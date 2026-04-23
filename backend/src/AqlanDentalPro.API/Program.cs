@@ -78,6 +78,7 @@ builder.Services.AddScoped<AppointmentService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<OrthoService>();
 builder.Services.AddScoped<FinanceService>();
+builder.Services.AddScoped<GeneralService>();
 
 builder.Services.AddHttpContextAccessor();
 

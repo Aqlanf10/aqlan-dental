@@ -2,10 +2,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil } from "lucide-react";
+import { ArrowRight, User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
+import { DentalChart } from "@/components/dental/DentalChart";
+import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
 
 // ─── Patient Timeline Component ───────────────────────────────────────────────
 interface TimelineEvent {
@@ -85,12 +87,13 @@ function PatientTimeline({ patientId }: { patientId: string }) {
   );
 }
 
-type Tab = "info" | "medical" | "dental" | "timeline";
+type Tab = "info" | "medical" | "dental" | "chart" | "timeline";
 
 const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "info",     label: "المعلومات العامة", icon: User },
   { key: "medical",  label: "التاريخ الطبي",    icon: FileText },
   { key: "dental",   label: "التاريخ السني",    icon: Stethoscope },
+  { key: "chart",    label: "المخطط السني",     icon: Grid3x3 },
   { key: "timeline", label: "السجل الزمني",     icon: Clock },
 ];
 
@@ -286,6 +289,15 @@ export default function PatientProfilePage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "chart" && (
+            <div className="space-y-6">
+              <DentalChart patientId={id} />
+              <div className="border-t border-gray-100 pt-6">
+                <TreatmentHistory patientId={id} />
+              </div>
             </div>
           )}
 

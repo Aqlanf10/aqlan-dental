@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { GitBranch, User, Calendar, Wallet, ClipboardList } from "lucide-react";
+import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity } from "lucide-react";
 import type { OrthoCase, TreatmentStage, OrthoVisit } from "@/types/ortho";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
@@ -157,6 +157,7 @@ export default function OrthoCaseDetailPage() {
 
         <div className="p-5">
           {activeTab === "info" && (
+            <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
                 ["المريض", orthoCase.patientName],
@@ -175,6 +176,16 @@ export default function OrthoCaseDetailPage() {
                   <p className="text-sm font-medium text-gray-900">{value}</p>
                 </div>
               ))}
+            </div>
+            <div className="pt-2 border-t border-gray-100">
+              <Link
+                href={`/ceph/new?orthoCaseId=${id}`}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-teal text-clinic-teal hover:bg-clinic-teal/10 transition"
+              >
+                <Activity className="w-4 h-4" />
+                إنشاء تحليل سيفالومتري
+              </Link>
+            </div>
             </div>
           )}
 

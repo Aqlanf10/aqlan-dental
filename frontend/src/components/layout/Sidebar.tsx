@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { href: "/patients",     label: "المرضى",             icon: Users,           active: true },
   { href: "/appointments", label: "المواعيد",           icon: Calendar,        active: true },
   { href: "/ortho",        label: "التقويم",            icon: GitBranch,       active: true },
-  { href: "/ceph",         label: "السيفالومتري",       icon: Activity,        active: false },
+  { href: "/ceph",         label: "السيفالومتري",       icon: Activity,        active: true },
   { href: "/general",      label: "طب الأسنان العام",   icon: Stethoscope,     active: true },
   { href: "/surgery",      label: "الجراحة",            icon: Scissors,        active: true },
   { href: "/referrals",    label: "الإحالات",           icon: ArrowLeftRight,  active: true },

@@ -9,6 +9,7 @@ export type AnalysisType =
   | 'mcnamara'
   | 'ricketts'
   | 'downs'
+  | 'wits'
   | 'full';
 
 /** Arabic labels for analysis types. */
@@ -18,6 +19,7 @@ export const ANALYSIS_TYPE_AR: Record<AnalysisType, string> = {
   mcnamara: 'ماكنامارا',
   ricketts: 'ريكتس',
   downs:    'داونز',
+  wits:     'وتس',
   full:     'شامل',
 };
 
@@ -28,7 +30,8 @@ export const ANALYSIS_GROUPS: Record<AnalysisType, MeasurementGroup[]> = {
   mcnamara: ['mcnamara'],
   ricketts: ['ricketts'],
   downs:    ['downs'],
-  full:     ['steiner', 'tweed', 'mcnamara', 'ricketts', 'downs'],
+  wits:     ['wits'],
+  full:     ['steiner', 'tweed', 'mcnamara', 'ricketts', 'downs', 'wits'],
 };
 
 /** A measurement belongs to exactly one analysis group. */
@@ -37,7 +40,8 @@ export type MeasurementGroup =
   | 'tweed'
   | 'mcnamara'
   | 'ricketts'
-  | 'downs';
+  | 'downs'
+  | 'wits';
 
 /** Anatomical region of a landmark — used only for UI grouping. */
 export type LandmarkGroup =

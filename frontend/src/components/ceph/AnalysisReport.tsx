@@ -20,6 +20,7 @@ const SCIENTIST_TABS: { key: MeasurementGroup; label: string; labelFull: string 
   { key: 'mcnamara', label: 'ماكنامارا', labelFull: 'تحليل ماكنامارا' },
   { key: 'ricketts', label: 'ريكتس',    labelFull: 'تحليل ريكتس' },
   { key: 'downs',    label: 'داونز',     labelFull: 'تحليل داونز' },
+  { key: 'wits',     label: 'وتس',       labelFull: 'تحليل وتس' },
 ];
 
 const SEVERITY_CFG = {

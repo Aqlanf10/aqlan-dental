@@ -69,16 +69,21 @@ interface Norm {
 }
 
 export const STEINER_NORMS: Record<string, Norm> = {
+  // ── Skeletal ──
   'SNA':          { normal: 82,  sd: 2, unit: '°',  nameAr: 'زاوية SNA' },
   'SNB':          { normal: 80,  sd: 2, unit: '°',  nameAr: 'زاوية SNB' },
   'ANB':          { normal: 2,   sd: 1, unit: '°',  nameAr: 'زاوية ANB' },
   'SND':          { normal: 76,  sd: 2, unit: '°',  nameAr: 'زاوية SND' },
+  // ── Dental ──
   'U1-NA_angle':  { normal: 22,  sd: 2, unit: '°',  nameAr: 'U1/NA (°)' },
   'U1-NA_mm':     { normal: 4,   sd: 2, unit: 'mm', nameAr: 'U1/NA (mm)' },
   'L1-NB_angle':  { normal: 25,  sd: 2, unit: '°',  nameAr: 'L1/NB (°)' },
   'L1-NB_mm':     { normal: 4,   sd: 2, unit: 'mm', nameAr: 'L1/NB (mm)' },
   'U1-L1':        { normal: 131, sd: 6, unit: '°',  nameAr: 'زاوية القاطعين' },
   'GoGn-SN':      { normal: 32,  sd: 6, unit: '°',  nameAr: 'GoGn / SN' },
+  // ── Soft tissue (S-line: Pog → midpoint of nose contour) ──
+  'UL-SLine':     { normal: 0,   sd: 1, unit: 'mm', nameAr: 'الشفة العلوية — خط S' },
+  'LL-SLine':     { normal: 0,   sd: 1, unit: 'mm', nameAr: 'الشفة السفلية — خط S' },
 };
 
 export const TWEED_NORMS: Record<string, Norm> = {
@@ -103,6 +108,13 @@ export const RICKETTS_NORMS: Record<string, Norm> = {
   'Upper-Lip-ELine': { normal: -2,  sd: 2, unit: 'mm', nameAr: 'الشفة العلوية إلى خط E' },
   'Lower-Lip-ELine': { normal: -2,  sd: 2, unit: 'mm', nameAr: 'الشفة السفلية إلى خط E' },
   'Nasolabial':      { normal: 102, sd: 8, unit: '°',  nameAr: 'الزاوية الأنفية-الشفوية' },
+};
+
+export const WITS_NORMS: Record<string, Norm> = {
+  // Wits appraisal: AO-BO distance on the functional occlusal plane.
+  // Male norm: -1mm, Female norm: 0mm → using combined 0 ± 1.5mm.
+  // Positive = Class II tendency, Negative = Class III tendency.
+  'Wits': { normal: 0, sd: 1.5, unit: 'mm', nameAr: 'مسافة وتس (AO-BO)' },
 };
 
 export const DOWNS_NORMS: Record<string, Norm> = {
@@ -171,6 +183,9 @@ function arabicInterpretation(
     'Y-Axis':       ['نمط نمو رأسي', 'نمط نمو أفقي'],
     'Facial-Plane-FH': ['مستوى الوجه بزاوية أعلى', 'مستوى الوجه بزاوية أقل'],
     'Mandibular-FH':['مستوى الفك السفلي مرتفع', 'مستوى الفك السفلي منخفض'],
+    'UL-SLine':     ['الشفة العلوية بارزة أمام خط S', 'الشفة العلوية مرتدة خلف خط S'],
+    'LL-SLine':     ['الشفة السفلية بارزة أمام خط S', 'الشفة السفلية مرتدة خلف خط S'],
+    'Wits':         ['تنافر هيكلي من الصنف الثاني (AO أمام BO)', 'تنافر هيكلي من الصنف الثالث (BO أمام AO)'],
   };
 
   const [hi, lo] = map[name] ?? ['أعلى من المعدل', 'أقل من المعدل'];
@@ -222,6 +237,76 @@ export function computeSteiner(lmMap: Record<string, Pt>, mmPerPx: number | null
   add('L1-NB_mm',   cal && has('L1T','N','B') ? r1(signedPerpDist(G('L1T'),G('N'),G('B'))*(mmPerPx!)) : null);
   add('U1-L1',      has('U1A','U1T','L1A','L1T') ? r1(180-angleBetweenLines(G('U1A'),G('U1T'),G('L1A'),G('L1T'))) : null);
   add('GoGn-SN',    has('Go','Me','S','N') ? r1(angleBetweenLines(G('Go'),G('Me'),G('S'),G('N'))) : null);
+
+  // ── Soft tissue (Steiner S-line: Pog → midpoint between Cm and Pn) ──
+  // The S-line reference runs from soft-tissue Pogonion (approximated here by
+  // hard-tissue Pog) to the midpoint of the nose contour. Lips should touch
+  // the line; positive = lip anterior to S-line, negative = posterior.
+  const sLineMid = has('Cm','Pn')
+    ? { x: (G('Cm').x + G('Pn').x) / 2, y: (G('Cm').y + G('Pn').y) / 2 }
+    : null;
+  add('UL-SLine', cal && sLineMid && has('LS','Pog')
+    ? r1(signedPerpDist(G('LS'), G('Pog'), sLineMid) * mmPerPx!) : null);
+  add('LL-SLine', cal && sLineMid && has('LI','Pog')
+    ? r1(signedPerpDist(G('LI'), G('Pog'), sLineMid) * mmPerPx!) : null);
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Wits appraisal
+// ---------------------------------------------------------------------------
+//
+// Classic Wits uses the functional occlusal plane defined by molar contacts
+// and incisor edges. Without posterior occlusal landmarks in our set, we
+// approximate the occlusal plane as the line from the midpoint of the
+// incisor edges (U1T, L1T) to the midpoint of the mandibular posterior
+// region (Go, Me). Points A and B are projected perpendicular onto this
+// plane; Wits = signed distance AO − BO along the plane (mm).
+// Positive → Class II tendency, Negative → Class III tendency.
+// ---------------------------------------------------------------------------
+
+export function computeWits(lmMap: Record<string, Pt>, mmPerPx: number | null): CephMeasurement[] {
+  const cal = mmPerPx !== null && mmPerPx > 0;
+  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
+  const r: CephMeasurement[] = [];
+  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, WITS_NORMS[n], 'wits'));
+
+  if (!cal || !has('U1T','L1T','Go','Me','A','B')) {
+    add('Wits', null);
+    return r;
+  }
+
+  // Occlusal plane approximation
+  const pA: Pt = {
+    x: (lmMap['U1T'].x + lmMap['L1T'].x) / 2,
+    y: (lmMap['U1T'].y + lmMap['L1T'].y) / 2,
+  };
+  const pB: Pt = {
+    x: (lmMap['Go'].x + lmMap['Me'].x) / 2,
+    y: (lmMap['Go'].y + lmMap['Me'].y) / 2,
+  };
+
+  // Perpendicular foot of point P onto line pA→pB
+  const project = (p: Pt): Pt => {
+    const dx = pB.x - pA.x, dy = pB.y - pA.y;
+    const len2 = dx*dx + dy*dy;
+    if (len2 === 0) return pA;
+    const t = ((p.x - pA.x) * dx + (p.y - pA.y) * dy) / len2;
+    return { x: pA.x + t * dx, y: pA.y + t * dy };
+  };
+
+  const AO = project(lmMap['A']);
+  const BO = project(lmMap['B']);
+
+  // Signed distance along plane direction (pA → pB)
+  const dirX = pB.x - pA.x, dirY = pB.y - pA.y;
+  const dLen = Math.sqrt(dirX*dirX + dirY*dirY);
+  if (dLen === 0) { add('Wits', null); return r; }
+  const ux = dirX / dLen, uy = dirY / dLen;
+  // Wits = signed scalar projection of (BO - AO) onto plane direction.
+  // Convention: positive when AO is anterior to BO (Class II).
+  const signed = ((AO.x - BO.x) * ux + (AO.y - BO.y) * uy) * mmPerPx!;
+  add('Wits', r1(signed));
   return r;
 }
 
@@ -358,7 +443,7 @@ export function computeDowns(lmMap: Record<string, Pt>): CephMeasurement[] {
 export function buildMeasurementList(
   lmMap: Record<string, Pt>,
   mmPerPx: number | null,
-  groups: readonly MeasurementGroup[] = ['steiner','tweed','mcnamara','ricketts','downs']
+  groups: readonly MeasurementGroup[] = ['steiner','tweed','mcnamara','ricketts','downs','wits']
 ): CephMeasurement[] {
   const all: CephMeasurement[] = [];
   if (groups.includes('steiner'))  all.push(...computeSteiner(lmMap, mmPerPx));
@@ -366,5 +451,6 @@ export function buildMeasurementList(
   if (groups.includes('mcnamara')) all.push(...computeMcNamara(lmMap, mmPerPx));
   if (groups.includes('ricketts')) all.push(...computeRicketts(lmMap, mmPerPx));
   if (groups.includes('downs'))    all.push(...computeDowns(lmMap));
+  if (groups.includes('wits'))     all.push(...computeWits(lmMap, mmPerPx));
   return all;
 }

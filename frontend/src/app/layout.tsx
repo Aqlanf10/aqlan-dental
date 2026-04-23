@@ -1,12 +1,18 @@
 import type { Metadata } from "next";
-import { Tajawal } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const tajawal = Tajawal({
-  subsets: ["arabic", "latin"],
-  weight: ["400", "500", "700", "800"],
+const tajawal = localFont({
+  src: [
+    { path: "./fonts/Tajawal-Regular.woff2",   weight: "400", style: "normal" },
+    { path: "./fonts/Tajawal-Medium.woff2",    weight: "500", style: "normal" },
+    { path: "./fonts/Tajawal-Bold.woff2",      weight: "700", style: "normal" },
+    { path: "./fonts/Tajawal-ExtraBold.woff2", weight: "800", style: "normal" },
+  ],
   variable: "--font-tajawal",
   display: "swap",
+  preload: true,
+  fallback: ["Arial", "Tahoma", "sans-serif"],
 });
 
 export const metadata: Metadata = {

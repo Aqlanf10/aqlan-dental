@@ -1,14 +1,16 @@
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/patients")]
 [Authorize]
-public class PatientsController(PatientService service) : ControllerBase
+public class PatientsController(PatientService service, AppDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -113,5 +115,30 @@ public class PatientsController(PatientService service) : ControllerBase
         };
         var result = await service.UpdateAsync(id, updateReq);
         return result == null ? NotFound() : Ok(result.DentalHistory);
+    }
+
+    [HttpGet("{id:guid}/timeline")]
+    public async Task<IActionResult> GetTimeline(Guid id)
+    {
+        var patient = await service.GetByIdAsync(id);
+        if (patient == null) return NotFound(new { message = "المريض غير موجود" });
+
+        var appointments = await db.Appointments
+            .Where(a => a.PatientId == id)
+            .Include(a => a.Doctor)
+            .OrderByDescending(a => a.AppointmentDate).ThenByDescending(a => a.StartTime)
+            .Select(a => new
+            {
+                type = "appointment",
+                id = a.Id,
+                date = a.AppointmentDate.ToString("yyyy-MM-dd"),
+                title = a.AppointmentType,
+                description = $"{a.Doctor.Name} · {a.StartTime:HH\\:mm}",
+                status = a.Status.ToString()
+            })
+            .Take(50)
+            .ToListAsync();
+
+        return Ok(appointments);
     }
 }

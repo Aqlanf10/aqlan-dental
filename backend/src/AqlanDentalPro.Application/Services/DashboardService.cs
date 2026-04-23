@@ -1,0 +1,40 @@
+using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace AqlanDentalPro.Application.Services;
+
+public record DashboardStats(
+    int AppointmentsToday,
+    int NewPatientsToday,
+    int ActiveOrthoCases,
+    int PendingLabOrders);
+
+public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
+{
+    public async Task<DashboardStats> GetStatsAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var apptQuery = db.Appointments.Where(a => a.AppointmentDate == today);
+        if (branchId.HasValue) apptQuery = apptQuery.Where(a => a.BranchId == branchId);
+
+        var patientQuery = db.Patients.Where(p => p.CreatedAt.Date == DateTime.Today);
+        if (branchId.HasValue) patientQuery = patientQuery.Where(p => p.BranchId == branchId);
+
+        var orthoQuery = db.OrthoCases.Where(o => o.Status == "active");
+        if (branchId.HasValue) orthoQuery = orthoQuery.Where(o => o.BranchId == branchId);
+
+        var labQuery = db.LabOrders.Where(l => l.Status == "sent" || l.Status == "manufacturing");
+
+        var results = await Task.WhenAll(
+            apptQuery.CountAsync(),
+            patientQuery.CountAsync(),
+            orthoQuery.CountAsync(),
+            labQuery.CountAsync()
+        );
+
+        return new DashboardStats(results[0], results[1], results[2], results[3]);
+    }
+}

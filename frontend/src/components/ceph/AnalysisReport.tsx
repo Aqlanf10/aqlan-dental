@@ -1,29 +1,31 @@
 "use client";
 import { useState } from "react";
-import { Printer, CheckCircle, AlertTriangle, XCircle, ChevronDown, ChevronUp } from "lucide-react";
-import type { CephMeasurement, CephDiagnosis } from "@/types/ceph";
-import type { MeasurementResult } from "@/lib/cephMath";
+import { Printer, CheckCircle, AlertTriangle, XCircle, ArrowUp, ArrowDown } from "lucide-react";
+import type { CephMeasurement, CephDiagnosis, MeasurementGroup } from "@/types/ceph";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  measurements: (CephMeasurement | MeasurementResult)[];
+  measurements: CephMeasurement[];
   diagnosis: CephDiagnosis | null | undefined;
   onDiagnosisChange?: (d: Partial<CephDiagnosis>) => void;
   patientName: string;
   analysisDate: string;
   calibrated: boolean;
+  defaultGroup?: MeasurementGroup;
 }
 
-const STATUS_CONFIG = {
-  normal: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50 text-green-700', label: 'طبيعي' },
-  mild:   { icon: AlertTriangle, color: 'text-yellow-500', bg: 'bg-yellow-50 text-yellow-700', label: 'خفيف' },
-  severe: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50 text-red-700', label: 'واضح' },
-} as const;
+const SCIENTIST_TABS: { key: MeasurementGroup; label: string; labelFull: string }[] = [
+  { key: 'steiner',  label: 'ستاينر',    labelFull: 'تحليل ستاينر' },
+  { key: 'tweed',    label: 'تويد',      labelFull: 'تحليل تويد' },
+  { key: 'mcnamara', label: 'ماكنامارا', labelFull: 'تحليل ماكنامارا' },
+  { key: 'ricketts', label: 'ريكتس',    labelFull: 'تحليل ريكتس' },
+  { key: 'downs',    label: 'داونز',     labelFull: 'تحليل داونز' },
+];
 
-const GROUP_LABELS = {
-  steiner:  'تحليل ستاينر',
-  tweed:    'تحليل تويد',
-  mcnamara: 'تحليل ماكنامارا',
+const SEVERITY_CFG = {
+  normal: { icon: CheckCircle,   color: 'text-green-500',  bg: 'bg-green-50 text-green-700',  label: 'طبيعي' },
+  mild:   { icon: AlertTriangle, color: 'text-amber-500',  bg: 'bg-amber-50 text-amber-700',  label: 'خفيف' },
+  severe: { icon: XCircle,       color: 'text-red-500',    bg: 'bg-red-50 text-red-700',       label: 'واضح' },
 } as const;
 
 const SKELETAL_CLASS_AR: Record<string, string> = {
@@ -33,46 +35,29 @@ const SKELETAL_CLASS_AR: Record<string, string> = {
 };
 
 const VERTICAL_AR: Record<string, string> = {
-  'Normal':          'طبيعي',
-  'Hyperdivergent':  'متشعب (نمط عمودي — وجه طويل)',
-  'Hypodivergent':   'مضغوط (نمط أفقي — وجه قصير)',
+  'Normal': 'طبيعي', 'Normodivergent': 'طبيعي',
+  'Hyperdivergent': 'متشعب (وجه طويل)', 'Hypodivergent': 'مضغوط (وجه قصير)',
 };
 
 export function AnalysisReport({
   measurements, diagnosis, onDiagnosisChange,
   patientName, analysisDate, calibrated,
+  defaultGroup = 'steiner',
 }: Props) {
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['steiner', 'tweed']));
-  const [finalNotes, setFinalNotes] = useState(diagnosis?.finalDiagnosis ?? "");
+  const [activeGroup, setActiveGroup] = useState<MeasurementGroup>(defaultGroup);
+  const [finalNotes, setFinalNotes]   = useState(diagnosis?.finalDiagnosis ?? "");
 
-  const groups = (Object.keys(GROUP_LABELS) as (keyof typeof GROUP_LABELS)[]);
-  const byGroup = (group: string) => measurements.filter(m => m.analysisGroup === group);
+  const grouped = measurements.filter(m => m.analysisGroup === activeGroup);
+  const hasMeas = measurements.length > 0;
+  const totalAbnormal = measurements.filter(m => m.severity !== 'normal' && m.value !== null).length;
+  const groupAbnormal = grouped.filter(m => m.severity !== 'normal' && m.value !== null).length;
 
-  const toggleGroup = (g: string) => {
-    setOpenGroups(prev => {
-      const next = new Set(prev);
-      next.has(g) ? next.delete(g) : next.add(g);
-      return next;
-    });
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  if (!measurements.length) {
-    return (
-      <div className="text-center py-10 text-gray-400 text-sm">
-        <p>لا توجد قياسات محسوبة</p>
-        <p className="text-xs mt-1 text-gray-300">ضع النقاط على الصورة ثم اضغط "احسب القياسات"</p>
-      </div>
-    );
-  }
-
-  const abnormalCount = measurements.filter(m => m.status !== 'normal' && m.value !== null).length;
+  const availableTabs = SCIENTIST_TABS.filter(t =>
+    !hasMeas || measurements.some(m => m.analysisGroup === t.key)
+  );
 
   return (
-    <div className="space-y-4 print:space-y-3">
+    <div className="flex flex-col h-full" dir="rtl">
       {/* Print header */}
       <div className="hidden print:block text-center border-b-2 pb-3 mb-4">
         <h2 className="text-lg font-bold">مركز د. عقلان الكامل لطب وتقويم الأسنان</h2>
@@ -84,172 +69,224 @@ export function AnalysisReport({
       </div>
 
       {/* Summary banner */}
-      <div className={cn(
-        "rounded-xl p-4 border",
-        abnormalCount === 0 ? "bg-green-50 border-green-200" :
-        abnormalCount <= 3 ? "bg-yellow-50 border-yellow-200" :
-        "bg-red-50 border-red-200"
-      )}>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-gray-900">
-              {abnormalCount === 0 ? "جميع القياسات ضمن الحدود الطبيعية" :
-               `${abnormalCount} قياس خارج النطاق الطبيعي`}
-            </p>
-            {diagnosis?.skeletalClass && (
-              <p className="text-xs text-gray-600 mt-1">{SKELETAL_CLASS_AR[diagnosis.skeletalClass] ?? diagnosis.skeletalClass}</p>
-            )}
-            {diagnosis?.verticalPattern && (
-              <p className="text-xs text-gray-600">النمط الرأسي: {VERTICAL_AR[diagnosis.verticalPattern] ?? diagnosis.verticalPattern}</p>
-            )}
+      {hasMeas && (
+        <div className={cn(
+          "flex-shrink-0 rounded-xl p-2.5 mb-2 border text-xs",
+          totalAbnormal === 0 ? "bg-green-50 border-green-200 text-green-800" :
+          totalAbnormal <= 3  ? "bg-amber-50 border-amber-200 text-amber-800" :
+                                "bg-red-50 border-red-200 text-red-800"
+        )}>
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-[11px]">
+              {totalAbnormal === 0 ? "جميع القياسات ضمن الحدود الطبيعية" :
+               `${totalAbnormal} قياس خارج النطاق الطبيعي`}
+            </span>
+            <button onClick={() => window.print()}
+              className="print:hidden flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-current hover:opacity-70 transition">
+              <Printer className="w-2.5 h-2.5" />طباعة
+            </button>
           </div>
-          <button
-            onClick={handlePrint}
-            className="print:hidden flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 hover:bg-white transition"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            طباعة
-          </button>
+          {diagnosis?.skeletalClass && (
+            <p className="mt-0.5 text-[10px]">{SKELETAL_CLASS_AR[diagnosis.skeletalClass] ?? diagnosis.skeletalClass}</p>
+          )}
+          {diagnosis?.verticalPattern && (
+            <p className="text-[10px]">النمط الرأسي: {VERTICAL_AR[diagnosis.verticalPattern] ?? diagnosis.verticalPattern}</p>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Calibration note */}
       {!calibrated && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-xs text-blue-700">
-          القياسات الخطية (mm) تتطلب معايرة الصورة — أدخل معامل التحجيم للحصول على قياسات بالملليمتر
+        <div className="flex-shrink-0 bg-blue-50 border border-blue-200 rounded-lg p-2 text-[10px] text-blue-700 mb-2">
+          القياسات الخطية (mm) تتطلب معايرة — أدخل معامل التحجيم أسفل الصورة
         </div>
       )}
 
-      {/* Measurement groups */}
-      {groups.map(group => {
-        const rows = byGroup(group);
-        if (!rows.length) return null;
-        const isOpen = openGroups.has(group);
-        const groupAbnormal = rows.filter(r => r.status !== 'normal' && r.value !== null).length;
-
-        return (
-          <div key={group} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden print:shadow-none print:border-gray-300">
-            <button
-              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100 hover:bg-gray-100 transition print:pointer-events-none"
-              onClick={() => toggleGroup(group)}
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm text-gray-800">{GROUP_LABELS[group]}</span>
-                {groupAbnormal > 0 && (
-                  <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">
-                    {groupAbnormal} انحراف
-                  </span>
+      {/* Scientist selector tabs */}
+      {hasMeas && (
+        <div className="flex-shrink-0 flex gap-1 mb-2 flex-wrap">
+          {availableTabs.map(t => {
+            const cnt = measurements.filter(m => m.analysisGroup === t.key && m.severity !== 'normal' && m.value !== null).length;
+            return (
+              <button key={t.key} onClick={() => setActiveGroup(t.key)}
+                className={cn(
+                  "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition",
+                  activeGroup === t.key
+                    ? "bg-clinic-teal text-white border-clinic-teal shadow-sm"
+                    : "bg-white text-gray-500 border-gray-200 hover:border-clinic-teal hover:text-clinic-teal"
                 )}
-              </div>
-              <span className="print:hidden">
-                {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-              </span>
-            </button>
+              >
+                {t.label}
+                {cnt > 0 && (
+                  <span className={cn(
+                    "text-[9px] rounded-full px-1 min-w-[14px] text-center font-bold leading-tight",
+                    activeGroup === t.key ? "bg-white/25 text-white" : "bg-red-100 text-red-600"
+                  )}>{cnt}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-            {(isOpen || typeof window === 'undefined') && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-gray-50/50 border-b border-gray-100">
-                    <tr>
-                      {["القياس", "القيمة", "المعيار", "الانحراف", "التقييم"].map(h => (
-                        <th key={h} className="text-start px-3 py-2 text-gray-500 font-semibold">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {rows.map(m => {
-                      const cfg = STATUS_CONFIG[m.status];
-                      const StatusIcon = cfg.icon;
-                      return (
-                        <tr key={m.name} className={cn(
-                          "hover:bg-gray-50/50 transition",
-                          m.status === 'severe' ? "bg-red-50/30" : m.status === 'mild' ? "bg-yellow-50/20" : ""
-                        )}>
-                          <td className="px-3 py-2.5">
-                            <div className="font-semibold text-gray-800">{m.nameAr}</div>
-                            {m.interpretationAr && m.status !== 'normal' && (
-                              <div className="text-gray-400 text-[10px] leading-tight mt-0.5 max-w-[150px]">{m.interpretationAr}</div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 font-mono font-bold text-gray-900">
-                            {m.value !== null ? `${m.value}${m.unit}` : (
-                              <span className="text-gray-300 font-normal">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 font-mono text-gray-500">
+      {/* Content scroll area */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {/* No measurements yet */}
+        {!hasMeas && !diagnosis && (
+          <div className="text-center py-10 text-gray-400">
+            <p className="text-xs font-medium">لا توجد قياسات محسوبة</p>
+            <p className="text-[10px] mt-1 text-gray-300">ضع النقاط ثم اضغط "احسب القياسات"</p>
+          </div>
+        )}
+
+        {/* Measurement rows for selected group */}
+        {hasMeas && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-gray-700">
+                {SCIENTIST_TABS.find(t => t.key === activeGroup)?.labelFull}
+              </span>
+              {groupAbnormal > 0 && (
+                <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">
+                  {groupAbnormal} انحراف
+                </span>
+              )}
+            </div>
+
+            {grouped.length === 0 ? (
+              <p className="text-[11px] text-gray-300 text-center py-6">
+                لا تتوفر قياسات {SCIENTIST_TABS.find(t => t.key === activeGroup)?.labelFull}
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {grouped.map(m => {
+                  const cfg = SEVERITY_CFG[m.severity];
+                  const Icon = cfg.icon;
+                  const above = m.direction === 'above';
+                  const below = m.direction === 'below';
+
+                  return (
+                    <div key={m.name} className={cn(
+                      "rounded-lg border p-2.5",
+                      m.severity === 'severe' ? "bg-red-50/60 border-red-200" :
+                      m.severity === 'mild'   ? "bg-amber-50/50 border-amber-100" :
+                      "bg-white border-gray-100"
+                    )}>
+                      {/* Top row */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] font-bold text-gray-800">{m.nameAr}</span>
+                            <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5", cfg.bg)}>
+                              <Icon className="w-2.5 h-2.5" />{cfg.label}
+                            </span>
+                          </div>
+                          {m.severity !== 'normal' && m.interpretationAr && (
+                            <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{m.interpretationAr}</p>
+                          )}
+                        </div>
+
+                        {/* Value */}
+                        <div className="flex-shrink-0 text-end">
+                          <div className="text-sm font-bold font-mono text-gray-900 leading-none">
+                            {m.value !== null
+                              ? `${m.value}${m.unit}`
+                              : <span className="text-gray-300 text-xs font-normal">—</span>}
+                          </div>
+                          <div className="text-[9px] text-gray-400 font-mono mt-0.5">
                             {m.normal}{m.unit} <span className="text-gray-300">±{m.stdDev}</span>
-                          </td>
-                          <td className="px-3 py-2.5 font-mono">
-                            {m.deviation !== null ? (
-                              <span className={m.deviation > 0 ? "text-orange-600" : m.deviation < 0 ? "text-blue-600" : "text-gray-400"}>
-                                {m.deviation > 0 ? '+' : ''}{m.deviation}{m.unit}
-                              </span>
-                            ) : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-1">
-                              <StatusIcon className={cn("w-3.5 h-3.5", cfg.color)} />
-                              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium", cfg.bg)}>
-                                {cfg.label}
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Deviation bar */}
+                      {m.deviation !== null && m.value !== null && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-visible relative">
+                            <div className="absolute inset-y-0 left-[20%] right-[20%] bg-green-100 rounded-full" />
+                            <div
+                              className={cn(
+                                "absolute w-2.5 h-2.5 rounded-full -top-[2px] border-2 border-white shadow-sm",
+                                m.severity === 'severe' ? 'bg-red-500' :
+                                m.severity === 'mild'   ? 'bg-amber-500' : 'bg-green-500'
+                              )}
+                              style={{
+                                left: `calc(${Math.max(2, Math.min(94, 50 + (m.deviation / (m.stdDev * 4)) * 50))}% - 5px)`
+                              }}
+                            />
+                          </div>
+                          <div className={cn(
+                            "text-[10px] font-mono flex items-center gap-0.5 flex-shrink-0",
+                            above ? 'text-orange-600' : below ? 'text-blue-600' : 'text-gray-400'
+                          )}>
+                            {above && <ArrowUp className="w-2.5 h-2.5" />}
+                            {below && <ArrowDown className="w-2.5 h-2.5" />}
+                            {m.deviation > 0 ? '+' : ''}{m.deviation}{m.unit}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
-        );
-      })}
+        )}
 
-      {/* Diagnosis section */}
-      {diagnosis && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3 print:shadow-none">
-          <h3 className="font-bold text-sm text-gray-900">التشخيص السريري</h3>
+        {/* Diagnosis section — always shown when diagnosis exists */}
+        {diagnosis && (
+          <div className={cn("pt-3 border-t border-gray-100 space-y-2.5", hasMeas && "mt-4")}>
+            <h3 className="font-bold text-[11px] text-gray-900">التشخيص السريري</h3>
 
-          {diagnosis.aiRecommendation && (
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-              <p className="text-xs font-semibold text-purple-800 mb-1">توصية الذكاء الاصطناعي:</p>
-              <p className="text-xs text-purple-700 leading-relaxed">{diagnosis.aiRecommendation}</p>
-            </div>
-          )}
-
-          {onDiagnosisChange && (
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                ملاحظات الطبيب والتشخيص النهائي
-              </label>
-              <textarea
-                value={finalNotes}
-                onChange={(e) => setFinalNotes(e.target.value)}
-                onBlur={() => onDiagnosisChange({ finalDiagnosis: finalNotes })}
-                rows={3}
-                className="w-full text-xs px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
-                placeholder="أكتب تشخيصك النهائي وخطة العلاج..."
-              />
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  type="checkbox"
-                  id="approved"
-                  checked={diagnosis.doctorApproved}
-                  onChange={(e) => onDiagnosisChange({ doctorApproved: e.target.checked })}
-                  className="w-3.5 h-3.5 accent-clinic-teal"
-                />
-                <label htmlFor="approved" className="text-xs text-gray-600">موافقة الطبيب على التشخيص</label>
+            {diagnosis.aiRecommendation && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5">
+                <p className="text-[9px] font-bold text-purple-800 mb-1 uppercase tracking-wide">توصية النظام</p>
+                <p className="text-[10px] text-purple-700 leading-relaxed whitespace-pre-line">
+                  {diagnosis.aiRecommendation}
+                </p>
               </div>
-            </div>
-          )}
+            )}
 
-          {diagnosis.finalDiagnosis && (
-            <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-700 leading-relaxed">
-              {diagnosis.finalDiagnosis}
-            </div>
-          )}
-        </div>
-      )}
+            {diagnosis.incisorInclination && (
+              <div className="text-[10px] text-gray-600 bg-gray-50 rounded-lg p-2">
+                <span className="font-semibold">ميلان القواطع: </span>
+                {diagnosis.incisorInclination}
+              </div>
+            )}
+
+            {onDiagnosisChange && (
+              <div className="space-y-2">
+                <label className="block text-[10px] font-semibold text-gray-600">
+                  ملاحظات الطبيب والتشخيص النهائي
+                </label>
+                <textarea
+                  value={finalNotes}
+                  onChange={(e) => setFinalNotes(e.target.value)}
+                  onBlur={() => onDiagnosisChange({ finalDiagnosis: finalNotes })}
+                  rows={4}
+                  className="w-full text-[11px] px-2.5 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-teal resize-none"
+                  placeholder="أكتب تشخيصك النهائي وخطة العلاج..."
+                />
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={diagnosis.doctorApproved}
+                    onChange={(e) => onDiagnosisChange({ doctorApproved: e.target.checked })}
+                    className="w-3.5 h-3.5 accent-clinic-teal"
+                  />
+                  <span className="text-[10px] text-gray-600">موافقة الطبيب على التشخيص</span>
+                </label>
+              </div>
+            )}
+
+            {diagnosis.finalDiagnosis && !onDiagnosisChange && (
+              <div className="bg-gray-50 rounded-lg p-2.5 text-[10px] text-gray-700 leading-relaxed">
+                {diagnosis.finalDiagnosis}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -143,11 +143,12 @@ export default function NewCephPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">نوع التحليل</label>
             <select {...register("analysisType")} className={inputCls()}>
-              <option value="full">شامل (ستاينر + تويد + ماكنامارا)</option>
+              <option value="full">شامل (ستاينر + تويد + ماكنامارا + ريكتس + داونز)</option>
               <option value="steiner">ستاينر</option>
-              <option value="mcnamara">ماكنامارا</option>
               <option value="tweed">تويد</option>
+              <option value="mcnamara">ماكنامارا</option>
               <option value="ricketts">ريكتس</option>
+              <option value="downs">داونز</option>
             </select>
           </div>
 

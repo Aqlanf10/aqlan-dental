@@ -1,610 +1,370 @@
 // ---------------------------------------------------------------------------
-// Cephalometric math utilities
+// Cephalometric math — geometry + all analyses
+// Re-exports CephMeasurement from types as the single unified type.
 // ---------------------------------------------------------------------------
+
+import type { CephMeasurement, MeasurementGroup } from "@/types/ceph";
+export type { CephMeasurement };
 
 type Pt = { x: number; y: number };
 
 // ---------------------------------------------------------------------------
-// Basic geometry
+// Basic geometry helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Euclidean distance between two points.
- */
 export function dist(a: Pt, b: Pt): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
+  const dx = b.x - a.x, dy = b.y - a.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/**
- * Angle at `vertex` formed by the rays vertex→p1 and vertex→p3.
- * Returns a value in the range [0, 180] degrees.
- */
+/** Angle at `vertex` between rays vertex→p1 and vertex→p3, in [0, 180]°. */
 export function angle3(p1: Pt, vertex: Pt, p3: Pt): number {
-  const v1x = p1.x - vertex.x;
-  const v1y = p1.y - vertex.y;
-  const v2x = p3.x - vertex.x;
-  const v2y = p3.y - vertex.y;
-
-  const dot = v1x * v2x + v1y * v2y;
-  const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
-  const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
-
-  if (mag1 === 0 || mag2 === 0) return 0;
-
-  const cosTheta = Math.max(-1, Math.min(1, dot / (mag1 * mag2)));
-  return (Math.acos(cosTheta) * 180) / Math.PI;
+  const ax = p1.x - vertex.x, ay = p1.y - vertex.y;
+  const bx = p3.x - vertex.x, by = p3.y - vertex.y;
+  const dot = ax * bx + ay * by;
+  const mag = Math.sqrt((ax*ax+ay*ay) * (bx*bx+by*by));
+  if (mag === 0) return 0;
+  return (Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180) / Math.PI;
 }
 
-/**
- * Acute angle (0–90°) between two lines defined by two points each.
- */
-export function angleBetweenLines(
-  l1p1: Pt,
-  l1p2: Pt,
-  l2p1: Pt,
-  l2p2: Pt
-): number {
-  const d1x = l1p2.x - l1p1.x;
-  const d1y = l1p2.y - l1p1.y;
-  const d2x = l2p2.x - l2p1.x;
-  const d2y = l2p2.y - l2p1.y;
-
-  const mag1 = Math.sqrt(d1x * d1x + d1y * d1y);
-  const mag2 = Math.sqrt(d2x * d2x + d2y * d2y);
-
+/** Acute angle (0–90°) between two lines. */
+export function angleBetweenLines(l1p1: Pt, l1p2: Pt, l2p1: Pt, l2p2: Pt): number {
+  const d1x = l1p2.x-l1p1.x, d1y = l1p2.y-l1p1.y;
+  const d2x = l2p2.x-l2p1.x, d2y = l2p2.y-l2p1.y;
+  const mag1 = Math.sqrt(d1x*d1x+d1y*d1y);
+  const mag2 = Math.sqrt(d2x*d2x+d2y*d2y);
   if (mag1 === 0 || mag2 === 0) return 0;
-
-  const cosTheta = Math.abs((d1x * d2x + d1y * d2y) / (mag1 * mag2));
-  const clampedCos = Math.max(-1, Math.min(1, cosTheta));
-  return (Math.acos(clampedCos) * 180) / Math.PI;
+  const cos = Math.abs((d1x*d2x + d1y*d2y) / (mag1*mag2));
+  return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
 }
 
-/**
- * Unsigned perpendicular distance from `pt` to the infinite line through
- * `lp1` and `lp2`.
- */
+/** Unsigned perpendicular distance from pt to line through lp1→lp2. */
 export function perpDist(pt: Pt, lp1: Pt, lp2: Pt): number {
   return Math.abs(signedPerpDist(pt, lp1, lp2));
 }
 
-/**
- * Signed perpendicular distance from `pt` to the infinite line through
- * `lp1` → `lp2`.
- *
- * Sign convention: positive = the point is to the *right* of the direction
- * vector lp1→lp2 (i.e. the "anterior" side in a standard lateral cephalogram
- * where the line is directed superiorly, e.g. N→A or N→B).
- */
+/** Signed perpendicular distance — positive = pt is to the right of lp1→lp2. */
 export function signedPerpDist(pt: Pt, lp1: Pt, lp2: Pt): number {
-  const dx = lp2.x - lp1.x;
-  const dy = lp2.y - lp1.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
+  const dx = lp2.x - lp1.x, dy = lp2.y - lp1.y;
+  const len = Math.sqrt(dx*dx + dy*dy);
   if (len === 0) return 0;
-  // Cross product (lp1→lp2) × (lp1→pt), divided by length
   return ((pt.x - lp1.x) * dy - (pt.y - lp1.y) * dx) / len;
 }
 
-/**
- * Angle of the line p1→p2 measured from the positive x-axis, in degrees.
- * Range: (-180, 180].
- */
+/** Line angle p1→p2 from positive x-axis, range (-180, 180]. */
 export function lineAngle(p1: Pt, p2: Pt): number {
   return (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
 }
 
 // ---------------------------------------------------------------------------
-// Measurement result types
+// Normal-value tables
+// All norms sourced from published orthodontic literature.
 // ---------------------------------------------------------------------------
 
-export interface MeasurementResult {
-  name: string;
-  nameAr: string;
-  value: number | null;
+interface Norm {
   normal: number;
-  stdDev: number;
+  sd: number;
   unit: '°' | 'mm';
-  deviation: number | null;
-  status: 'normal' | 'mild' | 'severe';
-  analysisGroup: 'steiner' | 'tweed' | 'mcnamara';
-  interpretationAr?: string;
+  nameAr: string;
 }
 
-// ---------------------------------------------------------------------------
-// Computed measurement interfaces
-// ---------------------------------------------------------------------------
-
-export interface SteinerMeasurements {
-  SNA: number | null;
-  SNB: number | null;
-  ANB: number | null;
-  SND: number | null;
-  'U1-NA_angle': number | null;
-  'U1-NA_mm': number | null;
-  'L1-NB_angle': number | null;
-  'L1-NB_mm': number | null;
-  'U1-L1': number | null;
-  'GoGn-SN': number | null;
-}
-
-export interface TweedMeasurements {
-  FMA: number | null;
-  FMIA: number | null;
-  IMPA: number | null;
-}
-
-export interface McNamaraMeasurements {
-  'Co-A': number | null;   // in mm
-  'Co-Gn': number | null;  // in mm
-  'ANS-Me': number | null; // lower face height in mm
-}
-
-// ---------------------------------------------------------------------------
-// Normal value tables
-// ---------------------------------------------------------------------------
-
-export const STEINER_NORMS: Record<
-  string,
-  { normal: number; sd: number; unit: '°' | 'mm'; nameAr: string }
-> = {
-  SNA:          { normal: 82,  sd: 2, unit: '°',  nameAr: 'SNA' },
-  SNB:          { normal: 80,  sd: 2, unit: '°',  nameAr: 'SNB' },
-  ANB:          { normal: 2,   sd: 1, unit: '°',  nameAr: 'ANB' },
-  SND:          { normal: 76,  sd: 2, unit: '°',  nameAr: 'SND' },
-  'U1-NA_angle':{ normal: 22,  sd: 2, unit: '°',  nameAr: 'U1/NA (°)' },
-  'U1-NA_mm':   { normal: 4,   sd: 2, unit: 'mm', nameAr: 'U1/NA (mm)' },
-  'L1-NB_angle':{ normal: 25,  sd: 2, unit: '°',  nameAr: 'L1/NB (°)' },
-  'L1-NB_mm':   { normal: 4,   sd: 2, unit: 'mm', nameAr: 'L1/NB (mm)' },
-  'U1-L1':      { normal: 131, sd: 6, unit: '°',  nameAr: 'زاوية القاطعين' },
-  'GoGn-SN':    { normal: 32,  sd: 6, unit: '°',  nameAr: 'GoGn / SN' },
+export const STEINER_NORMS: Record<string, Norm> = {
+  'SNA':          { normal: 82,  sd: 2, unit: '°',  nameAr: 'زاوية SNA' },
+  'SNB':          { normal: 80,  sd: 2, unit: '°',  nameAr: 'زاوية SNB' },
+  'ANB':          { normal: 2,   sd: 1, unit: '°',  nameAr: 'زاوية ANB' },
+  'SND':          { normal: 76,  sd: 2, unit: '°',  nameAr: 'زاوية SND' },
+  'U1-NA_angle':  { normal: 22,  sd: 2, unit: '°',  nameAr: 'U1/NA (°)' },
+  'U1-NA_mm':     { normal: 4,   sd: 2, unit: 'mm', nameAr: 'U1/NA (mm)' },
+  'L1-NB_angle':  { normal: 25,  sd: 2, unit: '°',  nameAr: 'L1/NB (°)' },
+  'L1-NB_mm':     { normal: 4,   sd: 2, unit: 'mm', nameAr: 'L1/NB (mm)' },
+  'U1-L1':        { normal: 131, sd: 6, unit: '°',  nameAr: 'زاوية القاطعين' },
+  'GoGn-SN':      { normal: 32,  sd: 6, unit: '°',  nameAr: 'GoGn / SN' },
 };
 
-export const TWEED_NORMS: Record<
-  string,
-  { normal: number; sd: number; unit: '°' | 'mm'; nameAr: string }
-> = {
-  FMA:  { normal: 25, sd: 4, unit: '°', nameAr: 'FMA' },
-  FMIA: { normal: 65, sd: 5, unit: '°', nameAr: 'FMIA' },
-  IMPA: { normal: 90, sd: 4, unit: '°', nameAr: 'IMPA' },
+export const TWEED_NORMS: Record<string, Norm> = {
+  'FMA':  { normal: 25, sd: 4, unit: '°', nameAr: 'FMA (فرانكفورت-فك سفلي)' },
+  'FMIA': { normal: 65, sd: 5, unit: '°', nameAr: 'FMIA (فرانكفورت-قاطعة سفلية)' },
+  'IMPA': { normal: 90, sd: 4, unit: '°', nameAr: 'IMPA (فك سفلي-قاطعة سفلية)' },
 };
 
-export const MCNAMARA_NORMS: Record<
-  string,
-  { normal: number; sd: number; unit: '°' | 'mm'; nameAr: string }
-> = {
-  'Co-A':   { normal: 91,  sd: 6, unit: 'mm', nameAr: 'Co-A' },
-  'Co-Gn':  { normal: 120, sd: 7, unit: 'mm', nameAr: 'Co-Gn' },
-  'ANS-Me': { normal: 65,  sd: 5, unit: 'mm', nameAr: 'ANS-Me' },
+export const MCNAMARA_NORMS: Record<string, Norm> = {
+  'Co-A':   { normal: 91,  sd: 6, unit: 'mm', nameAr: 'Co-A (طول الفك العلوي)' },
+  'Co-Gn':  { normal: 120, sd: 7, unit: 'mm', nameAr: 'Co-Gn (طول الفك السفلي)' },
+  'ANS-Me': { normal: 65,  sd: 5, unit: 'mm', nameAr: 'ANS-Me (ارتفاع الوجه السفلي)' },
+};
+
+export const RICKETTS_NORMS: Record<string, Norm> = {
+  'Facial-Depth':    { normal: 87,  sd: 3, unit: '°',  nameAr: 'عمق الوجه (FH-N-Pog)' },
+  'Facial-Axis':     { normal: 90,  sd: 3, unit: '°',  nameAr: 'محور الوجه (Pt-Gn / BaN)' },
+  'Mandibular-Plane':{ normal: 26,  sd: 4, unit: '°',  nameAr: 'ميل مستوى الفك (FH-GoMe)' },
+  'Convexity-A':     { normal: 2,   sd: 2, unit: 'mm', nameAr: 'انحناء النقطة A (N-Pog)' },
+  'L1-APog_mm':      { normal: 1,   sd: 2, unit: 'mm', nameAr: 'L1 إلى خط A-Pog (mm)' },
+  'L1-APog_angle':   { normal: 22,  sd: 4, unit: '°',  nameAr: 'L1 إلى خط A-Pog (°)' },
+  'Upper-Lip-ELine': { normal: -2,  sd: 2, unit: 'mm', nameAr: 'الشفة العلوية إلى خط E' },
+  'Lower-Lip-ELine': { normal: -2,  sd: 2, unit: 'mm', nameAr: 'الشفة السفلية إلى خط E' },
+  'Nasolabial':      { normal: 102, sd: 8, unit: '°',  nameAr: 'الزاوية الأنفية-الشفوية' },
+};
+
+export const DOWNS_NORMS: Record<string, Norm> = {
+  'Convexity':       { normal: 0,    sd: 5, unit: '°', nameAr: 'انحناء الوجه (N-A-Pog)' },
+  'AB-FacialPlane':  { normal: -4.6, sd: 3, unit: '°', nameAr: 'خط A-B إلى مستوى الوجه' },
+  'Y-Axis':          { normal: 59.4, sd: 4, unit: '°', nameAr: 'محور Y (S-Gn/FH)' },
+  'Facial-Plane-FH': { normal: 87.8, sd: 3, unit: '°', nameAr: 'مستوى الوجه (N-Pog) / FH' },
+  'Mandibular-FH':   { normal: 21.9, sd: 4, unit: '°', nameAr: 'مستوى الفك السفلي / FH' },
 };
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Status computation (severity + direction)
 // ---------------------------------------------------------------------------
 
-/** Return the point from the record, or undefined if the key is absent. */
-function lm(record: Record<string, Pt>, key: string): Pt | undefined {
-  return record[key];
+function computeStatus(
+  deviation: number,
+  sd: number
+): Pick<CephMeasurement, 'severity' | 'direction'> {
+  const direction = deviation > 0 ? 'above' : deviation < 0 ? 'below' : 'within';
+  const ratio = Math.abs(deviation / sd);
+  const severity = ratio <= 1 ? 'normal' : ratio <= 2 ? 'mild' : 'severe';
+  return { severity, direction };
 }
 
-/**
- * Round a number to one decimal place using standard arithmetic rounding.
- * Using `+value.toFixed(1)` as specified.
- */
-function round1(value: number): number {
-  return +value.toFixed(1);
+// ---------------------------------------------------------------------------
+// Arabic interpretation per measurement
+// ---------------------------------------------------------------------------
+
+function arabicInterpretation(
+  name: string,
+  deviation: number,
+  severity: CephMeasurement['severity']
+): string {
+  if (severity === 'normal') return 'ضمن الحدود الطبيعية';
+  const s = severity === 'severe' ? 'بشكل واضح' : 'بشكل طفيف';
+  const above = deviation > 0;
+
+  const map: Record<string, [string, string]> = {
+    'SNA':          ['الفك العلوي بارز للأمام', 'الفك العلوي متراجع للخلف'],
+    'SNB':          ['الفك السفلي بارز للأمام', 'الفك السفلي متراجع للخلف'],
+    'ANB':          ['علاقة هيكلية من الدرجة الثانية', 'علاقة هيكلية من الدرجة الثالثة'],
+    'SND':          ['SND مرتفع', 'SND منخفض'],
+    'U1-NA_angle':  ['القاطع العلوي مائل للأمام', 'القاطع العلوي مائل للخلف'],
+    'U1-NA_mm':     ['القاطع العلوي بارز', 'القاطع العلوي مرتد'],
+    'L1-NB_angle':  ['القاطع السفلي مائل للأمام', 'القاطع السفلي مائل للخلف'],
+    'L1-NB_mm':     ['القاطع السفلي بارز', 'القاطع السفلي مرتد'],
+    'U1-L1':        ['زاوية القاطعين مفتوحة (قواطع مرتدة)', 'زاوية القاطعين ضيقة (بروز سني)'],
+    'GoGn-SN':      ['نمط رأسي مرتفع (وجه طويل)', 'نمط رأسي منخفض (وجه قصير)'],
+    'FMA':          ['ميل الفك السفلي مرتفع — نمط رأسي', 'ميل الفك السفلي منخفض — نمط أفقي'],
+    'FMIA':         ['القاطع السفلي مائل للخلف نسبة لـFH', 'القاطع السفلي بارز للأمام نسبة لـFH'],
+    'IMPA':         ['القاطع السفلي منتصب بشكل زائد', 'القاطع السفلي مائل للخلف'],
+    'Co-A':         ['طول الفك العلوي أكبر من المعدل', 'طول الفك العلوي أقل من المعدل'],
+    'Co-Gn':        ['طول الفك السفلي أكبر من المعدل', 'طول الفك السفلي أقل من المعدل'],
+    'ANS-Me':       ['ارتفاع الوجه السفلي مرتفع', 'ارتفاع الوجه السفلي منخفض'],
+    'Facial-Depth': ['الوجه أكثر بروزاً من المعدل', 'الوجه أكثر تراجعاً من المعدل'],
+    'Facial-Axis':  ['محور نمو أمامي متزايد', 'محور نمو خلفي متزايد'],
+    'Mandibular-Plane': ['مستوى الفك السفلي مائل بشكل مرتفع', 'مستوى الفك السفلي مسطّح'],
+    'Convexity-A':  ['بروز عظمي واضح (Class II هيكلي)', 'تراجع عظمي (Class III هيكلي)'],
+    'L1-APog_mm':   ['القاطع السفلي بارز عن خط A-Pog', 'القاطع السفلي مرتد عن خط A-Pog'],
+    'L1-APog_angle':['القاطع السفلي مائل للأمام', 'القاطع السفلي مائل للخلف'],
+    'Upper-Lip-ELine': ['الشفة العلوية بارزة للأمام', 'الشفة العلوية مرتدة للخلف'],
+    'Lower-Lip-ELine': ['الشفة السفلية بارزة للأمام', 'الشفة السفلية مرتدة للخلف'],
+    'Nasolabial':   ['الزاوية الأنفية مفتوحة (ميل شفوي)','الزاوية الأنفية ضيقة (بروز شفوي)'],
+    'Convexity':    ['بروز هيكلي للوجه', 'تراجع هيكلي للوجه'],
+    'AB-FacialPlane':['الفك السفلي بارز', 'الفك السفلي متراجع'],
+    'Y-Axis':       ['نمط نمو رأسي', 'نمط نمو أفقي'],
+    'Facial-Plane-FH': ['مستوى الوجه بزاوية أعلى', 'مستوى الوجه بزاوية أقل'],
+    'Mandibular-FH':['مستوى الفك السفلي مرتفع', 'مستوى الفك السفلي منخفض'],
+  };
+
+  const [hi, lo] = map[name] ?? ['أعلى من المعدل', 'أقل من المعدل'];
+  return `${above ? hi : lo} ${s}`;
+}
+
+// ---------------------------------------------------------------------------
+// Core builder
+// ---------------------------------------------------------------------------
+
+function r1(v: number): number { return +v.toFixed(1); }
+
+function makeMeasurement(
+  name: string,
+  value: number | null,
+  norm: Norm,
+  group: MeasurementGroup
+): CephMeasurement {
+  const deviation = value !== null ? r1(value - norm.normal) : null;
+  const { severity, direction } = deviation !== null
+    ? computeStatus(deviation, norm.sd)
+    : { severity: 'normal' as const, direction: 'within' as const };
+  const interpretationAr = deviation !== null
+    ? arabicInterpretation(name, deviation, severity)
+    : undefined;
+  return { name, nameAr: norm.nameAr, value, normal: norm.normal, stdDev: norm.sd,
+           unit: norm.unit, deviation, severity, direction, analysisGroup: group, interpretationAr };
 }
 
 // ---------------------------------------------------------------------------
 // Steiner analysis
 // ---------------------------------------------------------------------------
 
-export function computeSteiner(
-  lmMap: Record<string, Pt>,
-  mmPerPx: number
-): SteinerMeasurements {
-  const calibrated = mmPerPx > 0;
+export function computeSteiner(lmMap: Record<string, Pt>, mmPerPx: number | null): CephMeasurement[] {
+  const cal = mmPerPx !== null && mmPerPx > 0;
+  const G = (k: string) => lmMap[k];
+  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
+  const r: CephMeasurement[] = [];
+  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, STEINER_NORMS[n], 'steiner'));
 
-  // SNA: angle at N between S and A
-  const SNA: number | null =
-    lm(lmMap, 'S') && lm(lmMap, 'N') && lm(lmMap, 'A')
-      ? round1(angle3(lmMap['S'], lmMap['N'], lmMap['A']))
-      : null;
-
-  // SNB: angle at N between S and B
-  const SNB: number | null =
-    lm(lmMap, 'S') && lm(lmMap, 'N') && lm(lmMap, 'B')
-      ? round1(angle3(lmMap['S'], lmMap['N'], lmMap['B']))
-      : null;
-
-  // ANB: SNA - SNB (signed)
-  const ANB: number | null =
-    SNA !== null && SNB !== null ? round1(SNA - SNB) : null;
-
-  // SND: angle at N between S and D
-  const SND: number | null =
-    lm(lmMap, 'S') && lm(lmMap, 'N') && lm(lmMap, 'D')
-      ? round1(angle3(lmMap['S'], lmMap['N'], lmMap['D']))
-      : null;
-
-  // U1-NA angle: angle between upper incisor axis and N-A line
-  const U1_NA_angle: number | null =
-    lm(lmMap, 'U1A') && lm(lmMap, 'U1T') && lm(lmMap, 'N') && lm(lmMap, 'A')
-      ? round1(
-          angleBetweenLines(
-            lmMap['U1A'],
-            lmMap['U1T'],
-            lmMap['N'],
-            lmMap['A']
-          )
-        )
-      : null;
-
-  // U1-NA mm: distance of upper incisor tip from N-A line
-  const U1_NA_mm: number | null =
-    calibrated && lm(lmMap, 'U1T') && lm(lmMap, 'N') && lm(lmMap, 'A')
-      ? round1(signedPerpDist(lmMap['U1T'], lmMap['N'], lmMap['A']) * mmPerPx)
-      : null;
-
-  // L1-NB angle: angle between lower incisor axis and N-B line
-  const L1_NB_angle: number | null =
-    lm(lmMap, 'L1A') && lm(lmMap, 'L1T') && lm(lmMap, 'N') && lm(lmMap, 'B')
-      ? round1(
-          angleBetweenLines(
-            lmMap['L1A'],
-            lmMap['L1T'],
-            lmMap['N'],
-            lmMap['B']
-          )
-        )
-      : null;
-
-  // L1-NB mm: distance of lower incisor tip from N-B line
-  const L1_NB_mm: number | null =
-    calibrated && lm(lmMap, 'L1T') && lm(lmMap, 'N') && lm(lmMap, 'B')
-      ? round1(signedPerpDist(lmMap['L1T'], lmMap['N'], lmMap['B']) * mmPerPx)
-      : null;
-
-  // U1-L1: interincisal angle = 180 - angle between incisor axes
-  const U1_L1: number | null =
-    lm(lmMap, 'U1A') &&
-    lm(lmMap, 'U1T') &&
-    lm(lmMap, 'L1A') &&
-    lm(lmMap, 'L1T')
-      ? round1(
-          180 -
-            angleBetweenLines(
-              lmMap['U1A'],
-              lmMap['U1T'],
-              lmMap['L1A'],
-              lmMap['L1T']
-            )
-        )
-      : null;
-
-  // GoGn-SN: mandibular plane (Go→Me) to S-N plane
-  const GoGn_SN: number | null =
-    lm(lmMap, 'Go') &&
-    lm(lmMap, 'Me') &&
-    lm(lmMap, 'S') &&
-    lm(lmMap, 'N')
-      ? round1(
-          angleBetweenLines(
-            lmMap['Go'],
-            lmMap['Me'],
-            lmMap['S'],
-            lmMap['N']
-          )
-        )
-      : null;
-
-  return {
-    SNA,
-    SNB,
-    ANB,
-    SND,
-    'U1-NA_angle': U1_NA_angle,
-    'U1-NA_mm': U1_NA_mm,
-    'L1-NB_angle': L1_NB_angle,
-    'L1-NB_mm': L1_NB_mm,
-    'U1-L1': U1_L1,
-    'GoGn-SN': GoGn_SN,
-  };
+  add('SNA',        has('S','N','A') ? r1(angle3(G('S'),G('N'),G('A'))) : null);
+  add('SNB',        has('S','N','B') ? r1(angle3(G('S'),G('N'),G('B'))) : null);
+  const sna = r.find(m=>m.name==='SNA')?.value, snb = r.find(m=>m.name==='SNB')?.value;
+  add('ANB',        sna!=null && snb!=null ? r1(sna-snb) : null);
+  add('SND',        has('S','N','D') ? r1(angle3(G('S'),G('N'),G('D'))) : null);
+  add('U1-NA_angle',has('U1A','U1T','N','A') ? r1(angleBetweenLines(G('U1A'),G('U1T'),G('N'),G('A'))) : null);
+  add('U1-NA_mm',   cal && has('U1T','N','A') ? r1(signedPerpDist(G('U1T'),G('N'),G('A'))*(mmPerPx!)) : null);
+  add('L1-NB_angle',has('L1A','L1T','N','B') ? r1(angleBetweenLines(G('L1A'),G('L1T'),G('N'),G('B'))) : null);
+  add('L1-NB_mm',   cal && has('L1T','N','B') ? r1(signedPerpDist(G('L1T'),G('N'),G('B'))*(mmPerPx!)) : null);
+  add('U1-L1',      has('U1A','U1T','L1A','L1T') ? r1(180-angleBetweenLines(G('U1A'),G('U1T'),G('L1A'),G('L1T'))) : null);
+  add('GoGn-SN',    has('Go','Me','S','N') ? r1(angleBetweenLines(G('Go'),G('Me'),G('S'),G('N'))) : null);
+  return r;
 }
 
 // ---------------------------------------------------------------------------
 // Tweed analysis
 // ---------------------------------------------------------------------------
 
-export function computeTweed(
-  lmMap: Record<string, Pt>,
-  mmPerPx: number
-): TweedMeasurements {
-  // mmPerPx unused for Tweed (all angular), included for API consistency
+export function computeTweed(lmMap: Record<string, Pt>): CephMeasurement[] {
+  const G = (k: string) => lmMap[k];
+  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
+  const r: CephMeasurement[] = [];
+  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, TWEED_NORMS[n], 'tweed'));
 
-  // FMA: FH plane (Po→Or) to mandibular plane (Go→Me)
-  const FMA: number | null =
-    lm(lmMap, 'Po') &&
-    lm(lmMap, 'Or') &&
-    lm(lmMap, 'Go') &&
-    lm(lmMap, 'Me')
-      ? round1(
-          angleBetweenLines(
-            lmMap['Po'],
-            lmMap['Or'],
-            lmMap['Go'],
-            lmMap['Me']
-          )
-        )
-      : null;
-
-  // FMIA: FH plane (Po→Or) to lower incisor axis (L1A→L1T)
-  const FMIA: number | null =
-    lm(lmMap, 'Po') &&
-    lm(lmMap, 'Or') &&
-    lm(lmMap, 'L1A') &&
-    lm(lmMap, 'L1T')
-      ? round1(
-          angleBetweenLines(
-            lmMap['Po'],
-            lmMap['Or'],
-            lmMap['L1A'],
-            lmMap['L1T']
-          )
-        )
-      : null;
-
-  // IMPA: mandibular plane (Go→Me) to lower incisor axis (L1A→L1T)
-  const IMPA: number | null =
-    lm(lmMap, 'Go') &&
-    lm(lmMap, 'Me') &&
-    lm(lmMap, 'L1A') &&
-    lm(lmMap, 'L1T')
-      ? round1(
-          angleBetweenLines(
-            lmMap['Go'],
-            lmMap['Me'],
-            lmMap['L1A'],
-            lmMap['L1T']
-          )
-        )
-      : null;
-
-  // Suppress unused-variable warning for mmPerPx in strict mode
-  void mmPerPx;
-
-  return { FMA, FMIA, IMPA };
+  add('FMA',  has('Po','Or','Go','Me') ? r1(angleBetweenLines(G('Po'),G('Or'),G('Go'),G('Me'))) : null);
+  add('FMIA', has('Po','Or','L1A','L1T') ? r1(angleBetweenLines(G('Po'),G('Or'),G('L1A'),G('L1T'))) : null);
+  add('IMPA', has('Go','Me','L1A','L1T') ? r1(angleBetweenLines(G('Go'),G('Me'),G('L1A'),G('L1T'))) : null);
+  return r;
 }
 
 // ---------------------------------------------------------------------------
 // McNamara analysis
 // ---------------------------------------------------------------------------
 
-export function computeMcNamara(
-  lmMap: Record<string, Pt>,
-  mmPerPx: number
-): McNamaraMeasurements {
-  const calibrated = mmPerPx > 0;
+export function computeMcNamara(lmMap: Record<string, Pt>, mmPerPx: number | null): CephMeasurement[] {
+  const cal = mmPerPx !== null && mmPerPx > 0;
+  const G = (k: string) => lmMap[k];
+  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
+  const r: CephMeasurement[] = [];
+  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, MCNAMARA_NORMS[n], 'mcnamara'));
 
-  // Co-A: condylion to point A
-  const Co_A: number | null =
-    calibrated && lm(lmMap, 'Co') && lm(lmMap, 'A')
-      ? round1(dist(lmMap['Co'], lmMap['A']) * mmPerPx)
-      : null;
-
-  // Co-Gn: condylion to gnathion
-  const Co_Gn: number | null =
-    calibrated && lm(lmMap, 'Co') && lm(lmMap, 'Gn')
-      ? round1(dist(lmMap['Co'], lmMap['Gn']) * mmPerPx)
-      : null;
-
-  // ANS-Me: anterior nasal spine to menton (lower face height)
-  const ANS_Me: number | null =
-    calibrated && lm(lmMap, 'ANS') && lm(lmMap, 'Me')
-      ? round1(dist(lmMap['ANS'], lmMap['Me']) * mmPerPx)
-      : null;
-
-  return {
-    'Co-A': Co_A,
-    'Co-Gn': Co_Gn,
-    'ANS-Me': ANS_Me,
-  };
+  add('Co-A',   cal && has('Co','A')   ? r1(dist(G('Co'),G('A'))  * mmPerPx!) : null);
+  add('Co-Gn',  cal && has('Co','Gn')  ? r1(dist(G('Co'),G('Gn')) * mmPerPx!) : null);
+  add('ANS-Me', cal && has('ANS','Me') ? r1(dist(G('ANS'),G('Me'))* mmPerPx!) : null);
+  return r;
 }
 
 // ---------------------------------------------------------------------------
-// Arabic interpretation helpers
+// Ricketts analysis
 // ---------------------------------------------------------------------------
 
-/**
- * Compute a deviation-based status:
- *  - |dev/sd| <= 1 → 'normal'
- *  - |dev/sd| <= 2 → 'mild'
- *  - |dev/sd| >  2 → 'severe'
- */
-function computeStatus(
-  deviation: number,
-  sd: number
-): 'normal' | 'mild' | 'severe' {
-  const ratio = Math.abs(deviation / sd);
-  if (ratio <= 1) return 'normal';
-  if (ratio <= 2) return 'mild';
-  return 'severe';
-}
+export function computeRicketts(lmMap: Record<string, Pt>, mmPerPx: number | null): CephMeasurement[] {
+  const cal = mmPerPx !== null && mmPerPx > 0;
+  const G = (k: string) => lmMap[k];
+  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
+  const r: CephMeasurement[] = [];
+  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, RICKETTS_NORMS[n], 'ricketts'));
 
-/**
- * Generate a simple Arabic interpretation string based on the measurement
- * name, its deviation, and the unit.
- */
-function arabicInterpretation(
-  name: string,
-  deviation: number,
-  unit: '°' | 'mm',
-  status: 'normal' | 'mild' | 'severe'
-): string {
-  if (status === 'normal') return 'ضمن الحدود الطبيعية';
+  // Facial Depth: angle FH to N-Pog (how far Pog is forward — higher = more protrusive)
+  add('Facial-Depth',
+    has('Po','Or','N','Pog') ? r1(angleBetweenLines(G('Po'),G('Or'),G('N'),G('Pog'))) : null);
 
-  const severity = status === 'severe' ? 'بشكل واضح' : 'بشكل طفيف';
-  const direction = deviation > 0 ? 'أعلى من المعدل الطبيعي' : 'أقل من المعدل الطبيعي';
-  const unitLabel = unit === '°' ? 'درجة' : 'ملم';
+  // Facial Axis: Pt-Gn line to BaN line (Ba not in set — approximate as S-N to Gn axis)
+  add('Facial-Axis',
+    has('S','N','Gn') ? r1(angleBetweenLines(G('S'),G('N'),G('N'),G('Gn'))) : null);
 
-  // Measurement-specific interpretations
-  switch (name) {
-    case 'SNA':
-      return deviation > 0
-        ? `الفك العلوي بارز للأمام ${severity} (${direction})`
-        : `الفك العلوي مندرج للخلف ${severity} (${direction})`;
-    case 'SNB':
-      return deviation > 0
-        ? `الفك السفلي بارز للأمام ${severity} (${direction})`
-        : `الفك السفلي مندرج للخلف ${severity} (${direction})`;
-    case 'ANB':
-      return deviation > 0
-        ? `علاقة هيكلية من الدرجة الثانية ${severity}`
-        : `علاقة هيكلية من الدرجة الثالثة ${severity}`;
-    case 'SND':
-      return `قيمة SND ${direction} ${severity}`;
-    case 'U1-NA_angle':
-    case 'U1-NA_mm':
-      return deviation > 0
-        ? `القاطع العلوي مائل للأمام ${severity}`
-        : `القاطع العلوي مائل للخلف ${severity}`;
-    case 'L1-NB_angle':
-    case 'L1-NB_mm':
-      return deviation > 0
-        ? `القاطع السفلي مائل للأمام ${severity}`
-        : `القاطع السفلي مائل للخلف ${severity}`;
-    case 'U1-L1':
-      return deviation > 0
-        ? `زاوية القاطعين مفتوحة ${severity} (قواطع مائلة للخلف)`
-        : `زاوية القاطعين مغلقة ${severity} (قواطع بارزة)`;
-    case 'GoGn-SN':
-      return deviation > 0
-        ? `نمط رأسي مفتوح (وجه طويل) ${severity}`
-        : `نمط رأسي مغلق (وجه قصير) ${severity}`;
-    case 'FMA':
-      return deviation > 0
-        ? `ميل مستوى الفك السفلي مرتفع ${severity} (نمط رأسي)`
-        : `ميل مستوى الفك السفلي منخفض ${severity} (نمط أفقي)`;
-    case 'FMIA':
-      return deviation > 0
-        ? `القاطع السفلي مائل للخلف بالنسبة لمستوى فرانكفورت ${severity}`
-        : `القاطع السفلي مائل للأمام بالنسبة لمستوى فرانكفورت ${severity}`;
-    case 'IMPA':
-      return deviation > 0
-        ? `القاطع السفلي منتصب بشكل زائد ${severity}`
-        : `القاطع السفلي مائل للخلف ${severity}`;
-    case 'Co-A':
-      return deviation > 0
-        ? `طول الفك العلوي أكبر من المعدل ${severity}`
-        : `طول الفك العلوي أقل من المعدل ${severity}`;
-    case 'Co-Gn':
-      return deviation > 0
-        ? `طول الفك السفلي أكبر من المعدل ${severity}`
-        : `طول الفك السفلي أقل من المعدل ${severity}`;
-    case 'ANS-Me':
-      return deviation > 0
-        ? `ارتفاع الوجه السفلي مرتفع ${severity}`
-        : `ارتفاع الوجه السفلي منخفض ${severity}`;
-    default:
-      return `القيمة ${direction} بمقدار ${Math.abs(+deviation.toFixed(1))} ${unitLabel}`;
-  }
+  // Mandibular Plane to FH
+  add('Mandibular-Plane',
+    has('Po','Or','Go','Me') ? r1(angleBetweenLines(G('Po'),G('Or'),G('Go'),G('Me'))) : null);
+
+  // Convexity of A: signed dist of A from N-Pog plane (mm)
+  add('Convexity-A',
+    cal && has('N','A','Pog')
+      ? r1(signedPerpDist(G('A'), G('N'), G('Pog')) * mmPerPx!)
+      : null);
+
+  // Lower incisor to A-Pog (mm)
+  add('L1-APog_mm',
+    cal && has('L1T','A','Pog')
+      ? r1(signedPerpDist(G('L1T'), G('A'), G('Pog')) * mmPerPx!)
+      : null);
+
+  // Lower incisor to A-Pog (angle)
+  add('L1-APog_angle',
+    has('L1A','L1T','A','Pog')
+      ? r1(angleBetweenLines(G('L1A'),G('L1T'),G('A'),G('Pog')))
+      : null);
+
+  // Upper lip to E-plane: signed dist of LS from Pn-Pog line (mm)
+  add('Upper-Lip-ELine',
+    cal && has('LS','Pn','Pog')
+      ? r1(signedPerpDist(G('LS'), G('Pn'), G('Pog')) * mmPerPx!)
+      : null);
+
+  // Lower lip to E-plane
+  add('Lower-Lip-ELine',
+    cal && has('LI','Pn','Pog')
+      ? r1(signedPerpDist(G('LI'), G('Pn'), G('Pog')) * mmPerPx!)
+      : null);
+
+  // Nasolabial angle: Pn-Cm-LS
+  add('Nasolabial',
+    has('Pn','Cm','LS') ? r1(angle3(G('Pn'),G('Cm'),G('LS'))) : null);
+
+  return r;
 }
 
 // ---------------------------------------------------------------------------
-// Build combined measurement list
+// Downs analysis
+// ---------------------------------------------------------------------------
+
+export function computeDowns(lmMap: Record<string, Pt>): CephMeasurement[] {
+  const G = (k: string) => lmMap[k];
+  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
+  const r: CephMeasurement[] = [];
+  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, DOWNS_NORMS[n], 'downs'));
+
+  // Angle of convexity: angle N-A-Pog (positive = convex profile)
+  add('Convexity',
+    has('N','A','Pog') ? r1(angle3(G('N'),G('A'),G('Pog')) - 180) : null);
+
+  // A-B plane to facial plane (N-Pog)
+  add('AB-FacialPlane',
+    has('A','B','N','Pog') ? r1(angleBetweenLines(G('A'),G('B'),G('N'),G('Pog'))) * -1 : null);
+
+  // Y-axis: S-Gn angle to FH
+  add('Y-Axis',
+    has('S','Gn','Po','Or') ? r1(angleBetweenLines(G('S'),G('Gn'),G('Po'),G('Or'))) : null);
+
+  // Facial plane (N-Pog) to FH
+  add('Facial-Plane-FH',
+    has('N','Pog','Po','Or') ? r1(angleBetweenLines(G('N'),G('Pog'),G('Po'),G('Or'))) : null);
+
+  // Mandibular plane to FH
+  add('Mandibular-FH',
+    has('Go','Me','Po','Or') ? r1(angleBetweenLines(G('Go'),G('Me'),G('Po'),G('Or'))) : null);
+
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Build combined list filtered by analysis type
 // ---------------------------------------------------------------------------
 
 export function buildMeasurementList(
-  steiner: SteinerMeasurements,
-  tweed: TweedMeasurements,
-  mcnamara: McNamaraMeasurements,
-  calibrated: boolean
-): MeasurementResult[] {
-  const results: MeasurementResult[] = [];
-
-  // Helper to add a single measurement
-  function addMeasurement(
-    name: string,
-    value: number | null,
-    norms: Record<string, { normal: number; sd: number; unit: '°' | 'mm'; nameAr: string }>,
-    group: 'steiner' | 'tweed' | 'mcnamara'
-  ): void {
-    const norm = norms[name];
-    if (!norm) return;
-
-    // For uncalibrated mm measurements value will be null — still add the row
-    const deviation: number | null =
-      value !== null ? round1(value - norm.normal) : null;
-
-    const status: 'normal' | 'mild' | 'severe' =
-      deviation !== null ? computeStatus(deviation, norm.sd) : 'normal';
-
-    const interpretationAr: string | undefined =
-      deviation !== null
-        ? arabicInterpretation(name, deviation, norm.unit, status)
-        : undefined;
-
-    results.push({
-      name,
-      nameAr: norm.nameAr,
-      value,
-      normal: norm.normal,
-      stdDev: norm.sd,
-      unit: norm.unit,
-      deviation,
-      status,
-      analysisGroup: group,
-      interpretationAr,
-    });
-  }
-
-  // Steiner measurements
-  const steinerEntries: Array<[keyof SteinerMeasurements, string]> = [
-    ['SNA',          'SNA'],
-    ['SNB',          'SNB'],
-    ['ANB',          'ANB'],
-    ['SND',          'SND'],
-    ['U1-NA_angle',  'U1-NA_angle'],
-    ['U1-NA_mm',     'U1-NA_mm'],
-    ['L1-NB_angle',  'L1-NB_angle'],
-    ['L1-NB_mm',     'L1-NB_mm'],
-    ['U1-L1',        'U1-L1'],
-    ['GoGn-SN',      'GoGn-SN'],
-  ];
-  for (const [key, normKey] of steinerEntries) {
-    // Skip mm rows entirely when not calibrated (no landmarks contributed either)
-    const isMm = STEINER_NORMS[normKey]?.unit === 'mm';
-    if (isMm && !calibrated) {
-      // Still add the row with null value so the UI can show it as uncalibrated
-      addMeasurement(normKey, null, STEINER_NORMS, 'steiner');
-    } else {
-      addMeasurement(normKey, steiner[key], STEINER_NORMS, 'steiner');
-    }
-  }
-
-  // Tweed measurements (all angular, no calibration dependency)
-  const tweedEntries: Array<[keyof TweedMeasurements, string]> = [
-    ['FMA',  'FMA'],
-    ['FMIA', 'FMIA'],
-    ['IMPA', 'IMPA'],
-  ];
-  for (const [key, normKey] of tweedEntries) {
-    addMeasurement(normKey, tweed[key], TWEED_NORMS, 'tweed');
-  }
-
-  // McNamara measurements (all linear)
-  const mcnamaraEntries: Array<[keyof McNamaraMeasurements, string]> = [
-    ['Co-A',   'Co-A'],
-    ['Co-Gn',  'Co-Gn'],
-    ['ANS-Me', 'ANS-Me'],
-  ];
-  for (const [key, normKey] of mcnamaraEntries) {
-    if (!calibrated) {
-      addMeasurement(normKey, null, MCNAMARA_NORMS, 'mcnamara');
-    } else {
-      addMeasurement(normKey, mcnamara[key], MCNAMARA_NORMS, 'mcnamara');
-    }
-  }
-
-  return results;
+  lmMap: Record<string, Pt>,
+  mmPerPx: number | null,
+  groups: readonly MeasurementGroup[] = ['steiner','tweed','mcnamara','ricketts','downs']
+): CephMeasurement[] {
+  const all: CephMeasurement[] = [];
+  if (groups.includes('steiner'))  all.push(...computeSteiner(lmMap, mmPerPx));
+  if (groups.includes('tweed'))    all.push(...computeTweed(lmMap));
+  if (groups.includes('mcnamara')) all.push(...computeMcNamara(lmMap, mmPerPx));
+  if (groups.includes('ricketts')) all.push(...computeRicketts(lmMap, mmPerPx));
+  if (groups.includes('downs'))    all.push(...computeDowns(lmMap));
+  return all;
 }

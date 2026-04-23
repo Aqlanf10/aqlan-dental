@@ -108,6 +108,31 @@ public class PatientService(
         patient.ReferralSource = req.ReferralSource;
         patient.PrimaryDoctorId = req.PrimaryDoctorId;
 
+        if (req.MedicalHistory != null)
+        {
+            patient.MedicalHistory ??= new MedicalHistory { PatientId = patient.Id };
+            patient.MedicalHistory.ChronicDiseases    = req.MedicalHistory.ChronicDiseases;
+            patient.MedicalHistory.CurrentMedications = req.MedicalHistory.CurrentMedications;
+            patient.MedicalHistory.DrugAllergies      = req.MedicalHistory.DrugAllergies;
+            patient.MedicalHistory.BleedingDisorders  = req.MedicalHistory.BleedingDisorders;
+            patient.MedicalHistory.IsPregnant         = req.MedicalHistory.IsPregnant;
+            patient.MedicalHistory.TmjProblems        = req.MedicalHistory.TmjProblems;
+            patient.MedicalHistory.PreviousSurgeries  = req.MedicalHistory.PreviousSurgeries;
+            patient.MedicalHistory.Notes              = req.MedicalHistory.Notes;
+        }
+
+        if (req.DentalHistory != null)
+        {
+            patient.DentalHistory ??= new DentalHistory { PatientId = patient.Id };
+            patient.DentalHistory.ChiefComplaint     = req.DentalHistory.ChiefComplaint;
+            patient.DentalHistory.PreviousTreatments = req.DentalHistory.PreviousTreatments;
+            patient.DentalHistory.MouthBreathing     = req.DentalHistory.MouthBreathing;
+            patient.DentalHistory.Bruxism            = req.DentalHistory.Bruxism;
+            patient.DentalHistory.ThumbSucking       = req.DentalHistory.ThumbSucking;
+            patient.DentalHistory.TongueThrusing     = req.DentalHistory.TongueThrusing;
+            patient.DentalHistory.Notes              = req.DentalHistory.Notes;
+        }
+
         repo.Update(patient);
         await repo.SaveChangesAsync();
         return ToProfileDto(patient);

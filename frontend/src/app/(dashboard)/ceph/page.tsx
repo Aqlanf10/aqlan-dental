@@ -3,12 +3,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Activity, Plus, Brain } from "lucide-react";
 import type { CephAnalysisList } from "@/types/ceph";
+import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
-
-const ANALYSIS_LABELS: Record<string, string> = {
-  steiner: "ستاينر", mcnamara: "ماكنامارا", tweed: "تويد", ricketts: "ريكتس", full: "شامل",
-};
 
 export default function CephPage() {
   const [analyses, setAnalyses] = useState<CephAnalysisList[]>([]);
@@ -66,7 +63,7 @@ export default function CephPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                        {ANALYSIS_LABELS[a.analysisType] ?? a.analysisType}
+                        {ANALYSIS_TYPE_AR[a.analysisType] ?? a.analysisType}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{formatArabicDate(a.analysisDate)}</td>

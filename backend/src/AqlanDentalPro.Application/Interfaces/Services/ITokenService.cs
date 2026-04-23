@@ -10,4 +10,6 @@ public interface ITokenService
     Task<bool> ValidateRefreshTokenAsync(Guid userId, string refreshToken);
     Task RevokeRefreshTokenAsync(Guid userId, string refreshToken);
     Task RevokeAllRefreshTokensAsync(Guid userId);
+    /// <summary>Returns the userId that owns <paramref name="refreshToken"/>, or null if not found.</summary>
+    Task<Guid?> GetOwnerOfRefreshTokenAsync(string refreshToken);
 }

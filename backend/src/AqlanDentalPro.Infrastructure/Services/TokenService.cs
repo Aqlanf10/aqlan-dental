@@ -49,7 +49,13 @@ public class TokenService(IConfiguration config, IConnectionMultiplexer redis) :
     {
         var hash = HashToken(refreshToken);
         var expiry = TimeSpan.FromDays(int.Parse(config["Jwt:RefreshTokenExpiryDays"] ?? "7"));
-        await _db.StringSetAsync($"refresh:{userId}:{hash[..16]}", hash, expiry);
+        var tokenKey = $"refresh:{userId}:{hash[..16]}";
+        var ownerKey = $"refresh:owner:{hash[..16]}";
+        var batch = _db.CreateBatch();
+        _ = batch.StringSetAsync(tokenKey, hash, expiry);
+        _ = batch.StringSetAsync(ownerKey, userId.ToString(), expiry);
+        batch.Execute();
+        await Task.CompletedTask;
     }
 
     public async Task<bool> ValidateRefreshTokenAsync(Guid userId, string refreshToken)
@@ -63,7 +69,19 @@ public class TokenService(IConfiguration config, IConnectionMultiplexer redis) :
     public async Task RevokeRefreshTokenAsync(Guid userId, string refreshToken)
     {
         var hash = HashToken(refreshToken);
-        await _db.KeyDeleteAsync($"refresh:{userId}:{hash[..16]}");
+        await _db.KeyDeleteAsync(new RedisKey[]
+        {
+            $"refresh:{userId}:{hash[..16]}",
+            $"refresh:owner:{hash[..16]}"
+        });
+    }
+
+    public async Task<Guid?> GetOwnerOfRefreshTokenAsync(string refreshToken)
+    {
+        var hash = HashToken(refreshToken);
+        var stored = await _db.StringGetAsync($"refresh:owner:{hash[..16]}");
+        if (!stored.HasValue) return null;
+        return Guid.TryParse(stored.ToString(), out var id) ? id : null;
     }
 
     public async Task RevokeAllRefreshTokensAsync(Guid userId)

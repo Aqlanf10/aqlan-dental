@@ -8,7 +8,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(AuthService authService, ICurrentUserService currentUser) : ControllerBase
+public class AuthController(AuthService authService, ICurrentUserService currentUser, ITokenService tokenService) : ControllerBase
 {
     private const string RefreshTokenCookie = "refresh_token";
 
@@ -37,16 +37,22 @@ public class AuthController(AuthService authService, ICurrentUserService current
     }
 
     [HttpPost("refresh-token")]
+    [AllowAnonymous]
     public async Task<ActionResult<object>> RefreshToken()
     {
         var refreshToken = Request.Cookies[RefreshTokenCookie];
         if (string.IsNullOrEmpty(refreshToken))
             return Unauthorized(new { message = "لا يوجد refresh token" });
 
-        if (!currentUser.UserId.HasValue)
-            return Unauthorized();
+        // The access token may be expired here, so we cannot rely on JWT claims.
+        // Look up the owner directly from the refresh token stored in Redis.
+        var userId = currentUser.UserId
+            ?? await tokenService.GetOwnerOfRefreshTokenAsync(refreshToken);
 
-        var result = await authService.RefreshAsync(currentUser.UserId.Value, refreshToken);
+        if (userId is null)
+            return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
+
+        var result = await authService.RefreshAsync(userId.Value, refreshToken);
         if (result == null)
         {
             Response.Cookies.Delete(RefreshTokenCookie);

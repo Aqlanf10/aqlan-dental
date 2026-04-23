@@ -12,10 +12,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     // ──────────────────────────────────────────────────────────────────────────
     //  LIST
     // ──────────────────────────────────────────────────────────────────────────
-    public async Task<List<CephAnalysisListDto>> ListAsync(Guid orthoCaseId)
+    public async Task<List<CephAnalysisListDto>> ListAsync(Guid? orthoCaseId)
     {
         return await db.CephAnalyses
-            .Where(a => a.OrthoCaseId == orthoCaseId)
+            .Where(a => orthoCaseId == null || a.OrthoCaseId == orthoCaseId)
             .OrderByDescending(a => a.AnalysisDate)
             .Select(a => new CephAnalysisListDto
             {
@@ -127,157 +127,175 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
 
         if (analysis is null) return;
 
-        // Build landmark dictionary.
         var lm = analysis.Landmarks
             .Where(l => l.IsActive)
             .ToDictionary(
                 l => l.LandmarkKey,
                 l => (x: (double)(l.XCoord ?? 0), y: (double)(l.YCoord ?? 0)));
 
-        // Parse calibration from Notes.
-        double pixelsPerMm = 1.0;
+        double pixelsPerMm = 0;
         if (!string.IsNullOrWhiteSpace(analysis.Notes))
-        {
             try
             {
                 var nd = JsonSerializer.Deserialize<CephNotesData>(analysis.Notes);
-                if (nd is not null && nd.PixelsPerMm > 0)
-                    pixelsPerMm = nd.PixelsPerMm;
+                if (nd is not null) pixelsPerMm = nd.PixelsPerMm;
             }
-            catch { /* Notes may be plain text on older records; keep default. */ }
-        }
+            catch { }
+
+        bool cal = pixelsPerMm > 0;
+        bool Has(params string[] keys) => keys.All(lm.ContainsKey);
+        (double x, double y) G(string k) => lm[k];
+        double R1(double v) => Math.Round(v, 1);
 
         var results = new List<(string name, string group, double value, double normal, double sd, string unit)>();
+        void Add(string name, string group, double value, double normal, double sd, string unit)
+            => results.Add((name, group, R1(value), normal, sd, unit));
 
-        // ── Steiner Analysis ────────────────────────────────────────────────
-        if (Has(lm, "S", "N", "A"))
-            results.Add(("SNA", "steiner",
-                Angle3(lm["S"].x, lm["S"].y, lm["N"].x, lm["N"].y, lm["A"].x, lm["A"].y),
-                82, 2, "°"));
+        var groups = GetAnalysisGroups(analysis.AnalysisType ?? "full");
 
-        if (Has(lm, "S", "N", "B"))
-            results.Add(("SNB", "steiner",
-                Angle3(lm["S"].x, lm["S"].y, lm["N"].x, lm["N"].y, lm["B"].x, lm["B"].y),
-                80, 2, "°"));
-
-        if (Has(lm, "S", "N", "A", "B"))
+        // ── Steiner ─────────────────────────────────────────────────────────
+        if (groups.Contains("steiner"))
         {
-            double sna = Angle3(lm["S"].x, lm["S"].y, lm["N"].x, lm["N"].y, lm["A"].x, lm["A"].y);
-            double snb = Angle3(lm["S"].x, lm["S"].y, lm["N"].x, lm["N"].y, lm["B"].x, lm["B"].y);
-            results.Add(("ANB", "steiner", sna - snb, 2, 1, "°"));
+            if (Has("S","N","A"))         Add("SNA",        "steiner", Angle3T(G("S"),G("N"),G("A")), 82, 2, "°");
+            if (Has("S","N","B"))         Add("SNB",        "steiner", Angle3T(G("S"),G("N"),G("B")), 80, 2, "°");
+
+            double? snAng = results.Find(r => r.name == "SNA") is var rA && rA.name != null ? rA.value : null;
+            double? snBAng = results.Find(r => r.name == "SNB") is var rB && rB.name != null ? rB.value : null;
+            if (snAng.HasValue && snBAng.HasValue)
+                Add("ANB",        "steiner", snAng.Value - snBAng.Value, 2, 1, "°");
+
+            if (Has("S","N","D"))         Add("SND",        "steiner", Angle3T(G("S"),G("N"),G("D")), 76, 2, "°");
+            if (Has("U1A","U1T","N","A")) Add("U1-NA_angle","steiner", ABLines(G("U1A"),G("U1T"),G("N"),G("A")), 22, 2, "°");
+            if (cal && Has("U1T","N","A")) Add("U1-NA_mm",  "steiner", SignedPerpT(G("U1T"),G("N"),G("A")) / pixelsPerMm, 4, 2, "mm");
+            if (Has("L1A","L1T","N","B")) Add("L1-NB_angle","steiner", ABLines(G("L1A"),G("L1T"),G("N"),G("B")), 25, 2, "°");
+            if (cal && Has("L1T","N","B")) Add("L1-NB_mm",  "steiner", SignedPerpT(G("L1T"),G("N"),G("B")) / pixelsPerMm, 4, 2, "mm");
+            if (Has("U1A","U1T","L1A","L1T"))
+                Add("U1-L1",      "steiner", 180 - ABLines(G("U1A"),G("U1T"),G("L1A"),G("L1T")), 131, 6, "°");
+            if (Has("Go","Me","S","N"))   Add("GoGn-SN",    "steiner", ABLines(G("Go"),G("Me"),G("S"),G("N")), 32, 6, "°");
+
+            // S-line soft tissue: Pog → midpoint(Cm, Pn)
+            if (Has("Cm","Pn"))
+            {
+                var sLineMid = ((G("Cm").x + G("Pn").x) / 2, (G("Cm").y + G("Pn").y) / 2);
+                if (cal && Has("LS","Pog"))
+                    Add("UL-SLine", "steiner",
+                        SignedPerp(G("LS").x, G("LS").y,
+                                   G("Pog").x, G("Pog").y, sLineMid.Item1, sLineMid.Item2) / pixelsPerMm,
+                        0, 1, "mm");
+                if (cal && Has("LI","Pog"))
+                    Add("LL-SLine", "steiner",
+                        SignedPerp(G("LI").x, G("LI").y,
+                                   G("Pog").x, G("Pog").y, sLineMid.Item1, sLineMid.Item2) / pixelsPerMm,
+                        0, 1, "mm");
+            }
         }
 
-        if (Has(lm, "S", "N", "D"))
-            results.Add(("SND", "steiner",
-                Angle3(lm["S"].x, lm["S"].y, lm["N"].x, lm["N"].y, lm["D"].x, lm["D"].y),
-                76, 2, "°"));
-
-        if (Has(lm, "N", "A", "U1T", "U1A"))
+        // ── Tweed ───────────────────────────────────────────────────────────
+        if (groups.Contains("tweed"))
         {
-            // U1-NA angle: angle of U1 axis to N-A line.
-            double u1naAngle = AngleBetweenLines(
-                lm["N"].x, lm["N"].y, lm["A"].x, lm["A"].y,
-                lm["U1A"].x, lm["U1A"].y, lm["U1T"].x, lm["U1T"].y);
-            results.Add(("U1-NA°", "steiner", u1naAngle, 22, 2, "°"));
-
-            // U1-NA mm: perpendicular distance from U1T to N-A line.
-            double u1naMm = Math.Abs(PerpDist(lm["U1T"].x, lm["U1T"].y,
-                lm["N"].x, lm["N"].y, lm["A"].x, lm["A"].y)) / pixelsPerMm;
-            results.Add(("U1-NA mm", "steiner", u1naMm, 4, 2, "mm"));
+            if (Has("Po","Or","Go","Me"))    Add("FMA",  "tweed", ABLines(G("Po"),G("Or"),G("Go"),G("Me")), 25, 4, "°");
+            if (Has("Po","Or","L1A","L1T"))  Add("FMIA", "tweed", ABLines(G("Po"),G("Or"),G("L1A"),G("L1T")), 65, 5, "°");
+            if (Has("Go","Me","L1A","L1T"))  Add("IMPA", "tweed", ABLines(G("Go"),G("Me"),G("L1A"),G("L1T")), 90, 4, "°");
         }
 
-        if (Has(lm, "N", "B", "L1T", "L1A"))
+        // ── McNamara ────────────────────────────────────────────────────────
+        if (groups.Contains("mcnamara"))
         {
-            double l1nbAngle = AngleBetweenLines(
-                lm["N"].x, lm["N"].y, lm["B"].x, lm["B"].y,
-                lm["L1A"].x, lm["L1A"].y, lm["L1T"].x, lm["L1T"].y);
-            results.Add(("L1-NB°", "steiner", l1nbAngle, 25, 2, "°"));
-
-            double l1nbMm = Math.Abs(PerpDist(lm["L1T"].x, lm["L1T"].y,
-                lm["N"].x, lm["N"].y, lm["B"].x, lm["B"].y)) / pixelsPerMm;
-            results.Add(("L1-NB mm", "steiner", l1nbMm, 4, 2, "mm"));
+            if (cal && Has("Co","A"))   Add("Co-A",   "mcnamara", DistT(G("Co"),G("A")) / pixelsPerMm, 91, 6, "mm");
+            if (cal && Has("Co","Gn"))  Add("Co-Gn",  "mcnamara", DistT(G("Co"),G("Gn")) / pixelsPerMm, 120, 7, "mm");
+            if (cal && Has("ANS","Me")) Add("ANS-Me", "mcnamara", DistT(G("ANS"),G("Me")) / pixelsPerMm, 65, 5, "mm");
         }
 
-        if (Has(lm, "U1T", "U1A", "L1T", "L1A"))
+        // ── Ricketts ────────────────────────────────────────────────────────
+        if (groups.Contains("ricketts"))
         {
-            // U1-L1 interincisal angle: angle between the two incisor axes.
-            double interIncisal = 180.0 - AngleBetweenLines(
-                lm["U1A"].x, lm["U1A"].y, lm["U1T"].x, lm["U1T"].y,
-                lm["L1A"].x, lm["L1A"].y, lm["L1T"].x, lm["L1T"].y);
-            results.Add(("U1-L1", "steiner", interIncisal, 131, 6, "°"));
+            if (Has("Po","Or","N","Pog"))
+                Add("Facial-Depth",     "ricketts", ABLines(G("Po"),G("Or"),G("N"),G("Pog")), 87, 3, "°");
+            if (Has("S","N","Gn"))
+                Add("Facial-Axis",      "ricketts", ABLines(G("S"),G("N"),G("N"),G("Gn")), 90, 3, "°");
+            if (Has("Po","Or","Go","Me"))
+                Add("Mandibular-Plane", "ricketts", ABLines(G("Po"),G("Or"),G("Go"),G("Me")), 26, 4, "°");
+            if (cal && Has("N","A","Pog"))
+                Add("Convexity-A",      "ricketts",
+                    SignedPerpT(G("A"),G("N"),G("Pog")) / pixelsPerMm, 2, 2, "mm");
+            if (cal && Has("L1T","A","Pog"))
+                Add("L1-APog_mm",       "ricketts",
+                    SignedPerpT(G("L1T"),G("A"),G("Pog")) / pixelsPerMm, 1, 2, "mm");
+            if (Has("L1A","L1T","A","Pog"))
+                Add("L1-APog_angle",    "ricketts", ABLines(G("L1A"),G("L1T"),G("A"),G("Pog")), 22, 4, "°");
+            if (cal && Has("LS","Pn","Pog"))
+                Add("Upper-Lip-ELine",  "ricketts",
+                    SignedPerpT(G("LS"),G("Pn"),G("Pog")) / pixelsPerMm, -2, 2, "mm");
+            if (cal && Has("LI","Pn","Pog"))
+                Add("Lower-Lip-ELine",  "ricketts",
+                    SignedPerpT(G("LI"),G("Pn"),G("Pog")) / pixelsPerMm, -2, 2, "mm");
+            if (Has("Pn","Cm","LS"))
+                Add("Nasolabial",       "ricketts", Angle3T(G("Pn"),G("Cm"),G("LS")), 102, 8, "°");
         }
 
-        if (Has(lm, "Go", "Gn", "S", "N"))
+        // ── Downs ───────────────────────────────────────────────────────────
+        if (groups.Contains("downs"))
         {
-            double goGnSn = AngleBetweenLines(
-                lm["S"].x, lm["S"].y, lm["N"].x, lm["N"].y,
-                lm["Go"].x, lm["Go"].y, lm["Gn"].x, lm["Gn"].y);
-            results.Add(("GoGn-SN", "steiner", goGnSn, 32, 6, "°"));
+            if (Has("N","A","Pog"))
+                Add("Convexity",        "downs", Angle3T(G("N"),G("A"),G("Pog")) - 180, 0, 5, "°");
+            if (Has("A","B","N","Pog"))
+                Add("AB-FacialPlane",   "downs", -ABLines(G("A"),G("B"),G("N"),G("Pog")), -4.6, 3, "°");
+            if (Has("S","Gn","Po","Or"))
+                Add("Y-Axis",           "downs", ABLines(G("S"),G("Gn"),G("Po"),G("Or")), 59.4, 4, "°");
+            if (Has("N","Pog","Po","Or"))
+                Add("Facial-Plane-FH",  "downs", ABLines(G("N"),G("Pog"),G("Po"),G("Or")), 87.8, 3, "°");
+            if (Has("Go","Me","Po","Or"))
+                Add("Mandibular-FH",    "downs", ABLines(G("Go"),G("Me"),G("Po"),G("Or")), 21.9, 4, "°");
         }
 
-        // ── Tweed Analysis ──────────────────────────────────────────────────
-        // FH plane defined by Or (Orbitale) and Po (Porion).
-        // Mandibular plane defined by Go and Me.
-        if (Has(lm, "Or", "Po", "Go", "Me"))
+        // ── Wits ─────────────────────────────────────────────────────────────
+        if (groups.Contains("wits") && cal && Has("U1T","L1T","Go","Me","A","B"))
         {
-            double fma = AngleBetweenLines(
-                lm["Or"].x, lm["Or"].y, lm["Po"].x, lm["Po"].y,
-                lm["Go"].x, lm["Go"].y, lm["Me"].x, lm["Me"].y);
-            results.Add(("FMA", "tweed", fma, 25, 4, "°"));
+            // Occlusal plane: midpoint(U1T,L1T) → midpoint(Go,Me)
+            var occP1 = ((G("U1T").x + G("L1T").x) / 2, (G("U1T").y + G("L1T").y) / 2);
+            var occP2 = ((G("Go").x  + G("Me").x)  / 2, (G("Go").y  + G("Me").y)  / 2);
+            double dx = occP2.Item1 - occP1.Item1, dy = occP2.Item2 - occP1.Item2;
+            double len2 = dx * dx + dy * dy;
+            if (len2 > 1e-9)
+            {
+                (double px, double py) ProjectOcc((double x, double y) p)
+                {
+                    double t = ((p.x - occP1.Item1) * dx + (p.y - occP1.Item2) * dy) / len2;
+                    return (occP1.Item1 + t * dx, occP1.Item2 + t * dy);
+                }
+                var ao = ProjectOcc(G("A"));
+                var bo = ProjectOcc(G("B"));
+                double dLen = Math.Sqrt(len2);
+                double ux = dx / dLen, uy = dy / dLen;
+                double wits = ((ao.px - bo.px) * ux + (ao.py - bo.py) * uy) / pixelsPerMm;
+                Add("Wits", "wits", wits, 0, 1.5, "mm");
+            }
+        }
+        else if (groups.Contains("wits") && !results.Exists(r => r.group == "wits"))
+        {
+            // No landmarks available — skip (frontend shows "—" via real-time compute)
         }
 
-        if (Has(lm, "Or", "Po", "L1A", "L1T"))
-        {
-            // FMIA: FH plane to L1 long axis.
-            double fmia = AngleBetweenLines(
-                lm["Or"].x, lm["Or"].y, lm["Po"].x, lm["Po"].y,
-                lm["L1A"].x, lm["L1A"].y, lm["L1T"].x, lm["L1T"].y);
-            results.Add(("FMIA", "tweed", fmia, 65, 5, "°"));
-        }
-
-        if (Has(lm, "Go", "Me", "L1A", "L1T"))
-        {
-            // IMPA: mandibular plane to L1 long axis.
-            double impa = AngleBetweenLines(
-                lm["Go"].x, lm["Go"].y, lm["Me"].x, lm["Me"].y,
-                lm["L1A"].x, lm["L1A"].y, lm["L1T"].x, lm["L1T"].y);
-            results.Add(("IMPA", "tweed", impa, 90, 4, "°"));
-        }
-
-        // ── McNamara Analysis (mm) ──────────────────────────────────────────
-        if (Has(lm, "Co", "A"))
-        {
-            double coA = Distance(lm["Co"].x, lm["Co"].y, lm["A"].x, lm["A"].y) / pixelsPerMm;
-            results.Add(("Co-A", "mcnamara", coA, 90, 5, "mm"));
-        }
-
-        if (Has(lm, "Co", "Gn"))
-        {
-            double coGn = Distance(lm["Co"].x, lm["Co"].y, lm["Gn"].x, lm["Gn"].y) / pixelsPerMm;
-            results.Add(("Co-Gn", "mcnamara", coGn, 120, 6, "mm"));
-        }
-
-        // ── Persist results ─────────────────────────────────────────────────
-        var oldMeasurements = await db.CephMeasurements
-            .Where(m => m.AnalysisId == id)
-            .ToListAsync();
+        // ── Persist ──────────────────────────────────────────────────────────
+        var oldMeasurements = await db.CephMeasurements.Where(m => m.AnalysisId == id).ToListAsync();
         foreach (var m in oldMeasurements) m.IsActive = false;
 
         foreach (var (name, group, value, normal, sd, unit) in results)
         {
-            double deviation = sd > 0 ? (value - normal) / sd : 0;
-            string classification = ClassifyDeviation(deviation);
+            double rawDev = value - normal;
+            double sdNorm = sd > 0 ? rawDev / sd : 0;
+            string classification = ClassifyDeviation(sdNorm);
 
             db.CephMeasurements.Add(new CephMeasurement
             {
-                AnalysisId      = id,
-                MeasurementName = name,
-                MeasurementValue = (decimal)Math.Round(value, 2),
-                NormalValue     = (decimal)normal,
-                StdDeviation    = (decimal)sd,
-                Unit            = unit,
-                Deviation       = (decimal)Math.Round(deviation, 2),
-                Classification  = classification
+                AnalysisId       = id,
+                MeasurementName  = name,
+                MeasurementValue = (decimal)value,
+                NormalValue      = (decimal)normal,
+                StdDeviation     = (decimal)sd,
+                Unit             = unit,
+                Deviation        = (decimal)Math.Round(rawDev, 2),
+                Classification   = classification
             });
         }
 
@@ -342,9 +360,9 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
             }
         }
 
-        // ── Incisor Inclination (from U1-NA° and L1-NB°) ─────────────────
-        double? u1na = GetValue("U1-NA°");
-        double? l1nb = GetValue("L1-NB°");
+        // ── Incisor Inclination (from U1-NA_angle and L1-NB_angle) ──────────
+        double? u1na = GetValue("U1-NA_angle");
+        double? l1nb = GetValue("L1-NB_angle");
         string incisorInclination;
 
         bool u1Protrusive = u1na.HasValue && u1na.Value > 24;
@@ -535,6 +553,22 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     // ──────────────────────────────────────────────────────────────────────────
     private static CephAnalysisDetailDto MapDetail(CephAnalysis a)
     {
+        // Extract calibration data stored in Notes JSON.
+        double? pixelsPerMm = null;
+        int imageWidth = 0, imageHeight = 0;
+        if (!string.IsNullOrWhiteSpace(a.Notes))
+            try
+            {
+                var nd = JsonSerializer.Deserialize<CephNotesData>(a.Notes);
+                if (nd is not null)
+                {
+                    pixelsPerMm = nd.PixelsPerMm > 0 ? nd.PixelsPerMm : null;
+                    imageWidth  = nd.ImageWidth;
+                    imageHeight = nd.ImageHeight;
+                }
+            }
+            catch { }
+
         return new CephAnalysisDetailDto
         {
             Id           = a.Id,
@@ -548,6 +582,9 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
             AiAssisted   = a.AiAssisted,
             DoctorId     = a.DoctorId,
             Notes        = a.Notes,
+            PixelsPerMm  = pixelsPerMm,
+            ImageWidth   = imageWidth,
+            ImageHeight  = imageHeight,
             Landmarks    = a.Landmarks
                 .Where(l => l.IsActive)
                 .Select(l => new CephLandmarkDto
@@ -563,20 +600,35 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
                 .ToList(),
             Measurements = a.Measurements
                 .Where(m => m.IsActive)
-                .Select(m => new CephMeasurementDto
+                .Select(m =>
                 {
-                    Name          = m.MeasurementName,
-                    NameAr        = GetMeasurementNameAr(m.MeasurementName),
-                    Value         = m.MeasurementValue.HasValue ? (double)m.MeasurementValue.Value : null,
-                    Normal        = m.NormalValue.HasValue ? (double)m.NormalValue.Value : null,
-                    StdDev        = m.StdDeviation.HasValue ? (double)m.StdDeviation.Value : null,
-                    Unit          = m.Unit,
-                    Deviation     = m.Deviation.HasValue ? (double)m.Deviation.Value : null,
-                    Status        = m.Classification ?? "normal",
-                    AnalysisGroup = GetMeasurementGroup(m.MeasurementName),
-                    InterpretationAr = GetInterpretationAr(m.MeasurementName,
-                        m.MeasurementValue.HasValue ? (double)m.MeasurementValue.Value : null,
-                        m.Deviation.HasValue ? (double)m.Deviation.Value : null)
+                    // Compute raw deviation from stored value/normal (more reliable than stored Deviation column).
+                    double? rawDev = (m.MeasurementValue.HasValue && m.NormalValue.HasValue)
+                        ? (double)(m.MeasurementValue.Value - m.NormalValue.Value)
+                        : null;
+                    double sd = m.StdDeviation.HasValue ? (double)m.StdDeviation.Value : 1.0;
+                    double? sdNorm = rawDev.HasValue && sd > 0 ? rawDev.Value / sd : null;
+                    string severity = m.Classification ?? (sdNorm.HasValue ? ClassifyDeviation(sdNorm.Value) : "normal");
+                    string direction = rawDev.HasValue
+                        ? (rawDev.Value > 0.001 ? "above" : rawDev.Value < -0.001 ? "below" : "within")
+                        : "within";
+
+                    return new CephMeasurementDto
+                    {
+                        Name          = m.MeasurementName,
+                        NameAr        = GetMeasurementNameAr(m.MeasurementName),
+                        Value         = m.MeasurementValue.HasValue ? (double)m.MeasurementValue.Value : null,
+                        Normal        = m.NormalValue.HasValue ? (double)m.NormalValue.Value : null,
+                        StdDev        = sd,
+                        Unit          = m.Unit,
+                        Deviation     = rawDev,
+                        Severity      = severity,
+                        Direction     = direction,
+                        AnalysisGroup = GetMeasurementGroup(m.MeasurementName),
+                        InterpretationAr = rawDev.HasValue
+                            ? GetInterpretationAr(m.MeasurementName, rawDev.Value, severity)
+                            : null
+                    };
                 })
                 .ToList(),
             Diagnosis = a.Diagnosis is null ? null : new CephDiagnosisDto
@@ -593,65 +645,58 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  STATIC GEOMETRY HELPERS
+    //  STATIC GEOMETRY HELPERS  (tuple-accepting overloads for cleaner code)
     // ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Angle at vertex (x2,y2) in the triangle formed by points 1-2-3, in degrees.
-    /// </summary>
-    private static double Angle3(
-        double x1, double y1,
-        double x2, double y2,
-        double x3, double y3)
+    // Angle at vertex between rays vertex→p1 and vertex→p3, range [0,180]°.
+    private static double Angle3T(
+        (double x, double y) p1,
+        (double x, double y) vertex,
+        (double x, double y) p3)
     {
-        double ax = x1 - x2, ay = y1 - y2;
-        double bx = x3 - x2, by = y3 - y2;
+        double ax = p1.x - vertex.x, ay = p1.y - vertex.y;
+        double bx = p3.x - vertex.x, by = p3.y - vertex.y;
         double dot  = ax * bx + ay * by;
         double magA = Math.Sqrt(ax * ax + ay * ay);
         double magB = Math.Sqrt(bx * bx + by * by);
         if (magA < 1e-9 || magB < 1e-9) return 0;
-        double cosA = Math.Clamp(dot / (magA * magB), -1, 1);
-        return Math.Acos(cosA) * 180.0 / Math.PI;
+        return Math.Acos(Math.Clamp(dot / (magA * magB), -1, 1)) * 180.0 / Math.PI;
     }
 
-    /// <summary>
-    /// Acute angle (0-90°) between two line segments, in degrees.
-    /// </summary>
-    private static double AngleBetweenLines(
-        double l1x1, double l1y1, double l1x2, double l1y2,
-        double l2x1, double l2y1, double l2x2, double l2y2)
+    // Acute angle (0–90°) between two line segments.
+    private static double ABLines(
+        (double x, double y) l1p1, (double x, double y) l1p2,
+        (double x, double y) l2p1, (double x, double y) l2p2)
     {
-        double d1x = l1x2 - l1x1, d1y = l1y2 - l1y1;
-        double d2x = l2x2 - l2x1, d2y = l2y2 - l2y1;
-        double dot  = d1x * d2x + d1y * d2y;
+        double d1x = l1p2.x - l1p1.x, d1y = l1p2.y - l1p1.y;
+        double d2x = l2p2.x - l2p1.x, d2y = l2p2.y - l2p1.y;
         double mag1 = Math.Sqrt(d1x * d1x + d1y * d1y);
         double mag2 = Math.Sqrt(d2x * d2x + d2y * d2y);
         if (mag1 < 1e-9 || mag2 < 1e-9) return 0;
-        double cosA = Math.Clamp(Math.Abs(dot) / (mag1 * mag2), 0, 1);
+        double cosA = Math.Clamp(Math.Abs(d1x * d2x + d1y * d2y) / (mag1 * mag2), 0, 1);
         return Math.Acos(cosA) * 180.0 / Math.PI;
     }
 
-    /// <summary>
-    /// Perpendicular distance from point (px,py) to line defined by (lx1,ly1)-(lx2,ly2).
-    /// </summary>
-    private static double PerpDist(
+    // Signed perpendicular distance (positive = point is to the right of lp1→lp2).
+    private static double SignedPerp(
         double px, double py,
         double lx1, double ly1, double lx2, double ly2)
     {
         double dx = lx2 - lx1, dy = ly2 - ly1;
         double len = Math.Sqrt(dx * dx + dy * dy);
         if (len < 1e-9) return 0;
-        return (dy * px - dx * py + lx2 * ly1 - ly2 * lx1) / len;
+        return ((px - lx1) * dy - (py - ly1) * dx) / len;
     }
 
-    /// <summary>
-    /// Euclidean distance between two points.
-    /// </summary>
-    private static double Distance(double x1, double y1, double x2, double y2)
-        => Math.Sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+    private static double SignedPerpT(
+        (double x, double y) pt,
+        (double x, double y) lp1,
+        (double x, double y) lp2)
+        => SignedPerp(pt.x, pt.y, lp1.x, lp1.y, lp2.x, lp2.y);
 
-    private static bool Has(Dictionary<string, (double x, double y)> lm, params string[] keys)
-        => keys.All(lm.ContainsKey);
+    // Euclidean distance.
+    private static double DistT((double x, double y) a, (double x, double y) b)
+        => Math.Sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
 
     private static string ClassifyDeviation(double deviationInSd)
     {
@@ -664,75 +709,116 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     // ──────────────────────────────────────────────────────────────────────────
     //  LOOKUP TABLES
     // ──────────────────────────────────────────────────────────────────────────
+    private static HashSet<string> GetAnalysisGroups(string analysisType) => analysisType switch
+    {
+        "steiner"  => ["steiner"],
+        "tweed"    => ["tweed"],
+        "mcnamara" => ["mcnamara"],
+        "ricketts" => ["ricketts"],
+        "downs"    => ["downs"],
+        "wits"     => ["wits"],
+        _          => ["steiner", "tweed", "mcnamara", "ricketts", "downs", "wits"]
+    };
+
     private static string GetMeasurementGroup(string name) => name switch
     {
-        "FMA" or "FMIA" or "IMPA"                        => "tweed",
-        "Co-A" or "Co-Gn"                                => "mcnamara",
-        _                                                 => "steiner"
+        "FMA" or "FMIA" or "IMPA"                                      => "tweed",
+        "Co-A" or "Co-Gn" or "ANS-Me"                                  => "mcnamara",
+        "Facial-Depth" or "Facial-Axis" or "Mandibular-Plane"
+            or "Convexity-A" or "L1-APog_mm" or "L1-APog_angle"
+            or "Upper-Lip-ELine" or "Lower-Lip-ELine" or "Nasolabial"  => "ricketts",
+        "Convexity" or "AB-FacialPlane" or "Y-Axis"
+            or "Facial-Plane-FH" or "Mandibular-FH"                    => "downs",
+        "Wits"                                                          => "wits",
+        _                                                               => "steiner"
     };
 
     private static string GetMeasurementNameAr(string name) => name switch
     {
-        "SNA"       => "زاوية SNA",
-        "SNB"       => "زاوية SNB",
-        "ANB"       => "زاوية ANB",
-        "SND"       => "زاوية SND",
-        "U1-NA°"    => "زاوية القاطعة العلوية-NA",
-        "U1-NA mm"  => "بعد القاطعة العلوية عن NA",
-        "L1-NB°"    => "زاوية القاطعة السفلية-NB",
-        "L1-NB mm"  => "بعد القاطعة السفلية عن NB",
-        "U1-L1"     => "الزاوية بين القاطعتين",
-        "GoGn-SN"   => "زاوية قاعدة الفك-SN",
-        "FMA"       => "زاوية فرانكفورت-فك سفلي",
-        "FMIA"      => "زاوية فرانكفورت-قاطعة سفلية",
-        "IMPA"      => "زاوية فك سفلي-قاطعة سفلية",
-        "Co-A"      => "مسافة Co-A",
-        "Co-Gn"     => "مسافة Co-Gn",
-        _           => name
+        // Steiner
+        "SNA"           => "زاوية SNA",
+        "SNB"           => "زاوية SNB",
+        "ANB"           => "زاوية ANB",
+        "SND"           => "زاوية SND",
+        "U1-NA_angle"   => "U1/NA (°)",
+        "U1-NA_mm"      => "U1/NA (mm)",
+        "L1-NB_angle"   => "L1/NB (°)",
+        "L1-NB_mm"      => "L1/NB (mm)",
+        "U1-L1"         => "زاوية القاطعين",
+        "GoGn-SN"       => "GoGn / SN",
+        "UL-SLine"      => "الشفة العلوية — خط S",
+        "LL-SLine"      => "الشفة السفلية — خط S",
+        // Tweed
+        "FMA"           => "FMA (فرانكفورت-فك سفلي)",
+        "FMIA"          => "FMIA (فرانكفورت-قاطعة سفلية)",
+        "IMPA"          => "IMPA (فك سفلي-قاطعة سفلية)",
+        // McNamara
+        "Co-A"          => "Co-A (طول الفك العلوي)",
+        "Co-Gn"         => "Co-Gn (طول الفك السفلي)",
+        "ANS-Me"        => "ANS-Me (ارتفاع الوجه السفلي)",
+        // Ricketts
+        "Facial-Depth"     => "عمق الوجه (FH-N-Pog)",
+        "Facial-Axis"      => "محور الوجه (Pt-Gn / BaN)",
+        "Mandibular-Plane" => "ميل مستوى الفك (FH-GoMe)",
+        "Convexity-A"      => "انحناء النقطة A (N-Pog)",
+        "L1-APog_mm"       => "L1 إلى خط A-Pog (mm)",
+        "L1-APog_angle"    => "L1 إلى خط A-Pog (°)",
+        "Upper-Lip-ELine"  => "الشفة العلوية إلى خط E",
+        "Lower-Lip-ELine"  => "الشفة السفلية إلى خط E",
+        "Nasolabial"       => "الزاوية الأنفية-الشفوية",
+        // Downs
+        "Convexity"        => "انحناء الوجه (N-A-Pog)",
+        "AB-FacialPlane"   => "خط A-B إلى مستوى الوجه",
+        "Y-Axis"           => "محور Y (S-Gn/FH)",
+        "Facial-Plane-FH"  => "مستوى الوجه (N-Pog) / FH",
+        "Mandibular-FH"    => "مستوى الفك السفلي / FH",
+        // Wits
+        "Wits"             => "مسافة وتس (AO-BO)",
+        _                  => name
     };
 
-    private static string GetInterpretationAr(string name, double? value, double? deviationSd)
+    private static string GetInterpretationAr(string name, double rawDev, string severity)
     {
-        if (value is null || deviationSd is null) return string.Empty;
-
-        string status = ClassifyDeviation(deviationSd.Value);
-        bool high = deviationSd.Value > 0;
+        if (severity == "normal") return "ضمن الحدود الطبيعية";
+        string s = severity == "severe" ? "بشكل واضح" : "بشكل طفيف";
+        bool above = rawDev > 0;
 
         return name switch
         {
-            "SNA" => status == "normal"
-                ? "موضع الفك العلوي طبيعي"
-                : high ? "بروز الفك العلوي للأمام" : "تراجع الفك العلوي للخلف",
-
-            "SNB" => status == "normal"
-                ? "موضع الفك السفلي طبيعي"
-                : high ? "بروز الفك السفلي للأمام" : "تراجع الفك السفلي للخلف",
-
-            "ANB" => status == "normal"
-                ? "علاقة هيكلية من الصنف الأول"
-                : high ? "علاقة هيكلية من الصنف الثاني" : "علاقة هيكلية من الصنف الثالث",
-
-            "GoGn-SN" or "FMA" => status == "normal"
-                ? "نمط رأسي طبيعي"
-                : high ? "نمط مرتفع (وجه طويل)" : "نمط منخفض (وجه قصير)",
-
-            "U1-NA°" or "U1-NA mm" => status == "normal"
-                ? "ميلان القاطعة العلوية طبيعي"
-                : high ? "بروز القاطعة العلوية" : "ارتداد القاطعة العلوية",
-
-            "L1-NB°" or "L1-NB mm" => status == "normal"
-                ? "ميلان القاطعة السفلية طبيعي"
-                : high ? "بروز القاطعة السفلية" : "ارتداد القاطعة السفلية",
-
-            "U1-L1" => status == "normal"
-                ? "الزاوية بين القاطعتين طبيعية"
-                : high ? "زاوية القاطعتين مفتوحة (الأسنان مائلة للخلف)" : "زاوية القاطعتين ضيقة (بروز سني)",
-
-            "IMPA" => status == "normal"
-                ? "ميلان القاطعة السفلية نسبة للفك طبيعي"
-                : high ? "بروز القاطعة السفلية" : "ارتداد القاطعة السفلية",
-
-            _ => string.Empty
+            "SNA"           => above ? $"الفك العلوي بارز للأمام {s}" : $"الفك العلوي متراجع للخلف {s}",
+            "SNB"           => above ? $"الفك السفلي بارز للأمام {s}" : $"الفك السفلي متراجع للخلف {s}",
+            "ANB"           => above ? $"علاقة هيكلية من الدرجة الثانية {s}" : $"علاقة هيكلية من الدرجة الثالثة {s}",
+            "SND"           => above ? $"SND مرتفع {s}" : $"SND منخفض {s}",
+            "U1-NA_angle"   => above ? $"القاطع العلوي مائل للأمام {s}" : $"القاطع العلوي مائل للخلف {s}",
+            "U1-NA_mm"      => above ? $"القاطع العلوي بارز {s}" : $"القاطع العلوي مرتد {s}",
+            "L1-NB_angle"   => above ? $"القاطع السفلي مائل للأمام {s}" : $"القاطع السفلي مائل للخلف {s}",
+            "L1-NB_mm"      => above ? $"القاطع السفلي بارز {s}" : $"القاطع السفلي مرتد {s}",
+            "U1-L1"         => above ? $"زاوية القاطعين مفتوحة (قواطع مرتدة) {s}" : $"زاوية القاطعين ضيقة (بروز سني) {s}",
+            "GoGn-SN"       => above ? $"نمط رأسي مرتفع (وجه طويل) {s}" : $"نمط رأسي منخفض (وجه قصير) {s}",
+            "UL-SLine"      => above ? $"الشفة العلوية بارزة أمام خط S {s}" : $"الشفة العلوية مرتدة خلف خط S {s}",
+            "LL-SLine"      => above ? $"الشفة السفلية بارزة أمام خط S {s}" : $"الشفة السفلية مرتدة خلف خط S {s}",
+            "FMA"           => above ? $"ميل الفك السفلي مرتفع — نمط رأسي {s}" : $"ميل الفك السفلي منخفض — نمط أفقي {s}",
+            "FMIA"          => above ? $"القاطع السفلي مائل للخلف نسبة لـFH {s}" : $"القاطع السفلي بارز للأمام نسبة لـFH {s}",
+            "IMPA"          => above ? $"القاطع السفلي منتصب بشكل زائد {s}" : $"القاطع السفلي مائل للخلف {s}",
+            "Co-A"          => above ? $"طول الفك العلوي أكبر من المعدل {s}" : $"طول الفك العلوي أقل من المعدل {s}",
+            "Co-Gn"         => above ? $"طول الفك السفلي أكبر من المعدل {s}" : $"طول الفك السفلي أقل من المعدل {s}",
+            "ANS-Me"        => above ? $"ارتفاع الوجه السفلي مرتفع {s}" : $"ارتفاع الوجه السفلي منخفض {s}",
+            "Facial-Depth"  => above ? $"الوجه أكثر بروزاً من المعدل {s}" : $"الوجه أكثر تراجعاً من المعدل {s}",
+            "Facial-Axis"   => above ? $"محور نمو أمامي متزايد {s}" : $"محور نمو خلفي متزايد {s}",
+            "Mandibular-Plane" => above ? $"مستوى الفك السفلي مائل بشكل مرتفع {s}" : $"مستوى الفك السفلي مسطّح {s}",
+            "Convexity-A"   => above ? $"بروز عظمي واضح (Class II هيكلي) {s}" : $"تراجع عظمي (Class III هيكلي) {s}",
+            "L1-APog_mm"    => above ? $"القاطع السفلي بارز عن خط A-Pog {s}" : $"القاطع السفلي مرتد عن خط A-Pog {s}",
+            "L1-APog_angle" => above ? $"القاطع السفلي مائل للأمام {s}" : $"القاطع السفلي مائل للخلف {s}",
+            "Upper-Lip-ELine" => above ? $"الشفة العلوية بارزة للأمام {s}" : $"الشفة العلوية مرتدة للخلف {s}",
+            "Lower-Lip-ELine" => above ? $"الشفة السفلية بارزة للأمام {s}" : $"الشفة السفلية مرتدة للخلف {s}",
+            "Nasolabial"    => above ? $"الزاوية الأنفية مفتوحة (ميل شفوي) {s}" : $"الزاوية الأنفية ضيقة (بروز شفوي) {s}",
+            "Convexity"     => above ? $"بروز هيكلي للوجه {s}" : $"تراجع هيكلي للوجه {s}",
+            "AB-FacialPlane" => above ? $"الفك السفلي بارز {s}" : $"الفك السفلي متراجع {s}",
+            "Y-Axis"        => above ? $"نمط نمو رأسي {s}" : $"نمط نمو أفقي {s}",
+            "Facial-Plane-FH" => above ? $"مستوى الوجه بزاوية أعلى {s}" : $"مستوى الوجه بزاوية أقل {s}",
+            "Mandibular-FH" => above ? $"مستوى الفك السفلي مرتفع {s}" : $"مستوى الفك السفلي منخفض {s}",
+            "Wits"          => above ? $"تنافر هيكلي من الصنف الثاني (AO أمام BO) {s}" : $"تنافر هيكلي من الصنف الثالث (BO أمام AO) {s}",
+            _               => above ? $"أعلى من المعدل {s}" : $"أقل من المعدل {s}"
         };
     }
 

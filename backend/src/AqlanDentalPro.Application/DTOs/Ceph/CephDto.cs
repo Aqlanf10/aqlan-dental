@@ -35,7 +35,8 @@ public class CephMeasurementDto
     public double? StdDev { get; set; }
     public string? Unit { get; set; }
     public double? Deviation { get; set; }
-    public string Status { get; set; } = "normal";
+    public string Severity { get; set; } = "normal";
+    public string Direction { get; set; } = "within";
     public string AnalysisGroup { get; set; } = "steiner";
     public string? InterpretationAr { get; set; }
 }
@@ -64,6 +65,9 @@ public class CephAnalysisDetailDto
     public bool AiAssisted { get; set; }
     public Guid? DoctorId { get; set; }
     public string? Notes { get; set; }
+    public double? PixelsPerMm { get; set; }
+    public int ImageWidth { get; set; }
+    public int ImageHeight { get; set; }
     public List<CephLandmarkDto> Landmarks { get; set; } = [];
     public List<CephMeasurementDto> Measurements { get; set; } = [];
     public CephDiagnosisDto? Diagnosis { get; set; }

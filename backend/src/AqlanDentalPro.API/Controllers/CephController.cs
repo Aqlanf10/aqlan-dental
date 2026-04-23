@@ -10,9 +10,10 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize]
 public class CephController(CephService service) : ControllerBase
 {
-    // GET /api/ceph?orthoCaseId={id}
+    // GET /api/ceph                          — all analyses
+    // GET /api/ceph?orthoCaseId={id}         — filtered by ortho case
     [HttpGet]
-    public async Task<IActionResult> List([FromQuery] Guid orthoCaseId)
+    public async Task<IActionResult> List([FromQuery] Guid? orthoCaseId)
     {
         var result = await service.ListAsync(orthoCaseId);
         return Ok(result);
@@ -36,14 +37,14 @@ public class CephController(CephService service) : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
 
-    // POST /api/ceph/{id}/landmarks
+    // POST /api/ceph/{id}/landmarks  — saves, computes, returns full detail
     [HttpPost("{id:guid}/landmarks")]
     public async Task<IActionResult> SaveLandmarks(Guid id, [FromBody] SaveLandmarksRequest req)
     {
         var ok = await service.SaveLandmarksAsync(id, req);
-        return ok
-            ? Ok(new { message = "تم حفظ النقاط التشريحية وحساب القياسات بنجاح" })
-            : NotFound(new { message = "تحليل السيفالومتري غير موجود" });
+        if (!ok) return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
+        var detail = await service.GetByIdAsync(id);
+        return Ok(detail);
     }
 
     // POST /api/ceph/{id}/simulate

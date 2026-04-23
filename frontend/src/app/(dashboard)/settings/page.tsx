@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Settings, Users, Shield, Save } from "lucide-react";
+import { Settings, Users, Shield, Save, Plus, X, UserCheck, UserX } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -138,57 +138,170 @@ function ClinicTab() {
   );
 }
 
+const ALL_ROLES = ["Admin","Orthodontist","GeneralDentist","OralSurgeon","Reception","Accountant","Assistant","BranchManager"] as const;
+
 // ─── Users Tab ────────────────────────────────────────────────────────────────
 function UsersTab() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#0E7490" });
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
     api.get<UserRow[]>("/api/users")
       .then((r) => setUsers(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(load, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.username || !form.password) { setFormError("اسم المستخدم وكلمة المرور مطلوبان"); return; }
+    setSaving(true); setFormError("");
+    try {
+      await api.post("/api/users", {
+        username: form.username,
+        password: form.password,
+        role: form.role,
+        email: form.email || undefined,
+        doctorName: form.doctorName || undefined,
+        doctorColor: form.doctorName ? form.doctorColor : undefined,
+      });
+      setShowForm(false);
+      setForm({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#0E7490" });
+      load();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setFormError(msg ?? "حدث خطأ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (id: string) => {
+    await api.put(`/api/users/${id}/status`, {}).catch(() => {});
+    load();
+  };
 
   if (loading) {
     return <div className="animate-pulse space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}</div>;
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            {["اسم المستخدم", "الاسم الكامل", "الدور", "آخر دخول", "الحالة"].map((h) => (
-              <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {users.map((u) => (
-            <tr key={u.id} className="hover:bg-gray-50 transition">
-              <td className="px-4 py-3 font-mono font-medium text-gray-900">{u.username}</td>
-              <td className="px-4 py-3 text-gray-700">{u.doctorName ?? "—"}</td>
-              <td className="px-4 py-3">
-                <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                  {ROLE_LABELS[u.role] ?? u.role}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-gray-500 text-xs">
-                {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString("ar-YE") : "—"}
-              </td>
-              <td className="px-4 py-3">
-                <span className={cn(
-                  "text-xs px-2 py-0.5 rounded-full font-medium",
-                  u.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
-                )}>
-                  {u.isActive ? "نشط" : "معطّل"}
-                </span>
-              </td>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">{users.length} مستخدم</p>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+        >
+          {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {showForm ? "إلغاء" : "مستخدم جديد"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleCreate} className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
+          <p className="text-sm font-semibold text-gray-800">إضافة مستخدم جديد</p>
+          {formError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{formError}</p>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">اسم المستخدم <span className="text-red-500">*</span></label>
+              <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })}
+                className={inputCls} placeholder="username" dir="ltr" autoComplete="off" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">كلمة المرور <span className="text-red-500">*</span></label>
+              <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
+                type="password" className={inputCls} autoComplete="new-password" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">الدور</label>
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
+                {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">البريد الإلكتروني</label>
+              <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                type="email" className={inputCls} dir="ltr" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">اسم الطبيب (اختياري)</label>
+              <input value={form.doctorName} onChange={(e) => setForm({ ...form, doctorName: e.target.value })}
+                className={inputCls} placeholder="د. محمد أحمد" />
+            </div>
+            {form.doctorName && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">لون الطبيب</label>
+                <input value={form.doctorColor} onChange={(e) => setForm({ ...form, doctorColor: e.target.value })}
+                  type="color" className="h-9 w-full rounded-lg border border-gray-300 cursor-pointer" />
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="submit" disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+            >
+              <Save className="w-4 h-4" />
+              {saving ? "جارٍ الحفظ..." : "إضافة المستخدم"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              {["اسم المستخدم", "الاسم الكامل", "الدور", "آخر دخول", "الحالة", ""].map((h) => (
+                <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500">{h}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {users.map((u) => (
+              <tr key={u.id} className="hover:bg-gray-50 transition">
+                <td className="px-4 py-3 font-mono font-medium text-gray-900">{u.username}</td>
+                <td className="px-4 py-3 text-gray-700">{u.doctorName ?? "—"}</td>
+                <td className="px-4 py-3">
+                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                    {ROLE_LABELS[u.role] ?? u.role}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs">
+                  {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString("ar-YE") : "—"}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={cn(
+                    "text-xs px-2 py-0.5 rounded-full font-medium",
+                    u.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
+                  )}>
+                    {u.isActive ? "نشط" : "معطّل"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <button
+                    onClick={() => handleToggleStatus(u.id)}
+                    title={u.isActive ? "تعطيل المستخدم" : "تفعيل المستخدم"}
+                    className="text-gray-400 hover:text-gray-700 transition"
+                  >
+                    {u.isActive
+                      ? <UserX className="w-4 h-4" />
+                      : <UserCheck className="w-4 h-4 text-green-600" />
+                    }
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

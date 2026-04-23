@@ -65,7 +65,9 @@ export default function ContractsPage() {
                 {contracts.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{c.patientName}</div>
+                      <Link href={`/finance/contracts/${c.id}`} className="font-medium text-gray-900 hover:text-clinic-teal transition">
+                        {c.patientName}
+                      </Link>
                       <div className="text-xs text-gray-400 font-mono">{c.patientNumber}</div>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{c.specialty ?? "—"}</td>

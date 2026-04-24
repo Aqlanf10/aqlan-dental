@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search } from "lucide-react";
 import api from "@/lib/api";
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 const STATUS_CONFIG: Record<
   LabOrderStatus,
-  { label: string; color: string; icon: React.ReactNode }
+  { label: string; color: string; icon: ReactNode }
 > = {
   sent:          { label: "تم الإرسال",  color: "bg-blue-100 text-blue-700",   icon: <Clock className="w-3.5 h-3.5" /> },
   manufacturing: { label: "قيد الصنع",   color: "bg-amber-100 text-amber-700", icon: <FlaskConical className="w-3.5 h-3.5" /> },

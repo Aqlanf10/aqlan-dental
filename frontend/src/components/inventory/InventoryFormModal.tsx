@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import api from "@/lib/api";
@@ -43,7 +43,7 @@ export function InventoryFormModal({ item, onClose }: Props) {
     onError: () => toast.error(isEdit ? "فشل التحديث" : "فشل الإضافة"),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     mutation.mutate({
       ...form,

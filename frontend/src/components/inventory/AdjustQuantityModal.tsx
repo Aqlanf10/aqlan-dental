@@ -38,8 +38,9 @@ export function AdjustQuantityModal({ item, onClose }: Props) {
       if (data.isLowStock) toast.info("تنبيه: الكمية وصلت إلى الحد الأدنى");
       onClose();
     },
-    onError: (error: { response?: { data?: { message?: string } } }) => {
-      toast.error(error.response?.data?.message ?? "فشل تعديل الكمية");
+    onError: (error: unknown) => {
+      const msg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل تعديل الكمية");
     },
   });
 

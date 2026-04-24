@@ -1,4 +1,3 @@
-using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -55,7 +54,7 @@ public sealed class UpdateSurgeryStatusRequestValidator : AbstractValidator<Upda
 [ApiController]
 [Route("api/surgery-cases")]
 [Authorize]
-public class SurgeryController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class SurgeryController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(

@@ -1,4 +1,3 @@
-using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -43,7 +42,7 @@ public sealed class CreateReferralRequestValidator : AbstractValidator<CreateRef
 [ApiController]
 [Route("api/referrals")]
 [Authorize]
-public class ReferralsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class ReferralsController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(

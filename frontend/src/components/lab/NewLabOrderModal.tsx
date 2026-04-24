@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Search } from "lucide-react";
 import api from "@/lib/api";
@@ -52,7 +52,7 @@ export function NewLabOrderModal({ onClose }: Props) {
     onError: () => toast.error("فشل إنشاء الطلب"),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!selectedPatient) return;
     mutation.mutate({

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { OrthoVisit, CreateOrthoVisitRequest } from "@/types/ortho";
 import api from "@/lib/api";
-import { cn, formatArabicDate } from "@/lib/utils";
+import { formatArabicDate } from "@/lib/utils";
 import { Plus, ChevronDown, ChevronUp } from "lucide-react";
 
 interface Props {
@@ -38,7 +38,7 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { visitDate: new Date().toISOString().slice(0, 10) }
   });

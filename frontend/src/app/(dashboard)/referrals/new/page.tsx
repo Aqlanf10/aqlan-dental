@@ -17,7 +17,7 @@ const schema = z.object({
   fromDoctorId: z.string().min(1, "اختر الطبيب المُحيل"),
   toDoctorId:   z.string().min(1, "اختر الطبيب المُحال إليه"),
   reason:       z.string().min(1, "سبب الإحالة مطلوب"),
-  priority:     z.enum(["normal", "urgent", "emergency"]).default("normal"),
+  priority:     z.enum(["normal", "urgent", "emergency"]),
   notes:        z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;

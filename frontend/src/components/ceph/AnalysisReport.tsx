@@ -136,7 +136,7 @@ export function AnalysisReport({
         {!hasMeas && !diagnosis && (
           <div className="text-center py-10 text-gray-400">
             <p className="text-xs font-medium">لا توجد قياسات محسوبة</p>
-            <p className="text-[10px] mt-1 text-gray-300">ضع النقاط ثم اضغط "احسب القياسات"</p>
+            <p className="text-[10px] mt-1 text-gray-300">ضع النقاط ثم اضغط &quot;احسب القياسات&quot;</p>
           </div>
         )}
 

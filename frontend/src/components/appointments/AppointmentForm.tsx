@@ -21,7 +21,7 @@ const schema = z.object({
   doctorId:        z.string().min(1, "اختر طبيباً"),
   appointmentDate: z.string().min(1, "التاريخ مطلوب"),
   startTime:       z.string().min(1, "وقت البداية مطلوب"),
-  durationMinutes: z.number().min(5).max(240).default(30),
+  durationMinutes: z.number().min(5).max(240),
   appointmentType: z.string().min(1, "نوع الموعد مطلوب"),
   notes:           z.string().optional(),
 });
@@ -40,7 +40,6 @@ export function AppointmentForm() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
-  const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const {
@@ -70,7 +69,6 @@ export function AppointmentForm() {
   }, [patientSearch]);
 
   const selectPatient = (p: PatientListItem) => {
-    setSelectedPatient(p);
     setValue("patientId", p.id);
     setPatientSearch(`${p.fullName} (${p.patientNumber})`);
     setShowPatientDropdown(false);

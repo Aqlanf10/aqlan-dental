@@ -49,6 +49,6 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
 
         RuleFor(x => x.PaymentMethod)
             .NotEmpty().WithMessage("طريقة الدفع مطلوبة")
-            .Must(m => ValidMethods.Contains(m)).WithMessage("طريقة الدفع غير صالحة");
+            .Must(m => m != null && ValidMethods.Contains(m)).WithMessage("طريقة الدفع غير صالحة");
     }
 }

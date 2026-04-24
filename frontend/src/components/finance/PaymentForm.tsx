@@ -15,7 +15,7 @@ const schema = z.object({
   patientId:          z.string().min(1, "اختر مريضاً"),
   contractId:         z.string().optional(),
   amount:             z.number().min(1, "المبلغ مطلوب"),
-  paymentMethod:      z.enum(["cash", "bank_transfer", "card"]).default("cash"),
+  paymentMethod:      z.enum(["cash", "bank_transfer", "card"]),
   serviceDescription: z.string().optional(),
   specialty:          z.string().optional(),
   notes:              z.string().optional(),

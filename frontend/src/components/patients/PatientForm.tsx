@@ -24,18 +24,18 @@ const schema = z.object({
   chronicDiseases:    z.string().optional(),
   currentMedications: z.string().optional(),
   drugAllergies:      z.string().optional(),
-  bleedingDisorders:  z.boolean().default(false),
+  bleedingDisorders:  z.boolean(),
   isPregnant:         z.enum(["yes", "no", "na"]).optional(),
-  tmjProblems:        z.boolean().default(false),
+  tmjProblems:        z.boolean(),
   previousSurgeries:  z.string().optional(),
   medNotes:           z.string().optional(),
   // Dental history
   chiefComplaint:     z.string().optional(),
   previousTreatments: z.string().optional(),
-  mouthBreathing:     z.boolean().default(false),
-  bruxism:            z.boolean().default(false),
-  thumbSucking:       z.boolean().default(false),
-  tongueThrusing:     z.boolean().default(false),
+  mouthBreathing:     z.boolean(),
+  bruxism:            z.boolean(),
+  thumbSucking:       z.boolean(),
+  tongueThrusing:     z.boolean(),
   dentalNotes:        z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
@@ -97,7 +97,14 @@ export function PatientForm({ defaultValues, patientId }: Props) {
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: defaultValues ?? { bleedingDisorders: false, tmjProblems: false },
+    defaultValues: defaultValues ?? {
+      bleedingDisorders: false,
+      tmjProblems: false,
+      mouthBreathing: false,
+      bruxism: false,
+      thumbSucking: false,
+      tongueThrusing: false,
+    },
   });
 
   const onSubmit = async (data: FormData) => {

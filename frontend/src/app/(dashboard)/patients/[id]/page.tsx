@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3 } from "lucide-react";
+import { User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";

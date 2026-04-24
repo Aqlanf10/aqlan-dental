@@ -3,11 +3,12 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Enums;
 using Konscious.Security.Cryptography;
+using Microsoft.Extensions.Configuration;
 using System.Text;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class AuthService(IUserRepository userRepo, ITokenService tokenService)
+public class AuthService(IUserRepository userRepo, ITokenService tokenService, IConfiguration config)
 {
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
@@ -68,13 +69,14 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService)
         DoctorInitials = user.Doctor?.AvatarInitials
     };
 
-    private static bool VerifyPassword(string password, string storedHash)
+    private bool VerifyPassword(string password, string storedHash)
     {
         try
         {
+            var salt = config["Security:Argon2Salt"] ?? "AqlanDentalSalt!";
             var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
             {
-                Salt = Encoding.UTF8.GetBytes("AqlanDentalSalt!"),
+                Salt = Encoding.UTF8.GetBytes(salt),
                 DegreeOfParallelism = 1,
                 MemorySize = 65536,
                 Iterations = 3

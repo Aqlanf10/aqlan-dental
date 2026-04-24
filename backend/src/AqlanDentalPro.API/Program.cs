@@ -2,10 +2,13 @@ using AqlanDentalPro.API.Middleware;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Application.Validators;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Data.Seed;
 using AqlanDentalPro.Infrastructure.Repositories;
 using AqlanDentalPro.Infrastructure.Services;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -82,6 +85,11 @@ builder.Services.AddScoped<GeneralService>();
 builder.Services.AddScoped<CephService>();
 
 builder.Services.AddHttpContextAccessor();
+
+// ── FluentValidation ──────────────────────────────────────────────────────────
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>(); // Application validators
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();               // API-level validators
 
 // ── Controllers + Swagger ─────────────────────────────────────────────────────
 builder.Services.AddControllers();

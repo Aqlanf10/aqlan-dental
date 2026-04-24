@@ -21,8 +21,8 @@ const NAV_ITEMS = [
   { href: "/referrals",    label: "الإحالات",           icon: ArrowLeftRight,  active: true },
   { href: "/finance",      label: "المالية",            icon: Wallet,          active: true },
   { href: "/reports",      label: "التقارير",           icon: BarChart2,       active: true },
-  { href: "/inventory",    label: "المخزون",            icon: Package,         active: false },
-  { href: "/lab",          label: "المختبر",            icon: FlaskConical,    active: false },
+  { href: "/inventory",    label: "المخزون",            icon: Package,         active: true },
+  { href: "/lab",          label: "المختبر",            icon: FlaskConical,    active: true },
   { href: "/settings",     label: "الإعدادات",          icon: Settings,        active: true },
 ];
 

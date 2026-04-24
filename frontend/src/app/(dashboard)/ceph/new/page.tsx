@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -24,7 +24,7 @@ const inputCls = (err?: string) => cn(
   err ? "border-red-400" : "border-gray-300"
 );
 
-export default function NewCephPage() {
+function NewCephPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [saving, setSaving] = useState(false);
@@ -187,5 +187,13 @@ export default function NewCephPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function NewCephPage() {
+  return (
+    <Suspense>
+      <NewCephPageInner />
+    </Suspense>
   );
 }

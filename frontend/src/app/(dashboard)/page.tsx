@@ -79,14 +79,10 @@ export default function DashboardPage() {
               يمكنك من هنا إدارة المرضى، المواعيد، الحالات التقويمية، والمالية.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {["إدارة المرضى ✓", "المواعيد ✓", "التقويم (قريباً)", "السيفالومتري (قريباً)", "المالية (قريباً)"].map((f) => (
+              {["المرضى ✓", "المواعيد ✓", "التقويم ✓", "السيفالومتري ✓", "المالية ✓", "الجراحة ✓", "الإحالات ✓", "التقارير ✓"].map((f) => (
                 <span
                   key={f}
-                  className={`text-xs px-2.5 py-1 rounded-full ${
-                    f.includes("✓")
-                      ? "bg-green-100 text-green-700"
-                      : "bg-gray-100 text-gray-400"
-                  }`}
+                  className="text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-700"
                 >
                   {f}
                 </span>

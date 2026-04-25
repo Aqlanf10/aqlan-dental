@@ -1,19 +1,23 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, CalendarDays, Plus } from "lucide-react";
+import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
-import { formatArabicDate } from "@/lib/utils";
+import { WeekCalendar } from "@/components/appointments/WeekCalendar";
+import { formatArabicDate, cn } from "@/lib/utils";
 
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
+type ViewMode = "day" | "week";
+
 export default function AppointmentsPage() {
   const [date, setDate] = useState(() => toDateStr(new Date()));
+  const [view, setView] = useState<ViewMode>("day");
 
   const shift = (days: number) => {
     const d = new Date(date);
@@ -21,32 +25,69 @@ export default function AppointmentsPage() {
     setDate(toDateStr(d));
   };
 
+  const shiftWeek = (weeks: number) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + weeks * 7);
+    setDate(toDateStr(d));
+  };
+
   const isToday = date === toDateStr(new Date());
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-extrabold text-gray-900">المواعيد</h1>
-          <p className="text-sm text-gray-500 mt-0.5">جدول المواعيد اليومي</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {view === "day" ? "جدول المواعيد اليومي" : "عرض الأسبوع"}
+          </p>
         </div>
-        <Link
-          href="/appointments/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
-        >
-          <Plus className="w-4 h-4" />
-          موعد جديد
-        </Link>
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => setView("day")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition",
+                view === "day"
+                  ? "bg-clinic-teal text-white"
+                  : "text-gray-600 hover:bg-gray-50"
+              )}
+            >
+              <List className="w-3.5 h-3.5" />
+              يومي
+            </button>
+            <button
+              onClick={() => setView("week")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition",
+                view === "week"
+                  ? "bg-clinic-teal text-white"
+                  : "text-gray-600 hover:bg-gray-50"
+              )}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              أسبوعي
+            </button>
+          </div>
+          <Link
+            href="/appointments/new"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          >
+            <Plus className="w-4 h-4" />
+            موعد جديد
+          </Link>
+        </div>
       </div>
 
       {/* Date Navigator */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => shift(-1)}
+            onClick={() => view === "day" ? shift(-1) : shiftWeek(-1)}
             className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500"
-            aria-label="اليوم السابق"
+            aria-label="السابق"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -71,9 +112,9 @@ export default function AppointmentsPage() {
           />
 
           <button
-            onClick={() => shift(1)}
+            onClick={() => view === "day" ? shift(1) : shiftWeek(1)}
             className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500"
-            aria-label="اليوم التالي"
+            aria-label="التالي"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -91,7 +132,11 @@ export default function AppointmentsPage() {
 
       {/* Schedule */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <DaySchedule date={date} />
+        {view === "day" ? (
+          <DaySchedule date={date} />
+        ) : (
+          <WeekCalendar anchor={date} onDateClick={(d) => { setDate(d); setView("day"); }} />
+        )}
       </div>
     </div>
   );

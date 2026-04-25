@@ -11,8 +11,8 @@ export default function DashboardLayout({
       {/* Sidebar — fixed, right side in RTL */}
       <Sidebar />
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden me-64">
+      {/* Main content — offset by sidebar width (sidebar is fixed on the right in RTL) */}
+      <div className="flex-1 flex flex-col overflow-hidden mr-64">
         <Topbar />
         <main className="flex-1 overflow-y-auto p-6">
           {children}

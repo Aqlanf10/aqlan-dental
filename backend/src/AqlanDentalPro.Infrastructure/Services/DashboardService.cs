@@ -20,7 +20,9 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var apptQuery = db.Appointments.Where(a => a.AppointmentDate == today);
         if (branchId.HasValue) apptQuery = apptQuery.Where(a => a.BranchId == branchId);
 
-        var patientQuery = db.Patients.Where(p => p.CreatedAt.Date == DateTime.Today);
+        var todayStart = DateTime.UtcNow.Date;
+        var todayEnd   = todayStart.AddDays(1);
+        var patientQuery = db.Patients.Where(p => p.CreatedAt >= todayStart && p.CreatedAt < todayEnd);
         if (branchId.HasValue) patientQuery = patientQuery.Where(p => p.BranchId == branchId);
 
         var orthoQuery = db.OrthoCases.Where(o => o.Status == "active");

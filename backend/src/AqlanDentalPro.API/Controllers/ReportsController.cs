@@ -76,17 +76,14 @@ public class ReportsController(AppDbContext db) : ControllerBase
         var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
         var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
 
-        var payments = await db.Payments
+        // Fetch raw groups then format DateOnly in memory (EF can't translate DateOnly.ToString)
+        var paymentsRaw = await db.Payments
             .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
             .GroupBy(p => p.PaymentDate)
-            .Select(g => new
-            {
-                date = g.Key.ToString("yyyy-MM-dd"),
-                total = g.Sum(p => p.Amount),
-                count = g.Count()
-            })
+            .Select(g => new { date = g.Key, total = g.Sum(p => p.Amount), count = g.Count() })
             .OrderBy(x => x.date)
             .ToListAsync();
+        var payments = paymentsRaw.Select(x => new { date = x.date.ToString("yyyy-MM-dd"), x.total, x.count }).ToList();
 
         var bySpecialty = await db.Payments
             .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate)

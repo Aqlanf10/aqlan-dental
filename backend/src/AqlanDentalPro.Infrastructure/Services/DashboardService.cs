@@ -30,13 +30,11 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
 
         var labQuery = db.LabOrders.Where(l => l.Status == "sent" || l.Status == "manufacturing");
 
-        var results = await Task.WhenAll(
-            apptQuery.CountAsync(),
-            patientQuery.CountAsync(),
-            orthoQuery.CountAsync(),
-            labQuery.CountAsync()
-        );
+        var appointmentsToday  = await apptQuery.CountAsync();
+        var newPatientsToday   = await patientQuery.CountAsync();
+        var activeOrthoCases   = await orthoQuery.CountAsync();
+        var pendingLabOrders   = await labQuery.CountAsync();
 
-        return new DashboardStats(results[0], results[1], results[2], results[3]);
+        return new DashboardStats(appointmentsToday, newPatientsToday, activeOrthoCases, pendingLabOrders);
     }
 }

@@ -122,23 +122,21 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ── Seed Database ─────────────────────────────────────────────────────────────
-if (app.Environment.IsDevelopment())
+// ── Migrate + Seed ────────────────────────────────────────────────────────────
+using (var scope = app.Services.CreateScope())
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    await db.Database.MigrateAsync();
     await DbSeeder.SeedAsync(db, logger);
 }
 
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseMiddleware<ErrorHandlingMiddleware>();
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Dental Pro v1"));
-}
+app.UseSwagger();
+app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Dental Pro v1"));
 
 app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontend");

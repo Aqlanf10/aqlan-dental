@@ -1877,7 +1877,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                 table: "Users",
                 column: "Email",
                 unique: true,
-                filter: "email IS NOT NULL");
+                filter: "\"Email\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_Username",

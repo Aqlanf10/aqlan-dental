@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
-  BarChart2, Package, FlaskConical, Settings, LogOut, Lock,
+  BarChart2, Package, FlaskConical, Settings, LogOut, Lock, Pill,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { href: "/finance",      label: "المالية",            icon: Wallet,          active: true },
   { href: "/reports",      label: "التقارير",           icon: BarChart2,       active: true },
   { href: "/inventory",    label: "المخزون",            icon: Package,         active: true },
+  { href: "/prescriptions", label: "الوصفات الطبية",     icon: Pill,            active: true },
   { href: "/lab",          label: "المختبر",            icon: FlaskConical,    active: true },
   { href: "/settings",     label: "الإعدادات",          icon: Settings,        active: true },
 ];

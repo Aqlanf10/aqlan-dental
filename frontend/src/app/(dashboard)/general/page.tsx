@@ -1,14 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Stethoscope, Search } from "lucide-react";
+import { Stethoscope, UserPlus } from "lucide-react";
 import type { GeneralTreatment } from "@/types/dental";
+import type { PatientListItem } from "@/types/patient";
 import api from "@/lib/api";
 import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 export default function GeneralPage() {
   const [treatments, setTreatments] = useState<GeneralTreatment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null);
 
   useEffect(() => {
     api.get<GeneralTreatment[]>("/api/general/recent-treatments?limit=30")
@@ -24,14 +27,31 @@ export default function GeneralPage() {
           <h1 className="text-2xl font-extrabold text-gray-900">طب الأسنان العام</h1>
           <p className="text-sm text-gray-500 mt-0.5">آخر المعالجات والمخططات السنية</p>
         </div>
-        <Link href="/patients"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
-        >
-          <Search className="w-4 h-4" />
-          البحث عن مريض
-        </Link>
       </div>
 
+      {/* Quick patient navigator */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+        <p className="text-sm font-medium text-gray-700 mb-2">الانتقال السريع إلى ملف مريض</p>
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <PatientCombobox
+              onSelect={(p: PatientListItem) => setSelectedPatient(p)}
+              placeholder="ابحث بالاسم أو رقم المريض..."
+            />
+          </div>
+          {selectedPatient && (
+            <Link
+              href={`/patients/${selectedPatient.id}?tab=chart`}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition whitespace-nowrap"
+            >
+              <UserPlus className="w-4 h-4" />
+              {selectedPatient.fullName}
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Recent treatments */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">آخر المعالجات</h2>
@@ -46,6 +66,7 @@ export default function GeneralPage() {
           <div className="text-center py-16 text-gray-400">
             <Stethoscope className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">لا توجد معالجات بعد</p>
+            <p className="text-xs mt-1">ابحث عن مريض أعلاه للوصول لمخططه السني</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity } from "lucide-react";
+import { GitBranch, User, Calendar, Wallet, ClipboardList, Plus, Activity } from "lucide-react";
 import type { OrthoCase, TreatmentStage, OrthoVisit } from "@/types/ortho";
+import type { Contract } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
@@ -17,6 +18,100 @@ const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "visits",  label: "سجل الزيارات", icon: Calendar },
   { key: "finance", label: "العقد المالي",  icon: Wallet },
 ];
+
+function PatientContractsPanel({ patientId }: { patientId: string }) {
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api
+      .get<Contract[]>(`/api/contracts?patientId=${patientId}&pageSize=10`)
+      .then((r) => setContracts(r.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [patientId]);
+
+  const STATUS_LABELS: Record<string, string> = { active: "نشط", completed: "مكتمل", cancelled: "ملغى" };
+  const STATUS_COLORS: Record<string, string> = {
+    active: "bg-teal-50 text-teal-700",
+    completed: "bg-green-50 text-green-700",
+    cancelled: "bg-gray-100 text-gray-500",
+  };
+  const SPECIALTY_LABELS: Record<string, string> = {
+    orthodontics: "تقويم", general: "أسنان عام", surgery: "جراحة", other: "أخرى",
+  };
+
+  if (loading) {
+    return <div className="space-y-2 animate-pulse">{Array.from({length:2}).map((_,i)=><div key={i} className="h-20 bg-gray-100 rounded-xl"/>)}</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">عقود المريض</h3>
+        <Link
+          href={`/finance/contracts/new?patientId=${patientId}`}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          عقد جديد
+        </Link>
+      </div>
+
+      {contracts.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <Wallet className="w-10 h-10 mx-auto mb-2 opacity-20" />
+          <p className="text-sm">لا توجد عقود لهذا المريض</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {contracts.map((c) => {
+            const net = c.totalAmount - (c.discountAmount ?? 0);
+            const pct = net > 0 ? Math.min(100, Math.round((c.paidAmount / net) * 100)) : 0;
+            return (
+              <Link key={c.id} href={`/finance/contracts/${c.id}`}
+                className="block bg-gray-50 rounded-xl border border-gray-200 p-4 hover:border-clinic-teal/40 hover:shadow-sm transition"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-gray-900">
+                        {SPECIALTY_LABELS[c.specialty ?? ""] ?? c.specialty ?? "عقد"}
+                      </span>
+                      <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_COLORS[c.status] ?? "bg-gray-100 text-gray-600")}>
+                        {STATUS_LABELS[c.status] ?? c.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {c.installmentsCount > 1
+                        ? `${c.installmentsCount} أقساط · ${formatYemeniRiyal(c.installmentAmount ?? 0)} / قسط`
+                        : "دفعة واحدة"}
+                    </p>
+                  </div>
+                  <div className="text-end flex-shrink-0">
+                    <p className="text-sm font-bold text-gray-900">{formatYemeniRiyal(c.paidAmount)}</p>
+                    <p className="text-xs text-gray-400">من {formatYemeniRiyal(net)}</p>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-clinic-teal rounded-full" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500 flex-shrink-0">{pct}%</span>
+                  </div>
+                  {c.remainingAmount > 0 && (
+                    <p className="text-xs text-red-500 mt-1">متبقي: {formatYemeniRiyal(c.remainingAmount)}</p>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function OrthoCaseDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -206,16 +301,7 @@ export default function OrthoCaseDetailPage() {
           )}
 
           {activeTab === "finance" && (
-            <div className="text-center py-12 text-gray-400">
-              <Wallet className="w-10 h-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">لإدارة العقد المالي</p>
-              <Link
-                href="/finance/contracts"
-                className="mt-3 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
-              >
-                الذهاب إلى المالية
-              </Link>
-            </div>
+            <PatientContractsPanel patientId={orthoCase.patientId} />
           )}
         </div>
       </div>

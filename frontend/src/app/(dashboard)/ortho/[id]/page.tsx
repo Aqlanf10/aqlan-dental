@@ -9,16 +9,17 @@ import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
 
-type Tab = "info" | "exam" | "problems" | "plan" | "stages" | "visits" | "finance";
+type Tab = "info" | "exam" | "problems" | "plan" | "extraction" | "stages" | "visits" | "finance";
 
 const TABS: { key: Tab; label: string; icon: typeof User }[] = [
-  { key: "info",     label: "المعلومات",     icon: User },
-  { key: "exam",     label: "الفحص السريري", icon: ClipboardCheck },
-  { key: "problems", label: "قائمة المشاكل", icon: ListChecks },
-  { key: "plan",     label: "خطة العلاج",    icon: FileText },
-  { key: "stages",   label: "مراحل العلاج",  icon: GitBranch },
-  { key: "visits",   label: "سجل الزيارات",  icon: Calendar },
-  { key: "finance",  label: "العقد المالي",   icon: Wallet },
+  { key: "info",       label: "المعلومات",     icon: User },
+  { key: "exam",       label: "الفحص السريري", icon: ClipboardCheck },
+  { key: "problems",   label: "قائمة المشاكل", icon: ListChecks },
+  { key: "plan",       label: "خطة العلاج",    icon: FileText },
+  { key: "extraction", label: "قرار الخلع",    icon: Activity },
+  { key: "stages",     label: "مراحل العلاج",  icon: GitBranch },
+  { key: "visits",     label: "سجل الزيارات",  icon: Calendar },
+  { key: "finance",    label: "العقد المالي",   icon: Wallet },
 ];
 
 interface ClinicalExam {
@@ -518,6 +519,114 @@ function TreatmentPlanTab({ caseId }: { caseId: string }) {
   );
 }
 
+// ─── Extraction Decision Tab ──────────────────────────────────────────────────
+const EXTRACTION_OPTIONS = [
+  { value: "no_extraction",  label: "بدون خلع" },
+  { value: "extract_4",      label: "خلع 4 أضراس (علوي + سفلي)" },
+  { value: "extract_2_upper",label: "خلع 2 علوي فقط" },
+  { value: "extract_2_lower",label: "خلع 2 سفلي فقط" },
+  { value: "borderline",     label: "حالة حدية — تحتاج تقييم إضافي" },
+];
+
+function ExtractionDecisionTab({ caseId }: { caseId: string }) {
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const [decision, setDecision] = useState("");
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [decidedBy, setDecidedBy] = useState<string | null>(null);
+  const [decidedAt, setDecidedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<{ decision?: string; doctorNotes?: string; decidedByName?: string; decidedAt?: string } | null>(`/api/ortho-cases/${caseId}/extraction-decision`)
+      .then((r) => {
+        if (r.data) {
+          setDecision(r.data.decision ?? "");
+          setNotes(r.data.doctorNotes ?? "");
+          setDecidedBy(r.data.decidedByName ?? null);
+          setDecidedAt(r.data.decidedAt ?? null);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [caseId]);
+
+  const handleSave = async () => {
+    setSaving(true); setSaved(false);
+    try {
+      await api.put(`/api/ortho-cases/${caseId}/extraction-decision`, { decision, doctorNotes: notes });
+      setSaved(true); setTimeout(() => setSaved(false), 3000);
+    } catch {} finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="animate-pulse h-40 bg-gray-100 rounded-xl" />;
+
+  const selectedOption = EXTRACTION_OPTIONS.find((o) => o.value === decision);
+
+  return (
+    <div className="space-y-5">
+      {/* Options */}
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-gray-700 mb-3">قرار الخلع</p>
+        {EXTRACTION_OPTIONS.map((opt) => (
+          <label key={opt.value}
+            className={cn(
+              "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition",
+              decision === opt.value
+                ? "border-clinic-teal bg-teal-50"
+                : "border-gray-200 hover:border-gray-300"
+            )}
+          >
+            <input type="radio" name="extraction" value={opt.value} checked={decision === opt.value}
+              onChange={() => { setDecision(opt.value); setSaved(false); }}
+              className="text-clinic-teal"
+            />
+            <span className={cn("text-sm font-medium", decision === opt.value ? "text-clinic-teal" : "text-gray-700")}>
+              {opt.label}
+            </span>
+          </label>
+        ))}
+      </div>
+
+      {/* Decision summary */}
+      {decision && (
+        <div className={cn(
+          "p-3 rounded-lg border text-sm font-medium",
+          decision === "no_extraction" ? "bg-green-50 border-green-200 text-green-800" :
+          decision === "borderline" ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
+          "bg-orange-50 border-orange-200 text-orange-800"
+        )}>
+          القرار: {selectedOption?.label}
+        </div>
+      )}
+
+      {/* Doctor notes */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">ملاحظات الطبيب</label>
+        <textarea rows={3} value={notes} onChange={(e) => { setNotes(e.target.value); setSaved(false); }}
+          placeholder="مبررات القرار، العوامل المحددة..." className={inputCls}
+        />
+      </div>
+
+      <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+        <button onClick={handleSave} disabled={saving || !decision}
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+        >
+          <Save className="w-4 h-4" />
+          {saving ? "جاري الحفظ..." : "تأكيد القرار"}
+        </button>
+        {saved && <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>}
+        {decidedBy && (
+          <span className="text-xs text-gray-400">
+            آخر تحديث: {decidedBy} {decidedAt ? `· ${decidedAt}` : ""}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function OrthoCaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [orthoCase, setOrthoCase] = useState<OrthoCase | null>(null);
@@ -702,6 +811,10 @@ export default function OrthoCaseDetailPage() {
 
           {activeTab === "plan" && (
             <TreatmentPlanTab caseId={id} />
+          )}
+
+          {activeTab === "extraction" && (
+            <ExtractionDecisionTab caseId={id} />
           )}
 
           {activeTab === "stages" && (

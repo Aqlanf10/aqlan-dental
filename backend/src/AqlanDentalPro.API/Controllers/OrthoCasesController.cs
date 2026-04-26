@@ -276,6 +276,50 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         await db.SaveChangesAsync();
         return Ok(new { existing.Id, message = "تم حفظ خطة العلاج" });
     }
+
+    // ─── Extraction Decision ─────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/extraction-decision")]
+    public async Task<IActionResult> GetExtractionDecision(Guid id)
+    {
+        var decision = await db.ExtractionDecisions
+            .Include(e => e.Doctor)
+            .Where(e => e.OrthoCaseId == id)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (decision is null) return Ok(null);
+        return Ok(new {
+            decision.Id,
+            decision.Decision,
+            decision.DoctorNotes,
+            decision.AiRecommendation,
+            DecidedByName = decision.Doctor?.Name,
+            DecidedAt     = decision.DecidedAt?.ToString("yyyy-MM-dd"),
+        });
+    }
+
+    [HttpPut("{id:guid}/extraction-decision")]
+    public async Task<IActionResult> UpsertExtractionDecision(Guid id, [FromBody] UpsertExtractionDecisionRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.ExtractionDecisions.Where(e => e.OrthoCaseId == id).OrderByDescending(e => e.CreatedAt).FirstOrDefaultAsync();
+        if (existing is null)
+        {
+            existing = new ExtractionDecision { OrthoCaseId = id };
+            db.ExtractionDecisions.Add(existing);
+        }
+        existing.Decision    = req.Decision;
+        existing.DoctorNotes = req.DoctorNotes;
+        existing.DecidedAt   = DateTime.UtcNow;
+
+        // Mirror to orthoCase for quick access
+        orthoCase.ExtractionDecisionValue = req.Decision;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم حفظ قرار الخلع" });
+    }
 }
 
 public class UpdateStageRequest
@@ -288,6 +332,12 @@ public sealed class AddProblemItemRequest
     public string Category    { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public string? Severity   { get; init; }
+}
+
+public sealed class UpsertExtractionDecisionRequest
+{
+    public string? Decision    { get; init; }
+    public string? DoctorNotes { get; init; }
 }
 
 public sealed class UpsertTreatmentPlanRequest

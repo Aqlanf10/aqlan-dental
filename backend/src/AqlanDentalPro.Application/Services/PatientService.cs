@@ -15,10 +15,11 @@ public class PatientService(
 {
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
-    public async Task<PaginatedResponse<PatientListDto>> GetListAsync(string? search, int page, int pageSize)
+    public async Task<PaginatedResponse<PatientListDto>> GetListAsync(
+        string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null)
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
-        var result = await repo.SearchAsync(search, page, pageSize, branchId);
+        var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId);
 
         return new PaginatedResponse<PatientListDto>
         {

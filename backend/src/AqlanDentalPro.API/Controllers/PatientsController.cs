@@ -16,9 +16,11 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     public async Task<IActionResult> GetList(
         [FromQuery] string? search,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? gender = null,
+        [FromQuery] Guid? doctorId = null)
     {
-        var result = await service.GetListAsync(search, page, pageSize);
+        var result = await service.GetListAsync(search, page, pageSize, gender, doctorId);
         return Ok(result);
     }
 

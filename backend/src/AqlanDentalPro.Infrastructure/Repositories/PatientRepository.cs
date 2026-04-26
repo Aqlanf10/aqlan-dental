@@ -10,7 +10,8 @@ public class PatientRepository(AppDbContext context)
     : GenericRepository<Patient>(context), IPatientRepository
 {
     public async Task<PaginatedResponse<Patient>> SearchAsync(
-        string? search, int page, int pageSize, Guid? branchId)
+        string? search, int page, int pageSize, Guid? branchId,
+        string? gender = null, Guid? doctorId = null)
     {
         var query = DbSet
             .Include(p => p.PrimaryDoctor)
@@ -30,6 +31,13 @@ public class PatientRepository(AppDbContext context)
                 p.PatientNumber.ToLower().Contains(term) ||
                 (p.Phone != null && p.Phone.Contains(term)));
         }
+
+        if (!string.IsNullOrWhiteSpace(gender) &&
+            Enum.TryParse<Domain.Enums.Gender>(gender, true, out var parsedGender))
+            query = query.Where(p => p.Gender == parsedGender);
+
+        if (doctorId.HasValue)
+            query = query.Where(p => p.PrimaryDoctorId == doctorId);
 
         var total = await query.CountAsync();
 

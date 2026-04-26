@@ -1,52 +1,127 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Search, UserPlus, ChevronRight, ChevronLeft, Eye, Pencil } from "lucide-react";
+import { Search, UserPlus, ChevronRight, ChevronLeft, Eye, Pencil, Download } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS } from "@/lib/utils";
 
+interface Doctor { id: string; name: string; }
+
+function exportCsv(patients: PatientListItem[]) {
+  const headers = ["رقم المريض", "الاسم", "الجنس", "العمر", "الهاتف", "الطبيب", "تاريخ التسجيل"];
+  const rows = patients.map((p) => [
+    p.patientNumber,
+    p.fullName,
+    GENDER_LABELS[p.gender ?? ""] ?? "",
+    String(p.age ?? ""),
+    p.phone ?? "",
+    p.primaryDoctorName ?? "",
+    new Date(p.createdAt).toLocaleDateString("ar-YE"),
+  ]);
+  const csv = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "patients.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function PatientTable() {
   const [data, setData] = useState<PaginatedResponse<PatientListItem> | null>(null);
   const [search, setSearch] = useState("");
+  const [gender, setGender] = useState("");
+  const [doctorId, setDoctorId] = useState("");
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
+  }, []);
 
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: "20" });
-      if (search) params.set("search", search);
+      if (search)   params.set("search", search);
+      if (gender)   params.set("gender", gender);
+      if (doctorId) params.set("doctorId", doctorId);
       const { data: res } = await api.get<PaginatedResponse<PatientListItem>>(
         `/api/patients?${params}`
       );
       setData(res);
     } catch {}
     setLoading(false);
-  }, [page, search]);
+  }, [page, search, gender, doctorId]);
 
   useEffect(() => {
     const timer = setTimeout(fetchPatients, 300);
     return () => clearTimeout(timer);
   }, [fetchPatients]);
 
-  // Reset to page 1 when search changes
-  useEffect(() => { setPage(1); }, [search]);
+  useEffect(() => { setPage(1); }, [search, gender, doctorId]);
+
+  const handleExport = async () => {
+    try {
+      const params = new URLSearchParams({ page: "1", pageSize: "1000" });
+      if (search)   params.set("search", search);
+      if (gender)   params.set("gender", gender);
+      if (doctorId) params.set("doctorId", doctorId);
+      const { data: res } = await api.get<PaginatedResponse<PatientListItem>>(`/api/patients?${params}`);
+      exportCsv(res.data);
+    } catch {}
+  };
 
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-gray-400" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="البحث بالاسم أو رقم المريض أو الهاتف..."
-            className="w-full h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
-          />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 flex-1">
+          {/* Search */}
+          <div className="relative flex-1 min-w-48">
+            <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-gray-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="البحث بالاسم أو رقم المريض أو الهاتف..."
+              className="w-full h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            />
+          </div>
+          {/* Gender filter */}
+          <select
+            value={gender}
+            onChange={(e) => setGender(e.target.value)}
+            className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+          >
+            <option value="">الجنسان</option>
+            <option value="Male">ذكر</option>
+            <option value="Female">أنثى</option>
+          </select>
+          {/* Doctor filter */}
+          {doctors.length > 0 && (
+            <select
+              value={doctorId}
+              onChange={(e) => setDoctorId(e.target.value)}
+              className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            >
+              <option value="">كل الأطباء</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
+          {/* Export */}
+          <button
+            onClick={handleExport}
+            className="h-9 flex items-center gap-1.5 px-3 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            title="تصدير CSV"
+          >
+            <Download className="w-4 h-4" />
+            تصدير
+          </button>
         </div>
         <Link
           href="/patients/new"

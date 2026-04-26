@@ -24,3 +24,19 @@ public class ContractDetailDto : ContractListDto
     public string? Notes { get; set; }
     public List<PaymentDto> Payments { get; set; } = [];
 }
+
+public class OverdueContractDto
+{
+    public Guid ContractId { get; set; }
+    public Guid PatientId { get; set; }
+    public string PatientName { get; set; } = string.Empty;
+    public string PatientNumber { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+    public string? Specialty { get; set; }
+    public decimal TotalAmount { get; set; }
+    public decimal PaidAmount { get; set; }
+    public decimal OverdueAmount { get; set; }
+    public decimal RemainingAmount { get; set; }
+    public int MonthsElapsed { get; set; }
+    public string? StartDate { get; set; }
+}

@@ -20,6 +20,13 @@ public class PaymentsController(FinanceService service) : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("payments/{id:guid}")]
+    public async Task<IActionResult> GetPaymentById(Guid id)
+    {
+        var result = await service.GetPaymentByIdAsync(id);
+        return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+    }
+
     [HttpPost("payments")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
@@ -31,6 +38,13 @@ public class PaymentsController(FinanceService service) : ControllerBase
     public async Task<IActionResult> GetSummary()
     {
         var result = await service.GetSummaryAsync();
+        return Ok(result);
+    }
+
+    [HttpGet("finance/overdue")]
+    public async Task<IActionResult> GetOverdue()
+    {
+        var result = await service.GetOverdueContractsAsync();
         return Ok(result);
     }
 }

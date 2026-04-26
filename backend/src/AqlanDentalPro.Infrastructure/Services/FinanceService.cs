@@ -100,6 +100,59 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser)
         return (await GetContractByIdAsync(contract.Id))!;
     }
 
+    public async Task<PaymentDto?> GetPaymentByIdAsync(Guid id)
+    {
+        var p = await db.Payments
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .FirstOrDefaultAsync(p => p.Id == id);
+        return p == null ? null : MapPayment(p);
+    }
+
+    public async Task<List<OverdueContractDto>> GetOverdueContractsAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        var contracts = await db.Contracts
+            .Include(c => c.Patient)
+            .Include(c => c.Payments)
+            .Where(c => c.Status == "active" && c.InstallmentAmount > 0 && c.StartDate != null)
+            .ToListAsync();
+
+        var overdue = new List<OverdueContractDto>();
+
+        foreach (var c in contracts)
+        {
+            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
+            if (monthsElapsed <= 0) continue;
+
+            var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
+            var actualPaid   = c.Payments.Sum(p => p.Amount);
+            var overdueAmt   = expectedPaid - actualPaid;
+
+            if (overdueAmt > 0)
+            {
+                overdue.Add(new OverdueContractDto
+                {
+                    ContractId     = c.Id,
+                    PatientId      = c.PatientId,
+                    PatientName    = c.Patient.FirstName + " " + c.Patient.LastName,
+                    PatientNumber  = c.Patient.PatientNumber,
+                    Phone          = c.Patient.Phone,
+                    Specialty      = c.Specialty,
+                    TotalAmount    = c.TotalAmount,
+                    PaidAmount     = actualPaid,
+                    OverdueAmount  = overdueAmt,
+                    RemainingAmount= c.TotalAmount - c.DiscountAmount - actualPaid,
+                    MonthsElapsed  = monthsElapsed,
+                    StartDate      = c.StartDate?.ToString("yyyy-MM-dd")
+                });
+            }
+        }
+
+        return overdue.OrderByDescending(o => o.OverdueAmount).ToList();
+    }
+
     public async Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId)
     {
         var query = db.Payments

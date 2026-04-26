@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { TrendingUp, Wallet, AlertCircle, FileText, Plus } from "lucide-react";
+import { TrendingUp, Wallet, AlertCircle, FileText, Plus, Printer } from "lucide-react";
 import type { FinanceSummary } from "@/types/finance";
 import api from "@/lib/api";
 import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
@@ -34,6 +34,12 @@ export default function FinancePage() {
           <p className="text-sm text-gray-500 mt-0.5">الملخص المالي والعقود والدفعات</p>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/finance/overdue"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition"
+          >
+            <AlertCircle className="w-4 h-4" />
+            متأخرات
+          </Link>
           <Link href="/finance/contracts/new"
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-teal text-clinic-teal hover:bg-teal-50 transition"
           >
@@ -86,7 +92,7 @@ export default function FinancePage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  {["المريض", "المبلغ", "التاريخ", "الطريقة", "رقم السند"].map((h) => (
+                  {["المريض", "المبلغ", "التاريخ", "الطريقة", "رقم السند", ""].map((h) => (
                     <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500">{h}</th>
                   ))}
                 </tr>
@@ -101,6 +107,15 @@ export default function FinancePage() {
                       {p.paymentMethod === "cash" ? "نقداً" : p.paymentMethod === "bank_transfer" ? "تحويل بنكي" : p.paymentMethod ?? "—"}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-400">{p.receiptNumber ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/finance/payments/${p.id}`}
+                        className="flex items-center gap-1 text-xs text-clinic-teal hover:underline whitespace-nowrap"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        طباعة
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>

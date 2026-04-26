@@ -106,7 +106,9 @@ export default function SurgeryPage() {
               <tbody className="divide-y divide-gray-100">
                 {cases.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-mono font-semibold text-clinic-teal text-xs">{c.caseNumber}</td>
+                    <td className="px-4 py-3 font-mono font-semibold text-clinic-teal text-xs">
+                      <Link href={`/surgery/${c.id}`} className="hover:underline">{c.caseNumber}</Link>
+                    </td>
                     <td className="px-4 py-3">
                       <Link href={`/patients/${c.patientId}`} className="font-medium text-gray-900 hover:text-clinic-teal">
                         {c.patientName}
@@ -131,7 +133,8 @@ export default function SurgeryPage() {
                         {STATUS_LABELS[c.status] ?? c.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 flex items-center gap-2">
+                      <Link href={`/surgery/${c.id}`} className="text-xs text-clinic-teal hover:underline font-medium">عرض</Link>
                       {c.status === "scheduled" && (
                         <button onClick={() => handleStatus(c.id, "in_progress")}
                           className="text-xs text-yellow-700 hover:underline font-medium"

@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
-  Calendar, Activity, Wallet, Pill, Plus,
+  Calendar, Activity, Wallet, Pill, Plus, Scissors,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
@@ -95,6 +95,91 @@ function PatientTimeline({ patientId }: { patientId: string }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Patient Cases Panel ──────────────────────────────────────────────────────
+interface OrthoCase { id: string; caseNumber: string; applianceType?: string; status: string; stagePercentage: number; doctorName?: string; }
+interface SurgeryCase { id: string; caseNumber: string; surgeryType: string; status: string; doctorName?: string; }
+
+const ORTHO_STATUS_LABELS: Record<string, string> = { active: "نشطة", completed: "مكتملة", cancelled: "ملغاة" };
+const SURGERY_STATUS_LABELS: Record<string, string> = { scheduled: "مجدولة", in_progress: "جارية", completed: "مكتملة", cancelled: "ملغاة" };
+
+function PatientCasesPanel({ patientId }: { patientId: string }) {
+  const [orthoCases, setOrthoCases] = useState<OrthoCase[]>([]);
+  const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
+
+  useEffect(() => {
+    api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientId}&pageSize=10`)
+      .then((r) => setOrthoCases(r.data))
+      .catch(() => {});
+    api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientId}&pageSize=10`)
+      .then((r) => setSurgeryCases(r.data.data ?? []))
+      .catch(() => {});
+  }, [patientId]);
+
+  if (!orthoCases.length && !surgeryCases.length) return null;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+      {orthoCases.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">الحالات التقويمية</p>
+          <div className="space-y-2">
+            {orthoCases.map((c) => (
+              <Link key={c.id} href={`/ortho/${c.id}`}
+                className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg hover:bg-teal-50 hover:border-teal-200 border border-transparent transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-teal-600 flex-shrink-0" />
+                  <span className="text-sm font-medium text-gray-900">{c.caseNumber}</span>
+                  {c.applianceType && <span className="text-xs text-gray-500">{c.applianceType}</span>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-clinic-teal rounded-full" style={{ width: `${c.stagePercentage}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500">{c.stagePercentage}%</span>
+                  </div>
+                  <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
+                    c.status === "active" ? "bg-teal-50 text-teal-700" : "bg-gray-100 text-gray-500"
+                  )}>
+                    {ORTHO_STATUS_LABELS[c.status] ?? c.status}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {surgeryCases.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">الحالات الجراحية</p>
+          <div className="space-y-2">
+            {surgeryCases.map((c) => (
+              <Link key={c.id} href={`/surgery/${c.id}`}
+                className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg hover:bg-red-50 hover:border-red-200 border border-transparent transition"
+              >
+                <div className="flex items-center gap-2">
+                  <Scissors className="w-3.5 h-3.5 text-red-600 flex-shrink-0" />
+                  <span className="text-sm font-medium text-gray-900">{c.caseNumber}</span>
+                  <span className="text-xs text-gray-500">{c.surgeryType}</span>
+                </div>
+                <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
+                  c.status === "completed" ? "bg-green-50 text-green-700" :
+                  c.status === "in_progress" ? "bg-yellow-50 text-yellow-700" :
+                  "bg-gray-100 text-gray-500"
+                )}>
+                  {SURGERY_STATUS_LABELS[c.status] ?? c.status}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -262,6 +347,13 @@ export default function PatientProfilePage() {
             <Activity className="w-3.5 h-3.5" />
             حالة تقويمية
           </Link>
+          <Link
+            href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patient.firstName + " " + patient.lastName)}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Scissors className="w-3.5 h-3.5" />
+            حالة جراحية
+          </Link>
         </div>
       </div>
 
@@ -287,26 +379,29 @@ export default function PatientProfilePage() {
 
         <div className="p-5">
           {activeTab === "info" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                ["الاسم الكامل", `${patient.firstName} ${patient.middleName ?? ""} ${patient.lastName}`.trim()],
-                ["رقم المريض", patient.patientNumber],
-                ["الجنس", GENDER_LABELS[patient.gender ?? ""] ?? "—"],
-                ["العمر", patient.age ? `${patient.age} سنة` : "—"],
-                ["تاريخ الميلاد", patient.dateOfBirth ?? "—"],
-                ["الهاتف", patient.phone ?? "—"],
-                ["واتساب", patient.whatsApp ?? "—"],
-                ["العنوان", patient.address ?? "—"],
-                ["المهنة", patient.occupation ?? "—"],
-                ["مصدر الإحالة", patient.referralSource ?? "—"],
-                ["الطبيب المعالج", patient.primaryDoctorName ?? "—"],
-                ["الفرع", patient.branchName ?? "—"],
-              ].map(([label, value]) => (
-                <div key={label} className="border-b border-gray-50 pb-3 last:border-0">
-                  <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-                  <p className="text-sm font-medium text-gray-900">{value}</p>
-                </div>
-              ))}
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  ["الاسم الكامل", `${patient.firstName} ${patient.middleName ?? ""} ${patient.lastName}`.trim()],
+                  ["رقم المريض", patient.patientNumber],
+                  ["الجنس", GENDER_LABELS[patient.gender ?? ""] ?? "—"],
+                  ["العمر", patient.age ? `${patient.age} سنة` : "—"],
+                  ["تاريخ الميلاد", patient.dateOfBirth ?? "—"],
+                  ["الهاتف", patient.phone ?? "—"],
+                  ["واتساب", patient.whatsApp ?? "—"],
+                  ["العنوان", patient.address ?? "—"],
+                  ["المهنة", patient.occupation ?? "—"],
+                  ["مصدر الإحالة", patient.referralSource ?? "—"],
+                  ["الطبيب المعالج", patient.primaryDoctorName ?? "—"],
+                  ["الفرع", patient.branchName ?? "—"],
+                ].map(([label, value]) => (
+                  <div key={label} className="border-b border-gray-50 pb-3 last:border-0">
+                    <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+                    <p className="text-sm font-medium text-gray-900">{value}</p>
+                  </div>
+                ))}
+              </div>
+              <PatientCasesPanel patientId={id} />
             </div>
           )}
 

@@ -60,6 +60,8 @@ public class SurgeryController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status,
         [FromQuery] Guid? doctorId,
+        [FromQuery] string? search,
+        [FromQuery] Guid? patientId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -70,6 +72,15 @@ public class SurgeryController(AppDbContext db) : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(s => s.Status == status);
         if (doctorId.HasValue) query = query.Where(s => s.DoctorId == doctorId);
+        if (patientId.HasValue) query = query.Where(s => s.PatientId == patientId);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(s =>
+                s.CaseNumber.ToLower().Contains(term) ||
+                (s.Patient.FirstName + " " + s.Patient.LastName).ToLower().Contains(term) ||
+                s.Patient.PatientNumber.ToLower().Contains(term));
+        }
 
         var total = await query.CountAsync();
         var cases = await query

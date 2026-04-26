@@ -16,9 +16,10 @@ public class OrthoCasesController(OrthoService service) : ControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? doctorId = null,
         [FromQuery] string? status = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? patientId = null)
     {
-        var result = await service.GetListAsync(page, pageSize, doctorId, status, search);
+        var result = await service.GetListAsync(page, pageSize, doctorId, status, search, patientId);
         return Ok(result);
     }
 

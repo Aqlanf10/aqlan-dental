@@ -44,8 +44,8 @@ export default function SurgeryPage() {
     if (filter) params.set("status", filter);
     if (search) params.set("search", search);
     const qs = params.toString() ? `?${params}` : "";
-    api.get<SurgeryCase[]>(`/api/surgery-cases${qs}`)
-      .then((r) => setCases(r.data))
+    api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases${qs}`)
+      .then((r) => setCases(r.data.data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [filter, search]);
@@ -137,7 +137,9 @@ export default function SurgeryPage() {
               <tbody className="divide-y divide-gray-100">
                 {cases.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-mono font-semibold text-clinic-teal text-xs">{c.caseNumber}</td>
+                    <td className="px-4 py-3 font-mono font-semibold text-clinic-teal text-xs">
+                      <Link href={`/surgery/${c.id}`} className="hover:underline">{c.caseNumber}</Link>
+                    </td>
                     <td className="px-4 py-3">
                       <Link href={`/patients/${c.patientId}`} className="font-medium text-gray-900 hover:text-clinic-teal">
                         {c.patientName}

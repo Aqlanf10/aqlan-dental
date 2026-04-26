@@ -8,7 +8,7 @@ namespace AqlanDentalPro.Application.Services;
 
 public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 {
-    public async Task<List<OrthoCaseListDto>> GetListAsync(int page, int pageSize, Guid? doctorId, string? status, string? search = null)
+    public async Task<List<OrthoCaseListDto>> GetListAsync(int page, int pageSize, Guid? doctorId, string? status, string? search = null, Guid? patientId = null)
     {
         var branchId = currentUser.BranchId;
 
@@ -18,6 +18,7 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
             .Where(c => branchId == null || c.BranchId == branchId);
 
         if (doctorId.HasValue) query = query.Where(c => c.DoctorId == doctorId);
+        if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status);
         if (!string.IsNullOrWhiteSpace(search))
         {

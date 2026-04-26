@@ -9,6 +9,8 @@ function NewAppointmentContent() {
   const params = useSearchParams();
   const patientId   = params.get("patientId")   ?? undefined;
   const patientName = params.get("patientName")  ?? undefined;
+  const date        = params.get("date")         ?? undefined;
+  const startTime   = params.get("startTime")    ?? undefined;
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -28,7 +30,17 @@ function NewAppointmentContent() {
         <h1 className="text-2xl font-extrabold text-gray-900">إضافة موعد جديد</h1>
       </div>
 
-      <AppointmentForm defaultPatientId={patientId} defaultPatientName={patientName} />
+      <AppointmentForm
+        defaultPatientId={patientId}
+        defaultPatientName={patientName}
+        editDefaults={date || startTime ? {
+          doctorId: "",
+          appointmentDate: date ?? new Date().toISOString().slice(0, 10),
+          startTime: startTime ?? "",
+          durationMinutes: 30,
+          appointmentType: "",
+        } : undefined}
+      />
     </div>
   );
 }

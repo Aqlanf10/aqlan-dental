@@ -137,7 +137,7 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
               return (
                 <Link
                   key={date}
-                  href={`/appointments/new`}
+                  href={`/appointments/new?date=${date}&startTime=${String(hour).padStart(2,"0")}:00`}
                   className={cn(
                     "min-h-[52px] rounded border border-dashed p-0.5 transition",
                     isToday

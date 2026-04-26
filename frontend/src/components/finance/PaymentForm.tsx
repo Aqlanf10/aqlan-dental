@@ -47,8 +47,8 @@ export function PaymentForm() {
   useEffect(() => {
     if (patientSearch.length < 2) { setPatientResults([]); return; }
     const t = setTimeout(() => {
-      api.get<{ items: PatientListItem[] }>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
-        .then((r) => setPatientResults(r.data.items))
+      api.get<import("@/types/api").PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
+        .then((r) => setPatientResults(r.data.data))
         .catch(() => {});
     }, 300);
     return () => clearTimeout(t);

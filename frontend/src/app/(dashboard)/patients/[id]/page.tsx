@@ -4,7 +4,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
-  Calendar, Activity, Wallet, Pill, Plus, Scissors, GitBranch, ArrowLeft,
+  Calendar, Activity, Wallet, Pill, Plus, Scissors, GitBranch, ArrowLeft, Image,
+  Trash2, ExternalLink,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
@@ -162,7 +163,396 @@ function PatientCasesPanel({ patientId }: { patientId: string }) {
   );
 }
 
-type Tab = "info" | "medical" | "dental" | "chart" | "timeline";
+// ─── Photos & Xrays Tab ───────────────────────────────────────────────────────
+interface ClinicalPhotoItem {
+  id: string;
+  category: string;
+  photoType?: string;
+  fileUrl: string;
+  thumbnailUrl?: string;
+  stage?: string;
+  notes?: string;
+  photoDate: string;
+  orthoCaseId?: string;
+}
+
+interface RadiographItem {
+  id: string;
+  xrayType: string;
+  fileUrl: string;
+  toothRelated?: string;
+  notes?: string;
+  xrayDate: string;
+  doctorName?: string;
+}
+
+function PhotosAndXraysTab({ patientId }: { patientId: string }) {
+  const [photos, setPhotos] = useState<ClinicalPhotoItem[]>([]);
+  const [xrays, setXrays] = useState<RadiographItem[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
+  const [loadingXrays, setLoadingXrays] = useState(true);
+
+  // Photo form state
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoCategory, setPhotoCategory] = useState("intraoral");
+  const [photoType, setPhotoType] = useState("");
+  const [photoStage, setPhotoStage] = useState("");
+  const [photoNotes, setPhotoNotes] = useState("");
+  const [addingPhoto, setAddingPhoto] = useState(false);
+
+  // Xray form state
+  const [xrayUrl, setXrayUrl] = useState("");
+  const [xrayType, setXrayType] = useState("OPG");
+  const [xrayNotes, setXrayNotes] = useState("");
+  const [addingXray, setAddingXray] = useState(false);
+
+  const fetchPhotos = () => {
+    setLoadingPhotos(true);
+    api.get<ClinicalPhotoItem[]>(`/api/clinical-photos/${patientId}`)
+      .then((r) => setPhotos(r.data))
+      .catch(() => {})
+      .finally(() => setLoadingPhotos(false));
+  };
+
+  const fetchXrays = () => {
+    setLoadingXrays(true);
+    api.get<RadiographItem[]>(`/api/radiographs/${patientId}`)
+      .then((r) => setXrays(r.data))
+      .catch(() => {})
+      .finally(() => setLoadingXrays(false));
+  };
+
+  useEffect(() => {
+    fetchPhotos();
+    fetchXrays();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId]);
+
+  const handleAddPhoto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!photoUrl.trim()) return;
+    setAddingPhoto(true);
+    try {
+      await api.post("/api/clinical-photos", {
+        patientId,
+        fileUrl: photoUrl.trim(),
+        category: photoCategory,
+        photoType: photoType || undefined,
+        stage: photoStage || undefined,
+        notes: photoNotes || undefined,
+      });
+      setPhotoUrl(""); setPhotoType(""); setPhotoStage(""); setPhotoNotes("");
+      fetchPhotos();
+    } catch {
+      // ignore
+    } finally {
+      setAddingPhoto(false);
+    }
+  };
+
+  const handleDeletePhoto = async (id: string) => {
+    await api.delete(`/api/clinical-photos/${id}`).catch(() => {});
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleAddXray = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!xrayUrl.trim()) return;
+    setAddingXray(true);
+    try {
+      await api.post("/api/radiographs", {
+        patientId,
+        fileUrl: xrayUrl.trim(),
+        xrayType,
+        notes: xrayNotes || undefined,
+      });
+      setXrayUrl(""); setXrayNotes("");
+      fetchXrays();
+    } catch {
+      // ignore
+    } finally {
+      setAddingXray(false);
+    }
+  };
+
+  const handleDeleteXray = async (id: string) => {
+    await api.delete(`/api/radiographs/${id}`).catch(() => {});
+    setXrays((prev) => prev.filter((x) => x.id !== id));
+  };
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    intraoral: "داخل الفم",
+    extraoral: "خارج الفم",
+  };
+  const STAGE_LABELS: Record<string, string> = {
+    initial: "أولية",
+    progress: "متابعة",
+    final: "نهائية",
+  };
+  const XRAY_TYPE_LABELS: Record<string, string> = {
+    OPG: "OPG",
+    lateral_ceph: "Lateral Ceph",
+    bitewing: "Bitewing",
+    periapical: "Periapical",
+    PA_ceph: "PA Ceph",
+    CBCT: "CBCT",
+  };
+
+  return (
+    <div className="space-y-8" dir="rtl">
+      {/* ── Clinical Photos ── */}
+      <section>
+        <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <Image className="w-4 h-4 text-clinic-teal" />
+          الصور السريرية
+        </h3>
+
+        {/* Add photo form */}
+        <form onSubmit={handleAddPhoto} className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-100 space-y-3">
+          <p className="text-xs font-semibold text-gray-500 mb-1">إضافة صورة</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">رابط الصورة *</label>
+              <input
+                type="url"
+                value={photoUrl}
+                onChange={(e) => setPhotoUrl(e.target.value)}
+                placeholder="https://..."
+                required
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">الفئة</label>
+              <select
+                value={photoCategory}
+                onChange={(e) => setPhotoCategory(e.target.value)}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal bg-white"
+              >
+                <option value="intraoral">داخل الفم</option>
+                <option value="extraoral">خارج الفم</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">نوع الصورة</label>
+              <input
+                type="text"
+                value={photoType}
+                onChange={(e) => setPhotoType(e.target.value)}
+                placeholder="مثال: frontal, lateral..."
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">المرحلة</label>
+              <select
+                value={photoStage}
+                onChange={(e) => setPhotoStage(e.target.value)}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal bg-white"
+              >
+                <option value="">— غير محدد —</option>
+                <option value="initial">أولية</option>
+                <option value="progress">متابعة</option>
+                <option value="final">نهائية</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs text-gray-500 block mb-1">ملاحظات</label>
+              <input
+                type="text"
+                value={photoNotes}
+                onChange={(e) => setPhotoNotes(e.target.value)}
+                placeholder="ملاحظات اختيارية..."
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={addingPhoto || !photoUrl.trim()}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {addingPhoto ? "جارٍ الإضافة..." : "إضافة صورة"}
+          </button>
+        </form>
+
+        {/* Photos grid */}
+        {loadingPhotos ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-pulse">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-16 bg-gray-100 rounded-lg" />
+            ))}
+          </div>
+        ) : photos.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <Image className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">لا توجد صور سريرية</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {photos.map((photo) => (
+              <div key={photo.id} className="flex items-start gap-3 bg-white border border-gray-100 rounded-lg p-3 hover:border-gray-200 transition">
+                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <Image className="w-5 h-5 text-gray-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <span className="text-xs font-semibold text-gray-700">
+                      {CATEGORY_LABELS[photo.category] ?? photo.category}
+                    </span>
+                    {photo.photoType && (
+                      <span className="text-xs text-gray-500">{photo.photoType}</span>
+                    )}
+                    {photo.stage && (
+                      <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+                        {STAGE_LABELS[photo.stage] ?? photo.stage}
+                      </span>
+                    )}
+                  </div>
+                  <a
+                    href={photo.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-clinic-teal hover:underline truncate flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{photo.fileUrl}</span>
+                  </a>
+                  <p className="text-xs text-gray-400 mt-0.5">{photo.photoDate}</p>
+                  {photo.notes && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{photo.notes}</p>}
+                </div>
+                <button
+                  onClick={() => handleDeletePhoto(photo.id)}
+                  className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                  title="حذف"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Radiographs ── */}
+      <section>
+        <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-clinic-teal" />
+          الأشعة
+        </h3>
+
+        {/* Add xray form */}
+        <form onSubmit={handleAddXray} className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-100 space-y-3">
+          <p className="text-xs font-semibold text-gray-500 mb-1">إضافة أشعة</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">رابط الأشعة *</label>
+              <input
+                type="url"
+                value={xrayUrl}
+                onChange={(e) => setXrayUrl(e.target.value)}
+                placeholder="https://..."
+                required
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">نوع الأشعة</label>
+              <select
+                value={xrayType}
+                onChange={(e) => setXrayType(e.target.value)}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal bg-white"
+              >
+                <option value="OPG">OPG</option>
+                <option value="lateral_ceph">Lateral Ceph</option>
+                <option value="bitewing">Bitewing</option>
+                <option value="periapical">Periapical</option>
+                <option value="PA_ceph">PA Ceph</option>
+                <option value="CBCT">CBCT</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs text-gray-500 block mb-1">ملاحظات</label>
+              <input
+                type="text"
+                value={xrayNotes}
+                onChange={(e) => setXrayNotes(e.target.value)}
+                placeholder="ملاحظات اختيارية..."
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={addingXray || !xrayUrl.trim()}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {addingXray ? "جارٍ الإضافة..." : "إضافة أشعة"}
+          </button>
+        </form>
+
+        {/* Xrays list */}
+        {loadingXrays ? (
+          <div className="space-y-2 animate-pulse">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-14 bg-gray-100 rounded-lg" />
+            ))}
+          </div>
+        ) : xrays.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">لا توجد أشعة مسجّلة</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {xrays.map((xray) => (
+              <div key={xray.id} className="flex items-center gap-3 bg-white border border-gray-100 rounded-lg p-3 hover:border-gray-200 transition">
+                <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-5 h-5 text-purple-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <span className="text-xs font-semibold text-gray-700">
+                      {XRAY_TYPE_LABELS[xray.xrayType] ?? xray.xrayType}
+                    </span>
+                    {xray.toothRelated && (
+                      <span className="text-xs text-gray-500">سن: {xray.toothRelated}</span>
+                    )}
+                    {xray.doctorName && (
+                      <span className="text-xs text-gray-500">{xray.doctorName}</span>
+                    )}
+                  </div>
+                  <a
+                    href={xray.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-clinic-teal hover:underline truncate flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{xray.fileUrl}</span>
+                  </a>
+                  <p className="text-xs text-gray-400 mt-0.5">{xray.xrayDate}</p>
+                  {xray.notes && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{xray.notes}</p>}
+                </div>
+                <button
+                  onClick={() => handleDeleteXray(xray.id)}
+                  className="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                  title="حذف"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+type Tab = "info" | "medical" | "dental" | "chart" | "timeline" | "images";
 
 const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "info",     label: "المعلومات العامة", icon: User },
@@ -170,6 +560,7 @@ const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "dental",   label: "التاريخ السني",    icon: Stethoscope },
   { key: "chart",    label: "المخطط السني",     icon: Grid3x3 },
   { key: "timeline", label: "السجل الزمني",     icon: Clock },
+  { key: "images",   label: "الصور والأشعة",    icon: Image },
 ];
 
 export default function PatientProfilePage() {
@@ -442,6 +833,8 @@ export default function PatientProfilePage() {
           )}
 
           {activeTab === "timeline" && <PatientTimeline patientId={id} />}
+
+          {activeTab === "images" && <PhotosAndXraysTab patientId={id} />}
         </div>
       </div>
     </div>

@@ -15,4 +15,11 @@ public class DashboardController(DashboardService service) : ControllerBase
         var stats = await service.GetStatsAsync();
         return Ok(stats);
     }
+
+    [HttpGet("charts")]
+    public async Task<IActionResult> GetCharts()
+    {
+        var charts = await service.GetChartsAsync();
+        return Ok(charts);
+    }
 }

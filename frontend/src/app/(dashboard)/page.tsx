@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Calendar, Users, Activity, FlaskConical } from "lucide-react";
 import { StatsCard } from "@/components/dashboard/StatsCard";
+import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import type { DashboardStats } from "@/types/dashboard";
 import api from "@/lib/api";
 
@@ -63,6 +64,9 @@ export default function DashboardPage() {
           description="قيد التصنيع أو الشحن"
         />
       </div>
+
+      {/* Charts */}
+      <DashboardCharts />
 
       {/* Welcome card */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">

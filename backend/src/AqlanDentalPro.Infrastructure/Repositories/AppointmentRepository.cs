@@ -1,0 +1,59 @@
+using AqlanDentalPro.Application.Interfaces.Repositories;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace AqlanDentalPro.Infrastructure.Repositories;
+
+public class AppointmentRepository(AppDbContext context)
+    : GenericRepository<Appointment>(context), IAppointmentRepository
+{
+    public async Task<bool> HasConflictAsync(
+        Guid doctorId, DateOnly date, TimeOnly start, TimeOnly end, Guid? excludeId = null)
+    {
+        return await DbSet.AnyAsync(a =>
+            a.DoctorId == doctorId &&
+            a.AppointmentDate == date &&
+            a.IsActive &&
+            a.Status != AppointmentStatus.Cancelled &&
+            a.Status != AppointmentStatus.NoShow &&
+            a.StartTime < end &&
+            a.EndTime > start &&
+            (excludeId == null || a.Id != excludeId));
+    }
+
+    public async Task<IEnumerable<Appointment>> GetTodayAsync(Guid? branchId, Guid? doctorId)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var query = DbSet
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .Where(a => a.AppointmentDate == today);
+
+        if (branchId.HasValue) query = query.Where(a => a.BranchId == branchId);
+        if (doctorId.HasValue) query = query.Where(a => a.DoctorId == doctorId);
+
+        return await query.OrderBy(a => a.StartTime).ToListAsync();
+    }
+
+    public async Task<IEnumerable<Appointment>> GetByDateRangeAsync(
+        DateOnly from, DateOnly to, Guid? branchId, Guid? doctorId)
+    {
+        var query = DbSet
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .Where(a => a.AppointmentDate >= from && a.AppointmentDate <= to);
+
+        if (branchId.HasValue) query = query.Where(a => a.BranchId == branchId);
+        if (doctorId.HasValue) query = query.Where(a => a.DoctorId == doctorId);
+
+        return await query.OrderBy(a => a.AppointmentDate).ThenBy(a => a.StartTime).ToListAsync();
+    }
+
+    public async Task<Appointment?> GetWithDetailAsync(Guid id) =>
+        await DbSet
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .FirstOrDefaultAsync(a => a.Id == id);
+}

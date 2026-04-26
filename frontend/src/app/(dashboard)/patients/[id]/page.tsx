@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
-  Calendar, Activity, Wallet, Pill, Plus,
+  Calendar, Activity, Wallet, Pill, Plus, Scissors, GitBranch, ArrowLeft,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
@@ -95,6 +95,69 @@ function PatientTimeline({ patientId }: { patientId: string }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Patient Cases Panel ──────────────────────────────────────────────────────
+interface OrthoSummary { id: string; caseNumber: string; applianceType?: string; status: string; startDate?: string; }
+interface SurgerySummary { id: string; caseNumber: string; surgeryType: string; status: string; createdAt: string; }
+
+function PatientCasesPanel({ patientId }: { patientId: string }) {
+  const [orthoCases, setOrthoCases] = useState<OrthoSummary[]>([]);
+  const [surgeryCases, setSurgeryCases] = useState<SurgerySummary[]>([]);
+
+  useEffect(() => {
+    api.get<OrthoSummary[]>(`/api/ortho-cases?patientId=${patientId}&pageSize=10`)
+      .then((r) => setOrthoCases(r.data)).catch(() => {});
+    api.get<{ data: SurgerySummary[] }>(`/api/surgery-cases?patientId=${patientId}&pageSize=10`)
+      .then((r) => setSurgeryCases(r.data.data ?? [])).catch(() => {});
+  }, [patientId]);
+
+  if (!orthoCases.length && !surgeryCases.length) return null;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+      {orthoCases.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5">
+            <GitBranch className="w-3.5 h-3.5" /> حالات التقويم
+          </p>
+          <div className="space-y-1.5">
+            {orthoCases.map((c) => (
+              <Link key={c.id} href={`/ortho/${c.id}`}
+                className="flex items-center justify-between px-3 py-2 bg-teal-50 rounded-lg hover:bg-teal-100 transition text-sm"
+              >
+                <span className="font-mono text-xs text-teal-700">{c.caseNumber}</span>
+                <span className="text-gray-600 text-xs">{c.applianceType ?? ""}</span>
+                <span className="flex items-center gap-1 text-xs text-teal-600">
+                  عرض <ArrowLeft className="w-3 h-3" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+      {surgeryCases.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-1.5">
+            <Scissors className="w-3.5 h-3.5" /> الحالات الجراحية
+          </p>
+          <div className="space-y-1.5">
+            {surgeryCases.map((c) => (
+              <Link key={c.id} href={`/surgery/${c.id}`}
+                className="flex items-center justify-between px-3 py-2 bg-red-50 rounded-lg hover:bg-red-100 transition text-sm"
+              >
+                <span className="font-mono text-xs text-red-700">{c.caseNumber}</span>
+                <span className="text-gray-600 text-xs">{c.surgeryType}</span>
+                <span className="flex items-center gap-1 text-xs text-red-600">
+                  عرض <ArrowLeft className="w-3 h-3" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -262,6 +325,13 @@ export default function PatientProfilePage() {
             <Activity className="w-3.5 h-3.5" />
             حالة تقويمية
           </Link>
+          <Link
+            href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patient.firstName + " " + patient.lastName)}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Scissors className="w-3.5 h-3.5" />
+            حالة جراحية
+          </Link>
         </div>
       </div>
 
@@ -307,6 +377,7 @@ export default function PatientProfilePage() {
                   <p className="text-sm font-medium text-gray-900">{value}</p>
                 </div>
               ))}
+              <PatientCasesPanel patientId={id} />
             </div>
           )}
 

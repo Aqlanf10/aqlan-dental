@@ -117,6 +117,34 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         return result == null ? NotFound() : Ok(result.DentalHistory);
     }
 
+    [HttpGet("{id:guid}/summary")]
+    public async Task<IActionResult> GetSummary(Guid id)
+    {
+        var exists = await db.Patients.AnyAsync(p => p.Id == id);
+        if (!exists) return NotFound(new { message = "المريض غير موجود" });
+
+        var totalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id);
+        var completedAppointments = await db.Appointments.CountAsync(a => a.PatientId == id && a.Status == Domain.Enums.AppointmentStatus.Completed);
+        var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == "active");
+        var totalPaid = await db.Payments.Where(p => p.PatientId == id).SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var totalOutstanding = await db.Contracts
+            .Where(c => c.PatientId == id && c.Status == "active")
+            .Include(c => c.Payments)
+            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
+            .SumAsync(r => (decimal?)r) ?? 0;
+        var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
+
+        return Ok(new
+        {
+            totalAppointments,
+            completedAppointments,
+            activeOrthoCases,
+            totalPaid,
+            totalOutstanding,
+            prescriptionsCount
+        });
+    }
+
     [HttpGet("{id:guid}/timeline")]
     public async Task<IActionResult> GetTimeline(Guid id)
     {

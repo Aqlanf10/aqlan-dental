@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -31,18 +31,22 @@ const inputCls = (err?: string) => cn(
 
 const APPLIANCE_TYPES = ["MBT 0.022", "MBT 0.018", "Damon", "Invisalign", "Removable", "Functional"];
 
-export default function NewOrthoPage() {
+function NewOrthoContent() {
   const router = useRouter();
+  const params = useSearchParams();
+  const defaultPatientId   = params.get("patientId")   ?? undefined;
+  const defaultPatientName = params.get("patientName")  ?? undefined;
+
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [patientSearch, setPatientSearch] = useState("");
+  const [patientSearch, setPatientSearch] = useState(defaultPatientName ?? "");
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { startDate: new Date().toISOString().slice(0, 10) }
+    defaultValues: { startDate: new Date().toISOString().slice(0, 10), patientId: defaultPatientId ?? "" }
   });
 
   useEffect(() => {
@@ -195,5 +199,13 @@ export default function NewOrthoPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function NewOrthoPage() {
+  return (
+    <Suspense>
+      <NewOrthoContent />
+    </Suspense>
   );
 }

@@ -2,12 +2,24 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3 } from "lucide-react";
+import {
+  User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
+  Calendar, Activity, Wallet, Pill, Plus,
+} from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import { DentalChart } from "@/components/dental/DentalChart";
 import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
+
+interface PatientSummary {
+  totalAppointments:   number;
+  completedAppointments: number;
+  activeOrthoCases:    number;
+  totalPaid:           number;
+  totalOutstanding:    number;
+  prescriptionsCount:  number;
+}
 
 // ─── Patient Timeline Component ───────────────────────────────────────────────
 interface TimelineEvent {
@@ -99,8 +111,9 @@ const TABS: { key: Tab; label: string; icon: typeof User }[] = [
 
 export default function PatientProfilePage() {
   const { id } = useParams<{ id: string }>();
-  const [patient, setPatient] = useState<PatientProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [patient, setPatient]   = useState<PatientProfile | null>(null);
+  const [summary, setSummary]   = useState<PatientSummary | null>(null);
+  const [loading, setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("info");
 
   useEffect(() => {
@@ -108,6 +121,9 @@ export default function PatientProfilePage() {
       .then((r) => setPatient(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+    api.get<PatientSummary>(`/api/patients/${id}/summary`)
+      .then((r) => setSummary(r.data))
+      .catch(() => {});
   }, [id]);
 
   if (loading) {
@@ -137,7 +153,8 @@ export default function PatientProfilePage() {
       </div>
 
       {/* Banner */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+        {/* Top row */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 clinic-gradient rounded-2xl flex items-center justify-center text-white text-xl font-extrabold flex-shrink-0">
@@ -192,6 +209,58 @@ export default function PatientProfilePage() {
           >
             <Pencil className="w-3.5 h-3.5" />
             تعديل
+          </Link>
+        </div>
+
+        {/* Quick stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1 border-t border-gray-50">
+          {[
+            { icon: Calendar, label: "المواعيد",     value: summary?.totalAppointments   ?? "—", color: "text-blue-600",   bg: "bg-blue-50" },
+            { icon: Calendar, label: "مكتملة",       value: summary?.completedAppointments ?? "—", color: "text-green-600",  bg: "bg-green-50" },
+            { icon: Activity, label: "تقويم نشط",   value: summary?.activeOrthoCases    ?? "—", color: "text-purple-600", bg: "bg-purple-50" },
+            { icon: Wallet,   label: "مدفوع",        value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-teal-600",   bg: "bg-teal-50" },
+            { icon: Wallet,   label: "متبقي",        value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-orange-600", bg: "bg-orange-50" },
+            { icon: Pill,     label: "الوصفات",      value: summary?.prescriptionsCount  ?? "—", color: "text-rose-600",   bg: "bg-rose-50" },
+          ].map(({ icon: Icon, label, value, color, bg }) => (
+            <div key={label} className={cn("rounded-lg px-3 py-2 flex items-center gap-2", bg)}>
+              <Icon className={cn("w-4 h-4 flex-shrink-0", color)} />
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 truncate">{label}</p>
+                <p className={cn("text-sm font-bold truncate", color)}>{value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-50">
+          <Link
+            href={`/appointments/new?patientId=${id}&patientName=${encodeURIComponent(patient.firstName + " " + patient.lastName)}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            موعد جديد
+          </Link>
+          <Link
+            href={`/prescriptions/new?patientId=${id}&patientName=${encodeURIComponent(patient.firstName + " " + patient.lastName)}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Pill className="w-3.5 h-3.5" />
+            وصفة طبية
+          </Link>
+          <Link
+            href={`/finance/contracts/new?patientId=${id}&patientName=${encodeURIComponent(patient.firstName + " " + patient.lastName)}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            عقد جديد
+          </Link>
+          <Link
+            href={`/ortho/new?patientId=${id}&patientName=${encodeURIComponent(patient.firstName + " " + patient.lastName)}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Activity className="w-3.5 h-3.5" />
+            حالة تقويمية
           </Link>
         </div>
       </div>

@@ -29,17 +29,22 @@ const inputCls = (err?: string) => cn(
   err ? "border-red-400" : "border-gray-300"
 );
 
-export function ContractForm() {
+interface Props {
+  defaultPatientId?:   string;
+  defaultPatientName?: string;
+}
+
+export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [patientSearch, setPatientSearch] = useState("");
+  const [patientSearch, setPatientSearch] = useState(defaultPatientName ?? "");
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { downPayment: 0, installmentsCount: 1, discountAmount: 0, startDate: new Date().toISOString().slice(0, 10) }
+    defaultValues: { downPayment: 0, installmentsCount: 1, discountAmount: 0, startDate: new Date().toISOString().slice(0, 10), patientId: defaultPatientId ?? "" }
   });
 
   const totalAmount = watch("totalAmount") || 0;

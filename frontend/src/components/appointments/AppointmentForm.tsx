@@ -33,12 +33,17 @@ const inputCls = (err?: string) =>
     err ? "border-red-400" : "border-gray-300"
   );
 
-export function AppointmentForm() {
+interface Props {
+  defaultPatientId?:   string;
+  defaultPatientName?: string;
+}
+
+export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [patientSearch, setPatientSearch] = useState("");
+  const [patientSearch, setPatientSearch] = useState(defaultPatientName ?? "");
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
@@ -49,7 +54,7 @@ export function AppointmentForm() {
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { durationMinutes: 30 },
+    defaultValues: { durationMinutes: 30, patientId: defaultPatientId ?? "" },
   });
 
   // Load doctors

@@ -1,9 +1,15 @@
 "use client";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { AppointmentForm } from "@/components/appointments/AppointmentForm";
 
-export default function NewAppointmentPage() {
+function NewAppointmentContent() {
+  const params = useSearchParams();
+  const patientId   = params.get("patientId")   ?? undefined;
+  const patientName = params.get("patientName")  ?? undefined;
+
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -22,7 +28,15 @@ export default function NewAppointmentPage() {
         <h1 className="text-2xl font-extrabold text-gray-900">إضافة موعد جديد</h1>
       </div>
 
-      <AppointmentForm />
+      <AppointmentForm defaultPatientId={patientId} defaultPatientName={patientName} />
     </div>
+  );
+}
+
+export default function NewAppointmentPage() {
+  return (
+    <Suspense>
+      <NewAppointmentContent />
+    </Suspense>
   );
 }

@@ -1,9 +1,15 @@
 "use client";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { PrescriptionForm } from "@/components/prescriptions/PrescriptionForm";
 
-export default function NewPrescriptionPage() {
+function NewPrescriptionContent() {
+  const params = useSearchParams();
+  const patientId   = params.get("patientId")   ?? undefined;
+  const patientName = params.get("patientName")  ?? undefined;
+
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -17,7 +23,15 @@ export default function NewPrescriptionPage() {
         </Link>
         <h1 className="text-2xl font-extrabold text-gray-900">إنشاء وصفة طبية</h1>
       </div>
-      <PrescriptionForm />
+      <PrescriptionForm defaultPatientId={patientId} defaultPatientName={patientName} />
     </div>
+  );
+}
+
+export default function NewPrescriptionPage() {
+  return (
+    <Suspense>
+      <NewPrescriptionContent />
+    </Suspense>
   );
 }

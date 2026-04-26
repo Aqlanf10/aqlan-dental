@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Plus, GitBranch, Search } from "lucide-react";
+import { Plus, GitBranch, Search, UserPlus } from "lucide-react";
 import type { OrthoCase } from "@/types/ortho";
+import type { PatientListItem } from "@/types/patient";
+import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal } from "@/lib/utils";
 
@@ -25,6 +27,7 @@ export default function OrthoPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
+  const [patientSuggestions, setPatientSuggestions] = useState<PatientListItem[]>([]);
 
   const fetchCases = useCallback(async () => {
     setLoading(true);
@@ -41,6 +44,18 @@ export default function OrthoPage() {
     const timer = setTimeout(fetchCases, 300);
     return () => clearTimeout(timer);
   }, [fetchCases]);
+
+  // Parallel patient search — so patients without ortho cases are discoverable
+  useEffect(() => {
+    if (search.length < 2) { setPatientSuggestions([]); return; }
+    const timer = setTimeout(() => {
+      api
+        .get<PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(search)}&pageSize=6`)
+        .then((r) => setPatientSuggestions(r.data.data))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   return (
     <div className="space-y-5 max-w-6xl">
@@ -94,12 +109,12 @@ export default function OrthoPage() {
             <div key={i} className="h-16 bg-gray-100 rounded-xl" />
           ))}
         </div>
-      ) : cases.length === 0 ? (
+      ) : cases.length === 0 && !patientSuggestions.length ? (
         <div className="text-center py-20 text-gray-400">
           <GitBranch className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p className="text-sm">لا توجد حالات تقويمية</p>
         </div>
-      ) : (
+      ) : cases.length > 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -171,6 +186,32 @@ export default function OrthoPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Patient suggestions — patients without an ortho case */}
+      {search.length >= 2 && patientSuggestions.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            مرضى مسجّلون — بدون حالة تقويمية
+          </p>
+          <div className="bg-white rounded-xl border border-dashed border-gray-300 divide-y divide-gray-100 shadow-sm">
+            {patientSuggestions.map((p) => (
+              <div key={p.id} className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <span className="font-medium text-sm text-gray-900">{p.fullName}</span>
+                  <span className="text-xs text-gray-400 font-mono ms-2">{p.patientNumber}</span>
+                </div>
+                <Link
+                  href={`/ortho/new?patientId=${p.id}&patientName=${encodeURIComponent(p.fullName)}`}
+                  className="flex items-center gap-1.5 text-xs font-medium text-clinic-teal hover:opacity-80 transition"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  إنشاء حالة تقويمية
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
       )}

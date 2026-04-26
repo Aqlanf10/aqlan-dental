@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -32,15 +32,22 @@ const inputCls = (err?: string) => cn(
 
 export default function NewSurgeryPage() {
   const router = useRouter();
+  const params = useSearchParams();
+  const defaultPatientId   = params.get("patientId")   ?? undefined;
+  const defaultPatientName = params.get("patientName")  ?? undefined;
+
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [patientSearch, setPatientSearch] = useState("");
+  const [patientSearch, setPatientSearch] = useState(
+    defaultPatientName ? `${defaultPatientName}` : ""
+  );
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: { patientId: defaultPatientId ?? "" },
   });
 
   useEffect(() => {

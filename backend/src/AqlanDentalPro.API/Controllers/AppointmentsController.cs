@@ -30,13 +30,29 @@ public class AppointmentsController(AppointmentService service) : ControllerBase
         return Ok(list);
     }
 
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<AppointmentDto>> GetById(Guid id)
+    {
+        var result = await service.GetByIdAsync(id);
+        return result == null ? NotFound(new { message = "الموعد غير موجود" }) : Ok(result);
+    }
+
     [HttpPost]
     public async Task<ActionResult<AppointmentDto>> Create([FromBody] CreateAppointmentRequest req)
     {
         var (result, error) = await service.CreateAsync(req);
         if (error != null)
             return Conflict(new { message = error });
-        return CreatedAtAction(nameof(GetToday), result);
+        return CreatedAtAction(nameof(GetById), new { id = result!.Id }, result);
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<AppointmentDto>> Update(Guid id, [FromBody] CreateAppointmentRequest req)
+    {
+        var (result, error) = await service.UpdateAsync(id, req);
+        if (error != null)
+            return error.Contains("تعارض") ? Conflict(new { message = error }) : NotFound(new { message = error });
+        return Ok(result);
     }
 
     [HttpPut("{id:guid}/status")]

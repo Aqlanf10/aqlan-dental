@@ -38,9 +38,19 @@ const inputCls = (err?: string) =>
 interface Props {
   defaultPatientId?:   string;
   defaultPatientName?: string;
+  appointmentId?:      string;
+  editDefaults?: {
+    doctorId:        string;
+    appointmentDate: string;
+    startTime:       string;
+    durationMinutes: number;
+    appointmentType: string;
+    notes?:          string;
+  };
 }
 
-export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props) {
+export function AppointmentForm({ defaultPatientId, defaultPatientName, appointmentId, editDefaults }: Props) {
+  const isEditMode = Boolean(appointmentId);
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -58,7 +68,15 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { durationMinutes: 30, patientId: defaultPatientId ?? "" },
+    defaultValues: {
+      durationMinutes: editDefaults?.durationMinutes ?? 30,
+      patientId:       defaultPatientId ?? "",
+      doctorId:        editDefaults?.doctorId ?? "",
+      appointmentDate: editDefaults?.appointmentDate ?? "",
+      startTime:       editDefaults?.startTime ?? "",
+      appointmentType: editDefaults?.appointmentType ?? "",
+      notes:           editDefaults?.notes ?? "",
+    },
   });
 
   const watchedDate   = useWatch({ control, name: "appointmentDate" });
@@ -91,7 +109,7 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
     setServerError("");
     setIsConflict(false);
     try {
-      await api.post("/api/appointments", {
+      const payload = {
         patientId:       data.patientId,
         doctorId:        data.doctorId,
         appointmentDate: data.appointmentDate,
@@ -99,7 +117,12 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
         durationMinutes: data.durationMinutes,
         appointmentType: data.appointmentType,
         notes:           data.notes,
-      });
+      };
+      if (isEditMode) {
+        await api.put(`/api/appointments/${appointmentId}`, payload);
+      } else {
+        await api.post("/api/appointments", payload);
+      }
       router.push(`/appointments?date=${data.appointmentDate}`);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { message?: string } } };
@@ -153,11 +176,12 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
             <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
             <input
               value={patientSearch}
-              onChange={(e) => { setPatientSearch(e.target.value); setShowPatientDropdown(true); }}
-              onFocus={() => patientSearch.length >= 2 && setShowPatientDropdown(true)}
+              onChange={(e) => { if (!isEditMode) { setPatientSearch(e.target.value); setShowPatientDropdown(true); } }}
+              onFocus={() => !isEditMode && patientSearch.length >= 2 && setShowPatientDropdown(true)}
               onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
               placeholder="ابحث بالاسم أو رقم المريض..."
-              className={cn(inputCls(errors.patientId?.message), "pe-9")}
+              className={cn(inputCls(errors.patientId?.message), "pe-9", isEditMode && "bg-gray-50 cursor-not-allowed")}
+              readOnly={isEditMode}
               autoComplete="off"
             />
             {showPatientDropdown && patientResults.length > 0 && (
@@ -283,7 +307,7 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
           className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
-          {saving ? "جارٍ الحفظ..." : "حفظ الموعد"}
+          {saving ? "جارٍ الحفظ..." : isEditMode ? "حفظ التعديلات" : "حفظ الموعد"}
         </button>
       </div>
     </form>

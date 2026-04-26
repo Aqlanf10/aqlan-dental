@@ -52,6 +52,39 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         return (ToDto(appointment), null);
     }
 
+    public async Task<AppointmentDto?> GetByIdAsync(Guid id)
+    {
+        var a = await repo.GetWithDetailAsync(id);
+        return a == null ? null : ToDto(a);
+    }
+
+    public async Task<(AppointmentDto? result, string? error)> UpdateAsync(
+        Guid id, CreateAppointmentRequest req)
+    {
+        var appointment = await repo.GetWithDetailAsync(id);
+        if (appointment == null) return (null, "الموعد غير موجود");
+
+        var date  = DateOnly.Parse(req.AppointmentDate);
+        var start = TimeOnly.Parse(req.StartTime);
+        var end   = start.AddMinutes(req.DurationMinutes);
+
+        if (await repo.HasConflictAsync(req.DoctorId, date, start, end, excludeId: id))
+            return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
+
+        appointment.DoctorId        = req.DoctorId;
+        appointment.AppointmentDate = date;
+        appointment.StartTime       = start;
+        appointment.EndTime         = end;
+        appointment.DurationMinutes = req.DurationMinutes;
+        appointment.AppointmentType = req.AppointmentType;
+        appointment.Specialty       = req.Specialty != null ? Enum.Parse<Specialty>(req.Specialty, true) : null;
+        appointment.Notes           = req.Notes;
+
+        repo.Update(appointment);
+        await repo.SaveChangesAsync();
+        return (ToDto(appointment), null);
+    }
+
     public async Task<(AppointmentDto? result, string? error)> UpdateStatusAsync(
         Guid id, string status)
     {

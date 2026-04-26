@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical } from "lucide-react";
+import { MoreVertical, Pencil } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
@@ -173,33 +173,43 @@ function AppointmentCard({
       </span>
 
       {/* Quick actions menu */}
-      {transitions.length > 0 && (
-        <div className="relative flex-shrink-0" ref={menuRef}>
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="p-1 rounded hover:bg-black/10 transition"
-            aria-label="خيارات"
-          >
-            <MoreVertical className="w-4 h-4" />
-          </button>
-          {menuOpen && (
-            <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[130px]">
-              {transitions.map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => {
-                    onStatusChange(a.id, value);
-                    setMenuOpen(false);
-                  }}
-                  className="w-full text-start px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <div className="relative flex-shrink-0" ref={menuRef}>
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="p-1 rounded hover:bg-black/10 transition"
+          aria-label="خيارات"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
+        {menuOpen && (
+          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+            <Link
+              href={`/appointments/${a.id}/edit`}
+              onClick={() => setMenuOpen(false)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              تعديل الموعد
+            </Link>
+            {transitions.length > 0 && (
+              <div className="border-t border-gray-100 mt-1 pt-1">
+                {transitions.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => {
+                      onStatusChange(a.id, value);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-start px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

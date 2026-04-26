@@ -50,4 +50,10 @@ public class AppointmentRepository(AppDbContext context)
 
         return await query.OrderBy(a => a.AppointmentDate).ThenBy(a => a.StartTime).ToListAsync();
     }
+
+    public async Task<Appointment?> GetWithDetailAsync(Guid id) =>
+        await DbSet
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .FirstOrDefaultAsync(a => a.Id == id);
 }

@@ -42,10 +42,11 @@ const STATUS_COLORS: Record<string, string> = {
 
 interface Props {
   anchor: string; // any date in the target week (yyyy-MM-dd)
+  doctorId?: string;
   onDateClick?: (date: string) => void;
 }
 
-export function WeekCalendar({ anchor, onDateClick }: Props) {
+export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -54,12 +55,13 @@ export function WeekCalendar({ anchor, onDateClick }: Props) {
 
   const load = useCallback(() => {
     setLoading(true);
+    const q = doctorId ? `&doctorId=${doctorId}` : "";
     api
-      .get<Appointment[]>(`/api/appointments?from=${dates[0]}&to=${dates[6]}`)
+      .get<Appointment[]>(`/api/appointments?from=${dates[0]}&to=${dates[6]}${q}`)
       .then((r) => setAppointments(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [dates[0], dates[6]]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dates[0], dates[6], doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 

@@ -1,11 +1,14 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar } from "lucide-react";
+import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
 import { formatArabicDate, cn } from "@/lib/utils";
+import api from "@/lib/api";
+
+interface Doctor { id: string; name: string; color?: string; specialty?: string; }
 
 const MONTHS_AR = [
   "يناير","فبراير","مارس","أبريل","مايو","يونيو",
@@ -22,8 +25,14 @@ function toDateStr(d: Date): string {
 type ViewMode = "day" | "week" | "month";
 
 export default function AppointmentsPage() {
-  const [date, setDate] = useState(() => toDateStr(new Date()));
-  const [view, setView] = useState<ViewMode>("day");
+  const [date, setDate]       = useState(() => toDateStr(new Date()));
+  const [view, setView]       = useState<ViewMode>("day");
+  const [doctorId, setDoctorId] = useState<string>("");
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+
+  useEffect(() => {
+    api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
+  }, []);
 
   const anchorDate = new Date(date + "T12:00:00");
 
@@ -71,6 +80,23 @@ export default function AppointmentsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Doctor filter */}
+          {doctors.length > 0 && (
+            <div className="relative flex items-center">
+              <Stethoscope className="absolute end-2.5 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+              <select
+                value={doctorId}
+                onChange={(e) => setDoctorId(e.target.value)}
+                className="pe-8 ps-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal appearance-none"
+              >
+                <option value="">كل الأطباء</option>
+                {doctors.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* View toggle */}
           <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
             <button
@@ -168,11 +194,11 @@ export default function AppointmentsPage() {
       {/* Schedule */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         {view === "day" ? (
-          <DaySchedule date={date} />
+          <DaySchedule date={date} doctorId={doctorId || undefined} />
         ) : view === "week" ? (
-          <WeekCalendar anchor={date} onDateClick={(d) => { setDate(d); setView("day"); }} />
+          <WeekCalendar anchor={date} doctorId={doctorId || undefined} onDateClick={(d) => { setDate(d); setView("day"); }} />
         ) : (
-          <MonthCalendar anchor={date} onDateClick={(d) => { setDate(d); setView("day"); }} />
+          <MonthCalendar anchor={date} doctorId={doctorId || undefined} onDateClick={(d) => { setDate(d); setView("day"); }} />
         )}
       </div>
     </div>

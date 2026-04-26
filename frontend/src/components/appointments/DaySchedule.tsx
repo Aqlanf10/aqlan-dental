@@ -30,22 +30,24 @@ const STATUS_COLORS: Record<string, string> = {
 
 interface Props {
   date: string;
+  doctorId?: string;
 }
 
-export function DaySchedule({ date }: Props) {
+export function DaySchedule({ date, doctorId }: Props) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
   const reload = () => {
     setLoading(true);
+    const q = doctorId ? `&doctorId=${doctorId}` : "";
     api
-      .get<Appointment[]>(`/api/appointments?from=${date}&to=${date}`)
+      .get<Appointment[]>(`/api/appointments?from=${date}&to=${date}${q}`)
       .then((r) => setAppointments(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { reload(); }, [date]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reload(); }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (id: string, status: string) => {
     await api.put(`/api/appointments/${id}/status`, { status }).catch(() => {});

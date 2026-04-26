@@ -18,6 +18,7 @@ const STATUS_DOT: Record<string, string> = {
 
 interface Props {
   anchor: string;           // any date in the month (YYYY-MM-DD)
+  doctorId?: string;
   onDateClick: (date: string) => void;
 }
 
@@ -25,7 +26,7 @@ function toStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function MonthCalendar({ anchor, onDateClick }: Props) {
+export function MonthCalendar({ anchor, doctorId, onDateClick }: Props) {
   const anchorDate  = new Date(anchor + "T12:00:00");
   const year        = anchorDate.getFullYear();
   const month       = anchorDate.getMonth(); // 0-based
@@ -45,11 +46,12 @@ export function MonthCalendar({ anchor, onDateClick }: Props) {
 
   useEffect(() => {
     setLoading(true);
-    api.get<Appointment[]>(`/api/appointments?from=${fromStr}&to=${toStr2}`)
+    const q = doctorId ? `&doctorId=${doctorId}` : "";
+    api.get<Appointment[]>(`/api/appointments?from=${fromStr}&to=${toStr2}${q}`)
       .then((r) => setAppointments(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [fromStr, toStr2]);
+  }, [fromStr, toStr2, doctorId]);
 
   // Group by date string
   const byDate: Record<string, Appointment[]> = {};

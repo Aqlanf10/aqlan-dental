@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, Search } from "lucide-react";
 import type { Contract } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
@@ -18,13 +18,27 @@ const STATUS_COLORS: Record<string, string> = {
 export default function ContractsPage() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   useEffect(() => {
-    api.get<Contract[]>("/api/contracts")
+    const params = new URLSearchParams({ pageSize: "100" });
+    if (statusFilter) params.set("status", statusFilter);
+    api.get<Contract[]>(`/api/contracts?${params}`)
       .then((r) => setContracts(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [statusFilter]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return contracts;
+    const term = search.trim().toLowerCase();
+    return contracts.filter(
+      (c) =>
+        c.patientName.toLowerCase().includes(term) ||
+        c.patientNumber?.toLowerCase().includes(term)
+    );
+  }, [contracts, search]);
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -41,14 +55,42 @@ export default function ContractsPage() {
         </Link>
       </div>
 
+      {/* Search + Status filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative min-w-56 flex-1">
+          <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-gray-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="بحث باسم المريض أو رقمه..."
+            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+          />
+        </div>
+        {["", "active", "completed", "cancelled"].map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={cn(
+              "px-3 py-1.5 text-sm rounded-lg border transition font-medium whitespace-nowrap",
+              statusFilter === s
+                ? "bg-clinic-teal text-white border-clinic-teal"
+                : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            )}
+          >
+            {s === "" ? "الكل" : STATUS_LABELS[s]}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="space-y-2 animate-pulse">
           {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl" />)}
         </div>
-      ) : contracts.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">لا توجد عقود</p>
+          <p className="text-sm">{search ? "لا توجد نتائج مطابقة" : "لا توجد عقود"}</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -62,7 +104,7 @@ export default function ContractsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {contracts.map((c) => (
+                {filtered.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3">
                       <Link href={`/finance/contracts/${c.id}`} className="font-medium text-gray-900 hover:text-clinic-teal transition">
@@ -90,6 +132,11 @@ export default function ContractsPage() {
               </tbody>
             </table>
           </div>
+          {filtered.length > 0 && (
+            <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
+              {filtered.length} عقد
+            </div>
+          )}
         </div>
       )}
     </div>

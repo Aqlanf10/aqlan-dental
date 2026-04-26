@@ -2,21 +2,23 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity, ClipboardCheck } from "lucide-react";
+import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity, ClipboardCheck, ListChecks, FileText, Plus, Trash2, Save } from "lucide-react";
 import type { OrthoCase, TreatmentStage, OrthoVisit } from "@/types/ortho";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
 
-type Tab = "info" | "exam" | "stages" | "visits" | "finance";
+type Tab = "info" | "exam" | "problems" | "plan" | "stages" | "visits" | "finance";
 
 const TABS: { key: Tab; label: string; icon: typeof User }[] = [
-  { key: "info",    label: "المعلومات",     icon: User },
-  { key: "exam",    label: "الفحص السريري", icon: ClipboardCheck },
-  { key: "stages",  label: "مراحل العلاج", icon: GitBranch },
-  { key: "visits",  label: "سجل الزيارات", icon: Calendar },
-  { key: "finance", label: "العقد المالي",  icon: Wallet },
+  { key: "info",     label: "المعلومات",     icon: User },
+  { key: "exam",     label: "الفحص السريري", icon: ClipboardCheck },
+  { key: "problems", label: "قائمة المشاكل", icon: ListChecks },
+  { key: "plan",     label: "خطة العلاج",    icon: FileText },
+  { key: "stages",   label: "مراحل العلاج",  icon: GitBranch },
+  { key: "visits",   label: "سجل الزيارات",  icon: Calendar },
+  { key: "finance",  label: "العقد المالي",   icon: Wallet },
 ];
 
 interface ClinicalExam {
@@ -307,6 +309,215 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
   );
 }
 
+// ─── Problem List Tab ─────────────────────────────────────────────────────────
+interface ProblemItem { id: string; category: string; description: string; severity?: string; }
+
+const PROBLEM_CATEGORIES = [
+  { value: "skeletal", label: "هيكلية" },
+  { value: "dental", label: "سنية" },
+  { value: "soft_tissue", label: "أنسجة رخوة" },
+  { value: "functional", label: "وظيفية" },
+  { value: "space", label: "فراغات" },
+];
+const CATEGORY_LABELS: Record<string, string> = { skeletal:"هيكلية", dental:"سنية", soft_tissue:"أنسجة رخوة", functional:"وظيفية", space:"فراغات" };
+const SEVERITY_COLORS: Record<string, string> = { mild:"bg-yellow-100 text-yellow-700", moderate:"bg-orange-100 text-orange-700", severe:"bg-red-100 text-red-700" };
+
+function ProblemListTab({ caseId }: { caseId: string }) {
+  const inputCls = "px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const [items, setItems] = useState<ProblemItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ category: "skeletal", description: "", severity: "" });
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    api.get<ProblemItem[]>(`/api/ortho-cases/${caseId}/problem-list`)
+      .then((r) => setItems(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [caseId]);
+
+  const handleAdd = async () => {
+    if (!form.description.trim()) return;
+    setAdding(true);
+    try {
+      const { data } = await api.post<ProblemItem>(`/api/ortho-cases/${caseId}/problem-list`, form);
+      setItems((prev) => [...prev, data]);
+      setForm({ category: "skeletal", description: "", severity: "" });
+    } catch {} finally { setAdding(false); }
+  };
+
+  const handleDelete = async (itemId: string) => {
+    try {
+      await api.delete(`/api/ortho-cases/${caseId}/problem-list/${itemId}`);
+      setItems((prev) => prev.filter((i) => i.id !== itemId));
+    } catch {}
+  };
+
+  if (loading) return <div className="animate-pulse h-40 bg-gray-100 rounded-xl" />;
+
+  return (
+    <div className="space-y-4">
+      {/* Add form */}
+      <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-gray-700">إضافة مشكلة جديدة</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className={inputCls}>
+            {PROBLEM_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+          <input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            placeholder="وصف المشكلة..." className={`${inputCls} md:col-span-1`} />
+          <select value={form.severity} onChange={(e) => setForm((f) => ({ ...f, severity: e.target.value }))} className={inputCls}>
+            <option value="">الشدة (اختياري)</option>
+            <option value="mild">خفيفة</option>
+            <option value="moderate">متوسطة</option>
+            <option value="severe">شديدة</option>
+          </select>
+        </div>
+        <button onClick={handleAdd} disabled={adding || !form.description.trim()}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+        >
+          <Plus className="w-4 h-4" />
+          {adding ? "جاري الإضافة..." : "إضافة"}
+        </button>
+      </div>
+
+      {/* List */}
+      {items.length === 0 ? (
+        <div className="text-center py-10 text-gray-400 text-sm">
+          <ListChecks className="w-10 h-10 mx-auto mb-2 opacity-30" />
+          لا توجد مشاكل مسجّلة
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div key={item.id} className="flex items-start justify-between gap-3 bg-white border border-gray-100 rounded-lg px-4 py-3">
+              <div className="flex items-start gap-3">
+                <span className="text-xs font-medium px-2 py-0.5 rounded bg-gray-100 text-gray-600 mt-0.5 whitespace-nowrap">
+                  {CATEGORY_LABELS[item.category] ?? item.category}
+                </span>
+                <span className="text-sm text-gray-900">{item.description}</span>
+                {item.severity && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SEVERITY_COLORS[item.severity] ?? "bg-gray-100 text-gray-500"}`}>
+                    {item.severity === "mild" ? "خفيفة" : item.severity === "moderate" ? "متوسطة" : "شديدة"}
+                  </span>
+                )}
+              </div>
+              <button onClick={() => handleDelete(item.id)} className="text-gray-300 hover:text-red-500 transition flex-shrink-0">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Treatment Plan Tab ───────────────────────────────────────────────────────
+interface TreatmentPlanData {
+  applianceType?: string; bracketSystem?: string; initialWire?: string;
+  extractionPlan?: string; anchoragePlan?: string; useTads?: boolean;
+  useElastics?: boolean; expectedDurationMonths?: number; retentionPlan?: string;
+  treatmentGoals?: string; risksLimitations?: string;
+  isApproved?: boolean; approvedByName?: string; approvedAt?: string;
+}
+
+function TreatmentPlanTab({ caseId }: { caseId: string }) {
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const [form, setForm] = useState<TreatmentPlanData>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get<TreatmentPlanData | null>(`/api/ortho-cases/${caseId}/treatment-plan`)
+      .then((r) => { if (r.data) setForm(r.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [caseId]);
+
+  const set = <K extends keyof TreatmentPlanData>(key: K, value: TreatmentPlanData[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const handleSave = async () => {
+    setSaving(true); setSaved(false);
+    try {
+      await api.put(`/api/ortho-cases/${caseId}/treatment-plan`, form);
+      setSaved(true); setTimeout(() => setSaved(false), 3000);
+    } catch {} finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="animate-pulse h-64 bg-gray-100 rounded-xl" />;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">نوع الجهاز</label>
+          <input value={form.applianceType ?? ""} onChange={(e) => set("applianceType", e.target.value)} className={inputCls} placeholder="MBT 0.022 / Invisalign..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">نظام البراكيت</label>
+          <input value={form.bracketSystem ?? ""} onChange={(e) => set("bracketSystem", e.target.value)} className={inputCls} placeholder="MBT / Roth / Damon..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">السلك الأولي</label>
+          <input value={form.initialWire ?? ""} onChange={(e) => set("initialWire", e.target.value)} className={inputCls} placeholder="0.014 NiTi..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">المدة المتوقعة (أشهر)</label>
+          <input type="number" value={form.expectedDurationMonths ?? ""} onChange={(e) => set("expectedDurationMonths", e.target.value ? Number(e.target.value) : undefined)} className={inputCls} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">خطة الخلع</label>
+          <input value={form.extractionPlan ?? ""} onChange={(e) => set("extractionPlan", e.target.value)} className={inputCls} placeholder="بدون خلع / خلع 4 أضراس..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">خطة التثبيت (Anchorage)</label>
+          <input value={form.anchoragePlan ?? ""} onChange={(e) => set("anchoragePlan", e.target.value)} className={inputCls} />
+        </div>
+        <div className="flex items-center gap-6 py-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.useTads ?? false} onChange={(e) => set("useTads", e.target.checked)} className="rounded" />
+            استخدام TADs
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.useElastics ?? false} onChange={(e) => set("useElastics", e.target.checked)} className="rounded" />
+            استخدام مطاطات
+          </label>
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium text-gray-500 mb-1">أهداف العلاج</label>
+          <textarea rows={3} value={form.treatmentGoals ?? ""} onChange={(e) => set("treatmentGoals", e.target.value)} className={inputCls} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium text-gray-500 mb-1">خطة الاحتفاظ</label>
+          <textarea rows={2} value={form.retentionPlan ?? ""} onChange={(e) => set("retentionPlan", e.target.value)} className={inputCls} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium text-gray-500 mb-1">المخاطر والقيود</label>
+          <textarea rows={2} value={form.risksLimitations ?? ""} onChange={(e) => set("risksLimitations", e.target.value)} className={inputCls} />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-gray-100 pt-4">
+        <button onClick={handleSave} disabled={saving}
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+        >
+          <Save className="w-4 h-4" />
+          {saving ? "جاري الحفظ..." : "حفظ الخطة"}
+        </button>
+        {saved && <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>}
+        {form.isApproved && (
+          <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full">
+            معتمدة {form.approvedByName ? `بواسطة ${form.approvedByName}` : ""}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function OrthoCaseDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [orthoCase, setOrthoCase] = useState<OrthoCase | null>(null);
@@ -483,6 +694,14 @@ export default function OrthoCaseDetailPage() {
 
           {activeTab === "exam" && (
             <ClinicalExamTab caseId={id} initial={clinicalExam} />
+          )}
+
+          {activeTab === "problems" && (
+            <ProblemListTab caseId={id} />
+          )}
+
+          {activeTab === "plan" && (
+            <TreatmentPlanTab caseId={id} />
           )}
 
           {activeTab === "stages" && (

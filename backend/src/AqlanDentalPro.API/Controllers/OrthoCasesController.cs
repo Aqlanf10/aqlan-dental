@@ -45,9 +45,10 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? doctorId = null,
         [FromQuery] string? status = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? patientId = null)
     {
-        var result = await service.GetListAsync(page, pageSize, doctorId, status, search);
+        var result = await service.GetListAsync(page, pageSize, doctorId, status, search, patientId);
         return Ok(result);
     }
 
@@ -171,9 +172,135 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         await db.SaveChangesAsync();
         return Ok(new { existing.Id, message = "تم حفظ الفحص السريري" });
     }
+
+    // ─── Problem List ────────────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/problem-list")]
+    public async Task<IActionResult> GetProblemList(Guid id)
+    {
+        var items = await db.ProblemListItems
+            .Where(p => p.OrthoCaseId == id)
+            .OrderBy(p => p.SortOrder).ThenBy(p => p.CreatedAt)
+            .Select(p => new { p.Id, p.Category, p.Description, p.Severity, p.SortOrder })
+            .ToListAsync();
+        return Ok(items);
+    }
+
+    [HttpPost("{id:guid}/problem-list")]
+    public async Task<IActionResult> AddProblemItem(Guid id, [FromBody] AddProblemItemRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var maxOrder = await db.ProblemListItems.Where(p => p.OrthoCaseId == id).MaxAsync(p => (int?)p.SortOrder) ?? 0;
+        var item = new ProblemListItem
+        {
+            OrthoCaseId = id,
+            Category    = req.Category,
+            Description = req.Description,
+            Severity    = req.Severity,
+            SortOrder   = maxOrder + 1,
+        };
+        db.ProblemListItems.Add(item);
+        await db.SaveChangesAsync();
+        return Ok(new { item.Id, item.Category, item.Description, item.Severity, item.SortOrder });
+    }
+
+    [HttpDelete("{id:guid}/problem-list/{itemId:guid}")]
+    public async Task<IActionResult> DeleteProblemItem(Guid id, Guid itemId)
+    {
+        var item = await db.ProblemListItems.FirstOrDefaultAsync(p => p.Id == itemId && p.OrthoCaseId == id);
+        if (item is null) return NotFound();
+        db.ProblemListItems.Remove(item);
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم الحذف" });
+    }
+
+    // ─── Treatment Plan ──────────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/treatment-plan")]
+    public async Task<IActionResult> GetTreatmentPlan(Guid id)
+    {
+        var plan = await db.TreatmentPlans
+            .Include(p => p.ApprovedByDoctor)
+            .Where(p => p.OrthoCaseId == id)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (plan is null) return Ok(null);
+        return Ok(new
+        {
+            plan.Id,
+            plan.PlanVersion,
+            plan.IsApproved,
+            plan.ApplianceType,
+            plan.BracketSystem,
+            plan.InitialWire,
+            plan.ExtractionPlan,
+            plan.AnchoragePlan,
+            plan.UseTads,
+            plan.UseElastics,
+            plan.ExpectedDurationMonths,
+            plan.RetentionPlan,
+            plan.TreatmentGoals,
+            plan.RisksLimitations,
+            ApprovedByName = plan.ApprovedByDoctor?.Name,
+            ApprovedAt     = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
+        });
+    }
+
+    [HttpPut("{id:guid}/treatment-plan")]
+    public async Task<IActionResult> UpsertTreatmentPlan(Guid id, [FromBody] UpsertTreatmentPlanRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id).OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
+        if (existing is null)
+        {
+            existing = new TreatmentPlan { OrthoCaseId = id };
+            db.TreatmentPlans.Add(existing);
+        }
+
+        existing.ApplianceType          = req.ApplianceType;
+        existing.BracketSystem          = req.BracketSystem;
+        existing.InitialWire            = req.InitialWire;
+        existing.ExtractionPlan         = req.ExtractionPlan;
+        existing.AnchoragePlan          = req.AnchoragePlan;
+        existing.UseTads                = req.UseTads;
+        existing.UseElastics            = req.UseElastics;
+        existing.ExpectedDurationMonths = req.ExpectedDurationMonths;
+        existing.RetentionPlan          = req.RetentionPlan;
+        existing.TreatmentGoals         = req.TreatmentGoals;
+        existing.RisksLimitations       = req.RisksLimitations;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم حفظ خطة العلاج" });
+    }
 }
 
 public class UpdateStageRequest
 {
     public string Status { get; set; } = string.Empty;
+}
+
+public sealed class AddProblemItemRequest
+{
+    public string Category    { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public string? Severity   { get; init; }
+}
+
+public sealed class UpsertTreatmentPlanRequest
+{
+    public string? ApplianceType          { get; init; }
+    public string? BracketSystem          { get; init; }
+    public string? InitialWire            { get; init; }
+    public string? ExtractionPlan         { get; init; }
+    public string? AnchoragePlan          { get; init; }
+    public bool UseTads                   { get; init; }
+    public bool UseElastics               { get; init; }
+    public int? ExpectedDurationMonths    { get; init; }
+    public string? RetentionPlan          { get; init; }
+    public string? TreatmentGoals         { get; init; }
+    public string? RisksLimitations       { get; init; }
 }

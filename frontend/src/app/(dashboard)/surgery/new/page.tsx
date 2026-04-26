@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -30,7 +30,7 @@ const inputCls = (err?: string) => cn(
   err ? "border-red-400" : "border-gray-300"
 );
 
-export default function NewSurgeryPage() {
+function NewSurgeryForm() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -163,5 +163,13 @@ export default function NewSurgeryPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function NewSurgeryPage() {
+  return (
+    <Suspense fallback={<div className="animate-pulse h-96 bg-gray-100 rounded-xl" />}>
+      <NewSurgeryForm />
+    </Suspense>
   );
 }

@@ -8,7 +8,9 @@ public record DashboardStats(
     int AppointmentsToday,
     int NewPatientsToday,
     int ActiveOrthoCases,
-    int PendingLabOrders);
+    int PendingLabOrders,
+    int OverdueContractsCount,
+    decimal TotalRevenueMTD);
 
 public class DashboardCharts
 {
@@ -46,12 +48,34 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
 
         var labQuery = db.LabOrders.Where(l => l.Status == "sent" || l.Status == "manufacturing");
 
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var revenueQuery = db.Payments.Where(p => p.PaymentDate >= monthStart && p.PaymentDate <= today);
+
+        // Overdue: active contracts where expected paid > actual paid
+        var activeContracts = await db.Contracts
+            .Include(c => c.Payments)
+            .Where(c => c.Status == "active" && c.StartDate.HasValue && c.InstallmentsCount > 0)
+            .ToListAsync();
+
+        var overdueCount = activeContracts.Count(c =>
+        {
+            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12)
+                                + (today.Month - c.StartDate.Value.Month);
+            var expectedPaid = c.DownPayment
+                + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
+            var actualPaid = c.Payments.Sum(p => p.Amount);
+            return expectedPaid - actualPaid > 0;
+        });
+
         var appointmentsToday  = await apptQuery.CountAsync();
         var newPatientsToday   = await patientQuery.CountAsync();
         var activeOrthoCases   = await orthoQuery.CountAsync();
         var pendingLabOrders   = await labQuery.CountAsync();
+        var totalRevenueMTD    = await revenueQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
 
-        return new DashboardStats(appointmentsToday, newPatientsToday, activeOrthoCases, pendingLabOrders);
+        return new DashboardStats(
+            appointmentsToday, newPatientsToday, activeOrthoCases, pendingLabOrders,
+            overdueCount, totalRevenueMTD);
     }
 
     public async Task<DashboardCharts> GetChartsAsync()

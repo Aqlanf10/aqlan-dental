@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Calendar, Users, Activity, FlaskConical } from "lucide-react";
+import { Calendar, Users, Activity, FlaskConical, AlertTriangle, Wallet } from "lucide-react";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { TodaySchedule } from "@/components/dashboard/TodaySchedule";
@@ -35,7 +35,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
         <StatsCard
           title="مواعيد اليوم"
           value={loading ? "—" : (stats?.appointmentsToday ?? 0)}
@@ -63,6 +63,22 @@ export default function DashboardPage() {
           icon={FlaskConical}
           color="green"
           description="قيد التصنيع أو الشحن"
+        />
+        <StatsCard
+          title="إيرادات الشهر"
+          value={loading ? "—" : (stats ? `${stats.totalRevenueMTD.toLocaleString()} ر.ي` : 0)}
+          icon={Wallet}
+          color="teal"
+          description="المحصّل هذا الشهر"
+          href="/finance"
+        />
+        <StatsCard
+          title="عقود متأخرة"
+          value={loading ? "—" : (stats?.overdueContractsCount ?? 0)}
+          icon={AlertTriangle}
+          color={stats?.overdueContractsCount ? "red" : "green"}
+          description="أقساط متأخرة السداد"
+          href="/finance/overdue"
         />
       </div>
 

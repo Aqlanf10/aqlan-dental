@@ -1,13 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, Search } from "lucide-react";
+import { Save, Search, AlertTriangle, CalendarDays } from "lucide-react";
+import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { PatientListItem } from "@/types/patient";
+import type { PaginatedResponse } from "@/types/api";
 
 interface Doctor {
   id: string;
@@ -42,6 +44,7 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
+  const [isConflict, setIsConflict] = useState(false);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [patientSearch, setPatientSearch] = useState(defaultPatientName ?? "");
   const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
@@ -51,11 +54,15 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
     register,
     handleSubmit,
     setValue,
+    control,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { durationMinutes: 30, patientId: defaultPatientId ?? "" },
   });
+
+  const watchedDate   = useWatch({ control, name: "appointmentDate" });
+  const watchedDoctor = useWatch({ control, name: "doctorId" });
 
   // Load doctors
   useEffect(() => {
@@ -66,8 +73,8 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
   useEffect(() => {
     if (patientSearch.length < 2) { setPatientResults([]); return; }
     const t = setTimeout(() => {
-      api.get<{ items: PatientListItem[] }>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
-        .then((r) => setPatientResults(r.data.items))
+      api.get<PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
+        .then((r) => setPatientResults(r.data.data))
         .catch(() => {});
     }, 300);
     return () => clearTimeout(t);
@@ -82,6 +89,7 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
   const onSubmit = async (data: FormData) => {
     setSaving(true);
     setServerError("");
+    setIsConflict(false);
     try {
       await api.post("/api/appointments", {
         patientId:       data.patientId,
@@ -94,8 +102,15 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
       });
       router.push(`/appointments?date=${data.appointmentDate}`);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setServerError(msg ?? "حدث خطأ أثناء الحفظ");
+      const axiosErr = err as { response?: { status?: number; data?: { message?: string } } };
+      const status = axiosErr?.response?.status;
+      const msg    = axiosErr?.response?.data?.message;
+      if (status === 409) {
+        setIsConflict(true);
+        setServerError(msg ?? "يوجد تعارض مع موعد آخر في هذا الوقت");
+      } else {
+        setServerError(msg ?? "حدث خطأ أثناء الحفظ");
+      }
     } finally {
       setSaving(false);
     }
@@ -104,9 +119,28 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName }: Props)
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {serverError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
-          {serverError}
-        </div>
+        isConflict ? (
+          <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800">تعارض في المواعيد</p>
+              <p className="text-sm text-amber-700 mt-0.5">{serverError}</p>
+              {watchedDate && (
+                <Link
+                  href={`/appointments?date=${watchedDate}${watchedDoctor ? `&doctorId=${watchedDoctor}` : ""}`}
+                  className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                >
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  عرض جدول اليوم للاطلاع على الأوقات المتاحة
+                </Link>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+            {serverError}
+          </div>
+        )
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">

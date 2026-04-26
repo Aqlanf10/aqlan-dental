@@ -72,7 +72,7 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       durationMinutes: editDefaults?.durationMinutes ?? 30,
       patientId:       defaultPatientId ?? "",
       doctorId:        editDefaults?.doctorId ?? "",
-      appointmentDate: editDefaults?.appointmentDate ?? "",
+      appointmentDate: editDefaults?.appointmentDate ?? new Date().toISOString().slice(0, 10),
       startTime:       editDefaults?.startTime ?? "",
       appointmentType: editDefaults?.appointmentType ?? "",
       notes:           editDefaults?.notes ?? "",
@@ -246,7 +246,6 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
             {...register("appointmentDate")}
             type="date"
             className={inputCls(errors.appointmentDate?.message)}
-            defaultValue={new Date().toISOString().slice(0, 10)}
           />
           {errors.appointmentDate && (
             <p className="mt-1 text-xs text-red-600">{errors.appointmentDate.message}</p>

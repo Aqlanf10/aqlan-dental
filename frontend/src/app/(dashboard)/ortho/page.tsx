@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Plus, GitBranch } from "lucide-react";
+import { Plus, GitBranch, Search } from "lucide-react";
 import type { OrthoCase } from "@/types/ortho";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal } from "@/lib/utils";
@@ -24,15 +24,23 @@ export default function OrthoPage() {
   const [cases, setCases] = useState<OrthoCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
+  const [search, setSearch] = useState("");
 
-  useEffect(() => {
+  const fetchCases = useCallback(async () => {
     setLoading(true);
-    const params = statusFilter ? `?status=${statusFilter}` : "";
-    api.get<OrthoCase[]>(`/api/ortho-cases${params}`)
+    const params = new URLSearchParams({ pageSize: "50" });
+    if (statusFilter) params.set("status", statusFilter);
+    if (search)       params.set("search", search);
+    api.get<OrthoCase[]>(`/api/ortho-cases?${params}`)
       .then((r) => setCases(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [statusFilter]);
+  }, [statusFilter, search]);
+
+  useEffect(() => {
+    const timer = setTimeout(fetchCases, 300);
+    return () => clearTimeout(timer);
+  }, [fetchCases]);
 
   return (
     <div className="space-y-5 max-w-6xl">
@@ -51,8 +59,18 @@ export default function OrthoPage() {
         </Link>
       </div>
 
-      {/* Filter */}
+      {/* Search + Filter */}
       <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative min-w-56">
+          <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-gray-400" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="بحث بالاسم أو رقم الحالة..."
+            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+          />
+        </div>
         {["", "active", "completed", "on_hold"].map((s) => (
           <button
             key={s}

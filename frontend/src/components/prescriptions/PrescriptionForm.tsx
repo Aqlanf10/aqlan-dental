@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, Search, Plus, Trash2 } from "lucide-react";
+import { Save, Plus, Trash2 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 interface Doctor { id: string; name: string; }
 
@@ -54,9 +55,6 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [patientSearch, setPatientSearch] = useState(defaultPatientName ?? "");
-  const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
 
   const { register, handleSubmit, setValue, control, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -71,22 +69,6 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
   useEffect(() => {
     api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    if (patientSearch.length < 2 || defaultPatientId) { setPatientResults([]); return; }
-    const t = setTimeout(() => {
-      api.get<import("@/types/api").PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
-        .then((r) => setPatientResults(r.data.data))
-        .catch(() => {});
-    }, 300);
-    return () => clearTimeout(t);
-  }, [patientSearch, defaultPatientId]);
-
-  const selectPatient = (p: PatientListItem) => {
-    setValue("patientId", p.id);
-    setPatientSearch(`${p.fullName} (${p.patientNumber})`);
-    setShowDropdown(false);
-  };
 
   const quickAdd = (drug: typeof COMMON_DRUGS[0]) => {
     append({ ...drug, notes: "" });
@@ -128,34 +110,12 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               المريض <span className="text-red-500">*</span>
             </label>
-            {defaultPatientId ? (
-              <input value={patientSearch} readOnly className={cn(inputCls(), "bg-gray-50")} />
-            ) : (
-              <div className="relative">
-                <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
-                <input
-                  value={patientSearch}
-                  onChange={(e) => { setPatientSearch(e.target.value); setShowDropdown(true); }}
-                  onFocus={() => patientSearch.length >= 2 && setShowDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-                  placeholder="ابحث بالاسم أو رقم المريض..."
-                  className={cn(inputCls(errors.patientId?.message), "pe-9")}
-                  autoComplete="off"
-                />
-                {showDropdown && patientResults.length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white rounded-lg border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
-                    {patientResults.map((p) => (
-                      <button key={p.id} type="button" onMouseDown={() => selectPatient(p)}
-                        className="w-full text-start px-3 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between"
-                      >
-                        <span className="font-medium">{p.fullName}</span>
-                        <span className="text-xs text-gray-400 font-mono">{p.patientNumber}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <PatientCombobox
+              defaultDisplayValue={defaultPatientName ?? ""}
+              onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
+              error={errors.patientId?.message}
+              readOnly={!!defaultPatientId}
+            />
             <input type="hidden" {...register("patientId")} />
             {errors.patientId && <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>}
           </div>

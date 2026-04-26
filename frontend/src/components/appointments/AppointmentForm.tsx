@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, Search, AlertTriangle, CalendarDays } from "lucide-react";
+import { Save, AlertTriangle, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { PatientListItem } from "@/types/patient";
-import type { PaginatedResponse } from "@/types/api";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 interface Doctor {
   id: string;
@@ -56,9 +56,6 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const [serverError, setServerError] = useState("");
   const [isConflict, setIsConflict] = useState(false);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [patientSearch, setPatientSearch] = useState(defaultPatientName ?? "");
-  const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
-  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const {
     register,
@@ -86,23 +83,6 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   useEffect(() => {
     api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
   }, []);
-
-  // Patient search (debounced)
-  useEffect(() => {
-    if (patientSearch.length < 2) { setPatientResults([]); return; }
-    const t = setTimeout(() => {
-      api.get<PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
-        .then((r) => setPatientResults(r.data.data))
-        .catch(() => {});
-    }, 300);
-    return () => clearTimeout(t);
-  }, [patientSearch]);
-
-  const selectPatient = (p: PatientListItem) => {
-    setValue("patientId", p.id);
-    setPatientSearch(`${p.fullName} (${p.patientNumber})`);
-    setShowPatientDropdown(false);
-  };
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -167,39 +147,17 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Patient search */}
+        {/* Patient */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
             المريض <span className="text-red-500">*</span>
           </label>
-          <div className="relative">
-            <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
-            <input
-              value={patientSearch}
-              onChange={(e) => { if (!isEditMode) { setPatientSearch(e.target.value); setShowPatientDropdown(true); } }}
-              onFocus={() => !isEditMode && patientSearch.length >= 2 && setShowPatientDropdown(true)}
-              onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
-              placeholder="ابحث بالاسم أو رقم المريض..."
-              className={cn(inputCls(errors.patientId?.message), "pe-9", isEditMode && "bg-gray-50 cursor-not-allowed")}
-              readOnly={isEditMode}
-              autoComplete="off"
-            />
-            {showPatientDropdown && patientResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white rounded-lg border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
-                {patientResults.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onMouseDown={() => selectPatient(p)}
-                    className="w-full text-start px-3 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between"
-                  >
-                    <span className="font-medium">{p.fullName}</span>
-                    <span className="text-xs text-gray-400 font-mono">{p.patientNumber}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <PatientCombobox
+            defaultDisplayValue={defaultPatientName ?? ""}
+            onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
+            error={errors.patientId?.message}
+            readOnly={isEditMode}
+          />
           {errors.patientId && (
             <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>
           )}

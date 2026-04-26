@@ -4,9 +4,10 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, Search } from "lucide-react";
+import { Save } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { CreateContractRequest } from "@/types/finance";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -38,9 +39,6 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
-  const [patientSearch, setPatientSearch] = useState(defaultPatientName ?? "");
-  const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
-  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -57,22 +55,6 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
   const calculatedInstallment = installmentsCount > 0 && netAmount > 0
     ? Math.ceil(netAmount / installmentsCount)
     : 0;
-
-  useEffect(() => {
-    if (patientSearch.length < 2) { setPatientResults([]); return; }
-    const t = setTimeout(() => {
-      api.get<import("@/types/api").PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
-        .then((r) => setPatientResults(r.data.data))
-        .catch(() => {});
-    }, 300);
-    return () => clearTimeout(t);
-  }, [patientSearch]);
-
-  const selectPatient = (p: PatientListItem) => {
-    setValue("patientId", p.id);
-    setPatientSearch(`${p.fullName} (${p.patientNumber})`);
-    setShowPatientDropdown(false);
-  };
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -110,30 +92,11 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
         {/* Patient */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
-          <div className="relative">
-            <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
-            <input
-              value={patientSearch}
-              onChange={(e) => { setPatientSearch(e.target.value); setShowPatientDropdown(true); }}
-              onFocus={() => patientSearch.length >= 2 && setShowPatientDropdown(true)}
-              onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
-              placeholder="ابحث بالاسم أو رقم المريض..."
-              className={cn(inputCls(errors.patientId?.message), "pe-9")}
-              autoComplete="off"
-            />
-            {showPatientDropdown && patientResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white rounded-lg border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
-                {patientResults.map((p) => (
-                  <button key={p.id} type="button" onMouseDown={() => selectPatient(p)}
-                    className="w-full text-start px-3 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between"
-                  >
-                    <span className="font-medium">{p.fullName}</span>
-                    <span className="text-xs text-gray-400 font-mono">{p.patientNumber}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <PatientCombobox
+            defaultDisplayValue={defaultPatientName ?? ""}
+            onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
+            error={errors.patientId?.message}
+          />
           <input type="hidden" {...register("patientId")} />
           {errors.patientId && <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>}
         </div>

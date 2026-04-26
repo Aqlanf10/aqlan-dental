@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Search } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { CreateLabOrderRequest, LabOrderPriority } from "@/types/lab";
 import type { PatientListItem } from "@/types/patient";
 import { cn } from "@/lib/utils";
+import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 interface Props {
   onClose: () => void;
@@ -15,8 +16,7 @@ interface Props {
 
 export function NewLabOrderModal({ onClose }: Props) {
   const queryClient = useQueryClient();
-  const [patientSearch, setPatientSearch] = useState("");
-  const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<CreateLabOrderRequest, "patientId">>({
     applianceType: "",
     labName: "",
@@ -24,18 +24,6 @@ export function NewLabOrderModal({ onClose }: Props) {
     expectedDate: "",
     priority: "normal",
     instructions: "",
-  });
-
-  const { data: patients } = useQuery({
-    queryKey: ["patients-search", patientSearch],
-    queryFn: async () => {
-      if (patientSearch.trim().length < 2) return [];
-      const res = await api.get<{ data: PatientListItem[] }>(
-        `/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`
-      );
-      return res.data.data;
-    },
-    enabled: patientSearch.trim().length >= 2,
   });
 
   const mutation = useMutation({
@@ -54,10 +42,10 @@ export function NewLabOrderModal({ onClose }: Props) {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedPatient) return;
+    if (!selectedPatientId) return;
     mutation.mutate({
       ...form,
-      patientId: selectedPatient.id,
+      patientId: selectedPatientId,
       sentDate: form.sentDate || undefined,
       expectedDate: form.expectedDate || undefined,
     });
@@ -80,47 +68,10 @@ export function NewLabOrderModal({ onClose }: Props) {
           {/* Patient search */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-gray-700">المريض *</label>
-            {selectedPatient ? (
-              <div className="flex items-center justify-between border border-green-300 bg-green-50 rounded-lg px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{selectedPatient.fullName}</p>
-                  <p className="text-xs text-gray-500">{selectedPatient.patientNumber}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setSelectedPatient(null); setPatientSearch(""); }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  value={patientSearch}
-                  onChange={(e) => setPatientSearch(e.target.value)}
-                  placeholder="ابحث باسم المريض أو رقمه..."
-                  className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                />
-                {patients && patients.length > 0 && (
-                  <ul className="absolute z-10 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                    {patients.map((p) => (
-                      <li key={p.id}>
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedPatient(p); setPatientSearch(""); }}
-                          className="w-full text-right px-3 py-2.5 hover:bg-gray-50 text-sm"
-                        >
-                          <span className="font-medium">{p.fullName}</span>
-                          <span className="text-gray-400 text-xs mr-2">{p.patientNumber}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+            <PatientCombobox
+              defaultDisplayValue=""
+              onSelect={(p: PatientListItem) => setSelectedPatientId(p.id)}
+            />
           </div>
 
           {/* Appliance type */}
@@ -212,7 +163,7 @@ export function NewLabOrderModal({ onClose }: Props) {
             </button>
             <button
               type="submit"
-              disabled={!selectedPatient || !form.applianceType || mutation.isPending}
+              disabled={!selectedPatientId || !form.applianceType || mutation.isPending}
               className="flex-1 bg-cyan-700 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-cyan-800 transition-colors disabled:opacity-50"
             >
               {mutation.isPending ? "جارٍ الإنشاء..." : "إنشاء الطلب"}

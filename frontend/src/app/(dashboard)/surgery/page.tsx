@@ -164,7 +164,8 @@ export default function SurgeryPage() {
                         {STATUS_LABELS[c.status] ?? c.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 flex items-center gap-2">
+                      <Link href={`/surgery/${c.id}`} className="text-xs text-clinic-teal hover:underline font-medium">عرض</Link>
                       {c.status === "scheduled" && (
                         <button onClick={() => handleStatus(c.id, "in_progress")}
                           className="text-xs text-yellow-700 hover:underline font-medium"

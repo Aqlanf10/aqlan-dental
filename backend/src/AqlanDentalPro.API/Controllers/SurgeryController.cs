@@ -38,6 +38,20 @@ public sealed class UpdateSurgeryStatusRequest
     public string Status { get; init; } = string.Empty;
 }
 
+public sealed class UpsertPreopRequest
+{
+    public string? SurgeryDate { get; init; }
+    public string? SurgeryLocation { get; init; }
+    public string? AnesthesiaType { get; init; }
+    public bool ConsentSigned { get; init; }
+    public Guid? DoctorId { get; init; }
+}
+
+public sealed class UpsertPostopRequest
+{
+    public string? Instructions { get; init; }
+}
+
 public sealed class UpdateSurgeryStatusRequestValidator : AbstractValidator<UpdateSurgeryStatusRequest>
 {
     private static readonly HashSet<string> ValidStatuses =
@@ -176,5 +190,75 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         surgery.IsActive = false;
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف الحالة بنجاح" });
+    }
+
+    [HttpGet("{id:guid}/preop")]
+    public async Task<IActionResult> GetPreop(Guid id)
+    {
+        var report = await db.PreopReports
+            .Include(p => p.Doctor)
+            .FirstOrDefaultAsync(p => p.SurgeryCaseId == id);
+        if (report is null)
+            return Ok(null);
+        return Ok(new {
+            report.Id,
+            SurgeryDate     = report.SurgeryDate?.ToString("yyyy-MM-dd"),
+            report.SurgeryLocation,
+            report.AnesthesiaType,
+            report.ConsentSigned,
+            DoctorName      = report.Doctor?.Name,
+            report.DoctorId,
+        });
+    }
+
+    [HttpPut("{id:guid}/preop")]
+    public async Task<IActionResult> UpsertPreop(Guid id, [FromBody] UpsertPreopRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.PreopReports.FirstOrDefaultAsync(p => p.SurgeryCaseId == id);
+        if (existing is null)
+        {
+            existing = new PreopReport { SurgeryCaseId = id };
+            db.PreopReports.Add(existing);
+        }
+
+        existing.SurgeryDate     = req.SurgeryDate != null ? DateOnly.Parse(req.SurgeryDate) : null;
+        existing.SurgeryLocation = req.SurgeryLocation;
+        existing.AnesthesiaType  = req.AnesthesiaType;
+        existing.ConsentSigned   = req.ConsentSigned;
+        existing.DoctorId        = req.DoctorId;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم الحفظ" });
+    }
+
+    [HttpGet("{id:guid}/postop")]
+    public async Task<IActionResult> GetPostop(Guid id)
+    {
+        var record = await db.PostopRecords.FirstOrDefaultAsync(p => p.SurgeryCaseId == id);
+        if (record is null) return Ok(null);
+        return Ok(new {
+            record.Id,
+            record.Instructions,
+        });
+    }
+
+    [HttpPut("{id:guid}/postop")]
+    public async Task<IActionResult> UpsertPostop(Guid id, [FromBody] UpsertPostopRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.PostopRecords.FirstOrDefaultAsync(p => p.SurgeryCaseId == id);
+        if (existing is null)
+        {
+            existing = new PostopRecord { SurgeryCaseId = id };
+            db.PostopRecords.Add(existing);
+        }
+        existing.Instructions = req.Instructions;
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم الحفظ" });
     }
 }

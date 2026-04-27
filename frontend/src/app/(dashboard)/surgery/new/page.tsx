@@ -1,13 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, ArrowRight } from "lucide-react";
+import { Save, Search, ArrowRight } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
-import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -31,24 +30,38 @@ const inputCls = (err?: string) => cn(
   err ? "border-red-400" : "border-gray-300"
 );
 
-export default function NewSurgeryPage() {
+function NewSurgeryForm() {
   const router = useRouter();
-  const params = useSearchParams();
-  const defaultPatientId   = params.get("patientId")   ?? undefined;
-  const defaultPatientName = params.get("patientName")  ?? undefined;
-
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientResults, setPatientResults] = useState<PatientListItem[]>([]);
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { patientId: defaultPatientId ?? "" },
   });
 
   useEffect(() => {
     api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (patientSearch.length < 2) { setPatientResults([]); return; }
+    const t = setTimeout(() => {
+      api.get<import("@/types/api").PaginatedResponse<PatientListItem>>(`/api/patients?search=${encodeURIComponent(patientSearch)}&pageSize=8`)
+        .then((r) => setPatientResults(r.data.data))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [patientSearch]);
+
+  const selectPatient = (p: PatientListItem) => {
+    setValue("patientId", p.id);
+    setPatientSearch(`${p.fullName} (${p.patientNumber})`);
+    setShowPatientDropdown(false);
+  };
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -86,11 +99,30 @@ export default function NewSurgeryPage() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
-            <PatientCombobox
-              defaultDisplayValue={defaultPatientName ?? ""}
-              onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
-              error={errors.patientId?.message}
-            />
+            <div className="relative">
+              <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
+              <input
+                value={patientSearch}
+                onChange={(e) => { setPatientSearch(e.target.value); setShowPatientDropdown(true); }}
+                onFocus={() => patientSearch.length >= 2 && setShowPatientDropdown(true)}
+                onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
+                placeholder="ابحث بالاسم أو الرقم..."
+                className={cn(inputCls(errors.patientId?.message), "pe-9")}
+                autoComplete="off"
+              />
+              {showPatientDropdown && patientResults.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white rounded-lg border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
+                  {patientResults.map((p) => (
+                    <button key={p.id} type="button" onMouseDown={() => selectPatient(p)}
+                      className="w-full text-start px-3 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between"
+                    >
+                      <span className="font-medium">{p.fullName}</span>
+                      <span className="text-xs text-gray-400 font-mono">{p.patientNumber}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <input type="hidden" {...register("patientId")} />
             {errors.patientId && <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>}
           </div>
@@ -131,5 +163,13 @@ export default function NewSurgeryPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function NewSurgeryPage() {
+  return (
+    <Suspense fallback={<div className="animate-pulse h-96 bg-gray-100 rounded-xl" />}>
+      <NewSurgeryForm />
+    </Suspense>
   );
 }

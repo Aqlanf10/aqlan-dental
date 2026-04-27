@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowRight, Printer, Plus, FileText } from "lucide-react";
+import { ArrowRight, Printer, Plus, FileText, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import type { Contract, Payment } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
@@ -17,6 +17,88 @@ const METHOD_LABELS: Record<string, string> = {
 const SPECIALTY_LABELS: Record<string, string> = {
   orthodontics: "تقويم", general: "أسنان عام", surgery: "جراحة", other: "أخرى",
 };
+
+// ─── Installment Schedule ────────────────────────────────────────────────────
+function InstallmentSchedule({ contract }: { contract: Contract }) {
+  const totalPaid    = contract.paidAmount;
+  const installAmt   = contract.installmentAmount ?? 0;
+  const downPayment  = contract.downPayment ?? 0;
+  const startDate    = contract.startDate ? new Date(contract.startDate) : null;
+  if (!startDate || installAmt === 0) return null;
+
+  // Generate installment rows
+  const installments = Array.from({ length: contract.installmentsCount }, (_, i) => {
+    const due = new Date(startDate);
+    due.setMonth(due.getMonth() + i + 1); // first installment 1 month after start
+    const dueStr = due.toISOString().slice(0, 10);
+    const cumulative = downPayment + (i + 1) * installAmt;
+    const isPaid = totalPaid >= cumulative;
+    const today = new Date().toISOString().slice(0, 10);
+    const isOverdue = !isPaid && dueStr < today;
+    return { num: i + 1, dueStr, amount: installAmt, isPaid, isOverdue };
+  });
+
+  const paidCount    = installments.filter((i) => i.isPaid).length;
+  const overdueCount = installments.filter((i) => i.isOverdue).length;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="font-bold text-gray-900">جدول الأقساط</h2>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="flex items-center gap-1 text-green-600">
+            <CheckCircle className="w-3.5 h-3.5" /> {paidCount} مسدّد
+          </span>
+          {overdueCount > 0 && (
+            <span className="flex items-center gap-1 text-red-600">
+              <AlertCircle className="w-3.5 h-3.5" /> {overdueCount} متأخر
+            </span>
+          )}
+          <span className="flex items-center gap-1 text-gray-400">
+            <Clock className="w-3.5 h-3.5" /> {contract.installmentsCount - paidCount} متبقي
+          </span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              {["#", "تاريخ الاستحقاق", "المبلغ", "الحالة"].map((h) => (
+                <th key={h} className="text-start px-4 py-2.5 text-xs font-semibold text-gray-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {installments.map((inst) => (
+              <tr key={inst.num}
+                className={cn("transition", inst.isPaid ? "bg-green-50/40" : inst.isOverdue ? "bg-red-50/40" : "hover:bg-gray-50")}
+              >
+                <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{inst.num}</td>
+                <td className="px-4 py-2.5 text-gray-700">{formatArabicDate(inst.dueStr)}</td>
+                <td className="px-4 py-2.5 font-mono font-semibold text-gray-900">{formatYemeniRiyal(inst.amount)}</td>
+                <td className="px-4 py-2.5">
+                  {inst.isPaid ? (
+                    <span className="flex items-center gap-1 text-xs text-green-700 font-medium">
+                      <CheckCircle className="w-3.5 h-3.5" /> مسدّد
+                    </span>
+                  ) : inst.isOverdue ? (
+                    <span className="flex items-center gap-1 text-xs text-red-600 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5" /> متأخر
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-xs text-gray-400">
+                      <Clock className="w-3.5 h-3.5" /> قادم
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -126,7 +208,7 @@ export default function ContractDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4 mt-4 text-xs text-gray-500 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-4 mt-4 text-xs text-gray-500 pt-4 border-t border-gray-100 flex-wrap">
           {contract.specialty && <span>التخصص: <span className="font-medium text-gray-700">{SPECIALTY_LABELS[contract.specialty] ?? contract.specialty}</span></span>}
           {contract.startDate && <span>تاريخ البدء: <span className="font-medium text-gray-700">{formatArabicDate(contract.startDate)}</span></span>}
           <span>الأقساط: <span className="font-medium text-gray-700">{contract.installmentsCount} قسط × {formatYemeniRiyal(contract.installmentAmount ?? 0)}</span></span>
@@ -135,6 +217,11 @@ export default function ContractDetailPage() {
           <p className="mt-3 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{contract.notes}</p>
         )}
       </div>
+
+      {/* Installment Schedule */}
+      {contract.installmentsCount > 1 && contract.startDate && (
+        <InstallmentSchedule contract={contract} />
+      )}
 
       {/* Print receipt if selected */}
       {printPayment && (

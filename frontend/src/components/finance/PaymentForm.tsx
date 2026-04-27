@@ -28,7 +28,13 @@ const inputCls = (err?: string) => cn(
   err ? "border-red-400" : "border-gray-300"
 );
 
-export function PaymentForm() {
+interface PaymentFormProps {
+  defaultContractId?: string;
+  defaultPatientId?:  string;
+  defaultPatientName?: string;
+}
+
+export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatientName }: PaymentFormProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -37,17 +43,29 @@ export function PaymentForm() {
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { paymentMethod: "cash" }
+    defaultValues: {
+      paymentMethod: "cash",
+      patientId:  defaultPatientId  ?? "",
+      contractId: defaultContractId ?? "",
+    },
   });
 
   const selectedPatientId = watch("patientId");
 
+  // Pre-fill patient if passed via props
+  useEffect(() => {
+    if (defaultPatientId) setValue("patientId", defaultPatientId);
+  }, [defaultPatientId, setValue]);
+
   useEffect(() => {
     if (!selectedPatientId) { setContracts([]); return; }
     api.get<Contract[]>(`/api/contracts?patientId=${selectedPatientId}&status=active`)
-      .then((r) => setContracts(r.data))
+      .then((r) => {
+        setContracts(r.data);
+        if (defaultContractId) setValue("contractId", defaultContractId);
+      })
       .catch(() => {});
-  }, [selectedPatientId]);
+  }, [selectedPatientId, defaultContractId, setValue]);
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -109,7 +127,7 @@ export function PaymentForm() {
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
           <PatientCombobox
-            defaultDisplayValue=""
+            defaultDisplayValue={defaultPatientName ?? ""}
             onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
             error={errors.patientId?.message}
           />

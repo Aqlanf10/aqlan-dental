@@ -1,9 +1,16 @@
 "use client";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { PaymentForm } from "@/components/finance/PaymentForm";
 
-export default function NewPaymentPage() {
+function PaymentPageContent() {
+  const params      = useSearchParams();
+  const contractId  = params.get("contractId")  ?? undefined;
+  const patientId   = params.get("patientId")   ?? undefined;
+  const patientName = params.get("patientName") ?? undefined;
+
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -17,7 +24,15 @@ export default function NewPaymentPage() {
         </Link>
         <h1 className="text-2xl font-extrabold text-gray-900">تسجيل دفعة جديدة</h1>
       </div>
-      <PaymentForm />
+      <PaymentForm defaultContractId={contractId} defaultPatientId={patientId} defaultPatientName={patientName} />
     </div>
+  );
+}
+
+export default function NewPaymentPage() {
+  return (
+    <Suspense>
+      <PaymentPageContent />
+    </Suspense>
   );
 }

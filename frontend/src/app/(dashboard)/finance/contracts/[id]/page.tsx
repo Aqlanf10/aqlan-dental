@@ -252,7 +252,7 @@ export default function ContractDetailPage() {
           <h2 className="font-bold text-gray-900">سجل الدفعات</h2>
           {contract.status === "active" && (
             <Link
-              href="/finance/payments"
+              href={`/finance/payments?contractId=${id}&patientId=${contract.patientId}&patientName=${encodeURIComponent(contract.patientName ?? "")}`}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
             >
               <Plus className="w-3.5 h-3.5" />

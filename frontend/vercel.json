@@ -1,8 +1,9 @@
 {
   "framework": "nextjs",
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "installCommand": "npm install",
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/.next",
+  "installCommand": "cd frontend && npm install",
+  "rootDirectory": "frontend",
   "regions": ["iad1"],
   "headers": [
     {

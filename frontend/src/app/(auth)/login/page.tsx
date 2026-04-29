@@ -296,6 +296,14 @@ export default function LoginPage() {
             <div style={{ textAlign: "left" }}>
               <button
                 type="button"
+                onClick={() => {
+                  const username = document.querySelector<HTMLInputElement>('input[autocomplete="username"]')?.value;
+                  if (username) {
+                    alert(`سيتم إرسال رابط إعادة تعيين كلمة المرور للمسؤول.\nتواصل مع مدير النظام لإعادة تعيين كلمة المرور.`);
+                  } else {
+                    alert("أدخل اسم المستخدم أولاً، ثم تواصل مع مدير النظام لإعادة تعيين كلمة المرور.");
+                  }
+                }}
                 style={{
                   background: "none",
                   border: "none",

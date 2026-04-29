@@ -73,6 +73,24 @@ public class ClinicalPhotosController(AppDbContext db) : ControllerBase
         return Ok(new { photo.Id, message = "تم إضافة الصورة" });
     }
 
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> UpdatePhoto(Guid id, [FromBody] AddPhotoRequest req)
+    {
+        var photo = await db.ClinicalPhotos.FindAsync(id);
+        if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
+
+        if (req.FileUrl is not null) photo.FileUrl = req.FileUrl;
+        if (req.FileUrl is not null) photo.ThumbnailUrl = req.FileUrl;
+        if (req.Category is not null) photo.Category = req.Category;
+        if (req.PhotoType is not null) photo.PhotoType = req.PhotoType;
+        if (req.Stage is not null) photo.Stage = req.Stage;
+        if (req.Notes is not null) photo.Notes = req.Notes;
+        if (req.PhotoDate is not null) photo.PhotoDate = DateOnly.Parse(req.PhotoDate);
+
+        await db.SaveChangesAsync();
+        return Ok(new { photo.Id, message = "تم تحديث الصورة" });
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeletePhoto(Guid id)
     {

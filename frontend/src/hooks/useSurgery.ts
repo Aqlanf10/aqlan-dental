@@ -275,3 +275,28 @@ export function useCreateHospitalReferral() {
     },
   });
 }
+
+/** Hook: Update hospital referral status */
+export function useUpdateHospitalReferralStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      referralId,
+      status,
+      notes,
+    }: {
+      referralId: string;
+      status: string;
+      notes?: string;
+    }) => {
+      const { data } = await api.put<HospitalReferral>(
+        `/api/hospital-referrals/${referralId}/status`,
+        { status, notes }
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["surgery-case"] });
+    },
+  });
+}

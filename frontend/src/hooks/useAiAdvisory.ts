@@ -30,10 +30,10 @@ export function useSmartAlerts() {
 
 export function useNotifications(unreadOnly = false) {
   return useQuery({
-    queryKey: ["notifications", { readOnly: unreadOnly }],
+    queryKey: ["notifications", { unreadOnly }],
     queryFn: async () => {
       const { data } = await api.get("/api/notifications", {
-        params: { readOnly: unreadOnly },
+        params: { unreadOnly },
       });
       return data as { notifications: Notification[]; unreadCount: number };
     },

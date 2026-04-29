@@ -97,13 +97,32 @@ const OPERATIVE_OUTCOMES = [
 const REFERRAL_STATUS_LABELS: Record<string, string> = {
   pending: "قيد الانتظار",
   accepted: "مقبول",
+  scheduled: "مجدول",
   completed: "مكتمل",
+  cancelled: "ملغي",
 };
 
 const REFERRAL_STATUS_COLORS: Record<string, string> = {
   pending: "bg-[#f59e0b18] text-[#f59e0b]",
   accepted: "bg-[#3d7ab518] text-accent-blue",
+  scheduled: "bg-[#8b5cf618] text-[#8b5cf6]",
   completed: "bg-[#22c55e18] text-[#22c55e]",
+  cancelled: "bg-[#94a3b818] text-[#94a3b8]",
+};
+
+const REFERRAL_NEXT_STATUSES: Record<string, { status: string; label: string }[]> = {
+  pending: [
+    { status: "accepted", label: "قبول" },
+    { status: "cancelled", label: "إلغاء" },
+  ],
+  accepted: [
+    { status: "scheduled", label: "جدولة" },
+    { status: "cancelled", label: "إلغاء" },
+  ],
+  scheduled: [
+    { status: "completed", label: "إكمال" },
+    { status: "cancelled", label: "إلغاء" },
+  ],
 };
 
 const inputCls =
@@ -250,6 +269,13 @@ export default function SurgeryDetailPage() {
     } catch {} finally {
       setSavingReferral(false);
     }
+  };
+
+  const updateReferralStatus = async (referralId: string, status: string) => {
+    try {
+      await api.put(`/api/hospital-referrals/${referralId}/status`, { status });
+      loadReferrals();
+    } catch {}
   };
 
   if (loading) {
@@ -841,7 +867,9 @@ export default function SurgeryDetailPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {referrals.map((ref) => (
+              {referrals.map((ref) => {
+                const nextStatuses = REFERRAL_NEXT_STATUSES[ref.status] ?? [];
+                return (
                 <div
                   key={ref.id}
                   className="flex items-start justify-between gap-3 p-4 bg-[#f7fafd] rounded-lg border border-[#e8f0f9] hover:border-[#dce8f5] transition"
@@ -860,8 +888,29 @@ export default function SurgeryDetailPage() {
                     <p className="text-xs text-[#94a3b8]">{formatArabicDate(ref.referralDate)}</p>
                     {ref.notes && <p className="text-xs text-[#64748b] mt-1">{ref.notes}</p>}
                   </div>
+                  {nextStatuses.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {nextStatuses.map(({ status, label }) => (
+                        <button
+                          key={status}
+                          onClick={() => updateReferralStatus(ref.id, status)}
+                          className={cn(
+                            "px-2.5 py-1 text-xs font-medium rounded-lg transition",
+                            status === "cancelled"
+                              ? "bg-[#94a3b818] text-[#94a3b8] hover:bg-[#94a3b830]"
+                              : status === "completed"
+                              ? "bg-[#22c55e18] text-[#22c55e] hover:bg-[#22c55e30]"
+                              : "bg-accent-blue/10 text-accent-blue hover:bg-accent-blue/20"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -78,15 +78,12 @@ export function PhotosRadiographsTab({ patientId, orthoCaseId }: Props) {
       );
 
       // Step 2: Create radiograph record
-      const radiographFormData = new FormData();
-      radiographFormData.append("patientId", patientId);
-      radiographFormData.append("fileUrl", fileData.url);
-      if (xrayForm.xrayType) radiographFormData.append("xrayType", xrayForm.xrayType);
-      if (xrayForm.toothRelated) radiographFormData.append("toothRelated", xrayForm.toothRelated);
-      if (xrayForm.notes) radiographFormData.append("notes", xrayForm.notes);
-
-      const { data: newXray } = await api.post<Radiograph>("/api/radiographs/upload", radiographFormData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const { data: newXray } = await api.post<Radiograph>("/api/radiographs", {
+        patientId,
+        fileUrl: fileData.url,
+        xrayType: xrayForm.xrayType,
+        toothRelated: xrayForm.toothRelated || undefined,
+        notes: xrayForm.notes || undefined,
       });
       setRadiographs((prev) => [newXray, ...prev]);
       setXrayForm((f) => ({ ...f, toothRelated: "", notes: "" }));

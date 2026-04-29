@@ -54,6 +54,26 @@ export function useCreatePrescription() {
   });
 }
 
+/** Hook: Update prescription */
+export function useUpdatePrescription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...prescription
+    }: { id: string } & Omit<CreatePrescriptionRequest, never>) => {
+      const { data } = await api.put<{ id: string; message: string }>(
+        `/api/prescriptions/${id}`,
+        prescription
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prescriptions"] });
+    },
+  });
+}
+
 /** Hook: Delete prescription */
 export function useDeletePrescription() {
   const queryClient = useQueryClient();

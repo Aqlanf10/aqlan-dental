@@ -3,8 +3,8 @@
 import { Search } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { SmartAlertsPanel } from "./SmartAlertsPanel";
-import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
 
 /* ─── Page title map based on route ──────────────────────────────────────────── */
 const PAGE_TITLES: Record<string, string> = {
@@ -81,7 +81,46 @@ function LiveClock() {
 export function Topbar() {
   const { user } = useAuthStore();
   const pathname = usePathname();
+  const router = useRouter();
   const pageTitle = getPageTitle(pathname);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const searchRoutes = [
+    { path: "/patients", label: "المرضى" },
+    { path: "/appointments", label: "المواعيد" },
+    { path: "/ortho", label: "التقويم" },
+    { path: "/ceph", label: "السيفالومتري" },
+    { path: "/general", label: "طب الأسنان العام" },
+    { path: "/surgery", label: "جراحة الوجه والفكين" },
+    { path: "/finance", label: "المالية" },
+    { path: "/prescriptions", label: "الوصفات الطبية" },
+    { path: "/referrals", label: "الإحالات" },
+    { path: "/lab", label: "طلبات المختبر" },
+    { path: "/inventory", label: "المخزون" },
+    { path: "/reports", label: "التقارير" },
+    { path: "/settings", label: "الإعدادات" },
+    { path: "/messaging", label: "الرسائل" },
+    { path: "/sms", label: "تذكيرات SMS" },
+    { path: "/recall", label: "نظام الاستدعاء" },
+    { path: "/vto", label: "VTO" },
+    { path: "/audit", label: "سجل التدقيق" },
+    { path: "/profile", label: "حسابي" },
+  ];
+
+  const filteredRoutes = searchQuery
+    ? searchRoutes.filter((r) => r.label.includes(searchQuery))
+    : [];
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (filteredRoutes.length > 0) {
+      router.push(filteredRoutes[0].path);
+      setSearchQuery("");
+      setSearchOpen(false);
+    }
+  };
 
   return (
     <header className="h-16 bg-white border-b border-[#e8f0f9] flex items-center justify-between px-6 flex-shrink-0">
@@ -101,10 +140,44 @@ export function Topbar() {
         <div className="relative hidden md:block">
           <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-[#94a3b8]" />
           <input
+            ref={searchInputRef}
             type="search"
             placeholder="بحث..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSearchOpen(true);
+            }}
+            onFocus={() => setSearchOpen(true)}
+            onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleSearch(e);
+              if (e.key === "Escape") {
+                setSearchQuery("");
+                setSearchOpen(false);
+              }
+            }}
             className="h-9 pe-9 ps-4 text-[13px] rounded-lg border-[1.5px] border-[#dce8f5] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/30 focus:border-[#3d7ab5] w-[220px] placeholder:text-[#94a3b8]"
           />
+          {/* Search dropdown */}
+          {searchOpen && filteredRoutes.length > 0 && (
+            <div className="absolute top-full mt-1 right-0 w-[220px] bg-white border border-[#dce8f5] rounded-xl shadow-lg z-50 overflow-hidden">
+              {filteredRoutes.map((route) => (
+                <button
+                  key={route.path}
+                  onMouseDown={() => {
+                    router.push(route.path);
+                    setSearchQuery("");
+                    setSearchOpen(false);
+                  }}
+                  className="w-full text-right px-4 py-2.5 text-sm text-[#0d2137] hover:bg-[#f0f5fb] transition-colors flex items-center gap-2"
+                >
+                  <Search className="w-3.5 h-3.5 text-[#94a3b8]" />
+                  {route.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Notifications */}

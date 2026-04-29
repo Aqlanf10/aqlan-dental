@@ -375,7 +375,7 @@ export function TreatmentPlanAB({ orthoCaseId, plans, selectedPlanId, onPlansCha
                   <th className="text-center px-4 py-2 text-xs font-medium" style={{ color: "#f5922e" }}>خطة B</th>
                 </tr>
               </thead>
-              <tbody className="divide-y" style={{ dividerColor: "#f1f5f9" }}>
+              <tbody className="divide-y" className="divide-y divide-[#f1f5f9]">
                 {[
                   { label: "نوع الجهاز", key: "applianceType" as const },
                   { label: "نظام البراكيت", key: "bracketSystem" as const },

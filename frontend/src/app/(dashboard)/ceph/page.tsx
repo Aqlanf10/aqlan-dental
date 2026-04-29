@@ -122,7 +122,7 @@ export default function CephPage() {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y" style={{ dividerColor: "#f1f5f9" }}>
+              <tbody className="divide-y" className="divide-y divide-[#f1f5f9]">
                 {analyses.map((a) => {
                   const badge = analysisTypeBadge[a.analysisType] ?? { bg: "#94a3b818", color: "#94a3b8" };
                   return (

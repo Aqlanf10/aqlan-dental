@@ -44,4 +44,43 @@ public class GeneralController(GeneralService service) : ControllerBase
         var result = await service.GetRecentTreatmentsAsync(limit);
         return Ok(result);
     }
+
+    // ── Periodontal Records ──────────────────────────────────────────────────
+
+    [HttpPost("general/perio")]
+    public async Task<IActionResult> CreatePerioRecord([FromBody] CreatePerioRecordRequest req)
+    {
+        var result = await service.CreatePerioRecordAsync(req);
+        return Ok(result);
+    }
+
+    [HttpGet("general/perio/{patientId:guid}")]
+    public async Task<IActionResult> GetPerioRecords(Guid patientId)
+    {
+        var result = await service.GetPerioRecordsAsync(patientId);
+        return Ok(result);
+    }
+
+    // ── Treatment Plan Items ─────────────────────────────────────────────────
+
+    [HttpPost("general/treatment-plans")]
+    public async Task<IActionResult> CreateTreatmentPlanItem([FromBody] CreateTreatmentPlanItemRequest req)
+    {
+        var result = await service.CreateTreatmentPlanItemAsync(req);
+        return Ok(result);
+    }
+
+    [HttpGet("general/treatment-plans/{patientId:guid}")]
+    public async Task<IActionResult> GetTreatmentPlanItems(Guid patientId)
+    {
+        var result = await service.GetTreatmentPlanItemsAsync(patientId);
+        return Ok(result);
+    }
+
+    [HttpPatch("general/treatment-plans/{id:guid}/status")]
+    public async Task<IActionResult> UpdateTreatmentPlanItemStatus(Guid id, [FromBody] UpdateTreatmentPlanStatusRequest req)
+    {
+        var result = await service.UpdateTreatmentPlanItemStatusAsync(id, req.Status);
+        return result == null ? NotFound(new { message = "عنصر خطة العلاج غير موجود" }) : Ok(result);
+    }
 }

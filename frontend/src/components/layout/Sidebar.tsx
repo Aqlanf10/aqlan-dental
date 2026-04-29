@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   BarChart2, Package, FlaskConical, Settings, LogOut,
-  Lock, Pill, X, Menu, MessageCircle,
+  Lock, Pill, X, Menu, MessageCircle, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/surgery",      label: "الجراحة",            icon: Scissors,        roles: ["Admin", "OralSurgeon"] },
   { href: "/referrals",    label: "الإحالات",           icon: ArrowLeftRight,  roles: [] },
   { href: "/messages",     label: "الرسائل",            icon: MessageCircle,   roles: [] },
+  { href: "/whatsapp",    label: "واتساب",             icon: MessageSquare,   roles: [] },
   { href: "/finance",      label: "المالية",            icon: Wallet,          roles: ["Admin", "Reception", "Accountant"] },
   { href: "/prescriptions", label: "الوصفات الطبية",    icon: Pill,            roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/reports",      label: "التقارير",           icon: BarChart2,       roles: ["Admin", "Accountant"] },

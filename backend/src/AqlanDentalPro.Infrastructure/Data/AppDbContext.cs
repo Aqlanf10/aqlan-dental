@@ -58,6 +58,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ConversationParticipant> ConversationParticipants => Set<ConversationParticipant>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageRead> MessageReads => Set<MessageRead>();
+    public DbSet<PatientAccount> PatientAccounts => Set<PatientAccount>();
+    public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
+    public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
+    public DbSet<PerioRecord> PerioRecords => Set<PerioRecord>();
+    public DbSet<GeneralTreatmentPlanItem> GeneralTreatmentPlanItems => Set<GeneralTreatmentPlanItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

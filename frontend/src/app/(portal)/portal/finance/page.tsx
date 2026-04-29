@@ -1,0 +1,104 @@
+"use client";
+import { useEffect, useState } from "react";
+import { CreditCard, ChevronLeft, TrendingUp, TrendingDown } from "lucide-react";
+import portalApi from "@/lib/portalApi";
+import type { PatientFinancialSummary } from "@/types/patientPortal";
+import { formatYemeniRiyal } from "@/lib/utils";
+import Link from "next/link";
+
+export default function PortalFinancePage() {
+  const [finance, setFinance] = useState<PatientFinancialSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    portalApi.get<PatientFinancialSummary>("/api/portal/finance")
+      .then((r) => setFinance(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="pb-20">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-100 px-5 pt-10 pb-4">
+        <div className="flex items-center gap-2">
+          <Link href="/portal" className="text-gray-400 hover:text-gray-600">
+            <ChevronLeft className="w-5 h-5" />
+          </Link>
+          <h1 className="text-xl font-extrabold text-gray-900">الحساب المالي</h1>
+        </div>
+      </div>
+
+      <div className="px-4 mt-4 space-y-4">
+        {loading ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="bg-white rounded-2xl h-32" />
+            <div className="bg-white rounded-2xl h-64" />
+          </div>
+        ) : (
+          <>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4 text-green-600" />
+                  </div>
+                  <span className="text-xs text-gray-500">المدفوع</span>
+                </div>
+                <p className="text-xl font-bold text-green-700">{formatYemeniRiyal(finance?.totalPaid ?? 0)}</p>
+              </div>
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                    <TrendingDown className="w-4 h-4 text-red-600" />
+                  </div>
+                  <span className="text-xs text-gray-500">المتبقي</span>
+                </div>
+                <p className="text-xl font-bold text-red-700">{formatYemeniRiyal(finance?.totalOutstanding ?? 0)}</p>
+              </div>
+            </div>
+
+            {/* Active Contracts */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">العقود النشطة</span>
+                <span className="text-2xl font-bold text-teal-700">{finance?.activeContracts ?? 0}</span>
+              </div>
+            </div>
+
+            {/* Recent Payments */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <h3 className="font-bold text-gray-900 mb-3">سجل المدفوعات</h3>
+              {!finance?.recentPayments || finance.recentPayments.length === 0 ? (
+                <div className="text-center py-8">
+                  <CreditCard className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">لا توجد مدفوعات</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {finance.recentPayments.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{formatYemeniRiyal(p.amount)}</p>
+                        <p className="text-xs text-gray-400">{p.createdAt}</p>
+                      </div>
+                      <div className="text-left">
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                          {p.paymentMethod}
+                        </span>
+                        {p.receiptNumber && (
+                          <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{p.receiptNumber}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

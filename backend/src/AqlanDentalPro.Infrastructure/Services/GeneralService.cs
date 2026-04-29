@@ -172,4 +172,121 @@ public class GeneralService(AppDbContext db, ICurrentUserService currentUser)
             })
             .ToListAsync();
     }
+
+    // ── Periodontal Records ──────────────────────────────────────────────────
+
+    public async Task<PerioRecordDto> CreatePerioRecordAsync(CreatePerioRecordRequest req)
+    {
+        var record = new PerioRecord
+        {
+            PatientId = req.PatientId,
+            ToothNumber = req.ToothNumber,
+            ProbingDepth = req.ProbingDepth,
+            ClinicalAttachment = req.ClinicalAttachment,
+            BleedingOnProbing = req.BleedingOnProbing,
+            PlaqueIndex = req.PlaqueIndex,
+            GingivalIndex = req.GingivalIndex,
+            Furcation = req.Furcation,
+            Mobility = req.Mobility,
+            Notes = req.Notes,
+            DoctorId = req.DoctorId
+        };
+
+        db.PerioRecords.Add(record);
+        await db.SaveChangesAsync();
+
+        await db.Entry(record).Reference(r => r.Doctor).LoadAsync();
+
+        return MapPerioRecord(record);
+    }
+
+    public async Task<List<PerioRecordDto>> GetPerioRecordsAsync(Guid patientId)
+    {
+        return await db.PerioRecords
+            .Include(r => r.Doctor)
+            .Where(r => r.PatientId == patientId)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => MapPerioRecord(r))
+            .ToListAsync();
+    }
+
+    private static PerioRecordDto MapPerioRecord(PerioRecord r) => new()
+    {
+        Id = r.Id,
+        PatientId = r.PatientId,
+        ToothNumber = r.ToothNumber,
+        ProbingDepth = r.ProbingDepth,
+        ClinicalAttachment = r.ClinicalAttachment,
+        BleedingOnProbing = r.BleedingOnProbing,
+        PlaqueIndex = r.PlaqueIndex,
+        GingivalIndex = r.GingivalIndex,
+        Furcation = r.Furcation,
+        Mobility = r.Mobility,
+        Notes = r.Notes,
+        DoctorName = r.Doctor?.Name,
+        CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd")
+    };
+
+    // ── Treatment Plan Items ─────────────────────────────────────────────────
+
+    public async Task<TreatmentPlanItemDto> CreateTreatmentPlanItemAsync(CreateTreatmentPlanItemRequest req)
+    {
+        var item = new GeneralTreatmentPlanItem
+        {
+            PatientId = req.PatientId,
+            ToothNumber = req.ToothNumber,
+            Treatment = req.Treatment,
+            Priority = req.Priority,
+            Status = "planned",
+            EstimatedCost = req.EstimatedCost,
+            Notes = req.Notes,
+            DoctorId = req.DoctorId
+        };
+
+        db.GeneralTreatmentPlanItems.Add(item);
+        await db.SaveChangesAsync();
+
+        await db.Entry(item).Reference(i => i.Doctor).LoadAsync();
+
+        return MapTreatmentPlanItem(item);
+    }
+
+    public async Task<List<TreatmentPlanItemDto>> GetTreatmentPlanItemsAsync(Guid patientId)
+    {
+        return await db.GeneralTreatmentPlanItems
+            .Include(i => i.Doctor)
+            .Where(i => i.PatientId == patientId)
+            .OrderBy(i => i.Status == "completed" ? 1 : i.Priority == "high" ? 0 : 2)
+            .ThenBy(i => i.CreatedAt)
+            .Select(i => MapTreatmentPlanItem(i))
+            .ToListAsync();
+    }
+
+    public async Task<TreatmentPlanItemDto?> UpdateTreatmentPlanItemStatusAsync(Guid itemId, string status)
+    {
+        var item = await db.GeneralTreatmentPlanItems.Include(i => i.Doctor).FirstOrDefaultAsync(i => i.Id == itemId);
+        if (item == null) return null;
+
+        item.Status = status;
+        if (status == "completed")
+            item.CompletedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        return MapTreatmentPlanItem(item);
+    }
+
+    private static TreatmentPlanItemDto MapTreatmentPlanItem(GeneralTreatmentPlanItem i) => new()
+    {
+        Id = i.Id,
+        PatientId = i.PatientId,
+        ToothNumber = i.ToothNumber,
+        Treatment = i.Treatment,
+        Priority = i.Priority,
+        Status = i.Status,
+        EstimatedCost = i.EstimatedCost,
+        Notes = i.Notes,
+        DoctorName = i.Doctor?.Name,
+        CreatedAt = i.CreatedAt.ToString("yyyy-MM-dd"),
+        CompletedAt = i.CompletedAt?.ToString("yyyy-MM-dd")
+    };
 }

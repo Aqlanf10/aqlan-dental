@@ -9,6 +9,8 @@ using AqlanDentalPro.Infrastructure.Data.Seed;
 using AqlanDentalPro.Infrastructure.Repositories;
 using AqlanDentalPro.Infrastructure.Services;
 using MessagingService = AqlanDentalPro.Infrastructure.Services.MessagingService;
+using PatientPortalService = AqlanDentalPro.Infrastructure.Services.PatientPortalService;
+using WhatsAppService = AqlanDentalPro.Infrastructure.Services.WhatsAppService;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -108,12 +110,16 @@ builder.Services.AddAuthorization(opts =>
             nameof(UserRole.Orthodontist),
             nameof(UserRole.GeneralDentist),
             nameof(UserRole.OralSurgeon)));
+
+    // Patient portal access - for patient-facing mobile app
+    opts.AddPolicy("PatientAccess", policy =>
+        policy.RequireRole("Patient"));
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
     policy.WithOrigins(
-            builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:3000"])
+            builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:3000", "http://localhost:3001"])
         .AllowAnyHeader()
         .AllowAnyMethod()
         .AllowCredentials()));
@@ -136,6 +142,9 @@ builder.Services.AddScoped<FinanceService>();
 builder.Services.AddScoped<GeneralService>();
 builder.Services.AddScoped<MessagingService>();
 builder.Services.AddScoped<CephService>();
+builder.Services.AddScoped<IPatientPortalService, PatientPortalService>();
+builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
+builder.Services.AddHttpClient("WhatsApp");
 
 builder.Services.AddHttpContextAccessor();
 

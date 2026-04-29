@@ -7,6 +7,10 @@ import type { PatientListItem } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
+import { EnhancedDentalChart } from "@/components/dental/EnhancedDentalChart";
+import { ToothEditorModal } from "@/components/dental/ToothEditorModal";
+import { PerioAssessment } from "@/components/dental/PerioAssessment";
+import { TreatmentPlanPanel } from "@/components/dental/TreatmentPlanPanel";
 
 interface Doctor { id: string; name: string; }
 
@@ -27,8 +31,15 @@ export default function GeneralPage() {
   const [loading,    setLoading]    = useState(true);
   const [doctors,    setDoctors]    = useState<Doctor[]>([]);
 
+  // Tab navigation
+  const [activeTab, setActiveTab] = useState<"treatments" | "chart" | "perio" | "plan">("treatments");
+
   // Quick navigator
   const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null);
+
+  // Dental chart state
+  const [selectedTooth, setSelectedTooth] = useState<number | null>(null);
+  const [chartTeeth, setChartTeeth] = useState<any[]>([]);
 
   // New treatment form
   const [showForm, setShowForm]   = useState(false);
@@ -103,6 +114,29 @@ export default function GeneralPage() {
         </button>
       </div>
 
+      {/* Tab navigation */}
+      <div className="flex gap-2 border-b border-gray-200 mb-5">
+        {[
+          { key: "treatments" as const, label: "المعالجات" },
+          { key: "chart" as const, label: "المخطط السني" },
+          { key: "perio" as const, label: "تقييم اللثة" },
+          { key: "plan" as const, label: "خطة العلاج" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium border-b-2 transition",
+              activeTab === tab.key
+                ? "border-teal-600 text-teal-700"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Quick patient navigator */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <p className="text-sm font-medium text-gray-700 mb-2">الانتقال السريع إلى ملف مريض</p>
@@ -125,6 +159,7 @@ export default function GeneralPage() {
         </div>
       </div>
 
+      {activeTab === "treatments" && (<>
       {/* New treatment form */}
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
@@ -270,6 +305,41 @@ export default function GeneralPage() {
           </div>
         )}
       </div>
+      </>)}
+
+      {activeTab === "chart" && selectedPatient && (
+        <div className="space-y-4">
+          <EnhancedDentalChart
+            teeth={chartTeeth}
+            onToothClick={(num) => setSelectedTooth(num)}
+            selectedTooth={selectedTooth}
+          />
+          {selectedTooth && (
+            <ToothEditorModal
+              toothNumber={selectedTooth}
+              data={chartTeeth.find((t: any) => t.toothNumber === selectedTooth)}
+              onSave={async (data) => {
+                try {
+                  await api.put(`/api/general/${selectedPatient.id}/teeth`, data);
+                  // Refresh chart data
+                  const { data: newChart } = await api.get(`/api/general/${selectedPatient.id}/chart`);
+                  setChartTeeth(newChart?.teeth || []);
+                  setSelectedTooth(null);
+                } catch {}
+              }}
+              onClose={() => setSelectedTooth(null)}
+            />
+          )}
+        </div>
+      )}
+
+      {activeTab === "perio" && selectedPatient && (
+        <PerioAssessment patientId={selectedPatient.id} onSave={() => {}} />
+      )}
+
+      {activeTab === "plan" && selectedPatient && (
+        <TreatmentPlanPanel patientId={selectedPatient.id} onUpdate={fetchTreatments} />
+      )}
     </div>
   );
 }

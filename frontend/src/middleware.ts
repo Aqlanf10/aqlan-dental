@@ -2,17 +2,16 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Auth Middleware — Protects dashboard routes from unauthenticated access.
+ * Auth Middleware — Protects dashboard and portal routes from unauthenticated access.
  *
  * Strategy:
- * - Check for access_token in sessionStorage (client-side) won't work in middleware
- *   because middleware runs on the edge (no DOM access).
- * - Instead, we check for a "aqlan-auth" cookie that we set alongside the token.
+ * - Dashboard routes use the "aqlan_auth_status" cookie (admin auth)
+ * - Portal routes use the "aqlan_portal_auth" cookie (patient auth)
  * - The actual auth validation still happens server-side via JWT verification,
- *   but this middleware prevents the flash of dashboard content before redirect.
+ *   but this middleware prevents the flash of content before redirect.
  */
 
-const PUBLIC_PATHS = ["/login", "/api/auth"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/portal/login"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -31,11 +30,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for auth cookie
-  const authCookie = request.cookies.get("aqlan_auth_status");
+  // Portal routes use portal auth cookie
+  if (pathname.startsWith("/portal")) {
+    const portalCookie = request.cookies.get("aqlan_portal_auth");
+    if (!portalCookie || portalCookie.value !== "authenticated") {
+      const loginUrl = new URL("/portal/login", request.url);
+      return NextResponse.redirect(loginUrl);
+    }
+    return NextResponse.next();
+  }
 
+  // Dashboard routes use admin auth cookie
+  const authCookie = request.cookies.get("aqlan_auth_status");
   if (!authCookie || authCookie.value !== "authenticated") {
-    // Redirect to login
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
@@ -46,13 +53,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - fonts (local fonts)
-     * - favicon.ico
-     */
     "/((?!_next/static|_next/image|fonts|favicon.ico).*)",
   ],
 };

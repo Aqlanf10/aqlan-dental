@@ -1,15 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Activity, Plus, Brain } from "lucide-react";
-import type { CephAnalysisList } from "@/types/ceph";
+import { Activity, Plus, Brain, GitCompare } from "lucide-react";
+import type { CephAnalysisList, AnalysisType } from "@/types/ceph";
 import { ANALYSIS_TYPE_AR } from "@/types/ceph";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
+import { CephComparison } from "@/components/ceph/CephComparison";
 
 export default function CephPage() {
   const [analyses, setAnalyses] = useState<CephAnalysisList[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showComparison, setShowComparison] = useState(false);
+  const [comparisonCaseId, setComparisonCaseId] = useState<string>("");
 
   useEffect(() => {
     api.get<CephAnalysisList[]>("/api/ceph")
@@ -17,6 +20,41 @@ export default function CephPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Group analyses by orthoCaseId to find cases with multiple analyses
+  const casesWithMultiple = useMemo(() => {
+    const caseMap = new Map<string, CephAnalysisList[]>();
+    analyses.forEach((a) => {
+      if (!caseMap.has(a.orthoCaseId)) caseMap.set(a.orthoCaseId, []);
+      caseMap.get(a.orthoCaseId)!.push(a);
+    });
+    const filteredEntries: [string, CephAnalysisList[]][] = [];
+    caseMap.forEach((list, key) => {
+      if (list.length >= 2) filteredEntries.push([key, list]);
+    });
+    return new Map(filteredEntries);
+  }, [analyses]);
+
+  // Check if an analysis belongs to a case with multiple analyses
+  const canCompare = (orthoCaseId: string) => casesWithMultiple.has(orthoCaseId);
+
+  const handleCompare = (orthoCaseId: string) => {
+    setComparisonCaseId(orthoCaseId);
+    setShowComparison(true);
+  };
+
+  // All analysis type options for display
+  const analysisTypeColors: Record<string, string> = {
+    steiner:    "bg-blue-50 text-blue-700",
+    tweed:      "bg-emerald-50 text-emerald-700",
+    mcnamara:   "bg-violet-50 text-violet-700",
+    ricketts:   "bg-amber-50 text-amber-700",
+    downs:      "bg-rose-50 text-rose-700",
+    wits:       "bg-cyan-50 text-cyan-700",
+    jarabak:    "bg-orange-50 text-orange-700",
+    softtissue: "bg-pink-50 text-pink-700",
+    full:       "bg-teal-50 text-teal-700",
+  };
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -62,8 +100,11 @@ export default function CephPage() {
                       {a.caseNumber && <div className="text-xs text-gray-400 font-mono">{a.caseNumber}</div>}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                        {ANALYSIS_TYPE_AR[a.analysisType] ?? a.analysisType}
+                      <span className={cn(
+                        "text-xs px-2 py-0.5 rounded-full font-medium",
+                        analysisTypeColors[a.analysisType] ?? "bg-gray-50 text-gray-700"
+                      )}>
+                        {ANALYSIS_TYPE_AR[a.analysisType as AnalysisType] ?? a.analysisType}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{formatArabicDate(a.analysisDate)}</td>
@@ -89,11 +130,23 @@ export default function CephPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/ceph/${a.id}`}
-                        className="text-xs text-clinic-teal hover:underline font-medium"
-                      >
-                        فتح التحليل
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/ceph/${a.id}`}
+                          className="text-xs text-clinic-teal hover:underline font-medium"
+                        >
+                          فتح التحليل
+                        </Link>
+                        {canCompare(a.orthoCaseId) && (
+                          <button
+                            onClick={() => handleCompare(a.orthoCaseId)}
+                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                            title="مقارنة مع تحليل آخر من نفس الحالة"
+                          >
+                            <GitCompare className="w-3 h-3" />
+                            مقارنة
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -102,6 +155,13 @@ export default function CephPage() {
           </div>
         </div>
       )}
+
+      {/* Comparison Dialog */}
+      <CephComparison
+        orthoCaseId={comparisonCaseId}
+        open={showComparison}
+        onClose={() => setShowComparison(false)}
+      />
     </div>
   );
 }

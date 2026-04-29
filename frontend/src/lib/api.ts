@@ -14,7 +14,7 @@ export const api = axios.create({
 // Inject access token on every request
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = sessionStorage.getItem("access_token");
+    const token = localStorage.getItem("access_token");
     if (token) config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -31,7 +31,12 @@ api.interceptors.response.use(
       original._retry = true;
 
       if (isRefreshing) {
-        window.location.href = "/login";
+        // Another refresh is in progress, just redirect
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("access_token");
+          document.cookie = "aqlan_auth_status=; path=/; max-age=0";
+          window.location.href = "/login";
+        }
         return Promise.reject(error);
       }
 
@@ -40,12 +45,15 @@ api.interceptors.response.use(
         const { data } = await api.post<{ accessToken: string }>(
           "/api/auth/refresh-token"
         );
-        sessionStorage.setItem("access_token", data.accessToken);
+        localStorage.setItem("access_token", data.accessToken);
         original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch {
-        sessionStorage.removeItem("access_token");
-        window.location.href = "/login";
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("access_token");
+          document.cookie = "aqlan_auth_status=; path=/; max-age=0";
+          window.location.href = "/login";
+        }
         return Promise.reject(error);
       } finally {
         isRefreshing = false;

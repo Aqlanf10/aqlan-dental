@@ -10,28 +10,34 @@ export type AnalysisType =
   | 'ricketts'
   | 'downs'
   | 'wits'
+  | 'jarabak'
+  | 'softtissue'
   | 'full';
 
 /** Arabic labels for analysis types. */
 export const ANALYSIS_TYPE_AR: Record<AnalysisType, string> = {
-  steiner:  'ستاينر',
-  tweed:    'تويد',
-  mcnamara: 'ماكنامارا',
-  ricketts: 'ريكتس',
-  downs:    'داونز',
-  wits:     'وتس',
-  full:     'شامل',
+  steiner:    'ستاينر',
+  tweed:      'تويد',
+  mcnamara:   'ماكنامارا',
+  ricketts:   'ريكتس',
+  downs:      'داونز',
+  wits:       'وتس',
+  jarabak:    'جاراباك',
+  softtissue: 'الأنسجة الرخوة',
+  full:       'شامل',
 };
 
 /** Which analyses to run for each AnalysisType. */
 export const ANALYSIS_GROUPS: Record<AnalysisType, MeasurementGroup[]> = {
-  steiner:  ['steiner'],
-  tweed:    ['tweed'],
-  mcnamara: ['mcnamara'],
-  ricketts: ['ricketts'],
-  downs:    ['downs'],
-  wits:     ['wits'],
-  full:     ['steiner', 'tweed', 'mcnamara', 'ricketts', 'downs', 'wits'],
+  steiner:    ['steiner'],
+  tweed:      ['tweed'],
+  mcnamara:   ['mcnamara'],
+  ricketts:   ['ricketts'],
+  downs:      ['downs'],
+  wits:       ['wits'],
+  jarabak:    ['jarabak'],
+  softtissue: ['softtissue'],
+  full:       ['steiner', 'tweed', 'mcnamara', 'ricketts', 'downs', 'wits', 'jarabak', 'softtissue'],
 };
 
 /** A measurement belongs to exactly one analysis group. */
@@ -41,7 +47,9 @@ export type MeasurementGroup =
   | 'mcnamara'
   | 'ricketts'
   | 'downs'
-  | 'wits';
+  | 'wits'
+  | 'jarabak'
+  | 'softtissue';
 
 /** Anatomical region of a landmark — used only for UI grouping. */
 export type LandmarkGroup =
@@ -82,7 +90,7 @@ export interface CephMeasurement {
   value: number | null;
   normal: number;
   stdDev: number;
-  unit: '°' | 'mm';
+  unit: '°' | 'mm' | '%';
   /** value − normal. `null` iff `value` is null. */
   deviation: number | null;
   severity: MeasurementSeverity;

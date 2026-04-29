@@ -1,3 +1,5 @@
+using AqlanDentalPro.Application.DTOs.Surgery;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -65,11 +67,59 @@ public sealed class UpdateSurgeryStatusRequestValidator : AbstractValidator<Upda
     }
 }
 
+public sealed class UpsertOperativeReportRequestValidator : AbstractValidator<UpsertOperativeReportRequest>
+{
+    public UpsertOperativeReportRequestValidator()
+    {
+        RuleFor(x => x.SurgeryDateTime)
+            .Must(d => DateTime.TryParse(d, out _)).WithMessage("تنسيق تاريخ ووقت الجراحة غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.SurgeryDateTime));
+
+        RuleFor(x => x.DurationMinutes)
+            .InclusiveBetween(1, 600).WithMessage("مدة الجراحة يجب أن تكون بين 1 و 600 دقيقة")
+            .When(x => x.DurationMinutes.HasValue);
+
+        RuleFor(x => x.SuturesCount)
+            .InclusiveBetween(0, 50).WithMessage("عدد الغرز يجب أن يكون بين 0 و 50")
+            .When(x => x.SuturesCount.HasValue);
+    }
+}
+
+public sealed class CreateHospitalReferralRequestValidator : AbstractValidator<CreateHospitalReferralRequest>
+{
+    public CreateHospitalReferralRequestValidator()
+    {
+        RuleFor(x => x.HospitalName)
+            .NotEmpty().WithMessage("اسم المستشفى مطلوب")
+            .MaximumLength(300).WithMessage("اسم المستشفى يجب ألا يتجاوز 300 حرف")
+            .When(x => x.HospitalName is not null);
+
+        RuleFor(x => x.ReferralDate)
+            .Must(d => DateOnly.TryParse(d, out _)).WithMessage("تنسيق تاريخ الإحالة غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.ReferralDate));
+    }
+}
+
+public sealed class UpdateHospitalReferralStatusRequestValidator : AbstractValidator<UpdateHospitalReferralStatusRequest>
+{
+    private static readonly HashSet<string> ValidStatuses =
+        ["pending", "accepted", "scheduled", "completed", "cancelled"];
+
+    public UpdateHospitalReferralStatusRequestValidator()
+    {
+        RuleFor(x => x.Status)
+            .NotEmpty().WithMessage("الحالة مطلوبة")
+            .Must(s => ValidStatuses.Contains(s)).WithMessage("الحالة غير صالحة");
+    }
+}
+
 [ApiController]
 [Route("api/surgery-cases")]
-[Authorize]
-public class SurgeryController(AppDbContext db) : ControllerBase
+[Authorize(Policy = "SurgeryAccess")]
+public class SurgeryController(AppDbContext db, INotificationService notificationService) : ControllerBase
 {
+    // ── Surgery Cases CRUD ──────────────────────────────────────────────────────
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status,
@@ -126,6 +176,10 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         var surgery = await db.SurgeryCases
             .Include(s => s.Patient)
             .Include(s => s.Doctor)
+            .Include(s => s.PreopReport)
+            .Include(s => s.OperativeReport).ThenInclude(o => o!.Doctor)
+            .Include(s => s.PostopRecord)
+            .Include(s => s.HospitalReferrals)
             .FirstOrDefaultAsync(s => s.Id == id);
 
         if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
@@ -142,7 +196,56 @@ public class SurgeryController(AppDbContext db) : ControllerBase
             surgery.SurgeryType,
             surgery.TeethInvolved,
             surgery.Status,
-            CreatedAt     = surgery.CreatedAt.ToString("yyyy-MM-dd")
+            CreatedAt     = surgery.CreatedAt.ToString("yyyy-MM-dd"),
+
+            // Preop report
+            PreopReport = surgery.PreopReport != null ? new
+            {
+                surgery.PreopReport.Id,
+                SurgeryDate     = surgery.PreopReport.SurgeryDate?.ToString("yyyy-MM-dd"),
+                surgery.PreopReport.SurgeryLocation,
+                surgery.PreopReport.AnesthesiaType,
+                surgery.PreopReport.ConsentSigned,
+                DoctorName      = surgery.PreopReport.Doctor?.Name,
+                surgery.PreopReport.DoctorId,
+            } : null,
+
+            // Operative report
+            OperativeReport = surgery.OperativeReport != null ? new
+            {
+                surgery.OperativeReport.Id,
+                SurgeryDateTime = surgery.OperativeReport.SurgeryDateTime?.ToString("yyyy-MM-dd HH:mm"),
+                surgery.OperativeReport.DurationMinutes,
+                surgery.OperativeReport.AnesthesiaUsed,
+                surgery.OperativeReport.Technique,
+                surgery.OperativeReport.DetailedDescription,
+                surgery.OperativeReport.Outcome,
+                surgery.OperativeReport.Complications,
+                surgery.OperativeReport.SuturesCount,
+                surgery.OperativeReport.SpecimenSent,
+                DoctorName       = surgery.OperativeReport.Doctor?.Name,
+                surgery.OperativeReport.DoctorId,
+                ApprovedAt       = surgery.OperativeReport.ApprovedAt?.ToString("yyyy-MM-dd HH:mm"),
+            } : null,
+
+            // Postop record
+            PostopRecord = surgery.PostopRecord != null ? new
+            {
+                surgery.PostopRecord.Id,
+                surgery.PostopRecord.Instructions,
+            } : null,
+
+            // Hospital referrals
+            HospitalReferrals = surgery.HospitalReferrals.Select(r => new
+            {
+                r.Id,
+                r.HospitalName,
+                r.Reason,
+                ReferralDate = r.ReferralDate?.ToString("yyyy-MM-dd"),
+                r.Status,
+                r.Notes,
+                CreatedAt     = r.CreatedAt.ToString("yyyy-MM-dd"),
+            }).ToList()
         });
     }
 
@@ -165,6 +268,8 @@ public class SurgeryController(AppDbContext db) : ControllerBase
 
         db.SurgeryCases.Add(surgery);
         await db.SaveChangesAsync();
+
+        await notificationService.NotifyUserAsync(req.DoctorId ?? Guid.Empty, "surgery", "حالة جراحية جديدة", $"تم إنشاء حالة جراحية جديدة: {surgery.CaseNumber}", "surgery-cases", surgery.Id);
 
         return CreatedAtAction(nameof(GetById), new { id = surgery.Id },
             new { surgery.Id, surgery.CaseNumber });
@@ -191,6 +296,8 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف الحالة بنجاح" });
     }
+
+    // ── Preop Report ────────────────────────────────────────────────────────────
 
     [HttpGet("{id:guid}/preop")]
     public async Task<IActionResult> GetPreop(Guid id)
@@ -234,6 +341,165 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         return Ok(new { existing.Id, message = "تم الحفظ" });
     }
 
+    // ── Operative Report ────────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/operative-report")]
+    public async Task<IActionResult> GetOperativeReport(Guid id)
+    {
+        var report = await db.OperativeReports
+            .Include(o => o.Doctor)
+            .FirstOrDefaultAsync(o => o.SurgeryCaseId == id);
+
+        if (report is null) return Ok(null);
+
+        return Ok(new OperativeReportDto
+        {
+            Id = report.Id,
+            SurgeryCaseId = report.SurgeryCaseId,
+            SurgeryDateTime = report.SurgeryDateTime?.ToString("yyyy-MM-dd HH:mm"),
+            DurationMinutes = report.DurationMinutes,
+            AnesthesiaUsed = report.AnesthesiaUsed,
+            Technique = report.Technique,
+            DetailedDescription = report.DetailedDescription,
+            Outcome = report.Outcome,
+            Complications = report.Complications,
+            SuturesCount = report.SuturesCount,
+            SpecimenSent = report.SpecimenSent,
+            DoctorName = report.Doctor?.Name,
+            DoctorId = report.DoctorId,
+            ApprovedAt = report.ApprovedAt?.ToString("yyyy-MM-dd HH:mm"),
+            CreatedAt = report.CreatedAt.ToString("yyyy-MM-dd")
+        });
+    }
+
+    [HttpPost("{id:guid}/operative-report")]
+    public async Task<IActionResult> CreateOperativeReport(
+        Guid id,
+        [FromBody] UpsertOperativeReportRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        var existing = await db.OperativeReports.FirstOrDefaultAsync(o => o.SurgeryCaseId == id);
+        if (existing is not null)
+            return BadRequest(new { message = "يوجد تقرير جراحي بالفعل، استخدم التحديث بدلاً من الإنشاء" });
+
+        var report = new OperativeReport
+        {
+            SurgeryCaseId = id,
+            SurgeryDateTime = req.SurgeryDateTime != null ? DateTime.Parse(req.SurgeryDateTime) : null,
+            DurationMinutes = req.DurationMinutes,
+            AnesthesiaUsed = req.AnesthesiaUsed,
+            Technique = req.Technique,
+            DetailedDescription = req.DetailedDescription,
+            Outcome = req.Outcome,
+            Complications = req.Complications,
+            SuturesCount = req.SuturesCount,
+            SpecimenSent = req.SpecimenSent ?? false,
+            DoctorId = req.DoctorId
+        };
+
+        db.OperativeReports.Add(report);
+        await db.SaveChangesAsync();
+
+        await db.Entry(report).Reference(o => o.Doctor).LoadAsync();
+
+        return Ok(new OperativeReportDto
+        {
+            Id = report.Id,
+            SurgeryCaseId = report.SurgeryCaseId,
+            SurgeryDateTime = report.SurgeryDateTime?.ToString("yyyy-MM-dd HH:mm"),
+            DurationMinutes = report.DurationMinutes,
+            AnesthesiaUsed = report.AnesthesiaUsed,
+            Technique = report.Technique,
+            DetailedDescription = report.DetailedDescription,
+            Outcome = report.Outcome,
+            Complications = report.Complications,
+            SuturesCount = report.SuturesCount,
+            SpecimenSent = report.SpecimenSent,
+            DoctorName = report.Doctor?.Name,
+            DoctorId = report.DoctorId,
+            CreatedAt = report.CreatedAt.ToString("yyyy-MM-dd")
+        });
+    }
+
+    [HttpPut("{id:guid}/operative-report")]
+    public async Task<IActionResult> UpdateOperativeReport(
+        Guid id,
+        [FromBody] UpsertOperativeReportRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        var report = await db.OperativeReports
+            .Include(o => o.Doctor)
+            .FirstOrDefaultAsync(o => o.SurgeryCaseId == id);
+
+        if (report is null)
+            return NotFound(new { message = "التقرير الجراحي غير موجود، استخدم الإنشاء أولاً" });
+
+        if (report.ApprovedAt.HasValue)
+            return BadRequest(new { message = "لا يمكن تعديل تقرير جراحي معتمد" });
+
+        if (req.SurgeryDateTime is not null)
+            report.SurgeryDateTime = DateTime.Parse(req.SurgeryDateTime);
+        if (req.DurationMinutes.HasValue) report.DurationMinutes = req.DurationMinutes;
+        if (req.AnesthesiaUsed is not null) report.AnesthesiaUsed = req.AnesthesiaUsed;
+        if (req.Technique is not null) report.Technique = req.Technique;
+        if (req.DetailedDescription is not null) report.DetailedDescription = req.DetailedDescription;
+        if (req.Outcome is not null) report.Outcome = req.Outcome;
+        if (req.Complications is not null) report.Complications = req.Complications;
+        if (req.SuturesCount.HasValue) report.SuturesCount = req.SuturesCount;
+        if (req.SpecimenSent.HasValue) report.SpecimenSent = req.SpecimenSent.Value;
+        if (req.DoctorId.HasValue) report.DoctorId = req.DoctorId;
+
+        await db.SaveChangesAsync();
+
+        await db.Entry(report).Reference(o => o.Doctor).LoadAsync();
+
+        return Ok(new OperativeReportDto
+        {
+            Id = report.Id,
+            SurgeryCaseId = report.SurgeryCaseId,
+            SurgeryDateTime = report.SurgeryDateTime?.ToString("yyyy-MM-dd HH:mm"),
+            DurationMinutes = report.DurationMinutes,
+            AnesthesiaUsed = report.AnesthesiaUsed,
+            Technique = report.Technique,
+            DetailedDescription = report.DetailedDescription,
+            Outcome = report.Outcome,
+            Complications = report.Complications,
+            SuturesCount = report.SuturesCount,
+            SpecimenSent = report.SpecimenSent,
+            DoctorName = report.Doctor?.Name,
+            DoctorId = report.DoctorId,
+            ApprovedAt = report.ApprovedAt?.ToString("yyyy-MM-dd HH:mm"),
+            CreatedAt = report.CreatedAt.ToString("yyyy-MM-dd")
+        });
+    }
+
+    [HttpPut("{id:guid}/operative-report/approve")]
+    public async Task<IActionResult> ApproveOperativeReport(Guid id)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        var report = await db.OperativeReports.FirstOrDefaultAsync(o => o.SurgeryCaseId == id);
+        if (report is null)
+            return NotFound(new { message = "التقرير الجراحي غير موجود" });
+
+        if (report.ApprovedAt.HasValue)
+            return BadRequest(new { message = "التقرير الجراحي معتمد بالفعل" });
+
+        report.ApprovedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        await notificationService.NotifyUserAsync(surgery.DoctorId ?? Guid.Empty, "surgery", "اعتماد تقرير جراحي", "تم اعتماد التقرير الجراحي", "surgery-cases", surgery.Id);
+
+        return Ok(new { report.Id, ApprovedAt = report.ApprovedAt.Value.ToString("yyyy-MM-dd HH:mm"), message = "تم اعتماد التقرير الجراحي" });
+    }
+
+    // ── Postop Record ───────────────────────────────────────────────────────────
+
     [HttpGet("{id:guid}/postop")]
     public async Task<IActionResult> GetPostop(Guid id)
     {
@@ -260,5 +526,92 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         existing.Instructions = req.Instructions;
         await db.SaveChangesAsync();
         return Ok(new { existing.Id, message = "تم الحفظ" });
+    }
+
+    // ── Hospital Referrals ──────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/hospital-referrals")]
+    public async Task<IActionResult> GetHospitalReferrals(Guid id)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        var referrals = await db.HospitalReferrals
+            .Where(r => r.SurgeryCaseId == id)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new HospitalReferralDto
+            {
+                Id = r.Id,
+                SurgeryCaseId = r.SurgeryCaseId,
+                HospitalName = r.HospitalName,
+                Reason = r.Reason,
+                ReferralDate = r.ReferralDate != null ? r.ReferralDate.Value.ToString("yyyy-MM-dd") : null,
+                Status = r.Status,
+                Notes = r.Notes,
+                CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd")
+            })
+            .ToListAsync();
+
+        return Ok(referrals);
+    }
+
+    [HttpPost("{id:guid}/hospital-referrals")]
+    public async Task<IActionResult> CreateHospitalReferral(
+        Guid id,
+        [FromBody] CreateHospitalReferralRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        var referral = new HospitalReferral
+        {
+            SurgeryCaseId = id,
+            HospitalName = req.HospitalName,
+            Reason = req.Reason,
+            ReferralDate = req.ReferralDate != null ? DateOnly.Parse(req.ReferralDate) : null,
+            Status = "pending",
+            Notes = req.Notes
+        };
+
+        db.HospitalReferrals.Add(referral);
+        await db.SaveChangesAsync();
+
+        return Ok(new HospitalReferralDto
+        {
+            Id = referral.Id,
+            SurgeryCaseId = referral.SurgeryCaseId,
+            HospitalName = referral.HospitalName,
+            Reason = referral.Reason,
+            ReferralDate = referral.ReferralDate?.ToString("yyyy-MM-dd"),
+            Status = referral.Status,
+            Notes = referral.Notes,
+            CreatedAt = referral.CreatedAt.ToString("yyyy-MM-dd")
+        });
+    }
+
+    [HttpPut("~/api/hospital-referrals/{id:guid}/status")]
+    public async Task<IActionResult> UpdateHospitalReferralStatus(
+        Guid id,
+        [FromBody] UpdateHospitalReferralStatusRequest req)
+    {
+        var referral = await db.HospitalReferrals.FindAsync(id);
+        if (referral is null) return NotFound(new { message = "إحالة المستشفى غير موجودة" });
+
+        referral.Status = req.Status;
+        if (req.Notes is not null) referral.Notes = req.Notes;
+
+        await db.SaveChangesAsync();
+
+        return Ok(new HospitalReferralDto
+        {
+            Id = referral.Id,
+            SurgeryCaseId = referral.SurgeryCaseId,
+            HospitalName = referral.HospitalName,
+            Reason = referral.Reason,
+            ReferralDate = referral.ReferralDate?.ToString("yyyy-MM-dd"),
+            Status = referral.Status,
+            Notes = referral.Notes,
+            CreatedAt = referral.CreatedAt.ToString("yyyy-MM-dd")
+        });
     }
 }

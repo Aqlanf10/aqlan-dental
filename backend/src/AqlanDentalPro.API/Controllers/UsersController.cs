@@ -1,14 +1,12 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
-using Konscious.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using System.Text;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -72,11 +70,10 @@ public sealed class ChangePasswordRequestValidator : AbstractValidator<ChangePas
 
 [ApiController]
 [Route("api/users")]
-[Authorize]
+[Authorize(Policy = "AdminOnly")]
 public class UsersController(
     AppDbContext db,
-    ICurrentUserService currentUser,
-    IConfiguration config) : ControllerBase
+    ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -111,11 +108,16 @@ public class UsersController(
         if (!Enum.TryParse<UserRole>(req.Role, out var role))
             return BadRequest(new { message = "الدور غير صالح" });
 
+        // Generate unique salt for each user
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(req.Password, salt);
+
         var user = new User
         {
             Username = req.Username,
             Email = req.Email,
-            PasswordHash = HashPassword(req.Password),
+            PasswordHash = hash,
+            PasswordSalt = salt,
             Role = role,
         };
         db.Users.Add(user);
@@ -162,6 +164,7 @@ public class UsersController(
     }
 
     [HttpPost("me/change-password")]
+    [Authorize] // Any authenticated user can change their own password
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest req)
     {
         var userId = currentUser.UserId;
@@ -170,24 +173,18 @@ public class UsersController(
         var user = await db.Users.FindAsync(userId);
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
 
-        if (user.PasswordHash != HashPassword(req.CurrentPassword))
+        // Verify current password with user's unique salt
+        var currentHash = AuthService.HashPassword(req.CurrentPassword, user.PasswordSalt);
+        if (currentHash != user.PasswordHash)
             return BadRequest(new { message = "كلمة المرور الحالية غير صحيحة" });
 
-        user.PasswordHash = HashPassword(req.NewPassword);
+        // Generate new salt for new password
+        var newSalt = AuthService.GenerateSalt();
+        var newHash = AuthService.HashPassword(req.NewPassword, newSalt);
+        user.PasswordHash = newHash;
+        user.PasswordSalt = newSalt;
+
         await db.SaveChangesAsync();
         return Ok(new { message = "تم تغيير كلمة المرور بنجاح" });
-    }
-
-    private string HashPassword(string password)
-    {
-        var salt = config["Security:Argon2Salt"] ?? "AqlanDentalSalt!";
-        var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
-        {
-            Salt = Encoding.UTF8.GetBytes(salt),
-            DegreeOfParallelism = 1,
-            MemorySize = 65536,
-            Iterations = 3
-        };
-        return Convert.ToBase64String(argon2.GetBytes(32));
     }
 }

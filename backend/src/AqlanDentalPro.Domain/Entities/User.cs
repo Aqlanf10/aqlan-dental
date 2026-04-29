@@ -7,6 +7,7 @@ public class User : BaseEntity
     public string Username { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
+    public string PasswordSalt { get; set; } = string.Empty; // Per-user unique salt
     public UserRole Role { get; set; }
     public Guid? BranchId { get; set; }
     public DateTime? LastLogin { get; set; }

@@ -243,6 +243,12 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("ImageHeight")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ImageWidth")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -254,6 +260,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("OrthoCaseId")
                         .HasColumnType("uuid");
+
+                    b.Property<double?>("PixelsPerMm")
+                        .HasColumnType("double precision");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -698,6 +707,56 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("PatientId");
 
                     b.ToTable("Documents");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Expense", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<Guid?>("BranchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("ExpenseDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Recipient")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("RecordedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BranchId");
+
+                    b.ToTable("Expenses");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.ExtractionDecision", b =>
@@ -1609,11 +1668,20 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateOnly?>("AssessmentDate")
                         .HasColumnType("date");
 
+                    b.Property<decimal?>("AttachmentLoss")
+                        .HasColumnType("numeric");
+
                     b.Property<decimal?>("AvgPocketDepth")
                         .HasColumnType("numeric");
 
+                    b.Property<JsonDocument>("BleedingOnProbing")
+                        .HasColumnType("jsonb");
+
                     b.Property<int?>("BleedingPoints")
                         .HasColumnType("integer");
+
+                    b.Property<string>("BoneLossPattern")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1621,8 +1689,17 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
 
+                    b.Property<JsonDocument>("FurcationInvolvement")
+                        .HasColumnType("jsonb");
+
+                    b.Property<decimal?>("GingivalIndex")
+                        .HasColumnType("numeric");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<JsonDocument>("Mobility")
+                        .HasColumnType("jsonb");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid");
@@ -1630,10 +1707,19 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<string>("PerioStage")
                         .HasColumnType("text");
 
+                    b.Property<decimal?>("PlaqueIndex")
+                        .HasColumnType("numeric");
+
+                    b.Property<JsonDocument>("PocketDepths")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("RecessionLevel")
                         .HasColumnType("text");
 
                     b.Property<string>("Recommendation")
+                        .HasColumnType("text");
+
+                    b.Property<string>("TreatmentPlan")
                         .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -2181,8 +2267,15 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<bool>("IsApproved")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsSelected")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid>("OrthoCaseId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("PlanLabel")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<int>("PlanVersion")
                         .HasColumnType("integer");
@@ -2285,6 +2378,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PasswordSalt")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -2570,6 +2667,15 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Expense", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId");
+
+                    b.Navigation("Branch");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.ExtractionDecision", b =>

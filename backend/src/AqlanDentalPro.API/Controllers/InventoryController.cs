@@ -54,7 +54,7 @@ public sealed class AdjustQuantityRequestValidator : AbstractValidator<AdjustQua
 
 [ApiController]
 [Route("api/inventory")]
-[Authorize]
+[Authorize(Policy = "AdminOnly")]
 public class InventoryController(AppDbContext db) : ControllerBase
 {
     [HttpGet]

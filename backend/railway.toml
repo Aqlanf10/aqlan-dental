@@ -5,5 +5,10 @@ dockerfilePath = "Dockerfile"
 [deploy]
 startCommand = "dotnet AqlanDentalPro.API.dll"
 healthcheckPath = "/health"
-healthcheckTimeout = 60
+healthcheckTimeout = 90
 restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
+
+[deploy.env]
+ASPNETCORE_ENVIRONMENT = "Production"
+ASPNETCORE_URLS = "http://+:8080"

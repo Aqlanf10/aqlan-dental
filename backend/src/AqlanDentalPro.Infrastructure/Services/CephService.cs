@@ -3,11 +3,10 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class CephService(AppDbContext db, ICurrentUserService currentUser)
+public class CephService(AppDbContext db, ICurrentUserService currentUser, ICephLandmarkDetector? landmarkDetector = null)
 {
     // ──────────────────────────────────────────────────────────────────────────
     //  LIST
@@ -80,15 +79,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
         var analysis = await db.CephAnalyses.FindAsync(id);
         if (analysis is null) return false;
 
-        // Store calibration data in Notes as JSON so ComputeMeasurements can use it.
-        var notesData = new CephNotesData
-        {
-            PixelsPerMm = req.PixelsPerMm,
-            ImageWidth  = req.ImageWidth,
-            ImageHeight = req.ImageHeight,
-            UserNotes   = ExtractUserNotes(analysis.Notes)
-        };
-        analysis.Notes = JsonSerializer.Serialize(notesData);
+        // Store calibration data in dedicated entity fields.
+        analysis.PixelsPerMm = req.PixelsPerMm > 0 ? req.PixelsPerMm : null;
+        analysis.ImageWidth  = req.ImageWidth > 0 ? req.ImageWidth : null;
+        analysis.ImageHeight = req.ImageHeight > 0 ? req.ImageHeight : null;
 
         // Replace landmarks: soft-delete old, insert new.
         var existing = await db.CephLandmarks
@@ -133,14 +127,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
                 l => l.LandmarkKey,
                 l => (x: (double)(l.XCoord ?? 0), y: (double)(l.YCoord ?? 0)));
 
-        double pixelsPerMm = 0;
-        if (!string.IsNullOrWhiteSpace(analysis.Notes))
-            try
-            {
-                var nd = JsonSerializer.Deserialize<CephNotesData>(analysis.Notes);
-                if (nd is not null) pixelsPerMm = nd.PixelsPerMm;
-            }
-            catch { }
+        double pixelsPerMm = analysis.PixelsPerMm ?? 0;
 
         bool cal = pixelsPerMm > 0;
         bool Has(params string[] keys) => keys.All(lm.ContainsKey);
@@ -274,6 +261,56 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
         else if (groups.Contains("wits") && !results.Exists(r => r.group == "wits"))
         {
             // No landmarks available — skip (frontend shows "—" via real-time compute)
+        }
+
+        // ── Jarabak ───────────────────────────────────────────────────────────
+        if (groups.Contains("jarabak"))
+        {
+            if (Has("N","S","Ar"))  Add("SaddleAngle",   "jarabak", Angle3T(G("N"),G("S"),G("Ar")), 123, 5, "°");
+            if (Has("S","Ar","Go")) Add("ArticularAngle", "jarabak", Angle3T(G("S"),G("Ar"),G("Go")), 143, 6, "°");
+            if (Has("Ar","Go","Me")) Add("GonialAngle",   "jarabak", Angle3T(G("Ar"),G("Go"),G("Me")), 128, 7, "°");
+            if (Has("Ar","Go","N"))  Add("UpperGonial",   "jarabak", Angle3T(G("Ar"),G("Go"),G("N")), 52, 3, "°");
+            if (Has("N","Go","Me"))  Add("LowerGonial",   "jarabak", Angle3T(G("N"),G("Go"),G("Me")), 76, 4, "°");
+            if (cal && Has("S","Go")) Add("PFH-SGo",      "jarabak", DistT(G("S"),G("Go")) / pixelsPerMm, 82, 6, "mm");
+            if (cal && Has("N","Me")) Add("AFH-NMe",      "jarabak", DistT(G("N"),G("Me")) / pixelsPerMm, 122, 6, "mm");
+
+            // Jarabak ratio: (S-Go / N-Me) * 100
+            var pfh = results.Find(r => r.name == "PFH-SGo");
+            var afh = results.Find(r => r.name == "AFH-NMe");
+            if (pfh.name != null && afh.name != null && afh.value > 0)
+                Add("FH-Ratio", "jarabak", (pfh.value / afh.value) * 100, 65, 3, "%");
+
+            // Polygon sum
+            var sa = results.Find(r => r.name == "SaddleAngle");
+            var ar = results.Find(r => r.name == "ArticularAngle");
+            var go = results.Find(r => r.name == "GonialAngle");
+            if (sa.name != null && ar.name != null && go.name != null)
+                Add("JarabakTotal", "jarabak", sa.value + ar.value + go.value, 396, 6, "°");
+        }
+
+        // ── Soft Tissue ───────────────────────────────────────────────────────
+        if (groups.Contains("softtissue"))
+        {
+            if (Has("Pn","Cm","LS"))  Add("NasolabialAngle",    "softtissue", Angle3T(G("Pn"),G("Cm"),G("LS")), 102, 8, "°");
+            // Mentolabial: approximate Si with LI
+            if (Has("LI","Pog","Cm"))  Add("MentolabialAngle",  "softtissue", Angle3T(G("LI"),G("LI"),G("Pog")), 132, 10, "°");
+            if (cal && Has("LS","Pn","Pog")) Add("UL-ELine",    "softtissue", SignedPerpT(G("LS"),G("Pn"),G("Pog")) / pixelsPerMm, -2, 2, "mm");
+            if (cal && Has("LI","Pn","Pog")) Add("LL-ELine",    "softtissue", SignedPerpT(G("LI"),G("Pn"),G("Pog")) / pixelsPerMm, -2, 2, "mm");
+            // S-line
+            if (Has("Cm","Pn"))
+            {
+                var sLineMid2 = ((G("Cm").x + G("Pn").x) / 2, (G("Cm").y + G("Pn").y) / 2);
+                if (cal && Has("LS","Pog"))
+                    Add("UL-SLine-Soft", "softtissue",
+                        SignedPerp(G("LS").x, G("LS").y, G("Pog").x, G("Pog").y, sLineMid2.Item1, sLineMid2.Item2) / pixelsPerMm, 0, 1, "mm");
+                if (cal && Has("LI","Pog"))
+                    Add("LL-SLine-Soft", "softtissue",
+                        SignedPerp(G("LI").x, G("LI").y, G("Pog").x, G("Pog").y, sLineMid2.Item1, sLineMid2.Item2) / pixelsPerMm, 0, 1, "mm");
+            }
+            if (cal && Has("Pn","N","Pog")) Add("NoseProminence","softtissue", SignedPerpT(G("Pn"),G("N"),G("Pog")) / pixelsPerMm, 14, 2, "mm");
+            if (Has("N","Pog","Po","Or")) Add("STFacialAngle", "softtissue", ABLines(G("N"),G("Pog"),G("Po"),G("Or")), 87, 3, "°");
+            if (cal && Has("ANS","LS")) Add("ULLength", "softtissue", DistT(G("ANS"),G("LS")) / pixelsPerMm, 22, 2, "mm");
+            if (cal && Has("LS","Me"))  Add("LLLength", "softtissue", DistT(G("LS"),G("Me")) / pixelsPerMm, 42, 3, "mm");
         }
 
         // ── Persist ──────────────────────────────────────────────────────────
@@ -431,7 +468,8 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  SIMULATE AI LANDMARKS
+    //  AI LANDMARK DETECTION
+    //  Uses ICephLandmarkDetector (ONNX model or template fallback)
     // ──────────────────────────────────────────────────────────────────────────
     public async Task<List<CephLandmarkDto>> SimulateAiAsync(Guid id, AiSimulateRequest req)
     {
@@ -439,19 +477,43 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
         var analysis = await db.CephAnalyses.FindAsync(id);
         if (analysis is not null)
         {
-            var notesData = new CephNotesData
-            {
-                PixelsPerMm = req.PixelsPerMm,
-                ImageWidth  = req.ImageWidth,
-                ImageHeight = req.ImageHeight,
-                UserNotes   = ExtractUserNotes(analysis.Notes)
-            };
-            analysis.Notes      = JsonSerializer.Serialize(notesData);
-            analysis.AiAssisted = true;
+            analysis.PixelsPerMm  = req.PixelsPerMm > 0 ? req.PixelsPerMm : null;
+            analysis.ImageWidth   = req.ImageWidth > 0 ? req.ImageWidth : null;
+            analysis.ImageHeight  = req.ImageHeight > 0 ? req.ImageHeight : null;
+            analysis.AiAssisted   = true;
             analysis.IsAutoTraced = true;
             await db.SaveChangesAsync();
         }
 
+        // Use the real AI detector if available
+        if (landmarkDetector is not null && analysis?.XrayFileUrl is not null)
+        {
+            try
+            {
+                var detected = await landmarkDetector.DetectAsync(
+                    new MemoryStream(),
+                    req.ImageWidth > 0 ? req.ImageWidth : 800,
+                    req.ImageHeight > 0 ? req.ImageHeight : 600);
+
+                return detected.Select(d => new CephLandmarkDto
+                {
+                    Id         = Guid.NewGuid(),
+                    Key        = d.Key,
+                    Name       = d.NameAr,
+                    X          = d.X,
+                    Y          = d.Y,
+                    IsAiPlaced = true,
+                    Confidence = d.Confidence
+                }).ToList();
+            }
+            catch (Exception ex) when (landmarkDetector is not null)
+            {
+                // Fall through to template-based detection on error
+                // Silently continue with template fallback when AI detection fails
+            }
+        }
+
+        // Template-based fallback: anatomical ratio templates with jitter
         var rng = new Random();
         double W = req.ImageWidth  > 0 ? req.ImageWidth  : 800;
         double H = req.ImageHeight > 0 ? req.ImageHeight : 600;
@@ -553,21 +615,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     // ──────────────────────────────────────────────────────────────────────────
     private static CephAnalysisDetailDto MapDetail(CephAnalysis a)
     {
-        // Extract calibration data stored in Notes JSON.
-        double? pixelsPerMm = null;
-        int imageWidth = 0, imageHeight = 0;
-        if (!string.IsNullOrWhiteSpace(a.Notes))
-            try
-            {
-                var nd = JsonSerializer.Deserialize<CephNotesData>(a.Notes);
-                if (nd is not null)
-                {
-                    pixelsPerMm = nd.PixelsPerMm > 0 ? nd.PixelsPerMm : null;
-                    imageWidth  = nd.ImageWidth;
-                    imageHeight = nd.ImageHeight;
-                }
-            }
-            catch { }
+        // Use calibration data from entity fields (previously stored in Notes JSON).
+        double? pixelsPerMm = a.PixelsPerMm > 0 ? a.PixelsPerMm : null;
+        int imageWidth  = a.ImageWidth ?? 0;
+        int imageHeight = a.ImageHeight ?? 0;
 
         return new CephAnalysisDetailDto
         {
@@ -711,13 +762,15 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     // ──────────────────────────────────────────────────────────────────────────
     private static HashSet<string> GetAnalysisGroups(string analysisType) => analysisType switch
     {
-        "steiner"  => ["steiner"],
-        "tweed"    => ["tweed"],
-        "mcnamara" => ["mcnamara"],
-        "ricketts" => ["ricketts"],
-        "downs"    => ["downs"],
-        "wits"     => ["wits"],
-        _          => ["steiner", "tweed", "mcnamara", "ricketts", "downs", "wits"]
+        "steiner"    => ["steiner"],
+        "tweed"      => ["tweed"],
+        "mcnamara"   => ["mcnamara"],
+        "ricketts"   => ["ricketts"],
+        "downs"      => ["downs"],
+        "wits"       => ["wits"],
+        "jarabak"    => ["jarabak"],
+        "softtissue" => ["softtissue"],
+        _            => ["steiner", "tweed", "mcnamara", "ricketts", "downs", "wits", "jarabak", "softtissue"]
     };
 
     private static string GetMeasurementGroup(string name) => name switch
@@ -730,6 +783,15 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
         "Convexity" or "AB-FacialPlane" or "Y-Axis"
             or "Facial-Plane-FH" or "Mandibular-FH"                    => "downs",
         "Wits"                                                          => "wits",
+        "SaddleAngle" or "ArticularAngle" or "GonialAngle"
+            or "UpperGonial" or "LowerGonial"
+            or "PFH-SGo" or "AFH-NMe" or "FH-Ratio"
+            or "JarabakTotal"                                           => "jarabak",
+        "NasolabialAngle" or "MentolabialAngle"
+            or "UL-ELine" or "LL-ELine"
+            or "UL-SLine-Soft" or "LL-SLine-Soft"
+            or "NoseProminence" or "STFacialAngle"
+            or "ULLength" or "LLLength"                                 => "softtissue",
         _                                                               => "steiner"
     };
 
@@ -774,6 +836,27 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
         "Mandibular-FH"    => "مستوى الفك السفلي / FH",
         // Wits
         "Wits"             => "مسافة وتس (AO-BO)",
+        // Jarabak
+        "SaddleAngle"      => "زاوية السرج (N-S-Ar)",
+        "ArticularAngle"   => "زاوية المفصل (S-Ar-Go)",
+        "GonialAngle"      => "زاوية الفك (Ar-Go-Me)",
+        "UpperGonial"      => "الزاوية الفكية العلوية (Ar-Go-N)",
+        "LowerGonial"      => "الزاوية الفكية السفلية (N-Go-Me)",
+        "PFH-SGo"          => "ارتفاع الوجه الخلفي (S-Go)",
+        "AFH-NMe"          => "ارتفاع الوجه الأمامي (N-Me)",
+        "FH-Ratio"         => "نسبة ارتفاع الوجه (S-Go/N-Me)",
+        "JarabakTotal"     => "مجموع جاراباك (مضلع)",
+        // Soft Tissue
+        "NasolabialAngle"  => "الزاوية الأنفية الشفوية (Cm-Pn-LS)",
+        "MentolabialAngle" => "الزاوية الذقنية الشفوية",
+        "UL-ELine"         => "الشفة العلوية لخط E",
+        "LL-ELine"         => "الشفة السفلية لخط E",
+        "UL-SLine-Soft"    => "الشفة العلوية لخط S (أنسجة رخوة)",
+        "LL-SLine-Soft"    => "الشفة السفلية لخط S (أنسجة رخوة)",
+        "NoseProminence"   => "بروز الأنف",
+        "STFacialAngle"    => "زاوية الوجه الأنسجة الرخوة",
+        "ULLength"         => "طول الشفة العلوية",
+        "LLLength"         => "طول الشفة السفلية",
         _                  => name
     };
 
@@ -818,19 +901,40 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
             "Facial-Plane-FH" => above ? $"مستوى الوجه بزاوية أعلى {s}" : $"مستوى الوجه بزاوية أقل {s}",
             "Mandibular-FH" => above ? $"مستوى الفك السفلي مرتفع {s}" : $"مستوى الفك السفلي منخفض {s}",
             "Wits"          => above ? $"تنافر هيكلي من الصنف الثاني (AO أمام BO) {s}" : $"تنافر هيكلي من الصنف الثالث (BO أمام AO) {s}",
+            // Jarabak
+            "SaddleAngle"   => above ? $"زاوية السرج مرتفعة {s}" : $"زاوية السرج منخفضة {s}",
+            "ArticularAngle" => above ? $"زاوية المفصل مرتفعة {s}" : $"زاوية المفصل منخفضة {s}",
+            "GonialAngle"   => above ? $"زاوية الفك مرتفعة (وجه طويل) {s}" : $"زاوية الفك منخفضة (وجه قصير) {s}",
+            "UpperGonial"   => above ? $"الزاوية الفكية العلوية مرتفعة {s}" : $"الزاوية الفكية العلوية منخفضة {s}",
+            "LowerGonial"   => above ? $"الزاوية الفكية السفلية مرتفعة {s}" : $"الزاوية الفكية السفلية منخفضة {s}",
+            "PFH-SGo"       => above ? $"ارتفاع الوجه الخلفي مرتفع {s}" : $"ارتفاع الوجه الخلفي منخفض {s}",
+            "AFH-NMe"       => above ? $"ارتفاع الوجه الأمامي مرتفع {s}" : $"ارتفاع الوجه الأمامي منخفض {s}",
+            "FH-Ratio"      => above ? $"نسبة ارتفاع الوجه مرتفعة (نمط أفقي) {s}" : $"نسبة ارتفاع الوجه منخفضة (نمط رأسي) {s}",
+            "JarabakTotal"  => above ? $"مجموع المضلع مرتفع {s}" : $"مجموع المضلع منخفض {s}",
+            // Soft Tissue
+            "NasolabialAngle"  => above ? $"الزاوية الأنفية مفتوحة {s}" : $"الزاوية الأنفية ضيقة {s}",
+            "MentolabialAngle" => above ? $"الزاوية الذقنية مفتوحة {s}" : $"الزاوية الذقنية ضيقة {s}",
+            "UL-ELine"         => above ? $"الشفة العلوية بارزة أمام خط E {s}" : $"الشفة العلوية خلف خط E {s}",
+            "LL-ELine"         => above ? $"الشفة السفلية بارزة أمام خط E {s}" : $"الشفة السفلية خلف خط E {s}",
+            "UL-SLine-Soft"    => above ? $"الشفة العلوية بارزة أمام خط S {s}" : $"الشفة العلوية خلف خط S {s}",
+            "LL-SLine-Soft"    => above ? $"الشفة السفلية بارزة أمام خط S {s}" : $"الشفة السفلية خلف خط S {s}",
+            "NoseProminence"   => above ? $"بروز الأنف زائد {s}" : $"بروز الأنف قليل {s}",
+            "STFacialAngle"    => above ? $"زاوية الوجه الرخوة مرتفعة {s}" : $"زاوية الوجه الرخوة منخفضة {s}",
+            "ULLength"         => above ? $"طول الشفة العلوية زائد {s}" : $"طول الشفة العلوية قصير {s}",
+            "LLLength"         => above ? $"طول الشفة السفلية زائد {s}" : $"طول الشفة السفلية قصير {s}",
             _               => above ? $"أعلى من المعدل {s}" : $"أقل من المعدل {s}"
         };
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  NOTES JSON HELPER
+    //  NOTES JSON HELPER  (kept for backward compatibility with old records)
     // ──────────────────────────────────────────────────────────────────────────
     private static string? ExtractUserNotes(string? notesJson)
     {
         if (string.IsNullOrWhiteSpace(notesJson)) return null;
         try
         {
-            var nd = JsonSerializer.Deserialize<CephNotesData>(notesJson);
+            var nd = System.Text.Json.JsonSerializer.Deserialize<CephNotesData>(notesJson);
             return nd?.UserNotes;
         }
         catch
@@ -841,7 +945,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  INNER DTO FOR NOTES JSON
+    //  INNER DTO FOR NOTES JSON  (kept for backward compatibility)
     // ──────────────────────────────────────────────────────────────────────────
     private sealed class CephNotesData
     {

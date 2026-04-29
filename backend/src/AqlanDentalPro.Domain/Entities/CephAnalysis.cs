@@ -11,6 +11,11 @@ public class CephAnalysis : BaseEntity
     public Guid? DoctorId { get; set; }
     public string? Notes { get; set; }
 
+    // Calibration fields (previously stored in Notes JSON)
+    public double? PixelsPerMm { get; set; }
+    public int? ImageWidth { get; set; }
+    public int? ImageHeight { get; set; }
+
     public OrthoCase OrthoCase { get; set; } = null!;
     public Doctor? Doctor { get; set; }
     public ICollection<CephLandmark> Landmarks { get; set; } = [];

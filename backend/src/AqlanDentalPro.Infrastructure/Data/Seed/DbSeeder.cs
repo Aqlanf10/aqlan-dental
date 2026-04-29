@@ -3,6 +3,7 @@ using AqlanDentalPro.Domain.Enums;
 using Konscious.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace AqlanDentalPro.Infrastructure.Data.Seed;
@@ -75,11 +76,16 @@ public static class DbSeeder
 
         foreach (var (id, username, role, name, specialty, color, initials) in usersData)
         {
+            // Generate a unique salt for each user
+            var salt = GenerateSalt();
+            var hash = HashPassword(defaultPassword, salt);
+
             var user = new User
             {
                 Id = id,
                 Username = username,
-                PasswordHash = HashPassword(defaultPassword),
+                PasswordHash = hash,
+                PasswordSalt = salt,
                 Role = role,
                 BranchId = branchId
             };
@@ -286,16 +292,28 @@ public static class DbSeeder
         await context.SaveChangesAsync();
     }
 
-    private static string HashPassword(string password)
+    /// <summary>
+    /// Generates a cryptographically random 16-byte salt encoded as Base64.
+    /// Each user gets a unique salt for maximum security.
+    /// </summary>
+    private static string GenerateSalt()
+    {
+        var saltBytes = RandomNumberGenerator.GetBytes(16);
+        return Convert.ToBase64String(saltBytes);
+    }
+
+    /// <summary>
+    /// Hashes a password with the given salt using Argon2id.
+    /// </summary>
+    private static string HashPassword(string password, string salt)
     {
         var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
         {
-            Salt = Encoding.UTF8.GetBytes("AqlanDentalSalt!"), // In prod, use random salt stored with hash
-            DegreeOfParallelism = 1,
+            Salt = Convert.FromBase64String(salt),
+            DegreeOfParallelism = 2,
             MemorySize = 65536,
             Iterations = 3
         };
-        var hash = argon2.GetBytes(32);
-        return Convert.ToBase64String(hash);
+        return Convert.ToBase64String(argon2.GetBytes(32));
     }
 }

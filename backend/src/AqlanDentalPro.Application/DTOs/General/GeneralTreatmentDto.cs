@@ -26,3 +26,14 @@ public class CreateGeneralTreatmentRequest
     public Guid? DoctorId { get; set; }
     public string? Notes { get; set; }
 }
+
+public class UpdateGeneralTreatmentRequest
+{
+    public string? TreatmentType { get; set; }
+    public string? ToothNumber { get; set; }
+    public string? MaterialUsed { get; set; }
+    public string? AnesthesiaType { get; set; }
+    public decimal? Cost { get; set; }
+    public Guid? DoctorId { get; set; }
+    public string? Notes { get; set; }
+}

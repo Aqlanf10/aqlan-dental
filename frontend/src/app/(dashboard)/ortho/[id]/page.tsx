@@ -2,15 +2,23 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity, ClipboardCheck, ListChecks, FileText, Plus, Trash2, Save } from "lucide-react";
-import type { OrthoCase, TreatmentStage, OrthoVisit } from "@/types/ortho";
+import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity, ClipboardCheck, ListChecks, FileText, Plus, Trash2, Save, ShieldCheck, Camera, Ruler, Sparkles, Target } from "lucide-react";
+import type { OrthoCase, TreatmentStage, OrthoVisit, TreatmentPlanDto, TreatmentPlanListDto, ModelAnalysisDto } from "@/types/ortho";
 import type { Contract } from "@/types/finance";
+import type { ProblemListSuggestion, ExtractionDecisionAnalysis } from "@/types/ai";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
+import { RetentionTab } from "@/components/ortho/RetentionTab";
+import { PhotosRadiographsTab } from "@/components/ortho/PhotosRadiographsTab";
+import { TreatmentPlanAB } from "@/components/ortho/TreatmentPlanAB";
+import { ModelAnalysisTab } from "@/components/ortho/ModelAnalysisTab";
+import { AiCaseSummary } from "@/components/ortho/AiCaseSummary";
+import { VtoModule } from "@/components/ceph/VtoModule";
+import { useProblemListSuggestion, useExtractionDecision, useOrthoCaseDataForAi } from "@/hooks/useAiAdvisory";
 
-type Tab = "info" | "exam" | "problems" | "plan" | "extraction" | "stages" | "visits" | "finance";
+type Tab = "info" | "exam" | "problems" | "plan" | "extraction" | "stages" | "visits" | "retention" | "photos" | "model" | "finance" | "summary" | "vto";
 
 const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "info",       label: "المعلومات",     icon: User },
@@ -20,7 +28,12 @@ const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "extraction", label: "قرار الخلع",    icon: Activity },
   { key: "stages",     label: "مراحل العلاج",  icon: GitBranch },
   { key: "visits",     label: "سجل الزيارات",  icon: Calendar },
+  { key: "retention",  label: "الاحتفاظ",      icon: ShieldCheck },
+  { key: "photos",     label: "الصور والأشعة",  icon: Camera },
+  { key: "model",      label: "تحليل الموديل", icon: Ruler },
   { key: "finance",    label: "العقد المالي",   icon: Wallet },
+  { key: "summary",    label: "ملخص AI",       icon: Sparkles },
+  { key: "vto",         label: "VTO",           icon: Target },
 ];
 
 interface ClinicalExam {
@@ -311,6 +324,40 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
   );
 }
 
+// ─── AI Problem List Button ──────────────────────────────────────────────────
+function AiProblemListButton({ caseId, onSuggestions }: { caseId: string; onSuggestions: (items: ProblemListSuggestion[]) => void }) {
+  const suggestMutation = useProblemListSuggestion();
+  const { data: caseData } = useOrthoCaseDataForAi(caseId);
+
+  const handleSuggest = async () => {
+    if (!caseData) return;
+    suggestMutation.mutate(
+      {
+        clinicalExam: caseData.ClinicalExam,
+        cephMeasurements: caseData.CephAnalysis?.Measurements,
+        patientAge: caseData.OrthoCase?.PatientAge,
+        patientGender: caseData.OrthoCase?.PatientGender,
+      },
+      {
+        onSuccess: (data) => {
+          if (data.suggestions) onSuggestions(data.suggestions);
+        },
+      }
+    );
+  };
+
+  return (
+    <button
+      onClick={handleSuggest}
+      disabled={suggestMutation.isPending || !caseData}
+      className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-1.5"
+    >
+      <Sparkles className="w-3 h-3" />
+      {suggestMutation.isPending ? "جاري التحليل..." : "اقتراح المشاكل"}
+    </button>
+  );
+}
+
 // ─── Problem List Tab ─────────────────────────────────────────────────────────
 interface ProblemItem { id: string; category: string; description: string; severity?: string; }
 
@@ -383,6 +430,30 @@ function ProblemListTab({ caseId }: { caseId: string }) {
         </button>
       </div>
 
+      {/* AI Suggestion */}
+      <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-600" />
+            <h3 className="text-sm font-semibold text-purple-800">اقتراح ذكي</h3>
+            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded-full">مقترح</span>
+          </div>
+          <AiProblemListButton caseId={caseId} onSuggestions={(suggestions) => {
+            // Auto-add suggestions
+            suggestions.forEach(async (s) => {
+              try {
+                const { data } = await api.post<ProblemItem>(`/api/ortho-cases/${caseId}/problem-list`, {
+                  category: s.category,
+                  description: s.description,
+                  severity: s.severity,
+                });
+                setItems((prev) => [...prev, data]);
+              } catch {}
+            });
+          }} />
+        </div>
+      </div>
+
       {/* List */}
       {items.length === 0 ? (
         <div className="text-center py-10 text-gray-400 text-sm">
@@ -415,108 +486,37 @@ function ProblemListTab({ caseId }: { caseId: string }) {
   );
 }
 
-// ─── Treatment Plan Tab ───────────────────────────────────────────────────────
-interface TreatmentPlanData {
-  applianceType?: string; bracketSystem?: string; initialWire?: string;
-  extractionPlan?: string; anchoragePlan?: string; useTads?: boolean;
-  useElastics?: boolean; expectedDurationMonths?: number; retentionPlan?: string;
-  treatmentGoals?: string; risksLimitations?: string;
-  isApproved?: boolean; approvedByName?: string; approvedAt?: string;
-}
+// ─── AI Extraction Button ────────────────────────────────────────────────────
+function AiExtractionButton({ caseId, onAnalysis }: { caseId: string; onAnalysis: (analysis: ExtractionDecisionAnalysis) => void }) {
+  const extractionMutation = useExtractionDecision();
+  const { data: caseData } = useOrthoCaseDataForAi(caseId);
 
-function TreatmentPlanTab({ caseId }: { caseId: string }) {
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
-  const [form, setForm] = useState<TreatmentPlanData>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    api.get<TreatmentPlanData | null>(`/api/ortho-cases/${caseId}/treatment-plan`)
-      .then((r) => { if (r.data) setForm(r.data); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [caseId]);
-
-  const set = <K extends keyof TreatmentPlanData>(key: K, value: TreatmentPlanData[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
-
-  const handleSave = async () => {
-    setSaving(true); setSaved(false);
-    try {
-      await api.put(`/api/ortho-cases/${caseId}/treatment-plan`, form);
-      setSaved(true); setTimeout(() => setSaved(false), 3000);
-    } catch {} finally { setSaving(false); }
+  const handleAnalyze = async () => {
+    if (!caseData) return;
+    extractionMutation.mutate(
+      {
+        clinicalExam: caseData.ClinicalExam,
+        cephMeasurements: caseData.CephAnalysis?.Measurements,
+        modelAnalysis: caseData.ModelAnalysis,
+        patientAge: caseData.OrthoCase?.PatientAge,
+        patientGender: caseData.OrthoCase?.PatientGender,
+        problemList: caseData.ProblemList,
+      },
+      {
+        onSuccess: (data) => onAnalysis(data),
+      }
+    );
   };
 
-  if (loading) return <div className="animate-pulse h-64 bg-gray-100 rounded-xl" />;
-
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">نوع الجهاز</label>
-          <input value={form.applianceType ?? ""} onChange={(e) => set("applianceType", e.target.value)} className={inputCls} placeholder="MBT 0.022 / Invisalign..." />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">نظام البراكيت</label>
-          <input value={form.bracketSystem ?? ""} onChange={(e) => set("bracketSystem", e.target.value)} className={inputCls} placeholder="MBT / Roth / Damon..." />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">السلك الأولي</label>
-          <input value={form.initialWire ?? ""} onChange={(e) => set("initialWire", e.target.value)} className={inputCls} placeholder="0.014 NiTi..." />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">المدة المتوقعة (أشهر)</label>
-          <input type="number" value={form.expectedDurationMonths ?? ""} onChange={(e) => set("expectedDurationMonths", e.target.value ? Number(e.target.value) : undefined)} className={inputCls} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">خطة الخلع</label>
-          <input value={form.extractionPlan ?? ""} onChange={(e) => set("extractionPlan", e.target.value)} className={inputCls} placeholder="بدون خلع / خلع 4 أضراس..." />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">خطة التثبيت (Anchorage)</label>
-          <input value={form.anchoragePlan ?? ""} onChange={(e) => set("anchoragePlan", e.target.value)} className={inputCls} />
-        </div>
-        <div className="flex items-center gap-6 py-2">
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-            <input type="checkbox" checked={form.useTads ?? false} onChange={(e) => set("useTads", e.target.checked)} className="rounded" />
-            استخدام TADs
-          </label>
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-            <input type="checkbox" checked={form.useElastics ?? false} onChange={(e) => set("useElastics", e.target.checked)} className="rounded" />
-            استخدام مطاطات
-          </label>
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-xs font-medium text-gray-500 mb-1">أهداف العلاج</label>
-          <textarea rows={3} value={form.treatmentGoals ?? ""} onChange={(e) => set("treatmentGoals", e.target.value)} className={inputCls} />
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-xs font-medium text-gray-500 mb-1">خطة الاحتفاظ</label>
-          <textarea rows={2} value={form.retentionPlan ?? ""} onChange={(e) => set("retentionPlan", e.target.value)} className={inputCls} />
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-xs font-medium text-gray-500 mb-1">المخاطر والقيود</label>
-          <textarea rows={2} value={form.risksLimitations ?? ""} onChange={(e) => set("risksLimitations", e.target.value)} className={inputCls} />
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 border-t border-gray-100 pt-4">
-        <button onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
-        >
-          <Save className="w-4 h-4" />
-          {saving ? "جاري الحفظ..." : "حفظ الخطة"}
-        </button>
-        {saved && <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>}
-        {form.isApproved && (
-          <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full">
-            معتمدة {form.approvedByName ? `بواسطة ${form.approvedByName}` : ""}
-          </span>
-        )}
-      </div>
-    </div>
+    <button
+      onClick={handleAnalyze}
+      disabled={extractionMutation.isPending || !caseData}
+      className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-1.5"
+    >
+      <Sparkles className="w-3 h-3" />
+      {extractionMutation.isPending ? "جاري التحليل..." : "تحليل بالذكاء الاصطناعي"}
+    </button>
   );
 }
 
@@ -588,6 +588,23 @@ function ExtractionDecisionTab({ caseId }: { caseId: string }) {
             </span>
           </label>
         ))}
+      </div>
+
+      {/* AI Extraction Analysis */}
+      <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-600" />
+            <h4 className="text-sm font-semibold text-purple-800">تحليل AI لقرار الخلع</h4>
+            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded-full">مقترح</span>
+          </div>
+          <AiExtractionButton caseId={caseId} onAnalysis={(analysis) => {
+            // Auto-select AI recommendation
+            if (analysis.recommendation) {
+              setDecision(analysis.recommendation);
+            }
+          }} />
+        </div>
       </div>
 
       {/* Decision summary */}
@@ -727,6 +744,9 @@ export default function OrthoCaseDetailPage() {
   const [orthoCase, setOrthoCase] = useState<OrthoCase | null>(null);
   const [visits, setVisits] = useState<OrthoVisit[]>([]);
   const [clinicalExam, setClinicalExam] = useState<ClinicalExam | null>(null);
+  const [treatmentPlans, setTreatmentPlans] = useState<TreatmentPlanDto[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
+  const [modelAnalysis, setModelAnalysis] = useState<ModelAnalysisDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("info");
 
@@ -735,15 +755,29 @@ export default function OrthoCaseDetailPage() {
       api.get<OrthoCase>(`/api/ortho-cases/${id}`),
       api.get<OrthoVisit[]>(`/api/ortho-cases/${id}/visits`),
       api.get<ClinicalExam | null>(`/api/ortho-cases/${id}/clinical-exam`),
+      api.get<TreatmentPlanListDto>(`/api/ortho-cases/${id}/treatment-plans`).catch((): { data: TreatmentPlanListDto } => ({ data: { plans: [] } })),
+      api.get<ModelAnalysisDto>(`/api/ortho-cases/${id}/model-analysis`).catch(() => ({ data: null })),
     ])
-      .then(([caseRes, visitsRes, examRes]) => {
+      .then(([caseRes, visitsRes, examRes, plansRes, analysisRes]) => {
         setOrthoCase(caseRes.data);
         setVisits(visitsRes.data);
         setClinicalExam(examRes.data);
+        setTreatmentPlans(plansRes.data?.plans ?? []);
+        setSelectedPlanId(plansRes.data?.selectedPlanId);
+        setModelAnalysis(analysisRes.data);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  const refetchPlans = () => {
+    api.get<TreatmentPlanListDto>(`/api/ortho-cases/${id}/treatment-plans`)
+      .then((res) => {
+        setTreatmentPlans(res.data?.plans ?? []);
+        setSelectedPlanId(res.data?.selectedPlanId);
+      })
+      .catch(() => {});
+  };
 
   const handleStageUpdate = (updated: TreatmentStage) => {
     setOrthoCase((prev) =>
@@ -905,7 +939,12 @@ export default function OrthoCaseDetailPage() {
           )}
 
           {activeTab === "plan" && (
-            <TreatmentPlanTab caseId={id} />
+            <TreatmentPlanAB
+              orthoCaseId={id}
+              plans={treatmentPlans}
+              selectedPlanId={selectedPlanId}
+              onPlansChange={refetchPlans}
+            />
           )}
 
           {activeTab === "extraction" && (
@@ -928,9 +967,20 @@ export default function OrthoCaseDetailPage() {
             />
           )}
 
+          {activeTab === "retention" && (
+            <RetentionTab caseId={id} />
+          )}
+          {activeTab === "photos" && orthoCase && (
+            <PhotosRadiographsTab patientId={orthoCase.patientId} orthoCaseId={id} />
+          )}
+          {activeTab === "model" && (
+            <ModelAnalysisTab orthoCaseId={id} modelAnalysis={modelAnalysis} key={modelAnalysis?.id} />
+          )}
           {activeTab === "finance" && orthoCase && (
             <PatientContractsPanel patientId={orthoCase.patientId} />
           )}
+          {activeTab === "summary" && <AiCaseSummary caseId={id} />}
+          {activeTab === "vto" && orthoCase && <VtoModule caseId={id} landmarks={[]} imageWidth={800} imageHeight={600} />}
         </div>
       </div>
     </div>

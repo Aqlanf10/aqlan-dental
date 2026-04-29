@@ -4,6 +4,14 @@ import { persist } from "zustand/middleware";
 import type { UserDto, LoginRequest } from "@/types/auth";
 import api from "@/lib/api";
 
+/** Helper: set/clear auth cookie for middleware */
+function setAuthCookie(authenticated: boolean) {
+  if (typeof document === "undefined") return;
+  document.cookie = `aqlan_auth_status=${
+    authenticated ? "authenticated" : ""
+  }; path=/; max-age=${authenticated ? 60 * 60 * 24 * 7 : 0}; SameSite=Strict`;
+}
+
 interface AuthState {
   user: UserDto | null;
   isAuthenticated: boolean;
@@ -27,7 +35,8 @@ export const useAuthStore = create<AuthState>()(
             "/api/auth/login",
             credentials
           );
-          sessionStorage.setItem("access_token", data.accessToken);
+          localStorage.setItem("access_token", data.accessToken);
+          setAuthCookie(true);
           set({ user: data.user, isAuthenticated: true });
         } finally {
           set({ isLoading: false });
@@ -37,16 +46,22 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         try {
           await api.post("/api/auth/logout");
-        } catch {}
-        sessionStorage.removeItem("access_token");
+        } catch {
+          // ignore logout API errors
+        }
+        localStorage.removeItem("access_token");
+        setAuthCookie(false);
         set({ user: null, isAuthenticated: false });
       },
 
       fetchMe: async () => {
         try {
           const { data } = await api.get<UserDto>("/api/auth/me");
+          setAuthCookie(true);
           set({ user: data, isAuthenticated: true });
         } catch {
+          localStorage.removeItem("access_token");
+          setAuthCookie(false);
           set({ user: null, isAuthenticated: false });
         }
       },
@@ -54,6 +69,12 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "aqlan-auth",
       partialize: (s) => ({ user: s.user, isAuthenticated: s.isAuthenticated }),
+      onRehydrateStorage: () => (state) => {
+        // Sync cookie on rehydration
+        if (state?.isAuthenticated) {
+          setAuthCookie(true);
+        }
+      },
     }
   )
 );

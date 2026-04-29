@@ -59,9 +59,9 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
 
   useEffect(() => {
     if (!selectedPatientId) { setContracts([]); return; }
-    api.get<Contract[]>(`/api/contracts?patientId=${selectedPatientId}&status=active`)
+    api.get<{ items: Contract[]; totalCount: number }>(`/api/contracts?patientId=${selectedPatientId}&status=active`)
       .then((r) => {
-        setContracts(r.data);
+        setContracts(r.data.items);
         if (defaultContractId) setValue("contractId", defaultContractId);
       })
       .catch(() => {});

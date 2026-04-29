@@ -15,12 +15,14 @@ interface Props {
 }
 
 const SCIENTIST_TABS: { key: MeasurementGroup; label: string; labelFull: string }[] = [
-  { key: 'steiner',  label: 'ستاينر',    labelFull: 'تحليل ستاينر' },
-  { key: 'tweed',    label: 'تويد',      labelFull: 'تحليل تويد' },
-  { key: 'mcnamara', label: 'ماكنامارا', labelFull: 'تحليل ماكنامارا' },
-  { key: 'ricketts', label: 'ريكتس',    labelFull: 'تحليل ريكتس' },
-  { key: 'downs',    label: 'داونز',     labelFull: 'تحليل داونز' },
-  { key: 'wits',     label: 'وتس',       labelFull: 'تحليل وتس' },
+  { key: 'steiner',    label: 'ستاينر',        labelFull: 'تحليل ستاينر' },
+  { key: 'tweed',      label: 'تويد',          labelFull: 'تحليل تويد' },
+  { key: 'mcnamara',   label: 'ماكنامارا',     labelFull: 'تحليل ماكنامارا' },
+  { key: 'ricketts',   label: 'ريكتس',        labelFull: 'تحليل ريكتس' },
+  { key: 'downs',      label: 'داونز',         labelFull: 'تحليل داونز' },
+  { key: 'wits',       label: 'وتس',           labelFull: 'تحليل وتس' },
+  { key: 'jarabak',    label: 'جاراباك',       labelFull: 'تحليل جاراباك' },
+  { key: 'softtissue', label: 'الأنسجة الرخوة', labelFull: 'تحليل الأنسجة الرخوة' },
 ];
 
 const SEVERITY_CFG = {

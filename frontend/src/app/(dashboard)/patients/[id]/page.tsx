@@ -4,14 +4,15 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
-  Calendar, Activity, Wallet, Pill, Plus, Scissors, GitBranch, ArrowLeft, Image,
-  Trash2, ExternalLink,
+  Calendar, Activity, Wallet, Pill, Plus, Scissors, Image,
+  Trash2, ExternalLink, Layers,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import { DentalChart } from "@/components/dental/DentalChart";
 import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
+import { UnifiedPatientFile } from "@/components/patient/UnifiedPatientFile";
 
 interface PatientSummary {
   totalAppointments:   number;
@@ -571,9 +572,10 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
   );
 }
 
-type Tab = "info" | "medical" | "dental" | "chart" | "timeline" | "images";
+type Tab = "info" | "medical" | "dental" | "chart" | "timeline" | "images" | "unified";
 
 const TABS: { key: Tab; label: string; icon: typeof User }[] = [
+  { key: "unified",  label: "الملف الموحد",     icon: Layers },
   { key: "info",     label: "المعلومات العامة", icon: User },
   { key: "medical",  label: "التاريخ الطبي",    icon: FileText },
   { key: "dental",   label: "التاريخ السني",    icon: Stethoscope },
@@ -854,6 +856,8 @@ export default function PatientProfilePage() {
           {activeTab === "timeline" && <PatientTimeline patientId={id} />}
 
           {activeTab === "images" && <PhotosAndXraysTab patientId={id} />}
+
+          {activeTab === "unified" && patient && <UnifiedPatientFile patientId={id} patient={patient} />}
         </div>
       </div>
     </div>

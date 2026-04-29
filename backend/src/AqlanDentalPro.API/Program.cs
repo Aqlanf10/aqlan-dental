@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Application.Validators;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Data.Seed;
 using AqlanDentalPro.Infrastructure.Repositories;
@@ -27,14 +28,49 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // ── Database (PostgreSQL) ─────────────────────────────────────────────────────
+// Support Railway's DATABASE_URL format (postgresql://user:pass@host:port/db)
+// as well as the standard ConnectionStrings__DefaultConnection format.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration["DATABASE_URL"] switch
+    {
+        string dbUrl => ConvertRailwayUrlToNpgsql(dbUrl),
+        null => null
+    }
+    ?? throw new InvalidOperationException("No database connection string found. Set ConnectionStrings__DefaultConnection or DATABASE_URL.");
+
 builder.Services.AddDbContext<AppDbContext>(opts =>
-    opts.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
+    opts.UseNpgsql(connectionString,
         npgsql => npgsql.MigrationsAssembly("AqlanDentalPro.Infrastructure")));
 
+static string ConvertRailwayUrlToNpgsql(string url)
+{
+    // Railway provides: postgresql://user:password@host:port/database
+    // Npgsql needs:     Host=host;Port=port;Database=database;Username=user;Password=password
+    var uri = new Uri(url);
+    var userInfo = uri.UserInfo.Split(':');
+    return $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.Trim('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+}
+
 // ── Redis ─────────────────────────────────────────────────────────────────────
+// Support Railway's REDIS_URL format (redis://default:password@host:port)
+var redisConnStr = builder.Configuration["Redis:ConnectionString"]
+    ?? builder.Configuration["REDIS_URL"] switch
+    {
+        string rUrl => ConvertRailwayRedisUrl(rUrl),
+        null => "localhost:6379"
+    };
+
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(builder.Configuration["Redis:ConnectionString"]
-        ?? "localhost:6379"));
+    ConnectionMultiplexer.Connect(redisConnStr));
+
+static string ConvertRailwayRedisUrl(string url)
+{
+    // Railway provides: redis://default:password@host:port
+    // StackExchange.Redis needs: host:port,password=password
+    var uri = new Uri(url);
+    var password = uri.UserInfo.Contains(':') ? uri.UserInfo.Split(':')[1] : "";
+    return $"{uri.Host}:{uri.Port},password={password},ssl=True,abortConnect=False";
+}
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 var jwtKey = builder.Configuration["Jwt:SecretKey"]
@@ -56,7 +92,57 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+// ── Role-Based Authorization Policies ─────────────────────────────────────────
+builder.Services.AddAuthorization(opts =>
+{
+    // Admin-only policies
+    opts.AddPolicy("AdminOnly", policy => policy.RequireRole(nameof(UserRole.Admin)));
+
+    // Orthodontist + Admin policies
+    opts.AddPolicy("OrthoAccess", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Orthodontist)));
+
+    // General Dentist + Admin policies
+    opts.AddPolicy("GeneralAccess", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.GeneralDentist)));
+
+    // Oral Surgeon + Admin policies
+    opts.AddPolicy("SurgeryAccess", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.OralSurgeon)));
+
+    // Finance access: Admin + Reception + Accountant
+    opts.AddPolicy("FinanceAccess", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Reception), nameof(UserRole.Accountant)));
+
+    // Reports access: Admin + Accountant
+    opts.AddPolicy("ReportsAccess", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
+
+    // Doctors (any medical role) + Admin
+    opts.AddPolicy("DoctorAccess", policy =>
+        policy.RequireRole(
+            nameof(UserRole.Admin),
+            nameof(UserRole.Orthodontist),
+            nameof(UserRole.GeneralDentist),
+            nameof(UserRole.OralSurgeon)));
+
+    // Appointment management: all doctors + reception + admin
+    opts.AddPolicy("AppointmentAccess", policy =>
+        policy.RequireRole(
+            nameof(UserRole.Admin),
+            nameof(UserRole.Orthodontist),
+            nameof(UserRole.GeneralDentist),
+            nameof(UserRole.OralSurgeon),
+            nameof(UserRole.Reception)));
+
+    // AI access: all doctors + admin
+    opts.AddPolicy("AIAccess", policy =>
+        policy.RequireRole(
+            nameof(UserRole.Admin),
+            nameof(UserRole.Orthodontist),
+            nameof(UserRole.GeneralDentist),
+            nameof(UserRole.OralSurgeon)));
+});
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
@@ -72,10 +158,10 @@ builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
 
 // ── DI — Services ────────────────────────────────────────────────────────────
+builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<PatientService>();
 builder.Services.AddScoped<AppointmentService>();
 builder.Services.AddScoped<DashboardService>();
@@ -83,6 +169,9 @@ builder.Services.AddScoped<OrthoService>();
 builder.Services.AddScoped<FinanceService>();
 builder.Services.AddScoped<GeneralService>();
 builder.Services.AddScoped<CephService>();
+builder.Services.AddScoped<IFileService, FileService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddSingleton<ICephLandmarkDetector, CephLandmarkDetector>();
 
 builder.Services.AddHttpContextAccessor();
 
@@ -140,6 +229,7 @@ app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Denta
 
 app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontend");
+app.UseStaticFiles();   // Serve wwwroot/uploads
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<AuditLogMiddleware>();

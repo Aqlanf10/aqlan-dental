@@ -7,7 +7,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/ceph")]
-[Authorize]
+[Authorize(Policy = "OrthoAccess")]
 public class CephController(CephService service) : ControllerBase
 {
     // GET /api/ceph                          — all analyses

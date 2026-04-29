@@ -1,12 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Stethoscope, UserPlus, Plus, X, Save } from "lucide-react";
+import {
+  Stethoscope, UserPlus, Plus, X, Save, Pencil, Trash2, AlertTriangle,
+  Activity, Grid3x3,
+} from "lucide-react";
 import type { GeneralTreatment } from "@/types/dental";
 import type { PatientListItem } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
+import { DentalChart } from "@/components/dental/DentalChart";
+import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
+import { PerioAssessmentComponent } from "@/components/dental/PerioAssessment";
 
 interface Doctor { id: string; name: string; }
 
@@ -22,6 +28,8 @@ const inputCls = (err?: boolean) => cn(
   err ? "border-red-400" : "border-gray-300"
 );
 
+type PatientTab = "chart" | "perio" | "treatments";
+
 export default function GeneralPage() {
   const [treatments, setTreatments] = useState<GeneralTreatment[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -29,6 +37,7 @@ export default function GeneralPage() {
 
   // Quick navigator
   const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null);
+  const [patientTab, setPatientTab] = useState<PatientTab>("chart");
 
   // New treatment form
   const [showForm, setShowForm]   = useState(false);
@@ -43,18 +52,33 @@ export default function GeneralPage() {
   const [saving,        setSaving]        = useState(false);
   const [formErr,       setFormErr]       = useState("");
 
-  const fetchTreatments = () => {
+  // Edit treatment modal
+  const [editingTreatment, setEditingTreatment] = useState<GeneralTreatment | null>(null);
+  const [editTreatmentType, setEditTreatmentType] = useState("");
+  const [editToothNumber,   setEditToothNumber]   = useState("");
+  const [editMaterial,      setEditMaterial]      = useState("");
+  const [editAnesthesia,    setEditAnesthesia]    = useState("");
+  const [editCost,          setEditCost]          = useState("");
+  const [editNotes,         setEditNotes]         = useState("");
+  const [savingEdit,        setSavingEdit]        = useState(false);
+
+  // Delete confirmation
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchTreatments = useCallback(() => {
     setLoading(true);
     api.get<GeneralTreatment[]>("/api/general/recent-treatments?limit=50")
       .then((r) => setTreatments(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  };
+  }, []);
 
   useEffect(() => {
     fetchTreatments();
     api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
-  }, []);
+  }, [fetchTreatments]);
 
   const resetForm = () => {
     setFormPatient(null); setTreatmentType(""); setToothNumber("");
@@ -87,6 +111,54 @@ export default function GeneralPage() {
     }
   };
 
+  // Edit treatment
+  const openEditModal = (t: GeneralTreatment) => {
+    setEditingTreatment(t);
+    setEditTreatmentType(t.treatmentType);
+    setEditToothNumber(t.toothNumber ?? "");
+    setEditMaterial(t.materialUsed ?? "");
+    setEditAnesthesia(t.anesthesiaType ?? "");
+    setEditCost(t.cost?.toString() ?? "");
+    setEditNotes(t.notes ?? "");
+  };
+
+  const saveEdit = async () => {
+    if (!editingTreatment) return;
+    setSavingEdit(true);
+    try {
+      await api.put(`/api/general-treatments/${editingTreatment.id}`, {
+        treatmentType: editTreatmentType,
+        toothNumber: editToothNumber || undefined,
+        materialUsed: editMaterial || undefined,
+        anesthesiaType: editAnesthesia || undefined,
+        cost: editCost ? parseFloat(editCost) : undefined,
+        notes: editNotes || undefined,
+      });
+      setEditingTreatment(null);
+      fetchTreatments();
+    } catch {
+      // ignore
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Delete treatment
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/general-treatments/${deletingId}`);
+      setDeletingId(null);
+      setConfirmDelete(false);
+      fetchTreatments();
+    } catch {
+      // ignore
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center justify-between">
@@ -109,7 +181,7 @@ export default function GeneralPage() {
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <PatientCombobox
-              onSelect={(p: PatientListItem) => setSelectedPatient(p)}
+              onSelect={(p: PatientListItem) => { setSelectedPatient(p); setPatientTab("chart"); }}
               placeholder="ابحث بالاسم أو رقم المريض..."
             />
           </div>
@@ -124,6 +196,40 @@ export default function GeneralPage() {
           )}
         </div>
       </div>
+
+      {/* Patient sub-tabs when a patient is selected */}
+      {selectedPatient && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="flex border-b border-gray-100 overflow-x-auto">
+            {(
+              [
+                { id: "chart", label: "المخطط السني", icon: Grid3x3 },
+                { id: "perio", label: "تقييم النسج الداعمة", icon: Activity },
+                { id: "treatments", label: "سجل المعالجات", icon: Stethoscope },
+              ] as { id: PatientTab; label: string; icon: typeof Grid3x3 }[]
+            ).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setPatientTab(id)}
+                className={cn(
+                  "flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition",
+                  patientTab === id
+                    ? "border-clinic-teal text-clinic-teal"
+                    : "border-transparent text-gray-500 hover:text-gray-900"
+                )}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="p-5">
+            {patientTab === "chart" && <DentalChart patientId={selectedPatient.id} />}
+            {patientTab === "perio" && <PerioAssessmentComponent patientId={selectedPatient.id} />}
+            {patientTab === "treatments" && <TreatmentHistory patientId={selectedPatient.id} />}
+          </div>
+        </div>
+      )}
 
       {/* New treatment form */}
       {showForm && (
@@ -258,10 +364,26 @@ export default function GeneralPage() {
                       {t.cost ? formatYemeniRiyal(t.cost) : "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/patients/${t.patientId}`}
-                        className="text-xs text-clinic-teal hover:underline font-medium">
-                        ملف المريض
-                      </Link>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEditModal(t)}
+                          className="p-1 rounded text-gray-400 hover:text-clinic-teal hover:bg-teal-50 transition"
+                          title="تعديل"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { setDeletingId(t.id); setConfirmDelete(true); }}
+                          className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <Link href={`/patients/${t.patientId}`}
+                          className="text-xs text-clinic-teal hover:underline font-medium mr-2">
+                          ملف المريض
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -270,6 +392,114 @@ export default function GeneralPage() {
           </div>
         )}
       </div>
+
+      {/* Edit Treatment Modal */}
+      {editingTreatment && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setEditingTreatment(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-lg w-full p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">تعديل المعالجة</h3>
+              <button onClick={() => setEditingTreatment(null)} className="p-1 hover:bg-gray-100 rounded transition">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">نوع العلاج</label>
+                <select value={editTreatmentType} onChange={(e) => setEditTreatmentType(e.target.value)} className={inputCls()}>
+                  {TREATMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">رقم السن</label>
+                <input value={editToothNumber} onChange={(e) => setEditToothNumber(e.target.value)} className={inputCls()} dir="ltr" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">المادة</label>
+                <input value={editMaterial} onChange={(e) => setEditMaterial(e.target.value)} className={inputCls()} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">التخدير</label>
+                <select value={editAnesthesia} onChange={(e) => setEditAnesthesia(e.target.value)} className={inputCls()}>
+                  <option value="">بدون</option>
+                  {ANESTHESIA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">التكلفة (ر.ي)</label>
+                <input type="number" value={editCost} onChange={(e) => setEditCost(e.target.value)} className={inputCls()} dir="ltr" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
+                <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} className={cn(inputCls(), "resize-none")} />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                onClick={() => setEditingTreatment(null)}
+                className="px-4 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={savingEdit}
+                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              >
+                <Save className="w-4 h-4" />
+                {savingEdit ? "جارٍ الحفظ..." : "حفظ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {confirmDelete && deletingId && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => { setConfirmDelete(false); setDeletingId(null); }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900">تأكيد الحذف</h3>
+                <p className="text-sm text-gray-600 mt-1">هل أنت متأكد من حذف هذه المعالجة؟ لا يمكن التراجع عن هذا الإجراء.</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                onClick={() => { setConfirmDelete(false); setDeletingId(null); }}
+                className="px-4 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition"
+              >
+                <Trash2 className="w-4 h-4" />
+                {deleting ? "جارٍ الحذف..." : "حذف"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

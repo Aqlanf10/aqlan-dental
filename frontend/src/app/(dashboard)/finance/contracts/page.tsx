@@ -24,8 +24,8 @@ export default function ContractsPage() {
   useEffect(() => {
     const params = new URLSearchParams({ pageSize: "100" });
     if (statusFilter) params.set("status", statusFilter);
-    api.get<Contract[]>(`/api/contracts?${params}`)
-      .then((r) => setContracts(r.data))
+    api.get<{ items: Contract[]; totalCount: number }>("/api/contracts?" + params)
+      .then((r) => setContracts(r.data.items))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [statusFilter]);

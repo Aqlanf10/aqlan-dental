@@ -1,16 +1,20 @@
 "use client";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
-  Save, CheckCircle2, ChevronRight, Loader2,
+  Save, CheckCircle2, ChevronRight, Loader2, GitCompare,
+  Cpu,
 } from "lucide-react";
 import type { CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType } from "@/types/ceph";
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
 import { buildMeasurementList } from "@/lib/cephMath";
-import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
+import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS, type CephCanvasExportRef } from "@/components/ceph/CephCanvas";
 import { AnalysisReport } from "@/components/ceph/AnalysisReport";
+import { CephPdfExport } from "@/components/ceph/CephPdfExport";
+import { CephComparison } from "@/components/ceph/CephComparison";
+import { useAiModelStatus } from "@/hooks/useCephAi";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 
@@ -41,6 +45,13 @@ export default function CephAnalysisPage() {
   const [rightTab, setRightTab]       = useState<RightTab>('landmarks');
   const [diagnosis, setDiagnosis]     = useState<CephDiagnosis | null>(null);
   const [imageSize, setImageSize]     = useState({ w: 800, h: 600 });
+  const [showComparison, setShowComparison] = useState(false);
+
+  // Canvas export ref for PDF
+  const canvasExportRef = useRef<CephCanvasExportRef | null>(null);
+
+  // AI model status
+  const aiModelStatus = useAiModelStatus();
 
   useEffect(() => {
     api.get<CephAnalysis>(`/api/ceph/${id}`)
@@ -141,6 +152,11 @@ export default function CephAnalysisPage() {
     await api.put(`/api/ceph/${id}/diagnosis`, updated).catch(() => {});
   };
 
+  // Get canvas data URL for PDF export
+  const getCanvasDataUrl = useCallback((): string | undefined => {
+    return canvasExportRef.current?.getDataUrl() ?? undefined;
+  }, []);
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <Loader2 className="w-8 h-8 animate-spin text-clinic-teal" />
@@ -159,9 +175,21 @@ export default function CephAnalysisPage() {
           </Link>
           <div className="min-w-0">
             <h1 className="text-base font-extrabold text-gray-900 truncate">{analysis.patientName}</h1>
-            <p className="text-[10px] text-gray-400">
-              {formatArabicDate(analysis.analysisDate)} · {ANALYSIS_TYPE_AR[analysis.analysisType] ?? analysis.analysisType}
-            </p>
+            <div className="flex items-center gap-2 text-[10px] text-gray-400">
+              <span>{formatArabicDate(analysis.analysisDate)} · {ANALYSIS_TYPE_AR[analysis.analysisType] ?? analysis.analysisType}</span>
+              {/* AI Model status indicator */}
+              {aiModelStatus.data && (
+                <span className={cn(
+                  "flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold",
+                  aiModelStatus.data.isModelLoaded
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-500"
+                )}>
+                  <Cpu className="w-2.5 h-2.5" />
+                  {aiModelStatus.data.isModelLoaded ? "ONNX" : "Template"}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -198,6 +226,21 @@ export default function CephAnalysisPage() {
               {showSim ? <PlayCircle className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             </button>
           </div>
+
+          {/* PDF Export */}
+          <CephPdfExport
+            analysis={analysis}
+            canvasDataUrl={getCanvasDataUrl()}
+            patientName={analysis.patientName}
+          />
+
+          {/* Comparison button */}
+          <button onClick={() => setShowComparison(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
+            title="مقارنة التحاليل">
+            <GitCompare className="w-3.5 h-3.5" />
+            مقارنة
+          </button>
 
           {isDirty && (
             <span className="text-[10px] text-orange-500 font-medium flex items-center gap-0.5">
@@ -237,6 +280,7 @@ export default function CephAnalysisPage() {
             showPlanes={showPlanes}
             showSimulation={showSim}
             simulationScenario={simScenario}
+            exportRef={canvasExportRef}
           />
 
           {/* Info bar */}
@@ -369,6 +413,13 @@ export default function CephAnalysisPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Comparison Dialog ── */}
+      <CephComparison
+        orthoCaseId={analysis.orthoCaseId}
+        open={showComparison}
+        onClose={() => setShowComparison(false)}
+      />
     </div>
   );
 }

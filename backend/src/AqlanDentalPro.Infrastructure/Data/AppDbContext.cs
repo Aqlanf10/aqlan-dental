@@ -54,6 +54,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Inventory> Inventory => Set<Inventory>();
     public DbSet<LabOrder> LabOrders => Set<LabOrder>();
     public DbSet<AiRecommendation> AiRecommendations => Set<AiRecommendation>();
+    public DbSet<Expense> Expenses => Set<Expense>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

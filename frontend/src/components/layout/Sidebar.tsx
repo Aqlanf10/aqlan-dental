@@ -4,27 +4,40 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
-  BarChart2, Package, FlaskConical, Settings, LogOut, Lock, Pill,
+  BarChart2, Package, FlaskConical, Settings, LogOut,
+  Pill, X, Menu, Receipt, FileText, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect } from "react";
 
-const NAV_ITEMS = [
-  { href: "/",             label: "لوحة التحكم",       icon: LayoutDashboard, active: true },
-  { href: "/patients",     label: "المرضى",             icon: Users,           active: true },
-  { href: "/appointments", label: "المواعيد",           icon: Calendar,        active: true },
-  { href: "/ortho",        label: "التقويم",            icon: GitBranch,       active: true },
-  { href: "/ceph",         label: "السيفالومتري",       icon: Activity,        active: true },
-  { href: "/general",      label: "طب الأسنان العام",   icon: Stethoscope,     active: true },
-  { href: "/surgery",      label: "الجراحة",            icon: Scissors,        active: true },
-  { href: "/referrals",    label: "الإحالات",           icon: ArrowLeftRight,  active: true },
-  { href: "/finance",      label: "المالية",            icon: Wallet,          active: true },
-  { href: "/reports",      label: "التقارير",           icon: BarChart2,       active: true },
-  { href: "/inventory",    label: "المخزون",            icon: Package,         active: true },
-  { href: "/prescriptions", label: "الوصفات الطبية",     icon: Pill,            active: true },
-  { href: "/lab",          label: "المختبر",            icon: FlaskConical,    active: true },
-  { href: "/settings",     label: "الإعدادات",          icon: Settings,        active: true },
+/* ─── Role-based navigation permissions ────────────────────────────────────── */
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  roles: string[]; // empty = all roles
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { href: "/",             label: "لوحة التحكم",       icon: LayoutDashboard, roles: [] },
+  { href: "/patients",     label: "المرضى",             icon: Users,           roles: [] },
+  { href: "/appointments", label: "المواعيد",           icon: Calendar,        roles: [] },
+  { href: "/ortho",        label: "التقويم",            icon: GitBranch,       roles: ["Admin", "Orthodontist"] },
+  { href: "/ceph",         label: "السيفالومتري",       icon: Activity,        roles: ["Admin", "Orthodontist"] },
+  { href: "/general",      label: "طب الأسنان العام",   icon: Stethoscope,     roles: ["Admin", "GeneralDentist"] },
+  { href: "/surgery",      label: "الجراحة",            icon: Scissors,        roles: ["Admin", "OralSurgeon"] },
+  { href: "/referrals",    label: "الإحالات",           icon: ArrowLeftRight,  roles: [] },
+  { href: "/finance",      label: "المالية",            icon: Wallet,          roles: ["Admin", "Reception", "Accountant"] },
+  { href: "/finance/expenses", label: "المصروفات",     icon: Receipt,         roles: ["Admin", "Accountant"] },
+  { href: "/prescriptions", label: "الوصفات الطبية",    icon: Pill,            roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
+  { href: "/reports",      label: "التقارير",           icon: BarChart2,       roles: ["Admin", "Accountant"] },
+  { href: "/inventory",    label: "المخزون",            icon: Package,         roles: ["Admin"] },
+  { href: "/lab",          label: "المختبر",            icon: FlaskConical,    roles: ["Admin", "Orthodontist"] },
+  { href: "/profile",      label: "حسابي",              icon: User,             roles: [] },
+  { href: "/settings",     label: "الإعدادات",          icon: Settings,        roles: ["Admin"] },
+  { href: "/audit",        label: "سجل التدقيق",        icon: FileText,        roles: ["Admin"] },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -38,96 +51,151 @@ const ROLE_LABELS: Record<string, string> = {
   BranchManager: "مدير فرع",
 };
 
+/* ─── Sidebar Component ──────────────────────────────────────────────────────── */
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleLogout = async () => {
+  const userRole = user?.role ?? "";
+
+  // Filter nav items by role
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => item.roles.length === 0 || item.roles.includes(userRole)
+  );
+
+  const handleLogout = useCallback(async () => {
     await logout();
     router.push("/login");
-  };
+  }, [logout, router]);
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen]);
 
   return (
-    <aside className="w-64 bg-white border-l border-gray-200 flex flex-col h-full fixed top-0 right-0 z-40 shadow-sm">
-      {/* Logo */}
-      <div className="p-4 border-b border-gray-100">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 clinic-gradient rounded-xl flex items-center justify-center flex-shrink-0">
-            <Stethoscope className="w-5 h-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <p className="font-bold text-gray-900 text-sm leading-tight truncate">
-              مركز د. عقلان الكامل
-            </p>
-            <p className="text-xs text-gray-400 truncate">Aqlan Dental Pro</p>
-          </div>
-        </div>
-      </div>
+    <>
+      {/* ── Mobile hamburger button ──────────────────────────────────── */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="lg:hidden fixed top-3.5 right-3 z-50 w-10 h-10 rounded-lg bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-600 hover:bg-gray-50"
+        aria-label="فتح القائمة"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {NAV_ITEMS.map(({ href, label, icon: Icon, active }) => {
-          const isCurrent = href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(href);
+      {/* ── Mobile overlay ───────────────────────────────────────────── */}
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/40 z-40"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
 
-          return (
-            <div key={href}>
-              {active ? (
-                <Link
-                  href={href}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                    isCurrent
-                      ? "bg-clinic-teal text-white shadow-sm"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  )}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span>{label}</span>
-                </Link>
-              ) : (
-                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-400 cursor-not-allowed select-none">
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="flex-1">{label}</span>
-                  <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded flex items-center gap-1">
-                    <Lock className="w-2.5 h-2.5" />
-                    قريباً
-                  </span>
-                </div>
-              )}
+      {/* ── Sidebar ──────────────────────────────────────────────────── */}
+      <aside
+        className={cn(
+          "w-64 bg-white border-l border-gray-200 flex flex-col h-full fixed top-0 right-0 z-40 shadow-sm transition-transform duration-300",
+          // On mobile: translate off-screen when closed, on-screen when open
+          "lg:translate-x-0",
+          mobileOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"
+        )}
+      >
+        {/* Logo */}
+        <div className="p-4 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 clinic-gradient rounded-xl flex items-center justify-center flex-shrink-0">
+                <Stethoscope className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold text-gray-900 text-sm leading-tight truncate">
+                  مركز د. عقلان الكامل
+                </p>
+                <p className="text-xs text-gray-400 truncate">Aqlan Dental Pro</p>
+              </div>
             </div>
-          );
-        })}
-      </nav>
-
-      {/* User footer */}
-      <div className="p-3 border-t border-gray-100">
-        <div className="flex items-center gap-3 mb-2">
-          <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-            style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
-          >
-            {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-gray-900 truncate">
-              {user?.doctorName ?? user?.username}
-            </p>
-            <p className="text-xs text-gray-400 truncate">
-              {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
-            </p>
+            {/* Close button for mobile */}
+            <button
+              onClick={() => setMobileOpen(false)}
+              className="lg:hidden w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400"
+              aria-label="إغلاق القائمة"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          <span>تسجيل الخروج</span>
-        </button>
-      </div>
-    </aside>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+          {visibleItems.map(({ href, label, icon: Icon }) => {
+            // Match most specific (longest) href first to avoid /finance matching /finance/expenses
+            const bestMatch = visibleItems
+              .filter((item) => item.href !== "/" && pathname.startsWith(item.href))
+              .sort((a, b) => b.href.length - a.href.length)[0];
+            const isCurrent = href === "/"
+              ? pathname === "/"
+              : bestMatch ? href === bestMatch.href : false;
+
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+                  isCurrent
+                    ? "bg-clinic-teal text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                )}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span>{label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* User footer */}
+        <div className="p-3 border-t border-gray-100">
+          <div className="flex items-center gap-3 mb-2">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+              style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
+            >
+              {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-900 truncate">
+                {user?.doctorName ?? user?.username}
+              </p>
+              <p className="text-xs text-gray-400 truncate">
+                {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>تسجيل الخروج</span>
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }

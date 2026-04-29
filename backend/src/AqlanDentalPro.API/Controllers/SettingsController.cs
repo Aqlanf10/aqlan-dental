@@ -7,7 +7,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/settings")]
-[Authorize]
+[Authorize(Policy = "AdminOnly")]
 public class SettingsController(AppDbContext db) : ControllerBase
 {
     [HttpGet]

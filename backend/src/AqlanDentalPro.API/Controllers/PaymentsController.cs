@@ -1,5 +1,7 @@
 using AqlanDentalPro.Application.DTOs.Finance;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Application.Validators;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,8 +9,8 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api")]
-[Authorize]
-public class PaymentsController(FinanceService service) : ControllerBase
+[Authorize(Policy = "FinanceAccess")]
+public class PaymentsController(FinanceService service, INotificationService notificationService) : ControllerBase
 {
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(
@@ -30,8 +32,23 @@ public class PaymentsController(FinanceService service) : ControllerBase
     [HttpPost("payments")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
+        var validator = new CreatePaymentRequestValidator();
+        var validationResult = await validator.ValidateAsync(req);
+        if (!validationResult.IsValid)
+            return BadRequest(new { message = "بيانات غير صالحة", errors = validationResult.Errors.Select(e => e.ErrorMessage) });
+
         var result = await service.CreatePaymentAsync(req);
+
+        await notificationService.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", "تم تسجيل دفعة جديدة", "payments", result.Id);
+
         return Ok(result);
+    }
+
+    [HttpGet("receipts/{paymentId:guid}")]
+    public async Task<IActionResult> GetReceipt(Guid paymentId)
+    {
+        var result = await service.GetReceiptByPaymentIdAsync(paymentId);
+        return result == null ? NotFound(new { message = "الإيصال غير موجود" }) : Ok(result);
     }
 
     [HttpGet("finance/summary")]

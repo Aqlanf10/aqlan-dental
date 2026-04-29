@@ -14,6 +14,7 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Email).HasMaxLength(200);
         builder.HasIndex(u => u.Email).IsUnique().HasFilter("email IS NOT NULL");
         builder.Property(u => u.PasswordHash).IsRequired();
+        builder.Property(u => u.PasswordSalt).IsRequired();
         builder.Property(u => u.Role).HasConversion<string>().HasMaxLength(50);
 
         builder.HasOne(u => u.Branch)

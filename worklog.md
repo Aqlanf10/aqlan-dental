@@ -152,3 +152,30 @@ Work Log:
 Stage Summary:
 - 4 hook files created with comprehensive coverage
 - Ready to replace manual useEffect+useState patterns in components
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: نظام الرسائل الداخلية — المرحلة الأولى
+
+Work Log:
+- Created 4 new Domain Entities: Conversation, ConversationParticipant, Message, MessageRead
+- Created EF Core configuration (ConversationConfiguration.cs) with indexes and FK constraints
+- Created migration: 20260430000000_AddMessagingSystem.cs (4 new tables)
+- Updated AppDbContext with 4 new DbSet properties
+- Created Messaging DTOs: ConversationListDto, ConversationDetailDto, MessageDto, ConversationParticipantDto, CreateConversationRequest, SendMessageRequest, UnreadCountDto
+- Created MessagingService with full business logic: get conversations, get conversation detail, create conversation (direct/group), send message, mark as read, unread counts, leave conversation
+- Created MessagesController with 7 API endpoints under /api/messages/
+- Added /api/users/contacts endpoint (available to all authenticated users) for new chat dialog
+- Registered MessagingService in DI (Program.cs)
+- Created frontend types (messaging.ts), hooks (useMessaging.ts), and full messages page
+- Messages page: conversation list panel, chat area with message bubbles, new chat dialog with user selection
+- Added MessageCircle icon + messages link to Sidebar navigation (available to all roles)
+- Committed all changes (270 files, commit 224026e)
+
+Stage Summary:
+- Complete internal messaging system implemented
+- Backend: 7 REST API endpoints, 4 DB tables, full service layer
+- Frontend: Full messaging UI with conversation list, chat, new chat dialog
+- Support: direct & group conversations, reply-to, read receipts, unread counts
+- Needs: push to GitHub (requires PAT), then Railway/Vercel auto-deploy

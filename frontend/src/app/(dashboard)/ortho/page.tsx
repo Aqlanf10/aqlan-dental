@@ -177,7 +177,7 @@ export default function OrthoPage() {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y" className="divide-y divide-[#f1f5f9]">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {cases.map((c) => (
                   <tr key={c.id} className="hover:opacity-95 transition" style={{ backgroundColor: "transparent" }}>
                     <td className="px-4 py-3 font-mono font-semibold text-xs" style={{ color: "#a855f7" }}>

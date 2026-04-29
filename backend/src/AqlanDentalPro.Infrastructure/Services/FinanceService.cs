@@ -37,7 +37,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser)
         "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
     ];
 
-    public async Task<PaginatedResponse<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
+    public async Task<PaginatedResponse<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status, string? specialty = null, string? search = null)
     {
         var branchId = currentUser.BranchId;
 
@@ -48,6 +48,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser)
 
         if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(specialty)) query = query.Where(c => c.Specialty == specialty);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(c => c.Patient.FirstName.ToLower().Contains(term) || c.Patient.LastName.ToLower().Contains(term) || c.Patient.PatientNumber.ToLower().Contains(term));
+        }
 
         var totalCount = await query.CountAsync();
 
@@ -289,7 +295,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser)
         return overdue.OrderByDescending(o => o.OverdueAmount).ToList();
     }
 
-    public async Task<PaginatedResponse<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId)
+    public async Task<PaginatedResponse<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId, Guid? contractId = null, string? paymentMethod = null, string? specialty = null, string? from = null, string? to = null)
     {
         var query = db.Payments
             .Include(p => p.Patient)
@@ -297,6 +303,19 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser)
             .AsQueryable();
 
         if (patientId.HasValue) query = query.Where(p => p.PatientId == patientId);
+        if (contractId.HasValue) query = query.Where(p => p.ContractId == contractId);
+        if (!string.IsNullOrWhiteSpace(paymentMethod)) query = query.Where(p => p.PaymentMethod == paymentMethod);
+        if (!string.IsNullOrWhiteSpace(specialty)) query = query.Where(p => p.Specialty == specialty);
+        if (!string.IsNullOrWhiteSpace(from))
+        {
+            var fromDate = DateOnly.Parse(from);
+            query = query.Where(p => p.PaymentDate >= fromDate);
+        }
+        if (!string.IsNullOrWhiteSpace(to))
+        {
+            var toDate = DateOnly.Parse(to);
+            query = query.Where(p => p.PaymentDate <= toDate);
+        }
 
         var totalCount = await query.CountAsync();
 

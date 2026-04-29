@@ -16,9 +16,11 @@ public class ContractsController(FinanceService service) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? patientId = null,
-        [FromQuery] string? status = null)
+        [FromQuery] string? status = null,
+        [FromQuery] string? specialty = null,
+        [FromQuery] string? search = null)
     {
-        var result = await service.GetContractsAsync(page, pageSize, patientId, status);
+        var result = await service.GetContractsAsync(page, pageSize, patientId, status, specialty, search);
         return Ok(result);
     }
 

@@ -16,9 +16,14 @@ public class PaymentsController(FinanceService service, INotificationService not
     public async Task<IActionResult> GetPayments(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] Guid? patientId = null)
+        [FromQuery] Guid? patientId = null,
+        [FromQuery] Guid? contractId = null,
+        [FromQuery] string? paymentMethod = null,
+        [FromQuery] string? specialty = null,
+        [FromQuery] string? from = null,
+        [FromQuery] string? to = null)
     {
-        var result = await service.GetPaymentsAsync(page, pageSize, patientId);
+        var result = await service.GetPaymentsAsync(page, pageSize, patientId, contractId, paymentMethod, specialty, from, to);
         return Ok(result);
     }
 

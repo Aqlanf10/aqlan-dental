@@ -15,6 +15,7 @@ public class NotificationsController(AppDbContext db, ICurrentUserService curren
     [HttpGet]
     public async Task<IActionResult> GetNotifications(
         [FromQuery] bool? unreadOnly = null,
+        [FromQuery] string? category = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -23,6 +24,8 @@ public class NotificationsController(AppDbContext db, ICurrentUserService curren
 
         if (unreadOnly == true)
             query = query.Where(n => !n.IsRead);
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(n => n.Type == category);
 
         var notifications = await query
             .OrderByDescending(n => n.CreatedAt)

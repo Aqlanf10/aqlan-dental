@@ -42,8 +42,8 @@ function NewCephPageInner() {
   useEffect(() => {
     const id = params.get("orthoCaseId");
     if (!id) return;
-    api.get<OrthoCase[]>("/api/ortho-cases").then((r) => {
-      const c = r.data.find((x) => x.id === id);
+    api.get<{ data: OrthoCase[]; total: number }>("/api/ortho-cases").then((r) => {
+      const c = (r.data.data ?? []).find((x) => x.id === id);
       if (c) {
         setValue("orthoCaseId", c.id);
         setCaseSearch(`${c.patientName} (${c.caseNumber})`);
@@ -54,8 +54,8 @@ function NewCephPageInner() {
   useEffect(() => {
     if (caseSearch.length < 2) { setCaseResults([]); return; }
     const t = setTimeout(() => {
-      api.get<OrthoCase[]>(`/api/ortho-cases?search=${encodeURIComponent(caseSearch)}&pageSize=8`)
-        .then((r) => setCaseResults(r.data))
+      api.get<{ data: OrthoCase[]; total: number }>(`/api/ortho-cases?search=${encodeURIComponent(caseSearch)}&pageSize=8`)
+        .then((r) => setCaseResults(r.data.data ?? []))
         .catch(() => {});
     }, 300);
     return () => clearTimeout(t);

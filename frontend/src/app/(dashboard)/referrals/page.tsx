@@ -45,8 +45,8 @@ export default function ReferralsPage() {
   const load = () => {
     setLoading(true);
     const params = filter ? `?status=${filter}` : "";
-    api.get<Referral[]>(`/api/referrals${params}`)
-      .then((r) => setReferrals(r.data))
+    api.get<{ data: Referral[]; total: number; page: number; pageSize: number }>(`/api/referrals${params}`)
+      .then((r) => setReferrals(r.data.data ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   };

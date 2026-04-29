@@ -48,6 +48,8 @@ public class ReferralsController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status,
         [FromQuery] Guid? patientId,
+        [FromQuery] Guid? doctorId,
+        [FromQuery] string? search,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -59,6 +61,9 @@ public class ReferralsController(AppDbContext db) : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(r => r.Status == status);
         if (patientId.HasValue) query = query.Where(r => r.PatientId == patientId.Value);
+        if (doctorId.HasValue) query = query.Where(r => r.FromDoctorId == doctorId.Value || r.ToDoctorId == doctorId.Value);
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(r => r.Patient.FirstName.Contains(search) || r.Patient.LastName.Contains(search) || r.Reason!.Contains(search));
 
         var total = await query.CountAsync();
         var referrals = await query

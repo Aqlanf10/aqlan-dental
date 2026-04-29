@@ -18,4 +18,7 @@ public class User : BaseEntity
     public Doctor? Doctor { get; set; }
     public ICollection<AuditLog> AuditLogs { get; set; } = [];
     public ICollection<Notification> Notifications { get; set; } = [];
+    public ICollection<ConversationParticipant> ConversationParticipants { get; set; } = [];
+    public ICollection<Message> SentMessages { get; set; } = [];
+    public ICollection<Conversation> CreatedConversations { get; set; } = [];
 }

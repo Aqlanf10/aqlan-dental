@@ -55,6 +55,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<LabOrder> LabOrders => Set<LabOrder>();
     public DbSet<AiRecommendation> AiRecommendations => Set<AiRecommendation>();
     public DbSet<Expense> Expenses => Set<Expense>();
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<ConversationParticipant> ConversationParticipants => Set<ConversationParticipant>();
+    public DbSet<Message> Messages => Set<Message>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

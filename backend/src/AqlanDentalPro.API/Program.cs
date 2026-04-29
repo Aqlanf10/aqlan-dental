@@ -156,6 +156,8 @@ builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
+builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 
 // ── DI — Services ────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -171,6 +173,7 @@ builder.Services.AddScoped<GeneralService>();
 builder.Services.AddScoped<CephService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<MessageService>();
 builder.Services.AddSingleton<ICephLandmarkDetector, CephLandmarkDetector>();
 
 builder.Services.AddHttpContextAccessor();

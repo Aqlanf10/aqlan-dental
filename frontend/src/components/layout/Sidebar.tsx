@@ -5,10 +5,10 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   Home, Users, Calendar, Smile, BarChart3,
-  Sparkles, ClipboardList, Cross, Bell, Phone,
+  Sparkles, ClipboardList, Cross, Phone,
   UserCheck, Banknote, Pill, ArrowRightLeft,
   FlaskConical, Package, BarChart2, Settings,
-  ChevronRight, LogOut, X, Menu,
+  ChevronRight, LogOut, X, Menu, MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -52,7 +52,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     title: "التواصل",
     items: [
-      { href: "/messaging", label: "الرسائل", icon: Bell, roles: [], badge: 3 },
+      { href: "/messaging", label: "الرسائل", icon: MessageCircle, roles: [] },
       { href: "/sms", label: "تذكيرات SMS", icon: Phone, roles: [] },
       { href: "/recall", label: "نظام الاستدعاء", icon: UserCheck, roles: [] },
     ],

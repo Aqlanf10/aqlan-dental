@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 
-const PUBLIC_PATHS = ["/portal/login"];
+const PUBLIC_PATHS = ["/portal/login", "/portal/portal/login"];
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (!isAuthenticated && !PUBLIC_PATHS.includes(pathname)) {
-      router.replace("/portal/login");
+      router.replace("/portal/portal/login");
     }
   }, [isAuthenticated, pathname, router]);
 

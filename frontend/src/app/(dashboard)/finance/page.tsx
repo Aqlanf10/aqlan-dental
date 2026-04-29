@@ -14,7 +14,7 @@ const SPECIALTY_LABELS: Record<string, string> = {
   orthodontics: "تقويم", general: "عام", surgery: "جراحة", other: "أخرى",
   ortho: "تقويم",
 };
-const SPECIALTY_COLORS = ["#0E7490", "#7C3AED", "#DC2626", "#D97706"];
+const SPECIALTY_COLORS = ["#3d7ab5", "#a855f7", "#ef4444", "#f5922e"];
 const METHOD_LABELS: Record<string, string> = {
   cash: "نقداً", bank_transfer: "تحويل بنكي", card: "بطاقة",
 };
@@ -29,10 +29,10 @@ export default function FinancePage() {
 
   const stats = summary
     ? [
-        { label: "محصّل اليوم", value: formatYemeniRiyal(summary.todayCollected), icon: TrendingUp, color: "bg-teal-50 text-teal-600 border-teal-200" },
-        { label: "محصّل هذا الشهر", value: formatYemeniRiyal(summary.monthCollected), icon: Wallet, color: "bg-emerald-50 text-emerald-600 border-emerald-200" },
-        { label: "المبالغ المستحقة", value: formatYemeniRiyal(summary.totalOutstanding), icon: AlertCircle, color: "bg-red-50 text-red-600 border-red-200" },
-        { label: "العقود النشطة", value: summary.activeContracts.toString(), icon: FileText, color: "bg-purple-50 text-purple-600 border-purple-200" },
+        { label: "محصّل اليوم", value: formatYemeniRiyal(summary.todayCollected), icon: TrendingUp, color: "bg-[#3d7ab518] text-accent-blue border-[#3d7ab530]" },
+        { label: "محصّل هذا الشهر", value: formatYemeniRiyal(summary.monthCollected), icon: Wallet, color: "bg-[#22c55e18] text-[#22c55e] border-[#22c55e30]" },
+        { label: "المبالغ المستحقة", value: formatYemeniRiyal(summary.totalOutstanding), icon: AlertCircle, color: "bg-[#ef444418] text-[#ef4444] border-[#ef444430]" },
+        { label: "العقود النشطة", value: summary.activeContracts.toString(), icon: FileText, color: "bg-[#a855f718] text-[#a855f7] border-[#a855f730]" },
       ]
     : [];
 
@@ -45,7 +45,7 @@ export default function FinancePage() {
             ? formatYemeniRiyal(summary.averageContractValue)
             : "—",
           icon: BarChart3,
-          color: "bg-cyan-50 text-cyan-700 border-cyan-200",
+          color: "bg-[#3d7ab518] text-accent-blue border-[#3d7ab530]",
         },
         {
           label: "نسبة التحصيل",
@@ -54,8 +54,8 @@ export default function FinancePage() {
             : "—",
           icon: Percent,
           color: summary.collectionRate != null && summary.collectionRate >= 80
-            ? "bg-green-50 text-green-700 border-green-200"
-            : "bg-amber-50 text-amber-700 border-amber-200",
+            ? "bg-[#22c55e18] text-[#22c55e] border-[#22c55e30]"
+            : "bg-[#f59e0b18] text-[#f59e0b] border-[#f59e0b30]",
         },
         {
           label: "نسبة المتأخرات",
@@ -64,8 +64,8 @@ export default function FinancePage() {
             : "—",
           icon: AlertCircle,
           color: summary.overduePercentage != null && summary.overduePercentage > 20
-            ? "bg-red-50 text-red-700 border-red-200"
-            : "bg-orange-50 text-orange-700 border-orange-200",
+            ? "bg-[#ef444418] text-[#ef4444] border-[#ef444430]"
+            : "bg-[#f5922e18] text-[#f5922e] border-[#f5922e30]",
         },
       ]
     : [];
@@ -82,24 +82,24 @@ export default function FinancePage() {
     <div className="space-y-5 max-w-6xl">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">المالية</h1>
-          <p className="text-sm text-gray-500 mt-0.5">الملخص المالي والعقود والدفعات</p>
+          <h1 className="text-2xl font-extrabold text-[#0d2137]">المالية</h1>
+          <p className="text-sm text-[#64748b] mt-0.5">الملخص المالي والعقود والدفعات</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link href="/finance/overdue"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-[#ef444430] text-[#ef4444] hover:bg-[#ef444418] transition"
           >
             <AlertCircle className="w-4 h-4" />
             متأخرات
           </Link>
           <Link href="/finance/contracts/new"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-teal text-clinic-teal hover:bg-teal-50 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-accent-blue text-accent-blue hover:bg-light-blue transition"
           >
             <FileText className="w-4 h-4" />
             عقد جديد
           </Link>
           <Link href="/finance/payments"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
           >
             <Plus className="w-4 h-4" />
             دفعة جديدة
@@ -110,7 +110,7 @@ export default function FinancePage() {
       {/* Main Stats */}
       {summaryLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-pulse">
-          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-xl" />)}
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 bg-[#eef3f9] rounded-xl" />)}
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -142,15 +142,15 @@ export default function FinancePage() {
       {/* Revenue by Specialty & Doctor Table */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Revenue by specialty mini-chart */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900 text-sm">الإيرادات حسب التخصص</h2>
-            <Link href="/reports" className="text-xs text-clinic-teal hover:underline">
+            <h2 className="font-bold text-[#0d2137] text-sm">الإيرادات حسب التخصص</h2>
+            <Link href="/reports" className="text-xs text-accent-blue hover:underline">
               التقرير المالي
             </Link>
           </div>
           {pieData.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">لا توجد بيانات</div>
+            <div className="text-center py-8 text-[#94a3b8] text-sm">لا توجد بيانات</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={160}>
@@ -172,9 +172,9 @@ export default function FinancePage() {
                       <div className="flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: SPECIALTY_COLORS[i % SPECIALTY_COLORS.length] }} />
-                        <span className="text-gray-600">{s.name}</span>
+                        <span className="text-[#64748b]">{s.name}</span>
                       </div>
-                      <span className="font-semibold text-gray-900">{formatYemeniRiyal(s.value)} ({pct}%)</span>
+                      <span className="font-semibold text-[#0d2137]">{formatYemeniRiyal(s.value)} ({pct}%)</span>
                     </div>
                   );
                 })}
@@ -184,31 +184,31 @@ export default function FinancePage() {
         </div>
 
         {/* Revenue by doctor mini-table */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h2 className="font-bold text-gray-900 text-sm">الإيرادات حسب الطبيب</h2>
-            <Link href="/reports" className="text-xs text-clinic-teal hover:underline">
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[#f1f5f9]">
+            <h2 className="font-bold text-[#0d2137] text-sm">الإيرادات حسب الطبيب</h2>
+            <Link href="/reports" className="text-xs text-accent-blue hover:underline">
               أداء الأطباء
             </Link>
           </div>
           {!doctorData?.length ? (
-            <div className="text-center py-8 text-gray-400 text-sm">لا توجد بيانات</div>
+            <div className="text-center py-8 text-[#94a3b8] text-sm">لا توجد بيانات</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-100">
+                <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
                   <tr>
                     {["الطبيب", "الدفعات", "الإيرادات"].map((h) => (
-                      <th key={h} className="text-start px-4 py-2.5 text-xs font-semibold text-gray-500">{h}</th>
+                      <th key={h} className="text-start px-4 py-2.5 text-xs font-bold text-[#64748b]">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[#f1f5f9]">
                   {doctorData.map((d) => (
-                    <tr key={d.doctorId} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-2.5 font-medium text-gray-900">{d.doctorName}</td>
-                      <td className="px-4 py-2.5 font-mono text-gray-600">{d.count}</td>
-                      <td className="px-4 py-2.5 font-mono font-semibold text-emerald-700">{formatYemeniRiyal(d.total)}</td>
+                    <tr key={d.doctorId} className="hover:bg-[#f7fafd] transition">
+                      <td className="px-4 py-2.5 font-medium text-[#0d2137]">{d.doctorName}</td>
+                      <td className="px-4 py-2.5 font-mono text-[#64748b]">{d.count}</td>
+                      <td className="px-4 py-2.5 font-mono font-semibold text-[#22c55e]">{formatYemeniRiyal(d.total)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -219,51 +219,51 @@ export default function FinancePage() {
       </div>
 
       {/* Quick Links */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h2 className="font-bold text-gray-900 text-sm mb-3">روابط سريعة</h2>
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+        <h2 className="font-bold text-[#0d2137] text-sm mb-3">روابط سريعة</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <QuickLink href="/finance/contracts" icon={FileText} label="العقود" color="text-clinic-teal" />
-          <QuickLink href="/finance/payments" icon={Wallet} label="الدفعات" color="text-emerald-600" />
-          <QuickLink href="/finance/overdue" icon={AlertCircle} label="المتأخرات" color="text-red-600" />
-          <QuickLink href="/reports" icon={BarChart3} label="التقارير" color="text-purple-600" />
+          <QuickLink href="/finance/contracts" icon={FileText} label="العقود" color="text-accent-blue" />
+          <QuickLink href="/finance/payments" icon={Wallet} label="الدفعات" color="text-[#22c55e]" />
+          <QuickLink href="/finance/overdue" icon={AlertCircle} label="المتأخرات" color="text-[#ef4444]" />
+          <QuickLink href="/reports" icon={BarChart3} label="التقارير" color="text-[#a855f7]" />
         </div>
       </div>
 
       {/* Recent Payments */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">آخر الدفعات</h2>
-          <Link href="/finance/contracts" className="text-sm text-clinic-teal hover:underline">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#f1f5f9]">
+          <h2 className="font-bold text-[#0d2137]">آخر الدفعات</h2>
+          <Link href="/finance/contracts" className="text-sm text-accent-blue hover:underline">
             عرض العقود
           </Link>
         </div>
 
         {summaryLoading ? (
           <div className="p-5 space-y-3 animate-pulse">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-[#eef3f9] rounded-lg" />)}
           </div>
         ) : !summary?.recentPayments.length ? (
-          <div className="text-center py-12 text-gray-400 text-sm">لا توجد دفعات مسجلة</div>
+          <div className="text-center py-12 text-[#94a3b8] text-sm">لا توجد دفعات مسجلة</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
+              <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
                 <tr>
                   {["المريض", "المبلغ", "التاريخ", "الطريقة", "رقم السند"].map((h) => (
-                    <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500">{h}</th>
+                    <th key={h} className="text-start px-4 py-3 text-xs font-bold text-[#64748b]">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {summary.recentPayments.map((p) => (
-                  <tr key={p.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-medium text-gray-900">{p.patientName}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-green-700">{formatYemeniRiyal(p.amount)}</td>
-                    <td className="px-4 py-3 text-gray-600">{formatArabicDate(p.paymentDate)}</td>
-                    <td className="px-4 py-3 text-gray-600">
+                  <tr key={p.id} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-3 font-medium text-[#0d2137]">{p.patientName}</td>
+                    <td className="px-4 py-3 font-mono font-semibold text-[#22c55e]">{formatYemeniRiyal(p.amount)}</td>
+                    <td className="px-4 py-3 text-[#64748b]">{formatArabicDate(p.paymentDate)}</td>
+                    <td className="px-4 py-3 text-[#64748b]">
                       {METHOD_LABELS[p.paymentMethod ?? ""] ?? p.paymentMethod ?? "—"}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-400">{p.receiptNumber ?? "—"}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-[#94a3b8]">{p.receiptNumber ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -282,10 +282,10 @@ function QuickLink({ href, icon: Icon, label, color }: {
 }) {
   return (
     <Link href={href}
-      className="flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition group"
+      className="flex items-center gap-3 px-4 py-3 rounded-lg border border-[#e8f0f9] hover:border-[#dce8f5] hover:shadow-card transition group"
     >
       <Icon className={`w-5 h-5 ${color} group-hover:scale-110 transition`} />
-      <span className="text-sm font-medium text-gray-700">{label}</span>
+      <span className="text-sm font-medium text-[#0d2137]">{label}</span>
     </Link>
   );
 }

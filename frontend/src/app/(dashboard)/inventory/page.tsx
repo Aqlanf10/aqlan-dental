@@ -77,9 +77,9 @@ export default function InventoryPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">المخزون</h1>
+            <h1 className="text-2xl font-bold text-[#0d2137]">المخزون</h1>
             {lowStockCount > 0 && (
-              <p className="text-sm text-red-600 mt-0.5 flex items-center gap-1">
+              <p className="text-sm text-[#ef4444] mt-0.5 flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5" />
                 {lowStockCount} مادة وصلت للحد الأدنى
               </p>
@@ -87,7 +87,7 @@ export default function InventoryPage() {
           </div>
           <button
             onClick={() => { setEditItem(null); setShowForm(true); }}
-            className="flex items-center gap-2 bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-cyan-800 transition-colors"
+            className="flex items-center gap-2 bg-accent-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-hover transition-colors"
           >
             <Plus className="w-4 h-4" />
             إضافة مادة
@@ -97,19 +97,19 @@ export default function InventoryPage() {
         {/* Filters */}
         <div className="flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-52">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="بحث بالاسم أو الفئة..."
-              className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full border border-[#e8f0f9] rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue"
             />
           </div>
           {categoriesData && categoriesData.length > 0 && (
             <select
               value={category}
               onChange={(e) => { setCategory(e.target.value); setPage(1); }}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="border border-[#e8f0f9] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue"
             >
               <option value="">جميع الفئات</option>
               {categoriesData.map((c) => (
@@ -122,54 +122,54 @@ export default function InventoryPage() {
               type="checkbox"
               checked={lowStockOnly}
               onChange={(e) => { setLowStockOnly(e.target.checked); setPage(1); }}
-              className="rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+              className="rounded border-[#dce8f5] text-accent-blue focus:ring-accent-blue"
             />
-            <span className="text-sm text-gray-700">الحد الأدنى فقط</span>
+            <span className="text-sm text-[#64748b]">الحد الأدنى فقط</span>
           </label>
         </div>
 
         {/* Table */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-[#f1f5f9] shadow-card overflow-hidden">
           {isLoading ? (
             <div className="p-6">
               <TableSkeleton rows={6} cols={6} />
             </div>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+            <div className="flex flex-col items-center justify-center py-16 text-[#94a3b8]">
               <Package className="w-10 h-10 mb-3" />
               <p className="font-medium">لا توجد مواد</p>
             </div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
+              <thead className="bg-[#f7fafd] border-b border-[#f1f5f9]">
                 <tr>
                   {["المادة", "الفئة", "الكمية", "الحد الأدنى", "الوحدة", "التكلفة / وحدة", ""].map((h) => (
-                    <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs">
+                    <th key={h} className="text-right px-4 py-3 font-medium text-[#64748b] text-xs">
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {items.map((item) => (
                   <tr
                     key={item.id}
                     className={cn(
-                      "hover:bg-gray-50 transition-colors",
-                      item.isLowStock && "bg-red-50/40"
+                      "hover:bg-[#f7fafd] transition-colors",
+                      item.isLowStock && "bg-[#ef444418]/40"
                     )}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {item.isLowStock && (
-                          <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                          <AlertTriangle className="w-3.5 h-3.5 text-[#ef4444] flex-shrink-0" />
                         )}
-                        <span className="font-medium text-gray-900">{item.name}</span>
+                        <span className="font-medium text-[#0d2137]">{item.name}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       {item.category ? (
-                        <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">
+                        <span className="bg-[#eef3f9] text-[#64748b] text-xs px-[10px] py-[2px] rounded-full">
                           {item.category}
                         </span>
                       ) : "—"}
@@ -177,14 +177,14 @@ export default function InventoryPage() {
                     <td className="px-4 py-3">
                       <span className={cn(
                         "font-semibold",
-                        item.isLowStock ? "text-red-600" : "text-gray-900"
+                        item.isLowStock ? "text-[#ef4444]" : "text-[#0d2137]"
                       )}>
                         {item.quantity}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500">{item.minQuantity}</td>
-                    <td className="px-4 py-3 text-gray-500">{item.unit ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-500">
+                    <td className="px-4 py-3 text-[#64748b]">{item.minQuantity}</td>
+                    <td className="px-4 py-3 text-[#64748b]">{item.unit ?? "—"}</td>
+                    <td className="px-4 py-3 text-[#64748b]">
                       {item.costPerUnit != null
                         ? `${item.costPerUnit.toLocaleString("ar-YE")} ر.ي`
                         : "—"}
@@ -193,14 +193,14 @@ export default function InventoryPage() {
                       <div className="flex items-center gap-2 justify-end">
                         <button
                           onClick={() => setAdjustItem(item)}
-                          className="text-xs text-cyan-700 hover:text-cyan-800 font-medium flex items-center gap-0.5"
+                          className="text-xs text-accent-blue hover:text-blue-hover font-medium flex items-center gap-0.5"
                           title="تعديل الكمية"
                         >
                           <Minus className="w-3 h-3" />/<Plus className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => { setEditItem(item); setShowForm(true); }}
-                          className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                          className="text-xs text-[#64748b] hover:text-[#64748b] font-medium"
                         >
                           تعديل
                         </button>
@@ -209,7 +209,7 @@ export default function InventoryPage() {
                             if (confirm(`هل تريد حذف "${item.name}"؟`))
                               deleteMutation.mutate(item.id);
                           }}
-                          className="text-xs text-red-500 hover:text-red-700 font-medium"
+                          className="text-xs text-[#ef4444] hover:text-[#ef4444] font-medium"
                         >
                           حذف
                         </button>
@@ -228,15 +228,15 @@ export default function InventoryPage() {
             <button
               disabled={page === 1}
               onClick={() => setPage((p) => p - 1)}
-              className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-[#f7fafd]"
             >
               السابق
             </button>
-            <span className="text-sm text-gray-500">{page} / {totalPages}</span>
+            <span className="text-sm text-[#64748b]">{page} / {totalPages}</span>
             <button
               disabled={page === totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40 hover:bg-[#f7fafd]"
             >
               التالي
             </button>

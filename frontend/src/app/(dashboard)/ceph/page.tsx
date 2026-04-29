@@ -8,6 +8,19 @@ import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { CephComparison } from "@/components/ceph/CephComparison";
 
+// Badge: padding 2px 10px, rounded-full, bg {color}18, text {color}
+const analysisTypeBadge: Record<string, { bg: string; color: string }> = {
+  steiner:    { bg: "#3d7ab518", color: "#3d7ab5" },
+  tweed:      { bg: "#22c55e18", color: "#22c55e" },
+  mcnamara:   { bg: "#a855f718", color: "#a855f7" },
+  ricketts:   { bg: "#f5922e18", color: "#f5922e" },
+  downs:      { bg: "#ef444418", color: "#ef4444" },
+  wits:       { bg: "#3d7ab518", color: "#3d7ab5" },
+  jarabak:    { bg: "#f59e0b18", color: "#f59e0b" },
+  softtissue: { bg: "#a855f718", color: "#a855f7" },
+  full:       { bg: "#3d7ab518", color: "#3d7ab5" },
+};
+
 export default function CephPage() {
   const [analyses, setAnalyses] = useState<CephAnalysisList[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +48,6 @@ export default function CephPage() {
     return new Map(filteredEntries);
   }, [analyses]);
 
-  // Check if an analysis belongs to a case with multiple analyses
   const canCompare = (orthoCaseId: string) => casesWithMultiple.has(orthoCaseId);
 
   const handleCompare = (orthoCaseId: string) => {
@@ -43,113 +55,136 @@ export default function CephPage() {
     setShowComparison(true);
   };
 
-  // All analysis type options for display
-  const analysisTypeColors: Record<string, string> = {
-    steiner:    "bg-blue-50 text-blue-700",
-    tweed:      "bg-emerald-50 text-emerald-700",
-    mcnamara:   "bg-violet-50 text-violet-700",
-    ricketts:   "bg-amber-50 text-amber-700",
-    downs:      "bg-rose-50 text-rose-700",
-    wits:       "bg-cyan-50 text-cyan-700",
-    jarabak:    "bg-orange-50 text-orange-700",
-    softtissue: "bg-pink-50 text-pink-700",
-    full:       "bg-teal-50 text-teal-700",
-  };
+  // Stats
+  const totalAnalyses = analyses.length;
+  const aiAssistedCount = analyses.filter(a => a.aiAssisted).length;
+  const measuredCount = analyses.filter(a => a.hasMeasurements).length;
+  const completeLandmarks = analyses.filter(a => a.landmarkCount >= 20).length;
 
   return (
-    <div className="space-y-5 max-w-5xl">
+    <div className="space-y-5 max-w-5xl" dir="rtl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">السيفالومتري</h1>
-          <p className="text-sm text-gray-500 mt-0.5">تحليل الأشعة السيفالومترية وقياسات الهيكل العظمي</p>
+          <h1 className="text-2xl font-extrabold" style={{ color: "#0d2137" }}>السيفالومتري</h1>
+          <p className="text-sm mt-0.5" style={{ color: "#64748b" }}>تحليل الأشعة السيفالومترية وقياسات الهيكل العظمي</p>
         </div>
         <Link href="/ceph/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl text-white transition hover:opacity-90"
+          style={{ backgroundColor: "#3d7ab5" }}
         >
           <Plus className="w-4 h-4" />
           تحليل جديد
         </Link>
       </div>
 
+      {/* Mini stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "إجمالي التحاليل", value: totalAnalyses, color: "#3d7ab5" },
+          { label: "بمساعدة AI", value: aiAssistedCount, color: "#a855f7" },
+          { label: "قياسات محسوبة", value: measuredCount, color: "#22c55e" },
+          { label: "نقاط مكتملة", value: completeLandmarks, color: "#f5922e" },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="bg-white rounded-xl border p-4 shadow-sm"
+            style={{ borderColor: "#e8f0f9", boxShadow: "0 1px 3px rgba(13,33,55,0.06)" }}
+          >
+            <span className="text-xs font-medium block mb-1" style={{ color: "#64748b" }}>{s.label}</span>
+            <p className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
       {loading ? (
         <div className="space-y-2 animate-pulse">
-          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl" />)}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-16 rounded-xl" style={{ backgroundColor: "#f7fafd" }} />
+          ))}
         </div>
       ) : analyses.length === 0 ? (
-        <div className="text-center py-20 text-gray-400">
+        <div className="text-center py-20" style={{ color: "#94a3b8" }}>
           <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p className="text-sm">لا توجد تحاليل سيفالومترية</p>
-          <p className="text-xs mt-1 text-gray-300">ابدأ بإنشاء تحليل جديد من صفحة حالة التقويم</p>
+          <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>ابدأ بإنشاء تحليل جديد من صفحة حالة التقويم</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div
+          className="bg-white rounded-xl border shadow-sm overflow-hidden"
+          style={{ borderColor: "#e8f0f9", boxShadow: "0 1px 3px rgba(13,33,55,0.06)" }}
+        >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead style={{ backgroundColor: "#f7fafd", borderBottom: "1px solid #e8f0f9" }}>
                 <tr>
                   {["المريض", "نوع التحليل", "التاريخ", "النقاط", "القياسات", ""].map((h) => (
-                    <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                    <th key={h} className="text-start px-4 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: "#64748b" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {analyses.map((a) => (
-                  <tr key={a.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{a.patientName}</div>
-                      {a.caseNumber && <div className="text-xs text-gray-400 font-mono">{a.caseNumber}</div>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={cn(
-                        "text-xs px-2 py-0.5 rounded-full font-medium",
-                        analysisTypeColors[a.analysisType] ?? "bg-gray-50 text-gray-700"
-                      )}>
-                        {ANALYSIS_TYPE_AR[a.analysisType as AnalysisType] ?? a.analysisType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{formatArabicDate(a.analysisDate)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className={cn("text-xs font-mono font-semibold",
-                          a.landmarkCount >= 20 ? "text-green-600" : a.landmarkCount > 0 ? "text-yellow-600" : "text-gray-400"
-                        )}>
-                          {a.landmarkCount}/24
-                        </span>
-                        {a.aiAssisted && (
-                          <span title="مساعدة الذكاء الاصطناعي">
-                            <Brain className="w-3.5 h-3.5 text-purple-400" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {a.hasMeasurements ? (
-                        <span className="text-xs text-green-600 font-medium">✓ محسوبة</span>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Link href={`/ceph/${a.id}`}
-                          className="text-xs text-clinic-teal hover:underline font-medium"
+              <tbody className="divide-y" style={{ dividerColor: "#f1f5f9" }}>
+                {analyses.map((a) => {
+                  const badge = analysisTypeBadge[a.analysisType] ?? { bg: "#94a3b818", color: "#94a3b8" };
+                  return (
+                    <tr key={a.id} className="hover:opacity-95 transition">
+                      <td className="px-4 py-3">
+                        <div className="font-medium" style={{ color: "#0d2137" }}>{a.patientName}</div>
+                        {a.caseNumber && <div className="text-xs font-mono" style={{ color: "#94a3b8" }}>{a.caseNumber}</div>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="text-xs py-0.5 rounded-full font-medium"
+                          style={{ padding: "2px 10px", backgroundColor: badge.bg, color: badge.color }}
                         >
-                          فتح التحليل
-                        </Link>
-                        {canCompare(a.orthoCaseId) && (
-                          <button
-                            onClick={() => handleCompare(a.orthoCaseId)}
-                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
-                            title="مقارنة مع تحليل آخر من نفس الحالة"
-                          >
-                            <GitCompare className="w-3 h-3" />
-                            مقارنة
-                          </button>
+                          {ANALYSIS_TYPE_AR[a.analysisType as AnalysisType] ?? a.analysisType}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs" style={{ color: "#64748b" }}>{formatArabicDate(a.analysisDate)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn("text-xs font-mono font-semibold",
+                            a.landmarkCount >= 20 ? { color: "#22c55e" } : a.landmarkCount > 0 ? { color: "#f59e0b" } : { color: "#94a3b8" }
+                          )}>
+                            {a.landmarkCount}/24
+                          </span>
+                          {a.aiAssisted && (
+                            <span title="مساعدة الذكاء الاصطناعي">
+                              <Brain className="w-3.5 h-3.5" style={{ color: "#a855f7" }} />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {a.hasMeasurements ? (
+                          <span className="text-xs font-medium" style={{ color: "#22c55e" }}>✓ محسوبة</span>
+                        ) : (
+                          <span className="text-xs" style={{ color: "#94a3b8" }}>—</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Link href={`/ceph/${a.id}`}
+                            className="text-xs font-medium hover:underline"
+                            style={{ color: "#3d7ab5" }}
+                          >
+                            فتح التحليل
+                          </Link>
+                          {canCompare(a.orthoCaseId) && (
+                            <button
+                              onClick={() => handleCompare(a.orthoCaseId)}
+                              className="text-xs font-medium flex items-center gap-1 hover:opacity-80 transition"
+                              style={{ color: "#3d7ab5" }}
+                              title="مقارنة مع تحليل آخر من نفس الحالة"
+                            >
+                              <GitCompare className="w-3 h-3" />
+                              مقارنة
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

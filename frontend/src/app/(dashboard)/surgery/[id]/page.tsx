@@ -52,11 +52,11 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  scheduled:   "bg-blue-50 text-blue-700",
-  in_progress: "bg-yellow-50 text-yellow-700",
-  completed:   "bg-green-50 text-green-700",
-  cancelled:   "bg-gray-100 text-gray-500",
-  postponed:   "bg-orange-50 text-orange-700",
+  scheduled:   "bg-[#3d7ab518] text-accent-blue",
+  in_progress: "bg-[#f59e0b18] text-[#f59e0b]",
+  completed:   "bg-[#22c55e18] text-[#22c55e]",
+  cancelled:   "bg-[#94a3b818] text-[#94a3b8]",
+  postponed:   "bg-[#f5922e18] text-[#f5922e]",
 };
 
 const NEXT_STATUSES: Record<
@@ -64,17 +64,17 @@ const NEXT_STATUSES: Record<
   { status: string; label: string; icon: typeof PlayCircle; color: string }[]
 > = {
   scheduled: [
-    { status: "in_progress", label: "بدء الجراحة",    icon: PlayCircle,  color: "bg-yellow-500 hover:bg-yellow-600 text-white" },
-    { status: "postponed",   label: "تأجيل",           icon: Clock,       color: "bg-orange-500 hover:bg-orange-600 text-white" },
-    { status: "cancelled",   label: "إلغاء",            icon: XCircle,     color: "bg-gray-500 hover:bg-gray-600 text-white" },
+    { status: "in_progress", label: "بدء الجراحة",    icon: PlayCircle,  color: "bg-[#f59e0b] hover:bg-[#d97706] text-white" },
+    { status: "postponed",   label: "تأجيل",           icon: Clock,       color: "bg-[#f5922e] hover:bg-[#e07d1e] text-white" },
+    { status: "cancelled",   label: "إلغاء",            icon: XCircle,     color: "bg-[#94a3b8] hover:bg-[#64748b] text-white" },
   ],
   in_progress: [
-    { status: "completed",   label: "إكمال الجراحة",   icon: CheckCircle, color: "bg-green-600 hover:bg-green-700 text-white" },
-    { status: "cancelled",   label: "إلغاء",             icon: XCircle,    color: "bg-gray-500 hover:bg-gray-600 text-white" },
+    { status: "completed",   label: "إكمال الجراحة",   icon: CheckCircle, color: "bg-[#22c55e] hover:bg-[#16a34a] text-white" },
+    { status: "cancelled",   label: "إلغاء",             icon: XCircle,    color: "bg-[#94a3b8] hover:bg-[#64748b] text-white" },
   ],
   postponed: [
-    { status: "scheduled",   label: "إعادة الجدولة",   icon: Clock,       color: "bg-blue-500 hover:bg-blue-600 text-white" },
-    { status: "cancelled",   label: "إلغاء",             icon: XCircle,    color: "bg-gray-500 hover:bg-gray-600 text-white" },
+    { status: "scheduled",   label: "إعادة الجدولة",   icon: Clock,       color: "bg-accent-blue hover:bg-blue-hover text-white" },
+    { status: "cancelled",   label: "إلغاء",             icon: XCircle,    color: "bg-[#94a3b8] hover:bg-[#64748b] text-white" },
   ],
 };
 
@@ -101,13 +101,13 @@ const REFERRAL_STATUS_LABELS: Record<string, string> = {
 };
 
 const REFERRAL_STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-50 text-yellow-700",
-  accepted: "bg-blue-50 text-blue-700",
-  completed: "bg-green-50 text-green-700",
+  pending: "bg-[#f59e0b18] text-[#f59e0b]",
+  accepted: "bg-[#3d7ab518] text-accent-blue",
+  completed: "bg-[#22c55e18] text-[#22c55e]",
 };
 
 const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  "w-full px-3 py-2 text-sm rounded-lg border-[1.5px] border-[#dce8f5] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-accent-blue";
 
 type Tab = "info" | "preop" | "operative" | "postop" | "referrals";
 
@@ -255,20 +255,20 @@ export default function SurgeryDetailPage() {
   if (loading) {
     return (
       <div className="space-y-4 max-w-4xl animate-pulse">
-        <div className="h-5 w-48 bg-gray-100 rounded" />
-        <div className="h-32 bg-gray-100 rounded-xl" />
-        <div className="h-10 bg-gray-100 rounded-xl" />
-        <div className="h-64 bg-gray-100 rounded-xl" />
+        <div className="h-5 w-48 bg-[#eef3f9] rounded" />
+        <div className="h-32 bg-[#eef3f9] rounded-xl" />
+        <div className="h-10 bg-[#eef3f9] rounded-xl" />
+        <div className="h-64 bg-[#eef3f9] rounded-xl" />
       </div>
     );
   }
 
   if (!surgeryCase) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-gray-400">
+      <div className="flex flex-col items-center justify-center py-24 text-[#94a3b8]">
         <AlertCircle className="w-12 h-12 mb-3 opacity-40" />
         <p className="text-sm">لم يتم العثور على الحالة الجراحية</p>
-        <Link href="/surgery" className="mt-4 text-sm text-clinic-teal hover:underline">
+        <Link href="/surgery" className="mt-4 text-sm text-accent-blue hover:underline">
           العودة إلى قائمة الجراحة
         </Link>
       </div>
@@ -288,56 +288,56 @@ export default function SurgeryDetailPage() {
   return (
     <div className="space-y-5 max-w-4xl">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/surgery" className="hover:text-clinic-teal transition">
+      <div className="flex items-center gap-2 text-sm text-[#64748b]">
+        <Link href="/surgery" className="hover:text-accent-blue transition">
           الجراحة
         </Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium font-mono">{surgeryCase.caseNumber}</span>
+        <span className="text-[#0d2137] font-medium font-mono">{surgeryCase.caseNumber}</span>
       </div>
 
       {/* Back + Title */}
       <div className="flex items-center gap-3">
         <Link
           href="/surgery"
-          className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500"
+          className="p-1.5 rounded-lg border border-[#e8f0f9] hover:bg-[#f7fafd] transition text-[#64748b]"
         >
           <ArrowRight className="w-4 h-4" />
         </Link>
-        <Scissors className="w-5 h-5 text-clinic-teal" />
-        <h1 className="text-2xl font-extrabold text-gray-900">{surgeryCase.surgeryType}</h1>
+        <Scissors className="w-5 h-5 text-accent-blue" />
+        <h1 className="text-2xl font-extrabold text-[#0d2137]">{surgeryCase.surgeryType}</h1>
       </div>
 
       {/* Banner */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-gray-400" />
+              <User className="w-4 h-4 text-[#94a3b8]" />
               <Link
                 href={`/patients/${surgeryCase.patientId}`}
-                className="text-base font-semibold text-gray-900 hover:text-clinic-teal transition"
+                className="text-base font-semibold text-[#0d2137] hover:text-accent-blue transition"
               >
                 {surgeryCase.patientName}
               </Link>
-              <span className="text-xs text-gray-400 font-mono">{surgeryCase.patientNumber}</span>
+              <span className="text-xs text-[#94a3b8] font-mono">{surgeryCase.patientNumber}</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-xs font-semibold text-clinic-teal">{surgeryCase.caseNumber}</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-sm text-gray-600">{surgeryCase.surgeryType}</span>
+              <span className="font-mono text-xs font-semibold text-accent-blue">{surgeryCase.caseNumber}</span>
+              <span className="text-[#dce8f5]">·</span>
+              <span className="text-sm text-[#64748b]">{surgeryCase.surgeryType}</span>
               {surgeryCase.teethInvolved && (
                 <>
-                  <span className="text-gray-300">·</span>
-                  <span className="text-xs font-mono text-gray-500">{surgeryCase.teethInvolved}</span>
+                  <span className="text-[#dce8f5]">·</span>
+                  <span className="text-xs font-mono text-[#64748b]">{surgeryCase.teethInvolved}</span>
                 </>
               )}
             </div>
             {surgeryCase.doctorName && (
-              <div className="flex items-center gap-1.5 text-sm text-gray-600">
+              <div className="flex items-center gap-1.5 text-sm text-[#64748b]">
                 <div
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: surgeryCase.doctorColor ?? "#0E7490" }}
+                  style={{ backgroundColor: surgeryCase.doctorColor ?? "#3d7ab5" }}
                 />
                 {surgeryCase.doctorName}
               </div>
@@ -347,19 +347,19 @@ export default function SurgeryDetailPage() {
           <div className="flex flex-col items-end gap-2">
             <span
               className={cn(
-                "text-sm px-3 py-1 rounded-full font-medium",
-                STATUS_COLORS[surgeryCase.status] ?? "bg-gray-100 text-gray-600"
+                "text-sm px-[10px] py-[2px] rounded-full font-medium",
+                STATUS_COLORS[surgeryCase.status] ?? "bg-[#94a3b818] text-[#94a3b8]"
               )}
             >
               {STATUS_LABELS[surgeryCase.status] ?? surgeryCase.status}
             </span>
-            <p className="text-xs text-gray-400">{formatArabicDate(surgeryCase.createdAt)}</p>
+            <p className="text-xs text-[#94a3b8]">{formatArabicDate(surgeryCase.createdAt)}</p>
           </div>
         </div>
 
         {/* Status action buttons */}
         {nextActions.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-gray-100">
+          <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-[#f1f5f9]">
             {nextActions.map(({ status, label, icon: Icon, color }) => (
               <button
                 key={status}
@@ -378,7 +378,7 @@ export default function SurgeryDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-gray-200 overflow-x-auto">
+      <div className="flex items-center gap-1 border-b border-[#e8f0f9] overflow-x-auto">
         {TABS.map(({ id: tabId, label, icon: Icon }) => (
           <button
             key={tabId}
@@ -386,8 +386,8 @@ export default function SurgeryDetailPage() {
             className={cn(
               "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px whitespace-nowrap",
               activeTab === tabId
-                ? "border-clinic-teal text-clinic-teal"
-                : "border-transparent text-gray-500 hover:text-gray-700"
+                ? "border-accent-blue text-accent-blue"
+                : "border-transparent text-[#64748b] hover:text-[#0d2137]"
             )}
           >
             <Icon className="w-4 h-4" />
@@ -398,29 +398,29 @@ export default function SurgeryDetailPage() {
 
       {/* Tab: Info */}
       {activeTab === "info" && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">معلومات الحالة</h2>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h2 className="text-sm font-semibold text-[#0d2137] mb-4">معلومات الحالة</h2>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
             <div>
-              <dt className="text-xs text-gray-400 mb-0.5">رقم الحالة</dt>
-              <dd className="font-mono font-semibold text-clinic-teal">{surgeryCase.caseNumber}</dd>
+              <dt className="text-xs text-[#94a3b8] mb-0.5">رقم الحالة</dt>
+              <dd className="font-mono font-semibold text-accent-blue">{surgeryCase.caseNumber}</dd>
             </div>
             <div>
-              <dt className="text-xs text-gray-400 mb-0.5">نوع الجراحة</dt>
-              <dd className="text-gray-800">{surgeryCase.surgeryType}</dd>
+              <dt className="text-xs text-[#94a3b8] mb-0.5">نوع الجراحة</dt>
+              <dd className="text-[#0d2137]">{surgeryCase.surgeryType}</dd>
             </div>
             <div>
-              <dt className="text-xs text-gray-400 mb-0.5">الأسنان المعنية</dt>
-              <dd className="font-mono text-gray-700">{surgeryCase.teethInvolved ?? "—"}</dd>
+              <dt className="text-xs text-[#94a3b8] mb-0.5">الأسنان المعنية</dt>
+              <dd className="font-mono text-[#64748b]">{surgeryCase.teethInvolved ?? "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs text-gray-400 mb-0.5">الطبيب الجراح</dt>
-              <dd className="text-gray-800">
+              <dt className="text-xs text-[#94a3b8] mb-0.5">الطبيب الجراح</dt>
+              <dd className="text-[#0d2137]">
                 {surgeryCase.doctorName ? (
                   <div className="flex items-center gap-1.5">
                     <div
                       className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: surgeryCase.doctorColor ?? "#0E7490" }}
+                      style={{ backgroundColor: surgeryCase.doctorColor ?? "#3d7ab5" }}
                     />
                     {surgeryCase.doctorName}
                   </div>
@@ -430,16 +430,16 @@ export default function SurgeryDetailPage() {
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-gray-400 mb-0.5">تاريخ الإنشاء</dt>
-              <dd className="text-gray-800">{formatArabicDate(surgeryCase.createdAt)}</dd>
+              <dt className="text-xs text-[#94a3b8] mb-0.5">تاريخ الإنشاء</dt>
+              <dd className="text-[#0d2137]">{formatArabicDate(surgeryCase.createdAt)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-gray-400 mb-0.5">الحالة</dt>
+              <dt className="text-xs text-[#94a3b8] mb-0.5">الحالة</dt>
               <dd>
                 <span
                   className={cn(
-                    "text-xs px-2 py-0.5 rounded-full font-medium",
-                    STATUS_COLORS[surgeryCase.status] ?? "bg-gray-100 text-gray-600"
+                    "text-xs px-[10px] py-[2px] rounded-full font-medium",
+                    STATUS_COLORS[surgeryCase.status] ?? "bg-[#94a3b818] text-[#94a3b8]"
                   )}
                 >
                   {STATUS_LABELS[surgeryCase.status] ?? surgeryCase.status}
@@ -452,12 +452,12 @@ export default function SurgeryDetailPage() {
 
       {/* Tab: Pre-op */}
       {activeTab === "preop" && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700">ما قبل الجراحة</h2>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-[#0d2137]">ما قبل الجراحة</h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">تاريخ الجراحة</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">تاريخ الجراحة</label>
               <input
                 type="date"
                 value={preop.surgeryDate ?? ""}
@@ -467,7 +467,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">موقع الجراحة</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">موقع الجراحة</label>
               <input
                 type="text"
                 value={preop.surgeryLocation ?? ""}
@@ -478,7 +478,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">نوع التخدير</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">نوع التخدير</label>
               <input
                 type="text"
                 value={preop.anesthesiaType ?? ""}
@@ -489,7 +489,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">الطبيب الجراح</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">الطبيب الجراح</label>
               <select
                 value={preop.doctorId ?? ""}
                 onChange={(e) => setPreop((p) => ({ ...p, doctorId: e.target.value || undefined }))}
@@ -511,16 +511,16 @@ export default function SurgeryDetailPage() {
               type="checkbox"
               checked={preop.consentSigned ?? false}
               onChange={(e) => setPreop((p) => ({ ...p, consentSigned: e.target.checked }))}
-              className="w-4 h-4 rounded border-gray-300 text-clinic-teal focus:ring-clinic-teal"
+              className="w-4 h-4 rounded border-[#dce8f5] text-accent-blue focus:ring-accent-blue"
             />
-            <label htmlFor="consent" className="text-sm text-gray-700 cursor-pointer">
+            <label htmlFor="consent" className="text-sm text-[#0d2137] cursor-pointer">
               تم توقيع نموذج الموافقة على الجراحة
             </label>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#f1f5f9]">
             {preopSaved && (
-              <span className="flex items-center gap-1 text-xs text-green-600">
+              <span className="flex items-center gap-1 text-xs text-[#22c55e]">
                 <CheckCircle className="w-3.5 h-3.5" />
                 تم الحفظ
               </span>
@@ -528,7 +528,7 @@ export default function SurgeryDetailPage() {
             <button
               onClick={savePreop}
               disabled={savingPreop}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {savingPreop ? "جارٍ الحفظ..." : "حفظ"}
@@ -539,11 +539,11 @@ export default function SurgeryDetailPage() {
 
       {/* Tab: Operative Report */}
       {activeTab === "operative" && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">التقرير الجراحي</h2>
+            <h2 className="text-sm font-semibold text-[#0d2137]">التقرير الجراحي</h2>
             {operative.isApproved && (
-              <span className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
+              <span className="flex items-center gap-1.5 text-xs text-[#22c55e] bg-[#22c55e18] px-2.5 py-1 rounded-full">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 معتمد {operative.approvedByName ? `بواسطة ${operative.approvedByName}` : ""}
               </span>
@@ -552,7 +552,7 @@ export default function SurgeryDetailPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">تاريخ الجراحة</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">تاريخ الجراحة</label>
               <input
                 type="date"
                 value={operative.surgeryDate ?? ""}
@@ -562,7 +562,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">وقت الجراحة</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">وقت الجراحة</label>
               <input
                 type="time"
                 value={operative.surgeryTime ?? ""}
@@ -572,7 +572,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">مدة العملية (دقيقة)</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">مدة العملية (دقيقة)</label>
               <input
                 type="number"
                 min={0}
@@ -590,7 +590,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">التخدير المستخدم</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">التخدير المستخدم</label>
               <input
                 type="text"
                 value={operative.anesthesiaUsed ?? ""}
@@ -601,7 +601,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">التقنية الجراحية</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">التقنية الجراحية</label>
               <select
                 value={operative.technique ?? ""}
                 onChange={(e) => setOperative((p) => ({ ...p, technique: e.target.value || undefined }))}
@@ -615,7 +615,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">نتيجة العملية</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">نتيجة العملية</label>
               <select
                 value={operative.outcome ?? ""}
                 onChange={(e) => setOperative((p) => ({ ...p, outcome: e.target.value || undefined }))}
@@ -629,7 +629,7 @@ export default function SurgeryDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">عدد الغرز</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">عدد الغرز</label>
               <input
                 type="number"
                 min={0}
@@ -652,9 +652,9 @@ export default function SurgeryDetailPage() {
                 type="checkbox"
                 checked={operative.specimenSent ?? false}
                 onChange={(e) => setOperative((p) => ({ ...p, specimenSent: e.target.checked }))}
-                className="w-4 h-4 rounded border-gray-300 text-clinic-teal focus:ring-clinic-teal"
+                className="w-4 h-4 rounded border-[#dce8f5] text-accent-blue focus:ring-accent-blue"
               />
-              <label htmlFor="specimen" className="text-sm text-gray-700 cursor-pointer">
+              <label htmlFor="specimen" className="text-sm text-[#0d2137] cursor-pointer">
                 تم إرسال عينة
               </label>
             </div>
@@ -662,7 +662,7 @@ export default function SurgeryDetailPage() {
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">وصف العملية التفصيلي</label>
+            <label className="block text-sm font-medium text-[#0d2137] mb-1.5">وصف العملية التفصيلي</label>
             <textarea
               value={operative.description ?? ""}
               onChange={(e) => setOperative((p) => ({ ...p, description: e.target.value || undefined }))}
@@ -674,7 +674,7 @@ export default function SurgeryDetailPage() {
 
           {/* Complications */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">المضاعفات</label>
+            <label className="block text-sm font-medium text-[#0d2137] mb-1.5">المضاعفات</label>
             <textarea
               value={operative.complications ?? ""}
               onChange={(e) => setOperative((p) => ({ ...p, complications: e.target.value || undefined }))}
@@ -685,13 +685,13 @@ export default function SurgeryDetailPage() {
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-between pt-2 border-t border-[#f1f5f9]">
             <div>
               {operative.id && !operative.isApproved && (
                 <button
                   onClick={approveOperative}
                   disabled={approving}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 transition"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-[#22c55e] text-white hover:bg-[#16a34a] disabled:opacity-60 transition"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   {approving ? "جارٍ الاعتماد..." : "اعتماد التقرير"}
@@ -700,7 +700,7 @@ export default function SurgeryDetailPage() {
             </div>
             <div className="flex items-center gap-3">
               {operativeSaved && (
-                <span className="flex items-center gap-1 text-xs text-green-600">
+                <span className="flex items-center gap-1 text-xs text-[#22c55e]">
                   <CheckCircle className="w-3.5 h-3.5" />
                   تم الحفظ
                 </span>
@@ -708,7 +708,7 @@ export default function SurgeryDetailPage() {
               <button
                 onClick={saveOperative}
                 disabled={savingOperative}
-                className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+                className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
               >
                 <Save className="w-4 h-4" />
                 {savingOperative ? "جارٍ الحفظ..." : "حفظ"}
@@ -720,11 +720,11 @@ export default function SurgeryDetailPage() {
 
       {/* Tab: Post-op */}
       {activeTab === "postop" && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-700">ما بعد الجراحة</h2>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-[#0d2137]">ما بعد الجراحة</h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">تعليمات ما بعد الجراحة</label>
+            <label className="block text-sm font-medium text-[#0d2137] mb-1.5">تعليمات ما بعد الجراحة</label>
             <textarea
               value={postop.instructions ?? ""}
               onChange={(e) => setPostop((p) => ({ ...p, instructions: e.target.value || undefined }))}
@@ -734,9 +734,9 @@ export default function SurgeryDetailPage() {
             />
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#f1f5f9]">
             {postopSaved && (
-              <span className="flex items-center gap-1 text-xs text-green-600">
+              <span className="flex items-center gap-1 text-xs text-[#22c55e]">
                 <CheckCircle className="w-3.5 h-3.5" />
                 تم الحفظ
               </span>
@@ -744,7 +744,7 @@ export default function SurgeryDetailPage() {
             <button
               onClick={savePostop}
               disabled={savingPostop}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {savingPostop ? "جارٍ الحفظ..." : "حفظ"}
@@ -755,12 +755,12 @@ export default function SurgeryDetailPage() {
 
       {/* Tab: Hospital Referrals */}
       {activeTab === "referrals" && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">إحالات المستشفى</h2>
+            <h2 className="text-sm font-semibold text-[#0d2137]">إحالات المستشفى</h2>
             <button
               onClick={() => setShowReferralForm(!showReferralForm)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
             >
               {showReferralForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               {showReferralForm ? "إغلاق" : "إحالة جديدة"}
@@ -769,48 +769,48 @@ export default function SurgeryDetailPage() {
 
           {/* New referral form */}
           {showReferralForm && (
-            <form onSubmit={handleCreateReferral} className="bg-gray-50 rounded-lg p-4 border border-gray-100 space-y-3">
-              <p className="text-xs font-semibold text-gray-500 mb-1">إنشاء إحالة جديدة</p>
+            <form onSubmit={handleCreateReferral} className="bg-[#f7fafd] rounded-lg p-4 border border-[#e8f0f9] space-y-3">
+              <p className="text-xs font-semibold text-[#64748b] mb-1">إنشاء إحالة جديدة</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">اسم المستشفى *</label>
+                  <label className="block text-xs text-[#64748b] mb-1">اسم المستشفى *</label>
                   <input
                     type="text"
                     value={referralHospital}
                     onChange={(e) => setReferralHospital(e.target.value)}
                     required
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+                    className="w-full text-sm border-[1.5px] border-[#dce8f5] bg-white rounded-lg px-3 py-2 focus:outline-none focus:border-accent-blue"
                     placeholder="مثلاً: مستشفى الثورة..."
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">تاريخ الإحالة *</label>
+                  <label className="block text-xs text-[#64748b] mb-1">تاريخ الإحالة *</label>
                   <input
                     type="date"
                     value={referralDate}
                     onChange={(e) => setReferralDate(e.target.value)}
                     required
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+                    className="w-full text-sm border-[1.5px] border-[#dce8f5] bg-white rounded-lg px-3 py-2 focus:outline-none focus:border-accent-blue"
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">السبب *</label>
+                  <label className="block text-xs text-[#64748b] mb-1">السبب *</label>
                   <input
                     type="text"
                     value={referralReason}
                     onChange={(e) => setReferralReason(e.target.value)}
                     required
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+                    className="w-full text-sm border-[1.5px] border-[#dce8f5] bg-white rounded-lg px-3 py-2 focus:outline-none focus:border-accent-blue"
                     placeholder="سبب الإحالة..."
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">ملاحظات</label>
+                  <label className="block text-xs text-[#64748b] mb-1">ملاحظات</label>
                   <textarea
                     value={referralNotes}
                     onChange={(e) => setReferralNotes(e.target.value)}
                     rows={2}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal resize-none"
+                    className="w-full text-sm border-[1.5px] border-[#dce8f5] bg-white rounded-lg px-3 py-2 focus:outline-none focus:border-accent-blue resize-none"
                     placeholder="ملاحظات اختيارية..."
                   />
                 </div>
@@ -818,7 +818,7 @@ export default function SurgeryDetailPage() {
               <button
                 type="submit"
                 disabled={savingReferral}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition disabled:opacity-50"
               >
                 <Plus className="w-3.5 h-3.5" />
                 {savingReferral ? "جارٍ الإنشاء..." : "إنشاء الإحالة"}
@@ -830,11 +830,11 @@ export default function SurgeryDetailPage() {
           {loadingReferrals ? (
             <div className="space-y-2 animate-pulse">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-16 bg-gray-100 rounded-lg" />
+                <div key={i} className="h-16 bg-[#eef3f9] rounded-lg" />
               ))}
             </div>
           ) : referrals.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-[#94a3b8]">
               <Building2 className="w-10 h-10 mx-auto mb-2 opacity-30" />
               <p className="text-sm">لا توجد إحالات مستشفى</p>
               <p className="text-xs mt-1">أنشئ إحالة جديدة من الزر أعلاه</p>
@@ -844,21 +844,21 @@ export default function SurgeryDetailPage() {
               {referrals.map((ref) => (
                 <div
                   key={ref.id}
-                  className="flex items-start justify-between gap-3 p-4 bg-gray-50 rounded-lg border border-gray-100 hover:border-gray-200 transition"
+                  className="flex items-start justify-between gap-3 p-4 bg-[#f7fafd] rounded-lg border border-[#e8f0f9] hover:border-[#dce8f5] transition"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-gray-900">{ref.hospitalName}</span>
+                      <span className="text-sm font-semibold text-[#0d2137]">{ref.hospitalName}</span>
                       <span className={cn(
-                        "text-xs px-2 py-0.5 rounded-full font-medium",
-                        REFERRAL_STATUS_COLORS[ref.status] ?? "bg-gray-100 text-gray-600"
+                        "text-xs px-[10px] py-[2px] rounded-full font-medium",
+                        REFERRAL_STATUS_COLORS[ref.status] ?? "bg-[#94a3b818] text-[#94a3b8]"
                       )}>
                         {REFERRAL_STATUS_LABELS[ref.status] ?? ref.status}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">{ref.reason}</p>
-                    <p className="text-xs text-gray-400">{formatArabicDate(ref.referralDate)}</p>
-                    {ref.notes && <p className="text-xs text-gray-500 mt-1">{ref.notes}</p>}
+                    <p className="text-sm text-[#64748b]">{ref.reason}</p>
+                    <p className="text-xs text-[#94a3b8]">{formatArabicDate(ref.referralDate)}</p>
+                    {ref.notes && <p className="text-xs text-[#64748b] mt-1">{ref.notes}</p>}
                   </div>
                 </div>
               ))}

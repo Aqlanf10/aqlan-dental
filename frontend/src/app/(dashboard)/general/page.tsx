@@ -24,8 +24,8 @@ const TREATMENT_TYPES = [
 const ANESTHESIA_TYPES = ["موضعي", "عام", "تخدير سطحي", "بدون تخدير"];
 
 const inputCls = (err?: boolean) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
-  err ? "border-red-400" : "border-gray-300"
+  "w-full px-3 py-2 text-sm rounded-lg border-[1.5px] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-accent-blue",
+  err ? "border-[#ef4444]" : "border-[#dce8f5]"
 );
 
 type PatientTab = "chart" | "perio" | "treatments";
@@ -163,12 +163,12 @@ export default function GeneralPage() {
     <div className="space-y-5 max-w-5xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900">طب الأسنان العام</h1>
-          <p className="text-sm text-gray-500 mt-0.5">آخر المعالجات والمخططات السنية</p>
+          <h1 className="text-2xl font-extrabold text-[#0d2137]">طب الأسنان العام</h1>
+          <p className="text-sm text-[#64748b] mt-0.5">آخر المعالجات والمخططات السنية</p>
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
         >
           {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showForm ? "إغلاق" : "تسجيل معالجة"}
@@ -176,8 +176,8 @@ export default function GeneralPage() {
       </div>
 
       {/* Quick patient navigator */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        <p className="text-sm font-medium text-gray-700 mb-2">الانتقال السريع إلى ملف مريض</p>
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-4">
+        <p className="text-sm font-medium text-[#0d2137] mb-2">الانتقال السريع إلى ملف مريض</p>
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <PatientCombobox
@@ -188,7 +188,7 @@ export default function GeneralPage() {
           {selectedPatient && (
             <Link
               href={`/patients/${selectedPatient.id}?tab=chart`}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition whitespace-nowrap"
             >
               <UserPlus className="w-4 h-4" />
               {selectedPatient.fullName}
@@ -199,8 +199,8 @@ export default function GeneralPage() {
 
       {/* Patient sub-tabs when a patient is selected */}
       {selectedPatient && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="flex border-b border-gray-100 overflow-x-auto">
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
+          <div className="flex border-b border-[#f1f5f9] overflow-x-auto">
             {(
               [
                 { id: "chart", label: "المخطط السني", icon: Grid3x3 },
@@ -214,8 +214,8 @@ export default function GeneralPage() {
                 className={cn(
                   "flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition",
                   patientTab === id
-                    ? "border-clinic-teal text-clinic-teal"
-                    : "border-transparent text-gray-500 hover:text-gray-900"
+                    ? "border-accent-blue text-accent-blue"
+                    : "border-transparent text-[#64748b] hover:text-[#0d2137]"
                 )}
               >
                 <Icon className="w-4 h-4" />
@@ -233,20 +233,20 @@ export default function GeneralPage() {
 
       {/* New treatment form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <Stethoscope className="w-4 h-4 text-clinic-teal" />
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h2 className="font-bold text-[#0d2137] mb-4 flex items-center gap-2">
+            <Stethoscope className="w-4 h-4 text-accent-blue" />
             تسجيل معالجة جديدة
           </h2>
 
           {formErr && (
-            <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{formErr}</div>
+            <div className="mb-4 text-sm text-[#ef4444] bg-[#ef444418] border border-[#ef444430] rounded-lg p-3">{formErr}</div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Patient */}
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">المريض <span className="text-[#ef4444]">*</span></label>
               <PatientCombobox
                 onSelect={(p: PatientListItem) => setFormPatient(p)}
                 defaultDisplayValue={formPatient ? `${formPatient.fullName} (${formPatient.patientNumber})` : ""}
@@ -256,7 +256,7 @@ export default function GeneralPage() {
 
             {/* Treatment type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">نوع العلاج <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">نوع العلاج <span className="text-[#ef4444]">*</span></label>
               <select value={treatmentType} onChange={(e) => setTreatmentType(e.target.value)}
                 className={inputCls(!treatmentType && !!formErr)}>
                 <option value="">اختر...</option>
@@ -266,14 +266,14 @@ export default function GeneralPage() {
 
             {/* Tooth number */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">رقم السن (FDI)</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">رقم السن (FDI)</label>
               <input value={toothNumber} onChange={(e) => setToothNumber(e.target.value)}
                 className={inputCls()} placeholder="مثلاً: 16، 36" dir="ltr" />
             </div>
 
             {/* Anesthesia */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">نوع التخدير</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">نوع التخدير</label>
               <select value={anesthesia} onChange={(e) => setAnesthesia(e.target.value)} className={inputCls()}>
                 <option value="">بدون / غير محدد</option>
                 {ANESTHESIA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -282,14 +282,14 @@ export default function GeneralPage() {
 
             {/* Material */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">المادة المستخدمة</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">المادة المستخدمة</label>
               <input value={material} onChange={(e) => setMaterial(e.target.value)}
                 className={inputCls()} placeholder="مثلاً: كومبوزيت، أملغم..." />
             </div>
 
             {/* Doctor */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">الطبيب</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">الطبيب</label>
               <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className={inputCls()}>
                 <option value="">اختر...</option>
                 {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -298,26 +298,26 @@ export default function GeneralPage() {
 
             {/* Cost */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">التكلفة (ر.ي)</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">التكلفة (ر.ي)</label>
               <input type="number" value={cost} onChange={(e) => setCost(e.target.value)}
                 className={inputCls()} placeholder="0" min="0" dir="ltr" />
             </div>
 
             {/* Notes */}
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">ملاحظات</label>
+              <label className="block text-sm font-medium text-[#0d2137] mb-1.5">ملاحظات</label>
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
                 rows={2} className={cn(inputCls(), "resize-none")} placeholder="ملاحظات إضافية..." />
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-gray-100">
+          <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-[#f1f5f9]">
             <button type="button" onClick={resetForm}
-              className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
+              className="px-5 py-2 text-sm rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-[#f7fafd] transition">
               إلغاء
             </button>
             <button type="submit" disabled={saving}
-              className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition">
+              className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition">
               <Save className="w-4 h-4" />
               {saving ? "جارٍ الحفظ..." : "حفظ المعالجة"}
             </button>
@@ -326,18 +326,18 @@ export default function GeneralPage() {
       )}
 
       {/* Recent treatments */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-bold text-gray-900">آخر المعالجات</h2>
-          <span className="text-xs text-gray-400">{treatments.length} معالجة</span>
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#f1f5f9]">
+          <h2 className="font-bold text-[#0d2137]">آخر المعالجات</h2>
+          <span className="text-xs text-[#94a3b8]">{treatments.length} معالجة</span>
         </div>
 
         {loading ? (
           <div className="p-5 space-y-2 animate-pulse">
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-[#eef3f9] rounded-lg" />)}
           </div>
         ) : treatments.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
+          <div className="text-center py-16 text-[#94a3b8]">
             <Stethoscope className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">لا توجد معالجات بعد</p>
             <p className="text-xs mt-1">سجّل معالجة جديدة من الزر أعلاه</p>
@@ -345,42 +345,42 @@ export default function GeneralPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
+              <thead className="bg-[#f7fafd] border-b border-[#f1f5f9]">
                 <tr>
                   {["التاريخ", "المريض", "نوع العلاج", "السن", "الطبيب", "التكلفة", ""].map((h) => (
-                    <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                    <th key={h} className="text-start px-4 py-3 text-xs font-bold text-[#64748b] whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {treatments.map((t) => (
-                  <tr key={t.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 text-gray-600 text-xs">{formatArabicDate(t.createdAt)}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{t.patientName}</td>
-                    <td className="px-4 py-3 text-gray-700">{t.treatmentType}</td>
-                    <td className="px-4 py-3 font-mono text-gray-700">{t.toothNumber ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-600">{t.doctorName ?? "—"}</td>
-                    <td className="px-4 py-3 font-mono text-green-700">
+                  <tr key={t.id} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-3 text-[#64748b] text-xs">{formatArabicDate(t.createdAt)}</td>
+                    <td className="px-4 py-3 font-medium text-[#0d2137]">{t.patientName}</td>
+                    <td className="px-4 py-3 text-[#64748b]">{t.treatmentType}</td>
+                    <td className="px-4 py-3 font-mono text-[#64748b]">{t.toothNumber ?? "—"}</td>
+                    <td className="px-4 py-3 text-[#64748b]">{t.doctorName ?? "—"}</td>
+                    <td className="px-4 py-3 font-mono text-[#22c55e]">
                       {t.cost ? formatYemeniRiyal(t.cost) : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => openEditModal(t)}
-                          className="p-1 rounded text-gray-400 hover:text-clinic-teal hover:bg-teal-50 transition"
+                          className="p-1 rounded text-[#94a3b8] hover:text-accent-blue hover:bg-light-blue transition"
                           title="تعديل"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => { setDeletingId(t.id); setConfirmDelete(true); }}
-                          className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                          className="p-1 rounded text-[#94a3b8] hover:text-[#ef4444] hover:bg-[#ef444418] transition"
                           title="حذف"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                         <Link href={`/patients/${t.patientId}`}
-                          className="text-xs text-clinic-teal hover:underline font-medium mr-2">
+                          className="text-xs text-accent-blue hover:underline font-medium mr-2">
                           ملف المريض
                         </Link>
                       </div>
@@ -400,59 +400,59 @@ export default function GeneralPage() {
           onClick={() => setEditingTreatment(null)}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-lg w-full p-5 space-y-4"
+            className="bg-white rounded-xl shadow-modal max-w-lg w-full p-5 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">تعديل المعالجة</h3>
-              <button onClick={() => setEditingTreatment(null)} className="p-1 hover:bg-gray-100 rounded transition">
-                <X className="w-4 h-4 text-gray-500" />
+              <h3 className="text-lg font-bold text-[#0d2137]">تعديل المعالجة</h3>
+              <button onClick={() => setEditingTreatment(null)} className="p-1 hover:bg-[#eef3f9] rounded transition">
+                <X className="w-4 h-4 text-[#64748b]" />
               </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">نوع العلاج</label>
+                <label className="block text-sm font-medium text-[#64748b] mb-1">نوع العلاج</label>
                 <select value={editTreatmentType} onChange={(e) => setEditTreatmentType(e.target.value)} className={inputCls()}>
                   {TREATMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">رقم السن</label>
+                <label className="block text-sm font-medium text-[#64748b] mb-1">رقم السن</label>
                 <input value={editToothNumber} onChange={(e) => setEditToothNumber(e.target.value)} className={inputCls()} dir="ltr" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">المادة</label>
+                <label className="block text-sm font-medium text-[#64748b] mb-1">المادة</label>
                 <input value={editMaterial} onChange={(e) => setEditMaterial(e.target.value)} className={inputCls()} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">التخدير</label>
+                <label className="block text-sm font-medium text-[#64748b] mb-1">التخدير</label>
                 <select value={editAnesthesia} onChange={(e) => setEditAnesthesia(e.target.value)} className={inputCls()}>
                   <option value="">بدون</option>
                   {ANESTHESIA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">التكلفة (ر.ي)</label>
+                <label className="block text-sm font-medium text-[#64748b] mb-1">التكلفة (ر.ي)</label>
                 <input type="number" value={editCost} onChange={(e) => setEditCost(e.target.value)} className={inputCls()} dir="ltr" />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
+                <label className="block text-sm font-medium text-[#64748b] mb-1">ملاحظات</label>
                 <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} className={cn(inputCls(), "resize-none")} />
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#f1f5f9]">
               <button
                 onClick={() => setEditingTreatment(null)}
-                className="px-4 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 transition"
+                className="px-4 py-1.5 text-sm rounded-lg border border-[#dce8f5] hover:bg-[#f7fafd] transition"
               >
                 إلغاء
               </button>
               <button
                 onClick={saveEdit}
                 disabled={savingEdit}
-                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
               >
                 <Save className="w-4 h-4" />
                 {savingEdit ? "جارٍ الحفظ..." : "حفظ"}
@@ -469,29 +469,29 @@ export default function GeneralPage() {
           onClick={() => { setConfirmDelete(false); setDeletingId(null); }}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-sm w-full p-5 space-y-4"
+            className="bg-white rounded-xl shadow-modal max-w-sm w-full p-5 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-5 h-5 text-red-500" />
+              <div className="w-10 h-10 rounded-full bg-[#ef444418] flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-[#ef4444]" />
               </div>
               <div>
-                <h3 className="font-bold text-gray-900">تأكيد الحذف</h3>
-                <p className="text-sm text-gray-600 mt-1">هل أنت متأكد من حذف هذه المعالجة؟ لا يمكن التراجع عن هذا الإجراء.</p>
+                <h3 className="font-bold text-[#0d2137]">تأكيد الحذف</h3>
+                <p className="text-sm text-[#64748b] mt-1">هل أنت متأكد من حذف هذه المعالجة؟ لا يمكن التراجع عن هذا الإجراء.</p>
               </div>
             </div>
-            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#f1f5f9]">
               <button
                 onClick={() => { setConfirmDelete(false); setDeletingId(null); }}
-                className="px-4 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50 transition"
+                className="px-4 py-1.5 text-sm rounded-lg border border-[#dce8f5] hover:bg-[#f7fafd] transition"
               >
                 إلغاء
               </button>
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 transition"
+                className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg bg-[#ef4444] text-white hover:bg-[#dc2626] disabled:opacity-60 transition"
               >
                 <Trash2 className="w-4 h-4" />
                 {deleting ? "جارٍ الحذف..." : "حذف"}

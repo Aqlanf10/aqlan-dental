@@ -29,12 +29,6 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-const inputCls = (err?: string) =>
-  cn(
-    "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
-    err ? "border-red-400" : "border-gray-300"
-  );
-
 interface Props {
   defaultPatientId?:   string;
   defaultPatientName?: string;
@@ -120,18 +114,25 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" dir="rtl">
       {serverError && (
         isConflict ? (
-          <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div
+            className="border rounded-lg p-4 flex gap-3"
+            style={{
+              backgroundColor: "#f59e0b18",
+              borderColor: "#f59e0b40",
+            }}
+          >
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: "#f59e0b" }} />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-amber-800">تعارض في المواعيد</p>
-              <p className="text-sm text-amber-700 mt-0.5">{serverError}</p>
+              <p className="text-sm font-semibold" style={{ color: "#d97706" }}>تعارض في المواعيد</p>
+              <p className="text-sm mt-0.5" style={{ color: "#92400e" }}>{serverError}</p>
               {watchedDate && (
                 <Link
                   href={`/appointments?date=${watchedDate}${watchedDoctor ? `&doctorId=${watchedDoctor}` : ""}`}
-                  className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                  className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium underline underline-offset-2"
+                  style={{ color: "#92400e" }}
                 >
                   <CalendarDays className="w-3.5 h-3.5" />
                   عرض جدول اليوم للاطلاع على الأوقات المتاحة
@@ -140,17 +141,31 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
             </div>
           </div>
         ) : (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+          <div
+            className="border rounded-lg p-3 text-sm"
+            style={{
+              backgroundColor: "#ef444418",
+              borderColor: "#ef444440",
+              color: "#ef4444",
+            }}
+          >
             {serverError}
           </div>
         )
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div
+        className="rounded-xl border p-5 grid grid-cols-1 md:grid-cols-2 gap-4"
+        style={{
+          backgroundColor: "#ffffff",
+          borderColor: "#e8f0f9",
+          boxShadow: "0 1px 3px rgba(13,33,55,0.06)",
+        }}
+      >
         {/* Patient */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            المريض <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>
+            المريض <span style={{ color: "#ef4444" }}>*</span>
           </label>
           <PatientCombobox
             defaultDisplayValue={defaultPatientName ?? ""}
@@ -159,78 +174,78 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
             readOnly={isEditMode}
           />
           {errors.patientId && (
-            <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>
+            <p className="mt-1 text-xs" style={{ color: "#ef4444" }}>{errors.patientId.message}</p>
           )}
           <input type="hidden" {...register("patientId")} />
         </div>
 
         {/* Doctor */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            الطبيب <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>
+            الطبيب <span style={{ color: "#ef4444" }}>*</span>
           </label>
-          <select {...register("doctorId")} className={inputCls(errors.doctorId?.message)}>
+          <select {...register("doctorId")} className={cn("aqlan-select", errors.doctorId && "border-[#ef4444]")}>
             <option value="">اختر الطبيب...</option>
             {doctors.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </select>
           {errors.doctorId && (
-            <p className="mt-1 text-xs text-red-600">{errors.doctorId.message}</p>
+            <p className="mt-1 text-xs" style={{ color: "#ef4444" }}>{errors.doctorId.message}</p>
           )}
         </div>
 
         {/* Appointment type */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            نوع الموعد <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>
+            نوع الموعد <span style={{ color: "#ef4444" }}>*</span>
           </label>
           <input
             {...register("appointmentType")}
-            className={inputCls(errors.appointmentType?.message)}
+            className={cn("aqlan-input", errors.appointmentType && "border-[#ef4444]")}
             placeholder="تقويم، حشو، قلع، فحص..."
           />
           {errors.appointmentType && (
-            <p className="mt-1 text-xs text-red-600">{errors.appointmentType.message}</p>
+            <p className="mt-1 text-xs" style={{ color: "#ef4444" }}>{errors.appointmentType.message}</p>
           )}
         </div>
 
         {/* Date */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            التاريخ <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>
+            التاريخ <span style={{ color: "#ef4444" }}>*</span>
           </label>
           <input
             {...register("appointmentDate")}
             type="date"
-            className={inputCls(errors.appointmentDate?.message)}
+            className={cn("aqlan-input", errors.appointmentDate && "border-[#ef4444]")}
           />
           {errors.appointmentDate && (
-            <p className="mt-1 text-xs text-red-600">{errors.appointmentDate.message}</p>
+            <p className="mt-1 text-xs" style={{ color: "#ef4444" }}>{errors.appointmentDate.message}</p>
           )}
         </div>
 
         {/* Start time */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            وقت البداية <span className="text-red-500">*</span>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>
+            وقت البداية <span style={{ color: "#ef4444" }}>*</span>
           </label>
           <input
             {...register("startTime")}
             type="time"
-            className={inputCls(errors.startTime?.message)}
+            className={cn("aqlan-input", errors.startTime && "border-[#ef4444]")}
           />
           {errors.startTime && (
-            <p className="mt-1 text-xs text-red-600">{errors.startTime.message}</p>
+            <p className="mt-1 text-xs" style={{ color: "#ef4444" }}>{errors.startTime.message}</p>
           )}
         </div>
 
         {/* Duration */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">المدة (دقيقة)</label>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>المدة (دقيقة)</label>
           <select
             {...register("durationMinutes", { valueAsNumber: true })}
-            className={inputCls()}
+            className="aqlan-select"
           >
             {[15, 20, 30, 45, 60, 90, 120].map((m) => (
               <option key={m} value={m}>{m} دقيقة</option>
@@ -240,11 +255,11 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
 
         {/* Notes */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">ملاحظات</label>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>ملاحظات</label>
           <textarea
             {...register("notes")}
             rows={2}
-            className={inputCls()}
+            className="aqlan-input"
             placeholder="ملاحظات اختيارية..."
           />
         </div>
@@ -254,14 +269,14 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
         <button
           type="button"
           onClick={() => router.back()}
-          className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+          className="btn-ghost rounded-lg"
         >
           إلغاء
         </button>
         <button
           type="submit"
           disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="btn-blue"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : isEditMode ? "حفظ التعديلات" : "حفظ الموعد"}

@@ -22,14 +22,14 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  Create: "bg-green-100 text-green-700 border-green-200",
-  Update: "bg-blue-100 text-blue-700 border-blue-200",
-  Delete: "bg-red-100 text-red-700 border-red-200",
-  View: "bg-gray-100 text-gray-600 border-gray-200",
-  Export: "bg-purple-100 text-purple-700 border-purple-200",
-  Login: "bg-teal-100 text-teal-700 border-teal-200",
-  Logout: "bg-orange-100 text-orange-700 border-orange-200",
-  Approve: "bg-amber-100 text-amber-700 border-amber-200",
+  Create: "bg-green-100 text-[#22c55e] border-green-200",
+  Update: "bg-[#3d7ab518] text-accent-blue border-blue-200",
+  Delete: "bg-red-100 text-[#ef4444] border-[#ef444430]",
+  View: "bg-[#eef3f9] text-[#64748b] border-[#e8f0f9]",
+  Export: "bg-[#a855f718] text-[#a855f7] border-purple-200",
+  Login: "bg-light-blue text-accent-blue border-teal-200",
+  Logout: "bg-orange-100 text-[#f5922e] border-orange-200",
+  Approve: "bg-[#f59e0b18] text-[#f59e0b] border-amber-200",
 };
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -71,7 +71,7 @@ const ACTION_OPTIONS = [
 ];
 
 const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  "w-full px-3 py-2 text-sm rounded-lg border-[1.5px] border-[#dce8f5] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-accent-blue";
 
 // ─── Helper: Beautify resource name ────────────────────────────────────────────
 function beautifyResource(resource: string): string {
@@ -180,18 +180,18 @@ export default function AuditLogPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold text-gray-900 flex items-center gap-2">
-            <FileText className="w-6 h-6 text-clinic-teal" />
+          <h1 className="text-2xl font-extrabold text-[#0d2137] flex items-center gap-2">
+            <FileText className="w-6 h-6 text-accent-blue" />
             سجل التدقيق
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <p className="text-sm text-[#64748b] mt-0.5">
             عرض جميع العمليات والتغييرات في النظام
           </p>
         </div>
         <button
           onClick={handleExport}
           disabled={exportMutation.isPending || totalCount === 0}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-50 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-50 transition"
         >
           <Download className="w-4 h-4" />
           {exportMutation.isPending ? "جارٍ التصدير..." : "تصدير CSV"}
@@ -199,14 +199,14 @@ export default function AuditLogPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <span className="text-sm font-semibold text-gray-700">تصفية</span>
+          <Filter className="w-4 h-4 text-[#94a3b8]" />
+          <span className="text-sm font-bold text-[#64748b]">تصفية</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               الإجراء
             </label>
             <select
@@ -222,7 +222,7 @@ export default function AuditLogPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               المورد
             </label>
             <input
@@ -234,7 +234,7 @@ export default function AuditLogPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               من تاريخ
             </label>
             <input
@@ -246,7 +246,7 @@ export default function AuditLogPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               إلى تاريخ
             </label>
             <input
@@ -258,11 +258,11 @@ export default function AuditLogPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               بحث
             </label>
             <div className="relative">
-              <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94a3b8]" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -275,20 +275,20 @@ export default function AuditLogPage() {
         <div className="flex items-center gap-2 mt-3">
           <button
             onClick={applyFilters}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
           >
             <Search className="w-4 h-4" />
             تطبيق
           </button>
           <button
             onClick={resetFilters}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-[#f7fafd] transition"
           >
             <RotateCcw className="w-4 h-4" />
             إعادة تعيين
           </button>
           {totalCount > 0 && (
-            <span className="text-xs text-gray-400 mr-auto">
+            <span className="text-xs text-[#94a3b8] mr-auto">
               {totalCount} سجل
             </span>
           )}
@@ -296,22 +296,22 @@ export default function AuditLogPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
         {isLoading ? (
           <div className="p-5 space-y-3 animate-pulse">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-12 bg-gray-100 rounded-lg" />
+              <div key={i} className="h-12 bg-[#eef3f9] rounded-lg" />
             ))}
           </div>
         ) : logs.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
+          <div className="text-center py-16 text-[#94a3b8]">
             <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">لا توجد سجلات تطابق التصفية</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
                 <tr>
                   {[
                     "التاريخ",
@@ -323,40 +323,40 @@ export default function AuditLogPage() {
                   ].map((h) => (
                     <th
                       key={h}
-                      className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap"
+                      className="text-start px-4 py-3 text-xs font-bold text-[#64748b] whitespace-nowrap"
                     >
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">
+                  <tr key={log.id} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-3 text-xs text-[#64748b] whitespace-nowrap">
                       {formatAuditDate(log.timestamp)}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                    <td className="px-4 py-3 font-medium text-[#0d2137]">
                       {log.userName ?? log.userId}
                     </td>
                     <td className="px-4 py-3">
                       <span
                         className={cn(
-                          "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border",
+                          "inline-flex items-center px-[10px] py-[2px] rounded-full text-xs font-semibold border",
                           ACTION_COLORS[log.action] ??
-                            "bg-gray-100 text-gray-600 border-gray-200"
+                            "bg-[#eef3f9] text-[#64748b] border-[#e8f0f9]"
                         )}
                       >
                         {ACTION_LABELS[log.action] ?? log.action}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-[#64748b]">
                       {beautifyResource(log.resource)}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500" dir="ltr">
+                    <td className="px-4 py-3 font-mono text-xs text-[#64748b]" dir="ltr">
                       {log.resourceId ?? "—"}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-400" dir="ltr">
+                    <td className="px-4 py-3 font-mono text-xs text-[#94a3b8]" dir="ltr">
                       {log.ipAddress ?? "—"}
                     </td>
                   </tr>
@@ -368,15 +368,15 @@ export default function AuditLogPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
-            <p className="text-xs text-gray-500">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-[#f1f5f9] bg-[#f7fafd]">
+            <p className="text-xs text-[#64748b]">
               صفحة {page} من {totalPages}
             </p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handlePageChange(page - 1)}
                 disabled={page <= 1}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
                 السابقة
@@ -384,7 +384,7 @@ export default function AuditLogPage() {
               <button
                 onClick={() => handlePageChange(page + 1)}
                 disabled={page >= totalPages}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 التالية
                 <ChevronLeft className="w-3.5 h-3.5" />

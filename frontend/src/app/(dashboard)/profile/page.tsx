@@ -88,14 +88,14 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin w-8 h-8 border-4 border-clinic-teal border-t-transparent rounded-full" />
+        <div className="animate-spin w-8 h-8 border-4 border-accent-blue border-t-transparent rounded-full" />
       </div>
     );
   }
 
   if (!displayUser) {
     return (
-      <div className="p-6 text-center text-gray-500">
+      <div className="p-6 text-center text-[#64748b]">
         لم يتم العثور على بيانات المستخدم
       </div>
     );
@@ -105,26 +105,26 @@ export default function ProfilePage() {
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
       {/* Page Title */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-clinic-teal/10 flex items-center justify-center">
-          <User className="w-5 h-5 text-clinic-teal" />
+        <div className="w-10 h-10 rounded-xl bg-accent-blue/10 flex items-center justify-center">
+          <User className="w-5 h-5 text-accent-blue" />
         </div>
-        <h1 className="text-xl font-bold text-gray-900">حسابي</h1>
+        <h1 className="text-xl font-bold text-[#0d2137]">حسابي</h1>
       </div>
 
       {/* Avatar + Name Section */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+      <div className="bg-white rounded-2xl border border-[#e8f0f9] p-6">
         <div className="flex items-center gap-4">
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-bold flex-shrink-0"
-            style={{ backgroundColor: displayUser.doctorColor ?? "#0E7490" }}
+            style={{ backgroundColor: displayUser.doctorColor ?? "#3d7ab5" }}
           >
             {displayUser.doctorInitials ?? displayUser.username.charAt(0).toUpperCase()}
           </div>
           <div>
-            <h2 className="text-lg font-bold text-gray-900">
+            <h2 className="text-lg font-bold text-[#0d2137]">
               {displayUser.doctorName ?? displayUser.username}
             </h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-[#64748b]">
               {ROLE_LABELS[displayUser.role] ?? displayUser.role}
             </p>
           </div>
@@ -134,57 +134,57 @@ export default function ProfilePage() {
       {/* User Info Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Username */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-400 mb-1">اسم المستخدم</div>
-          <div className="text-sm font-semibold text-gray-900">{displayUser.username}</div>
+        <div className="bg-white rounded-2xl border border-[#e8f0f9] p-4">
+          <div className="text-xs text-[#94a3b8] mb-1">اسم المستخدم</div>
+          <div className="text-sm font-semibold text-[#0d2137]">{displayUser.username}</div>
         </div>
 
         {/* Role */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-400 mb-1">الدور</div>
-          <div className="text-sm font-semibold text-gray-900">
+        <div className="bg-white rounded-2xl border border-[#e8f0f9] p-4">
+          <div className="text-xs text-[#94a3b8] mb-1">الدور</div>
+          <div className="text-sm font-semibold text-[#0d2137]">
             {ROLE_LABELS[displayUser.role] ?? displayUser.role}
           </div>
         </div>
 
         {/* Email */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-400 mb-1">البريد الإلكتروني</div>
-          <div className="text-sm font-semibold text-gray-900">
+        <div className="bg-white rounded-2xl border border-[#e8f0f9] p-4">
+          <div className="text-xs text-[#94a3b8] mb-1">البريد الإلكتروني</div>
+          <div className="text-sm font-semibold text-[#0d2137]">
             {displayUser.email ?? "غير محدد"}
           </div>
         </div>
 
         {/* Doctor Name */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-400 mb-1">اسم الطبيب</div>
-          <div className="text-sm font-semibold text-gray-900">
+        <div className="bg-white rounded-2xl border border-[#e8f0f9] p-4">
+          <div className="text-xs text-[#94a3b8] mb-1">اسم الطبيب</div>
+          <div className="text-sm font-semibold text-[#0d2137]">
             {displayUser.doctorName ?? "غير محدد"}
           </div>
         </div>
 
         {/* Last Login */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:col-span-2">
-          <div className="text-xs text-gray-400 mb-1">آخر تسجيل دخول</div>
-          <div className="text-sm font-semibold text-gray-900">
+        <div className="bg-white rounded-2xl border border-[#e8f0f9] p-4 sm:col-span-2">
+          <div className="text-xs text-[#94a3b8] mb-1">آخر تسجيل دخول</div>
+          <div className="text-sm font-semibold text-[#0d2137]">
             {displayUser.lastLogin ?? "غير متوفر"}
           </div>
         </div>
       </div>
 
       {/* Change Password Section */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+      <div className="bg-white rounded-2xl border border-[#e8f0f9] p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
-            <Lock className="w-4 h-4 text-amber-600" />
+          <div className="w-9 h-9 rounded-lg bg-[#f59e0b18] flex items-center justify-center">
+            <Lock className="w-4 h-4 text-[#f59e0b]" />
           </div>
-          <h3 className="text-base font-bold text-gray-900">تغيير كلمة المرور</h3>
+          <h3 className="text-base font-bold text-[#0d2137]">تغيير كلمة المرور</h3>
         </div>
 
         <div className="space-y-4">
           {/* Current Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[#64748b] mb-1">
               كلمة المرور الحالية
             </label>
             <div className="relative">
@@ -192,14 +192,14 @@ export default function ProfilePage() {
                 type={showCurrent ? "text" : "password"}
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal/30 focus:border-clinic-teal"
+                className="w-full rounded-lg border border-[#dce8f5] px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue/30 focus:border-accent-blue"
                 placeholder="أدخل كلمة المرور الحالية"
                 dir="ltr"
               />
               <button
                 type="button"
                 onClick={() => setShowCurrent(!showCurrent)}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b]"
               >
                 {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -208,7 +208,7 @@ export default function ProfilePage() {
 
           {/* New Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[#64748b] mb-1">
               كلمة المرور الجديدة
             </label>
             <div className="relative">
@@ -216,14 +216,14 @@ export default function ProfilePage() {
                 type={showNew ? "text" : "password"}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal/30 focus:border-clinic-teal"
+                className="w-full rounded-lg border border-[#dce8f5] px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue/30 focus:border-accent-blue"
                 placeholder="أدخل كلمة المرور الجديدة"
                 dir="ltr"
               />
               <button
                 type="button"
                 onClick={() => setShowNew(!showNew)}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b]"
               >
                 {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -232,7 +232,7 @@ export default function ProfilePage() {
 
           {/* Confirm Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[#64748b] mb-1">
               تأكيد كلمة المرور الجديدة
             </label>
             <div className="relative">
@@ -240,14 +240,14 @@ export default function ProfilePage() {
                 type={showConfirm ? "text" : "password"}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal/30 focus:border-clinic-teal"
+                className="w-full rounded-lg border border-[#dce8f5] px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue/30 focus:border-accent-blue"
                 placeholder="أعد إدخال كلمة المرور الجديدة"
                 dir="ltr"
               />
               <button
                 type="button"
                 onClick={() => setShowConfirm(!showConfirm)}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b]"
               >
                 {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -256,12 +256,12 @@ export default function ProfilePage() {
 
           {/* Error/Success Messages */}
           {passwordError && (
-            <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">
+            <div className="text-sm text-[#ef4444] bg-[#ef444418] rounded-lg p-3">
               {passwordError}
             </div>
           )}
           {passwordSuccess && (
-            <div className="text-sm text-green-600 bg-green-50 rounded-lg p-3">
+            <div className="text-sm text-[#22c55e] bg-[#22c55e18] rounded-lg p-3">
               {passwordSuccess}
             </div>
           )}
@@ -270,7 +270,7 @@ export default function ProfilePage() {
           <button
             onClick={handleChangePassword}
             disabled={changePassword.isPending}
-            className="flex items-center gap-2 px-5 py-2.5 bg-clinic-teal text-white rounded-lg text-sm font-medium hover:bg-clinic-teal/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2.5 bg-accent-blue text-white rounded-lg text-sm font-medium hover:bg-accent-blue/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {changePassword.isPending ? (
               <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />

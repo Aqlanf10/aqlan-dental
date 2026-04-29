@@ -37,18 +37,18 @@ export function TodaySchedule() {
   const completed = appointments.filter((a) => a.status === "Completed").length;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+    <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-[0_1px_3px_rgba(13,33,55,0.06)] overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-[#e8f0f9]">
         <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-clinic-teal" />
-          <h3 className="font-bold text-gray-900 text-sm">مواعيد اليوم</h3>
+          <Calendar className="w-4 h-4" style={{ color: "#3d7ab5" }} />
+          <h3 className="font-bold text-[#0d2137] text-sm">مواعيد اليوم</h3>
           {!loading && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-[#94a3b8]">
               {completed}/{active.length} مكتمل
             </span>
           )}
         </div>
-        <Link href="/appointments" className="text-xs text-clinic-teal hover:underline">
+        <Link href="/appointments" className="text-xs hover:underline" style={{ color: "#f5922e" }}>
           عرض الجدول
         </Link>
       </div>
@@ -60,34 +60,34 @@ export function TodaySchedule() {
           ))}
         </div>
       ) : appointments.length === 0 ? (
-        <div className="text-center py-10 text-gray-400">
+        <div className="text-center py-10 text-[#94a3b8]">
           <Clock className="w-8 h-8 mx-auto mb-2 opacity-30" />
           <p className="text-xs">لا توجد مواعيد اليوم</p>
         </div>
       ) : (
-        <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
+        <div className="divide-y divide-[#e8f0f9] max-h-96 overflow-y-auto">
           {appointments
             .sort((a, b) => a.startTime.localeCompare(b.startTime))
             .map((appt) => (
-              <div key={appt.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition">
-                {/* Doctor color dot */}
+              <div key={appt.id} className="flex items-center gap-3 px-5 py-3 hover:bg-[#f8fafc] transition">
+                {/* Doctor color bar */}
                 <div
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: appt.doctorColor ?? "#0E7490" }}
+                  className="w-1 h-8 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: appt.doctorColor ?? "#3d7ab5" }}
                 />
                 {/* Time */}
-                <div className="text-xs font-mono text-gray-500 w-12 flex-shrink-0" dir="ltr">
+                <div className="text-xs font-mono text-[#64748b] w-12 flex-shrink-0" dir="ltr">
                   {formatTime(appt.startTime)}
                 </div>
                 {/* Patient & type */}
                 <div className="flex-1 min-w-0">
                   <Link
                     href={`/patients/${appt.patientId}`}
-                    className="text-sm font-semibold text-gray-900 hover:text-clinic-teal transition truncate block"
+                    className="text-sm font-semibold text-[#0d2137] hover:text-[#3d7ab5] transition truncate block"
                   >
                     {appt.patientName}
                   </Link>
-                  <p className="text-xs text-gray-400 truncate">{appt.appointmentType} · {appt.doctorName}</p>
+                  <p className="text-xs text-[#94a3b8] truncate">{appt.appointmentType} · {appt.doctorName}</p>
                 </div>
                 {/* Status badge */}
                 <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0", STATUS_COLORS[appt.status] ?? "bg-gray-100 text-gray-600")}>

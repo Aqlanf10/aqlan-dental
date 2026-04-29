@@ -24,8 +24,8 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const inputCls = (err?: string) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
-  err ? "border-red-400" : "border-gray-300"
+  "w-full px-3 py-2 text-sm rounded-lg border-[1.5px] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-accent-blue",
+  err ? "border-[#ef4444]" : "border-[#dce8f5]"
 );
 
 interface PaymentFormProps {
@@ -93,21 +93,21 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
   if (savedPayment) {
     return (
       <div className="space-y-4">
-        <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 text-sm font-medium">
+        <div className="bg-[#22c55e18] border border-[#22c55e30] text-[#22c55e] rounded-lg p-4 text-sm font-medium">
           ✓ تم تسجيل الدفعة بنجاح — رقم السند: {savedPayment.receiptNumber}
         </div>
         <ReceiptView payment={savedPayment} />
         <div className="flex gap-3">
           <button
             onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-[#e8f0f9] hover:bg-[#f7fafd] transition"
           >
             <Printer className="w-4 h-4" />
             طباعة السند
           </button>
           <button
             onClick={() => { setSavedPayment(null); router.push("/finance"); }}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
           >
             العودة إلى المالية
           </button>
@@ -119,26 +119,26 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {serverError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{serverError}</div>
+        <div className="bg-[#ef444418] border border-[#ef444430] text-[#ef4444] rounded-lg p-3 text-sm">{serverError}</div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Patient */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
+          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">المريض <span className="text-[#ef4444]">*</span></label>
           <PatientCombobox
             defaultDisplayValue={defaultPatientName ?? ""}
             onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
             error={errors.patientId?.message}
           />
           <input type="hidden" {...register("patientId")} />
-          {errors.patientId && <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>}
+          {errors.patientId && <p className="mt-1 text-xs text-[#ef4444]">{errors.patientId.message}</p>}
         </div>
 
         {/* Contract */}
         {contracts.length > 0 && (
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">ربط بعقد</label>
+            <label className="block text-sm font-medium text-[#0d2137] mb-1.5">ربط بعقد</label>
             <select {...register("contractId")} className={inputCls()}>
               <option value="">بدون ربط بعقد</option>
               {contracts.map((c) => (
@@ -152,14 +152,14 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
 
         {/* Amount */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">المبلغ (ريال) <span className="text-red-500">*</span></label>
+          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">المبلغ (ريال) <span className="text-[#ef4444]">*</span></label>
           <input {...register("amount", { valueAsNumber: true })} type="number" min={1} className={inputCls(errors.amount?.message)} dir="ltr" />
-          {errors.amount && <p className="mt-1 text-xs text-red-600">{errors.amount.message}</p>}
+          {errors.amount && <p className="mt-1 text-xs text-[#ef4444]">{errors.amount.message}</p>}
         </div>
 
         {/* Payment method */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">طريقة الدفع</label>
+          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">طريقة الدفع</label>
           <select {...register("paymentMethod")} className={inputCls()}>
             <option value="cash">نقداً</option>
             <option value="bank_transfer">تحويل بنكي</option>
@@ -169,23 +169,23 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
 
         {/* Service description */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">وصف الخدمة</label>
+          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">وصف الخدمة</label>
           <input {...register("serviceDescription")} className={inputCls()} placeholder="تقويم، حشو، فحص..." />
         </div>
 
         {/* Notes */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">ملاحظات</label>
+          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">ملاحظات</label>
           <textarea {...register("notes")} rows={2} className={inputCls()} />
         </div>
       </div>
 
       <div className="flex justify-end gap-3 pb-4">
         <button type="button" onClick={() => router.back()}
-          className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+          className="px-5 py-2 text-sm rounded-lg border border-[#e8f0f9] text-[#64748b] hover:bg-[#f7fafd] transition"
         >إلغاء</button>
         <button type="submit" disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ التسجيل..." : "تسجيل الدفعة"}

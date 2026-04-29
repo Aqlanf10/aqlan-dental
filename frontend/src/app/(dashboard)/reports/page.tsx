@@ -35,7 +35,7 @@ const SPECIALTY_LABELS: Record<string, string> = {
 const METHOD_LABELS: Record<string, string> = {
   cash: "نقد", bank_transfer: "تحويل", card: "بطاقة",
 };
-const SPECIALTY_COLORS = ["#0E7490", "#7C3AED", "#DC2626", "#D97706", "#059669"];
+const SPECIALTY_COLORS = ["#3d7ab5", "#7C3AED", "#DC2626", "#D97706", "#059669"];
 
 const ORTHO_STAGE_LABELS: Record<string, string> = {
   alignment: "المحاذاة", leveling: "التسوية", space_closure: "إغلاق الفراغات",
@@ -73,9 +73,9 @@ interface TooltipProps { active?: boolean; payload?: { value: number }[]; label?
 const TooltipRevenue = ({ active, payload, label }: TooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-      <p className="text-gray-500 mb-1">{label}</p>
-      <p className="font-bold text-clinic-teal">{payload[0].value.toLocaleString()} ر.ي</p>
+    <div className="bg-white border border-[#e8f0f9] rounded-lg shadow-md px-3 py-2 text-xs">
+      <p className="text-[#64748b] mb-1">{label}</p>
+      <p className="font-bold text-accent-blue">{payload[0].value.toLocaleString()} ر.ي</p>
     </div>
   );
 };
@@ -83,9 +83,9 @@ const TooltipRevenue = ({ active, payload, label }: TooltipProps) => {
 const TooltipAppt = ({ active, payload, label }: TooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-      <p className="text-gray-500 mb-1">{label}</p>
-      <p className="font-bold text-purple-600">{payload[0].value}</p>
+    <div className="bg-white border border-[#e8f0f9] rounded-lg shadow-md px-3 py-2 text-xs">
+      <p className="text-[#64748b] mb-1">{label}</p>
+      <p className="font-bold text-[#a855f7]">{payload[0].value}</p>
     </div>
   );
 };
@@ -93,9 +93,9 @@ const TooltipAppt = ({ active, payload, label }: TooltipProps) => {
 const TooltipCount = ({ active, payload, label }: TooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-      <p className="text-gray-500 mb-1">{label}</p>
-      <p className="font-bold text-clinic-teal">{payload[0].value}</p>
+    <div className="bg-white border border-[#e8f0f9] rounded-lg shadow-md px-3 py-2 text-xs">
+      <p className="text-[#64748b] mb-1">{label}</p>
+      <p className="font-bold text-accent-blue">{payload[0].value}</p>
     </div>
   );
 };
@@ -147,16 +147,16 @@ export default function ReportsPage() {
   return (
     <div className="space-y-5 max-w-6xl">
       <div>
-        <h1 className="text-2xl font-extrabold text-gray-900">التقارير</h1>
-        <p className="text-sm text-gray-500 mt-0.5">التقارير والإحصائيات التفصيلية</p>
+        <h1 className="text-2xl font-extrabold text-[#0d2137]">التقارير</h1>
+        <p className="text-sm text-[#64748b] mt-0.5">التقارير والإحصائيات التفصيلية</p>
       </div>
 
       {/* Tabs + date range */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex items-center gap-2 flex-wrap">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-3 flex items-center gap-2 flex-wrap">
         {REPORT_TABS.map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setActiveReport(key)}
             className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition ${
-              activeReport === key ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-100"
+              activeReport === key ? "bg-accent-blue text-white" : "text-[#64748b] hover:bg-[#eef3f9]"
             }`}
           >
             <Icon className="w-4 h-4" />
@@ -166,16 +166,16 @@ export default function ReportsPage() {
         {activeReport !== "growth" && (
           <div className="flex items-center gap-2 md:ms-auto">
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
-            <span className="text-gray-400">—</span>
+              className="text-sm border border-[#e8f0f9] rounded-lg px-2 py-1.5" />
+            <span className="text-[#94a3b8]">—</span>
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+              className="text-sm border border-[#e8f0f9] rounded-lg px-2 py-1.5" />
           </div>
         )}
       </div>
 
       {loading ? (
-        <div className="h-64 bg-gray-100 rounded-xl animate-pulse" />
+        <div className="h-64 bg-[#eef3f9] rounded-xl animate-pulse" />
       ) : (
         <>
           {activeReport === "center" && <CenterReport summary={centerQ.data} />}
@@ -199,24 +199,24 @@ function CenterReport({ summary }: { summary?: import("@/types/finance").CenterS
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="إجمالي المرضى" value={summary.totalPatients.toString()} icon={Users} color="bg-blue-50 text-blue-600 border-blue-200" />
-        <StatCard label="مرضى جدد" value={summary.newPatients.toString()} icon={TrendingUp} color="bg-teal-50 text-teal-600 border-teal-200" />
-        <StatCard label="إجمالي المواعيد" value={summary.totalAppointments.toString()} icon={Calendar} color="bg-purple-50 text-purple-600 border-purple-200" />
-        <StatCard label="مواعيد مكتملة" value={summary.completedAppointments.toString()} icon={Calendar} color="bg-green-50 text-green-600 border-green-200" />
-        <StatCard label="حالات تقويم نشطة" value={summary.activeOrthoCases.toString()} icon={Stethoscope} color="bg-yellow-50 text-yellow-600 border-yellow-200" />
-        <StatCard label="الإيرادات" value={formatYemeniRiyal(summary.totalRevenue)} icon={Wallet} color="bg-emerald-50 text-emerald-600 border-emerald-200" />
+        <StatCard label="إجمالي المرضى" value={summary.totalPatients.toString()} icon={Users} color="bg-[#3d7ab518] text-accent-blue border-[#3d7ab530]" />
+        <StatCard label="مرضى جدد" value={summary.newPatients.toString()} icon={TrendingUp} color="bg-light-blue text-accent-blue border-teal-200" />
+        <StatCard label="إجمالي المواعيد" value={summary.totalAppointments.toString()} icon={Calendar} color="bg-[#a855f718] text-[#a855f7] border-purple-200" />
+        <StatCard label="مواعيد مكتملة" value={summary.completedAppointments.toString()} icon={Calendar} color="bg-[#22c55e18] text-[#22c55e] border-green-200" />
+        <StatCard label="حالات تقويم نشطة" value={summary.activeOrthoCases.toString()} icon={Stethoscope} color="bg-[#f59e0b18] text-[#f59e0b] border-[#f59e0b30]" />
+        <StatCard label="الإيرادات" value={formatYemeniRiyal(summary.totalRevenue)} icon={Wallet} color="bg-[#22c55e18] text-[#22c55e] border-emerald-200" />
       </div>
       {summary.totalAppointments > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <p className="text-sm font-semibold text-gray-700 mb-3">نسبة إكمال المواعيد</p>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <p className="text-sm font-bold text-[#64748b] mb-3">نسبة إكمال المواعيد</p>
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div className="flex-1 h-3 bg-[#eef3f9] rounded-full overflow-hidden">
               <div
-                className="h-full bg-clinic-teal rounded-full transition-all"
+                className="h-full bg-accent-blue rounded-full transition-all"
                 style={{ width: `${Math.round((summary.completedAppointments / summary.totalAppointments) * 100)}%` }}
               />
             </div>
-            <span className="text-sm font-bold text-gray-900 flex-shrink-0">
+            <span className="text-sm font-bold text-[#0d2137] flex-shrink-0">
               {Math.round((summary.completedAppointments / summary.totalAppointments) * 100)}%
             </span>
           </div>
@@ -232,9 +232,9 @@ function DoctorsReport({ performance }: { performance: import("@/types/finance")
   if (!performance.length) return <EmptyState />;
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h3 className="font-bold text-gray-900 text-sm mb-4 flex items-center gap-2">
-          <Wallet className="w-4 h-4 text-emerald-600" />
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+        <h3 className="font-bold text-[#0d2137] text-sm mb-4 flex items-center gap-2">
+          <Wallet className="w-4 h-4 text-[#22c55e]" />
           الإيرادات حسب الطبيب
         </h3>
         <ResponsiveContainer width="100%" height={180}>
@@ -243,35 +243,35 @@ function DoctorsReport({ performance }: { performance: import("@/types/finance")
             <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
             <YAxis tickFormatter={formatYER} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
             <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} ر.ي`, "الإيرادات"]} />
-            <Bar dataKey="revenue" fill="#0E7490" radius={[4, 4, 0, 0]} maxBarSize={32} />
+            <Bar dataKey="revenue" fill="#3d7ab5" radius={[4, 4, 0, 0]} maxBarSize={32} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
               <tr>
                 {["الطبيب", "المواعيد", "المكتملة", "حالات تقويم", "معالجات", "الإيرادات"].map((h) => (
-                  <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                  <th key={h} className="text-start px-4 py-3 text-xs font-bold text-[#64748b] whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[#f1f5f9]">
               {performance.map((p) => (
-                <tr key={p.doctorId} className="hover:bg-gray-50 transition">
+                <tr key={p.doctorId} className="hover:bg-[#f7fafd] transition">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color ?? "#0E7490" }} />
-                      <span className="font-medium text-gray-900">{p.name}</span>
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color ?? "#3d7ab5" }} />
+                      <span className="font-medium text-[#0d2137]">{p.name}</span>
                     </div>
-                    {p.specialty && <div className="text-xs text-gray-400 mr-4.5">{p.specialty}</div>}
+                    {p.specialty && <div className="text-xs text-[#94a3b8] mr-4.5">{p.specialty}</div>}
                   </td>
-                  <td className="px-4 py-3 font-mono text-gray-700">{p.appointmentCount}</td>
-                  <td className="px-4 py-3 font-mono text-green-700">{p.completedCount}</td>
-                  <td className="px-4 py-3 font-mono text-gray-700">{p.orthoCasesCount}</td>
-                  <td className="px-4 py-3 font-mono text-gray-700">{p.treatmentsCount}</td>
-                  <td className="px-4 py-3 font-mono font-semibold text-emerald-700">{formatYemeniRiyal(p.revenue)}</td>
+                  <td className="px-4 py-3 font-mono text-[#64748b]">{p.appointmentCount}</td>
+                  <td className="px-4 py-3 font-mono text-[#22c55e]">{p.completedCount}</td>
+                  <td className="px-4 py-3 font-mono text-[#64748b]">{p.orthoCasesCount}</td>
+                  <td className="px-4 py-3 font-mono text-[#64748b]">{p.treatmentsCount}</td>
+                  <td className="px-4 py-3 font-mono font-semibold text-[#22c55e]">{formatYemeniRiyal(p.revenue)}</td>
                 </tr>
               ))}
             </tbody>
@@ -288,11 +288,11 @@ function FinancialReportView({ report }: { report?: import("@/types/finance").Fi
   if (!report) return <EmptyState />;
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-500">إجمالي المحصّل في الفترة</p>
-            <p className="text-3xl font-extrabold text-emerald-700 font-mono mt-1">
+            <p className="text-sm text-[#64748b]">إجمالي المحصّل في الفترة</p>
+            <p className="text-3xl font-extrabold text-[#22c55e] font-mono mt-1">
               {formatYemeniRiyal(report.totalCollected)}
             </p>
           </div>
@@ -301,9 +301,9 @@ function FinancialReportView({ report }: { report?: import("@/types/finance").Fi
       </div>
 
       {report.daily.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-clinic-teal" />
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-accent-blue" />
             الإيرادات اليومية
           </h3>
           <ResponsiveContainer width="100%" height={180}>
@@ -313,16 +313,16 @@ function FinancialReportView({ report }: { report?: import("@/types/finance").Fi
                 interval={Math.ceil(report.daily.length / 8)} />
               <YAxis tickFormatter={formatYER} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <Tooltip content={<TooltipRevenue />} />
-              <Bar dataKey="total" fill="#0E7490" radius={[3, 3, 0, 0]} maxBarSize={20} />
+              <Bar dataKey="total" fill="#3d7ab5" radius={[3, 3, 0, 0]} maxBarSize={20} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
 
       {report.daily.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-purple-600" />
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4 flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-[#a855f7]" />
             دفعات يومية (عدد)
           </h3>
           <ResponsiveContainer width="100%" height={140}>
@@ -332,7 +332,7 @@ function FinancialReportView({ report }: { report?: import("@/types/finance").Fi
                 interval={Math.ceil(report.daily.length / 8)} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipAppt />} />
-              <Line type="monotone" dataKey="count" stroke="#7C3AED" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#7C3AED" }} />
+              <Line type="monotone" dataKey="count" stroke="#a855f7" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#7C3AED" }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -340,10 +340,10 @@ function FinancialReportView({ report }: { report?: import("@/types/finance").Fi
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* By specialty */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">حسب التخصص</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">حسب التخصص</h3>
           {report.bySpecialty.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">لا توجد بيانات</p>
+            <p className="text-sm text-[#94a3b8] text-center py-4">لا توجد بيانات</p>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={140}>
@@ -365,9 +365,9 @@ function FinancialReportView({ report }: { report?: import("@/types/finance").Fi
                       <div className="flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: SPECIALTY_COLORS[i % SPECIALTY_COLORS.length] }} />
-                        <span className="text-gray-600">{SPECIALTY_LABELS[s.specialty] ?? s.specialty}</span>
+                        <span className="text-[#64748b]">{SPECIALTY_LABELS[s.specialty] ?? s.specialty}</span>
                       </div>
-                      <span className="font-semibold text-gray-900">{formatYemeniRiyal(s.total)} ({pct}%)</span>
+                      <span className="font-semibold text-[#0d2137]">{formatYemeniRiyal(s.total)} ({pct}%)</span>
                     </div>
                   );
                 })}
@@ -377,24 +377,24 @@ function FinancialReportView({ report }: { report?: import("@/types/finance").Fi
         </div>
 
         {/* By payment method */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">حسب طريقة الدفع</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">حسب طريقة الدفع</h3>
           <div className="space-y-3">
             {report.byMethod.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">لا توجد بيانات</p>
+              <p className="text-sm text-[#94a3b8] text-center py-4">لا توجد بيانات</p>
             ) : report.byMethod.map((m) => {
               const pct = report.totalCollected > 0 ? Math.round((m.total / report.totalCollected) * 100) : 0;
               return (
                 <div key={m.method}>
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-gray-700 font-medium">{METHOD_LABELS[m.method] ?? m.method}</span>
-                    <span className="font-mono text-gray-900">
+                    <span className="text-[#64748b] font-medium">{METHOD_LABELS[m.method] ?? m.method}</span>
+                    <span className="font-mono text-[#0d2137]">
                       {formatYemeniRiyal(m.total)}{" "}
-                      <span className="text-xs text-gray-400">({pct}%)</span>
+                      <span className="text-xs text-[#94a3b8]">({pct}%)</span>
                     </span>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                  <div className="h-2 bg-[#eef3f9] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#22c55e18]0 rounded-full" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -420,23 +420,23 @@ function OrthoReportView({ report }: { report?: OrthoReport }) {
     <div className="space-y-4">
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="حالات نشطة" value={report.activeCases.toString()} icon={ShieldCheck} color="bg-teal-50 text-teal-600 border-teal-200" />
-        <StatCard label="حالات مكتملة" value={report.completedCases.toString()} icon={TrendingUp} color="bg-green-50 text-green-600 border-green-200" />
-        <StatCard label="حالات جديدة" value={report.newCases.toString()} icon={Users} color="bg-blue-50 text-blue-600 border-blue-200" />
-        <StatCard label="متوسط المدة (شهر)" value={report.averageDuration.toFixed(1)} icon={Calendar} color="bg-purple-50 text-purple-600 border-purple-200" />
+        <StatCard label="حالات نشطة" value={report.activeCases.toString()} icon={ShieldCheck} color="bg-light-blue text-accent-blue border-teal-200" />
+        <StatCard label="حالات مكتملة" value={report.completedCases.toString()} icon={TrendingUp} color="bg-[#22c55e18] text-[#22c55e] border-green-200" />
+        <StatCard label="حالات جديدة" value={report.newCases.toString()} icon={Users} color="bg-[#3d7ab518] text-accent-blue border-[#3d7ab530]" />
+        <StatCard label="متوسط المدة (شهر)" value={report.averageDuration.toFixed(1)} icon={Calendar} color="bg-[#a855f718] text-[#a855f7] border-purple-200" />
       </div>
 
       {/* Cases by stage */}
       {stageData.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">توزيع المراحل</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">توزيع المراحل</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={stageData} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
               <XAxis dataKey="stage" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipCount />} />
-              <Bar dataKey="count" fill="#0E7490" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <Bar dataKey="count" fill="#3d7ab5" radius={[4, 4, 0, 0]} maxBarSize={40} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -444,15 +444,15 @@ function OrthoReportView({ report }: { report?: OrthoReport }) {
 
       {/* Monthly cases trend */}
       {report.monthlyCases.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">حالات التقويم الشهرية</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">حالات التقويم الشهرية</h3>
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={report.monthlyCases} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
               <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipCount />} />
-              <Line type="monotone" dataKey="count" stroke="#0E7490" strokeWidth={2} dot={{ fill: "#0E7490", r: 3 }} />
+              <Line type="monotone" dataKey="count" stroke="#3d7ab5" strokeWidth={2} dot={{ fill: "#3d7ab5", r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -460,23 +460,23 @@ function OrthoReportView({ report }: { report?: OrthoReport }) {
 
       {/* By doctor table */}
       {report.byDoctor.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100">
-            <h3 className="font-bold text-gray-900 text-sm">حسب الطبيب</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#f1f5f9]">
+            <h3 className="font-bold text-[#0d2137] text-sm">حسب الطبيب</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-[#f7fafd]">
                 <tr>
                   {["الطبيب", "عدد الحالات"].map((h) => (
-                    <th key={h} className="text-start px-4 py-2.5 text-xs font-semibold text-gray-500">{h}</th>
+                    <th key={h} className="text-start px-4 py-2.5 text-xs font-bold text-[#64748b]">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {report.byDoctor.map((d) => (
-                  <tr key={d.doctorId} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{d.doctorName}</td>
+                  <tr key={d.doctorId} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-2.5 font-medium text-[#0d2137]">{d.doctorName}</td>
                     <td className="px-4 py-2.5 font-mono">{d.count}</td>
                   </tr>
                 ))}
@@ -509,17 +509,17 @@ function GeneralReportView({ report }: { report?: GeneralDentistryReport }) {
     <div className="space-y-4">
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="إجمالي المعالجات" value={report.totalTreatments.toString()} icon={SmilePlus} color="bg-teal-50 text-teal-600 border-teal-200" />
-        <StatCard label="إجمالي الإيرادات" value={formatYemeniRiyal(report.byType.reduce((s, t) => s + t.revenue, 0))} icon={Wallet} color="bg-emerald-50 text-emerald-600 border-emerald-200" />
-        <StatCard label="أنواع المعالجات" value={report.byType.length.toString()} icon={BarChart2} color="bg-purple-50 text-purple-600 border-purple-200" />
+        <StatCard label="إجمالي المعالجات" value={report.totalTreatments.toString()} icon={SmilePlus} color="bg-light-blue text-accent-blue border-teal-200" />
+        <StatCard label="إجمالي الإيرادات" value={formatYemeniRiyal(report.byType.reduce((s, t) => s + t.revenue, 0))} icon={Wallet} color="bg-[#22c55e18] text-[#22c55e] border-emerald-200" />
+        <StatCard label="أنواع المعالجات" value={report.byType.length.toString()} icon={BarChart2} color="bg-[#a855f718] text-[#a855f7] border-purple-200" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Treatment type distribution pie chart */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">توزيع أنواع المعالجات</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">توزيع أنواع المعالجات</h3>
           {treatmentPieData.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">لا توجد بيانات</p>
+            <p className="text-sm text-[#94a3b8] text-center py-8">لا توجد بيانات</p>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={180}>
@@ -539,9 +539,9 @@ function GeneralReportView({ report }: { report?: GeneralDentistryReport }) {
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: SPECIALTY_COLORS[i % SPECIALTY_COLORS.length] }} />
-                      <span className="text-gray-600">{t.name}</span>
+                      <span className="text-[#64748b]">{t.name}</span>
                     </div>
-                    <span className="font-semibold text-gray-900">{t.value} ({formatYemeniRiyal(t.revenue)})</span>
+                    <span className="font-semibold text-[#0d2137]">{t.value} ({formatYemeniRiyal(t.revenue)})</span>
                   </div>
                 ))}
               </div>
@@ -550,10 +550,10 @@ function GeneralReportView({ report }: { report?: GeneralDentistryReport }) {
         </div>
 
         {/* Top procedures bar chart */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">أكثر المعالجات</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">أكثر المعالجات</h3>
           {topProceduresData.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">لا توجد بيانات</p>
+            <p className="text-sm text-[#94a3b8] text-center py-8">لا توجد بيانات</p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={topProceduresData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
@@ -570,25 +570,25 @@ function GeneralReportView({ report }: { report?: GeneralDentistryReport }) {
 
       {/* By doctor table */}
       {report.byDoctor.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100">
-            <h3 className="font-bold text-gray-900 text-sm">حسب الطبيب</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#f1f5f9]">
+            <h3 className="font-bold text-[#0d2137] text-sm">حسب الطبيب</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-[#f7fafd]">
                 <tr>
                   {["الطبيب", "عدد المعالجات", "الإيرادات"].map((h) => (
-                    <th key={h} className="text-start px-4 py-2.5 text-xs font-semibold text-gray-500">{h}</th>
+                    <th key={h} className="text-start px-4 py-2.5 text-xs font-bold text-[#64748b]">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {report.byDoctor.map((d) => (
-                  <tr key={d.doctorId} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{d.doctorName}</td>
+                  <tr key={d.doctorId} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-2.5 font-medium text-[#0d2137]">{d.doctorName}</td>
                     <td className="px-4 py-2.5 font-mono">{d.count}</td>
-                    <td className="px-4 py-2.5 font-mono font-semibold text-emerald-700">{formatYemeniRiyal(d.revenue)}</td>
+                    <td className="px-4 py-2.5 font-mono font-semibold text-[#22c55e]">{formatYemeniRiyal(d.revenue)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -619,17 +619,17 @@ function SurgeryReportView({ report }: { report?: SurgeryReport }) {
     <div className="space-y-4">
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="إجمالي الحالات" value={report.totalCases.toString()} icon={Scissors} color="bg-red-50 text-red-600 border-red-200" />
-        <StatCard label="أنواع العمليات" value={report.byType.length.toString()} icon={BarChart2} color="bg-orange-50 text-orange-600 border-orange-200" />
-        <StatCard label="الأطباء" value={report.byDoctor.length.toString()} icon={Stethoscope} color="bg-teal-50 text-teal-600 border-teal-200" />
+        <StatCard label="إجمالي الحالات" value={report.totalCases.toString()} icon={Scissors} color="bg-[#ef444418] text-[#ef4444] border-[#ef444430]" />
+        <StatCard label="أنواع العمليات" value={report.byType.length.toString()} icon={BarChart2} color="bg-[#f5922e18] text-[#f5922e] border-orange-200" />
+        <StatCard label="الأطباء" value={report.byDoctor.length.toString()} icon={Stethoscope} color="bg-light-blue text-accent-blue border-teal-200" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Case type distribution */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">توزيع أنواع العمليات</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">توزيع أنواع العمليات</h3>
           {typeData.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">لا توجد بيانات</p>
+            <p className="text-sm text-[#94a3b8] text-center py-8">لا توجد بيانات</p>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
@@ -650,9 +650,9 @@ function SurgeryReportView({ report }: { report?: SurgeryReport }) {
                   <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                       style={{ backgroundColor: SPECIALTY_COLORS[i % SPECIALTY_COLORS.length] }} />
-                    <span className="text-gray-600">{t.type}</span>
+                    <span className="text-[#64748b]">{t.type}</span>
                   </div>
-                  <span className="font-semibold text-gray-900">{t.count}</span>
+                  <span className="font-semibold text-[#0d2137]">{t.count}</span>
                 </div>
               ))}
             </div>
@@ -660,10 +660,10 @@ function SurgeryReportView({ report }: { report?: SurgeryReport }) {
         </div>
 
         {/* Status breakdown */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">توزيع الحالات حسب الوضع</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">توزيع الحالات حسب الوضع</h3>
           {statusData.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">لا توجد بيانات</p>
+            <p className="text-sm text-[#94a3b8] text-center py-8">لا توجد بيانات</p>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={statusData} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
@@ -680,23 +680,23 @@ function SurgeryReportView({ report }: { report?: SurgeryReport }) {
 
       {/* By doctor */}
       {report.byDoctor.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100">
-            <h3 className="font-bold text-gray-900 text-sm">حسب الطبيب</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#f1f5f9]">
+            <h3 className="font-bold text-[#0d2137] text-sm">حسب الطبيب</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-[#f7fafd]">
                 <tr>
                   {["الطبيب", "عدد الحالات"].map((h) => (
-                    <th key={h} className="text-start px-4 py-2.5 text-xs font-semibold text-gray-500">{h}</th>
+                    <th key={h} className="text-start px-4 py-2.5 text-xs font-bold text-[#64748b]">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {report.byDoctor.map((d) => (
-                  <tr key={d.doctorId} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{d.doctorName}</td>
+                  <tr key={d.doctorId} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-2.5 font-medium text-[#0d2137]">{d.doctorName}</td>
                     <td className="px-4 py-2.5 font-mono">{d.count}</td>
                   </tr>
                 ))}
@@ -718,31 +718,31 @@ function GrowthReportView({ analysis }: { analysis?: GrowthAnalysis }) {
     <div className="space-y-4">
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="مرضى جدد (12 شهر)" value={analysis.totalNew.toString()} icon={Users} color="bg-teal-50 text-teal-600 border-teal-200" />
-        <StatCard label="مرضى عائدون" value={analysis.totalReturning.toString()} icon={TrendingUp} color="bg-blue-50 text-blue-600 border-blue-200" />
-        <StatCard label="معدل النمو" value={`${analysis.growthRate.toFixed(1)}%`} icon={Activity} color="bg-emerald-50 text-emerald-600 border-emerald-200" />
-        <StatCard label="إجمالي المرضى" value={analysis.totalNew + analysis.totalReturning + ""} icon={Users} color="bg-purple-50 text-purple-600 border-purple-200" />
+        <StatCard label="مرضى جدد (12 شهر)" value={analysis.totalNew.toString()} icon={Users} color="bg-light-blue text-accent-blue border-teal-200" />
+        <StatCard label="مرضى عائدون" value={analysis.totalReturning.toString()} icon={TrendingUp} color="bg-[#3d7ab518] text-accent-blue border-[#3d7ab530]" />
+        <StatCard label="معدل النمو" value={`${analysis.growthRate.toFixed(1)}%`} icon={Activity} color="bg-[#22c55e18] text-[#22c55e] border-emerald-200" />
+        <StatCard label="إجمالي المرضى" value={analysis.totalNew + analysis.totalReturning + ""} icon={Users} color="bg-[#a855f718] text-[#a855f7] border-purple-200" />
       </div>
 
       {/* Monthly growth line chart */}
       {analysis.months.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-4">المرضى الجدد شهرياً (12 شهر)</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-4">المرضى الجدد شهرياً (12 شهر)</h3>
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={analysis.months} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
               <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip />
-              <Line type="monotone" dataKey="newPatients" name="مرضى جدد" stroke="#0E7490" strokeWidth={2.5}
-                dot={{ fill: "#0E7490", r: 3 }} activeDot={{ r: 5 }} />
-              <Line type="monotone" dataKey="returningPatients" name="مرضى عائدون" stroke="#7C3AED" strokeWidth={2}
+              <Line type="monotone" dataKey="newPatients" name="مرضى جدد" stroke="#3d7ab5" strokeWidth={2.5}
+                dot={{ fill: "#3d7ab5", r: 3 }} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="returningPatients" name="مرضى عائدون" stroke="#a855f7" strokeWidth={2}
                 dot={{ fill: "#7C3AED", r: 2 }} activeDot={{ r: 4 }} strokeDasharray="5 5" />
             </LineChart>
           </ResponsiveContainer>
-          <div className="flex items-center justify-center gap-6 mt-3 text-xs text-gray-500">
+          <div className="flex items-center justify-center gap-6 mt-3 text-xs text-[#64748b]">
             <div className="flex items-center gap-1.5">
-              <span className="w-6 h-0.5 bg-[#0E7490] inline-block" />
+              <span className="w-6 h-0.5 bg-[#3d7ab5] inline-block" />
               مرضى جدد
             </div>
             <div className="flex items-center gap-1.5">
@@ -755,26 +755,26 @@ function GrowthReportView({ analysis }: { analysis?: GrowthAnalysis }) {
 
       {/* Monthly table */}
       {analysis.months.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100">
-            <h3 className="font-bold text-gray-900 text-sm">تفاصيل شهرية</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#f1f5f9]">
+            <h3 className="font-bold text-[#0d2137] text-sm">تفاصيل شهرية</h3>
           </div>
           <div className="overflow-x-auto max-h-72 overflow-y-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
+              <thead className="bg-[#f7fafd] sticky top-0">
                 <tr>
                   {["الشهر", "جدد", "عائدون", "الإجمالي"].map((h) => (
-                    <th key={h} className="text-start px-4 py-2.5 text-xs font-semibold text-gray-500">{h}</th>
+                    <th key={h} className="text-start px-4 py-2.5 text-xs font-bold text-[#64748b]">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {analysis.months.map((m) => (
-                  <tr key={m.month} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{m.month}</td>
-                    <td className="px-4 py-2.5 font-mono text-teal-700 font-semibold">{m.newPatients}</td>
-                    <td className="px-4 py-2.5 font-mono text-purple-700">{m.returningPatients}</td>
-                    <td className="px-4 py-2.5 font-mono font-bold text-gray-900">{m.total}</td>
+                  <tr key={m.month} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-2.5 font-medium text-[#0d2137]">{m.month}</td>
+                    <td className="px-4 py-2.5 font-mono text-accent-blue font-semibold">{m.newPatients}</td>
+                    <td className="px-4 py-2.5 font-mono text-[#a855f7]">{m.returningPatients}</td>
+                    <td className="px-4 py-2.5 font-mono font-bold text-[#0d2137]">{m.total}</td>
                   </tr>
                 ))}
               </tbody>
@@ -800,7 +800,7 @@ function StatCard({ label, value, icon: Icon, color }: { label: string; value: s
 
 function EmptyState() {
   return (
-    <div className="text-center py-16 text-gray-400 text-sm">لا توجد بيانات للعرض</div>
+    <div className="text-center py-16 text-[#94a3b8] text-sm">لا توجد بيانات للعرض</div>
   );
 }
 
@@ -816,17 +816,17 @@ function ProfitLossReport({ data }: { data?: import("@/types/finance").ProfitLos
       {/* Main P&L card */}
       <div className={cn(
         "rounded-xl border-2 p-6",
-        isProfit ? "bg-green-50 border-green-300" : "bg-red-50 border-red-300"
+        isProfit ? "bg-[#22c55e18] border-green-300" : "bg-[#ef444418] border-red-300"
       )}>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-gray-600">
+            <p className="text-sm font-medium text-[#64748b]">
               {isProfit ? "صافي الربح" : "صافي الخسارة"}
             </p>
-            <p className={cn("text-4xl font-extrabold font-mono mt-1", isProfit ? "text-green-700" : "text-red-700")}>
+            <p className={cn("text-4xl font-extrabold font-mono mt-1", isProfit ? "text-[#22c55e]" : "text-[#ef4444]")}>
               {formatYemeniRiyal(Math.abs(data.netProfit))}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-[#64748b] mt-1">
               هامش الربح: {data.profitMargin}%
             </p>
           </div>
@@ -838,31 +838,31 @@ function ProfitLossReport({ data }: { data?: import("@/types/finance").ProfitLos
 
       {/* Revenue vs Expenses comparison */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 text-center">
-          <p className="text-sm text-emerald-600 font-medium">إجمالي الإيرادات</p>
-          <p className="text-2xl font-extrabold text-emerald-700 font-mono mt-1">{formatYemeniRiyal(data.totalRevenue)}</p>
+        <div className="bg-[#22c55e18] border border-emerald-200 rounded-xl p-5 text-center">
+          <p className="text-sm text-[#22c55e] font-medium">إجمالي الإيرادات</p>
+          <p className="text-2xl font-extrabold text-[#22c55e] font-mono mt-1">{formatYemeniRiyal(data.totalRevenue)}</p>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
-          <p className="text-sm text-red-600 font-medium">إجمالي المصروفات</p>
-          <p className="text-2xl font-extrabold text-red-700 font-mono mt-1">{formatYemeniRiyal(data.totalExpenses)}</p>
+        <div className="bg-[#ef444418] border border-[#ef444430] rounded-xl p-5 text-center">
+          <p className="text-sm text-[#ef4444] font-medium">إجمالي المصروفات</p>
+          <p className="text-2xl font-extrabold text-[#ef4444] font-mono mt-1">{formatYemeniRiyal(data.totalExpenses)}</p>
         </div>
       </div>
 
       {/* Revenue by specialty */}
       {data.revenue.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-3">الإيرادات حسب التخصص</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-3">الإيرادات حسب التخصص</h3>
           <div className="space-y-2">
             {data.revenue.map((r) => {
               const pct = data.totalRevenue > 0 ? Math.round((r.totalRevenue / data.totalRevenue) * 100) : 0;
               return (
                 <div key={r.specialty}>
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-gray-700 font-medium">{r.specialtyAr}</span>
-                    <span className="font-mono text-gray-900">{formatYemeniRiyal(r.totalRevenue)} ({pct}%)</span>
+                    <span className="text-[#64748b] font-medium">{r.specialtyAr}</span>
+                    <span className="font-mono text-[#0d2137]">{formatYemeniRiyal(r.totalRevenue)} ({pct}%)</span>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                  <div className="h-2 bg-[#eef3f9] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#22c55e18]0 rounded-full" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -873,18 +873,18 @@ function ProfitLossReport({ data }: { data?: import("@/types/finance").ProfitLos
 
       {/* Expenses by category */}
       {data.expenses.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h3 className="font-bold text-gray-900 text-sm mb-3">المصروفات حسب الفئة</h3>
+        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5">
+          <h3 className="font-bold text-[#0d2137] text-sm mb-3">المصروفات حسب الفئة</h3>
           <div className="space-y-2">
             {data.expenses.map((e) => {
               const pct = data.totalExpenses > 0 ? Math.round((e.total / data.totalExpenses) * 100) : 0;
               return (
                 <div key={e.category}>
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-gray-700 font-medium">{e.categoryAr}</span>
-                    <span className="font-mono text-gray-900">{formatYemeniRiyal(e.total)} ({pct}%)</span>
+                    <span className="text-[#64748b] font-medium">{e.categoryAr}</span>
+                    <span className="font-mono text-[#0d2137]">{formatYemeniRiyal(e.total)} ({pct}%)</span>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-2 bg-[#eef3f9] rounded-full overflow-hidden">
                     <div className="h-full bg-red-400 rounded-full" style={{ width: `${pct}%` }} />
                   </div>
                 </div>

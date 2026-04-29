@@ -219,7 +219,7 @@ export function CephCanvas({
     const fc = new fabric.Canvas(canvasEl, {
       width: container.clientWidth,
       height: container.clientHeight,
-      backgroundColor: '#0F172A',
+      backgroundColor: '#0d1520',
       selection: false,
       preserveObjectStacking: true,
     });
@@ -514,7 +514,7 @@ export function CephCanvas({
     const rect = new fabric.Rect({
       left: cW * 0.1, top: cH * 0.1,
       width: cW * 0.8, height: cH * 0.8,
-      fill: '#1E293B',
+      fill: '#151f2e',
       selectable: false, evented: false,
     });
     (rect as fabric.Object & { _placeholder?: boolean })._placeholder = true;
@@ -805,7 +805,7 @@ export function CephCanvas({
         const bgBar = new fabric.Rect({
           left: barLeft, top: barTop,
           width: barW, height: barH,
-          fill: '#1E293B',
+          fill: '#151f2e',
           selectable: false, evented: false,
         });
         parts.push(bgBar);
@@ -976,7 +976,7 @@ export function CephCanvas({
   // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div ref={containerRef} className="relative w-full h-full bg-gray-950 rounded-lg overflow-hidden select-none">
+    <div ref={containerRef} className="relative w-full h-full rounded-lg overflow-hidden select-none" style={{ backgroundColor: "#0d1520" }}>
       <canvas ref={canvasElRef} />
 
       {/* ── Toolbar ── */}

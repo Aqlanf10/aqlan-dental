@@ -47,10 +47,7 @@ export default function CephAnalysisPage() {
   const [imageSize, setImageSize]     = useState({ w: 800, h: 600 });
   const [showComparison, setShowComparison] = useState(false);
 
-  // Canvas export ref for PDF
   const canvasExportRef = useRef<CephCanvasExportRef | null>(null);
-
-  // AI model status
   const aiModelStatus = useAiModelStatus();
 
   useEffect(() => {
@@ -79,7 +76,6 @@ export default function CephAnalysisPage() {
     return ANALYSIS_GROUPS[analysis.analysisType as AnalysisType] ?? ANALYSIS_GROUPS['full'];
   }, [analysis]);
 
-  // Real-time measurements (live as user places landmarks)
   const computedMeasurements = useMemo(() => {
     const pts: Record<string, { x: number; y: number }> = {};
     landmarks.forEach(l => { pts[l.key] = { x: l.x, y: l.y }; });
@@ -116,18 +112,11 @@ export default function CephAnalysisPage() {
     try {
       const res = await api.post<CephAnalysis>(`/api/ceph/${id}/landmarks`, {
         landmarks: landmarks.map(l => ({
-          key:        l.key,
-          name:       l.name,
-          nameAr:     l.nameAr,
-          group:      l.group ?? LANDMARK_DEFS[l.key]?.group,
-          x:          l.x,
-          y:          l.y,
-          isAiPlaced: l.isAiPlaced,
-          confidence: l.confidence,
+          key: l.key, name: l.name, nameAr: l.nameAr,
+          group: l.group ?? LANDMARK_DEFS[l.key]?.group,
+          x: l.x, y: l.y, isAiPlaced: l.isAiPlaced, confidence: l.confidence,
         })),
-        pixelsPerMm: pixelsPerMm ?? 0,
-        imageWidth:  imageSize.w,
-        imageHeight: imageSize.h,
+        pixelsPerMm: pixelsPerMm ?? 0, imageWidth: imageSize.w, imageHeight: imageSize.h,
       });
       setAnalysis(res.data);
       setDiagnosis(res.data.diagnosis ?? null);
@@ -152,39 +141,39 @@ export default function CephAnalysisPage() {
     await api.put(`/api/ceph/${id}/diagnosis`, updated).catch(() => {});
   };
 
-  // Get canvas data URL for PDF export
   const getCanvasDataUrl = useCallback((): string | undefined => {
     return canvasExportRef.current?.getDataUrl() ?? undefined;
   }, []);
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
-      <Loader2 className="w-8 h-8 animate-spin text-clinic-teal" />
+      <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#3d7ab5" }} />
     </div>
   );
-  if (!analysis) return <div className="text-center py-20 text-gray-400">التحليل غير موجود</div>;
+  if (!analysis) return <div className="text-center py-20" style={{ color: "#94a3b8" }}>التحليل غير موجود</div>;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden" dir="rtl">
       {/* ── Header ── */}
       <div className="flex-shrink-0 flex items-center justify-between py-3 px-1 gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/ceph"
-            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500 flex-shrink-0">
+            className="p-1.5 rounded-xl border hover:opacity-80 transition flex-shrink-0"
+            style={{ borderColor: "#e8f0f9", color: "#64748b" }}>
             <ArrowRight className="w-4 h-4" />
           </Link>
           <div className="min-w-0">
-            <h1 className="text-base font-extrabold text-gray-900 truncate">{analysis.patientName}</h1>
-            <div className="flex items-center gap-2 text-[10px] text-gray-400">
+            <h1 className="text-base font-extrabold truncate" style={{ color: "#0d2137" }}>{analysis.patientName}</h1>
+            <div className="flex items-center gap-2 text-[10px]" style={{ color: "#94a3b8" }}>
               <span>{formatArabicDate(analysis.analysisDate)} · {ANALYSIS_TYPE_AR[analysis.analysisType] ?? analysis.analysisType}</span>
-              {/* AI Model status indicator */}
               {aiModelStatus.data && (
-                <span className={cn(
-                  "flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold",
-                  aiModelStatus.data.isModelLoaded
-                    ? "bg-green-100 text-green-700"
-                    : "bg-gray-100 text-gray-500"
-                )}>
+                <span
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold"
+                  style={{
+                    backgroundColor: aiModelStatus.data.isModelLoaded ? "#22c55e18" : "#94a3b818",
+                    color: aiModelStatus.data.isModelLoaded ? "#22c55e" : "#94a3b8",
+                  }}
+                >
                   <Cpu className="w-2.5 h-2.5" />
                   {aiModelStatus.data.isModelLoaded ? "ONNX" : "Template"}
                 </span>
@@ -196,54 +185,56 @@ export default function CephAnalysisPage() {
         {/* Toolbar */}
         <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
           <button onClick={handleAiDetect} disabled={detecting}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-60 transition">
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-xl text-white hover:opacity-90 disabled:opacity-60 transition"
+            style={{ backgroundColor: "#a855f7" }}>
             {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
             {detecting ? 'جارٍ الكشف...' : 'كشف AI'}
           </button>
 
           <button onClick={handleSaveAndCompute} disabled={saving || !landmarks.length}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition",
-              saveStatus === 'saved' ? "bg-green-600 text-white" :
-              saveStatus === 'error' ? "bg-red-100 text-red-700 border border-red-300" :
-              "bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60"
-            )}>
+            className={cn("flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-xl transition",
+              saveStatus === 'saved' ? "text-white" : saveStatus === 'error' ? "text-white" : "text-white hover:opacity-90 disabled:opacity-60"
+            )}
+            style={{
+              backgroundColor: saveStatus === 'saved' ? "#22c55e" : saveStatus === 'error' ? "#ef4444" : "#3d7ab5",
+            }}>
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
              saveStatus === 'saved' ? <CheckCircle2 className="w-3.5 h-3.5" /> :
              <Calculator className="w-3.5 h-3.5" />}
             {saving ? 'حساب...' : saveStatus === 'saved' ? 'تم' : 'احسب'}
           </button>
 
-          <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-0.5 rounded-xl p-0.5" style={{ backgroundColor: "#f7fafd" }}>
             <button onClick={() => setShowPlanes(!showPlanes)}
-              className={cn("p-1.5 rounded-md transition", showPlanes ? "bg-white shadow-sm text-clinic-teal" : "text-gray-400")}
+              className="p-1.5 rounded-lg transition"
+              style={showPlanes ? { backgroundColor: "#ffffff", color: "#3d7ab5", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" } : { color: "#94a3b8" }}
               title="الخطوط التشريحية">
               {showPlanes ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
             </button>
             <button onClick={() => setShowSim(!showSim)}
-              className={cn("p-1.5 rounded-md transition", showSim ? "bg-white shadow-sm text-green-600" : "text-gray-400")}
+              className="p-1.5 rounded-lg transition"
+              style={showSim ? { backgroundColor: "#ffffff", color: "#22c55e", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" } : { color: "#94a3b8" }}
               title="محاكاة العلاج">
               {showSim ? <PlayCircle className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             </button>
           </div>
 
-          {/* PDF Export */}
           <CephPdfExport
             analysis={analysis}
             canvasDataUrl={getCanvasDataUrl()}
             patientName={analysis.patientName}
           />
 
-          {/* Comparison button */}
           <button onClick={() => setShowComparison(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-xl text-white hover:opacity-90 transition"
+            style={{ backgroundColor: "#3d7ab5" }}
             title="مقارنة التحاليل">
             <GitCompare className="w-3.5 h-3.5" />
             مقارنة
           </button>
 
           {isDirty && (
-            <span className="text-[10px] text-orange-500 font-medium flex items-center gap-0.5">
+            <span className="text-[10px] font-medium flex items-center gap-0.5" style={{ color: "#f5922e" }}>
               <Save className="w-3 h-3" />غير محفوظ
             </span>
           )}
@@ -253,21 +244,23 @@ export default function CephAnalysisPage() {
       {/* Simulation scenario bar */}
       {showSim && (
         <div className="flex-shrink-0 flex items-center gap-2 px-1 pb-2 flex-wrap">
-          <span className="text-[10px] text-gray-500">سيناريو:</span>
+          <span className="text-[10px]" style={{ color: "#64748b" }}>سيناريو:</span>
           {Object.entries(SIMULATION_SCENARIOS).map(([k, sc]) => (
             <button key={k} onClick={() => setSimScenario(k)}
-              className={cn("px-2 py-0.5 text-[10px] rounded-lg border transition",
-                simScenario === k ? "bg-green-600 text-white border-green-600" : "border-gray-200 text-gray-500 hover:bg-gray-50"
-              )}>
+              className="px-2 py-0.5 text-[10px] rounded-xl border transition"
+              style={simScenario === k
+                ? { backgroundColor: "#22c55e", color: "#ffffff", borderColor: "#22c55e" }
+                : { borderColor: "#e8f0f9", color: "#64748b" }
+              }>
               {sc.label}
             </button>
           ))}
         </div>
       )}
 
-      {/* Main content */}
+      {/* Main content: 1fr canvas + 260px sidebar */}
       <div className="flex-1 flex gap-3 overflow-hidden">
-        {/* ── Canvas side ── */}
+        {/* ── Canvas side (1fr) ── */}
         <div className="flex-1 min-w-0 flex flex-col gap-2">
           <CephCanvas
             imageUrl={analysis.xrayFileUrl ?? null}
@@ -284,9 +277,9 @@ export default function CephAnalysisPage() {
           />
 
           {/* Info bar */}
-          <div className="flex-shrink-0 flex items-center gap-3 text-[10px] text-gray-400 px-1 flex-wrap">
+          <div className="flex-shrink-0 flex items-center gap-3 text-[10px] px-1 flex-wrap" style={{ color: "#94a3b8" }}>
             <span className="font-mono">
-              <span className={cn("font-bold", placedCount >= 20 ? "text-green-600" : placedCount > 10 ? "text-amber-500" : "text-gray-500")}>
+              <span className="font-bold" style={{ color: placedCount >= 20 ? "#22c55e" : placedCount > 10 ? "#f59e0b" : "#64748b" }}>
                 {placedCount}
               </span>/{totalCount} نقطة
             </span>
@@ -299,15 +292,16 @@ export default function CephAnalysisPage() {
                 min={0} step={0.01}
                 onChange={e => setPixelsPerMm(e.target.value ? +e.target.value : null)}
                 placeholder="px/mm"
-                className="w-16 text-[10px] px-1.5 py-0.5 border border-gray-200 rounded text-gray-700 focus:outline-none focus:ring-1 focus:ring-clinic-teal"
+                className="w-16 text-[10px] px-1.5 py-0.5 border rounded focus:outline-none focus:ring-1 focus:ring-[#3d7ab5]"
+                style={{ borderColor: "#dce8f5", color: "#0d2137" }}
                 dir="ltr"
               />
-              <span className="text-gray-300">px/mm</span>
+              <span>px/mm</span>
             </div>
             {selectedKey && (
               <>
                 <span>·</span>
-                <span className="text-clinic-teal font-semibold">
+                <span className="font-semibold" style={{ color: "#3d7ab5" }}>
                   ▶ انقر لوضع: {LANDMARK_DEFS[selectedKey]?.nameAr ?? selectedKey}
                 </span>
               </>
@@ -315,22 +309,22 @@ export default function CephAnalysisPage() {
           </div>
         </div>
 
-        {/* ── Right panel ── */}
-        <div className="w-80 flex-shrink-0 flex flex-col overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
-          {/* Tab bar */}
-          <div className="flex border-b border-gray-100 flex-shrink-0">
+        {/* ── Right panel (260px sidebar) ── */}
+        <div className="w-[260px] flex-shrink-0 flex flex-col overflow-hidden rounded-xl border shadow-sm bg-white"
+          style={{ borderColor: "#e8f0f9", boxShadow: "0 1px 3px rgba(13,33,55,0.06)" }}>
+          {/* Tab bar: border-bottom 2px #e8f0f9, active tab: text #3d7ab5, font-weight 700 */}
+          <div className="flex flex-shrink-0" style={{ borderBottom: "2px solid #e8f0f9" }}>
             {([
               { key: 'landmarks', label: 'النقاط' },
               { key: 'report',    label: 'القياسات' },
               { key: 'diagnosis', label: 'التشخيص' },
             ] as { key: RightTab; label: string }[]).map(t => (
               <button key={t.key} onClick={() => setRightTab(t.key)}
-                className={cn(
-                  "flex-1 py-2.5 text-[11px] font-semibold border-b-2 transition",
-                  rightTab === t.key
-                    ? "border-clinic-teal text-clinic-teal"
-                    : "border-transparent text-gray-400 hover:text-gray-600"
-                )}>
+                className="flex-1 py-2.5 text-[11px] border-b-2 transition -mb-[2px]"
+                style={rightTab === t.key
+                  ? { color: "#3d7ab5", fontWeight: 700, borderBottomColor: "#3d7ab5" }
+                  : { color: "#94a3b8", fontWeight: 500, borderBottomColor: "transparent" }
+                }>
                 {t.label}
               </button>
             ))}
@@ -342,7 +336,7 @@ export default function CephAnalysisPage() {
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {LANDMARK_GROUPS.map(group => (
                   <div key={group.key}>
-                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-1 mb-1">
+                    <p className="text-[9px] font-bold uppercase tracking-widest px-1 mb-1" style={{ color: "#94a3b8" }}>
                       {group.label}
                     </p>
                     <div className="space-y-0.5">
@@ -352,24 +346,26 @@ export default function CephAnalysisPage() {
                         const isSel  = selectedKey === key;
                         return (
                           <button key={key} onClick={() => setSelectedKey(isSel ? null : key)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] transition text-start",
-                              isSel   ? "bg-clinic-teal/10 border border-clinic-teal/30 text-clinic-teal" :
-                              placed  ? "hover:bg-gray-50 text-gray-700" :
-                                        "hover:bg-gray-50 text-gray-400"
-                            )}>
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] transition text-start"
+                            style={isSel
+                              ? { backgroundColor: "#3d7ab510", border: "1px solid #3d7ab530", color: "#3d7ab5" }
+                              : placed
+                                ? { color: "#0d2137" }
+                                : { color: "#94a3b8" }
+                            }
+                          >
                             <div className="w-2 h-2 rounded-full flex-shrink-0 border"
                               style={{
                                 backgroundColor: placed ? def?.color : 'transparent',
-                                borderColor: placed ? def?.color : '#d1d5db',
+                                borderColor: placed ? def?.color : '#dce8f5',
                               }} />
-                            <span className="font-mono font-bold text-[9px] w-5 text-gray-500">{key}</span>
+                            <span className="font-mono font-bold text-[9px] w-5" style={{ color: "#64748b" }}>{key}</span>
                             <span className="flex-1 truncate">{def?.nameAr}</span>
                             {placed?.isAiPlaced && (
-                              <span className="text-[8px] text-purple-400 font-bold">AI</span>
+                              <span className="text-[8px] font-bold" style={{ color: "#a855f7" }}>AI</span>
                             )}
                             {placed?.confidence !== undefined && (
-                              <span className="text-[8px] text-gray-300 font-mono">
+                              <span className="text-[8px] font-mono" style={{ color: "#94a3b8" }}>
                                 {Math.round(placed.confidence * 100)}%
                               </span>
                             )}
@@ -383,7 +379,7 @@ export default function CephAnalysisPage() {
               </div>
             )}
 
-            {/* ── Report tab (scientist tabs) ── */}
+            {/* ── Report tab ── */}
             {rightTab === 'report' && (
               <div className="flex-1 overflow-hidden p-3">
                 <AnalysisReport

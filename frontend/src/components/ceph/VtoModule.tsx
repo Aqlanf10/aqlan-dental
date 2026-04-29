@@ -14,11 +14,12 @@ interface VtoModuleProps {
   imageUrl?: string;
 }
 
+// Before profile: #3d7ab5 (dashed), After profile: #22c55e
 const VTO_COLORS = {
-  original: "#3B82F6",    // blue
-  target: "#10B981",      // green
-  arrow: "#F59E0B",       // amber
-  arrowHover: "#EF4444",  // red
+  original: "#3d7ab5",    // before profile (dashed)
+  target: "#22c55e",      // after profile
+  arrow: "#f5922e",       // amber
+  arrowHover: "#ef4444",  // red
 };
 
 export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl }: VtoModuleProps) {
@@ -55,7 +56,6 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
     const animate = () => {
       frame++;
       const progress = Math.min(frame / totalFrames, 1);
-      // Ease-out curve
       setAnimProgress(1 - Math.pow(1 - progress, 3));
       if (progress < 1) requestAnimationFrame(animate);
     };
@@ -78,7 +78,6 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
     canvas.height = imageHeight;
     ctx.clearRect(0, 0, imageWidth, imageHeight);
 
-    // Draw background image if available
     if (imageUrl) {
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -98,7 +97,7 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
   function drawOverlays(ctx: CanvasRenderingContext2D) {
     const landmarkMap = new Map(landmarks.map((l) => [l.key, l]));
 
-    // Draw original landmarks
+    // Draw original landmarks (before profile - #3d7ab5 dashed)
     if (showOriginal) {
       landmarks.forEach((lm) => {
         ctx.beginPath();
@@ -115,6 +114,26 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
         ctx.textAlign = "center";
         ctx.fillText(lm.key, lm.x, lm.y - 8);
       });
+
+      // Draw dashed connecting line for before profile
+      if (landmarks.length > 1) {
+        ctx.beginPath();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = VTO_COLORS.original;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.5;
+        // Connect soft tissue landmarks if available
+        const softKeys = ['Pn', 'Cm', 'LS', 'LI'];
+        softKeys.forEach((k, i) => {
+          const lm = landmarkMap.get(k);
+          if (!lm) return;
+          if (i === 0) ctx.moveTo(lm.x, lm.y);
+          else ctx.lineTo(lm.x, lm.y);
+        });
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
     }
 
     if (!vtoData) return;
@@ -157,7 +176,7 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
         ctx.stroke();
       }
 
-      // Draw target position
+      // Draw target position (#22c55e - after profile)
       if (showTarget) {
         ctx.beginPath();
         ctx.arc(targetX, targetY, 4, 0, Math.PI * 2);
@@ -175,25 +194,54 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
         }
       }
     });
+
+    // Draw after profile connecting line (#22c55e solid)
+    if (showTarget && vtoData && animProgress >= 1) {
+      ctx.beginPath();
+      ctx.strokeStyle = VTO_COLORS.target;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.7;
+      const softKeys = ['Pn', 'Cm', 'LS', 'LI'];
+      softKeys.forEach((k, i) => {
+        const mv = vtoData.targetMovements.find(m => m.landmark === k);
+        const lm = landmarkMap.get(k);
+        if (!lm) return;
+        const tx = lm.x + (mv?.deltaX ?? 0);
+        const ty = lm.y + (mv?.deltaY ?? 0);
+        if (i === 0) ctx.moveTo(tx, ty);
+        else ctx.lineTo(tx, ty);
+      });
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" dir="rtl">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-purple-600" />
-          <h3 className="text-sm font-bold text-gray-800">VTO — الهدف العلاجي البصري</h3>
-          <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded-full font-medium">AI مقترح</span>
+          <Sparkles className="w-4 h-4" style={{ color: "#a855f7" }} />
+          <h3 className="text-sm font-bold" style={{ color: "#0d2137" }}>VTO — الهدف العلاجي البصري</h3>
+          <span
+            className="text-[10px] rounded-full font-medium"
+            style={{ padding: "2px 10px", backgroundColor: "#a855f718", color: "#a855f7" }}
+          >AI مقترح</span>
         </div>
         <div className="flex gap-2">
           {vtoData && (
             <>
-              <button onClick={startAnimation} className="text-xs px-3 py-1.5 rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 transition flex items-center gap-1">
+              <button onClick={startAnimation}
+                className="text-xs px-3 py-1.5 rounded-xl flex items-center gap-1 transition"
+                style={{ backgroundColor: "#3d7ab510", color: "#3d7ab5" }}
+              >
                 <Play className="w-3 h-3" />
                 تشغيل الحركة
               </button>
-              <button onClick={handleReset} className="text-xs px-3 py-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 transition flex items-center gap-1">
+              <button onClick={handleReset}
+                className="text-xs px-3 py-1.5 rounded-xl flex items-center gap-1 transition"
+                style={{ backgroundColor: "#f7fafd", color: "#64748b" }}
+              >
                 <RotateCcw className="w-3 h-3" />
                 إعادة
               </button>
@@ -207,7 +255,8 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
         <button
           onClick={handleGenerateVto}
           disabled={!caseData}
-          className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 transition"
+          className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl text-white hover:opacity-90 disabled:opacity-50 transition"
+          style={{ backgroundColor: "#a855f7" }}
         >
           <Sparkles className="w-4 h-4" />
           إنشاء VTO بالذكاء الاصطناعي
@@ -216,13 +265,13 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
 
       {vtoMutation.isPending && (
         <div className="flex items-center justify-center gap-2 py-6">
-          <div className="w-5 h-5 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
-          <span className="text-sm text-purple-600">جاري تحليل الحالة واقتراح VTO...</span>
+          <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "#a855f740", borderTopColor: "#a855f7" }} />
+          <span className="text-sm" style={{ color: "#a855f7" }}>جاري تحليل الحالة واقتراح VTO...</span>
         </div>
       )}
 
       {error && (
-        <div className="flex items-center gap-2 p-3 bg-red-50 rounded-lg text-sm text-red-600">
+        <div className="flex items-center gap-2 p-3 rounded-xl text-sm" style={{ backgroundColor: "#ef444410", color: "#ef4444" }}>
           <AlertTriangle className="w-4 h-4" />
           {error}
         </div>
@@ -230,25 +279,26 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
 
       {/* Canvas */}
       {vtoData && (
-        <div className="relative bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+        <div className="relative rounded-xl border overflow-hidden" style={{ backgroundColor: "#f7fafd", borderColor: "#e8f0f9" }}>
           <canvas ref={canvasRef} className="w-full" style={{ maxHeight: "500px" }} />
 
           {/* Legend */}
-          <div className="absolute top-3 start-3 bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 space-y-1.5 text-xs">
+          <div className="absolute top-3 start-3 rounded-xl px-3 py-2 space-y-1.5 text-xs"
+            style={{ backgroundColor: "rgba(255,255,255,0.92)", backdropFilter: "blur(4px)" }}>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={showOriginal} onChange={(e) => setShowOriginal(e.target.checked)} className="rounded" />
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: VTO_COLORS.original }} />
-              المواقع الأصلية
+              <input type="checkbox" checked={showOriginal} onChange={(e) => setShowOriginal(e.target.checked)} className="rounded accent-[#3d7ab5]" />
+              <span className="w-3 h-0.5 rounded" style={{ backgroundColor: VTO_COLORS.original, borderStyle: "dashed" }} />
+              <span style={{ color: "#0d2137" }}>الملف قبل العلاج (متقطع)</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={showTarget} onChange={(e) => setShowTarget(e.target.checked)} className="rounded" />
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: VTO_COLORS.target }} />
-              المواقع المستهدفة
+              <input type="checkbox" checked={showTarget} onChange={(e) => setShowTarget(e.target.checked)} className="rounded accent-[#22c55e]" />
+              <span className="w-3 h-0.5 rounded" style={{ backgroundColor: VTO_COLORS.target }} />
+              <span style={{ color: "#0d2137" }}>الملف بعد العلاج</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={showArrows} onChange={(e) => setShowArrows(e.target.checked)} className="rounded" />
-              <span className="w-3 h-0.5 bg-amber-400 rounded" />
-              اتجاه الحركة
+              <input type="checkbox" checked={showArrows} onChange={(e) => setShowArrows(e.target.checked)} className="rounded accent-[#f5922e]" />
+              <span className="w-3 h-0.5 rounded" style={{ backgroundColor: VTO_COLORS.arrow }} />
+              <span style={{ color: "#0d2137" }}>اتجاه الحركة</span>
             </label>
           </div>
         </div>
@@ -257,49 +307,50 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
       {/* Movement details */}
       {vtoData && (
         <div className="space-y-3">
-          <h4 className="text-xs font-bold text-gray-700">تفاصيل التحركات المقترحة</h4>
+          <h4 className="text-xs font-bold" style={{ color: "#0d2137" }}>تفاصيل التحركات المقترحة</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {vtoData.targetMovements.map((mv, i) => (
-              <div key={i} className="flex items-center gap-2 bg-white border border-gray-100 rounded-lg px-3 py-2">
-                <span className="text-xs font-mono font-bold text-purple-700">{mv.landmark}</span>
-                <span className="text-xs text-gray-500">
+              <div key={i} className="flex items-center gap-2 border rounded-xl px-3 py-2"
+                style={{ backgroundColor: "#ffffff", borderColor: "#e8f0f9" }}>
+                <span className="text-xs font-mono font-bold" style={{ color: "#a855f7" }}>{mv.landmark}</span>
+                <span className="text-xs" style={{ color: "#64748b" }}>
                   Δx={mv.deltaX > 0 ? "+" : ""}{mv.deltaX}mm Δy={mv.deltaY > 0 ? "+" : ""}{mv.deltaY}mm
                 </span>
-                <span className="text-xs text-gray-700 flex-1">{mv.description}</span>
+                <span className="text-xs flex-1" style={{ color: "#0d2137" }}>{mv.description}</span>
               </div>
             ))}
           </div>
 
           {vtoData.expectedOutcomes.length > 0 && (
-            <div className="bg-green-50 rounded-lg p-3">
-              <h5 className="text-xs font-bold text-green-700 mb-1">النتائج المتوقعة</h5>
+            <div className="rounded-xl p-3" style={{ backgroundColor: "#22c55e10" }}>
+              <h5 className="text-xs font-bold mb-1" style={{ color: "#22c55e" }}>النتائج المتوقعة</h5>
               <ul className="space-y-0.5">
                 {vtoData.expectedOutcomes.map((o, i) => (
-                  <li key={i} className="text-xs text-green-800">• {o}</li>
+                  <li key={i} className="text-xs" style={{ color: "#0d2137" }}>• {o}</li>
                 ))}
               </ul>
             </div>
           )}
 
           {vtoData.treatmentSequence.length > 0 && (
-            <div className="bg-blue-50 rounded-lg p-3">
-              <h5 className="text-xs font-bold text-blue-700 mb-1">التسلسل العلاجي المقترح</h5>
+            <div className="rounded-xl p-3" style={{ backgroundColor: "#f0f5fb" }}>
+              <h5 className="text-xs font-bold mb-1" style={{ color: "#3d7ab5" }}>التسلسل العلاجي المقترح</h5>
               <ol className="space-y-0.5 list-decimal list-inside">
                 {vtoData.treatmentSequence.map((s, i) => (
-                  <li key={i} className="text-xs text-blue-800">{s}</li>
+                  <li key={i} className="text-xs" style={{ color: "#0d2137" }}>{s}</li>
                 ))}
               </ol>
             </div>
           )}
 
           {vtoData.warnings.length > 0 && (
-            <div className="bg-amber-50 rounded-lg p-3 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="rounded-xl p-3 flex items-start gap-2" style={{ backgroundColor: "#f59e0b10" }}>
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "#f59e0b" }} />
               <div>
-                <h5 className="text-xs font-bold text-amber-700 mb-1">تحذيرات</h5>
+                <h5 className="text-xs font-bold mb-1" style={{ color: "#f59e0b" }}>تحذيرات</h5>
                 <ul className="space-y-0.5">
                   {vtoData.warnings.map((w, i) => (
-                    <li key={i} className="text-xs text-amber-800">• {w}</li>
+                    <li key={i} className="text-xs" style={{ color: "#0d2137" }}>• {w}</li>
                   ))}
                 </ul>
               </div>
@@ -307,9 +358,9 @@ export function VtoModule({ caseId, landmarks, imageWidth, imageHeight, imageUrl
           )}
 
           {vtoData.estimatedDuration && (
-            <div className="flex items-center gap-2 text-xs text-gray-600">
+            <div className="flex items-center gap-2 text-xs" style={{ color: "#64748b" }}>
               <Info className="w-3.5 h-3.5" />
-              المدة التقديرية: <span className="font-semibold">{vtoData.estimatedDuration}</span>
+              المدة التقديرية: <span className="font-semibold" style={{ color: "#0d2137" }}>{vtoData.estimatedDuration}</span>
             </div>
           )}
         </div>

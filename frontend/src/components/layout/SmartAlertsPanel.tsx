@@ -12,7 +12,7 @@ const ALERT_ICONS: Record<string, typeof AlertTriangle> = {
 };
 
 const SEVERITY_STYLES: Record<string, string> = {
-  info: "bg-blue-50 border-blue-200",
+  info: "bg-[#f0f5fb] border-[#dce8f5]",
   warning: "bg-amber-50 border-amber-200",
   error: "bg-red-50 border-red-200",
 };
@@ -39,24 +39,24 @@ export function SmartAlertsPanel() {
     <div className="relative" ref={panelRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="relative w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+        className="relative w-[38px] h-[38px] rounded-lg bg-[#f0f5fb] hover:bg-[#e3edf7] flex items-center justify-center text-[#0d2137]/60 transition-colors"
       >
-        <Bell className="w-5 h-5" />
+        <Bell className="w-[18px] h-[18px]" />
         {unreadCount > 0 && (
-          <span className="absolute top-1 end-1 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+          <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] flex items-center justify-center bg-[#ef4444] text-white text-[10px] font-extrabold rounded-full px-1">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute end-0 top-full mt-2 w-96 max-h-[500px] overflow-y-auto bg-white rounded-xl shadow-xl border border-gray-200 z-50">
-          <div className="sticky top-0 bg-white px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="text-sm font-bold text-gray-800">التنبيهات والإشعارات</h3>
+        <div className="absolute end-0 top-full mt-2 w-96 max-h-[500px] overflow-y-auto bg-white rounded-xl shadow-xl border border-[#e8f0f9] z-50">
+          <div className="sticky top-0 bg-white px-4 py-3 border-b border-[#e8f0f9] flex items-center justify-between">
+            <h3 className="text-sm font-bold text-[#0d2137]">التنبيهات والإشعارات</h3>
             {unreadCount > 0 && (
               <button
                 onClick={() => markAllRead.mutate()}
-                className="text-xs text-clinic-teal hover:underline flex items-center gap-1"
+                className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
                 قراءة الكل
@@ -65,9 +65,9 @@ export function SmartAlertsPanel() {
           </div>
 
           {alertsLoading ? (
-            <div className="p-6 text-center text-sm text-gray-400">جاري التحميل...</div>
+            <div className="p-6 text-center text-sm text-[#94a3b8]">جاري التحميل...</div>
           ) : alerts.length === 0 ? (
-            <div className="p-6 text-center text-sm text-gray-400">
+            <div className="p-6 text-center text-sm text-[#94a3b8]">
               <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
               لا توجد تنبيهات جديدة
             </div>
@@ -81,10 +81,10 @@ export function SmartAlertsPanel() {
                     className={`px-4 py-3 border-s-4 ${SEVERITY_STYLES[alert.severity] ?? ""}`}
                   >
                     <div className="flex items-start gap-3">
-                      <Icon className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-500" />
+                      <Icon className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#0d2137]/50" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-gray-700">{alert.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{alert.message}</p>
+                        <p className="text-xs font-semibold text-[#0d2137]">{alert.title}</p>
+                        <p className="text-xs text-[#94a3b8] mt-0.5 leading-relaxed">{alert.message}</p>
                       </div>
                       <button
                         onClick={() => setOpen(false)}
@@ -100,20 +100,20 @@ export function SmartAlertsPanel() {
           )}
 
           {notifData?.notifications && notifData.notifications.length > 0 && (
-            <div className="border-t border-gray-100">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 bg-gray-50">الإشعارات</div>
+            <div className="border-t border-[#e8f0f9]">
+              <div className="px-4 py-2 text-xs font-semibold text-[#94a3b8] bg-[#f7fafd]">الإشعارات</div>
               {notifData.notifications.slice(0, 5).map((n) => (
                 <div
                   key={n.id}
-                  className={`px-4 py-2.5 border-b border-gray-50 ${!n.isRead ? "bg-teal-50/50" : ""}`}
+                  className={`px-4 py-2.5 border-b border-gray-50 cursor-pointer hover:bg-[#f7fafd] transition-colors ${!n.isRead ? "bg-[#3d7ab5]/5" : ""}`}
                   onClick={() => { markRead.mutate(n.id); }}
                 >
                   <div className="flex items-start gap-2">
-                    {!n.isRead && <span className="w-1.5 h-1.5 rounded-full bg-clinic-teal mt-1.5 flex-shrink-0" />}
+                    {!n.isRead && <span className="w-1.5 h-1.5 rounded-full bg-[#3d7ab5] mt-1.5 flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-700">{n.title}</p>
-                      {n.body && <p className="text-xs text-gray-500 mt-0.5">{n.body}</p>}
-                      <p className="text-[10px] text-gray-400 mt-0.5">{n.createdAt}</p>
+                      <p className="text-xs font-medium text-[#0d2137]">{n.title}</p>
+                      {n.body && <p className="text-xs text-[#94a3b8] mt-0.5">{n.body}</p>}
+                      <p className="text-[10px] text-[#94a3b8]/60 mt-0.5">{n.createdAt}</p>
                     </div>
                   </div>
                 </div>

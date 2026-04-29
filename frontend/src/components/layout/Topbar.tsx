@@ -1,42 +1,119 @@
 "use client";
+
 import { Search } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { SmartAlertsPanel } from "./SmartAlertsPanel";
+import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
 
-export function Topbar() {
-  const { user } = useAuthStore();
+/* ─── Page title map based on route ──────────────────────────────────────────── */
+const PAGE_TITLES: Record<string, string> = {
+  "/": "لوحة التحكم",
+  "/patients": "المرضى",
+  "/appointments": "المواعيد",
+  "/ortho": "التقويم",
+  "/ceph": "السيفالومتري المتقدم",
+  "/vto": "محاكاة العلاج VTO",
+  "/general": "طب الأسنان العام",
+  "/surgery": "جراحة الوجه والفكين",
+  "/messaging": "الرسائل",
+  "/sms": "تذكيرات SMS",
+  "/recall": "نظام الاستدعاء",
+  "/finance": "المالية",
+  "/finance/expenses": "المصروفات",
+  "/finance/contracts": "العقود",
+  "/finance/payments": "المدفوعات",
+  "/finance/overdue": "المتأخرات",
+  "/prescriptions": "الوصفات الطبية",
+  "/referrals": "الإحالات",
+  "/lab": "طلبات المختبر",
+  "/inventory": "المخزون",
+  "/reports": "التقارير والإحصائيات",
+  "/settings": "الإعدادات",
+  "/audit": "سجل التدقيق",
+  "/profile": "حسابي",
+};
+
+function getPageTitle(pathname: string): string {
+  // Exact match first
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
+  // Prefix match (most specific)
+  const match = Object.entries(PAGE_TITLES)
+    .filter(([path]) => path !== "/" && pathname.startsWith(path))
+    .sort((a, b) => b[0].length - a[0].length)[0];
+  return match ? match[1] : "لوحة التحكم";
+}
+
+/* ─── Live Clock ─────────────────────────────────────────────────────────────── */
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const timeStr = now.toLocaleTimeString("ar-SA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const dateStr = now.toLocaleDateString("ar-SA", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6 flex-shrink-0">
-      {/* Branch name */}
-      <div className="flex items-center gap-2">
-        {/* Spacer for mobile hamburger (fixed positioned) */}
+    <div className="bg-[#f0f5fb] rounded-[10px] px-[14px] py-1 border border-[#dce8f5] flex items-center gap-3">
+      <span className="text-[18px] font-extrabold text-[#0d2137] font-mono tracking-[1px]">
+        {timeStr}
+      </span>
+      <span className="text-[10px] font-semibold text-[#94a3b8]">{dateStr}</span>
+    </div>
+  );
+}
+
+/* ─── Topbar Component ───────────────────────────────────────────────────────── */
+export function Topbar() {
+  const { user } = useAuthStore();
+  const pathname = usePathname();
+  const pageTitle = getPageTitle(pathname);
+
+  return (
+    <header className="h-16 bg-white border-b border-[#e8f0f9] flex items-center justify-between px-6 flex-shrink-0">
+      {/* Right side: page title + clock */}
+      <div className="flex items-center gap-4">
+        {/* Mobile hamburger spacer */}
         <div className="lg:hidden w-10" />
-        <div className="w-2 h-2 rounded-full bg-green-500" />
-        <span className="text-sm text-gray-600 font-medium">
-          مركز د. عقلان الكامل — تعز
-        </span>
+        <h1 className="text-[18px] font-extrabold text-[#0d2137]">{pageTitle}</h1>
+        <div className="hidden sm:block">
+          <LiveClock />
+        </div>
       </div>
 
-      {/* Right controls */}
+      {/* Left side: search, notifications, user */}
       <div className="flex items-center gap-3">
         {/* Search */}
         <div className="relative hidden md:block">
-          <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-gray-400" />
+          <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-[#94a3b8]" />
           <input
             type="search"
             placeholder="بحث..."
-            className="h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-clinic-teal w-56"
+            className="h-9 pe-9 ps-4 text-[13px] rounded-lg border-[1.5px] border-[#dce8f5] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/30 focus:border-[#3d7ab5] w-[220px] placeholder:text-[#94a3b8]"
           />
         </div>
 
-        {/* Smart Alerts & Notifications */}
+        {/* Notifications */}
         <SmartAlertsPanel />
 
         {/* User avatar */}
         <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer"
-          style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
+          className="w-[38px] h-[38px] rounded-full flex items-center justify-center text-white text-[13px] font-bold cursor-pointer border-2 border-[#dce8f5]"
+          style={{ backgroundColor: user?.doctorColor ?? "#3d7ab5" }}
           title={user?.doctorName ?? user?.username}
         >
           {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}

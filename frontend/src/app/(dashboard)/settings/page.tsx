@@ -69,7 +69,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  "w-full px-3 py-2 text-sm rounded-lg border-[1.5px] border-[#dce8f5] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-accent-blue";
 
 const ALL_ROLES = [
   "Admin",
@@ -96,14 +96,14 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  Create: "bg-green-100 text-green-700 border-green-200",
-  Update: "bg-blue-100 text-blue-700 border-blue-200",
-  Delete: "bg-red-100 text-red-700 border-red-200",
-  View: "bg-gray-100 text-gray-600 border-gray-200",
-  Export: "bg-purple-100 text-purple-700 border-purple-200",
-  Login: "bg-teal-100 text-teal-700 border-teal-200",
-  Logout: "bg-orange-100 text-orange-700 border-orange-200",
-  Approve: "bg-amber-100 text-amber-700 border-amber-200",
+  Create: "bg-green-100 text-[#22c55e] border-green-200",
+  Update: "bg-[#3d7ab518] text-accent-blue border-blue-200",
+  Delete: "bg-red-100 text-[#ef4444] border-[#ef444430]",
+  View: "bg-[#eef3f9] text-[#64748b] border-[#e8f0f9]",
+  Export: "bg-[#a855f718] text-[#a855f7] border-purple-200",
+  Login: "bg-light-blue text-accent-blue border-teal-200",
+  Logout: "bg-orange-100 text-[#f5922e] border-orange-200",
+  Approve: "bg-[#f59e0b18] text-[#f59e0b] border-amber-200",
 };
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -211,7 +211,7 @@ function ClinicTab() {
     return (
       <div className="animate-pulse space-y-3">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-10 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-10 bg-[#eef3f9] rounded-lg" />
         ))}
       </div>
     );
@@ -220,7 +220,7 @@ function ClinicTab() {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        <label className="block text-sm font-medium text-[#64748b] mb-1.5">
           اسم المركز
         </label>
         <input
@@ -233,7 +233,7 @@ function ClinicTab() {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        <label className="block text-sm font-medium text-[#64748b] mb-1.5">
           العنوان
         </label>
         <input
@@ -246,7 +246,7 @@ function ClinicTab() {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        <label className="block text-sm font-medium text-[#64748b] mb-1.5">
           أرقام الهاتف
         </label>
         <input
@@ -260,7 +260,7 @@ function ClinicTab() {
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        <label className="block text-sm font-medium text-[#64748b] mb-1.5">
           بادئة رقم المريض
         </label>
         <input
@@ -281,13 +281,13 @@ function ClinicTab() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ الإعدادات"}
         </button>
         {saved && (
-          <span className="text-sm text-green-600 font-medium">
+          <span className="text-sm text-[#22c55e] font-medium">
             ✓ تم الحفظ
           </span>
         )}
@@ -309,7 +309,7 @@ function UsersTab() {
     role: "Reception",
     email: "",
     doctorName: "",
-    doctorColor: "#0E7490",
+    doctorColor: "#3d7ab5",
   });
 
   const load = () => {
@@ -347,7 +347,7 @@ function UsersTab() {
         role: "Reception",
         email: "",
         doctorName: "",
-        doctorColor: "#0E7490",
+        doctorColor: "#3d7ab5",
       });
       load();
     } catch (err: unknown) {
@@ -368,7 +368,7 @@ function UsersTab() {
     return (
       <div className="animate-pulse space-y-2">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-12 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-12 bg-[#eef3f9] rounded-lg" />
         ))}
       </div>
     );
@@ -377,10 +377,10 @@ function UsersTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{users.length} مستخدم</p>
+        <p className="text-sm text-[#64748b]">{users.length} مستخدم</p>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
         >
           {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showForm ? "إلغاء" : "مستخدم جديد"}
@@ -390,20 +390,20 @@ function UsersTab() {
       {showForm && (
         <form
           onSubmit={handleCreate}
-          className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3"
+          className="bg-[#f7fafd] rounded-xl border border-[#e8f0f9] p-4 space-y-3"
         >
-          <p className="text-sm font-semibold text-gray-800">
+          <p className="text-sm font-semibold text-[#0d2137]">
             إضافة مستخدم جديد
           </p>
           {formError && (
-            <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+            <p className="text-xs text-[#ef4444] bg-[#ef444418] px-3 py-2 rounded-lg">
               {formError}
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                اسم المستخدم <span className="text-red-500">*</span>
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
+                اسم المستخدم <span className="text-[#ef4444]">*</span>
               </label>
               <input
                 value={form.username}
@@ -417,8 +417,8 @@ function UsersTab() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                كلمة المرور <span className="text-red-500">*</span>
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
+                كلمة المرور <span className="text-[#ef4444]">*</span>
               </label>
               <input
                 value={form.password}
@@ -431,7 +431,7 @@ function UsersTab() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
                 الدور
               </label>
               <select
@@ -449,7 +449,7 @@ function UsersTab() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
                 البريد الإلكتروني
               </label>
               <input
@@ -463,7 +463,7 @@ function UsersTab() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
                 اسم الطبيب (اختياري)
               </label>
               <input
@@ -477,7 +477,7 @@ function UsersTab() {
             </div>
             {form.doctorName && (
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
+                <label className="block text-xs font-medium text-[#64748b] mb-1">
                   لون الطبيب
                 </label>
                 <input
@@ -486,7 +486,7 @@ function UsersTab() {
                     setForm({ ...form, doctorColor: e.target.value })
                   }
                   type="color"
-                  className="h-9 w-full rounded-lg border border-gray-300 cursor-pointer"
+                  className="h-9 w-full rounded-lg border border-[#dce8f5] cursor-pointer"
                 />
               </div>
             )}
@@ -495,7 +495,7 @@ function UsersTab() {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {saving ? "جارٍ الحفظ..." : "إضافة المستخدم"}
@@ -504,9 +504,9 @@ function UsersTab() {
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border-[1.5px] border-[#dce8f5]">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
             <tr>
               {[
                 "اسم المستخدم",
@@ -518,28 +518,28 @@ function UsersTab() {
               ].map((h) => (
                 <th
                   key={h}
-                  className="text-start px-4 py-3 text-xs font-semibold text-gray-500"
+                  className="text-start px-4 py-3 text-xs font-bold text-[#64748b]"
                 >
                   {h}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-[#f1f5f9]">
             {users.map((u) => (
-              <tr key={u.id} className="hover:bg-gray-50 transition">
-                <td className="px-4 py-3 font-mono font-medium text-gray-900">
+              <tr key={u.id} className="hover:bg-[#f7fafd] transition">
+                <td className="px-4 py-3 font-mono font-medium text-[#0d2137]">
                   {u.username}
                 </td>
-                <td className="px-4 py-3 text-gray-700">
+                <td className="px-4 py-3 text-[#64748b]">
                   {u.doctorName ?? "—"}
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                  <span className="text-xs bg-[#3d7ab518] text-accent-blue px-[10px] py-[2px] rounded-full font-medium">
                     {ROLE_LABELS[u.role] ?? u.role}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-gray-500 text-xs">
+                <td className="px-4 py-3 text-[#64748b] text-xs">
                   {u.lastLoginAt
                     ? new Date(u.lastLoginAt).toLocaleDateString("ar-YE")
                     : "—"}
@@ -547,10 +547,10 @@ function UsersTab() {
                 <td className="px-4 py-3">
                   <span
                     className={cn(
-                      "text-xs px-2 py-0.5 rounded-full font-medium",
+                      "text-xs px-[10px] py-[2px] rounded-full font-medium",
                       u.isActive
-                        ? "bg-green-50 text-green-700"
-                        : "bg-gray-100 text-gray-500"
+                        ? "bg-[#22c55e18] text-[#22c55e]"
+                        : "bg-[#eef3f9] text-[#64748b]"
                     )}
                   >
                     {u.isActive ? "نشط" : "معطّل"}
@@ -560,12 +560,12 @@ function UsersTab() {
                   <button
                     onClick={() => handleToggleStatus(u.id)}
                     title={u.isActive ? "تعطيل المستخدم" : "تفعيل المستخدم"}
-                    className="text-gray-400 hover:text-gray-700 transition"
+                    className="text-[#94a3b8] hover:text-[#64748b] transition"
                   >
                     {u.isActive ? (
                       <UserX className="w-4 h-4" />
                     ) : (
-                      <UserCheck className="w-4 h-4 text-green-600" />
+                      <UserCheck className="w-4 h-4 text-[#22c55e]" />
                     )}
                   </button>
                 </td>
@@ -667,7 +667,7 @@ function BranchesTab() {
     return (
       <div className="animate-pulse space-y-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-12 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-12 bg-[#eef3f9] rounded-lg" />
         ))}
       </div>
     );
@@ -676,7 +676,7 @@ function BranchesTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-[#64748b]">
           {(branches ?? []).length} فرع
         </p>
         <button
@@ -684,7 +684,7 @@ function BranchesTab() {
             resetForm();
             setShowForm(true);
           }}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
         >
           <Plus className="w-4 h-4" />
           فرع جديد
@@ -694,15 +694,15 @@ function BranchesTab() {
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3"
+          className="bg-[#f7fafd] rounded-xl border border-[#e8f0f9] p-4 space-y-3"
         >
-          <p className="text-sm font-semibold text-gray-800">
+          <p className="text-sm font-semibold text-[#0d2137]">
             {editingBranch ? "تعديل الفرع" : "إضافة فرع جديد"}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                اسم الفرع <span className="text-red-500">*</span>
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
+                اسم الفرع <span className="text-[#ef4444]">*</span>
               </label>
               <input
                 value={form.name}
@@ -712,7 +712,7 @@ function BranchesTab() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
                 العنوان
               </label>
               <input
@@ -725,7 +725,7 @@ function BranchesTab() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
                 الهاتف
               </label>
               <input
@@ -744,9 +744,9 @@ function BranchesTab() {
                 onChange={(e) =>
                   setForm({ ...form, isMain: e.target.checked })
                 }
-                className="w-4 h-4 text-clinic-teal rounded border-gray-300 focus:ring-clinic-teal"
+                className="w-4 h-4 text-accent-blue rounded border-[#dce8f5] focus:ring-accent-blue"
               />
-              <label htmlFor="isMain" className="text-sm text-gray-700">
+              <label htmlFor="isMain" className="text-sm text-[#64748b]">
                 فرع رئيسي
               </label>
             </div>
@@ -755,14 +755,14 @@ function BranchesTab() {
             <button
               type="button"
               onClick={resetForm}
-              className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+              className="px-4 py-2 text-sm font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-[#f7fafd] transition"
             >
               إلغاء
             </button>
             <button
               type="submit"
               disabled={createMutation.isPending || updateMutation.isPending}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {createMutation.isPending || updateMutation.isPending
@@ -775,9 +775,9 @@ function BranchesTab() {
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border-[1.5px] border-[#dce8f5]">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
             <tr>
               {[
                 "الاسم",
@@ -789,46 +789,46 @@ function BranchesTab() {
               ].map((h) => (
                 <th
                   key={h}
-                  className="text-start px-4 py-3 text-xs font-semibold text-gray-500"
+                  className="text-start px-4 py-3 text-xs font-bold text-[#64748b]"
                 >
                   {h}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-[#f1f5f9]">
             {(branches ?? []).map((branch) => (
-              <tr key={branch.id} className="hover:bg-gray-50 transition">
-                <td className="px-4 py-3 font-medium text-gray-900">
+              <tr key={branch.id} className="hover:bg-[#f7fafd] transition">
+                <td className="px-4 py-3 font-medium text-[#0d2137]">
                   {branch.name}
                 </td>
-                <td className="px-4 py-3 text-gray-600">
+                <td className="px-4 py-3 text-[#64748b]">
                   {branch.address ?? "—"}
                 </td>
-                <td className="px-4 py-3 text-gray-600" dir="ltr">
+                <td className="px-4 py-3 text-[#64748b]" dir="ltr">
                   {branch.phone ?? "—"}
                 </td>
                 <td className="px-4 py-3">
                   <button
                     onClick={() => toggleMain(branch)}
                     className={cn(
-                      "text-xs px-2.5 py-0.5 rounded-full font-medium border transition",
+                      "text-xs px-[10px] py-[2px] rounded-full font-medium border transition",
                       branch.isMain
-                        ? "bg-green-50 text-green-700 border-green-200"
-                        : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100"
+                        ? "bg-[#22c55e18] text-[#22c55e] border-green-200"
+                        : "bg-[#f7fafd] text-[#94a3b8] border-[#e8f0f9] hover:bg-[#eef3f9]"
                     )}
                   >
                     {branch.isMain ? "رئيسي ✓" : "فرعي"}
                   </button>
                 </td>
-                <td className="px-4 py-3 text-gray-500">
+                <td className="px-4 py-3 text-[#64748b]">
                   {branch.userCount ?? 0}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleEdit(branch)}
-                      className="p-1.5 text-gray-400 hover:text-clinic-teal rounded-lg hover:bg-teal-50 transition"
+                      className="p-1.5 text-[#94a3b8] hover:text-accent-blue rounded-lg hover:bg-light-blue transition"
                       title="تعديل"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -837,13 +837,13 @@ function BranchesTab() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleDelete(branch.id)}
-                          className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition"
+                          className="text-xs px-2 py-1 rounded bg-[#ef444418] text-[#ef4444] hover:bg-[#ef444430] transition"
                         >
                           تأكيد
                         </button>
                         <button
                           onClick={() => setConfirmDeleteId(null)}
-                          className="text-xs px-2 py-1 rounded bg-gray-50 text-gray-500 hover:bg-gray-100 transition"
+                          className="text-xs px-2 py-1 rounded bg-[#f7fafd] text-[#64748b] hover:bg-[#eef3f9] transition"
                         >
                           إلغاء
                         </button>
@@ -851,7 +851,7 @@ function BranchesTab() {
                     ) : (
                       <button
                         onClick={() => setConfirmDeleteId(branch.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition"
+                        className="p-1.5 text-[#94a3b8] hover:text-[#ef4444] rounded-lg hover:bg-[#ef444418] transition"
                         title="حذف"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -863,7 +863,7 @@ function BranchesTab() {
             ))}
             {(branches ?? []).length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">
+                <td colSpan={6} className="px-4 py-8 text-center text-[#94a3b8] text-sm">
                   لا توجد فروع مسجلة
                 </td>
               </tr>
@@ -1006,7 +1006,7 @@ function RolesTab() {
     return (
       <div className="animate-pulse space-y-2">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-10 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-10 bg-[#eef3f9] rounded-lg" />
         ))}
       </div>
     );
@@ -1015,7 +1015,7 @@ function RolesTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-[#64748b]">
           {(permissions ?? []).length} صلاحية
         </p>
         <div className="flex items-center gap-2">
@@ -1023,7 +1023,7 @@ function RolesTab() {
             <button
               onClick={handleBulkSave}
               disabled={bulkUpdateMutation.isPending}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {bulkUpdateMutation.isPending
@@ -1033,7 +1033,7 @@ function RolesTab() {
           )}
           <button
             onClick={() => setShowAddRow(!showAddRow)}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-clinic-teal text-clinic-teal hover:bg-teal-50 transition"
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-accent-blue text-accent-blue hover:bg-light-blue transition"
           >
             {showAddRow ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             {showAddRow ? "إلغاء" : "صلاحية جديدة"}
@@ -1042,13 +1042,13 @@ function RolesTab() {
       </div>
 
       {showAddRow && (
-        <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
-          <p className="text-sm font-semibold text-gray-800">
+        <div className="bg-[#f7fafd] rounded-xl border border-[#e8f0f9] p-4 space-y-3">
+          <p className="text-sm font-semibold text-[#0d2137]">
             إضافة صلاحية جديدة
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
                 الدور
               </label>
               <select
@@ -1066,7 +1066,7 @@ function RolesTab() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label className="block text-xs font-medium text-[#64748b] mb-1">
                 المورد
               </label>
               <input
@@ -1087,9 +1087,9 @@ function RolesTab() {
                   onChange={(e) =>
                     setNewPerm({ ...newPerm, [key]: e.target.checked })
                   }
-                  className="w-4 h-4 text-clinic-teal rounded border-gray-300 focus:ring-clinic-teal"
+                  className="w-4 h-4 text-accent-blue rounded border-[#dce8f5] focus:ring-accent-blue"
                 />
-                <span className="text-xs text-gray-600">{label}</span>
+                <span className="text-xs text-[#64748b]">{label}</span>
               </div>
             ))}
           </div>
@@ -1097,7 +1097,7 @@ function RolesTab() {
             <button
               onClick={handleAddPermission}
               disabled={createPermissionMutation.isPending}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
             >
               <Plus className="w-4 h-4" />
               {createPermissionMutation.isPending
@@ -1108,40 +1108,40 @@ function RolesTab() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border-[1.5px] border-[#dce8f5]">
         <table className="w-full text-xs">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
             <tr>
-              <th className="text-start px-4 py-3 font-semibold text-gray-700 min-w-[120px]">
+              <th className="text-start px-4 py-3 font-bold text-[#64748b] min-w-[120px]">
                 الدور
               </th>
-              <th className="text-start px-4 py-3 font-semibold text-gray-700 min-w-[120px]">
+              <th className="text-start px-4 py-3 font-bold text-[#64748b] min-w-[120px]">
                 المورد
               </th>
               {PERMISSION_COLS.map(({ key, label }) => (
                 <th
                   key={key}
-                  className="px-3 py-3 font-semibold text-gray-600 text-center whitespace-nowrap"
+                  className="px-3 py-3 font-bold text-[#64748b] text-center whitespace-nowrap"
                 >
                   {label}
                 </th>
               ))}
-              <th className="px-3 py-3 font-semibold text-gray-600 text-center w-10">
+              <th className="px-3 py-3 font-bold text-[#64748b] text-center w-10">
                 حذف
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-[#f1f5f9]">
             {(permissions ?? []).map((perm) => {
               const edited = editedPermissions[perm.id] ?? perm;
               return (
-                <tr key={perm.id} className="hover:bg-gray-50 transition">
-                  <td className="px-4 py-2.5 text-gray-700 font-medium">
-                    <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                <tr key={perm.id} className="hover:bg-[#f7fafd] transition">
+                  <td className="px-4 py-2.5 text-[#64748b] font-medium">
+                    <span className="text-xs bg-[#3d7ab518] text-accent-blue px-[10px] py-[2px] rounded-full">
                       {ROLE_LABELS[perm.role] ?? perm.role}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-gray-700">
+                  <td className="px-4 py-2.5 text-[#64748b]">
                     {beautifyResource(perm.resource)}
                   </td>
                   {PERMISSION_COLS.map(({ key }) => (
@@ -1150,14 +1150,14 @@ function RolesTab() {
                         type="checkbox"
                         checked={edited[key] ?? false}
                         onChange={() => togglePermission(perm.id, key)}
-                        className="w-4 h-4 text-clinic-teal rounded border-gray-300 focus:ring-clinic-teal cursor-pointer"
+                        className="w-4 h-4 text-accent-blue rounded border-[#dce8f5] focus:ring-accent-blue cursor-pointer"
                       />
                     </td>
                   ))}
                   <td className="px-3 py-2.5 text-center">
                     <button
                       onClick={() => handleDeletePermission(perm.id)}
-                      className="p-1 text-gray-300 hover:text-red-500 transition"
+                      className="p-1 text-gray-300 hover:text-[#ef4444] transition"
                       title="حذف الصلاحية"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1168,7 +1168,7 @@ function RolesTab() {
             })}
             {(permissions ?? []).length === 0 && (
               <tr>
-                <td colSpan={PERMISSION_COLS.length + 3} className="px-4 py-8 text-center text-gray-400 text-sm">
+                <td colSpan={PERMISSION_COLS.length + 3} className="px-4 py-8 text-center text-[#94a3b8] text-sm">
                   لا توجد صلاحيات مسجلة
                 </td>
               </tr>
@@ -1253,10 +1253,10 @@ function AuditTab() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
+      <div className="bg-[#f7fafd] rounded-lg border-[1.5px] border-[#dce8f5] p-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               الإجراء
             </label>
             <select
@@ -1272,7 +1272,7 @@ function AuditTab() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               من تاريخ
             </label>
             <input
@@ -1284,7 +1284,7 @@ function AuditTab() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               إلى تاريخ
             </label>
             <input
@@ -1296,7 +1296,7 @@ function AuditTab() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label className="block text-xs font-medium text-[#64748b] mb-1">
               بحث
             </label>
             <input
@@ -1310,14 +1310,14 @@ function AuditTab() {
         <div className="flex items-center gap-2 mt-2">
           <button
             onClick={applyFilters}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
           >
             <Search className="w-3.5 h-3.5" />
             تطبيق
           </button>
           <button
             onClick={resetFilters}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-white transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-white transition"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             إعادة تعيين
@@ -1325,7 +1325,7 @@ function AuditTab() {
           <button
             onClick={handleExport}
             disabled={exportMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-white transition mr-auto"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-white transition mr-auto"
           >
             <Download className="w-3.5 h-3.5" />
             تصدير
@@ -1337,18 +1337,18 @@ function AuditTab() {
       {isLoading ? (
         <div className="animate-pulse space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-10 bg-gray-100 rounded-lg" />
+            <div key={i} className="h-10 bg-[#eef3f9] rounded-lg" />
           ))}
         </div>
       ) : logs.length === 0 ? (
-        <div className="text-center py-10 text-gray-400 text-sm">
+        <div className="text-center py-10 text-[#94a3b8] text-sm">
           لا توجد سجلات
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <div className="overflow-x-auto rounded-lg border-[1.5px] border-[#dce8f5]">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
                 <tr>
                   {[
                     "التاريخ",
@@ -1359,38 +1359,38 @@ function AuditTab() {
                   ].map((h) => (
                     <th
                       key={h}
-                      className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap"
+                      className="text-start px-4 py-3 text-xs font-bold text-[#64748b] whitespace-nowrap"
                     >
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-[#f1f5f9]">
                 {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
+                  <tr key={log.id} className="hover:bg-[#f7fafd] transition">
+                    <td className="px-4 py-2.5 text-xs text-[#64748b] whitespace-nowrap">
                       {formatAuditDate(log.timestamp)}
                     </td>
-                    <td className="px-4 py-2.5 font-medium text-gray-900 text-xs">
+                    <td className="px-4 py-2.5 font-medium text-[#0d2137] text-xs">
                       {log.userName ?? log.userId}
                     </td>
                     <td className="px-4 py-2.5">
                       <span
                         className={cn(
-                          "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border",
+                          "inline-flex items-center px-[10px] py-[2px] rounded-full text-xs font-semibold border",
                           ACTION_COLORS[log.action] ??
-                            "bg-gray-100 text-gray-600 border-gray-200"
+                            "bg-[#eef3f9] text-[#64748b] border-[#e8f0f9]"
                         )}
                       >
                         {ACTION_LABELS[log.action] ?? log.action}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-700">
+                    <td className="px-4 py-2.5 text-xs text-[#64748b]">
                       {beautifyResource(log.resource)}
                     </td>
                     <td
-                      className="px-4 py-2.5 font-mono text-xs text-gray-400"
+                      className="px-4 py-2.5 font-mono text-xs text-[#94a3b8]"
                       dir="ltr"
                     >
                       {log.ipAddress ?? "—"}
@@ -1404,14 +1404,14 @@ function AuditTab() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-2">
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-[#94a3b8]">
                 صفحة {page} من {totalPages}
               </p>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handlePageChange(page - 1)}
                   disabled={page <= 1}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
                   <ChevronRight className="w-3 h-3" />
                   السابقة
@@ -1419,7 +1419,7 @@ function AuditTab() {
                 <button
                   onClick={() => handlePageChange(page + 1)}
                   disabled={page >= totalPages}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-[#dce8f5] text-[#64748b] hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
                   التالية
                   <ChevronLeft className="w-3 h-3" />
@@ -1491,21 +1491,21 @@ function ChangePasswordTab() {
   return (
     <div className="max-w-md space-y-4">
       {success && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[#22c55e18] border border-green-200 text-[#22c55e] text-sm">
           <CheckCircle className="w-5 h-5" />
           <span>تم تغيير كلمة المرور بنجاح</span>
         </div>
       )}
 
       {error && (
-        <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
+        <div className="px-4 py-3 rounded-lg bg-[#ef444418] border border-[#ef444430] text-[#ef4444] text-sm">
           {error}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          <label className="block text-sm font-medium text-[#64748b] mb-1.5">
             كلمة المرور الحالية
           </label>
           <div className="relative">
@@ -1522,7 +1522,7 @@ function ChangePasswordTab() {
             <button
               type="button"
               onClick={() => setShowCurrent(!showCurrent)}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b] transition"
             >
               {showCurrent ? (
                 <EyeOff className="w-4 h-4" />
@@ -1534,7 +1534,7 @@ function ChangePasswordTab() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          <label className="block text-sm font-medium text-[#64748b] mb-1.5">
             كلمة المرور الجديدة
           </label>
           <div className="relative">
@@ -1551,7 +1551,7 @@ function ChangePasswordTab() {
             <button
               type="button"
               onClick={() => setShowNew(!showNew)}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b] transition"
             >
               {showNew ? (
                 <EyeOff className="w-4 h-4" />
@@ -1561,14 +1561,14 @@ function ChangePasswordTab() {
             </button>
           </div>
           {form.newPassword.length > 0 && form.newPassword.length < 8 && (
-            <p className="text-xs text-red-500 mt-1">
+            <p className="text-xs text-[#ef4444] mt-1">
               يجب أن تكون 8 أحرف على الأقل
             </p>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          <label className="block text-sm font-medium text-[#64748b] mb-1.5">
             تأكيد كلمة المرور الجديدة
           </label>
           <div className="relative">
@@ -1585,7 +1585,7 @@ function ChangePasswordTab() {
             <button
               type="button"
               onClick={() => setShowConfirm(!showConfirm)}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#64748b] transition"
             >
               {showConfirm ? (
                 <EyeOff className="w-4 h-4" />
@@ -1596,7 +1596,7 @@ function ChangePasswordTab() {
           </div>
           {form.confirmPassword.length > 0 &&
             form.newPassword !== form.confirmPassword && (
-              <p className="text-xs text-red-500 mt-1">
+              <p className="text-xs text-[#ef4444] mt-1">
                 كلمات المرور غير متطابقة
               </p>
             )}
@@ -1605,7 +1605,7 @@ function ChangePasswordTab() {
         <button
           type="submit"
           disabled={changePasswordMutation.isPending}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
         >
           <Lock className="w-4 h-4" />
           {changePasswordMutation.isPending
@@ -1624,14 +1624,14 @@ export default function SettingsPage() {
   return (
     <div className="space-y-5 max-w-5xl">
       <div>
-        <h1 className="text-2xl font-extrabold text-gray-900">الإعدادات</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
+        <h1 className="text-2xl font-extrabold text-[#0d2137]">الإعدادات</h1>
+        <p className="text-sm text-[#64748b] mt-0.5">
           إدارة إعدادات المركز والمستخدمين
         </p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="flex border-b border-gray-100 overflow-x-auto">
+      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
+        <div className="flex border-b border-[#f1f5f9] overflow-x-auto">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -1639,8 +1639,8 @@ export default function SettingsPage() {
               className={cn(
                 "flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition",
                 activeTab === key
-                  ? "border-clinic-teal text-clinic-teal"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
+                  ? "border-accent-blue text-accent-blue"
+                  : "border-transparent text-[#64748b] hover:text-[#0d2137]"
               )}
             >
               <Icon className="w-4 h-4" />

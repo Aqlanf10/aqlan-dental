@@ -28,49 +28,14 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // ── Database (PostgreSQL) ─────────────────────────────────────────────────────
-// Support Railway's DATABASE_URL format (postgresql://user:pass@host:port/db)
-// as well as the standard ConnectionStrings__DefaultConnection format.
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? builder.Configuration["DATABASE_URL"] switch
-    {
-        string dbUrl => ConvertRailwayUrlToNpgsql(dbUrl),
-        null => null
-    }
-    ?? throw new InvalidOperationException("No database connection string found. Set ConnectionStrings__DefaultConnection or DATABASE_URL.");
-
 builder.Services.AddDbContext<AppDbContext>(opts =>
-    opts.UseNpgsql(connectionString,
+    opts.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
         npgsql => npgsql.MigrationsAssembly("AqlanDentalPro.Infrastructure")));
 
-static string ConvertRailwayUrlToNpgsql(string url)
-{
-    // Railway provides: postgresql://user:password@host:port/database
-    // Npgsql needs:     Host=host;Port=port;Database=database;Username=user;Password=password
-    var uri = new Uri(url);
-    var userInfo = uri.UserInfo.Split(':');
-    return $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.Trim('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
-}
-
 // ── Redis ─────────────────────────────────────────────────────────────────────
-// Support Railway's REDIS_URL format (redis://default:password@host:port)
-var redisConnStr = builder.Configuration["Redis:ConnectionString"]
-    ?? builder.Configuration["REDIS_URL"] switch
-    {
-        string rUrl => ConvertRailwayRedisUrl(rUrl),
-        null => "localhost:6379"
-    };
-
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(redisConnStr));
-
-static string ConvertRailwayRedisUrl(string url)
-{
-    // Railway provides: redis://default:password@host:port
-    // StackExchange.Redis needs: host:port,password=password
-    var uri = new Uri(url);
-    var password = uri.UserInfo.Contains(':') ? uri.UserInfo.Split(':')[1] : "";
-    return $"{uri.Host}:{uri.Port},password={password},ssl=True,abortConnect=False";
-}
+    ConnectionMultiplexer.Connect(builder.Configuration["Redis:ConnectionString"]
+        ?? "localhost:6379"));
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 var jwtKey = builder.Configuration["Jwt:SecretKey"]
@@ -156,8 +121,6 @@ builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IPatientRepository, PatientRepository>();
 builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
-builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
-builder.Services.AddScoped<IMessageRepository, MessageRepository>();
 
 // ── DI — Services ────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -170,11 +133,8 @@ builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<OrthoService>();
 builder.Services.AddScoped<FinanceService>();
 builder.Services.AddScoped<GeneralService>();
+builder.Services.AddScoped<MessagingService>();
 builder.Services.AddScoped<CephService>();
-builder.Services.AddScoped<IFileService, FileService>();
-builder.Services.AddScoped<INotificationService, NotificationService>();
-builder.Services.AddScoped<MessageService>();
-builder.Services.AddSingleton<ICephLandmarkDetector, CephLandmarkDetector>();
 
 builder.Services.AddHttpContextAccessor();
 
@@ -232,7 +192,6 @@ app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Denta
 
 app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontend");
-app.UseStaticFiles();   // Serve wwwroot/uploads
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<AuditLogMiddleware>();

@@ -1,30 +1,22 @@
-export interface Conversation {
-  id: string;
-  title?: string;
-  type: "Direct" | "Group";
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  participants: ConversationParticipant[];
-  lastMessage?: LastMessage;
-  unreadCount: number;
-}
-
 export interface ConversationParticipant {
   userId: string;
   username: string;
-  fullName?: string;
-  role: string;
-  lastReadAt?: string;
+  displayName?: string;
+  role?: string;
+  avatarInitials?: string;
+  color?: string;
+  isAdmin: boolean;
 }
 
-export interface LastMessage {
+export interface ConversationListItem {
   id: string;
-  senderId: string;
-  senderName: string;
-  content: string;
-  type: string;
-  createdAt: string;
+  title: string;
+  isGroup: boolean;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  unreadCount: number;
+  otherParticipant?: ConversationParticipant;
+  participants: ConversationParticipant[];
 }
 
 export interface Message {
@@ -32,29 +24,46 @@ export interface Message {
   conversationId: string;
   senderId: string;
   senderName: string;
-  senderRole: string;
+  senderInitials?: string;
+  senderColor?: string;
   content: string;
-  type: "Text" | "Inquiry" | "System";
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
+  replyToId?: string;
+  replyToContent?: string;
+  replyToSenderName?: string;
+  isSystemMessage: boolean;
+  isReadByMe: boolean;
+  readCount: number;
   createdAt: string;
 }
 
-export interface DoctorForMessaging {
-  userId: string;
-  username: string;
-  fullName?: string;
-  role: string;
-  specialty?: string;
+export interface ConversationDetail {
+  id: string;
+  title: string;
+  isGroup: boolean;
+  participants: ConversationParticipant[];
+  messages: Message[];
+  createdAt: string;
 }
 
 export interface CreateConversationRequest {
-  recipientId?: string;
-  participantIds?: string[];
   title?: string;
+  isGroup?: boolean;
+  participantIds: string[];
   initialMessage?: string;
-  type?: string;
 }
 
 export interface SendMessageRequest {
   content: string;
-  type: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
+  replyToId?: string;
+}
+
+export interface UnreadCount {
+  totalUnread: number;
+  unreadConversations: number;
 }

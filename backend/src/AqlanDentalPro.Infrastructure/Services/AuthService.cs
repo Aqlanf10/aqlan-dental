@@ -3,19 +3,19 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Enums;
 using Konscious.Security.Cryptography;
-using System.Security.Cryptography;
+using Microsoft.Extensions.Configuration;
 using System.Text;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class AuthService(IUserRepository userRepo, ITokenService tokenService) : IAuthService
+public class AuthService(IUserRepository userRepo, ITokenService tokenService, IConfiguration config)
 {
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
         var user = await userRepo.GetByUsernameAsync(request.Username);
         if (user == null) return null;
 
-        if (!VerifyPassword(request.Password, user.PasswordHash, user.PasswordSalt)) return null;
+        if (!VerifyPassword(request.Password, user.PasswordHash)) return null;
 
         user.LastLogin = DateTime.UtcNow;
         await userRepo.SaveChangesAsync();
@@ -69,38 +69,19 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
         DoctorInitials = user.Doctor?.AvatarInitials
     };
 
-    /// <summary>
-    /// Generates a unique random salt for a new user.
-    /// </summary>
-    public static string GenerateSalt()
-    {
-        var saltBytes = RandomNumberGenerator.GetBytes(16);
-        return Convert.ToBase64String(saltBytes);
-    }
-
-    /// <summary>
-    /// Hashes a password with the given salt using Argon2id.
-    /// </summary>
-    public static string HashPassword(string password, string salt)
-    {
-        var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
-        {
-            Salt = Convert.FromBase64String(salt),
-            DegreeOfParallelism = 2,
-            MemorySize = 65536,
-            Iterations = 3
-        };
-        return Convert.ToBase64String(argon2.GetBytes(32));
-    }
-
-    /// <summary>
-    /// Verifies a password against the stored hash and salt.
-    /// </summary>
-    private static bool VerifyPassword(string password, string storedHash, string storedSalt)
+    private bool VerifyPassword(string password, string storedHash)
     {
         try
         {
-            var hash = HashPassword(password, storedSalt);
+            var salt = config["Security:Argon2Salt"] ?? "AqlanDentalSalt!";
+            var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
+            {
+                Salt = Encoding.UTF8.GetBytes(salt),
+                DegreeOfParallelism = 1,
+                MemorySize = 65536,
+                Iterations = 3
+            };
+            var hash = Convert.ToBase64String(argon2.GetBytes(32));
             return hash == storedHash;
         }
         catch

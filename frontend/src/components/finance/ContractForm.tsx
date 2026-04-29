@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -26,8 +26,8 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const inputCls = (err?: string) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border-[1.5px] bg-[#f7fafd] focus:outline-none focus:ring-2 focus:ring-accent-blue",
-  err ? "border-[#ef4444]" : "border-[#dce8f5]"
+  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+  err ? "border-red-400" : "border-gray-300"
 );
 
 interface Props {
@@ -85,25 +85,25 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {serverError && (
-        <div className="bg-[#ef444418] border border-[#ef444430] text-[#ef4444] rounded-lg p-3 text-sm">{serverError}</div>
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{serverError}</div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Patient */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">المريض <span className="text-[#ef4444]">*</span></label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">المريض <span className="text-red-500">*</span></label>
           <PatientCombobox
             defaultDisplayValue={defaultPatientName ?? ""}
             onSelect={(p: PatientListItem) => setValue("patientId", p.id)}
             error={errors.patientId?.message}
           />
           <input type="hidden" {...register("patientId")} />
-          {errors.patientId && <p className="mt-1 text-xs text-[#ef4444]">{errors.patientId.message}</p>}
+          {errors.patientId && <p className="mt-1 text-xs text-red-600">{errors.patientId.message}</p>}
         </div>
 
         {/* Specialty */}
         <div>
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">التخصص</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">التخصص</label>
           <select {...register("specialty")} className={inputCls()}>
             <option value="">اختر...</option>
             <option value="orthodontics">تقويم</option>
@@ -115,50 +115,50 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
 
         {/* Start date */}
         <div>
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">تاريخ العقد</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">تاريخ العقد</label>
           <input {...register("startDate")} type="date" className={inputCls()} />
         </div>
 
         {/* Total amount */}
         <div>
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">المبلغ الإجمالي (ريال) <span className="text-[#ef4444]">*</span></label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">المبلغ الإجمالي (ريال) <span className="text-red-500">*</span></label>
           <input {...register("totalAmount", { valueAsNumber: true })} type="number" min={0} className={inputCls(errors.totalAmount?.message)} dir="ltr" />
-          {errors.totalAmount && <p className="mt-1 text-xs text-[#ef4444]">{errors.totalAmount.message}</p>}
+          {errors.totalAmount && <p className="mt-1 text-xs text-red-600">{errors.totalAmount.message}</p>}
         </div>
 
         {/* Discount */}
         <div>
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">الخصم (ريال)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">الخصم (ريال)</label>
           <input {...register("discountAmount", { valueAsNumber: true })} type="number" min={0} className={inputCls()} dir="ltr" />
         </div>
 
         {/* Down payment */}
         <div>
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">الدفعة الأولى (ريال)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">الدفعة الأولى (ريال)</label>
           <input {...register("downPayment", { valueAsNumber: true })} type="number" min={0} className={inputCls()} dir="ltr" />
         </div>
 
         {/* Installments */}
         <div>
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">عدد الأقساط</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">عدد الأقساط</label>
           <input {...register("installmentsCount", { valueAsNumber: true })} type="number" min={1} max={60} className={inputCls()} dir="ltr" />
         </div>
 
         {/* Summary */}
         {totalAmount > 0 && (
-          <div className="md:col-span-2 bg-[#f0f5fb] rounded-lg p-3 text-sm">
+          <div className="md:col-span-2 bg-teal-50 rounded-lg p-3 text-sm">
             <div className="grid grid-cols-3 gap-3 text-center">
               <div>
-                <p className="text-xs text-[#64748b]">صافي المبلغ</p>
-                <p className="font-bold text-[#0d2137]">{(totalAmount - discountAmount).toLocaleString()} ر.ي</p>
+                <p className="text-xs text-gray-500">صافي المبلغ</p>
+                <p className="font-bold text-gray-900">{(totalAmount - discountAmount).toLocaleString()} ر.ي</p>
               </div>
               <div>
-                <p className="text-xs text-[#64748b]">بعد الدفعة الأولى</p>
-                <p className="font-bold text-accent-blue">{netAmount.toLocaleString()} ر.ي</p>
+                <p className="text-xs text-gray-500">بعد الدفعة الأولى</p>
+                <p className="font-bold text-teal-700">{netAmount.toLocaleString()} ر.ي</p>
               </div>
               <div>
-                <p className="text-xs text-[#64748b]">القسط الشهري</p>
-                <p className="font-bold text-accent-blue">{calculatedInstallment.toLocaleString()} ر.ي</p>
+                <p className="text-xs text-gray-500">القسط الشهري</p>
+                <p className="font-bold text-blue-700">{calculatedInstallment.toLocaleString()} ر.ي</p>
               </div>
             </div>
           </div>
@@ -166,17 +166,17 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
 
         {/* Notes */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-[#0d2137] mb-1.5">ملاحظات</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">ملاحظات</label>
           <textarea {...register("notes")} rows={2} className={inputCls()} />
         </div>
       </div>
 
       <div className="flex justify-end gap-3 pb-4">
         <button type="button" onClick={() => router.back()}
-          className="px-5 py-2 text-sm rounded-lg border border-[#e8f0f9] text-[#64748b] hover:bg-[#f7fafd] transition"
+          className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
         >إلغاء</button>
         <button type="submit" disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ العقد"}

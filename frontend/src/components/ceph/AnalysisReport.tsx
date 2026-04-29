@@ -15,21 +15,18 @@ interface Props {
 }
 
 const SCIENTIST_TABS: { key: MeasurementGroup; label: string; labelFull: string }[] = [
-  { key: 'steiner',    label: 'ستاينر',        labelFull: 'تحليل ستاينر' },
-  { key: 'tweed',      label: 'تويد',          labelFull: 'تحليل تويد' },
-  { key: 'mcnamara',   label: 'ماكنامارا',     labelFull: 'تحليل ماكنامارا' },
-  { key: 'ricketts',   label: 'ريكتس',        labelFull: 'تحليل ريكتس' },
-  { key: 'downs',      label: 'داونز',         labelFull: 'تحليل داونز' },
-  { key: 'wits',       label: 'وتس',           labelFull: 'تحليل وتس' },
-  { key: 'jarabak',    label: 'جاراباك',       labelFull: 'تحليل جاراباك' },
-  { key: 'softtissue', label: 'الأنسجة الرخوة', labelFull: 'تحليل الأنسجة الرخوة' },
+  { key: 'steiner',  label: 'ستاينر',    labelFull: 'تحليل ستاينر' },
+  { key: 'tweed',    label: 'تويد',      labelFull: 'تحليل تويد' },
+  { key: 'mcnamara', label: 'ماكنامارا', labelFull: 'تحليل ماكنامارا' },
+  { key: 'ricketts', label: 'ريكتس',    labelFull: 'تحليل ريكتس' },
+  { key: 'downs',    label: 'داونز',     labelFull: 'تحليل داونز' },
+  { key: 'wits',     label: 'وتس',       labelFull: 'تحليل وتس' },
 ];
 
-// Badge: padding 2px 10px, rounded-full, bg {color}18, text {color}
 const SEVERITY_CFG = {
-  normal: { icon: CheckCircle,   color: "#22c55e",  bg: "#22c55e18",  label: "طبيعي" },
-  mild:   { icon: AlertTriangle, color: "#f59e0b",  bg: "#f59e0b18",  label: "خفيف" },
-  severe: { icon: XCircle,       color: "#ef4444",  bg: "#ef444418",  label: "واضح" },
+  normal: { icon: CheckCircle,   color: 'text-green-500',  bg: 'bg-green-50 text-green-700',  label: 'طبيعي' },
+  mild:   { icon: AlertTriangle, color: 'text-amber-500',  bg: 'bg-amber-50 text-amber-700',  label: 'خفيف' },
+  severe: { icon: XCircle,       color: 'text-red-500',    bg: 'bg-red-50 text-red-700',       label: 'واضح' },
 } as const;
 
 const SKELETAL_CLASS_AR: Record<string, string> = {
@@ -74,14 +71,12 @@ export function AnalysisReport({
 
       {/* Summary banner */}
       {hasMeas && (
-        <div
-          className="flex-shrink-0 rounded-xl p-2.5 mb-2 border text-xs"
-          style={{
-            backgroundColor: totalAbnormal === 0 ? "#22c55e10" : totalAbnormal <= 3 ? "#f59e0b10" : "#ef444410",
-            borderColor: totalAbnormal === 0 ? "#22c55e30" : totalAbnormal <= 3 ? "#f59e0b30" : "#ef444430",
-            color: totalAbnormal === 0 ? "#22c55e" : totalAbnormal <= 3 ? "#f59e0b" : "#ef4444",
-          }}
-        >
+        <div className={cn(
+          "flex-shrink-0 rounded-xl p-2.5 mb-2 border text-xs",
+          totalAbnormal === 0 ? "bg-green-50 border-green-200 text-green-800" :
+          totalAbnormal <= 3  ? "bg-amber-50 border-amber-200 text-amber-800" :
+                                "bg-red-50 border-red-200 text-red-800"
+        )}>
           <div className="flex items-center justify-between">
             <span className="font-bold text-[11px]">
               {totalAbnormal === 0 ? "جميع القياسات ضمن الحدود الطبيعية" :
@@ -103,8 +98,7 @@ export function AnalysisReport({
 
       {/* Calibration note */}
       {!calibrated && (
-        <div className="flex-shrink-0 rounded-xl p-2 text-[10px] mb-2"
-          style={{ backgroundColor: "#3d7ab510", border: "1px solid #3d7ab530", color: "#3d7ab5" }}>
+        <div className="flex-shrink-0 bg-blue-50 border border-blue-200 rounded-lg p-2 text-[10px] text-blue-700 mb-2">
           القياسات الخطية (mm) تتطلب معايرة — أدخل معامل التحجيم أسفل الصورة
         </div>
       )}
@@ -114,25 +108,21 @@ export function AnalysisReport({
         <div className="flex-shrink-0 flex gap-1 mb-2 flex-wrap">
           {availableTabs.map(t => {
             const cnt = measurements.filter(m => m.analysisGroup === t.key && m.severity !== 'normal' && m.value !== null).length;
-            const isActive = activeGroup === t.key;
             return (
               <button key={t.key} onClick={() => setActiveGroup(t.key)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] border transition"
-                style={isActive
-                  ? { backgroundColor: "#3d7ab5", color: "#ffffff", borderColor: "#3d7ab5", fontWeight: 700 }
-                  : { backgroundColor: "#ffffff", color: "#64748b", borderColor: "#e8f0f9" }
-                }
+                className={cn(
+                  "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition",
+                  activeGroup === t.key
+                    ? "bg-clinic-teal text-white border-clinic-teal shadow-sm"
+                    : "bg-white text-gray-500 border-gray-200 hover:border-clinic-teal hover:text-clinic-teal"
+                )}
               >
                 {t.label}
                 {cnt > 0 && (
-                  <span
-                    className="text-[9px] rounded-full min-w-[14px] text-center font-bold leading-tight"
-                    style={{
-                      padding: "0px 4px",
-                      backgroundColor: isActive ? "#ffffff30" : "#ef444418",
-                      color: isActive ? "#ffffff" : "#ef4444",
-                    }}
-                  >{cnt}</span>
+                  <span className={cn(
+                    "text-[9px] rounded-full px-1 min-w-[14px] text-center font-bold leading-tight",
+                    activeGroup === t.key ? "bg-white/25 text-white" : "bg-red-100 text-red-600"
+                  )}>{cnt}</span>
                 )}
               </button>
             );
@@ -142,31 +132,30 @@ export function AnalysisReport({
 
       {/* Content scroll area */}
       <div className="flex-1 overflow-y-auto min-h-0">
+        {/* No measurements yet */}
         {!hasMeas && !diagnosis && (
-          <div className="text-center py-10" style={{ color: "#94a3b8" }}>
+          <div className="text-center py-10 text-gray-400">
             <p className="text-xs font-medium">لا توجد قياسات محسوبة</p>
-            <p className="text-[10px] mt-1">ضع النقاط ثم اضغط &quot;احسب القياسات&quot;</p>
+            <p className="text-[10px] mt-1 text-gray-300">ضع النقاط ثم اضغط &quot;احسب القياسات&quot;</p>
           </div>
         )}
 
+        {/* Measurement rows for selected group */}
         {hasMeas && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold" style={{ color: "#0d2137" }}>
+              <span className="text-[11px] font-bold text-gray-700">
                 {SCIENTIST_TABS.find(t => t.key === activeGroup)?.labelFull}
               </span>
               {groupAbnormal > 0 && (
-                <span
-                  className="text-[9px] rounded-full font-bold"
-                  style={{ padding: "2px 10px", backgroundColor: "#ef444418", color: "#ef4444" }}
-                >
+                <span className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">
                   {groupAbnormal} انحراف
                 </span>
               )}
             </div>
 
             {grouped.length === 0 ? (
-              <p className="text-[11px] text-center py-6" style={{ color: "#94a3b8" }}>
+              <p className="text-[11px] text-gray-300 text-center py-6">
                 لا تتوفر قياسات {SCIENTIST_TABS.find(t => t.key === activeGroup)?.labelFull}
               </p>
             ) : (
@@ -178,39 +167,35 @@ export function AnalysisReport({
                   const below = m.direction === 'below';
 
                   return (
-                    <div key={m.name}
-                      className="rounded-xl border p-2.5"
-                      style={{
-                        backgroundColor: m.severity === 'severe' ? "#ef444408" : m.severity === 'mild' ? "#f59e0b08" : "#ffffff",
-                        borderColor: m.severity === 'severe' ? "#ef444430" : m.severity === 'mild' ? "#f59e0b30" : "#e8f0f9",
-                      }}
-                    >
+                    <div key={m.name} className={cn(
+                      "rounded-lg border p-2.5",
+                      m.severity === 'severe' ? "bg-red-50/60 border-red-200" :
+                      m.severity === 'mild'   ? "bg-amber-50/50 border-amber-100" :
+                      "bg-white border-gray-100"
+                    )}>
                       {/* Top row */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[11px] font-bold" style={{ color: "#0d2137" }}>{m.nameAr}</span>
-                            <span
-                              className="text-[9px] rounded-full font-medium flex items-center gap-0.5"
-                              style={{ padding: "2px 10px", backgroundColor: cfg.bg, color: cfg.color }}
-                            >
+                            <span className="text-[11px] font-bold text-gray-800">{m.nameAr}</span>
+                            <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5", cfg.bg)}>
                               <Icon className="w-2.5 h-2.5" />{cfg.label}
                             </span>
                           </div>
                           {m.severity !== 'normal' && m.interpretationAr && (
-                            <p className="text-[10px] mt-0.5 leading-tight" style={{ color: "#64748b" }}>{m.interpretationAr}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{m.interpretationAr}</p>
                           )}
                         </div>
 
                         {/* Value */}
                         <div className="flex-shrink-0 text-end">
-                          <div className="text-sm font-bold font-mono leading-none" style={{ color: "#0d2137" }}>
+                          <div className="text-sm font-bold font-mono text-gray-900 leading-none">
                             {m.value !== null
                               ? `${m.value}${m.unit}`
-                              : <span style={{ color: "#94a3b8" }}>—</span>}
+                              : <span className="text-gray-300 text-xs font-normal">—</span>}
                           </div>
-                          <div className="text-[9px] font-mono mt-0.5" style={{ color: "#94a3b8" }}>
-                            {m.normal}{m.unit} <span style={{ color: "#dce8f5" }}>±{m.stdDev}</span>
+                          <div className="text-[9px] text-gray-400 font-mono mt-0.5">
+                            {m.normal}{m.unit} <span className="text-gray-300">±{m.stdDev}</span>
                           </div>
                         </div>
                       </div>
@@ -218,20 +203,23 @@ export function AnalysisReport({
                       {/* Deviation bar */}
                       {m.deviation !== null && m.value !== null && (
                         <div className="mt-2 flex items-center gap-2">
-                          {/* Progress bar: track bg #f1f5f9, fill gradient #3d7ab5 to #2d5e8e */}
-                          <div className="flex-1 h-1.5 rounded-full overflow-visible relative" style={{ backgroundColor: "#f1f5f9" }}>
-                            <div className="absolute inset-y-0 left-[20%] right-[20%] rounded-full" style={{ backgroundColor: "#22c55e18" }} />
+                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-visible relative">
+                            <div className="absolute inset-y-0 left-[20%] right-[20%] bg-green-100 rounded-full" />
                             <div
-                              className="absolute w-2.5 h-2.5 rounded-full -top-[2px] border-2 border-white shadow-sm"
+                              className={cn(
+                                "absolute w-2.5 h-2.5 rounded-full -top-[2px] border-2 border-white shadow-sm",
+                                m.severity === 'severe' ? 'bg-red-500' :
+                                m.severity === 'mild'   ? 'bg-amber-500' : 'bg-green-500'
+                              )}
                               style={{
-                                backgroundColor: m.severity === 'severe' ? '#ef4444' : m.severity === 'mild' ? '#f59e0b' : '#22c55e',
-                                left: `calc(${Math.max(2, Math.min(94, 50 + (m.deviation / (m.stdDev * 4)) * 50))}% - 5px)`,
+                                left: `calc(${Math.max(2, Math.min(94, 50 + (m.deviation / (m.stdDev * 4)) * 50))}% - 5px)`
                               }}
                             />
                           </div>
-                          <div className="text-[10px] font-mono flex items-center gap-0.5 flex-shrink-0"
-                            style={{ color: above ? '#f5922e' : below ? '#3d7ab5' : '#94a3b8' }}
-                          >
+                          <div className={cn(
+                            "text-[10px] font-mono flex items-center gap-0.5 flex-shrink-0",
+                            above ? 'text-orange-600' : below ? 'text-blue-600' : 'text-gray-400'
+                          )}>
                             {above && <ArrowUp className="w-2.5 h-2.5" />}
                             {below && <ArrowDown className="w-2.5 h-2.5" />}
                             {m.deviation > 0 ? '+' : ''}{m.deviation}{m.unit}
@@ -246,22 +234,22 @@ export function AnalysisReport({
           </div>
         )}
 
-        {/* Diagnosis section */}
+        {/* Diagnosis section — always shown when diagnosis exists */}
         {diagnosis && (
-          <div className={cn("pt-3 space-y-2.5", hasMeas && "mt-4")} style={{ borderTop: "1px solid #e8f0f9" }}>
-            <h3 className="font-bold text-[11px]" style={{ color: "#0d2137" }}>التشخيص السريري</h3>
+          <div className={cn("pt-3 border-t border-gray-100 space-y-2.5", hasMeas && "mt-4")}>
+            <h3 className="font-bold text-[11px] text-gray-900">التشخيص السريري</h3>
 
             {diagnosis.aiRecommendation && (
-              <div className="rounded-xl p-2.5" style={{ backgroundColor: "#f0f5fb", border: "1px solid #3d7ab520" }}>
-                <p className="text-[9px] font-bold uppercase tracking-wide mb-1" style={{ color: "#3d7ab5" }}>توصية النظام</p>
-                <p className="text-[10px] leading-relaxed whitespace-pre-line" style={{ color: "#0d2137" }}>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5">
+                <p className="text-[9px] font-bold text-purple-800 mb-1 uppercase tracking-wide">توصية النظام</p>
+                <p className="text-[10px] text-purple-700 leading-relaxed whitespace-pre-line">
                   {diagnosis.aiRecommendation}
                 </p>
               </div>
             )}
 
             {diagnosis.incisorInclination && (
-              <div className="text-[10px] rounded-xl p-2" style={{ backgroundColor: "#f7fafd", color: "#0d2137" }}>
+              <div className="text-[10px] text-gray-600 bg-gray-50 rounded-lg p-2">
                 <span className="font-semibold">ميلان القواطع: </span>
                 {diagnosis.incisorInclination}
               </div>
@@ -269,7 +257,7 @@ export function AnalysisReport({
 
             {onDiagnosisChange && (
               <div className="space-y-2">
-                <label className="block text-[10px] font-semibold" style={{ color: "#64748b" }}>
+                <label className="block text-[10px] font-semibold text-gray-600">
                   ملاحظات الطبيب والتشخيص النهائي
                 </label>
                 <textarea
@@ -277,8 +265,7 @@ export function AnalysisReport({
                   onChange={(e) => setFinalNotes(e.target.value)}
                   onBlur={() => onDiagnosisChange({ finalDiagnosis: finalNotes })}
                   rows={4}
-                  className="w-full text-[11px] px-2.5 py-2 rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] resize-none"
-                  style={{ borderColor: "#dce8f5" }}
+                  className="w-full text-[11px] px-2.5 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-teal resize-none"
                   placeholder="أكتب تشخيصك النهائي وخطة العلاج..."
                 />
                 <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -286,15 +273,15 @@ export function AnalysisReport({
                     type="checkbox"
                     checked={diagnosis.doctorApproved}
                     onChange={(e) => onDiagnosisChange({ doctorApproved: e.target.checked })}
-                    className="w-3.5 h-3.5 accent-[#3d7ab5]"
+                    className="w-3.5 h-3.5 accent-clinic-teal"
                   />
-                  <span className="text-[10px]" style={{ color: "#64748b" }}>موافقة الطبيب على التشخيص</span>
+                  <span className="text-[10px] text-gray-600">موافقة الطبيب على التشخيص</span>
                 </label>
               </div>
             )}
 
             {diagnosis.finalDiagnosis && !onDiagnosisChange && (
-              <div className="rounded-xl p-2.5 text-[10px] leading-relaxed" style={{ backgroundColor: "#f7fafd", color: "#0d2137" }}>
+              <div className="bg-gray-50 rounded-lg p-2.5 text-[10px] text-gray-700 leading-relaxed">
                 {diagnosis.finalDiagnosis}
               </div>
             )}

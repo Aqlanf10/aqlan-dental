@@ -80,39 +80,6 @@ export function useUpdateAppointmentStatus() {
   });
 }
 
-/** Hook: Update appointment (full) */
-export function useUpdateAppointment() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      id,
-      ...appointment
-    }: { id: string } & Omit<CreateAppointmentRequest, never>) => {
-      const { data } = await api.put<Appointment>(`/api/appointments/${id}`, appointment);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
-    },
-  });
-}
-
-/** Hook: Delete/cancel appointment */
-export function useDeleteAppointment() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { data } = await api.delete(`/api/appointments/${id}`);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["appointments"] });
-    },
-  });
-}
-
 /** Hook: Check appointment conflict */
 export function useCheckConflict() {
   return useMutation({

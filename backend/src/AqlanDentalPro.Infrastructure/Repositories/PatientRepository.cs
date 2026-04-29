@@ -11,7 +11,7 @@ public class PatientRepository(AppDbContext context)
 {
     public async Task<PaginatedResponse<Patient>> SearchAsync(
         string? search, int page, int pageSize, Guid? branchId,
-        string? gender = null, Guid? doctorId = null, bool? isActive = null)
+        string? gender = null, Guid? doctorId = null)
     {
         var query = DbSet
             .Include(p => p.PrimaryDoctor)
@@ -38,9 +38,6 @@ public class PatientRepository(AppDbContext context)
 
         if (doctorId.HasValue)
             query = query.Where(p => p.PrimaryDoctorId == doctorId);
-
-        if (isActive.HasValue)
-            query = query.Where(p => p.IsActive == isActive.Value);
 
         var total = await query.CountAsync();
 

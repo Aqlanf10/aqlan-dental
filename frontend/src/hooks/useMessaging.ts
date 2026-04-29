@@ -1,71 +1,70 @@
+"use client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type {
-  Conversation,
-  Message,
-  DoctorForMessaging,
+  ConversationListItem,
+  ConversationDetail,
   CreateConversationRequest,
   SendMessageRequest,
+  UnreadCount,
 } from "@/types/messaging";
 
-// ── Get all conversations for current user ────────────────────────────────
-export function useConversations() {
+// ─── جلب محادثاتي ────────────────────────────────────────────────────────────
+export function useConversations(page = 1, search?: string) {
   return useQuery({
-    queryKey: ["conversations"],
+    queryKey: ["conversations", page, search],
     queryFn: async () => {
-      const { data } = await api.get<Conversation[]>("/api/messages/conversations");
-      return data;
+      const params = new URLSearchParams({ page: String(page), pageSize: "20" });
+      if (search) params.set("search", search);
+      const { data } = await api.get(`/api/messages/conversations?${params}`);
+      return data as {
+        data: ConversationListItem[];
+        totalCount: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+      };
     },
-    staleTime: 10_000,
-  });
-}
-
-// ── Get messages in a conversation ────────────────────────────────────────
-export function useMessages(conversationId: string | null) {
-  return useQuery({
-    queryKey: ["messages", conversationId],
-    queryFn: async () => {
-      const { data } = await api.get<Message[]>(
-        `/api/messages/conversations/${conversationId}/messages`
-      );
-      return data;
-    },
-    enabled: !!conversationId,
     staleTime: 5_000,
   });
 }
 
-// ── Get doctors/staff for new conversation ────────────────────────────────
-export function useDoctorsForMessaging() {
+// ─── جلب تفاصيل محادثة ──────────────────────────────────────────────────────
+export function useConversation(conversationId: string | null, page = 1) {
   return useQuery({
-    queryKey: ["doctors-for-messaging"],
+    queryKey: ["conversation", conversationId, page],
     queryFn: async () => {
-      const { data } = await api.get<DoctorForMessaging[]>("/api/messages/doctors");
-      return data;
+      if (!conversationId) return null;
+      const { data } = await api.get(
+        `/api/messages/conversations/${conversationId}?page=${page}&pageSize=50`
+      );
+      return data as ConversationDetail;
     },
-    staleTime: 60_000,
+    enabled: !!conversationId,
+    staleTime: 3_000,
   });
 }
 
-// ── Get total unread count ────────────────────────────────────────────────
-export function useMessageUnreadCount() {
+// ─── عدد الرسائل غير المقروءة ────────────────────────────────────────────────
+export function useUnreadCount() {
   return useQuery({
-    queryKey: ["message-unread-count"],
+    queryKey: ["unreadCount"],
     queryFn: async () => {
-      const { data } = await api.get<{ count: number }>("/api/messages/unread-count");
-      return data.count;
+      const { data } = await api.get("/api/messages/unread-count");
+      return data as UnreadCount;
     },
-    staleTime: 15_000,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   });
 }
 
-// ── Create a new conversation ─────────────────────────────────────────────
+// ─── إنشاء محادثة ────────────────────────────────────────────────────────────
 export function useCreateConversation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (req: CreateConversationRequest) => {
-      const { data } = await api.post<Conversation>("/api/messages/conversations", req);
-      return data;
+      const { data } = await api.post("/api/messages/conversations", req);
+      return data as ConversationDetail;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -73,35 +72,37 @@ export function useCreateConversation() {
   });
 }
 
-// ── Send a message ────────────────────────────────────────────────────────
-export function useSendMessage() {
+// ─── إرسال رسالة ──────────────────────────────────────────────────────────────
+export function useSendMessage(conversationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ conversationId, req }: { conversationId: string; req: SendMessageRequest }) => {
-      const { data } = await api.post<Message>(
+    mutationFn: async (req: SendMessageRequest) => {
+      const { data } = await api.post(
         `/api/messages/conversations/${conversationId}/messages`,
         req
       );
       return data;
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["messages", variables.conversationId] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["conversation", conversationId],
+      });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      queryClient.invalidateQueries({ queryKey: ["message-unread-count"] });
+      queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
     },
   });
 }
 
-// ── Mark conversation as read ─────────────────────────────────────────────
-export function useMarkAsRead() {
+// ─── تحديد كمقروء ────────────────────────────────────────────────────────────
+export function useMarkAsRead(conversationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (conversationId: string) => {
-      await api.put(`/api/messages/conversations/${conversationId}/read`);
+    mutationFn: async () => {
+      await api.post(`/api/messages/conversations/${conversationId}/read`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      queryClient.invalidateQueries({ queryKey: ["message-unread-count"] });
+      queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
     },
   });
 }

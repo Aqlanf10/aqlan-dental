@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, CalendarDays, Plus, Stethoscope } from "lucide-react";
+import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
@@ -15,8 +15,6 @@ const MONTHS_AR = [
   "يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر",
 ];
 
-const DOCTOR_COLORS = ["#3d7ab5", "#f5922e", "#22c55e", "#a855f7", "#ef4444"];
-
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -25,12 +23,6 @@ function toDateStr(d: Date): string {
 }
 
 type ViewMode = "day" | "week" | "month";
-
-const VIEW_TABS: { key: ViewMode; label: string }[] = [
-  { key: "day",   label: "يومي" },
-  { key: "week",  label: "أسبوعي" },
-  { key: "month", label: "شهري" },
-];
 
 export default function AppointmentsPage() {
   const [date, setDate]       = useState(() => toDateStr(new Date()));
@@ -78,29 +70,24 @@ export default function AppointmentsPage() {
   };
 
   return (
-    <div className="space-y-5" dir="rtl">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: "#0d2137" }}>
-            المواعيد
-          </h1>
-          <p className="text-sm mt-0.5" style={{ color: "#64748b" }}>
+          <h1 className="text-2xl font-extrabold text-gray-900">المواعيد</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
             {view === "day" ? "جدول المواعيد اليومي" : view === "week" ? "عرض الأسبوع" : "عرض الشهر"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Doctor filter */}
           {doctors.length > 0 && (
             <div className="relative flex items-center">
-              <Stethoscope
-                className="absolute end-2.5 w-3.5 h-3.5 pointer-events-none"
-                style={{ color: "#94a3b8" }}
-              />
+              <Stethoscope className="absolute end-2.5 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
               <select
                 value={doctorId}
                 onChange={(e) => setDoctorId(e.target.value)}
-                className="aqlan-select pe-8 ps-3 py-2 text-sm min-w-[150px]"
+                className="pe-8 ps-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal appearance-none"
               >
                 <option value="">كل الأطباء</option>
                 {doctors.map((d) => (
@@ -110,57 +97,42 @@ export default function AppointmentsPage() {
             </div>
           )}
 
-          {/* Doctor color indicators */}
-          {doctors.length > 0 && (
-            <div className="hidden md:flex items-center gap-2">
-              {doctors.slice(0, 5).map((d, i) => (
-                <div key={d.id} className="flex items-center gap-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: DOCTOR_COLORS[i % DOCTOR_COLORS.length] }}
-                  />
-                  <span className="text-xs" style={{ color: "#64748b" }}>{d.name}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Segmented View Toggle */}
-          <div
-            className="flex items-center p-1 rounded-[10px]"
-            style={{ backgroundColor: "#f0f5fb" }}
-          >
-            {VIEW_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setView(tab.key)}
-                className={cn(
-                  "px-4 py-1.5 text-sm rounded-[8px] transition-all duration-200",
-                )}
-                style={
-                  view === tab.key
-                    ? {
-                        backgroundColor: "#ffffff",
-                        color: "#0d2137",
-                        fontWeight: 700,
-                        boxShadow: "0 1px 3px rgba(13,33,55,0.1)",
-                      }
-                    : {
-                        backgroundColor: "transparent",
-                        color: "#64748b",
-                        fontWeight: 400,
-                      }
-                }
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* View toggle */}
+          <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => setView("day")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition",
+                view === "day" ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-50"
+              )}
+            >
+              <List className="w-3.5 h-3.5" />
+              يومي
+            </button>
+            <button
+              onClick={() => setView("week")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition border-r border-l border-gray-200",
+                view === "week" ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-50"
+              )}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              أسبوعي
+            </button>
+            <button
+              onClick={() => setView("month")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition",
+                view === "month" ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-50"
+              )}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              شهري
+            </button>
           </div>
-
-          {/* Add Appointment */}
           <Link
             href="/appointments/new"
-            className="btn-blue flex items-center gap-2"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
           >
             <Plus className="w-4 h-4" />
             موعد جديد
@@ -169,34 +141,24 @@ export default function AppointmentsPage() {
       </div>
 
       {/* Date Navigator */}
-      <div
-        className="rounded-xl border p-4"
-        style={{
-          backgroundColor: "#ffffff",
-          borderColor: "#e8f0f9",
-          boxShadow: "0 1px 3px rgba(13,33,55,0.06)",
-        }}
-      >
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-3">
           <button
             onClick={navigatePrev}
-            className="p-1.5 rounded-lg transition-colors"
-            style={{ color: "#64748b" }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#f0f5fb"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500"
             aria-label="السابق"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
 
           <div className="flex-1 flex items-center gap-3">
-            <CalendarDays className="w-5 h-5 flex-shrink-0" style={{ color: "#3d7ab5" }} />
+            <CalendarDays className="w-5 h-5 text-clinic-teal flex-shrink-0" />
             <div>
-              <div className="font-bold" style={{ color: "#0d2137" }}>
+              <div className="font-bold text-gray-900">
                 {view === "month" ? monthLabel : formatArabicDate(date)}
               </div>
               {isToday && view !== "month" && (
-                <span className="text-xs font-medium" style={{ color: "#3d7ab5" }}>اليوم</span>
+                <span className="text-xs text-clinic-teal font-medium">اليوم</span>
               )}
             </div>
           </div>
@@ -206,17 +168,13 @@ export default function AppointmentsPage() {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="aqlan-input px-2 py-1.5 text-sm"
-              style={{ borderRadius: "0.5rem" }}
+              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
             />
           )}
 
           <button
             onClick={navigateNext}
-            className="p-1.5 rounded-lg transition-colors"
-            style={{ color: "#64748b" }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#f0f5fb"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500"
             aria-label="التالي"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -225,17 +183,7 @@ export default function AppointmentsPage() {
           {(!isToday || view === "month") && (
             <button
               onClick={() => setDate(toDateStr(new Date()))}
-              className="text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors"
-              style={{
-                borderColor: "#3d7ab5",
-                color: "#3d7ab5",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#3d7ab518";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-              }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-clinic-teal text-clinic-teal hover:bg-teal-50 transition font-medium"
             >
               اليوم
             </button>
@@ -244,14 +192,7 @@ export default function AppointmentsPage() {
       </div>
 
       {/* Schedule */}
-      <div
-        className="rounded-xl border p-5"
-        style={{
-          backgroundColor: "#ffffff",
-          borderColor: "#e8f0f9",
-          boxShadow: "0 1px 3px rgba(13,33,55,0.06)",
-        }}
-      >
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         {view === "day" ? (
           <DaySchedule date={date} doctorId={doctorId || undefined} />
         ) : view === "week" ? (

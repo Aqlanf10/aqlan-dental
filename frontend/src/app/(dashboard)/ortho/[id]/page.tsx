@@ -2,23 +2,15 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity, ClipboardCheck, ListChecks, FileText, Plus, Trash2, Save, ShieldCheck, Camera, Ruler, Sparkles, Target } from "lucide-react";
-import type { OrthoCase, TreatmentStage, OrthoVisit, TreatmentPlanDto, TreatmentPlanListDto, ModelAnalysisDto } from "@/types/ortho";
+import { GitBranch, User, Calendar, Wallet, ClipboardList, Activity, ClipboardCheck, ListChecks, FileText, Plus, Trash2, Save } from "lucide-react";
+import type { OrthoCase, TreatmentStage, OrthoVisit } from "@/types/ortho";
 import type { Contract } from "@/types/finance";
-import type { ProblemListSuggestion, ExtractionDecisionAnalysis } from "@/types/ai";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
-import { RetentionTab } from "@/components/ortho/RetentionTab";
-import { PhotosRadiographsTab } from "@/components/ortho/PhotosRadiographsTab";
-import { TreatmentPlanAB } from "@/components/ortho/TreatmentPlanAB";
-import { ModelAnalysisTab } from "@/components/ortho/ModelAnalysisTab";
-import { AiCaseSummary } from "@/components/ortho/AiCaseSummary";
-import { VtoModule } from "@/components/ceph/VtoModule";
-import { useProblemListSuggestion, useExtractionDecision, useOrthoCaseDataForAi } from "@/hooks/useAiAdvisory";
 
-type Tab = "info" | "exam" | "problems" | "plan" | "extraction" | "stages" | "visits" | "retention" | "photos" | "model" | "finance" | "summary" | "vto";
+type Tab = "info" | "exam" | "problems" | "plan" | "extraction" | "stages" | "visits" | "finance";
 
 const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "info",       label: "المعلومات",     icon: User },
@@ -28,12 +20,7 @@ const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "extraction", label: "قرار الخلع",    icon: Activity },
   { key: "stages",     label: "مراحل العلاج",  icon: GitBranch },
   { key: "visits",     label: "سجل الزيارات",  icon: Calendar },
-  { key: "retention",  label: "الاحتفاظ",      icon: ShieldCheck },
-  { key: "photos",     label: "الصور والأشعة",  icon: Camera },
-  { key: "model",      label: "تحليل الموديل", icon: Ruler },
   { key: "finance",    label: "العقد المالي",   icon: Wallet },
-  { key: "summary",    label: "ملخص AI",       icon: Sparkles },
-  { key: "vto",         label: "VTO",           icon: Target },
 ];
 
 interface ClinicalExam {
@@ -62,8 +49,7 @@ interface ClinicalExam {
 }
 
 function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: ClinicalExam | null }) {
-  const inputCls = "w-full px-3 py-2 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]";
-  const inputStyle = { borderColor: "#dce8f5" };
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
   const [form, setForm] = useState<ClinicalExam>(initial ?? {});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -119,14 +105,13 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <input
               type="date"
               className={inputCls}
-              style={inputStyle}
               value={form.examDate ?? ""}
               onChange={(e) => set("examDate", e.target.value)}
             />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">التماثل الوجهي</label>
-            <select className={inputCls} style={inputStyle} value={form.facialSymmetry ?? ""} onChange={(e) => set("facialSymmetry", e.target.value || undefined)}>
+            <select className={inputCls} value={form.facialSymmetry ?? ""} onChange={(e) => set("facialSymmetry", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="متماثل">متماثل</option>
               <option value="غير متماثل">غير متماثل</option>
@@ -134,7 +119,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">الملف</label>
-            <select className={inputCls} style={inputStyle} value={form.profile ?? ""} onChange={(e) => set("profile", e.target.value || undefined)}>
+            <select className={inputCls} value={form.profile ?? ""} onChange={(e) => set("profile", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="Class I">Class I</option>
               <option value="Convex">Convex</option>
@@ -143,7 +128,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">خط الابتسامة</label>
-            <select className={inputCls} style={inputStyle} value={form.smileLine ?? ""} onChange={(e) => set("smileLine", e.target.value || undefined)}>
+            <select className={inputCls} value={form.smileLine ?? ""} onChange={(e) => set("smileLine", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="منخفض">منخفض</option>
               <option value="متوسط">متوسط</option>
@@ -152,7 +137,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">التناسب الرأسي</label>
-            <select className={inputCls} style={inputStyle} value={form.verticalProportion ?? ""} onChange={(e) => set("verticalProportion", e.target.value || undefined)}>
+            <select className={inputCls} value={form.verticalProportion ?? ""} onChange={(e) => set("verticalProportion", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="طبيعي">طبيعي</option>
               <option value="قصير">قصير</option>
@@ -163,7 +148,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <input
               id="lipsCompetence"
               type="checkbox"
-              className="w-4 h-4 accent-[#a855f7]"
+              className="w-4 h-4 accent-clinic-teal"
               checked={form.lipsCompetence ?? false}
               onChange={(e) => set("lipsCompetence", e.target.checked)}
             />
@@ -178,7 +163,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">علاقة الرحى</label>
-            <select className={inputCls} style={inputStyle} value={form.molarRelation ?? ""} onChange={(e) => set("molarRelation", e.target.value || undefined)}>
+            <select className={inputCls} value={form.molarRelation ?? ""} onChange={(e) => set("molarRelation", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="Class I">Class I</option>
               <option value="Class II">Class II</option>
@@ -187,7 +172,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">علاقة الناب</label>
-            <select className={inputCls} style={inputStyle} value={form.canineRelation ?? ""} onChange={(e) => set("canineRelation", e.target.value || undefined)}>
+            <select className={inputCls} value={form.canineRelation ?? ""} onChange={(e) => set("canineRelation", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="Class I">Class I</option>
               <option value="Class II">Class II</option>
@@ -200,7 +185,6 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
               type="number"
               step="0.1"
               className={inputCls}
-              style={inputStyle}
               value={form.overjet ?? ""}
               onChange={(e) => set("overjet", e.target.value ? parseFloat(e.target.value) : undefined)}
             />
@@ -211,14 +195,13 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
               type="number"
               step="0.1"
               className={inputCls}
-              style={inputStyle}
               value={form.overbite ?? ""}
               onChange={(e) => set("overbite", e.target.value ? parseFloat(e.target.value) : undefined)}
             />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">تكدس علوي</label>
-            <select className={inputCls} style={inputStyle} value={form.upperCrowding ?? ""} onChange={(e) => set("upperCrowding", e.target.value || undefined)}>
+            <select className={inputCls} value={form.upperCrowding ?? ""} onChange={(e) => set("upperCrowding", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="لا يوجد">لا يوجد</option>
               <option value="خفيف">خفيف</option>
@@ -228,7 +211,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">تكدس سفلي</label>
-            <select className={inputCls} style={inputStyle} value={form.lowerCrowding ?? ""} onChange={(e) => set("lowerCrowding", e.target.value || undefined)}>
+            <select className={inputCls} value={form.lowerCrowding ?? ""} onChange={(e) => set("lowerCrowding", e.target.value || undefined)}>
               <option value="">— اختر —</option>
               <option value="لا يوجد">لا يوجد</option>
               <option value="خفيف">خفيف</option>
@@ -238,17 +221,17 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">الخط المتوسط العلوي</label>
-            <input type="text" className={inputCls} style={inputStyle} value={form.midlineUpper ?? ""} onChange={(e) => set("midlineUpper", e.target.value || undefined)} />
+            <input type="text" className={inputCls} value={form.midlineUpper ?? ""} onChange={(e) => set("midlineUpper", e.target.value || undefined)} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">الخط المتوسط السفلي</label>
-            <input type="text" className={inputCls} style={inputStyle} value={form.midlineLower ?? ""} onChange={(e) => set("midlineLower", e.target.value || undefined)} />
+            <input type="text" className={inputCls} value={form.midlineLower ?? ""} onChange={(e) => set("midlineLower", e.target.value || undefined)} />
           </div>
           <div className="flex items-center gap-4 pt-5">
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
-                className="w-4 h-4 accent-[#a855f7]"
+                className="w-4 h-4 accent-clinic-teal"
                 checked={form.crossbite ?? false}
                 onChange={(e) => set("crossbite", e.target.checked)}
               />
@@ -257,7 +240,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
-                className="w-4 h-4 accent-[#a855f7]"
+                className="w-4 h-4 accent-clinic-teal"
                 checked={form.openBite ?? false}
                 onChange={(e) => set("openBite", e.target.checked)}
               />
@@ -275,7 +258,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <input
               id="coCrDiscrepancy"
               type="checkbox"
-              className="w-4 h-4 accent-[#a855f7]"
+              className="w-4 h-4 accent-clinic-teal"
               checked={form.coCrDiscrepancy ?? false}
               onChange={(e) => set("coCrDiscrepancy", e.target.checked)}
             />
@@ -316,50 +299,15 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-5 py-2 text-sm font-medium rounded-xl text-white hover:opacity-90 transition disabled:opacity-50"
-          style={{ backgroundColor: "#a855f7" }}
+          className="px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
         >
           {saving ? "جاري الحفظ..." : "حفظ الفحص"}
         </button>
         {saved && (
-          <span className="text-sm font-medium" style={{ color: "#22c55e" }}>تم الحفظ بنجاح</span>
+          <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>
         )}
       </div>
     </div>
-  );
-}
-
-// ─── AI Problem List Button ──────────────────────────────────────────────────
-function AiProblemListButton({ caseId, onSuggestions }: { caseId: string; onSuggestions: (items: ProblemListSuggestion[]) => void }) {
-  const suggestMutation = useProblemListSuggestion();
-  const { data: caseData } = useOrthoCaseDataForAi(caseId);
-
-  const handleSuggest = async () => {
-    if (!caseData) return;
-    suggestMutation.mutate(
-      {
-        clinicalExam: caseData.ClinicalExam,
-        cephMeasurements: caseData.CephAnalysis?.Measurements,
-        patientAge: caseData.OrthoCase?.PatientAge,
-        patientGender: caseData.OrthoCase?.PatientGender,
-      },
-      {
-        onSuccess: (data) => {
-          if (data.suggestions) onSuggestions(data.suggestions);
-        },
-      }
-    );
-  };
-
-  return (
-    <button
-      onClick={handleSuggest}
-      disabled={suggestMutation.isPending || !caseData}
-      className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-1.5"
-    >
-      <Sparkles className="w-3 h-3" />
-      {suggestMutation.isPending ? "جاري التحليل..." : "اقتراح المشاكل"}
-    </button>
   );
 }
 
@@ -377,7 +325,7 @@ const CATEGORY_LABELS: Record<string, string> = { skeletal:"هيكلية", denta
 const SEVERITY_COLORS: Record<string, string> = { mild:"bg-yellow-100 text-yellow-700", moderate:"bg-orange-100 text-orange-700", severe:"bg-red-100 text-red-700" };
 
 function ProblemListTab({ caseId }: { caseId: string }) {
-  const inputCls = "px-3 py-2 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]";
+  const inputCls = "px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
   const [items, setItems] = useState<ProblemItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ category: "skeletal", description: "", severity: "" });
@@ -407,7 +355,7 @@ function ProblemListTab({ caseId }: { caseId: string }) {
     } catch {}
   };
 
-  if (loading) return <div className="animate-pulse h-40 rounded-xl" style={{ backgroundColor: "#f7fafd" }} />;
+  if (loading) return <div className="animate-pulse h-40 bg-gray-100 rounded-xl" />;
 
   return (
     <div className="space-y-4">
@@ -428,36 +376,11 @@ function ProblemListTab({ caseId }: { caseId: string }) {
           </select>
         </div>
         <button onClick={handleAdd} disabled={adding || !form.description.trim()}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl text-white hover:opacity-90 disabled:opacity-60 transition"
-          style={{ backgroundColor: "#a855f7" }}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Plus className="w-4 h-4" />
           {adding ? "جاري الإضافة..." : "إضافة"}
         </button>
-      </div>
-
-      {/* AI Suggestion */}
-      <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-600" />
-            <h3 className="text-sm font-semibold text-purple-800">اقتراح ذكي</h3>
-            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded-full">مقترح</span>
-          </div>
-          <AiProblemListButton caseId={caseId} onSuggestions={(suggestions) => {
-            // Auto-add suggestions
-            suggestions.forEach(async (s) => {
-              try {
-                const { data } = await api.post<ProblemItem>(`/api/ortho-cases/${caseId}/problem-list`, {
-                  category: s.category,
-                  description: s.description,
-                  severity: s.severity,
-                });
-                setItems((prev) => [...prev, data]);
-              } catch {}
-            });
-          }} />
-        </div>
       </div>
 
       {/* List */}
@@ -492,37 +415,108 @@ function ProblemListTab({ caseId }: { caseId: string }) {
   );
 }
 
-// ─── AI Extraction Button ────────────────────────────────────────────────────
-function AiExtractionButton({ caseId, onAnalysis }: { caseId: string; onAnalysis: (analysis: ExtractionDecisionAnalysis) => void }) {
-  const extractionMutation = useExtractionDecision();
-  const { data: caseData } = useOrthoCaseDataForAi(caseId);
+// ─── Treatment Plan Tab ───────────────────────────────────────────────────────
+interface TreatmentPlanData {
+  applianceType?: string; bracketSystem?: string; initialWire?: string;
+  extractionPlan?: string; anchoragePlan?: string; useTads?: boolean;
+  useElastics?: boolean; expectedDurationMonths?: number; retentionPlan?: string;
+  treatmentGoals?: string; risksLimitations?: string;
+  isApproved?: boolean; approvedByName?: string; approvedAt?: string;
+}
 
-  const handleAnalyze = async () => {
-    if (!caseData) return;
-    extractionMutation.mutate(
-      {
-        clinicalExam: caseData.ClinicalExam,
-        cephMeasurements: caseData.CephAnalysis?.Measurements,
-        modelAnalysis: caseData.ModelAnalysis,
-        patientAge: caseData.OrthoCase?.PatientAge,
-        patientGender: caseData.OrthoCase?.PatientGender,
-        problemList: caseData.ProblemList,
-      },
-      {
-        onSuccess: (data) => onAnalysis(data),
-      }
-    );
+function TreatmentPlanTab({ caseId }: { caseId: string }) {
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const [form, setForm] = useState<TreatmentPlanData>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get<TreatmentPlanData | null>(`/api/ortho-cases/${caseId}/treatment-plan`)
+      .then((r) => { if (r.data) setForm(r.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [caseId]);
+
+  const set = <K extends keyof TreatmentPlanData>(key: K, value: TreatmentPlanData[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const handleSave = async () => {
+    setSaving(true); setSaved(false);
+    try {
+      await api.put(`/api/ortho-cases/${caseId}/treatment-plan`, form);
+      setSaved(true); setTimeout(() => setSaved(false), 3000);
+    } catch {} finally { setSaving(false); }
   };
 
+  if (loading) return <div className="animate-pulse h-64 bg-gray-100 rounded-xl" />;
+
   return (
-    <button
-      onClick={handleAnalyze}
-      disabled={extractionMutation.isPending || !caseData}
-      className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-1.5"
-    >
-      <Sparkles className="w-3 h-3" />
-      {extractionMutation.isPending ? "جاري التحليل..." : "تحليل بالذكاء الاصطناعي"}
-    </button>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">نوع الجهاز</label>
+          <input value={form.applianceType ?? ""} onChange={(e) => set("applianceType", e.target.value)} className={inputCls} placeholder="MBT 0.022 / Invisalign..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">نظام البراكيت</label>
+          <input value={form.bracketSystem ?? ""} onChange={(e) => set("bracketSystem", e.target.value)} className={inputCls} placeholder="MBT / Roth / Damon..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">السلك الأولي</label>
+          <input value={form.initialWire ?? ""} onChange={(e) => set("initialWire", e.target.value)} className={inputCls} placeholder="0.014 NiTi..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">المدة المتوقعة (أشهر)</label>
+          <input type="number" value={form.expectedDurationMonths ?? ""} onChange={(e) => set("expectedDurationMonths", e.target.value ? Number(e.target.value) : undefined)} className={inputCls} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">خطة الخلع</label>
+          <input value={form.extractionPlan ?? ""} onChange={(e) => set("extractionPlan", e.target.value)} className={inputCls} placeholder="بدون خلع / خلع 4 أضراس..." />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">خطة التثبيت (Anchorage)</label>
+          <input value={form.anchoragePlan ?? ""} onChange={(e) => set("anchoragePlan", e.target.value)} className={inputCls} />
+        </div>
+        <div className="flex items-center gap-6 py-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.useTads ?? false} onChange={(e) => set("useTads", e.target.checked)} className="rounded" />
+            استخدام TADs
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.useElastics ?? false} onChange={(e) => set("useElastics", e.target.checked)} className="rounded" />
+            استخدام مطاطات
+          </label>
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium text-gray-500 mb-1">أهداف العلاج</label>
+          <textarea rows={3} value={form.treatmentGoals ?? ""} onChange={(e) => set("treatmentGoals", e.target.value)} className={inputCls} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium text-gray-500 mb-1">خطة الاحتفاظ</label>
+          <textarea rows={2} value={form.retentionPlan ?? ""} onChange={(e) => set("retentionPlan", e.target.value)} className={inputCls} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium text-gray-500 mb-1">المخاطر والقيود</label>
+          <textarea rows={2} value={form.risksLimitations ?? ""} onChange={(e) => set("risksLimitations", e.target.value)} className={inputCls} />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-gray-100 pt-4">
+        <button onClick={handleSave} disabled={saving}
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+        >
+          <Save className="w-4 h-4" />
+          {saving ? "جاري الحفظ..." : "حفظ الخطة"}
+        </button>
+        {saved && <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>}
+        {form.isApproved && (
+          <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full">
+            معتمدة {form.approvedByName ? `بواسطة ${form.approvedByName}` : ""}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -536,7 +530,7 @@ const EXTRACTION_OPTIONS = [
 ];
 
 function ExtractionDecisionTab({ caseId }: { caseId: string }) {
-  const inputCls = "w-full px-3 py-2 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]";
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
   const [decision, setDecision] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
@@ -567,7 +561,7 @@ function ExtractionDecisionTab({ caseId }: { caseId: string }) {
     } catch {} finally { setSaving(false); }
   };
 
-  if (loading) return <div className="animate-pulse h-40 rounded-xl" style={{ backgroundColor: "#f7fafd" }} />;
+  if (loading) return <div className="animate-pulse h-40 bg-gray-100 rounded-xl" />;
 
   const selectedOption = EXTRACTION_OPTIONS.find((o) => o.value === decision);
 
@@ -581,36 +575,19 @@ function ExtractionDecisionTab({ caseId }: { caseId: string }) {
             className={cn(
               "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition",
               decision === opt.value
-                ? { borderColor: "#a855f7", backgroundColor: "#a855f718" }
-                : { borderColor: "#e8f0f9" }
+                ? "border-clinic-teal bg-teal-50"
+                : "border-gray-200 hover:border-gray-300"
             )}
           >
             <input type="radio" name="extraction" value={opt.value} checked={decision === opt.value}
               onChange={() => { setDecision(opt.value); setSaved(false); }}
-              className="accent-[#a855f7]"
+              className="text-clinic-teal"
             />
-            <span className={cn("text-sm font-medium", decision === opt.value ? { color: "#a855f7" } : { color: "#0d2137" })}>
+            <span className={cn("text-sm font-medium", decision === opt.value ? "text-clinic-teal" : "text-gray-700")}>
               {opt.label}
             </span>
           </label>
         ))}
-      </div>
-
-      {/* AI Extraction Analysis */}
-      <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-600" />
-            <h4 className="text-sm font-semibold text-purple-800">تحليل AI لقرار الخلع</h4>
-            <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded-full">مقترح</span>
-          </div>
-          <AiExtractionButton caseId={caseId} onAnalysis={(analysis) => {
-            // Auto-select AI recommendation
-            if (analysis.recommendation) {
-              setDecision(analysis.recommendation);
-            }
-          }} />
-        </div>
       </div>
 
       {/* Decision summary */}
@@ -635,13 +612,12 @@ function ExtractionDecisionTab({ caseId }: { caseId: string }) {
 
       <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
         <button onClick={handleSave} disabled={saving || !decision}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-xl text-white hover:opacity-90 disabled:opacity-60 transition"
-          style={{ backgroundColor: "#a855f7" }}
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جاري الحفظ..." : "تأكيد القرار"}
         </button>
-        {saved && <span className="text-sm font-medium" style={{ color: "#22c55e" }}>تم الحفظ بنجاح</span>}
+        {saved && <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>}
         {decidedBy && (
           <span className="text-xs text-gray-400">
             آخر تحديث: {decidedBy} {decidedAt ? `· ${decidedAt}` : ""}
@@ -676,7 +652,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
   };
 
   if (loading) {
-    return <div className="space-y-2 animate-pulse">{Array.from({length:2}).map((_,i)=><div key={i} className="h-20 rounded-xl" style={{ backgroundColor: "#f7fafd" }}/>)}</div>;
+    return <div className="space-y-2 animate-pulse">{Array.from({length:2}).map((_,i)=><div key={i} className="h-20 bg-gray-100 rounded-xl"/>)}</div>;
   }
 
   return (
@@ -685,8 +661,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
         <h3 className="font-semibold text-gray-900">عقود المريض</h3>
         <Link
           href={`/finance/contracts/new?patientId=${patientId}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-xl text-white hover:opacity-90 transition"
-          style={{ backgroundColor: "#3d7ab5" }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
         >
           <Plus className="w-3.5 h-3.5" />
           عقد جديد
@@ -704,8 +679,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
             const pct = net > 0 ? Math.min(100, Math.round((c.paidAmount / net) * 100)) : 0;
             return (
               <Link key={c.id} href={`/finance/contracts/${c.id}`}
-                className="block rounded-xl border p-4 hover:shadow-sm transition"
-                style={{ backgroundColor: "#f7fafd", borderColor: "#e8f0f9" }}
+                className="block bg-gray-50 rounded-xl border border-gray-200 p-4 hover:border-clinic-teal/40 hover:shadow-sm transition"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -731,7 +705,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
                 <div className="mt-3">
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "linear-gradient(to left, #3d7ab5, #2d5e8e)" }} />
+                      <div className="h-full bg-clinic-teal rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-xs text-gray-500 flex-shrink-0">{pct}%</span>
                   </div>
@@ -753,9 +727,6 @@ export default function OrthoCaseDetailPage() {
   const [orthoCase, setOrthoCase] = useState<OrthoCase | null>(null);
   const [visits, setVisits] = useState<OrthoVisit[]>([]);
   const [clinicalExam, setClinicalExam] = useState<ClinicalExam | null>(null);
-  const [treatmentPlans, setTreatmentPlans] = useState<TreatmentPlanDto[]>([]);
-  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>();
-  const [modelAnalysis, setModelAnalysis] = useState<ModelAnalysisDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("info");
 
@@ -764,29 +735,15 @@ export default function OrthoCaseDetailPage() {
       api.get<OrthoCase>(`/api/ortho-cases/${id}`),
       api.get<OrthoVisit[]>(`/api/ortho-cases/${id}/visits`),
       api.get<ClinicalExam | null>(`/api/ortho-cases/${id}/clinical-exam`),
-      api.get<TreatmentPlanListDto>(`/api/ortho-cases/${id}/treatment-plans`).catch((): { data: TreatmentPlanListDto } => ({ data: { plans: [] } })),
-      api.get<ModelAnalysisDto>(`/api/ortho-cases/${id}/model-analysis`).catch(() => ({ data: null })),
     ])
-      .then(([caseRes, visitsRes, examRes, plansRes, analysisRes]) => {
+      .then(([caseRes, visitsRes, examRes]) => {
         setOrthoCase(caseRes.data);
         setVisits(visitsRes.data);
         setClinicalExam(examRes.data);
-        setTreatmentPlans(plansRes.data?.plans ?? []);
-        setSelectedPlanId(plansRes.data?.selectedPlanId);
-        setModelAnalysis(analysisRes.data);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
-
-  const refetchPlans = () => {
-    api.get<TreatmentPlanListDto>(`/api/ortho-cases/${id}/treatment-plans`)
-      .then((res) => {
-        setTreatmentPlans(res.data?.plans ?? []);
-        setSelectedPlanId(res.data?.selectedPlanId);
-      })
-      .catch(() => {});
-  };
 
   const handleStageUpdate = (updated: TreatmentStage) => {
     setOrthoCase((prev) =>
@@ -802,8 +759,8 @@ export default function OrthoCaseDetailPage() {
   if (loading) {
     return (
       <div className="space-y-4 animate-pulse">
-        <div className="h-28 rounded-xl" style={{ backgroundColor: "#f7fafd" }} />
-        <div className="h-64 rounded-xl" style={{ backgroundColor: "#f7fafd" }} />
+        <div className="h-28 bg-gray-100 rounded-xl" />
+        <div className="h-64 bg-gray-100 rounded-xl" />
       </div>
     );
   }
@@ -818,35 +775,31 @@ export default function OrthoCaseDetailPage() {
     <div className="space-y-5 max-w-5xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/ortho" className="hover:opacity-80 transition" style={{ color: "#3d7ab5" }}>التقويم</Link>
+        <Link href="/ortho" className="hover:text-clinic-teal transition">التقويم</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{orthoCase.caseNumber}</span>
       </div>
 
       {/* Banner */}
-      <div className="bg-white rounded-xl border shadow-sm p-5" style={{ borderColor: "#e8f0f9", boxShadow: "0 1px 3px rgba(13,33,55,0.06)" }}>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white flex-shrink-0"
-              style={{ backgroundColor: "#a855f7" }}
+              style={{ backgroundColor: orthoCase.doctorColor ?? "#0E7490" }}
             >
               <GitBranch className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-xl font-extrabold" style={{ color: "#0d2137" }}>{orthoCase.patientName}</h1>
-                <span className="font-mono text-xs px-2.5 py-1 rounded" style={{ backgroundColor: "#f0f5fb", color: "#64748b" }}>
+                <h1 className="text-xl font-extrabold text-gray-900">{orthoCase.patientName}</h1>
+                <span className="font-mono text-xs bg-gray-100 px-2.5 py-1 rounded text-gray-600">
                   {orthoCase.caseNumber}
                 </span>
-                <span
-                  className="text-xs py-0.5 rounded-full font-medium"
-                  style={{
-                    padding: "2px 10px",
-                    backgroundColor: orthoCase.status === "active" ? "#3d7ab518" : orthoCase.status === "completed" ? "#22c55e18" : "#94a3b818",
-                    color: orthoCase.status === "active" ? "#3d7ab5" : orthoCase.status === "completed" ? "#22c55e" : "#94a3b8",
-                  }}
-                >
-                  {orthoCase.status === "active" ? "نشطة" : orthoCase.status === "completed" ? "مكتملة" : orthoCase.status}
+                <span className={cn(
+                  "text-xs px-2 py-0.5 rounded-full font-medium",
+                  orthoCase.status === "active" ? "bg-teal-50 text-teal-700" : "bg-gray-100 text-gray-500"
+                )}>
+                  {orthoCase.status === "active" ? "نشطة" : orthoCase.status}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
@@ -869,13 +822,13 @@ export default function OrthoCaseDetailPage() {
 
               {/* Progress bar */}
               <div className="mt-3 flex items-center gap-3">
-                <div className="flex-1 h-2 rounded-full overflow-hidden max-w-xs" style={{ backgroundColor: "#f1f5f9" }}>
+                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-xs">
                   <div
-                    className="h-full rounded-full transition-all"
-                    style={{ width: `${progress}%`, background: "linear-gradient(to left, #3d7ab5, #2d5e8e)" }}
+                    className="h-full bg-clinic-teal rounded-full transition-all"
+                    style={{ width: `${progress}%` }}
                   />
                 </div>
-                <span className="text-xs font-medium" style={{ color: "#64748b" }}>{progress}% مكتمل</span>
+                <span className="text-xs font-medium text-gray-600">{progress}% مكتمل</span>
               </div>
             </div>
           </div>
@@ -890,17 +843,18 @@ export default function OrthoCaseDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden" style={{ borderColor: "#e8f0f9", boxShadow: "0 1px 3px rgba(13,33,55,0.06)" }}>
-        <div className="flex overflow-x-auto" style={{ borderBottom: "2px solid #e8f0f9" }}>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="flex border-b border-gray-100 overflow-x-auto">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className="flex items-center gap-2 px-5 py-3.5 text-sm whitespace-nowrap border-b-2 transition -mb-[2px]"
-              style={activeTab === key
-                ? { color: "#3d7ab5", fontWeight: 700, borderBottomColor: "#3d7ab5" }
-                : { color: "#64748b", fontWeight: 500, borderBottomColor: "transparent" }
-              }
+              className={cn(
+                "flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition",
+                activeTab === key
+                  ? "border-clinic-teal text-clinic-teal"
+                  : "border-transparent text-gray-500 hover:text-gray-900"
+              )}
             >
               <Icon className="w-4 h-4" />
               {label}
@@ -933,8 +887,7 @@ export default function OrthoCaseDetailPage() {
             <div className="pt-2 border-t border-gray-100">
               <Link
                 href={`/ceph/new?orthoCaseId=${id}`}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border transition"
-                style={{ borderColor: "#3d7ab5", color: "#3d7ab5" }}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-teal text-clinic-teal hover:bg-clinic-teal/10 transition"
               >
                 <Activity className="w-4 h-4" />
                 إنشاء تحليل سيفالومتري
@@ -952,12 +905,7 @@ export default function OrthoCaseDetailPage() {
           )}
 
           {activeTab === "plan" && (
-            <TreatmentPlanAB
-              orthoCaseId={id}
-              plans={treatmentPlans}
-              selectedPlanId={selectedPlanId}
-              onPlansChange={refetchPlans}
-            />
+            <TreatmentPlanTab caseId={id} />
           )}
 
           {activeTab === "extraction" && (
@@ -980,20 +928,9 @@ export default function OrthoCaseDetailPage() {
             />
           )}
 
-          {activeTab === "retention" && (
-            <RetentionTab caseId={id} />
-          )}
-          {activeTab === "photos" && orthoCase && (
-            <PhotosRadiographsTab patientId={orthoCase.patientId} orthoCaseId={id} />
-          )}
-          {activeTab === "model" && (
-            <ModelAnalysisTab orthoCaseId={id} modelAnalysis={modelAnalysis} key={modelAnalysis?.id} />
-          )}
           {activeTab === "finance" && orthoCase && (
             <PatientContractsPanel patientId={orthoCase.patientId} />
           )}
-          {activeTab === "summary" && <AiCaseSummary caseId={id} />}
-          {activeTab === "vto" && orthoCase && <VtoModule caseId={id} landmarks={[]} imageWidth={800} imageHeight={600} />}
         </div>
       </div>
     </div>

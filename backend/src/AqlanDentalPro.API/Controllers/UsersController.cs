@@ -99,6 +99,37 @@ public class UsersController(
         return Ok(users);
     }
 
+    /// <summary>قائمة المستخدمين للرسائل — متاح لجميع الأدوار</summary>
+    [HttpGet("contacts")]
+    [Authorize]
+    public async Task<IActionResult> GetContacts()
+    {
+        var users = await db.Users
+            .Where(u => u.IsActive)
+            .OrderBy(u => u.Username)
+            .Select(u => new
+            {
+                u.Id,
+                u.Username,
+                Role = u.Role.ToString(),
+                DoctorName = db.Doctors
+                    .Where(d => d.UserId == u.Id)
+                    .Select(d => d.Name)
+                    .FirstOrDefault(),
+                DoctorColor = db.Doctors
+                    .Where(d => d.UserId == u.Id)
+                    .Select(d => d.Color)
+                    .FirstOrDefault(),
+                DoctorInitials = db.Doctors
+                    .Where(d => d.UserId == u.Id)
+                    .Select(d => d.AvatarInitials)
+                    .FirstOrDefault()
+            })
+            .ToListAsync();
+
+        return Ok(users);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest req)
     {

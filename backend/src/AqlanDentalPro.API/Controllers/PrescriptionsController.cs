@@ -46,7 +46,7 @@ public sealed class CreatePrescriptionRequestValidator : AbstractValidator<Creat
 [ApiController]
 [Route("api/prescriptions")]
 [Authorize]
-public class PrescriptionsController(AppDbContext db, ICurrentUserService currentUser, INotificationService notificationService) : ControllerBase
+public class PrescriptionsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -127,25 +127,8 @@ public class PrescriptionsController(AppDbContext db, ICurrentUserService curren
         db.Prescriptions.Add(prescription);
         await db.SaveChangesAsync();
 
-        await notificationService.NotifyUserAsync(req.DoctorId ?? currentUser.UserId ?? Guid.Empty, "prescription", "وصفة طبية جديدة", "تم إنشاء وصفة طبية جديدة", "prescriptions", prescription.Id);
-
         return CreatedAtAction(nameof(GetById), new { id = prescription.Id },
             new { prescription.Id });
-    }
-
-    [HttpPut("{id:guid}")]
-    public async Task<IActionResult> Update(Guid id, [FromBody] CreatePrescriptionRequest req)
-    {
-        var prescription = await db.Prescriptions.FindAsync(id);
-        if (prescription is null) return NotFound(new { message = "الوصفة الطبية غير موجودة" });
-
-        prescription.Diagnosis = req.Diagnosis;
-        prescription.Drugs = JsonSerializer.SerializeToDocument(req.Drugs);
-        prescription.Notes = req.Notes;
-        if (req.DoctorId.HasValue) prescription.DoctorId = req.DoctorId;
-
-        await db.SaveChangesAsync();
-        return Ok(new { prescription.Id, message = "تم تحديث الوصفة بنجاح" });
     }
 
     [HttpDelete("{id:guid}")]

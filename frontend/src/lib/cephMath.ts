@@ -64,7 +64,7 @@ export function lineAngle(p1: Pt, p2: Pt): number {
 interface Norm {
   normal: number;
   sd: number;
-  unit: '°' | 'mm' | '%';
+  unit: '°' | 'mm';
   nameAr: string;
 }
 
@@ -123,31 +123,6 @@ export const DOWNS_NORMS: Record<string, Norm> = {
   'Y-Axis':          { normal: 59.4, sd: 4, unit: '°', nameAr: 'محور Y (S-Gn/FH)' },
   'Facial-Plane-FH': { normal: 87.8, sd: 3, unit: '°', nameAr: 'مستوى الوجه (N-Pog) / FH' },
   'Mandibular-FH':   { normal: 21.9, sd: 4, unit: '°', nameAr: 'مستوى الفك السفلي / FH' },
-};
-
-export const JARABAK_NORMS: Record<string, Norm> = {
-  'SaddleAngle':    { normal: 123, sd: 5, unit: '°',  nameAr: 'زاوية السرج (N-S-Ar)' },
-  'ArticularAngle': { normal: 143, sd: 6, unit: '°',  nameAr: 'زاوية المفصل (S-Ar-Go)' },
-  'GonialAngle':    { normal: 128, sd: 7, unit: '°',  nameAr: 'زاوية الفكنية (Ar-Go-Me)' },
-  'UpperGonial':    { normal: 52,  sd: 3, unit: '°',  nameAr: 'زاوية فكنية علوية (Ar-Go-N)' },
-  'LowerGonial':    { normal: 76,  sd: 4, unit: '°',  nameAr: 'زاوية فكنية سفلية (N-Go-Me)' },
-  'PFH-SGo':        { normal: 82,  sd: 6, unit: 'mm', nameAr: 'ارتفاع الوجه الخلفي (S-Go)' },
-  'AFH-NMe':        { normal: 122, sd: 6, unit: 'mm', nameAr: 'ارتفاع الوجه الأمامي (N-Me)' },
-  'FH-Ratio':       { normal: 65,  sd: 3, unit: '%',  nameAr: 'نسبة ارتفاع الوجه (خلفي/أمامي)' },
-  'JarabakTotal':   { normal: 396, sd: 6, unit: '°',  nameAr: 'مجموع مضلع جاراباك' },
-};
-
-export const SOFT_TISSUE_NORMS: Record<string, Norm> = {
-  'NasolabialAngle': { normal: 102, sd: 8,  unit: '°',  nameAr: 'الزاوية الأنفية الشفوية' },
-  'MentolabialAngle':{ normal: 132, sd: 10, unit: '°',  nameAr: 'الزاوية الذقنية الشفوية' },
-  'UL-ELine':        { normal: -2,  sd: 2,  unit: 'mm', nameAr: 'الشفة العلوية إلى خط E' },
-  'LL-ELine':        { normal: -2,  sd: 2,  unit: 'mm', nameAr: 'الشفة السفلية إلى خط E' },
-  'UL-SLine-Soft':   { normal: 0,   sd: 1,  unit: 'mm', nameAr: 'الشفة العلوية إلى خط S' },
-  'LL-SLine-Soft':   { normal: 0,   sd: 1,  unit: 'mm', nameAr: 'الشفة السفلية إلى خط S' },
-  'NoseProminence':  { normal: 14,  sd: 2,  unit: 'mm', nameAr: 'بروز الأنف' },
-  'STFacialAngle':   { normal: 87,  sd: 3,  unit: '°',  nameAr: 'زاوية الوجه الرخوة' },
-  'ULLength':        { normal: 22,  sd: 2,  unit: 'mm', nameAr: 'طول الشفة العلوية' },
-  'LLLength':        { normal: 42,  sd: 3,  unit: 'mm', nameAr: 'طول الشفة السفلية' },
 };
 
 // ---------------------------------------------------------------------------
@@ -211,27 +186,6 @@ function arabicInterpretation(
     'UL-SLine':     ['الشفة العلوية بارزة أمام خط S', 'الشفة العلوية مرتدة خلف خط S'],
     'LL-SLine':     ['الشفة السفلية بارزة أمام خط S', 'الشفة السفلية مرتدة خلف خط S'],
     'Wits':         ['تنافر هيكلي من الصنف الثاني (AO أمام BO)', 'تنافر هيكلي من الصنف الثالث (BO أمام AO)'],
-    // ── Jarabak ──
-    'SaddleAngle':    ['زاوية السرج مرتفعة — اتجاه نمو أمامي', 'زاوية السرج منخفضة — اتجاه نمو خلفي'],
-    'ArticularAngle': ['زاوية المفصل مرتفعة — اتجاه نمو رأسي', 'زاوية المفصل منخفضة — اتجاه نمو أفقي'],
-    'GonialAngle':    ['زاوية الفكنية مرتفعة — نمط رأسي (وجه طويل)', 'زاوية الفكنية منخفضة — نمط أفقي (وجه قصير)'],
-    'UpperGonial':    ['الزاوية الفكنية العلوية مرتفعة', 'الزاوية الفكنية العلوية منخفضة'],
-    'LowerGonial':    ['الزاوية الفكنية السفلية مرتفعة — دوران خلفي', 'الزاوية الفكنية السفلية منخفضة — دوران أمامي'],
-    'PFH-SGo':        ['ارتفاع الوجه الخلفي كبير', 'ارتفاع الوجه الخلفي قليل'],
-    'AFH-NMe':        ['ارتفاع الوجه الأمامي كبير (وجه طويل)', 'ارتفاع الوجه الأمامي قليل (وجه قصير)'],
-    'FH-Ratio':       ['نسبة ارتفاع الوجه مرتفعة — نمط أفقي', 'نسبة ارتفاع الوجه منخفضة — نمط رأسي'],
-    'JarabakTotal':   ['مجموع المضلع مرتفع', 'مجموع المضلع منخفض'],
-    // ── Soft Tissue ──
-    'NasolabialAngle':  ['الزاوية الأنفية الشفوية مفتوحة (ميل شفوي للخلف)', 'الزاوية الأنفية الشفوية ضيقة (بروز شفوي)'],
-    'MentolabialAngle': ['الزاوية الذقنية الشفوية مفتوحة', 'الزاوية الذقنية الشفوية ضيقة'],
-    'UL-ELine':         ['الشفة العلوية بارزة أمام خط E', 'الشفة العلوية مرتدة خلف خط E'],
-    'LL-ELine':         ['الشفة السفلية بارزة أمام خط E', 'الشفة السفلية مرتدة خلف خط E'],
-    'UL-SLine-Soft':    ['الشفة العلوية بارزة أمام خط S', 'الشفة العلوية مرتدة خلف خط S'],
-    'LL-SLine-Soft':    ['الشفة السفلية بارزة أمام خط S', 'الشفة السفلية مرتدة خلف خط S'],
-    'NoseProminence':   ['بروز الأنف أكبر من المعدل', 'بروز الأنف أقل من المعدل'],
-    'STFacialAngle':    ['زاوية الوجه الرخوة مرتفعة (بروز الوجه)', 'زاوية الوجه الرخوة منخفضة (تراجع الوجه)'],
-    'ULLength':         ['طول الشفة العلوية كبير', 'طول الشفة العلوية قليل'],
-    'LLLength':         ['طول الشفة السفلية كبير', 'طول الشفة السفلية قليل'],
   };
 
   const [hi, lo] = map[name] ?? ['أعلى من المعدل', 'أقل من المعدل'];
@@ -483,119 +437,20 @@ export function computeDowns(lmMap: Record<string, Pt>): CephMeasurement[] {
 }
 
 // ---------------------------------------------------------------------------
-// Jarabak analysis
-// ---------------------------------------------------------------------------
-
-export function computeJarabak(lmMap: Record<string, Pt>, mmPerPx: number | null): CephMeasurement[] {
-  const cal = mmPerPx !== null && mmPerPx > 0;
-  const G = (k: string) => lmMap[k];
-  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
-  const r: CephMeasurement[] = [];
-  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, JARABAK_NORMS[n], 'jarabak'));
-
-  // Saddle Angle: angle at S between N-S-Ar
-  add('SaddleAngle', has('N','S','Ar') ? r1(angle3(G('N'), G('S'), G('Ar'))) : null);
-
-  // Articular Angle: angle at Ar between S-Ar-Go
-  add('ArticularAngle', has('S','Ar','Go') ? r1(angle3(G('S'), G('Ar'), G('Go'))) : null);
-
-  // Gonial Angle: angle at Go between Ar-Go-Me
-  add('GonialAngle', has('Ar','Go','Me') ? r1(angle3(G('Ar'), G('Go'), G('Me'))) : null);
-
-  // Upper Gonial: angle at Go between Ar-Go-N
-  add('UpperGonial', has('Ar','Go','N') ? r1(angle3(G('Ar'), G('Go'), G('N'))) : null);
-
-  // Lower Gonial: angle at Go between N-Go-Me
-  add('LowerGonial', has('N','Go','Me') ? r1(angle3(G('N'), G('Go'), G('Me'))) : null);
-
-  // Posterior Facial Height: S-Go (mm)
-  const pfh = cal && has('S','Go') ? r1(dist(G('S'), G('Go')) * mmPerPx!) : null;
-  add('PFH-SGo', pfh);
-
-  // Anterior Facial Height: N-Me (mm)
-  const afh = cal && has('N','Me') ? r1(dist(G('N'), G('Me')) * mmPerPx!) : null;
-  add('AFH-NMe', afh);
-
-  // Facial Height Ratio: (PFH/AFH) × 100
-  add('FH-Ratio', pfh !== null && afh !== null && afh !== 0 ? r1((pfh / afh) * 100) : null);
-
-  // Jarabak Total: Saddle + Articular + Gonial
-  const saddle = r.find(m => m.name === 'SaddleAngle')?.value;
-  const articular = r.find(m => m.name === 'ArticularAngle')?.value;
-  const gonial = r.find(m => m.name === 'GonialAngle')?.value;
-  add('JarabakTotal', saddle != null && articular != null && gonial != null ? r1(saddle + articular + gonial) : null);
-
-  return r;
-}
-
-// ---------------------------------------------------------------------------
-// Soft Tissue analysis
-// ---------------------------------------------------------------------------
-
-export function computeSoftTissue(lmMap: Record<string, Pt>, mmPerPx: number | null): CephMeasurement[] {
-  const cal = mmPerPx !== null && mmPerPx > 0;
-  const G = (k: string) => lmMap[k];
-  const has = (...keys: string[]) => keys.every(k => lmMap[k]);
-  const r: CephMeasurement[] = [];
-  const add = (n: string, v: number | null) => r.push(makeMeasurement(n, v, SOFT_TISSUE_NORMS[n], 'softtissue'));
-
-  // Nasolabial Angle: angle at Cm between Pn-Cm-LS
-  add('NasolabialAngle', has('Pn','Cm','LS') ? r1(angle3(G('Pn'), G('Cm'), G('LS'))) : null);
-
-  // Mentolabial Angle: angle at LI between Pog-LI-Cm (approximation)
-  add('MentolabialAngle', has('Pog','LI','Cm') ? r1(angle3(G('Pog'), G('LI'), G('Cm'))) : null);
-
-  // Upper Lip to E-Line: signed perp dist of LS from Pn-Pog line (mm)
-  add('UL-ELine', cal && has('LS','Pn','Pog') ? r1(signedPerpDist(G('LS'), G('Pn'), G('Pog')) * mmPerPx!) : null);
-
-  // Lower Lip to E-Line: signed perp dist of LI from Pn-Pog line (mm)
-  add('LL-ELine', cal && has('LI','Pn','Pog') ? r1(signedPerpDist(G('LI'), G('Pn'), G('Pog')) * mmPerPx!) : null);
-
-  // S-line midpoint: midpoint of Cm and Pn (same as Steiner S-line)
-  const sLineMid = has('Cm','Pn')
-    ? { x: (G('Cm').x + G('Pn').x) / 2, y: (G('Cm').y + G('Pn').y) / 2 }
-    : null;
-
-  // Upper Lip to S-Line (soft tissue version): signed perp dist of LS from Pog-sLineMid
-  add('UL-SLine-Soft', cal && sLineMid && has('LS','Pog')
-    ? r1(signedPerpDist(G('LS'), G('Pog'), sLineMid) * mmPerPx!) : null);
-
-  // Lower Lip to S-Line (soft tissue version): signed perp dist of LI from Pog-sLineMid
-  add('LL-SLine-Soft', cal && sLineMid && has('LI','Pog')
-    ? r1(signedPerpDist(G('LI'), G('Pog'), sLineMid) * mmPerPx!) : null);
-
-  // Nose Prominence: signed perp dist of Pn from N-Pog line (mm)
-  add('NoseProminence', cal && has('Pn','N','Pog') ? r1(signedPerpDist(G('Pn'), G('N'), G('Pog')) * mmPerPx!) : null);
-
-  // Soft Tissue Facial Angle: angle between N-Pog and Po-Or (Frankfort)
-  add('STFacialAngle', has('N','Pog','Po','Or') ? r1(angleBetweenLines(G('N'), G('Pog'), G('Po'), G('Or'))) : null);
-
-  // Upper Lip Length: ANS to LS (mm)
-  add('ULLength', cal && has('ANS','LS') ? r1(dist(G('ANS'), G('LS')) * mmPerPx!) : null);
-
-  // Lower Lip Length: LS to Me (mm)
-  add('LLLength', cal && has('LS','Me') ? r1(dist(G('LS'), G('Me')) * mmPerPx!) : null);
-
-  return r;
-}
-
-// ---------------------------------------------------------------------------
 // Build combined list filtered by analysis type
 // ---------------------------------------------------------------------------
 
 export function buildMeasurementList(
   lmMap: Record<string, Pt>,
   mmPerPx: number | null,
-  groups: readonly MeasurementGroup[] = ['steiner','tweed','mcnamara','ricketts','downs','wits','jarabak','softtissue']
+  groups: readonly MeasurementGroup[] = ['steiner','tweed','mcnamara','ricketts','downs','wits']
 ): CephMeasurement[] {
   const all: CephMeasurement[] = [];
-  if (groups.includes('steiner'))    all.push(...computeSteiner(lmMap, mmPerPx));
-  if (groups.includes('tweed'))      all.push(...computeTweed(lmMap));
-  if (groups.includes('mcnamara'))   all.push(...computeMcNamara(lmMap, mmPerPx));
-  if (groups.includes('ricketts'))   all.push(...computeRicketts(lmMap, mmPerPx));
-  if (groups.includes('downs'))      all.push(...computeDowns(lmMap));
-  if (groups.includes('wits'))       all.push(...computeWits(lmMap, mmPerPx));
-  if (groups.includes('jarabak'))    all.push(...computeJarabak(lmMap, mmPerPx));
-  if (groups.includes('softtissue')) all.push(...computeSoftTissue(lmMap, mmPerPx));
+  if (groups.includes('steiner'))  all.push(...computeSteiner(lmMap, mmPerPx));
+  if (groups.includes('tweed'))    all.push(...computeTweed(lmMap));
+  if (groups.includes('mcnamara')) all.push(...computeMcNamara(lmMap, mmPerPx));
+  if (groups.includes('ricketts')) all.push(...computeRicketts(lmMap, mmPerPx));
+  if (groups.includes('downs'))    all.push(...computeDowns(lmMap));
+  if (groups.includes('wits'))     all.push(...computeWits(lmMap, mmPerPx));
   return all;
 }

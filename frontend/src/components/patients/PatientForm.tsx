@@ -48,33 +48,16 @@ interface Props {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
-    <div
-      className="rounded-xl border overflow-hidden"
-      style={{
-        backgroundColor: "#ffffff",
-        borderColor: "#e8f0f9",
-        boxShadow: "0 1px 3px rgba(13,33,55,0.06)",
-      }}
-    >
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-4 text-start transition-colors"
-        style={{ color: "#0d2137" }}
-        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#f7fafd"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+        className="w-full flex items-center justify-between px-5 py-4 text-start hover:bg-gray-50 transition"
       >
-        <h3 className="font-bold">{title}</h3>
-        <ChevronDown
-          className={cn("w-4 h-4 transition-transform", open && "rotate-180")}
-          style={{ color: "#94a3b8" }}
-        />
+        <h3 className="font-bold text-gray-900">{title}</h3>
+        <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", open && "rotate-180")} />
       </button>
-      {open && (
-        <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {children}
-        </div>
-      )}
+      {open && <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>}
     </div>
   );
 }
@@ -86,22 +69,22 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-sm font-medium mb-1.5" style={{ color: "#0d2137" }}>
-        {label} {required && <span style={{ color: "#ef4444" }}>*</span>}
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        {label} {required && <span className="text-red-500">*</span>}
       </label>
       {children}
-      {error && <p className="mt-1 text-xs" style={{ color: "#ef4444" }}>{error}</p>}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
 
 const inputCls = (err?: string) =>
   cn(
-    "aqlan-input",
-    err && "border-[#ef4444] ring-[#ef444430]"
+    "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+    err ? "border-red-400" : "border-gray-300"
   );
 
-const checkboxCls = "w-4 h-4 rounded accent-[#3d7ab5]";
+const checkboxCls = "w-4 h-4 accent-clinic-teal rounded";
 
 export function PatientForm({ defaultValues, patientId }: Props) {
   const router = useRouter();
@@ -177,16 +160,9 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" dir="rtl">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       {serverError && (
-        <div
-          className="border rounded-lg p-3 text-sm"
-          style={{
-            backgroundColor: "#ef444418",
-            borderColor: "#ef444440",
-            color: "#ef4444",
-          }}
-        >
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
           {serverError}
         </div>
       )}
@@ -206,7 +182,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
           <input {...register("dateOfBirth")} type="date" className={inputCls()} />
         </Field>
         <Field label="الجنس">
-          <select {...register("gender")} className="aqlan-select">
+          <select {...register("gender")} className={inputCls()}>
             <option value="">اختر...</option>
             <option value="Male">ذكر</option>
             <option value="Female">أنثى</option>
@@ -246,18 +222,18 @@ export function PatientForm({ defaultValues, patientId }: Props) {
           <input {...register("previousSurgeries")} className={inputCls()} placeholder="نوع العملية والتاريخ" />
         </Field>
         <Field label="الحمل">
-          <select {...register("isPregnant")} className="aqlan-select">
+          <select {...register("isPregnant")} className={inputCls()}>
             <option value="na">لا ينطبق</option>
             <option value="no">لا</option>
             <option value="yes">نعم</option>
           </select>
         </Field>
         <div className="flex flex-col gap-2 md:col-span-2">
-          <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: "#0d2137" }}>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input type="checkbox" {...register("bleedingDisorders")} className={checkboxCls} />
             اضطرابات النزيف
           </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: "#0d2137" }}>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input type="checkbox" {...register("tmjProblems")} className={checkboxCls} />
             مشاكل المفصل الفكي (TMJ)
           </label>
@@ -282,14 +258,14 @@ export function PatientForm({ defaultValues, patientId }: Props) {
           </Field>
         </div>
         <div className="flex flex-col gap-2 md:col-span-2">
-          <p className="text-sm font-medium" style={{ color: "#0d2137" }}>العادات الضارة</p>
+          <p className="text-sm font-medium text-gray-700">العادات الضارة</p>
           {[
             { name: "mouthBreathing" as const, label: "التنفس الفموي" },
             { name: "bruxism" as const,        label: "صرير الأسنان (Bruxism)" },
             { name: "thumbSucking" as const,   label: "مص الإبهام" },
             { name: "tongueThrusing" as const, label: "وضع اللسان الخاطئ (Tongue Thrusting)" },
           ].map(({ name, label }) => (
-            <label key={name} className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: "#0d2137" }}>
+            <label key={name} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input type="checkbox" {...register(name)} className={checkboxCls} />
               {label}
             </label>
@@ -307,14 +283,14 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         <button
           type="button"
           onClick={() => router.back()}
-          className="btn-ghost rounded-lg"
+          className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
         >
           إلغاء
         </button>
         <button
           type="submit"
           disabled={saving}
-          className="btn-blue"
+          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ المريض"}

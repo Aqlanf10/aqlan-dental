@@ -1,6 +1,5 @@
-using AqlanDentalPro.Application.DTOs.Messages;
+using AqlanDentalPro.Application.DTOs.Messaging;
 using AqlanDentalPro.Application.Services;
-using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,65 +8,75 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/messages")]
 [Authorize]
-public class MessagesController(MessageService messageService, AppDbContext db) : ControllerBase
+public class MessagesController(MessagingService messagingService) : ControllerBase
 {
-    // GET /api/messages/conversations
+    /// <summary>جلب محادثاتي</summary>
     [HttpGet("conversations")]
-    public async Task<IActionResult> GetConversations()
+    public async Task<ActionResult<object>> GetConversations(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
     {
-        var conversations = await messageService.GetConversationsAsync();
-        return Ok(conversations);
+        var result = await messagingService.GetMyConversationsAsync(page, pageSize, search);
+        return Ok(new { result.Data, result.TotalCount, result.Page, result.PageSize, result.TotalPages, result.HasNextPage, result.HasPreviousPage });
     }
 
-    // POST /api/messages/conversations
+    /// <summary>جلب تفاصيل محادثة مع الرسائل</summary>
+    [HttpGet("conversations/{conversationId:guid}")]
+    public async Task<ActionResult<ConversationDetailDto>> GetConversation(
+        Guid conversationId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        var result = await messagingService.GetConversationAsync(conversationId, page, pageSize);
+        if (result == null) return NotFound(new { message = "المحادثة غير موجودة أو ليس لديك صلاحية الوصول" });
+        return Ok(result);
+    }
+
+    /// <summary>إنشاء محادثة جديدة</summary>
     [HttpPost("conversations")]
-    public async Task<IActionResult> CreateConversation([FromBody] CreateConversationRequest req)
+    public async Task<ActionResult<ConversationDetailDto>> CreateConversation([FromBody] CreateConversationRequest request)
     {
-        var (result, error) = await messageService.CreateConversationAsync(req);
-        if (error != null) return BadRequest(new { message = error });
-        return Ok(result);
+        var result = await messagingService.CreateConversationAsync(request);
+        return CreatedAtAction(nameof(GetConversation), new { conversationId = result.Id }, result);
     }
 
-    // GET /api/messages/conversations/{id}/messages
-    [HttpGet("conversations/{id:guid}/messages")]
-    public async Task<IActionResult> GetMessages(Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    /// <summary>إرسال رسالة في محادثة</summary>
+    [HttpPost("conversations/{conversationId:guid}/messages")]
+    public async Task<ActionResult<MessageDto>> SendMessage(Guid conversationId, [FromBody] SendMessageRequest request)
     {
-        var (result, error) = await messageService.GetMessagesAsync(id, page, pageSize);
-        if (error != null) return BadRequest(new { message = error });
-        return Ok(result);
+        try
+        {
+            var result = await messagingService.SendMessageAsync(conversationId, request);
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Forbid(ex.Message);
+        }
     }
 
-    // POST /api/messages/conversations/{id}/messages
-    [HttpPost("conversations/{id:guid}/messages")]
-    public async Task<IActionResult> SendMessage(Guid id, [FromBody] SendMessageRequest req)
+    /// <summary>تحديد الرسائل كمقروءة</summary>
+    [HttpPost("conversations/{conversationId:guid}/read")]
+    public async Task<IActionResult> MarkAsRead(Guid conversationId)
     {
-        var (result, error) = await messageService.SendMessageAsync(id, req);
-        if (error != null) return BadRequest(new { message = error });
-        return Ok(result);
+        await messagingService.MarkAsReadAsync(conversationId);
+        return NoContent();
     }
 
-    // PUT /api/messages/conversations/{id}/read
-    [HttpPut("conversations/{id:guid}/read")]
-    public async Task<IActionResult> MarkAsRead(Guid id)
-    {
-        var (success, error) = await messageService.MarkAsReadAsync(id);
-        if (error != null) return BadRequest(new { message = error });
-        return Ok(new { message = "تم تحديد المحادثة كمقروءة" });
-    }
-
-    // GET /api/messages/unread-count
+    /// <summary>عدد الرسائل غير المقروءة</summary>
     [HttpGet("unread-count")]
-    public async Task<IActionResult> GetUnreadCount()
+    public async Task<ActionResult<UnreadCountDto>> GetUnreadCount()
     {
-        var count = await messageService.GetTotalUnreadCountAsync();
-        return Ok(new { count });
+        var result = await messagingService.GetUnreadCountAsync();
+        return Ok(result);
     }
 
-    // GET /api/messages/doctors
-    [HttpGet("doctors")]
-    public async Task<IActionResult> GetDoctorsForMessaging()
+    /// <summary>مغادرة محادثة</summary>
+    [HttpPost("conversations/{conversationId:guid}/leave")]
+    public async Task<IActionResult> LeaveConversation(Guid conversationId)
     {
-        var doctors = await messageService.GetDoctorsForMessagingAsync();
-        return Ok(doctors);
+        await messagingService.LeaveConversationAsync(conversationId);
+        return NoContent();
     }
 }

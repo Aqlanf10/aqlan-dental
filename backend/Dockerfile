@@ -22,25 +22,14 @@ RUN dotnet publish src/AqlanDentalPro.API/AqlanDentalPro.API.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
-# Install necessary dependencies for ONNX Runtime + ICU (Arabic text support)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libicu-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 # Non-root user for security
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup appuser
-
-# Create uploads directory
-RUN mkdir -p wwwroot/uploads ai-models && chown -R appuser:appgroup wwwroot ai-models
 
 COPY --from=build --chown=appuser:appgroup /app/publish .
 
 USER appuser
 
 EXPOSE 8080
-
-ENV ASPNETCORE_ENVIRONMENT=Production
-ENV ASPNETCORE_URLS=http://+:8080
 
 ENTRYPOINT ["dotnet", "AqlanDentalPro.API.dll"]

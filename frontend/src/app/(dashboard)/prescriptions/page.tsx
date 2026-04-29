@@ -28,12 +28,12 @@ export default function PrescriptionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold text-[#0d2137]">الوصفات الطبية</h1>
-          <p className="text-sm text-[#64748b] mt-0.5">إدارة وطباعة وصفات المرضى</p>
+          <h1 className="text-2xl font-extrabold text-gray-900">الوصفات الطبية</h1>
+          <p className="text-sm text-gray-500 mt-0.5">إدارة وطباعة وصفات المرضى</p>
         </div>
         <Link
           href="/prescriptions/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-accent-blue text-white hover:bg-blue-hover transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           وصفة جديدة
@@ -44,52 +44,52 @@ export default function PrescriptionsPage() {
       {loading ? (
         <div className="space-y-2 animate-pulse">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-16 bg-[#eef3f9] rounded-xl" />
+            <div key={i} className="h-16 bg-gray-100 rounded-xl" />
           ))}
         </div>
       ) : prescriptions.length === 0 ? (
-        <div className="text-center py-20 text-[#94a3b8]">
+        <div className="text-center py-20 text-gray-400">
           <Pill className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">لا توجد وصفات بعد</p>
-          <Link href="/prescriptions/new" className="mt-2 inline-block text-xs text-accent-blue hover:underline">
+          <Link href="/prescriptions/new" className="mt-2 inline-block text-xs text-clinic-teal hover:underline">
             + إنشاء أول وصفة
           </Link>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-[#e8f0f9] shadow-card overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-[#f7fafd] border-b border-[#e8f0f9]">
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-start px-4 py-3 font-bold text-[#64748b]">المريض</th>
-                <th className="text-start px-4 py-3 font-bold text-[#64748b]">التشخيص</th>
-                <th className="text-start px-4 py-3 font-bold text-[#64748b]">الطبيب</th>
-                <th className="text-start px-4 py-3 font-bold text-[#64748b]">الأدوية</th>
-                <th className="text-start px-4 py-3 font-bold text-[#64748b]">التاريخ</th>
+                <th className="text-start px-4 py-3 font-semibold text-gray-600">المريض</th>
+                <th className="text-start px-4 py-3 font-semibold text-gray-600">التشخيص</th>
+                <th className="text-start px-4 py-3 font-semibold text-gray-600">الطبيب</th>
+                <th className="text-start px-4 py-3 font-semibold text-gray-600">الأدوية</th>
+                <th className="text-start px-4 py-3 font-semibold text-gray-600">التاريخ</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#f1f5f9]">
+            <tbody className="divide-y divide-gray-100">
               {prescriptions.map((rx) => (
-                <tr key={rx.id} className="hover:bg-[#f7fafd] transition">
+                <tr key={rx.id} className="hover:bg-gray-50 transition">
                   <td className="px-4 py-3">
-                    <Link href={`/patients/${rx.patientId}`} className="font-semibold text-[#0d2137] hover:text-accent-blue transition">
+                    <Link href={`/patients/${rx.patientId}`} className="font-semibold text-gray-900 hover:text-clinic-teal transition">
                       {rx.patientName}
                     </Link>
-                    <div className="text-xs text-[#94a3b8] font-mono">{rx.patientNumber}</div>
+                    <div className="text-xs text-gray-400 font-mono">{rx.patientNumber}</div>
                   </td>
-                  <td className="px-4 py-3 text-[#64748b]">{rx.diagnosis ?? "—"}</td>
-                  <td className="px-4 py-3 text-[#64748b]">{rx.doctorName ?? "—"}</td>
+                  <td className="px-4 py-3 text-gray-700">{rx.diagnosis ?? "—"}</td>
+                  <td className="px-4 py-3 text-gray-600">{rx.doctorName ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1 text-xs bg-light-blue text-accent-blue px-[10px] py-[2px] rounded-full font-medium">
+                    <span className="inline-flex items-center gap-1 text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full font-medium">
                       <Pill className="w-3 h-3" />
                       {rx.drugCount} {rx.drugCount === 1 ? "دواء" : "أدوية"}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-[#64748b] text-xs">{formatArabicDate(rx.createdAt)}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{formatArabicDate(rx.createdAt)}</td>
                   <td className="px-4 py-3">
                     <Link
                       href={`/prescriptions/${rx.id}`}
-                      className="flex items-center gap-1 text-xs text-accent-blue hover:underline"
+                      className="flex items-center gap-1 text-xs text-clinic-teal hover:underline"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       عرض / طباعة
@@ -102,22 +102,22 @@ export default function PrescriptionsPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-[#f1f5f9] bg-[#f7fafd] text-sm">
-              <span className="text-[#64748b]">
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50 text-sm">
+              <span className="text-gray-500">
                 {total} وصفة · صفحة {page} من {totalPages}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-3 py-1 rounded border border-[#e8f0f9] disabled:opacity-40 hover:bg-[#eef3f9] transition text-[#64748b]"
+                  className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100 transition text-gray-600"
                 >
                   السابق
                 </button>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-3 py-1 rounded border border-[#e8f0f9] disabled:opacity-40 hover:bg-[#eef3f9] transition text-[#64748b]"
+                  className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-100 transition text-gray-600"
                 >
                   التالي
                 </button>

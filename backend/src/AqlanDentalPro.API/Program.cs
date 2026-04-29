@@ -8,6 +8,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Data.Seed;
 using AqlanDentalPro.Infrastructure.Repositories;
 using AqlanDentalPro.Infrastructure.Services;
+using MessagingService = AqlanDentalPro.Infrastructure.Services.MessagingService;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;

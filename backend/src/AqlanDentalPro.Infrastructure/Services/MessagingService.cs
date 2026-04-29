@@ -5,7 +5,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace AqlanDentalPro.Application.Services;
+namespace AqlanDentalPro.Infrastructure.Services;
 
 public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
 {
@@ -312,7 +312,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
         var otherParticipant = conv.Participants
             .FirstOrDefault(p => p.UserId != UserId);
 
-        var dto = new ConversationListDto
+        return new ConversationListDto
         {
             Id = conv.Id,
             Title = conv.IsGroup ? conv.Title : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title),
@@ -322,7 +322,6 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
             OtherParticipant = otherParticipant != null ? MapParticipantDto(otherParticipant) : null,
             Participants = conv.Participants.Select(MapParticipantDto).ToList(),
         };
-        return dto;
     }
 
     private ConversationParticipantDto MapParticipantDto(ConversationParticipant cp)

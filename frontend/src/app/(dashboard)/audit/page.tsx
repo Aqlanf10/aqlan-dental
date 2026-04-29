@@ -152,7 +152,7 @@ export default function AuditLogPage() {
       const result = await exportMutation.mutateAsync({
         action: appliedFilters.action,
         resource: appliedFilters.resource,
-        userId: appliedFilters.userId,
+        userId: undefined,
         from: appliedFilters.from,
         to: appliedFilters.to,
         search: appliedFilters.search,

@@ -89,3 +89,4 @@ Thumbs.db
 # ===========================
 uploads/
 public/uploads/
+.vercel

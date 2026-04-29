@@ -28,7 +28,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
             query = query.Where(c =>
                 c.Title.Contains(search) ||
                 c.Participants.Any(p => p.User.Doctor != null && p.User.Doctor.Name.Contains(search)) ||
-                c.Participants.Any(p => p.Username.Contains(search)));
+                c.Participants.Any(p => p.User.Username.Contains(search)));
         }
 
         var total = await query.CountAsync();

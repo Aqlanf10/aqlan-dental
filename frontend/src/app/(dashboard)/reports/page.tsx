@@ -7,6 +7,7 @@ import {
 import { BarChart2, Users, Calendar, TrendingUp, Stethoscope, Wallet, Download } from "lucide-react";
 import api from "@/lib/api";
 import { formatYemeniRiyal } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
 
 interface CenterSummary {
   fromDate: string;
@@ -106,7 +107,7 @@ export default function ReportsPage() {
       downloadCsv(url, `${type}_${today}.csv`);
       URL.revokeObjectURL(url);
     } catch {
-      alert("فشل التصدير");
+      toast.error("فشل تصدير البيانات — تحقق من الاتصال وحاول مجدداً");
     } finally {
       setExporting(false);
     }

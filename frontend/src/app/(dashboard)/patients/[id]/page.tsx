@@ -10,6 +10,7 @@ import {
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
 import { DentalChart } from "@/components/dental/DentalChart";
 import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
 
@@ -290,8 +291,9 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
       });
       setPhotoFile(null); setPhotoPreview(null); setPhotoType(""); setPhotoStage(""); setPhotoNotes("");
       fetchPhotos();
+      toast.success("تم رفع الصورة بنجاح");
     } catch {
-      // ignore
+      toast.error("فشل رفع الصورة — تحقق من حجم الملف والاتصال");
     } finally {
       setAddingPhoto(false);
     }
@@ -316,8 +318,9 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
       });
       setXrayFile(null); setXrayNotes("");
       fetchXrays();
+      toast.success("تم رفع ملف الأشعة بنجاح");
     } catch {
-      // ignore
+      toast.error("فشل رفع ملف الأشعة — تحقق من حجم الملف والاتصال");
     } finally {
       setAddingXray(false);
     }

@@ -313,21 +313,27 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         var targetUser = await db.Users.FirstOrDefaultAsync(u => u.Id == targetUserId);
         if (currentUser == null || targetUser == null) return false;
 
-        // Admin can message everyone
-        if (currentUser.Role == UserRole.Admin) return true;
+        // Admin and BranchManager can message everyone
+        if (currentUser.Role is UserRole.Admin or UserRole.BranchManager) return true;
 
         var targetRole = targetUser.Role;
 
+        // All internal staff can message each other
         return currentUser.Role switch
         {
             UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
-                => targetRole is UserRole.Patient or UserRole.Reception or UserRole.Accountant or UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon,
+                => targetRole is UserRole.Reception or UserRole.Accountant or UserRole.Admin
+                    or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    or UserRole.Assistant or UserRole.BranchManager,
             UserRole.Reception
-                => targetRole is UserRole.Patient or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon or UserRole.Admin or UserRole.Accountant,
+                => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    or UserRole.Admin or UserRole.Accountant or UserRole.Assistant or UserRole.BranchManager,
             UserRole.Accountant
-                => targetRole is UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon or UserRole.Reception,
-            UserRole.Patient
-                => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon or UserRole.Reception or UserRole.Admin,
+                => targetRole is UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist
+                    or UserRole.OralSurgeon or UserRole.Reception or UserRole.Assistant or UserRole.BranchManager,
+            UserRole.Assistant
+                => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    or UserRole.Reception or UserRole.Admin or UserRole.Accountant or UserRole.BranchManager,
             _ => false
         };
     }
@@ -335,27 +341,9 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── محادثة مع مريض ──────────────────────────────────────────────────────
     public async Task<ConversationDetailDto?> GetOrCreatePatientConversationAsync(Guid patientId)
     {
-        // Find patient's linked user account
-        var patient = await db.Patients.FindAsync(patientId);
-        if (patient == null) return null;
-
-        // Check if patient has a user account
-        var patientUser = await db.Users.FirstOrDefaultAsync(u => u.Phone == patient.Phone && u.Role == UserRole.Patient);
-        if (patientUser == null) return null; // Patient doesn't have portal account
-
-        // Check messaging permission
-        if (!await CanMessageUserAsync(patientUser.Id))
-            throw new UnauthorizedAccessException("ليس لديك صلاحية مراسلة هذا المريض");
-
-        // Find existing direct conversation or create new
-        var existing = await FindDirectConversationAsync(UserId, patientUser.Id);
-        if (existing != null) return await GetConversationAsync(existing.Id);
-
-        return await CreateConversationAsync(new CreateConversationRequest
-        {
-            ParticipantIds = [patientUser.Id],
-            InitialMessage = null
-        });
+        // Patient messaging is not supported in this version
+        // Patients don't have user accounts in the staff system
+        return null;
     }
 
     // ─── التحقق من صلاحية المراسلة (عام) ────────────────────────────────────────

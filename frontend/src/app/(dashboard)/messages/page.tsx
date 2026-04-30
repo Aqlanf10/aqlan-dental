@@ -22,7 +22,7 @@ import {
   useMarkAsRead,
   useUnreadCount,
 } from "@/hooks/useMessaging";
-import type { ConversationListItem, Message } from "@/types/messaging";
+import type { ConversationListItem, ConversationDetail, Message } from "@/types/messaging";
 import api from "@/lib/api";
 
 // ─── مستخدمو النظام (للمحادثة الجديدة) ───────────────────────────────────────
@@ -76,7 +76,7 @@ export default function MessagesPage() {
   const [isMobileDetail, setIsMobileDetail] = useState(false);
 
   const { data: convData, isLoading: convLoading } = useConversations(1, searchQuery || undefined);
-  const { data: conversation, isLoading: msgLoading } = useConversation(selectedConvId);
+  const { data: conversation } = useConversation(selectedConvId);
   const sendMessage = useSendMessage(selectedConvId ?? "");
   const markAsRead = useMarkAsRead(selectedConvId ?? "");
   const { data: unreadData } = useUnreadCount();
@@ -221,7 +221,6 @@ export default function MessagesPage() {
 function ConversationItem({
   conv,
   isSelected,
-  currentUserId,
   onClick,
 }: {
   conv: ConversationListItem;

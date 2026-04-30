@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   BarChart2, Package, FlaskConical, Settings, LogOut,
-  Lock, Pill, X, Menu, MessageCircle, MessageSquare,
+  Pill, X, Menu, MessageCircle, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";

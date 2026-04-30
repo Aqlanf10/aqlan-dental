@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Calendar, Plus, Clock, User, X, Check, ChevronLeft } from "lucide-react";
+import { Calendar, Plus, Clock, User, X, ChevronLeft } from "lucide-react";
 import portalApi from "@/lib/portalApi";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import type { PatientAppointment, PortalDoctor } from "@/types/patientPortal";
@@ -10,7 +10,7 @@ import Link from "next/link";
 const APPOINTMENT_TYPES = ["فحص", "تنظيف", "حشو", "قلع", "معالجة جذر", "تقويم", "أخرى"];
 
 export default function PortalAppointmentsPage() {
-  const { profile } = usePatientAuthStore();
+  usePatientAuthStore();
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -56,8 +56,9 @@ export default function PortalAppointmentsPage() {
       setAppointments((prev) => [data, ...prev]);
       setShowForm(false);
       setApptDate(""); setApptTime(""); setApptType(""); setDoctorId(""); setNotes("");
-    } catch (err: any) {
-      setFormError(err.response?.data?.message || "حدث خطأ");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setFormError(msg || "حدث خطأ");
     } finally {
       setSaving(false);
     }

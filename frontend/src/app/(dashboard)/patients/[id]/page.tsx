@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
-  Calendar, Activity, Wallet, Pill, Plus, Scissors, GitBranch, ArrowLeft, Image,
+  Calendar, Activity, Wallet, Pill, Plus, Scissors, Image,
   Trash2, ExternalLink,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";

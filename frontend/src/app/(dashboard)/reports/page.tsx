@@ -182,7 +182,7 @@ export default function ReportsPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
                 <YAxis tickFormatter={formatYER} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
-                <Tooltip formatter={(v: number) => [`${v.toLocaleString()} ر.ي`, "الإيرادات"]} />
+                <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} ر.ي`, "الإيرادات"]} />
                 <Bar dataKey="revenue" fill="#0E7490" radius={[4, 4, 0, 0]} maxBarSize={32} />
               </BarChart>
             </ResponsiveContainer>
@@ -307,7 +307,7 @@ export default function ReportsPage() {
                           <Cell key={i} fill={SPECIALTY_COLORS[i % SPECIALTY_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => [`${v.toLocaleString()} ر.ي`, ""]} />
+                      <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} ر.ي`, ""]} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="mt-3 space-y-2">

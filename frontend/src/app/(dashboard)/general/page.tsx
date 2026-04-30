@@ -8,6 +8,7 @@ import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import { EnhancedDentalChart } from "@/components/dental/EnhancedDentalChart";
+import type { ToothData } from "@/components/dental/EnhancedDentalChart";
 import { ToothEditorModal } from "@/components/dental/ToothEditorModal";
 import { PerioAssessment } from "@/components/dental/PerioAssessment";
 import { TreatmentPlanPanel } from "@/components/dental/TreatmentPlanPanel";
@@ -39,7 +40,7 @@ export default function GeneralPage() {
 
   // Dental chart state
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null);
-  const [chartTeeth, setChartTeeth] = useState<any[]>([]);
+  const [chartTeeth, setChartTeeth] = useState<ToothData[]>([]);
 
   // New treatment form
   const [showForm, setShowForm]   = useState(false);
@@ -317,7 +318,7 @@ export default function GeneralPage() {
           {selectedTooth && (
             <ToothEditorModal
               toothNumber={selectedTooth}
-              data={chartTeeth.find((t: any) => t.toothNumber === selectedTooth)}
+              data={chartTeeth.find((t) => t.toothNumber === selectedTooth)}
               onSave={async (data) => {
                 try {
                   await api.put(`/api/general/${selectedPatient.id}/teeth`, data);

@@ -1,5 +1,5 @@
 "use client";
-import { Bell, Search, Menu } from "lucide-react";
+import { Bell, Search } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
 export function Topbar() {

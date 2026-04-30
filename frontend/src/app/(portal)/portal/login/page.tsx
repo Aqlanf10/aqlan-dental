@@ -29,8 +29,9 @@ export default function PortalLoginPage() {
       setSuccess(data.message || "تم إرسال رمز التحقق");
       savePhoneToStore(phoneNumber);
       setStep("verify");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "حدث خطأ أثناء إرسال الرمز");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg || "حدث خطأ أثناء إرسال الرمز");
     } finally {
       setLoading(false);
     }
@@ -51,8 +52,9 @@ export default function PortalLoginPage() {
       });
       setAuth(data.profile, data.accessToken);
       router.push("/portal");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "رمز التحقق غير صحيح");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg || "رمز التحقق غير صحيح");
     } finally {
       setLoading(false);
     }

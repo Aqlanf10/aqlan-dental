@@ -2288,6 +2288,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("PasswordSalt")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(50)

@@ -19,55 +19,84 @@ public class SearchController(AppDbContext db) : ControllerBase
 
         q = q.Trim();
 
-        var patients = await db.Patients
-            .Where(p => p.FullName.Contains(q) || p.PatientNumber.Contains(q) || (p.PhoneNumber != null && p.PhoneNumber.Contains(q)))
+        var patientsRaw = await db.Patients
+            .Where(p => p.FirstName.Contains(q) || p.LastName.Contains(q) || p.PatientNumber.Contains(q) || (p.Phone != null && p.Phone.Contains(q)))
             .OrderByDescending(p => p.CreatedAt)
             .Take(limit)
             .Select(p => new
             {
                 p.Id,
-                p.FullName,
+                p.FirstName,
+                p.LastName,
                 p.PatientNumber,
-                p.PhoneNumber,
-                Type = "patient",
-                Url = $"/patients/{p.Id}"
+                p.Phone,
             })
             .ToListAsync();
 
-        var appointments = await db.Appointments
+        var patients = patientsRaw.Select(p => new
+        {
+            p.Id,
+            FullName = $"{p.FirstName} {p.LastName}".Trim(),
+            p.PatientNumber,
+            PhoneNumber = p.Phone,
+            Type = "patient",
+            Url = $"/patients/{p.Id}"
+        }).ToList();
+
+        var apptsRaw = await db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
-            .Where(a => a.Patient.FullName.Contains(q) || (a.AppointmentType != null && a.AppointmentType.Contains(q)))
+            .Where(a => a.Patient.FirstName.Contains(q) || a.Patient.LastName.Contains(q) || (a.AppointmentType != null && a.AppointmentType.Contains(q)))
             .OrderByDescending(a => a.AppointmentDate)
             .Take(limit)
             .Select(a => new
             {
                 a.Id,
-                PatientName = a.Patient.FullName,
+                a.Patient.FirstName,
+                a.Patient.LastName,
                 a.AppointmentType,
                 AppointmentDate = a.AppointmentDate.ToString("yyyy-MM-dd"),
                 DoctorName = a.Doctor != null ? a.Doctor.Name : null,
                 a.Status,
-                Type = "appointment",
-                Url = $"/appointments"
             })
             .ToListAsync();
 
-        var orthoCases = await db.OrthoCases
+        var appointments = apptsRaw.Select(a => new
+        {
+            a.Id,
+            PatientName = $"{a.FirstName} {a.LastName}".Trim(),
+            a.AppointmentType,
+            a.AppointmentDate,
+            a.DoctorName,
+            Status = a.Status.ToString(),
+            Type = "appointment",
+            Url = "/appointments"
+        }).ToList();
+
+        var orthoRaw = await db.OrthoCases
             .Include(c => c.Patient)
-            .Where(c => c.Patient.FullName.Contains(q) || c.CaseNumber.Contains(q))
+            .Where(c => c.Patient.FirstName.Contains(q) || c.Patient.LastName.Contains(q) || c.CaseNumber.Contains(q))
             .OrderByDescending(c => c.CreatedAt)
             .Take(limit)
             .Select(c => new
             {
                 c.Id,
                 c.CaseNumber,
-                PatientName = c.Patient.FullName,
+                c.Patient.FirstName,
+                c.Patient.LastName,
                 c.Status,
-                Type = "ortho",
-                Url = $"/ortho/{c.Id}"
             })
             .ToListAsync();
+
+        var orthoCases = orthoRaw.Select(c => new
+        {
+            c.Id,
+            c.CaseNumber,
+            PatientName = $"{c.FirstName} {c.LastName}".Trim(),
+            c.Status,
+            Type = "ortho",
+            Url = $"/ortho/{c.Id}"
+        }).ToList();
 
         return Ok(new
         {

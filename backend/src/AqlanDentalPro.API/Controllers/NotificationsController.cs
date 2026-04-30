@@ -20,7 +20,7 @@ public class NotificationsController(AppDbContext db, ICurrentUserService curren
         [FromQuery] int pageSize = 20)
     {
         var userId = currentUser.UserId;
-        if (userId == Guid.Empty) return Unauthorized();
+        if (userId is null || userId == Guid.Empty) return Unauthorized();
 
         var query = db.Notifications
             .Where(n => n.UserId == userId);
@@ -56,7 +56,7 @@ public class NotificationsController(AppDbContext db, ICurrentUserService curren
     public async Task<IActionResult> UnreadCount()
     {
         var userId = currentUser.UserId;
-        if (userId == Guid.Empty) return Unauthorized();
+        if (userId is null || userId == Guid.Empty) return Unauthorized();
 
         var count = await db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead);
         return Ok(new { count });
@@ -104,14 +104,15 @@ public class NotificationsController(AppDbContext db, ICurrentUserService curren
     public async Task<IActionResult> SeedDemo()
     {
         var userId = currentUser.UserId;
-        if (userId == Guid.Empty) return Unauthorized();
+        if (userId is null || userId == Guid.Empty) return Unauthorized();
 
+        var uid = userId.Value;
         var demo = new List<Notification>
         {
-            new() { UserId = userId, Type = "appointment", Title = "موعد جديد", Body = "تم حجز موعد جديد لـ أحمد محمد الساعة 10:00 صباحاً", IsRead = false },
-            new() { UserId = userId, Type = "payment", Title = "دفعة مستلمة", Body = "تم تسجيل دفعة بمبلغ 50,000 ر.ي من المريض سارة علي", IsRead = false },
-            new() { UserId = userId, Type = "lab", Title = "طلب مختبر جاهز", Body = "الطبقة المتحركة للمريض خالد العمري جاهزة للاستلام", IsRead = false },
-            new() { UserId = userId, Type = "system", Title = "تحديث النظام", Body = "تم تحديث النظام إلى الإصدار الجديد بنجاح", IsRead = true },
+            new() { UserId = uid, Type = "appointment", Title = "موعد جديد", Body = "تم حجز موعد جديد لـ أحمد محمد الساعة 10:00 صباحاً", IsRead = false },
+            new() { UserId = uid, Type = "payment", Title = "دفعة مستلمة", Body = "تم تسجيل دفعة بمبلغ 50,000 ر.ي من المريض سارة علي", IsRead = false },
+            new() { UserId = uid, Type = "lab", Title = "طلب مختبر جاهز", Body = "الطبقة المتحركة للمريض خالد العمري جاهزة للاستلام", IsRead = false },
+            new() { UserId = uid, Type = "system", Title = "تحديث النظام", Body = "تم تحديث النظام إلى الإصدار الجديد بنجاح", IsRead = true },
         };
 
         db.Notifications.AddRange(demo);

@@ -111,10 +111,11 @@ public class ReportsController(AppDbContext db) : ControllerBase
             .Select(p => new
             {
                 p.PatientNumber,
-                p.FullName,
+                p.FirstName,
+                p.LastName,
                 p.DateOfBirth,
                 p.Gender,
-                p.PhoneNumber,
+                p.Phone,
                 p.Address,
                 p.CreatedAt
             })
@@ -124,7 +125,8 @@ public class ReportsController(AppDbContext db) : ControllerBase
         csv.AppendLine("رقم المريض,الاسم الكامل,تاريخ الميلاد,الجنس,رقم الهاتف,العنوان,تاريخ التسجيل");
         foreach (var p in patients)
         {
-            csv.AppendLine($"{p.PatientNumber},{Esc(p.FullName)},{p.DateOfBirth?.ToString("yyyy-MM-dd") ?? ""},{ p.Gender},{Esc(p.PhoneNumber ?? "")},{Esc(p.Address ?? "")},{p.CreatedAt:yyyy-MM-dd}");
+            var fullName = $"{p.FirstName} {p.LastName}".Trim();
+            csv.AppendLine($"{p.PatientNumber},{Esc(fullName)},{p.DateOfBirth?.ToString("yyyy-MM-dd") ?? ""},{p.Gender},{Esc(p.Phone ?? "")},{Esc(p.Address ?? "")},{p.CreatedAt:yyyy-MM-dd}");
         }
 
         var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
@@ -145,8 +147,9 @@ public class ReportsController(AppDbContext db) : ControllerBase
             .Select(p => new
             {
                 p.ReceiptNumber,
-                PatientName    = p.Patient.FullName,
-                PatientNumber  = p.Patient.PatientNumber,
+                FirstName     = p.Patient.FirstName,
+                LastName      = p.Patient.LastName,
+                PatientNumber = p.Patient.PatientNumber,
                 p.Amount,
                 p.PaymentMethod,
                 p.PaymentDate,
@@ -160,7 +163,8 @@ public class ReportsController(AppDbContext db) : ControllerBase
         csv.AppendLine("رقم السند,المريض,رقم المريض,المبلغ,طريقة الدفع,التاريخ,الوصف,التخصص,ملاحظات");
         foreach (var p in payments)
         {
-            csv.AppendLine($"{Esc(p.ReceiptNumber ?? "")},{Esc(p.PatientName)},{p.PatientNumber},{p.Amount},{p.PaymentMethod},{p.PaymentDate:yyyy-MM-dd},{Esc(p.ServiceDescription ?? "")},{Esc(p.Specialty ?? "")},{Esc(p.Notes ?? "")}");
+            var patientName = $"{p.FirstName} {p.LastName}".Trim();
+            csv.AppendLine($"{Esc(p.ReceiptNumber ?? "")},{Esc(patientName)},{p.PatientNumber},{p.Amount},{p.PaymentMethod},{p.PaymentDate:yyyy-MM-dd},{Esc(p.ServiceDescription ?? "")},{Esc(p.Specialty ?? "")},{Esc(p.Notes ?? "")}");
         }
 
         var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
@@ -181,7 +185,8 @@ public class ReportsController(AppDbContext db) : ControllerBase
             .OrderByDescending(a => a.AppointmentDate)
             .Select(a => new
             {
-                PatientName    = a.Patient.FullName,
+                FirstName      = a.Patient.FirstName,
+                LastName       = a.Patient.LastName,
                 PatientNumber  = a.Patient.PatientNumber,
                 DoctorName     = a.Doctor != null ? a.Doctor.Name : "",
                 AppointmentDate = a.AppointmentDate,
@@ -196,7 +201,8 @@ public class ReportsController(AppDbContext db) : ControllerBase
         csv.AppendLine("المريض,رقم المريض,الطبيب,التاريخ,الوقت,نوع الموعد,الحالة,ملاحظات");
         foreach (var a in appts)
         {
-            csv.AppendLine($"{Esc(a.PatientName)},{a.PatientNumber},{Esc(a.DoctorName)},{a.AppointmentDate:yyyy-MM-dd},{a.StartTime},{Esc(a.AppointmentType ?? "")},{a.Status},{Esc(a.Notes ?? "")}");
+            var patientName = $"{a.FirstName} {a.LastName}".Trim();
+            csv.AppendLine($"{Esc(patientName)},{a.PatientNumber},{Esc(a.DoctorName)},{a.AppointmentDate:yyyy-MM-dd},{a.StartTime},{Esc(a.AppointmentType ?? "")},{a.Status},{Esc(a.Notes ?? "")}");
         }
 
         var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();

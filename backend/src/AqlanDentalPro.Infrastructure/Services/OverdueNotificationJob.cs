@@ -58,7 +58,10 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
             {
                 count++;
                 var overdueAmt = expectedPaid - actualPaid;
-                var msg = $"عقد {c.Patient?.FullName ?? "مريض"}: متأخر {overdueAmt:N0} ر.ي";
+                var patientName = c.Patient != null
+                    ? $"{c.Patient.FirstName} {c.Patient.LastName}".Trim()
+                    : "مريض";
+                var msg = $"عقد {patientName}: متأخر {overdueAmt:N0} ر.ي";
                 await notifications.NotifyRoleAsync("Accountant", "payment", "قسط متأخر", msg, "Contract", c.Id);
             }
         }

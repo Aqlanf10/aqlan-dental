@@ -6,7 +6,7 @@ using AqlanDentalPro.Domain.Enums;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class AppointmentService(IAppointmentRepository repo, ICurrentUserService currentUser)
+public class AppointmentService(IAppointmentRepository repo, ICurrentUserService currentUser, INotificationService notifications)
 {
     public async Task<IEnumerable<AppointmentDto>> GetTodayAsync(Guid? doctorId = null)
     {
@@ -49,7 +49,26 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
 
         await repo.AddAsync(appointment);
         await repo.SaveChangesAsync();
-        return (ToDto(appointment), null);
+
+        // Notify the doctor
+        var dto = ToDto(appointment);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var patientName = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
+                await notifications.NotifyDoctorAsync(
+                    req.DoctorId,
+                    "appointment",
+                    "موعد جديد",
+                    $"تم حجز موعد جديد لـ {patientName} بتاريخ {dto.AppointmentDate} الساعة {dto.StartTime}",
+                    "Appointment",
+                    appointment.Id);
+            }
+            catch { /* non-blocking */ }
+        });
+
+        return (dto, null);
     }
 
     public async Task<AppointmentDto?> GetByIdAsync(Guid id)

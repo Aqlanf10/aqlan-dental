@@ -53,7 +53,7 @@ public sealed class UpdateLabOrderStatusRequest
 [ApiController]
 [Route("api/lab-orders")]
 [Authorize]
-public class LabOrdersController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class LabOrdersController(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -169,6 +169,18 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         db.LabOrders.Add(order);
         await db.SaveChangesAsync();
 
+        // Notify admin and reception about the new lab order
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var msg = $"طلب مختبر جديد {order.OrderNumber} — {req.ApplianceType}";
+                await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جديد", msg, "LabOrder", order.Id);
+                await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جديد", msg, "LabOrder", order.Id);
+            }
+            catch { /* non-blocking */ }
+        });
+
         return CreatedAtAction(nameof(GetById), new { id = order.Id },
             new { order.Id, order.OrderNumber });
     }
@@ -188,6 +200,21 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             order.ReceivedDate = DateOnly.Parse(req.ReceivedDate);
 
         await db.SaveChangesAsync();
+
+        if (req.Status == "ready")
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var msg = $"طلب المختبر {order.OrderNumber} — {order.ApplianceType} جاهز للاستلام";
+                    await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جاهز", msg, "LabOrder", order.Id);
+                    await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جاهز", msg, "LabOrder", order.Id);
+                }
+                catch { /* non-blocking */ }
+            });
+        }
+
         return Ok(new { id, status = req.Status });
     }
 

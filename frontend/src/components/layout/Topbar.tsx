@@ -1,5 +1,5 @@
 "use client";
-import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2 } from "lucide-react";
+import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, ChevronDown } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
@@ -343,15 +343,135 @@ export function Topbar() {
           )}
         </div>
 
-        {/* User avatar */}
+        {/* User menu */}
+        <UserMenu user={user} router={router} />
+      </div>
+    </header>
+  );
+}
+
+/* ─── UserMenu ───────────────────────────────────────────────────────────────── */
+function UserMenu({ user, router }: { user: ReturnType<typeof useAuthStore>["user"]; router: ReturnType<typeof useRouter> }) {
+  const { logout } = useAuthStore();
+  const [open, setOpen]           = useState(false);
+  const [changePw, setChangePw]   = useState(false);
+  const [pwForm, setPwForm]       = useState({ current: "", next: "", confirm: "" });
+  const [pwError, setPwError]     = useState("");
+  const [pwSaving, setPwSaving]   = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setChangePw(false); } };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/login");
+  };
+
+  const handleChangePw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwForm.next !== pwForm.confirm) { setPwError("كلمة المرور الجديدة غير متطابقة"); return; }
+    if (pwForm.next.length < 8) { setPwError("يجب أن تكون 8 أحرف على الأقل"); return; }
+    setPwSaving(true); setPwError("");
+    try {
+      await api.post("/api/users/me/change-password", { currentPassword: pwForm.current, newPassword: pwForm.next });
+      setChangePw(false); setOpen(false);
+      setPwForm({ current: "", next: "", confirm: "" });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setPwError(msg ?? "حدث خطأ");
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => { setOpen(o => !o); setChangePw(false); }}
+        className="flex items-center gap-1.5 rounded-lg hover:bg-gray-100 transition px-1 py-0.5"
+      >
         <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
           style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
-          title={user?.doctorName ?? user?.username}
         >
           {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
         </div>
-      </div>
-    </header>
+        <ChevronDown className="w-3 h-3 text-gray-400" />
+      </button>
+
+      {open && (
+        <div className="absolute top-full mt-2 end-0 w-72 bg-white rounded-xl border border-gray-200 shadow-xl z-50 overflow-hidden">
+          {/* User info */}
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
+              style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
+            >
+              {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-900 truncate">{user?.doctorName ?? user?.username}</p>
+              <p className="text-xs text-gray-400 truncate font-mono">{user?.username}</p>
+            </div>
+          </div>
+
+          {!changePw ? (
+            <div className="py-1">
+              <button
+                onClick={() => setChangePw(true)}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition text-start"
+              >
+                <KeyRound className="w-4 h-4 text-gray-400" />
+                تغيير كلمة المرور
+              </button>
+              <div className="border-t border-gray-100 my-1" />
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition text-start"
+              >
+                <LogOut className="w-4 h-4" />
+                تسجيل الخروج
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleChangePw} className="p-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-800">تغيير كلمة المرور</p>
+              {pwError && <p className="text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">{pwError}</p>}
+              <input
+                type="password" placeholder="كلمة المرور الحالية"
+                value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              />
+              <input
+                type="password" placeholder="كلمة المرور الجديدة (8 أحرف+)"
+                value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              />
+              <input
+                type="password" placeholder="تأكيد كلمة المرور الجديدة"
+                value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              />
+              <div className="flex gap-2 pt-1">
+                <button type="submit" disabled={pwSaving}
+                  className="flex-1 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+                >
+                  {pwSaving ? "جارٍ الحفظ..." : "حفظ"}
+                </button>
+                <button type="button" onClick={() => { setChangePw(false); setPwError(""); }}
+                  className="flex-1 py-2 text-sm font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

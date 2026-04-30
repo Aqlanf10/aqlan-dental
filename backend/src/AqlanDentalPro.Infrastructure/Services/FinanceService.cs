@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications)
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
@@ -205,7 +205,23 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser)
         await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
         await db.Entry(payment).Reference(p => p.Doctor).LoadAsync();
 
-        return MapPayment(payment);
+        var dto = MapPayment(payment);
+
+        // Notify accountants and admins
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var patientName = dto.PatientName ?? "مريض";
+                var amountStr = req.Amount.ToString("N0");
+                var msg = $"تم استلام دفعة {amountStr} ر.ي من {patientName}";
+                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
+                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
+            }
+            catch { /* non-blocking */ }
+        });
+
+        return dto;
     }
 
     public async Task<FinanceSummaryDto> GetSummaryAsync()

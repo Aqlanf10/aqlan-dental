@@ -41,7 +41,7 @@ public class AuditLogsController(AppDbContext db) : ControllerBase
             .Select(a => new
             {
                 a.Id,
-                a.Action,
+                Action = a.Action.ToString(),
                 a.Resource,
                 a.ResourceId,
                 a.IpAddress,

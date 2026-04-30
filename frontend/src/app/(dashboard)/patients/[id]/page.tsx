@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image,
-  Trash2, ExternalLink,
+  Trash2, ExternalLink, Archive, RotateCcw,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
@@ -13,6 +13,8 @@ import { cn, GENDER_LABELS, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "
 import { toast } from "@/stores/toastStore";
 import { DentalChart } from "@/components/dental/DentalChart";
 import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useAuthStore } from "@/stores/authStore";
 
 interface PatientSummary {
   totalAppointments:   number;
@@ -634,20 +636,51 @@ const TABS: { key: Tab; label: string; icon: typeof User }[] = [
 
 export default function PatientProfilePage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role?.toLowerCase() === "admin";
+
   const [patient, setPatient]   = useState<PatientProfile | null>(null);
   const [summary, setSummary]   = useState<PatientSummary | null>(null);
   const [loading, setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("info");
+  const [confirmAction, setConfirmAction] = useState<"archive" | "restore" | null>(null);
 
-  useEffect(() => {
+  const fetchPatient = () => {
     api.get<PatientProfile>(`/api/patients/${id}`)
       .then((r) => setPatient(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchPatient();
     api.get<PatientSummary>(`/api/patients/${id}/summary`)
       .then((r) => setSummary(r.data))
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const handleArchive = async () => {
+    try {
+      await api.put(`/api/patients/${id}/archive`);
+      toast.success("تم أرشفة المريض");
+      fetchPatient();
+    } catch {
+      toast.error("فشل أرشفة المريض");
+    }
+    setConfirmAction(null);
+  };
+
+  const handleRestore = async () => {
+    try {
+      await api.put(`/api/patients/${id}/restore`);
+      toast.success("تم استعادة المريض");
+      fetchPatient();
+    } catch {
+      toast.error("فشل استعادة المريض");
+    }
+    setConfirmAction(null);
+  };
 
   if (loading) {
     return (
@@ -691,8 +724,11 @@ export default function PatientProfilePage() {
                 <span className="font-mono text-xs bg-gray-100 px-2.5 py-1 rounded text-gray-600">
                   {patient.patientNumber}
                 </span>
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                  نشط
+                <span className={cn(
+                  "text-xs px-2 py-0.5 rounded-full font-medium",
+                  patient.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
+                )}>
+                  {patient.isActive ? "نشط" : "مؤرشف"}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
@@ -726,13 +762,35 @@ export default function PatientProfilePage() {
               </p>
             </div>
           </div>
-          <Link
-            href={`/patients/${id}/edit`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600 flex-shrink-0"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-            تعديل
-          </Link>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {patient.isActive && (
+              <Link
+                href={`/patients/${id}/edit`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                تعديل
+              </Link>
+            )}
+            {isAdmin && patient.isActive && (
+              <button
+                onClick={() => setConfirmAction("archive")}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-red-200 rounded-lg hover:bg-red-50 transition text-red-600"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                أرشفة
+              </button>
+            )}
+            {isAdmin && !patient.isActive && (
+              <button
+                onClick={() => setConfirmAction("restore")}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-green-200 rounded-lg hover:bg-green-50 transition text-green-700"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                استعادة
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Quick stats row */}
@@ -906,6 +964,21 @@ export default function PatientProfilePage() {
           {activeTab === "images" && <PhotosAndXraysTab patientId={id} />}
         </div>
       </div>
+
+      {/* Archive/Restore confirmation */}
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={confirmAction === "archive" ? "أرشفة المريض" : "استعادة المريض"}
+        message={
+          confirmAction === "archive"
+            ? `هل تريد أرشفة المريض "${patient.firstName} ${patient.lastName}"؟ لن يظهر في القوائم العادية لكن يمكن استعادته لاحقاً.`
+            : `هل تريد استعادة المريض "${patient.firstName} ${patient.lastName}" وإعادة تفعيله؟`
+        }
+        confirmLabel={confirmAction === "archive" ? "أرشفة" : "استعادة"}
+        variant={confirmAction === "archive" ? "danger" : "warning"}
+        onConfirm={confirmAction === "archive" ? handleArchive : handleRestore}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

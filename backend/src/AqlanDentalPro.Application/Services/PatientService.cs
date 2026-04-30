@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Utilities;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using Microsoft.Extensions.Configuration;
@@ -16,10 +17,10 @@ public class PatientService(
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
     public async Task<PaginatedResponse<PatientListDto>> GetListAsync(
-        string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null)
+        string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null, string? status = "active")
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
-        var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId);
+        var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId, status);
 
         return new PaginatedResponse<PatientListDto>
         {
@@ -40,6 +41,9 @@ public class PatientService(
     {
         var number = await repo.GeneratePatientNumberAsync(NumberPrefix);
 
+        var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+        var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+
         var patient = new Patient
         {
             PatientNumber = number,
@@ -49,7 +53,9 @@ public class PatientService(
             DateOfBirth = req.DateOfBirth != null ? DateOnly.Parse(req.DateOfBirth) : null,
             Gender = req.Gender != null ? Enum.Parse<Gender>(req.Gender, true) : null,
             Phone = req.Phone,
+            NormalizedPhone = normalizedPhone,
             WhatsApp = req.WhatsApp,
+            NormalizedWhatsApp = normalizedWhatsApp,
             Address = req.Address,
             Occupation = req.Occupation,
             ReferralSource = req.ReferralSource,
@@ -103,7 +109,9 @@ public class PatientService(
         patient.DateOfBirth = req.DateOfBirth != null ? DateOnly.Parse(req.DateOfBirth) : null;
         patient.Gender = req.Gender != null ? Enum.Parse<Gender>(req.Gender, true) : null;
         patient.Phone = req.Phone;
+        patient.NormalizedPhone = PhoneNormalizer.Normalize(req.Phone);
         patient.WhatsApp = req.WhatsApp;
+        patient.NormalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
         patient.Address = req.Address;
         patient.Occupation = req.Occupation;
         patient.ReferralSource = req.ReferralSource;
@@ -139,16 +147,40 @@ public class PatientService(
         return ToProfileDto(patient);
     }
 
-    public async Task<bool> SoftDeleteAsync(Guid id)
+    public async Task<(bool exists, string? patientNumber, string? fullName)> CheckDuplicatePhoneAsync(string? phone, Guid? excludeId = null)
+    {
+        var normalized = PhoneNormalizer.Normalize(phone);
+        if (string.IsNullOrEmpty(normalized)) return (false, null, null);
+        var existing = await repo.FindByNormalizedPhoneAsync(normalized, excludeId);
+        if (existing == null) return (false, null, null);
+        return (true, existing.PatientNumber, $"{existing.FirstName} {existing.LastName}".Trim());
+    }
+
+    public async Task<bool> ArchiveAsync(Guid id)
     {
         var patient = await repo.GetByIdAsync(id);
         if (patient == null) return false;
 
         patient.IsActive = false;
+        patient.UpdatedAt = DateTime.UtcNow;
         repo.Update(patient);
         await repo.SaveChangesAsync();
         return true;
     }
+
+    public async Task<bool> RestoreAsync(Guid id)
+    {
+        var patient = await repo.GetArchivedByIdAsync(id);
+        if (patient == null) return false;
+
+        patient.IsActive = true;
+        patient.UpdatedAt = DateTime.UtcNow;
+        repo.Update(patient);
+        await repo.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> SoftDeleteAsync(Guid id) => await ArchiveAsync(id);
 
     private static PatientListDto ToListDto(Patient p) => new()
     {
@@ -186,6 +218,7 @@ public class PatientService(
         BranchId = p.BranchId,
         BranchName = p.Branch?.Name,
         CreatedAt = p.CreatedAt,
+        IsActive = p.IsActive,
         MedicalHistory = p.MedicalHistory == null ? null : new MedicalHistoryDto
         {
             ChronicDiseases = p.MedicalHistory.ChronicDiseases,

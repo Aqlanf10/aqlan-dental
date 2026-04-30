@@ -11,9 +11,16 @@ public class PatientRepository(AppDbContext context)
 {
     public async Task<PaginatedResponse<Patient>> SearchAsync(
         string? search, int page, int pageSize, Guid? branchId,
-        string? gender = null, Guid? doctorId = null)
+        string? gender = null, Guid? doctorId = null, string? status = "active")
     {
-        var query = DbSet
+        var baseQuery = status?.ToLower() switch
+        {
+            "archived" => DbSet.IgnoreQueryFilters().Where(p => !p.IsActive),
+            "all"      => DbSet.IgnoreQueryFilters(),
+            _          => DbSet.AsQueryable(), // "active" — global filter applies
+        };
+
+        var query = baseQuery
             .Include(p => p.PrimaryDoctor)
             .Include(p => p.Branch)
             .AsQueryable();
@@ -63,6 +70,18 @@ public class PatientRepository(AppDbContext context)
             .Include(p => p.PrimaryDoctor)
             .Include(p => p.Branch)
             .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> GetArchivedByIdAsync(Guid id) =>
+        await DbSet
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> FindByNormalizedPhoneAsync(string normalizedPhone, Guid? excludeId = null) =>
+        await DbSet
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p =>
+                p.NormalizedPhone == normalizedPhone &&
+                (excludeId == null || p.Id != excludeId));
 
     public async Task<string> GeneratePatientNumberAsync(string prefix)
     {

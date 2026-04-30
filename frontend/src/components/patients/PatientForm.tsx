@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, ChevronDown } from "lucide-react";
+import { Save, ChevronDown, AlertCircle } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -90,10 +90,12 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
+  const [phoneDuplicate, setPhoneDuplicate] = useState<{ patientNumber: string; fullName: string } | null>(null);
 
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -106,6 +108,25 @@ export function PatientForm({ defaultValues, patientId }: Props) {
       tongueThrusing: false,
     },
   });
+
+  const phoneValue = useWatch({ control, name: "phone" });
+
+  useEffect(() => {
+    if (!phoneValue || phoneValue.length < 7) { setPhoneDuplicate(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ phone: phoneValue });
+        if (patientId) params.set("excludeId", patientId);
+        const { data } = await api.get<{ exists: boolean; patientNumber?: string; fullName?: string }>(
+          `/api/patients/check-duplicate?${params}`
+        );
+        setPhoneDuplicate(data.exists && data.patientNumber ? { patientNumber: data.patientNumber, fullName: data.fullName ?? "" } : null);
+      } catch {
+        setPhoneDuplicate(null);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [phoneValue, patientId]);
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -190,6 +211,15 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         </Field>
         <Field label="رقم الهاتف">
           <input {...register("phone")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" />
+          {phoneDuplicate && (
+            <div className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              <span>
+                هذا الرقم مسجّل مسبقاً للمريض{" "}
+                <strong>{phoneDuplicate.fullName}</strong> ({phoneDuplicate.patientNumber})
+              </span>
+            </div>
+          )}
         </Field>
         <Field label="واتساب">
           <input {...register("whatsApp")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" />

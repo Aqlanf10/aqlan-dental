@@ -18,9 +18,10 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? gender = null,
-        [FromQuery] Guid? doctorId = null)
+        [FromQuery] Guid? doctorId = null,
+        [FromQuery] string? status = "active")
     {
-        var result = await service.GetListAsync(search, page, pageSize, gender, doctorId);
+        var result = await service.GetListAsync(search, page, pageSize, gender, doctorId, status);
         return Ok(result);
     }
 
@@ -50,6 +51,30 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     {
         var success = await service.SoftDeleteAsync(id);
         return success ? NoContent() : NotFound(new { message = "المريض غير موجود" });
+    }
+
+    [HttpPut("{id:guid}/archive")]
+    [Authorize(Roles = "Admin,admin")]
+    public async Task<IActionResult> Archive(Guid id)
+    {
+        var success = await service.ArchiveAsync(id);
+        return success ? Ok(new { message = "تم أرشفة المريض" }) : NotFound(new { message = "المريض غير موجود" });
+    }
+
+    [HttpPut("{id:guid}/restore")]
+    [Authorize(Roles = "Admin,admin")]
+    public async Task<IActionResult> Restore(Guid id)
+    {
+        var success = await service.RestoreAsync(id);
+        return success ? Ok(new { message = "تم استعادة المريض" }) : NotFound(new { message = "المريض غير موجود" });
+    }
+
+    // GET /api/patients/check-duplicate?phone=0770123456&excludeId=...
+    [HttpGet("check-duplicate")]
+    public async Task<IActionResult> CheckDuplicate([FromQuery] string? phone, [FromQuery] Guid? excludeId = null)
+    {
+        var (exists, patientNumber, fullName) = await service.CheckDuplicatePhoneAsync(phone, excludeId);
+        return Ok(new { exists, patientNumber, fullName });
     }
 
     [HttpGet("{id:guid}/medical-history")]

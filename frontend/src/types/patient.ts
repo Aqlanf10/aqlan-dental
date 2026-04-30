@@ -51,6 +51,7 @@ export interface PatientProfile {
   branchId?: string;
   branchName?: string;
   createdAt: string;
+  isActive: boolean;
   medicalHistory?: MedicalHistory;
   dentalHistory?: DentalHistory;
 }

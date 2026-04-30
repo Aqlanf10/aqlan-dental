@@ -34,6 +34,7 @@ public class PatientProfileDto
     public Guid? BranchId { get; set; }
     public string? BranchName { get; set; }
     public DateTime CreatedAt { get; set; }
+    public bool IsActive { get; set; }
     public MedicalHistoryDto? MedicalHistory { get; set; }
     public DentalHistoryDto? DentalHistory { get; set; }
 }

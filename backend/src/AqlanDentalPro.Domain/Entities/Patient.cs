@@ -11,7 +11,9 @@ public class Patient : BaseEntity
     public DateOnly? DateOfBirth { get; set; }
     public Gender? Gender { get; set; }
     public string? Phone { get; set; }
+    public string? NormalizedPhone { get; set; }
     public string? WhatsApp { get; set; }
+    public string? NormalizedWhatsApp { get; set; }
     public string? Address { get; set; }
     public string? Occupation { get; set; }
     public string? ReferralSource { get; set; }

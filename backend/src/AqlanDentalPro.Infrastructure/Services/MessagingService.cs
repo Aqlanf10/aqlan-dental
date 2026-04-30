@@ -16,9 +16,14 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     public async Task<PaginatedResponse<ConversationListDto>> GetMyConversationsAsync(
         int page = 1, int pageSize = 20, string? search = null)
     {
-        var query = db.ConversationParticipants
+        // Query conversations directly (not through participants) to allow Include
+        var myConversationIds = await db.ConversationParticipants
             .Where(cp => cp.UserId == UserId)
-            .Select(cp => cp.Conversation)
+            .Select(cp => cp.ConversationId)
+            .ToListAsync();
+
+        var query = db.Conversations
+            .Where(c => myConversationIds.Contains(c.Id))
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
@@ -39,11 +44,20 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             .Take(pageSize)
             .ToListAsync();
 
+        // Batch fetch unread counts to avoid N+1
+        var unreadCounts = await db.Messages
+            .Where(m => myConversationIds.Contains(m.ConversationId)
+                     && m.SenderId != UserId
+                     && !m.Reads.Any(r => r.UserId == UserId))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => new { ConversationId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ConversationId, x => x.Count);
+
         var result = new List<ConversationListDto>();
         foreach (var conv in conversations)
         {
             var dto = MapToListDto(conv);
-            dto.UnreadCount = await GetUnreadCountAsync(conv.Id);
+            dto.UnreadCount = unreadCounts.GetValueOrDefault(conv.Id);
             result.Add(dto);
         }
 
@@ -252,15 +266,17 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             .Select(cp => cp.ConversationId)
             .ToListAsync();
 
-        var totalUnread = 0;
-        var unreadConvs = 0;
+        // Batch fetch all unread counts in one query
+        var unreadByConv = await db.Messages
+            .Where(m => myConversationIds.Contains(m.ConversationId)
+                     && m.SenderId != UserId
+                     && !m.Reads.Any(r => r.UserId == UserId))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => new { ConversationId = g.Key, Count = g.Count() })
+            .ToListAsync();
 
-        foreach (var convId in myConversationIds)
-        {
-            var count = await GetUnreadCountAsync(convId);
-            totalUnread += count;
-            if (count > 0) unreadConvs++;
-        }
+        var totalUnread = unreadByConv.Sum(x => x.Count);
+        var unreadConvs = unreadByConv.Count(x => x.Count > 0);
 
         return new UnreadCountDto
         {

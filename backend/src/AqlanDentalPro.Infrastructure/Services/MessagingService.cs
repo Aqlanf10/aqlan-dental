@@ -24,6 +24,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
         var query = db.Conversations
             .Where(c => myConversationIds.Contains(c.Id))
+            .Include(c => c.Patient)
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
@@ -97,11 +98,28 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         // Mark as read
         await MarkAsReadAsync(conversationId);
 
+        // Get patient info if this is a patient conversation
+        string? patientName = null;
+        string? patientPhone = null;
+        if (conv.PatientId.HasValue)
+        {
+            var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == conv.PatientId.Value);
+            if (patient != null)
+            {
+                patientName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim();
+                patientPhone = patient.Phone;
+            }
+        }
+
         return new ConversationDetailDto
         {
             Id = conv.Id,
             Title = conv.Title,
             IsGroup = conv.IsGroup,
+            ConversationType = conv.ConversationType.ToString(),
+            PatientId = conv.PatientId,
+            PatientName = patientName,
+            PatientPhone = patientPhone,
             Participants = conv.Participants.Select(MapParticipantDto).ToList(),
             Messages = messages.Select(m => MapMessageDto(m)).ToList(),
             CreatedAt = conv.CreatedAt
@@ -341,9 +359,71 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── محادثة مع مريض ──────────────────────────────────────────────────────
     public async Task<ConversationDetailDto?> GetOrCreatePatientConversationAsync(Guid patientId)
     {
-        // Patient messaging is not supported in this version
-        // Patients don't have user accounts in the staff system
-        return null;
+        // Find patient
+        var patient = await db.Patients
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == patientId);
+        if (patient == null) return null;
+
+        // Look for existing conversation linked to this patient
+        var existingConv = await db.Conversations
+            .Include(c => c.Participants)
+                .ThenInclude(p => p.User)
+                    .ThenInclude(u => u.Doctor)
+            .Where(c => c.PatientId == patientId && c.ConversationType == ConversationType.StaffToPatient)
+            .FirstOrDefaultAsync();
+
+        if (existingConv != null)
+        {
+            // Check if current user is already a participant
+            var isParticipant = existingConv.Participants.Any(p => p.UserId == UserId);
+            if (!isParticipant)
+            {
+                // Add current user as participant
+                await db.ConversationParticipants.AddAsync(new ConversationParticipant
+                {
+                    ConversationId = existingConv.Id,
+                    UserId = UserId,
+                    IsAdmin = false
+                });
+                await db.SaveChangesAsync();
+            }
+            return await GetConversationAsync(existingConv.Id);
+        }
+
+        // Create new StaffToPatient conversation
+        var patientName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim();
+        var conv = new Conversation
+        {
+            Title = $"محادثة المريض - {patientName}",
+            IsGroup = false,
+            CreatedBy = UserId,
+            PatientId = patientId,
+            ConversationType = ConversationType.StaffToPatient,
+            BranchId = patient.BranchId,
+        };
+
+        await db.Conversations.AddAsync(conv);
+
+        // Add current user as participant (admin)
+        await db.ConversationParticipants.AddAsync(new ConversationParticipant
+        {
+            ConversationId = conv.Id,
+            UserId = UserId,
+            IsAdmin = true
+        });
+
+        // Add system message
+        await db.Messages.AddAsync(new Message
+        {
+            ConversationId = conv.Id,
+            SenderId = UserId,
+            Content = $"تم إنشاء محادثة حول المريض: {patientName}",
+            IsSystemMessage = true
+        });
+
+        await db.SaveChangesAsync();
+        return await GetConversationAsync(conv.Id);
     }
 
     // ─── التحقق من صلاحية المراسلة (عام) ────────────────────────────────────────
@@ -392,11 +472,24 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         var otherParticipant = conv.Participants
             .FirstOrDefault(p => p.UserId != UserId);
 
+        // For patient conversations, show patient info
+        string displayTitle = conv.Title;
+        if (conv.ConversationType == ConversationType.StaffToPatient && conv.Patient != null)
+        {
+            displayTitle = $"مريض: {conv.Patient.FirstName} {conv.Patient.LastName}";
+        }
+        else if (!conv.IsGroup && otherParticipant != null)
+        {
+            displayTitle = otherParticipant.User?.Doctor?.Name ?? otherParticipant.User?.Username ?? conv.Title;
+        }
+
         return new ConversationListDto
         {
             Id = conv.Id,
-            Title = conv.IsGroup ? conv.Title : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title),
+            Title = displayTitle,
             IsGroup = conv.IsGroup,
+            ConversationType = conv.ConversationType.ToString(),
+            PatientId = conv.PatientId,
             LastMessageAt = conv.LastMessageAt,
             LastMessagePreview = conv.LastMessagePreview,
             OtherParticipant = otherParticipant != null ? MapParticipantDto(otherParticipant) : null,

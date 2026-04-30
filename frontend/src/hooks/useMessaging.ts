@@ -26,6 +26,7 @@ export function useConversations(page = 1, search?: string) {
       };
     },
     staleTime: 5_000,
+    refetchInterval: 10_000, // Poll every 10 seconds for new conversations
   });
 }
 
@@ -42,6 +43,7 @@ export function useConversation(conversationId: string | null, page = 1) {
     },
     enabled: !!conversationId,
     staleTime: 3_000,
+    refetchInterval: 5_000, // Poll every 5 seconds for new messages
   });
 }
 

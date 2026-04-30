@@ -48,11 +48,42 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
                 CREATE INDEX IF NOT EXISTS "IX_Conversations_LastMessageAt" ON "Conversations" ("LastMessageAt")
             """);
 
+            // Add Patient conversation support columns
+            await db.Database.ExecuteSqlRawAsync("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
+                        ALTER TABLE "Conversations" ADD COLUMN "ConversationType" character varying(20) NOT NULL DEFAULT 'StaffToStaff';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'PatientId') THEN
+                        ALTER TABLE "Conversations" ADD COLUMN "PatientId" uuid NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId') THEN
+                        ALTER TABLE "Conversations" ADD COLUMN "BranchId" uuid NULL;
+                    END IF;
+                END $$
+            """);
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId" ON "Conversations" ("PatientId")
+            """);
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType" ON "Conversations" ("ConversationType")
+            """);
+
             await db.Database.ExecuteSqlRawAsync("""
                 DO $$ BEGIN
                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Users_CreatedBy') THEN
                         ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Users_CreatedBy" 
                             FOREIGN KEY ("CreatedBy") REFERENCES "Users"("Id") ON DELETE SET NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId') THEN
+                        ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Patients_PatientId" 
+                            FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE SET NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Branches_BranchId') THEN
+                        ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Branches_BranchId" 
+                            FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE SET NULL;
                     END IF;
                 END $$
             """);
@@ -170,6 +201,14 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
                 )
             """);
 
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                SELECT '20260501010000_AddPatientConversationSupport', '8.0.8'
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
+                )
+            """);
+
             return Ok(new { message = "تم إنشاء جداول المراسلة بنجاح" });
         }
         catch (Exception ex)
@@ -282,8 +321,15 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
     [HttpGet("patient/{patientId:guid}")]
     public async Task<ActionResult<ConversationDetailDto>> GetOrCreatePatientConversation(Guid patientId)
     {
-        var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
-        if (result == null) return NotFound(new { message = "المريض ليس لديه حساب في البوابة" });
-        return Ok(result);
+        try
+        {
+            var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
+            if (result == null) return NotFound(new { message = "المريض غير موجود" });
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Forbid(ex.Message);
+        }
     }
 }

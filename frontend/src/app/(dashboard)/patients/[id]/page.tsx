@@ -5,12 +5,13 @@ import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image,
-  Trash2, ExternalLink, MessageCircle,
+  Trash2, ExternalLink, MessageCircle, Archive, RotateCcw,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
+import { useAuthStore } from "@/stores/authStore";
 import { DentalChart } from "@/components/dental/DentalChart";
 import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
 
@@ -638,6 +639,37 @@ export default function PatientProfilePage() {
   const [summary, setSummary]   = useState<PatientSummary | null>(null);
   const [loading, setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("info");
+  const { user } = useAuthStore();
+  const [confirmAction, setConfirmAction] = useState<{ type: "archive" | "restore"; id: string; name: string } | null>(null);
+
+  const handleArchivePatient = (patientId: string, name: string) => {
+    setConfirmAction({ type: "archive", id: patientId, name });
+  };
+
+  const handleRestorePatient = (patientId: string, name: string) => {
+    setConfirmAction({ type: "restore", id: patientId, name });
+  };
+
+  const executeConfirmAction = async () => {
+    if (!confirmAction) return;
+    try {
+      if (confirmAction.type === "archive") {
+        await api.delete(`/api/patients/${confirmAction.id}`);
+        toast.success(`تم أرشفة المريض ${confirmAction.name} بنجاح`);
+      } else {
+        await api.post(`/api/patients/${confirmAction.id}/restore`);
+        toast.success(`تم استعادة المريض ${confirmAction.name} بنجاح`);
+      }
+      // Refresh patient data
+      const { data: updated } = await api.get<PatientProfile>(`/api/patients/${id}`);
+      setPatient(updated);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "حدث خطأ أثناء العملية");
+    } finally {
+      setConfirmAction(null);
+    }
+  };
 
   useEffect(() => {
     api.get<PatientProfile>(`/api/patients/${id}`)
@@ -691,8 +723,13 @@ export default function PatientProfilePage() {
                 <span className="font-mono text-xs bg-gray-100 px-2.5 py-1 rounded text-gray-600">
                   {patient.patientNumber}
                 </span>
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                  نشط
+                <span className={cn(
+                  "text-xs px-2 py-0.5 rounded-full font-medium",
+                  patient.isActive
+                    ? "bg-green-100 text-green-700"
+                    : "bg-orange-100 text-orange-600"
+                )}>
+                  {patient.isActive ? "نشط" : "مؤرشف"}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
@@ -726,13 +763,33 @@ export default function PatientProfilePage() {
               </p>
             </div>
           </div>
-          <Link
-            href={`/patients/${id}/edit`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600 flex-shrink-0"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-            تعديل
-          </Link>
+          {patient.isActive && (
+            <Link
+              href={`/patients/${id}/edit`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600 flex-shrink-0"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              تعديل
+            </Link>
+          )}
+          {user?.role === "Admin" && patient.isActive && (
+            <button
+              onClick={() => handleArchivePatient(id, `${patient.firstName} ${patient.lastName}`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-orange-200 rounded-lg hover:bg-orange-50 transition text-orange-600 flex-shrink-0"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              أرشفة
+            </button>
+          )}
+          {user?.role === "Admin" && !patient.isActive && (
+            <button
+              onClick={() => handleRestorePatient(id, `${patient.firstName} ${patient.lastName}`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-green-200 rounded-lg hover:bg-green-50 transition text-green-600 flex-shrink-0"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              استعادة
+            </button>
+          )}
           <Link
             href={`/messages?patientId=${id}`}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-clinic-teal/30 rounded-lg hover:bg-clinic-teal/5 transition text-clinic-teal flex-shrink-0"
@@ -913,6 +970,53 @@ export default function PatientProfilePage() {
           {activeTab === "images" && <PhotosAndXraysTab patientId={id} />}
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4">
+            <div className="text-center">
+              <div className={cn(
+                "w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3",
+                confirmAction.type === "archive" ? "bg-orange-100" : "bg-green-100"
+              )}>
+                {confirmAction.type === "archive"
+                  ? <Archive className="w-7 h-7 text-orange-600" />
+                  : <RotateCcw className="w-7 h-7 text-green-600" />
+                }
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">
+                {confirmAction.type === "archive" ? "أرشفة المريض" : "استعادة المريض"}
+              </h3>
+              <p className="text-sm text-gray-500 mt-2">
+                {confirmAction.type === "archive"
+                  ? `هل أنت متأكد من أرشفة المريض "${confirmAction.name}"؟ لن يظهر في قائمة المرضى النشطين، ويمكن استعادته لاحقًا.`
+                  : `هل أنت متأكد من استعادة المريض "${confirmAction.name}"؟ سيظهر مجدداً في قائمة المرضى النشطين.`
+                }
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="flex-1 py-2.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={executeConfirmAction}
+                className={cn(
+                  "flex-1 py-2.5 text-sm font-medium rounded-lg text-white transition",
+                  confirmAction.type === "archive"
+                    ? "bg-orange-500 hover:bg-orange-600"
+                    : "bg-green-500 hover:bg-green-600"
+                )}
+              >
+                {confirmAction.type === "archive" ? "أرشفة" : "استعادة"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

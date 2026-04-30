@@ -14,12 +14,23 @@ public class PatientRepository(AppDbContext context)
         await DbSet.FirstOrDefaultAsync(predicate);
     public async Task<PaginatedResponse<Patient>> SearchAsync(
         string? search, int page, int pageSize, Guid? branchId,
-        string? gender = null, Guid? doctorId = null)
+        string? gender = null, Guid? doctorId = null, string? status = null)
     {
         var query = DbSet
             .Include(p => p.PrimaryDoctor)
             .Include(p => p.Branch)
             .AsQueryable();
+
+        // Status filtering
+        if (status == "archived")
+        {
+            query = query.IgnoreQueryFilters().Where(p => !p.IsActive);
+        }
+        else if (status == "all")
+        {
+            query = query.IgnoreQueryFilters();
+        }
+        // else status == null or "active": global filter already applies (IsActive = true)
 
         if (branchId.HasValue)
             query = query.Where(p => p.BranchId == branchId);
@@ -67,13 +78,51 @@ public class PatientRepository(AppDbContext context)
             .Include(p => p.Branch)
             .FirstOrDefaultAsync(p => p.Id == id);
 
+    public async Task<Patient?> GetWithHistoriesIgnoreFiltersAsync(Guid id) =>
+        await DbSet
+            .IgnoreQueryFilters()
+            .Include(p => p.MedicalHistory)
+            .Include(p => p.DentalHistory)
+            .Include(p => p.PrimaryDoctor)
+            .Include(p => p.Branch)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> GetByIdIgnoreFiltersAsync(Guid id) =>
+        await DbSet.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == id);
+
     public async Task<string> GeneratePatientNumberAsync(string prefix)
     {
         var year = DateTime.Today.Year;
-        var count = await DbSet
-            .IgnoreQueryFilters()
-            .CountAsync(p => p.PatientNumber.StartsWith($"{prefix}-{year}-"));
+        var baseNum = $"{prefix}-{year}-";
+        
+        // Use retry loop to handle concurrent inserts
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            var count = await DbSet
+                .IgnoreQueryFilters()
+                .CountAsync(p => p.PatientNumber.StartsWith(baseNum));
 
-        return $"{prefix}-{year}-{(count + 1):D3}";
+            var number = $"{baseNum}{(count + 1 + attempt):D3}";
+            
+            // Check if this number already exists
+            var exists = await DbSet
+                .IgnoreQueryFilters()
+                .AnyAsync(p => p.PatientNumber == number);
+            
+            if (!exists) return number;
+        }
+        
+        // Fallback: use max + 1
+        var maxNumber = await DbSet
+            .IgnoreQueryFilters()
+            .Where(p => p.PatientNumber.StartsWith(baseNum))
+            .OrderByDescending(p => p.PatientNumber)
+            .Select(p => p.PatientNumber)
+            .FirstOrDefaultAsync();
+        
+        if (int.TryParse(maxNumber?.Split('-').Last(), out var maxSeq))
+            return $"{baseNum}{(maxSeq + 1):D3}";
+        
+        return $"{baseNum}001";
     }
 }

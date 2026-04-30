@@ -16,10 +16,10 @@ public class PatientService(
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
     public async Task<PaginatedResponse<PatientListDto>> GetListAsync(
-        string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null)
+        string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null, string? status = null)
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
-        var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId);
+        var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId, status);
 
         return new PaginatedResponse<PatientListDto>
         {
@@ -33,23 +33,31 @@ public class PatientService(
     public async Task<PatientProfileDto?> GetByIdAsync(Guid id)
     {
         var patient = await repo.GetWithHistoriesAsync(id);
+        // If not found (may be archived and filtered by global filter), try ignoring filters
+        if (patient == null)
+            patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
         return patient == null ? null : ToProfileDto(patient);
     }
 
     public async Task<PatientProfileDto> CreateAsync(CreatePatientRequest req)
     {
-        // Check for duplicate phone
-        if (!string.IsNullOrWhiteSpace(req.Phone))
+        var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+        var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+
+        // Check for duplicate phone (using normalized)
+        if (normalizedPhone != null)
         {
-            var existingPhone = await repo.FirstOrDefaultAsync(p => (p.Phone == req.Phone || p.WhatsApp == req.Phone) && p.IsActive);
+            var existingPhone = await repo.FirstOrDefaultAsync(p => 
+                (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone) && p.IsActive);
             if (existingPhone != null)
                 throw new InvalidOperationException($"رقم الهاتف مضاف مسبقاً لمريض آخر: {existingPhone.FirstName} {existingPhone.LastName} (ملف رقم {existingPhone.PatientNumber})");
         }
 
-        // Check for duplicate WhatsApp
-        if (!string.IsNullOrWhiteSpace(req.WhatsApp))
+        // Check for duplicate WhatsApp (using normalized)
+        if (normalizedWhatsApp != null)
         {
-            var existingWA = await repo.FirstOrDefaultAsync(p => (p.WhatsApp == req.WhatsApp || p.Phone == req.WhatsApp) && p.IsActive);
+            var existingWA = await repo.FirstOrDefaultAsync(p => 
+                (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp) && p.IsActive);
             if (existingWA != null)
                 throw new InvalidOperationException($"رقم واتساب مضاف مسبقاً لمريض آخر: {existingWA.FirstName} {existingWA.LastName} (ملف رقم {existingWA.PatientNumber})");
         }
@@ -66,6 +74,8 @@ public class PatientService(
             Gender = req.Gender != null ? Enum.Parse<Gender>(req.Gender, true) : null,
             Phone = req.Phone,
             WhatsApp = req.WhatsApp,
+            NormalizedPhone = normalizedPhone,
+            NormalizedWhatsApp = normalizedWhatsApp,
             Address = req.Address,
             Occupation = req.Occupation,
             ReferralSource = req.ReferralSource,
@@ -113,6 +123,26 @@ public class PatientService(
         var patient = await repo.GetWithHistoriesAsync(id);
         if (patient == null) return null;
 
+        // Normalize and check duplicates before updating
+        var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+        var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+
+        if (normalizedPhone != null)
+        {
+            var existingPhone = await repo.FirstOrDefaultAsync(p => 
+                p.Id != id && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone) && p.IsActive);
+            if (existingPhone != null)
+                throw new InvalidOperationException($"رقم الهاتف أو الواتساب مستخدم مسبقاً لمريض آخر: {existingPhone.FirstName} {existingPhone.LastName} (ملف رقم {existingPhone.PatientNumber})");
+        }
+
+        if (normalizedWhatsApp != null)
+        {
+            var existingWA = await repo.FirstOrDefaultAsync(p => 
+                p.Id != id && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp) && p.IsActive);
+            if (existingWA != null)
+                throw new InvalidOperationException($"رقم واتساب أو الهاتف مستخدم مسبقاً لمريض آخر: {existingWA.FirstName} {existingWA.LastName} (ملف رقم {existingWA.PatientNumber})");
+        }
+
         patient.FirstName = req.FirstName;
         patient.MiddleName = req.MiddleName;
         patient.LastName = req.LastName;
@@ -120,6 +150,8 @@ public class PatientService(
         patient.Gender = req.Gender != null ? Enum.Parse<Gender>(req.Gender, true) : null;
         patient.Phone = req.Phone;
         patient.WhatsApp = req.WhatsApp;
+        patient.NormalizedPhone = normalizedPhone;
+        patient.NormalizedWhatsApp = normalizedWhatsApp;
         patient.Address = req.Address;
         patient.Occupation = req.Occupation;
         patient.ReferralSource = req.ReferralSource;
@@ -161,6 +193,21 @@ public class PatientService(
         if (patient == null) return false;
 
         patient.IsActive = false;
+        patient.DeletedAt = DateTime.UtcNow;
+        patient.DeletedBy = currentUser.UserId;
+        repo.Update(patient);
+        await repo.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> RestoreAsync(Guid id)
+    {
+        var patient = await repo.GetByIdIgnoreFiltersAsync(id);
+        if (patient == null) return false;
+
+        patient.IsActive = true;
+        patient.DeletedAt = null;
+        patient.DeletedBy = null;
         repo.Update(patient);
         await repo.SaveChangesAsync();
         return true;
@@ -202,6 +249,7 @@ public class PatientService(
         BranchId = p.BranchId,
         BranchName = p.Branch?.Name,
         CreatedAt = p.CreatedAt,
+        IsActive = p.IsActive,
         MedicalHistory = p.MedicalHistory == null ? null : new MedicalHistoryDto
         {
             ChronicDiseases = p.MedicalHistory.ChronicDiseases,

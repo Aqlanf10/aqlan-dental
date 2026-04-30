@@ -9,6 +9,31 @@ import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+// ─── توحيد صيغة رقم الهاتف اليمنية ──────────────────────────────────────────
+function normalizePhone(phone: string): string {
+  if (!phone) return "";
+  let result = phone
+    // Convert Arabic/Indic digits to English
+    .replace(/[٠٠-٩۹]/g, (c) => {
+      const map: Record<string, string> = {
+        '٠': '0', '۰': '0', '١': '1', '۱': '1', '٢': '2', '۲': '2',
+        '٣': '3', '۳': '3', '٤': '4', '۴': '4', '٥': '5', '۵': '5',
+        '٦': '6', '۶': '6', '٧': '7', '۷': '7', '٨': '8', '۸': '8',
+        '٩': '9', '۹': '9',
+      };
+      return map[c] ?? c;
+    })
+    // Remove spaces, dashes, parentheses, dots
+    .replace(/[\s\-.()]/g, "");
+  
+  if (result.startsWith("+")) result = result.slice(1);
+  if (result.startsWith("00")) result = result.slice(2);
+  if (result.startsWith("0") && result.length >= 9) result = "967" + result.slice(1);
+  else if (result.startsWith("7") && result.length === 9) result = "967" + result;
+  
+  return result;
+}
+
 const schema = z.object({
   firstName:   z.string().min(1, "الاسم الأول مطلوب"),
   middleName:  z.string().optional(),
@@ -112,8 +137,8 @@ export function PatientForm({ defaultValues, patientId }: Props) {
     if (patientId) return; // Skip for editing existing patient
     try {
       const params = new URLSearchParams();
-      if (phone) params.set("phone", phone);
-      if (whatsApp) params.set("whatsApp", whatsApp);
+      if (phone) params.set("phone", normalizePhone(phone));
+      if (whatsApp) params.set("whatsApp", normalizePhone(whatsApp));
       if (firstName) params.set("firstName", firstName);
       if (lastName) params.set("lastName", lastName);
       if (dateOfBirth) params.set("dateOfBirth", dateOfBirth);
@@ -136,10 +161,20 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   const onSubmit = async (data: FormData) => {
-    // If duplicates found and user hasn't confirmed, show warning
-    if (duplicateWarning && duplicateWarning.length > 0 && !forceSave) {
-      setServerError("يوجد مريض مشابه — راجع التحذير أعلاه قبل الحفظ");
-      return;
+    // If duplicates found by phone/whatsapp/patientNumber — prevent save entirely
+    if (duplicateWarning && duplicateWarning.length > 0) {
+      const hasPhoneOrNumberMatch = duplicateWarning.some(
+        (m) => m.matchType === "phone" || m.matchType === "whatsapp" || m.matchType === "patientNumber"
+      );
+      if (hasPhoneOrNumberMatch) {
+        setServerError("لا يمكن حفظ المريض — رقم الهاتف أو الواتساب أو رقم الملف مكرر. راجع الملف الموجود.");
+        return;
+      }
+      // Name-only match: allow force save
+      if (!forceSave) {
+        setServerError("يوجد مريض مشابه بالاسم — راجع التحذير أعلاه أو اضغط 'حفظ على أي حال'");
+        return;
+      }
     }
 
     setSaving(true);
@@ -228,13 +263,15 @@ export function PatientForm({ defaultValues, patientId }: Props) {
             ))}
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => { setForceSave(true); setServerError(""); }}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-100 transition"
-            >
-              حفظ على أي حال (مريض مختلف)
-            </button>
+            {duplicateWarning.every((m) => m.matchType === "name") && (
+              <button
+                type="button"
+                onClick={() => { setForceSave(true); setServerError(""); }}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-100 transition"
+              >
+                حفظ على أي حال (مريض مختلف)
+              </button>
+            )}
           </div>
         </div>
       )}

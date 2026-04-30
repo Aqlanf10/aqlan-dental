@@ -6,6 +6,9 @@ public class ConversationListDto
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
     public bool IsGroup { get; set; }
+    public string ConversationType { get; set; } = "StaffToStaff";
+    public Guid? PatientId { get; set; }
+    public string? PatientName { get; set; }
     public DateTime? LastMessageAt { get; set; }
     public string? LastMessagePreview { get; set; }
     public int UnreadCount { get; set; }
@@ -53,6 +56,9 @@ public class ConversationDetailDto
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
     public bool IsGroup { get; set; }
+    public string ConversationType { get; set; } = "StaffToStaff";
+    public Guid? PatientId { get; set; }
+    public string? PatientName { get; set; }
     public List<ConversationParticipantDto> Participants { get; set; } = [];
     public List<MessageDto> Messages { get; set; } = [];
     public DateTime CreatedAt { get; set; }

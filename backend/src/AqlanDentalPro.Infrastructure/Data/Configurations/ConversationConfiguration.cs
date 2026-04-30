@@ -18,7 +18,13 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
             .HasForeignKey(c => c.CreatedBy)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasOne(c => c.Patient)
+            .WithMany()
+            .HasForeignKey(c => c.PatientId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(c => c.LastMessageAt);
+        builder.HasIndex(c => c.PatientId);
     }
 }
 

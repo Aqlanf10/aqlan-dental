@@ -79,4 +79,36 @@ public class MessagesController(MessagingService messagingService) : ControllerB
         await messagingService.LeaveConversationAsync(conversationId);
         return NoContent();
     }
+
+    /// <summary>إنشاء/جلب محادثة داخلية حول مريض (StaffToPatient)</summary>
+    [HttpPost("conversations/patient/{patientId:guid}")]
+    public async Task<ActionResult<ConversationDetailDto>> GetOrCreatePatientConversation(Guid patientId)
+    {
+        try
+        {
+            var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>جلب رسائل جديدة منذ آخر رسالة (للـ polling)</summary>
+    [HttpGet("conversations/{conversationId:guid}/poll")]
+    public async Task<IActionResult> PollMessages(Guid conversationId, [FromQuery] string? since = null)
+    {
+        var result = await messagingService.GetConversationAsync(conversationId, 1, 50);
+        if (result == null) return NotFound(new { message = "المحادثة غير موجودة" });
+
+        if (since != null && DateTime.TryParse(since, null, System.Globalization.DateTimeStyles.RoundtripKind, out var sinceDate))
+        {
+            result.Messages = result.Messages
+                .Where(m => m.CreatedAt > sinceDate)
+                .ToList();
+        }
+
+        return Ok(result);
+    }
 }

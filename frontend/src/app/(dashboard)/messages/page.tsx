@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   MessageCircle,
   Search,
@@ -18,6 +19,7 @@ import {
   useConversations,
   useConversation,
   useCreateConversation,
+  usePatientConversation,
   useSendMessage,
   useMarkAsRead,
   useUnreadCount,
@@ -70,6 +72,9 @@ function formatFullTime(dateStr: string) {
 // ─── المكون الرئيسي ──────────────────────────────────────────────────────────
 export default function MessagesPage() {
   const { user } = useAuthStore();
+  const searchParams = useSearchParams();
+  const patientIdFromUrl = searchParams?.get("patientId");
+
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
@@ -80,8 +85,22 @@ export default function MessagesPage() {
   const sendMessage = useSendMessage(selectedConvId ?? "");
   const markAsRead = useMarkAsRead(selectedConvId ?? "");
   const { data: unreadData } = useUnreadCount();
+  const patientConv = usePatientConversation();
 
   const conversations = convData?.data ?? [];
+
+  // Auto-open patient conversation if navigated with ?patientId=
+  useEffect(() => {
+    if (patientIdFromUrl && !selectedConvId) {
+      patientConv.mutate(patientIdFromUrl, {
+        onSuccess: (conv) => {
+          setSelectedConvId(conv.id);
+          setIsMobileDetail(true);
+        },
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientIdFromUrl]);
 
   // Mark as read when selecting a conversation
   useEffect(() => {
@@ -89,6 +108,7 @@ export default function MessagesPage() {
       markAsRead.mutate();
       setIsMobileDetail(true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConvId]);
 
   const handleSelectConv = useCallback(

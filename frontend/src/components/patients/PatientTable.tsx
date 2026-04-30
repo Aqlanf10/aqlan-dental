@@ -383,6 +383,7 @@ export function PatientTable() {
         onOpen={(id) => router.push(`/patients/${id}`)}
         onEdit={(id) => router.push(`/patients/${id}/edit`)}
         onNewAppointment={(id) => router.push(`/appointments/new?patientId=${id}`)}
+        onMessage={(id) => router.push(`/messages?patientId=${id}`)}
         onArchive={(patient) => setConfirm({ open: true, patient, action: "archive" })}
         onRestore={(patient) => setConfirm({ open: true, patient, action: "restore" })}
       />

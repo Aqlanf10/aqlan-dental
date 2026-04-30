@@ -26,10 +26,11 @@ export function useConversations(page = 1, search?: string) {
       };
     },
     staleTime: 5_000,
+    refetchInterval: 15_000, // refresh conversation list every 15s
   });
 }
 
-// ─── جلب تفاصيل محادثة ──────────────────────────────────────────────────────
+// ─── جلب تفاصيل محادثة (مع polling) ────────────────────────────────────────
 export function useConversation(conversationId: string | null, page = 1) {
   return useQuery({
     queryKey: ["conversation", conversationId, page],
@@ -41,7 +42,8 @@ export function useConversation(conversationId: string | null, page = 1) {
       return data as ConversationDetail;
     },
     enabled: !!conversationId,
-    staleTime: 3_000,
+    staleTime: 2_000,
+    refetchInterval: conversationId ? 4_000 : false, // poll every 4s when conversation is open
   });
 }
 
@@ -54,7 +56,7 @@ export function useUnreadCount() {
       return data as UnreadCount;
     },
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: 20_000,
   });
 }
 
@@ -64,6 +66,20 @@ export function useCreateConversation() {
   return useMutation({
     mutationFn: async (req: CreateConversationRequest) => {
       const { data } = await api.post("/api/messages/conversations", req);
+      return data as ConversationDetail;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+}
+
+// ─── إنشاء/جلب محادثة مريض (StaffToPatient) ─────────────────────────────────
+export function usePatientConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const { data } = await api.post(`/api/messages/conversations/patient/${patientId}`);
       return data as ConversationDetail;
     },
     onSuccess: () => {
@@ -98,6 +114,7 @@ export function useMarkAsRead(conversationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
+      if (!conversationId) return;
       await api.post(`/api/messages/conversations/${conversationId}/read`);
     },
     onSuccess: () => {

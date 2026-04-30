@@ -26,6 +26,7 @@ interface Props {
   onOpen: (id: string) => void;
   onEdit: (id: string) => void;
   onNewAppointment: (id: string) => void;
+  onMessage: (id: string) => void;
   onArchive: (patient: PatientListItem) => void;
   onRestore: (patient: PatientListItem) => void;
 }
@@ -47,6 +48,7 @@ export function PatientContextMenu({
   onOpen,
   onEdit,
   onNewAppointment,
+  onMessage,
   onArchive,
   onRestore,
 }: Props) {
@@ -108,7 +110,7 @@ export function PatientContextMenu({
     {
       icon: <MessageSquare className="w-4 h-4" />,
       label: "رسالة داخلية",
-      action: () => { onOpen(patient.id); onClose(); },
+      action: () => { onMessage(patient.id); onClose(); },
       show: !isArchived,
     },
     {

@@ -339,6 +339,147 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
+    // Apply new columns for Phase 1-4 (NormalizedPhone, DeletedAt/DeletedBy, ConversationType)
+    try
+    {
+        // Add NormalizedPhone/NormalizedWhatsApp to Patients
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone') THEN
+                    ALTER TABLE "Patients" ADD COLUMN "NormalizedPhone" character varying(20) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedWhatsApp') THEN
+                    ALTER TABLE "Patients" ADD COLUMN "NormalizedWhatsApp" character varying(20) NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Backfill NormalizedPhone/NormalizedWhatsApp
+        await db.Database.ExecuteSqlRawAsync("""
+            UPDATE "Patients" SET "NormalizedPhone" = 
+                CASE 
+                    WHEN "Phone" IS NULL OR "Phone" = '' THEN NULL
+                    ELSE LTRIM(RTRIM(
+                        CASE 
+                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
+                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
+                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
+                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
+                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
+                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
+                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
+                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
+                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
+                        END
+                    ))
+                END
+            WHERE "NormalizedPhone" IS NULL AND "Phone" IS NOT NULL AND "Phone" != '';
+        """);
+
+        await db.Database.ExecuteSqlRawAsync("""
+            UPDATE "Patients" SET "NormalizedWhatsApp" = 
+                CASE 
+                    WHEN "WhatsApp" IS NULL OR "WhatsApp" = '' THEN NULL
+                    ELSE LTRIM(RTRIM(
+                        CASE 
+                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
+                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
+                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
+                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
+                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
+                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
+                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
+                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
+                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
+                        END
+                    ))
+                END
+            WHERE "NormalizedWhatsApp" IS NULL AND "WhatsApp" IS NOT NULL AND "WhatsApp" != '';
+        """);
+
+        // Create unique indexes for NormalizedPhone/NormalizedWhatsApp
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedPhone" 
+                ON "Patients" ("NormalizedPhone") 
+                WHERE "NormalizedPhone" IS NOT NULL AND "NormalizedPhone" != '';
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedWhatsApp" 
+                ON "Patients" ("NormalizedWhatsApp") 
+                WHERE "NormalizedWhatsApp" IS NOT NULL AND "NormalizedWhatsApp" != '';
+        """);
+
+        // Add DeletedAt/DeletedBy to all tables that inherit BaseEntity
+        var baseEntityTables = new[] { "Patients", "Users", "Doctors", "Branches", "Appointments", "Conversations", "Messages" };
+        foreach (var table in baseEntityTables)
+        {
+            await db.Database.ExecuteSqlRawAsync($"""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedAt') THEN
+                        ALTER TABLE "{table}" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedBy') THEN
+                        ALTER TABLE "{table}" ADD COLUMN "DeletedBy" uuid NULL;
+                    END IF;
+                END $$;
+            """);
+        }
+
+        // Add ConversationType/PatientId/BranchId to Conversations
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "ConversationType" character varying(20) NOT NULL DEFAULT 'StaffToStaff';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'PatientId') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "PatientId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "BranchId" uuid NULL;
+                END IF;
+            END $$;
+        """);
+
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId" ON "Conversations" ("PatientId");
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType" ON "Conversations" ("ConversationType");
+        """);
+
+        // Add FK for Conversations.PatientId -> Patients.Id
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId') THEN
+                    ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Patients_PatientId" 
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Record migrations in history
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260501000000_AddNormalizedPhoneFields', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501000000_AddNormalizedPhoneFields'
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260501010000_AddPatientConversationSupport', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
+            );
+        """);
+
+        logger.LogInformation("Phase 1-4 schema updates applied successfully");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to apply Phase 1-4 schema updates");
+    }
+
     await DbSeeder.SeedAsync(db, logger);
 }
 

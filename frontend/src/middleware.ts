@@ -11,7 +11,7 @@ import type { NextRequest } from "next/server";
  *   but this middleware prevents the flash of content before redirect.
  */
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/portal/login", "/portal/portal/login"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/portal/login"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -34,7 +34,7 @@ export function middleware(request: NextRequest) {
   if (pathname.startsWith("/portal")) {
     const portalCookie = request.cookies.get("aqlan_portal_auth");
     if (!portalCookie || portalCookie.value !== "authenticated") {
-      const loginUrl = new URL("/portal/portal/login", request.url);
+      const loginUrl = new URL("/portal/login", request.url);
       return NextResponse.redirect(loginUrl);
     }
     return NextResponse.next();

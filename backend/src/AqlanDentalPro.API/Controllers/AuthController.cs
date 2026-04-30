@@ -1,6 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Auth;
 using AqlanDentalPro.Application.Interfaces.Services;
-using AqlanDentalPro.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +7,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(AuthService authService, ICurrentUserService currentUser, ITokenService tokenService) : ControllerBase
+public class AuthController(IAuthService authService, ICurrentUserService currentUser, ITokenService tokenService) : ControllerBase
 {
     private const string RefreshTokenCookie = "refresh_token";
 

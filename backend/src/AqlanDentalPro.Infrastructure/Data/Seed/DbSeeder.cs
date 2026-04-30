@@ -15,6 +15,11 @@ public static class DbSeeder
     {
         try
         {
+            // Ensure PasswordSalt column exists BEFORE MigrateAsync()
+            // because the EF model expects this column and queries will fail without it.
+            await context.Database.ExecuteSqlRawAsync(
+                @"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""PasswordSalt"" text NOT NULL DEFAULT ''");
+
             await context.Database.MigrateAsync();
 
             if (!await context.Branches.AnyAsync())

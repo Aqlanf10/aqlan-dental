@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
+using System.Linq;
 
 namespace AqlanDentalPro.Infrastructure.Data.Seed;
 
@@ -21,6 +22,8 @@ public static class DbSeeder
 
             if (!await context.Users.AnyAsync())
                 await SeedUsersAndDoctorsAsync(context);
+            else
+                await MigrateUserPasswordsAsync(context);
 
             if (!await context.RolePermissions.AnyAsync())
                 await SeedPermissionsAsync(context);
@@ -105,6 +108,31 @@ public static class DbSeeder
                 await context.Doctors.AddAsync(doctor);
             }
         }
+    }
+
+    /// <summary>
+    /// Migrates existing users from unsalted password hashes to per-user salted hashes.
+    /// Users with empty PasswordSalt get re-hashed with the default password.
+    /// </summary>
+    private static async Task MigrateUserPasswordsAsync(AppDbContext context)
+    {
+        var users = await context.Users
+            .Where(u => u.PasswordSalt == null || u.PasswordSalt == "")
+            .ToListAsync();
+
+        if (users.Count == 0) return;
+
+        var defaultPassword = "AqlanDental2024!";
+
+        foreach (var user in users)
+        {
+            var salt = GenerateSalt();
+            var hash = HashPassword(defaultPassword, salt);
+            user.PasswordSalt = salt;
+            user.PasswordHash = hash;
+        }
+
+        await context.SaveChangesAsync();
     }
 
     private static async Task SeedPermissionsAsync(AppDbContext context)

@@ -348,7 +348,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
 
 // Serve uploaded files
 var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-Directory.CreateDirectory(uploadsPath);
+try { Directory.CreateDirectory(uploadsPath); } catch { /* directory creation may fail in restricted environments */ }
 app.UseStaticFiles();
 
 app.UseSwagger();

@@ -23,8 +23,8 @@ public static class DbSeeder
             // Deduplicate phone numbers before creating unique index
             await context.Database.ExecuteSqlRawAsync(@"
                 UPDATE ""Patients"" SET ""Phone"" = '' 
-                WHERE ""Id"" NOT IN (
-                    SELECT MIN(p.""Id"") FROM ""Patients"" p 
+                WHERE ""Id""::text NOT IN (
+                    SELECT MIN(p.""Id""::text) FROM ""Patients"" p 
                     WHERE p.""Phone"" IS NOT NULL AND p.""Phone"" != ''
                     GROUP BY p.""Phone""
                 ) AND ""Phone"" IS NOT NULL AND ""Phone"" != '';

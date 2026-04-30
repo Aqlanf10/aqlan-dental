@@ -31,6 +31,9 @@ public class GenericRepository<T>(AppDbContext context) : IGenericRepository<T> 
     public void Remove(T entity) =>
         DbSet.Remove(entity);
 
+    public void Detach(T entity) =>
+        Context.Entry(entity).State = EntityState.Detached;
+
     public async Task<int> SaveChangesAsync() =>
         await Context.SaveChangesAsync();
 }

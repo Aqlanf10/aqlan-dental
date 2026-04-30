@@ -86,10 +86,19 @@ public class PatientRepository(AppDbContext context)
     public async Task<string> GeneratePatientNumberAsync(string prefix)
     {
         var year = DateTime.Today.Year;
-        var count = await DbSet
-            .IgnoreQueryFilters()
-            .CountAsync(p => p.PatientNumber.StartsWith($"{prefix}-{year}-"));
+        var yearPrefix = $"{prefix}-{year}-";
 
-        return $"{prefix}-{year}-{(count + 1):D3}";
+        // Use MAX of the numeric suffix so gaps (soft-deleted rows) don't cause reuse
+        var maxSuffix = await DbSet
+            .IgnoreQueryFilters()
+            .Where(p => p.PatientNumber.StartsWith(yearPrefix))
+            .Select(p => p.PatientNumber.Substring(yearPrefix.Length))
+            .ToListAsync()
+            .ContinueWith(t => t.Result
+                .Select(s => int.TryParse(s, out var n) ? n : 0)
+                .DefaultIfEmpty(0)
+                .Max());
+
+        return $"{yearPrefix}{(maxSuffix + 1):D3}";
     }
 }

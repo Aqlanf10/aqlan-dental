@@ -39,63 +39,83 @@ public class PatientService(
 
     public async Task<PatientProfileDto> CreateAsync(CreatePatientRequest req)
     {
-        var number = await repo.GeneratePatientNumberAsync(NumberPrefix);
-
         var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
         var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
 
-        var patient = new Patient
+        // Retry up to 5 times to handle the rare concurrent-insert race on PatientNumber
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            PatientNumber = number,
-            FirstName = req.FirstName,
-            MiddleName = req.MiddleName,
-            LastName = req.LastName,
-            DateOfBirth = req.DateOfBirth != null ? DateOnly.Parse(req.DateOfBirth) : null,
-            Gender = req.Gender != null ? Enum.Parse<Gender>(req.Gender, true) : null,
-            Phone = req.Phone,
-            NormalizedPhone = normalizedPhone,
-            WhatsApp = req.WhatsApp,
-            NormalizedWhatsApp = normalizedWhatsApp,
-            Address = req.Address,
-            Occupation = req.Occupation,
-            ReferralSource = req.ReferralSource,
-            PrimaryDoctorId = req.PrimaryDoctorId,
-            BranchId = currentUser.BranchId
-        };
+            var number = await repo.GeneratePatientNumberAsync(NumberPrefix);
 
-        if (req.MedicalHistory != null)
-        {
-            patient.MedicalHistory = new MedicalHistory
+            var patient = new Patient
             {
-                ChronicDiseases = req.MedicalHistory.ChronicDiseases,
-                CurrentMedications = req.MedicalHistory.CurrentMedications,
-                DrugAllergies = req.MedicalHistory.DrugAllergies,
-                BleedingDisorders = req.MedicalHistory.BleedingDisorders,
-                IsPregnant = req.MedicalHistory.IsPregnant,
-                TmjProblems = req.MedicalHistory.TmjProblems,
-                PreviousSurgeries = req.MedicalHistory.PreviousSurgeries,
-                Notes = req.MedicalHistory.Notes
+                PatientNumber = number,
+                FirstName = req.FirstName,
+                MiddleName = req.MiddleName,
+                LastName = req.LastName,
+                DateOfBirth = req.DateOfBirth != null ? DateOnly.Parse(req.DateOfBirth) : null,
+                Gender = req.Gender != null ? Enum.Parse<Gender>(req.Gender, true) : null,
+                Phone = req.Phone,
+                NormalizedPhone = normalizedPhone,
+                WhatsApp = req.WhatsApp,
+                NormalizedWhatsApp = normalizedWhatsApp,
+                Address = req.Address,
+                Occupation = req.Occupation,
+                ReferralSource = req.ReferralSource,
+                PrimaryDoctorId = req.PrimaryDoctorId,
+                BranchId = currentUser.BranchId
             };
+
+            if (req.MedicalHistory != null)
+            {
+                patient.MedicalHistory = new MedicalHistory
+                {
+                    ChronicDiseases = req.MedicalHistory.ChronicDiseases,
+                    CurrentMedications = req.MedicalHistory.CurrentMedications,
+                    DrugAllergies = req.MedicalHistory.DrugAllergies,
+                    BleedingDisorders = req.MedicalHistory.BleedingDisorders,
+                    IsPregnant = req.MedicalHistory.IsPregnant,
+                    TmjProblems = req.MedicalHistory.TmjProblems,
+                    PreviousSurgeries = req.MedicalHistory.PreviousSurgeries,
+                    Notes = req.MedicalHistory.Notes
+                };
+            }
+
+            if (req.DentalHistory != null)
+            {
+                patient.DentalHistory = new DentalHistory
+                {
+                    ChiefComplaint = req.DentalHistory.ChiefComplaint,
+                    PreviousTreatments = req.DentalHistory.PreviousTreatments,
+                    MouthBreathing = req.DentalHistory.MouthBreathing,
+                    Bruxism = req.DentalHistory.Bruxism,
+                    ThumbSucking = req.DentalHistory.ThumbSucking,
+                    TongueThrusing = req.DentalHistory.TongueThrusing,
+                    Notes = req.DentalHistory.Notes
+                };
+            }
+
+            try
+            {
+                await repo.AddAsync(patient);
+                await repo.SaveChangesAsync();
+                return await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+            }
+            catch (Exception ex) when (IsPatientNumberConflict(ex))
+            {
+                // Another request grabbed the same number — detach and retry
+                repo.Detach(patient);
+            }
         }
 
-        if (req.DentalHistory != null)
-        {
-            patient.DentalHistory = new DentalHistory
-            {
-                ChiefComplaint = req.DentalHistory.ChiefComplaint,
-                PreviousTreatments = req.DentalHistory.PreviousTreatments,
-                MouthBreathing = req.DentalHistory.MouthBreathing,
-                Bruxism = req.DentalHistory.Bruxism,
-                ThumbSucking = req.DentalHistory.ThumbSucking,
-                TongueThrusing = req.DentalHistory.TongueThrusing,
-                Notes = req.DentalHistory.Notes
-            };
-        }
+        throw new InvalidOperationException("تعذّر إنشاء رقم مريض فريد بعد عدة محاولات.");
+    }
 
-        await repo.AddAsync(patient);
-        await repo.SaveChangesAsync();
-
-        return await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+    private static bool IsPatientNumberConflict(Exception ex)
+    {
+        var msg = (ex.InnerException?.Message ?? ex.Message).ToLowerInvariant();
+        return (msg.Contains("unique") || msg.Contains("duplicate")) &&
+               msg.Contains("patientnumber");
     }
 
     public async Task<PatientProfileDto?> UpdateAsync(Guid id, UpdatePatientRequest req)

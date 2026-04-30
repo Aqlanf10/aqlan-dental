@@ -20,6 +20,16 @@ public static class DbSeeder
             await context.Database.ExecuteSqlRawAsync(
                 @"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""PasswordSalt"" text NOT NULL DEFAULT ''");
 
+            // Deduplicate phone numbers before creating unique index
+            await context.Database.ExecuteSqlRawAsync(@"
+                UPDATE ""Patients"" SET ""Phone"" = '' 
+                WHERE ""Id"" NOT IN (
+                    SELECT MIN(p.""Id"") FROM ""Patients"" p 
+                    WHERE p.""Phone"" IS NOT NULL AND p.""Phone"" != ''
+                    GROUP BY p.""Phone""
+                ) AND ""Phone"" IS NOT NULL AND ""Phone"" != '';
+            ");
+
             // Add unique index on Phone if not exists
             var addPhoneIndexSql = @"
                 DO $$ BEGIN
@@ -64,8 +74,8 @@ public static class DbSeeder
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Database seeding failed.");
-            throw;
+            logger.LogError(ex, "Database seeding failed, but app will continue running.");
+            // Don't rethrow - let the app start even if seeding partially fails
         }
     }
 

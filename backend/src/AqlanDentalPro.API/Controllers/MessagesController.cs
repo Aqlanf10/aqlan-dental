@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Messaging;
+using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,8 +9,71 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/messages")]
 [Authorize]
-public class MessagesController(MessagingService messagingService) : ControllerBase
+public class MessagesController(MessagingService messagingService, AppDbContext db) : ControllerBase
 {
+    /// <summary>تطبيق الـ migrations يدوياً (Admin فقط)</summary>
+    [HttpPost("ensure-schema")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult> EnsureSchema()
+    {
+        try
+        {
+            var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+            var appliedMigrations = await db.Database.GetAppliedMigrationsAsync();
+
+            if (pendingMigrations.Any())
+            {
+                await db.Database.MigrateAsync();
+                return Ok(new
+                {
+                    message = "تم تطبيق الـ migrations بنجاح",
+                    applied = pendingMigrations.ToList(),
+                    previouslyApplied = appliedMigrations.ToList()
+                });
+            }
+
+            return Ok(new
+            {
+                message = "قاعدة البيانات محدثة - لا توجد migrations معلقة",
+                appliedMigrations = appliedMigrations.ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                message = "فشل تطبيق الـ migrations",
+                error = ex.Message,
+                innerError = ex.InnerException?.Message
+            });
+        }
+    }
+
+    /// <summary>فحص حالة جداول المراسلة (Admin فقط)</summary>
+    [HttpGet("schema-status")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<ActionResult> SchemaStatus()
+    {
+        try
+        {
+            var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+            var appliedMigrations = await db.Database.GetAppliedMigrationsAsync();
+            var canConnect = await db.Database.CanConnectAsync();
+
+            return Ok(new
+            {
+                canConnect,
+                pendingMigrations = pendingMigrations.ToList(),
+                appliedMigrations = appliedMigrations.ToList(),
+                conversationsExists = db.Conversations.Any(),
+                messageReadsExists = db.MessageReads.Any()
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+        }
+    }
     /// <summary>جلب محادثاتي</summary>
     [HttpGet("conversations")]
     public async Task<ActionResult<object>> GetConversations(

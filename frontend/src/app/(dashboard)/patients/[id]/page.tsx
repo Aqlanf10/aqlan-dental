@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
-  Calendar, Activity, Wallet, Pill, Plus, Scissors, Image,
+  Calendar, Activity, Wallet, Pill, Plus, Scissors, Image as ImageIcon,
   Trash2, ExternalLink, Archive, RotateCcw, MessageSquare,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
@@ -356,7 +356,7 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
       {/* ── Clinical Photos ── */}
       <section>
         <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <Image className="w-4 h-4 text-clinic-teal" />
+          <ImageIcon className="w-4 h-4 text-clinic-teal" />
           الصور السريرية
         </h3>
 
@@ -372,10 +372,11 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
               )}>
                 <input type="file" accept="image/*,.pdf" className="sr-only" onChange={handlePhotoFileChange} />
                 {photoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={photoPreview} alt="preview" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
                 ) : (
                   <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <Image className="w-5 h-5 text-gray-400" />
+                    <ImageIcon className="w-5 h-5 text-gray-400" />
                   </div>
                 )}
                 <div className="min-w-0">
@@ -450,7 +451,7 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
           </div>
         ) : photos.length === 0 ? (
           <div className="text-center py-8 text-gray-400">
-            <Image className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
             <p className="text-sm">لا توجد صور سريرية</p>
           </div>
         ) : (
@@ -458,7 +459,7 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
             {photos.map((photo) => (
               <div key={photo.id} className="flex items-start gap-3 bg-white border border-gray-100 rounded-lg p-3 hover:border-gray-200 transition">
                 <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <Image className="w-5 h-5 text-gray-400" />
+                  <ImageIcon className="w-5 h-5 text-gray-400" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-0.5">
@@ -631,7 +632,7 @@ const TABS: { key: Tab; label: string; icon: typeof User }[] = [
   { key: "dental",   label: "التاريخ السني",    icon: Stethoscope },
   { key: "chart",    label: "المخطط السني",     icon: Grid3x3 },
   { key: "timeline", label: "السجل الزمني",     icon: Clock },
-  { key: "images",   label: "الصور والأشعة",    icon: Image },
+  { key: "images",   label: "الصور والأشعة",    icon: ImageIcon },
 ];
 
 export default function PatientProfilePage() {

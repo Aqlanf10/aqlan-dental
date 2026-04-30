@@ -212,18 +212,33 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
   const [loadingXrays, setLoadingXrays] = useState(true);
 
   // Photo form state
-  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoCategory, setPhotoCategory] = useState("intraoral");
   const [photoType, setPhotoType] = useState("");
   const [photoStage, setPhotoStage] = useState("");
   const [photoNotes, setPhotoNotes] = useState("");
   const [addingPhoto, setAddingPhoto] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   // Xray form state
-  const [xrayUrl, setXrayUrl] = useState("");
+  const [xrayFile, setXrayFile] = useState<File | null>(null);
   const [xrayType, setXrayType] = useState("OPG");
   const [xrayNotes, setXrayNotes] = useState("");
   const [addingXray, setAddingXray] = useState(false);
+
+  const uploadFile = async (file: File): Promise<string> => {
+    const token = sessionStorage.getItem("accessToken") ?? "";
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/uploads`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (!res.ok) throw new Error("فشل رفع الملف");
+    const data = await res.json() as { url: string };
+    return data.url;
+  };
 
   const fetchPhotos = () => {
     setLoadingPhotos(true);
@@ -247,20 +262,33 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId]);
 
+  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    setPhotoFile(f);
+    if (f && f.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = ev => setPhotoPreview(ev.target?.result as string);
+      reader.readAsDataURL(f);
+    } else {
+      setPhotoPreview(null);
+    }
+  };
+
   const handleAddPhoto = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!photoUrl.trim()) return;
+    if (!photoFile) return;
     setAddingPhoto(true);
     try {
+      const fileUrl = await uploadFile(photoFile);
       await api.post("/api/clinical-photos", {
         patientId,
-        fileUrl: photoUrl.trim(),
+        fileUrl,
         category: photoCategory,
         photoType: photoType || undefined,
         stage: photoStage || undefined,
         notes: photoNotes || undefined,
       });
-      setPhotoUrl(""); setPhotoType(""); setPhotoStage(""); setPhotoNotes("");
+      setPhotoFile(null); setPhotoPreview(null); setPhotoType(""); setPhotoStage(""); setPhotoNotes("");
       fetchPhotos();
     } catch {
       // ignore
@@ -276,16 +304,17 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
 
   const handleAddXray = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!xrayUrl.trim()) return;
+    if (!xrayFile) return;
     setAddingXray(true);
     try {
+      const fileUrl = await uploadFile(xrayFile);
       await api.post("/api/radiographs", {
         patientId,
-        fileUrl: xrayUrl.trim(),
+        fileUrl,
         xrayType,
         notes: xrayNotes || undefined,
       });
-      setXrayUrl(""); setXrayNotes("");
+      setXrayFile(null); setXrayNotes("");
       fetchXrays();
     } catch {
       // ignore
@@ -330,16 +359,27 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
         <form onSubmit={handleAddPhoto} className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-100 space-y-3">
           <p className="text-xs font-semibold text-gray-500 mb-1">إضافة صورة</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">رابط الصورة *</label>
-              <input
-                type="url"
-                value={photoUrl}
-                onChange={(e) => setPhotoUrl(e.target.value)}
-                placeholder="https://..."
-                required
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
-              />
+            <div className="sm:col-span-2">
+              <label className="text-xs text-gray-500 block mb-1">الصورة *</label>
+              <label className={cn(
+                "flex items-center gap-3 w-full border-2 border-dashed rounded-lg px-4 py-3 cursor-pointer transition",
+                photoFile ? "border-clinic-teal bg-teal-50" : "border-gray-200 hover:border-gray-300"
+              )}>
+                <input type="file" accept="image/*,.pdf" className="sr-only" onChange={handlePhotoFileChange} />
+                {photoPreview ? (
+                  <img src={photoPreview} alt="preview" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <Image className="w-5 h-5 text-gray-400" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-700">
+                    {photoFile ? photoFile.name : "اختر صورة أو اسحب وأفلت"}
+                  </p>
+                  <p className="text-xs text-gray-400">JPG، PNG، WebP — حتى 10 ميجابايت</p>
+                </div>
+              </label>
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">الفئة</label>
@@ -388,11 +428,11 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
           </div>
           <button
             type="submit"
-            disabled={addingPhoto || !photoUrl.trim()}
+            disabled={addingPhoto || !photoFile}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" />
-            {addingPhoto ? "جارٍ الإضافة..." : "إضافة صورة"}
+            {addingPhoto ? "جارٍ الرفع..." : "إضافة صورة"}
           </button>
         </form>
 
@@ -465,16 +505,23 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
         <form onSubmit={handleAddXray} className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-100 space-y-3">
           <p className="text-xs font-semibold text-gray-500 mb-1">إضافة أشعة</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">رابط الأشعة *</label>
-              <input
-                type="url"
-                value={xrayUrl}
-                onChange={(e) => setXrayUrl(e.target.value)}
-                placeholder="https://..."
-                required
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
-              />
+            <div className="sm:col-span-2">
+              <label className="text-xs text-gray-500 block mb-1">ملف الأشعة *</label>
+              <label className={cn(
+                "flex items-center gap-3 w-full border-2 border-dashed rounded-lg px-4 py-3 cursor-pointer transition",
+                xrayFile ? "border-clinic-teal bg-teal-50" : "border-gray-200 hover:border-gray-300"
+              )}>
+                <input type="file" accept="image/*,.pdf,.dcm" className="sr-only" onChange={(e) => setXrayFile(e.target.files?.[0] ?? null)} />
+                <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-5 h-5 text-gray-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-700">
+                    {xrayFile ? xrayFile.name : "اختر ملف أشعة أو اسحب وأفلت"}
+                  </p>
+                  <p className="text-xs text-gray-400">JPG، PNG، PDF، DICOM — حتى 10 ميجابايت</p>
+                </div>
+              </label>
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">نوع الأشعة</label>
@@ -504,7 +551,7 @@ function PhotosAndXraysTab({ patientId }: { patientId: string }) {
           </div>
           <button
             type="submit"
-            disabled={addingXray || !xrayUrl.trim()}
+            disabled={addingXray || !xrayFile}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
           >
             <Plus className="w-3.5 h-3.5" />

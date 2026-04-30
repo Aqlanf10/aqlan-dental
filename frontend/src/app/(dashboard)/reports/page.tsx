@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
 } from "recharts";
-import { BarChart2, Users, Calendar, TrendingUp, Stethoscope, Wallet } from "lucide-react";
+import { BarChart2, Users, Calendar, TrendingUp, Stethoscope, Wallet, Download } from "lucide-react";
 import api from "@/lib/api";
 import { formatYemeniRiyal } from "@/lib/utils";
 
@@ -78,12 +78,39 @@ const TooltipAppt = ({ active, payload, label }: TooltipProps) => {
 
 type ReportType = "center" | "doctors" | "financial";
 
+function downloadCsv(url: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+}
+
 export default function ReportsPage() {
   const [activeReport, setActiveReport] = useState<ReportType>("center");
+  const [exporting, setExporting] = useState(false);
   const today    = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const [from, setFrom] = useState(monthAgo);
   const [to,   setTo]   = useState(today);
+
+  const handleExport = async (type: "patients" | "payments" | "appointments") => {
+    setExporting(true);
+    try {
+      const token = sessionStorage.getItem("accessToken") ?? "";
+      const params = type === "patients" ? "" : `?from=${from}&to=${to}`;
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/reports/export/${type}${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      downloadCsv(url, `${type}_${today}.csv`);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("فشل التصدير");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const [summary,     setSummary]     = useState<CenterSummary | null>(null);
   const [performance, setPerformance] = useState<DoctorPerformance[]>([]);
@@ -128,12 +155,28 @@ export default function ReportsPage() {
             {label}
           </button>
         ))}
-        <div className="flex items-center gap-2 md:ms-auto">
+        <div className="flex items-center gap-2 md:ms-auto flex-wrap">
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
           <span className="text-gray-400">—</span>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+          {/* Export buttons */}
+          <div className="flex items-center gap-1 border-s border-gray-200 ps-2">
+            <span className="text-xs text-gray-400 me-1">تصدير:</span>
+            {(["patients", "payments", "appointments"] as const).map(type => (
+              <button
+                key={type}
+                onClick={() => handleExport(type)}
+                disabled={exporting}
+                title={type === "patients" ? "تصدير المرضى" : type === "payments" ? "تصدير الدفعات" : "تصدير المواعيد"}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50 transition"
+              >
+                <Download className="w-3 h-3" />
+                {type === "patients" ? "المرضى" : type === "payments" ? "الدفعات" : "المواعيد"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

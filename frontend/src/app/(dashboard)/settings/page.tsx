@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Settings, Users, Shield, Save, Plus, X, UserCheck, UserX } from "lucide-react";
+import { Settings, Users, Shield, Save, Plus, X, UserCheck, UserX, FileSearch } from "lucide-react";
+import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -410,6 +411,22 @@ export default function SettingsPage() {
           {activeTab === "users"  && <UsersTab />}
           {activeTab === "roles"  && <RolesTab />}
         </div>
+      </div>
+
+      {/* Quick links */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link
+          href="/settings/audit"
+          className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-teal hover:shadow-md transition group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-100 transition">
+            <FileSearch className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">سجل التدقيق</p>
+            <p className="text-sm text-gray-500">عرض كل العمليات المنفذة في النظام</p>
+          </div>
+        </Link>
       </div>
     </div>
   );

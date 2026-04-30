@@ -101,4 +101,109 @@ public class ReportsController(AppDbContext db) : ControllerBase
 
         return Ok(new { fromDate = fromDate.ToString("yyyy-MM-dd"), toDate = toDate.ToString("yyyy-MM-dd"), totalCollected, daily = payments, bySpecialty, byMethod });
     }
+
+    // GET /api/reports/export/patients  — CSV تصدير المرضى
+    [HttpGet("export/patients")]
+    public async Task<IActionResult> ExportPatients()
+    {
+        var patients = await db.Patients
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new
+            {
+                p.PatientNumber,
+                p.FullName,
+                p.DateOfBirth,
+                p.Gender,
+                p.PhoneNumber,
+                p.Address,
+                p.CreatedAt
+            })
+            .ToListAsync();
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("رقم المريض,الاسم الكامل,تاريخ الميلاد,الجنس,رقم الهاتف,العنوان,تاريخ التسجيل");
+        foreach (var p in patients)
+        {
+            csv.AppendLine($"{p.PatientNumber},{Esc(p.FullName)},{p.DateOfBirth?.ToString("yyyy-MM-dd") ?? ""},{ p.Gender},{Esc(p.PhoneNumber ?? "")},{Esc(p.Address ?? "")},{p.CreatedAt:yyyy-MM-dd}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+        return File(bytes, "text/csv; charset=utf-8", $"patients_{DateTime.Today:yyyyMMdd}.csv");
+    }
+
+    // GET /api/reports/export/payments?from=&to=  — CSV تصدير الدفعات
+    [HttpGet("export/payments")]
+    public async Task<IActionResult> ExportPayments([FromQuery] string? from, [FromQuery] string? to)
+    {
+        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+        var toDate   = !string.IsNullOrWhiteSpace(to)   ? DateOnly.Parse(to)   : DateOnly.FromDateTime(DateTime.Today);
+
+        var payments = await db.Payments
+            .Include(p => p.Patient)
+            .Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .OrderByDescending(p => p.PaymentDate)
+            .Select(p => new
+            {
+                p.ReceiptNumber,
+                PatientName    = p.Patient.FullName,
+                PatientNumber  = p.Patient.PatientNumber,
+                p.Amount,
+                p.PaymentMethod,
+                p.PaymentDate,
+                p.ServiceDescription,
+                p.Specialty,
+                p.Notes
+            })
+            .ToListAsync();
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("رقم السند,المريض,رقم المريض,المبلغ,طريقة الدفع,التاريخ,الوصف,التخصص,ملاحظات");
+        foreach (var p in payments)
+        {
+            csv.AppendLine($"{Esc(p.ReceiptNumber ?? "")},{Esc(p.PatientName)},{p.PatientNumber},{p.Amount},{p.PaymentMethod},{p.PaymentDate:yyyy-MM-dd},{Esc(p.ServiceDescription ?? "")},{Esc(p.Specialty ?? "")},{Esc(p.Notes ?? "")}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+        return File(bytes, "text/csv; charset=utf-8", $"payments_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}.csv");
+    }
+
+    // GET /api/reports/export/appointments?from=&to=
+    [HttpGet("export/appointments")]
+    public async Task<IActionResult> ExportAppointments([FromQuery] string? from, [FromQuery] string? to)
+    {
+        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
+        var toDate   = !string.IsNullOrWhiteSpace(to)   ? DateOnly.Parse(to)   : DateOnly.FromDateTime(DateTime.Today);
+
+        var appts = await db.Appointments
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .Where(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .OrderByDescending(a => a.AppointmentDate)
+            .Select(a => new
+            {
+                PatientName    = a.Patient.FullName,
+                PatientNumber  = a.Patient.PatientNumber,
+                DoctorName     = a.Doctor != null ? a.Doctor.Name : "",
+                AppointmentDate = a.AppointmentDate,
+                a.StartTime,
+                a.AppointmentType,
+                a.Status,
+                a.Notes
+            })
+            .ToListAsync();
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("المريض,رقم المريض,الطبيب,التاريخ,الوقت,نوع الموعد,الحالة,ملاحظات");
+        foreach (var a in appts)
+        {
+            csv.AppendLine($"{Esc(a.PatientName)},{a.PatientNumber},{Esc(a.DoctorName)},{a.AppointmentDate:yyyy-MM-dd},{a.StartTime},{Esc(a.AppointmentType ?? "")},{a.Status},{Esc(a.Notes ?? "")}");
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+        return File(bytes, "text/csv; charset=utf-8", $"appointments_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}.csv");
+    }
+
+    private static string Esc(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n')
+            ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
 }

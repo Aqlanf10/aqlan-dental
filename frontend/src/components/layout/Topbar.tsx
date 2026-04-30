@@ -19,7 +19,18 @@ interface NotificationItem {
   body?: string;
   isRead: boolean;
   createdAt: string;
+  relatedEntity?: string;
+  relatedId?: string;
 }
+
+const ENTITY_URL: Record<string, (id: string) => string> = {
+  Appointment: () => "/appointments",
+  Patient:     (id) => `/patients/${id}`,
+  Payment:     (id) => `/finance/payments/${id}`,
+  Contract:    (id) => `/finance/contracts/${id}`,
+  LabOrder:    () => "/lab",
+  OrthoCase:   (id) => `/ortho/${id}`,
+};
 
 /* ─── Notification type icons ────────────────────────────────────────────── */
 const TYPE_ICON: Record<string, string> = {
@@ -116,6 +127,17 @@ export function Topbar() {
     await api.put(`/api/notifications/${id}/read`).catch(() => {});
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const handleNotifClick = async (n: NotificationItem) => {
+    if (!n.isRead) await markRead(n.id);
+    if (n.relatedEntity && n.relatedId) {
+      const urlFn = ENTITY_URL[n.relatedEntity];
+      if (urlFn) {
+        setNotifOpen(false);
+        router.push(urlFn(n.relatedId));
+      }
+    }
   };
 
   const deleteNotif = async (id: string) => {
@@ -301,7 +323,7 @@ export function Topbar() {
                   notifications.map(n => (
                     <div
                       key={n.id}
-                      onClick={() => !n.isRead && markRead(n.id)}
+                      onClick={() => handleNotifClick(n)}
                       className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition cursor-pointer group ${!n.isRead ? "bg-blue-50/40" : ""}`}
                     >
                       <span className="text-lg flex-shrink-0 mt-0.5">

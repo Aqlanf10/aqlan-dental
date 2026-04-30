@@ -145,6 +145,7 @@ builder.Services.AddScoped<CephService>();
 builder.Services.AddScoped<IPatientPortalService, PatientPortalService>();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();
+builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
 builder.Services.AddHttpClient("WhatsApp");
 
 builder.Services.AddHttpContextAccessor();

@@ -2,6 +2,7 @@
 import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, ChevronDown } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
+import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
 import { useEffect, useRef, useState, useCallback } from "react";
 
@@ -373,7 +374,7 @@ export function Topbar() {
 }
 
 /* ─── UserMenu ───────────────────────────────────────────────────────────────── */
-function UserMenu({ user, router }: { user: ReturnType<typeof useAuthStore>["user"]; router: ReturnType<typeof useRouter> }) {
+function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<typeof useRouter> }) {
   const { logout } = useAuthStore();
   const [open, setOpen]           = useState(false);
   const [changePw, setChangePw]   = useState(false);

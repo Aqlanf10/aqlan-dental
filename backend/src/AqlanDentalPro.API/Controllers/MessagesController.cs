@@ -79,4 +79,13 @@ public class MessagesController(MessagingService messagingService) : ControllerB
         await messagingService.LeaveConversationAsync(conversationId);
         return NoContent();
     }
+
+    /// <summary>إنشاء أو جلب محادثة مع مريض بواسطة معرف المريض</summary>
+    [HttpGet("patient/{patientId:guid}")]
+    public async Task<ActionResult<ConversationDetailDto>> GetOrCreatePatientConversation(Guid patientId)
+    {
+        var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
+        if (result == null) return NotFound(new { message = "المريض ليس لديه حساب في البوابة" });
+        return Ok(result);
+    }
 }

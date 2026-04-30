@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -99,10 +100,10 @@ public class UsersController(
         return Ok(users);
     }
 
-    /// <summary>قائمة المستخدمين للرسائل — متاح لجميع الأدوار</summary>
+    /// <summary>قائمة المستخدمين للرسائل — متاح لجميع الأدوار مع تصفية حسب الصلاحيات</summary>
     [HttpGet("contacts")]
     [Authorize]
-    public async Task<IActionResult> GetContacts()
+    public async Task<IActionResult> GetContacts([FromServices] MessagingService messagingService)
     {
         var users = await db.Users
             .Where(u => u.IsActive)
@@ -127,7 +128,24 @@ public class UsersController(
             })
             .ToListAsync();
 
-        return Ok(users);
+        // Filter based on messaging permissions
+        var filtered = new List<object>();
+        foreach (var u in users)
+        {
+            var canMessage = await messagingService.CanMessageUserPublicAsync(u.Id);
+            filtered.Add(new
+            {
+                u.Id,
+                u.Username,
+                u.Role,
+                u.DoctorName,
+                u.DoctorColor,
+                u.DoctorInitials,
+                CanMessage = canMessage
+            });
+        }
+
+        return Ok(filtered);
     }
 
     [HttpPost]

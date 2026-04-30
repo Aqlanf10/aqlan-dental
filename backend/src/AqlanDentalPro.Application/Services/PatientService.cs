@@ -38,6 +38,22 @@ public class PatientService(
 
     public async Task<PatientProfileDto> CreateAsync(CreatePatientRequest req)
     {
+        // Check for duplicate phone
+        if (!string.IsNullOrWhiteSpace(req.Phone))
+        {
+            var existingPhone = await repo.FirstOrDefaultAsync(p => (p.Phone == req.Phone || p.WhatsApp == req.Phone) && p.IsActive);
+            if (existingPhone != null)
+                throw new InvalidOperationException($"رقم الهاتف مضاف مسبقاً لمريض آخر: {existingPhone.FirstName} {existingPhone.LastName} (ملف رقم {existingPhone.PatientNumber})");
+        }
+
+        // Check for duplicate WhatsApp
+        if (!string.IsNullOrWhiteSpace(req.WhatsApp))
+        {
+            var existingWA = await repo.FirstOrDefaultAsync(p => (p.WhatsApp == req.WhatsApp || p.Phone == req.WhatsApp) && p.IsActive);
+            if (existingWA != null)
+                throw new InvalidOperationException($"رقم واتساب مضاف مسبقاً لمريض آخر: {existingWA.FirstName} {existingWA.LastName} (ملف رقم {existingWA.PatientNumber})");
+        }
+
         var number = await repo.GeneratePatientNumberAsync(NumberPrefix);
 
         var patient = new Patient

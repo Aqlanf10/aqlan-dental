@@ -34,8 +34,79 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     [HttpPost]
     public async Task<ActionResult<PatientProfileDto>> Create([FromBody] CreatePatientRequest req)
     {
-        var patient = await service.CreateAsync(req);
-        return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
+        try
+        {
+            var patient = await service.CreateAsync(req);
+            return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_Phone") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
+        {
+            return Conflict(new { message = "البيانات مكررة — رقم الهاتف أو رقم الملف موجود مسبقاً" });
+        }
+    }
+
+    [HttpGet("check-duplicate")]
+    public async Task<IActionResult> CheckDuplicate(
+        [FromQuery] string? phone,
+        [FromQuery] string? whatsApp,
+        [FromQuery] string? patientNumber,
+        [FromQuery] string? firstName,
+        [FromQuery] string? lastName,
+        [FromQuery] string? dateOfBirth)
+    {
+        var duplicates = new List<object>();
+
+        // Check by phone
+        if (!string.IsNullOrWhiteSpace(phone))
+        {
+            var match = await db.Patients
+                .Where(p => (p.Phone == phone || p.WhatsApp == phone) && p.IsActive)
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "phone" })
+                .FirstOrDefaultAsync();
+            if (match != null) duplicates.Add(match);
+        }
+
+        // Check by WhatsApp
+        if (!string.IsNullOrWhiteSpace(whatsApp) && !duplicates.Any(d => ((dynamic)d).MatchType == "phone"))
+        {
+            var match = await db.Patients
+                .Where(p => (p.WhatsApp == whatsApp || p.Phone == whatsApp) && p.IsActive)
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "whatsapp" })
+                .FirstOrDefaultAsync();
+            if (match != null) duplicates.Add(match);
+        }
+
+        // Check by patient number
+        if (!string.IsNullOrWhiteSpace(patientNumber))
+        {
+            var match = await db.Patients
+                .Where(p => p.PatientNumber == patientNumber && p.IsActive)
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "patientNumber" })
+                .FirstOrDefaultAsync();
+            if (match != null) duplicates.Add(match);
+        }
+
+        // Check by similar name + date of birth
+        if (!string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(lastName))
+        {
+            var nameQuery = db.Patients.Where(p => p.IsActive && p.FirstName == firstName && p.LastName == lastName);
+            if (!string.IsNullOrWhiteSpace(dateOfBirth) && DateOnly.TryParse(dateOfBirth, out var dob))
+                nameQuery = nameQuery.Where(p => p.DateOfBirth == dob);
+
+            var nameMatches = await nameQuery
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "name" })
+                .Take(5)
+                .ToListAsync();
+            duplicates.AddRange(nameMatches.Where(nm => !duplicates.Any(d => ((dynamic)d).Id == nm.Id)));
+        }
+
+        return Ok(new { isDuplicate = duplicates.Count > 0, matches = duplicates });
     }
 
     [HttpPut("{id:guid}")]

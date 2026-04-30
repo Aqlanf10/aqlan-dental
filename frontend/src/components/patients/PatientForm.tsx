@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, ChevronDown } from "lucide-react";
+import { Save, ChevronDown, AlertTriangle, ExternalLink, X } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -20,7 +20,6 @@ const schema = z.object({
   address:     z.string().optional(),
   occupation:  z.string().optional(),
   referralSource: z.string().optional(),
-  // Medical history
   chronicDiseases:    z.string().optional(),
   currentMedications: z.string().optional(),
   drugAllergies:      z.string().optional(),
@@ -29,7 +28,6 @@ const schema = z.object({
   tmjProblems:        z.boolean(),
   previousSurgeries:  z.string().optional(),
   medNotes:           z.string().optional(),
-  // Dental history
   chiefComplaint:     z.string().optional(),
   previousTreatments: z.string().optional(),
   mouthBreathing:     z.boolean(),
@@ -39,6 +37,14 @@ const schema = z.object({
   dentalNotes:        z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
+
+interface DuplicateMatch {
+  id: string;
+  patientNumber: string;
+  fullName: string;
+  phone?: string;
+  matchType: string;
+}
 
 interface Props {
   defaultValues?: Partial<FormData>;
@@ -62,11 +68,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({
-  label, error, required, children,
-}: {
-  label: string; error?: string; required?: boolean; children: React.ReactNode;
-}) {
+function Field({ label, error, required, children }: { label: string; error?: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -79,10 +81,7 @@ function Field({
 }
 
 const inputCls = (err?: string) =>
-  cn(
-    "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
-    err ? "border-red-400" : "border-gray-300"
-  );
+  cn("w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal", err ? "border-red-400" : "border-gray-300");
 
 const checkboxCls = "w-4 h-4 accent-clinic-teal rounded";
 
@@ -90,73 +89,99 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateMatch[] | null>(null);
+  const [forceSave, setForceSave] = useState(false);
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<FormData>({
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: defaultValues ?? {
-      bleedingDisorders: false,
-      tmjProblems: false,
-      mouthBreathing: false,
-      bruxism: false,
-      thumbSucking: false,
-      tongueThrusing: false,
+      bleedingDisorders: false, tmjProblems: false, mouthBreathing: false,
+      bruxism: false, thumbSucking: false, tongueThrusing: false,
     },
   });
 
+  // Watch phone/whatsApp/name fields for real-time duplicate check
+  const phone = watch("phone");
+  const whatsApp = watch("whatsApp");
+  const firstName = watch("firstName");
+  const lastName = watch("lastName");
+  const dateOfBirth = watch("dateOfBirth");
+
+  const checkDuplicates = useCallback(async () => {
+    if (patientId) return; // Skip for editing existing patient
+    try {
+      const params = new URLSearchParams();
+      if (phone) params.set("phone", phone);
+      if (whatsApp) params.set("whatsApp", whatsApp);
+      if (firstName) params.set("firstName", firstName);
+      if (lastName) params.set("lastName", lastName);
+      if (dateOfBirth) params.set("dateOfBirth", dateOfBirth);
+      if (!params.toString()) { setDuplicateWarning(null); return; }
+
+      const { data } = await api.get(`/api/patients/check-duplicate?${params}`);
+      if (data.isDuplicate) {
+        setDuplicateWarning(data.matches);
+        setForceSave(false);
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch { /* silent */ }
+  }, [phone, whatsApp, firstName, lastName, dateOfBirth, patientId]);
+
+  // Debounced duplicate check on field change
+  const handleFieldChange = () => {
+    if (checkTimer.current) clearTimeout(checkTimer.current);
+    checkTimer.current = setTimeout(checkDuplicates, 500);
+  };
+
   const onSubmit = async (data: FormData) => {
+    // If duplicates found and user hasn't confirmed, show warning
+    if (duplicateWarning && duplicateWarning.length > 0 && !forceSave) {
+      setServerError("يوجد مريض مشابه — راجع التحذير أعلاه قبل الحفظ");
+      return;
+    }
+
     setSaving(true);
     setServerError("");
+    setForceSave(false);
     try {
       const payload: CreatePatientRequest = {
-        firstName: data.firstName,
-        middleName: data.middleName,
-        lastName: data.lastName,
-        dateOfBirth: data.dateOfBirth,
-        gender: data.gender,
-        phone: data.phone,
-        whatsApp: data.whatsApp,
-        address: data.address,
-        occupation: data.occupation,
+        firstName: data.firstName, middleName: data.middleName, lastName: data.lastName,
+        dateOfBirth: data.dateOfBirth, gender: data.gender, phone: data.phone,
+        whatsApp: data.whatsApp, address: data.address, occupation: data.occupation,
         referralSource: data.referralSource,
         medicalHistory: {
-          chronicDiseases: data.chronicDiseases,
-          currentMedications: data.currentMedications,
-          drugAllergies: data.drugAllergies,
-          bleedingDisorders: data.bleedingDisorders,
-          isPregnant: data.isPregnant,
-          tmjProblems: data.tmjProblems,
-          previousSurgeries: data.previousSurgeries,
-          notes: data.medNotes,
+          chronicDiseases: data.chronicDiseases, currentMedications: data.currentMedications,
+          drugAllergies: data.drugAllergies, bleedingDisorders: data.bleedingDisorders,
+          isPregnant: data.isPregnant, tmjProblems: data.tmjProblems,
+          previousSurgeries: data.previousSurgeries, notes: data.medNotes,
         },
         dentalHistory: {
-          chiefComplaint: data.chiefComplaint,
-          previousTreatments: data.previousTreatments,
-          mouthBreathing: data.mouthBreathing,
-          bruxism: data.bruxism,
-          thumbSucking: data.thumbSucking,
-          tongueThrusing: data.tongueThrusing,
+          chiefComplaint: data.chiefComplaint, previousTreatments: data.previousTreatments,
+          mouthBreathing: data.mouthBreathing, bruxism: data.bruxism,
+          thumbSucking: data.thumbSucking, tongueThrusing: data.tongueThrusing,
           notes: data.dentalNotes,
         },
       };
 
       if (patientId) {
         await api.put(`/api/patients/${patientId}`, payload);
+        router.push(`/patients/${patientId}`);
       } else {
         const { data: created } = await api.post<{ id: string }>("/api/patients", payload);
         router.push(`/patients/${created.id}`);
-        return;
       }
-      router.push(`/patients/${patientId}`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setServerError(msg ?? "حدث خطأ أثناء الحفظ");
     } finally {
       setSaving(false);
     }
+  };
+
+  const MATCH_LABELS: Record<string, string> = {
+    phone: "رقم الهاتف", whatsapp: "واتساب", patientNumber: "رقم الملف", name: "الاسم",
   };
 
   return (
@@ -167,19 +192,66 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         </div>
       )}
 
+      {/* Duplicate Warning */}
+      {duplicateWarning && duplicateWarning.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-amber-800 font-bold">
+              <AlertTriangle className="w-5 h-5" />
+              تحذير: يوجد مريض مشابه!
+            </div>
+            <button type="button" onClick={() => setDuplicateWarning(null)} className="text-amber-600 hover:text-amber-800">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-sm text-amber-700 mb-3">
+            هذا الرقم أو الاسم مضاف مسبقاً لمريض آخر. يرجى مراجعة ملف المريض الموجود بدلاً من إنشاء ملف جديد.
+          </p>
+          <div className="space-y-2">
+            {duplicateWarning.map((m, i) => (
+              <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 p-3">
+                <div>
+                  <p className="font-semibold text-gray-900">{m.fullName}</p>
+                  <p className="text-xs text-gray-500">
+                    ملف رقم: {m.patientNumber} {m.phone && `· هاتف: ${m.phone}`} · تطابق: {MATCH_LABELS[m.matchType] ?? m.matchType}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/patients/${m.id}`)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  فتح الملف
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setForceSave(true); setServerError(""); }}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-100 transition"
+            >
+              حفظ على أي حال (مريض مختلف)
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Basic Info */}
       <Section title="البيانات الأساسية">
         <Field label="الاسم الأول" required error={errors.firstName?.message}>
-          <input {...register("firstName")} className={inputCls(errors.firstName?.message)} placeholder="الاسم الأول" />
+          <input {...register("firstName")} className={inputCls(errors.firstName?.message)} placeholder="الاسم الأول" onChange={(e) => { register("firstName").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="اسم الأب" error={errors.middleName?.message}>
           <input {...register("middleName")} className={inputCls()} placeholder="اسم الأب (اختياري)" />
         </Field>
         <Field label="الاسم الأخير" required error={errors.lastName?.message}>
-          <input {...register("lastName")} className={inputCls(errors.lastName?.message)} placeholder="اسم العائلة" />
+          <input {...register("lastName")} className={inputCls(errors.lastName?.message)} placeholder="اسم العائلة" onChange={(e) => { register("lastName").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="تاريخ الميلاد">
-          <input {...register("dateOfBirth")} type="date" className={inputCls()} />
+          <input {...register("dateOfBirth")} type="date" className={inputCls()} onChange={(e) => { register("dateOfBirth").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="الجنس">
           <select {...register("gender")} className={inputCls()}>
@@ -189,10 +261,10 @@ export function PatientForm({ defaultValues, patientId }: Props) {
           </select>
         </Field>
         <Field label="رقم الهاتف">
-          <input {...register("phone")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" />
+          <input {...register("phone")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" onChange={(e) => { register("phone").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="واتساب">
-          <input {...register("whatsApp")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" />
+          <input {...register("whatsApp")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" onChange={(e) => { register("whatsApp").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="العنوان">
           <input {...register("address")} className={inputCls()} placeholder="المدينة، الحي..." />
@@ -280,18 +352,10 @@ export function PatientForm({ defaultValues, patientId }: Props) {
 
       {/* Submit */}
       <div className="flex justify-end gap-3 pb-4">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
-        >
+        <button type="button" onClick={() => router.back()} className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
           إلغاء
         </button>
-        <button
-          type="submit"
-          disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
-        >
+        <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition">
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ المريض"}
         </button>

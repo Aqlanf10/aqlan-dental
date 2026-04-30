@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image,
-  Trash2, ExternalLink,
+  Trash2, ExternalLink, MessageCircle,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
@@ -732,6 +732,13 @@ export default function PatientProfilePage() {
           >
             <Pencil className="w-3.5 h-3.5" />
             تعديل
+          </Link>
+          <Link
+            href={`/messages?patientId=${id}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-clinic-teal/30 rounded-lg hover:bg-clinic-teal/5 transition text-clinic-teal flex-shrink-0"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            مراسلة
           </Link>
         </div>
 

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   MessageCircle,
   Search,
@@ -11,6 +12,7 @@ import {
   Users,
   ArrowLeft,
   CheckCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -70,10 +72,14 @@ function formatFullTime(dateStr: string) {
 // ─── المكون الرئيسي ──────────────────────────────────────────────────────────
 export default function MessagesPage() {
   const { user } = useAuthStore();
+  const searchParams = useSearchParams();
+  const patientIdParam = searchParams.get("patientId");
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [isMobileDetail, setIsMobileDetail] = useState(false);
+  const [patientConvLoading, setPatientConvLoading] = useState(false);
+  const [patientConvError, setPatientConvError] = useState("");
 
   const { data: convData, isLoading: convLoading } = useConversations(1, searchQuery || undefined);
   const { data: conversation } = useConversation(selectedConvId);
@@ -82,6 +88,26 @@ export default function MessagesPage() {
   const { data: unreadData } = useUnreadCount();
 
   const conversations = convData?.data ?? [];
+
+  // Auto-open patient conversation when navigated from patient file
+  useEffect(() => {
+    if (patientIdParam && !selectedConvId) {
+      setPatientConvLoading(true);
+      setPatientConvError("");
+      api.get(`/api/messages/patient/${patientIdParam}`)
+        .then(({ data }) => {
+          if (data?.id) {
+            setSelectedConvId(data.id);
+            setIsMobileDetail(true);
+          }
+        })
+        .catch((err) => {
+          const msg = err?.response?.data?.message ?? "لا يمكن فتح محادثة مع هذا المريض";
+          setPatientConvError(msg);
+        })
+        .finally(() => setPatientConvLoading(false));
+    }
+  }, [patientIdParam, selectedConvId]);
 
   // Mark as read when selecting a conversation
   useEffect(() => {
@@ -105,6 +131,16 @@ export default function MessagesPage() {
 
   return (
     <div className="h-[calc(100vh-4rem)] flex gap-4">
+      {/* Patient conversation error */}
+      {patientConvError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-2 text-sm shadow-lg flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {patientConvError}
+          <button onClick={() => setPatientConvError("")} className="text-amber-600 hover:text-amber-800 ms-2">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
       {/* ─── قائمة المحادثات ──────────────────────────────────────────── */}
       <div
         className={cn(

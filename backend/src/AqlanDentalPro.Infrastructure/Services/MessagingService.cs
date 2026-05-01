@@ -412,14 +412,6 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         };
     }
 
-    // ─── محادثة مع مريض ──────────────────────────────────────────────────────
-    public async Task<ConversationDetailDto?> GetOrCreatePatientConversationAsync(Guid patientId)
-    {
-        // Patient messaging is not supported in this version
-        // Patients don't have user accounts in the staff system
-        return null;
-    }
-
     // ─── التحقق من صلاحية المراسلة (عام) ────────────────────────────────────────
     public async Task<bool> CanMessageUserPublicAsync(Guid targetUserId) => await CanMessageUserAsync(targetUserId);
 

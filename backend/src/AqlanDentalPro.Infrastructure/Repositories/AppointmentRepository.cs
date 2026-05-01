@@ -56,4 +56,12 @@ public class AppointmentRepository(AppDbContext context)
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
             .FirstOrDefaultAsync(a => a.Id == id);
+
+    public async Task<IEnumerable<Appointment>> GetByPatientAsync(Guid patientId) =>
+        await DbSet
+            .Include(a => a.Doctor)
+            .Where(a => a.PatientId == patientId)
+            .OrderByDescending(a => a.AppointmentDate)
+            .ThenByDescending(a => a.StartTime)
+            .ToListAsync();
 }

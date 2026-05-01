@@ -71,6 +71,12 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         return (dto, null);
     }
 
+    public async Task<IEnumerable<AppointmentDto>> GetByPatientAsync(Guid patientId)
+    {
+        var list = await repo.GetByPatientAsync(patientId);
+        return list.Select(ToDto);
+    }
+
     public async Task<AppointmentDto?> GetByIdAsync(Guid id)
     {
         var a = await repo.GetWithDetailAsync(id);

@@ -140,14 +140,6 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         return success ? Ok(new { message = "تم استعادة المريض" }) : NotFound(new { message = "المريض غير موجود" });
     }
 
-    // GET /api/patients/check-duplicate?phone=0770123456&excludeId=...
-    [HttpGet("check-duplicate")]
-    public async Task<IActionResult> CheckDuplicate([FromQuery] string? phone, [FromQuery] Guid? excludeId = null)
-    {
-        var (exists, patientNumber, fullName) = await service.CheckDuplicatePhoneAsync(phone, excludeId);
-        return Ok(new { exists, patientNumber, fullName });
-    }
-
     [HttpGet("{id:guid}/medical-history")]
     public async Task<IActionResult> GetMedicalHistory(Guid id)
     {

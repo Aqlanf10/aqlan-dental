@@ -220,16 +220,25 @@ using (var scope = app.Services.CreateScope())
         };
         foreach (var table in baseEntityTables)
         {
-            await db.Database.ExecuteSqlRawAsync($"""
-                DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedAt') THEN
-                        ALTER TABLE "{table}" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedBy') THEN
-                        ALTER TABLE "{table}" ADD COLUMN "DeletedBy" uuid NULL;
-                    END IF;
-                END $$;
-            """);
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync($"""
+                    DO $$ BEGIN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}') THEN
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedAt') THEN
+                                ALTER TABLE "{table}" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                            END IF;
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedBy') THEN
+                                ALTER TABLE "{table}" ADD COLUMN "DeletedBy" uuid NULL;
+                            END IF;
+                        END IF;
+                    END $$;
+                """);
+            }
+            catch (Exception tableEx)
+            {
+                logger.LogWarning(tableEx, "Skipping soft-delete columns for table {Table}", table);
+            }
         }
 
         // Add NormalizedPhone/NormalizedWhatsApp to Patients

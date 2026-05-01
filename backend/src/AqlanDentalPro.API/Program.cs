@@ -117,9 +117,14 @@ builder.Services.AddAuthorization(opts =>
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
+var allowedOrigins = builder.Configuration["AllowedOrigins"]?.Split(',', StringSplitOptions.RemoveEmptyEntries)
+    ?? ["http://localhost:3000", "http://localhost:3001"];
+// Always include Vercel deployment origins so the frontend can call the API directly
+allowedOrigins = [..allowedOrigins,
+    "https://aqlan-dental-pro.vercel.app",
+    "https://aqlan-dental.vercel.app"];
 builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
-    policy.WithOrigins(
-            builder.Configuration["AllowedOrigins"]?.Split(',') ?? ["http://localhost:3000", "http://localhost:3001"])
+    policy.WithOrigins(allowedOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()
         .AllowCredentials()));

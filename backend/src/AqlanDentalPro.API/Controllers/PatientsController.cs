@@ -186,33 +186,23 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     {
         var patient = await service.GetByIdAsync(id);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
-        return Ok(patient.MedicalHistory);
+        // Return empty DTO instead of null when no history exists yet
+        return Ok(patient.MedicalHistory ?? new MedicalHistoryDto());
     }
 
     [HttpPut("{id:guid}/medical-history")]
     public async Task<IActionResult> UpdateMedicalHistory(Guid id, [FromBody] MedicalHistoryDto dto)
     {
-        var req = new UpdatePatientRequest();
-        var patient = await service.GetByIdAsync(id);
-        if (patient == null) return NotFound(new { message = "المريض غير موجود" });
-
-        var updateReq = new UpdatePatientRequest
+        try
         {
-            FirstName = patient.FirstName,
-            MiddleName = patient.MiddleName,
-            LastName = patient.LastName,
-            DateOfBirth = patient.DateOfBirth,
-            Gender = patient.Gender,
-            Phone = patient.Phone,
-            WhatsApp = patient.WhatsApp,
-            Address = patient.Address,
-            Occupation = patient.Occupation,
-            ReferralSource = patient.ReferralSource,
-            PrimaryDoctorId = patient.PrimaryDoctorId,
-            MedicalHistory = dto
-        };
-        var result = await service.UpdateAsync(id, updateReq);
-        return result == null ? NotFound() : Ok(result.MedicalHistory);
+            var result = await service.UpsertMedicalHistoryAsync(id, dto);
+            if (result == null) return NotFound(new { message = "المريض غير موجود" });
+            return Ok(result);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "تعارض في تحديث السجل الطبي — حاول مرة أخرى" });
+        }
     }
 
     [HttpGet("{id:guid}/dental-history")]
@@ -220,32 +210,23 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     {
         var patient = await service.GetByIdAsync(id);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
-        return Ok(patient.DentalHistory);
+        // Return empty DTO instead of null when no history exists yet
+        return Ok(patient.DentalHistory ?? new DentalHistoryDto());
     }
 
     [HttpPut("{id:guid}/dental-history")]
     public async Task<IActionResult> UpdateDentalHistory(Guid id, [FromBody] DentalHistoryDto dto)
     {
-        var patient = await service.GetByIdAsync(id);
-        if (patient == null) return NotFound(new { message = "المريض غير موجود" });
-
-        var updateReq = new UpdatePatientRequest
+        try
         {
-            FirstName = patient.FirstName,
-            MiddleName = patient.MiddleName,
-            LastName = patient.LastName,
-            DateOfBirth = patient.DateOfBirth,
-            Gender = patient.Gender,
-            Phone = patient.Phone,
-            WhatsApp = patient.WhatsApp,
-            Address = patient.Address,
-            Occupation = patient.Occupation,
-            ReferralSource = patient.ReferralSource,
-            PrimaryDoctorId = patient.PrimaryDoctorId,
-            DentalHistory = dto
-        };
-        var result = await service.UpdateAsync(id, updateReq);
-        return result == null ? NotFound() : Ok(result.DentalHistory);
+            var result = await service.UpsertDentalHistoryAsync(id, dto);
+            if (result == null) return NotFound(new { message = "المريض غير موجود" });
+            return Ok(result);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return Conflict(new { message = "تعارض في تحديث السجل السني — حاول مرة أخرى" });
+        }
     }
 
     [HttpGet("{id:guid}/summary")]

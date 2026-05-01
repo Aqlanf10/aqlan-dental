@@ -123,8 +123,9 @@ public class PatientService(
 
     public async Task<PatientProfileDto?> UpdateAsync(Guid id, UpdatePatientRequest req)
     {
-        var patient = await repo.GetWithHistoriesAsync(id);
-        if (patient == null) return null;
+        // Use ignore-filters variant to also find soft-deleted history rows
+        var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
+        if (patient == null || !patient.IsActive) return null;
 
         // Normalize and check duplicates before updating
         var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
@@ -266,16 +267,18 @@ public class PatientService(
 
     /// <summary>
     /// Upsert medical history: create if none exists, update if it does.
+    /// Also handles soft-deleted history rows by restoring them.
     /// Fixes DbUpdateConcurrencyException when patient has no MedicalHistory row.
     /// </summary>
     public async Task<MedicalHistoryDto?> UpsertMedicalHistoryAsync(Guid id, MedicalHistoryDto dto)
     {
-        var patient = await repo.GetWithHistoriesAsync(id);
-        if (patient == null) return null;
+        // Use ignore-filters variant to also find soft-deleted history rows
+        var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
+        if (patient == null || !patient.IsActive) return null;
 
         if (patient.MedicalHistory == null)
         {
-            // No existing row — create a NEW entity and ADD it (not Update)
+            // No existing row at all — create a NEW entity and ADD it
             patient.MedicalHistory = new MedicalHistory
             {
                 PatientId = patient.Id,
@@ -288,12 +291,11 @@ public class PatientService(
                 PreviousSurgeries = dto.PreviousSurgeries,
                 Notes = dto.Notes
             };
-            // Explicitly Add the new child entity so EF tracks it as Added, not Modified
             await repo.AddChildAsync(patient.MedicalHistory);
         }
         else
         {
-            // Existing row — update in place (change tracker marks properties as Modified)
+            // Existing row (active or soft-deleted) — update and restore if needed
             patient.MedicalHistory.ChronicDiseases = dto.ChronicDiseases;
             patient.MedicalHistory.CurrentMedications = dto.CurrentMedications;
             patient.MedicalHistory.DrugAllergies = dto.DrugAllergies;
@@ -303,6 +305,13 @@ public class PatientService(
             patient.MedicalHistory.PreviousSurgeries = dto.PreviousSurgeries;
             patient.MedicalHistory.Notes = dto.Notes;
             patient.MedicalHistory.UpdatedAt = DateTime.UtcNow;
+            // Restore if the row was soft-deleted
+            if (!patient.MedicalHistory.IsActive)
+            {
+                patient.MedicalHistory.IsActive = true;
+                patient.MedicalHistory.DeletedAt = null;
+                patient.MedicalHistory.DeletedBy = null;
+            }
         }
 
         await repo.SaveChangesAsync();
@@ -321,16 +330,18 @@ public class PatientService(
 
     /// <summary>
     /// Upsert dental history: create if none exists, update if it does.
+    /// Also handles soft-deleted history rows by restoring them.
     /// Fixes DbUpdateConcurrencyException when patient has no DentalHistory row.
     /// </summary>
     public async Task<DentalHistoryDto?> UpsertDentalHistoryAsync(Guid id, DentalHistoryDto dto)
     {
-        var patient = await repo.GetWithHistoriesAsync(id);
-        if (patient == null) return null;
+        // Use ignore-filters variant to also find soft-deleted history rows
+        var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
+        if (patient == null || !patient.IsActive) return null;
 
         if (patient.DentalHistory == null)
         {
-            // No existing row — create a NEW entity and ADD it (not Update)
+            // No existing row at all — create a NEW entity and ADD it
             patient.DentalHistory = new DentalHistory
             {
                 PatientId = patient.Id,
@@ -342,12 +353,11 @@ public class PatientService(
                 TongueThrusing = dto.TongueThrusing,
                 Notes = dto.Notes
             };
-            // Explicitly Add the new child entity so EF tracks it as Added, not Modified
             await repo.AddChildAsync(patient.DentalHistory);
         }
         else
         {
-            // Existing row — update in place (change tracker marks properties as Modified)
+            // Existing row (active or soft-deleted) — update and restore if needed
             patient.DentalHistory.ChiefComplaint = dto.ChiefComplaint;
             patient.DentalHistory.PreviousTreatments = dto.PreviousTreatments;
             patient.DentalHistory.MouthBreathing = dto.MouthBreathing;
@@ -356,6 +366,13 @@ public class PatientService(
             patient.DentalHistory.TongueThrusing = dto.TongueThrusing;
             patient.DentalHistory.Notes = dto.Notes;
             patient.DentalHistory.UpdatedAt = DateTime.UtcNow;
+            // Restore if the row was soft-deleted
+            if (!patient.DentalHistory.IsActive)
+            {
+                patient.DentalHistory.IsActive = true;
+                patient.DentalHistory.DeletedAt = null;
+                patient.DentalHistory.DeletedBy = null;
+            }
         }
 
         await repo.SaveChangesAsync();

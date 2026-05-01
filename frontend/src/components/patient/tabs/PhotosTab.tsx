@@ -133,7 +133,7 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
             <label className="text-xs text-gray-500 block mb-1">الصورة *</label>
             <label className={cn(
               "flex items-center gap-3 w-full border-2 border-dashed rounded-lg px-4 py-3 cursor-pointer transition",
-              photoFile ? "border-clinic-teal bg-teal-50" : "border-gray-200 hover:border-gray-300"
+              photoFile ? "border-clinic-blue bg-clinic-blue-50" : "border-gray-200 hover:border-gray-300"
             )}>
               <input type="file" accept="image/*,.pdf" className="sr-only" onChange={handlePhotoFileChange} />
               {photoPreview ? (
@@ -156,7 +156,7 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
             <select
               value={photoCategory}
               onChange={(e) => setPhotoCategory(e.target.value)}
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal bg-white"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue bg-white"
             >
               <option value="intraoral">داخل الفم</option>
               <option value="extraoral">خارج الفم</option>
@@ -169,7 +169,7 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
               value={photoType}
               onChange={(e) => setPhotoType(e.target.value)}
               placeholder="مثال: frontal, lateral..."
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
             />
           </div>
           <div>
@@ -177,7 +177,7 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
             <select
               value={photoStage}
               onChange={(e) => setPhotoStage(e.target.value)}
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal bg-white"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue bg-white"
             >
               <option value="">— غير محدد —</option>
               <option value="initial">أولية</option>
@@ -192,14 +192,14 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
               value={photoNotes}
               onChange={(e) => setPhotoNotes(e.target.value)}
               placeholder="ملاحظات اختيارية..."
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
             />
           </div>
         </div>
         <button
           type="submit"
           disabled={addingPhoto || !photoFile}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition disabled:opacity-50"
         >
           <Plus className="w-3.5 h-3.5" />
           {addingPhoto ? "جارٍ الرفع..." : "إضافة صورة"}
@@ -243,7 +243,7 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
                   href={photo.fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-clinic-teal hover:underline truncate flex items-center gap-1"
+                  className="text-xs text-clinic-blue hover:underline truncate flex items-center gap-1"
                 >
                   <ExternalLink className="w-3 h-3 flex-shrink-0" />
                   <span className="truncate">{photo.fileUrl}</span>

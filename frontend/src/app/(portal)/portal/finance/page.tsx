@@ -63,7 +63,7 @@ export default function PortalFinancePage() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">العقود النشطة</span>
-                <span className="text-2xl font-bold text-teal-700">{finance?.activeContracts ?? 0}</span>
+                <span className="text-2xl font-bold text-clinic-blue">{finance?.activeContracts ?? 0}</span>
               </div>
             </div>
 

@@ -22,7 +22,7 @@ export default function PortalDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-clinic-blue border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -70,7 +70,7 @@ export default function PortalDashboard() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-teal-600" />
+                <Calendar className="w-4 h-4 text-clinic-blue" />
                 الموعد القادم
               </h3>
               <span className={cn(
@@ -103,7 +103,7 @@ export default function PortalDashboard() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
             <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
             <p className="text-sm text-gray-500">لا يوجد مواعيد قادمة</p>
-            <Link href="/portal/appointments" className="text-xs text-teal-600 hover:underline mt-1 inline-block">
+            <Link href="/portal/appointments" className="text-xs text-clinic-blue hover:underline mt-1 inline-block">
               احجز موعد جديد
             </Link>
           </div>
@@ -113,10 +113,10 @@ export default function PortalDashboard() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-teal-600" />
+              <CreditCard className="w-4 h-4 text-clinic-blue" />
               الملخص المالي
             </h3>
-            <Link href="/portal/finance" className="text-xs text-teal-600 hover:underline flex items-center gap-1">
+            <Link href="/portal/finance" className="text-xs text-clinic-blue hover:underline flex items-center gap-1">
               التفاصيل <ChevronLeft className="w-3 h-3" />
             </Link>
           </div>

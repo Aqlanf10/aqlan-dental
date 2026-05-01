@@ -52,22 +52,22 @@ export function BasicInfoTab({ patient, orthoCases, surgeryCases }: BasicInfoTab
               <div className="space-y-2">
                 {orthoCases.map((c) => (
                   <Link key={c.id} href={`/ortho/${c.id}`}
-                    className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg hover:bg-teal-50 hover:border-teal-200 border border-transparent transition"
+                    className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg hover:bg-clinic-blue-50 hover:border-clinic-blue-100 border border-transparent transition"
                   >
                     <div className="flex items-center gap-2">
-                      <Stethoscope className="w-3.5 h-3.5 text-teal-600 flex-shrink-0" />
+                      <Stethoscope className="w-3.5 h-3.5 text-clinic-blue flex-shrink-0" />
                       <span className="text-sm font-medium text-gray-900">{c.caseNumber}</span>
                       {c.applianceType && <span className="text-xs text-gray-500">{c.applianceType}</span>}
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-1.5">
                         <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-clinic-teal rounded-full" style={{ width: `${c.stagePercentage}%` }} />
+                          <div className="h-full bg-clinic-blue rounded-full" style={{ width: `${c.stagePercentage}%` }} />
                         </div>
                         <span className="text-xs text-gray-500">{c.stagePercentage}%</span>
                       </div>
                       <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
-                        c.status === "active" ? "bg-teal-50 text-teal-700" : "bg-gray-100 text-gray-500"
+                        c.status === "active" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
                       )}>
                         {ORTHO_STATUS_LABELS[c.status] ?? c.status}
                       </span>

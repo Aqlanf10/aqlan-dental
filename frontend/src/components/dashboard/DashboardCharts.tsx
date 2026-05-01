@@ -17,7 +17,7 @@ interface ChartsData {
   orthoByStatus:     OrthoStatus;
 }
 
-const ORTHO_COLORS = ["#0E7490", "#059669", "#6B7280"];
+const ORTHO_COLORS = ["#2563EB", "#059669", "#6B7280"];
 
 function formatYER(val: number) {
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}م`;
@@ -36,7 +36,7 @@ const TooltipRevenue = ({ active, payload, label }: TooltipProps) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
       <p className="text-gray-500 mb-1">{label}</p>
-      <p className="font-bold text-clinic-teal">{payload[0].value.toLocaleString()} ر.ي</p>
+      <p className="font-bold text-clinic-blue">{payload[0].value.toLocaleString()} ر.ي</p>
     </div>
   );
 };
@@ -91,7 +91,7 @@ export function DashboardCharts() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-clinic-teal" />
+              <TrendingUp className="w-4 h-4 text-clinic-blue" />
               <h3 className="font-bold text-gray-900 text-sm">الإيرادات — آخر 30 يوماً</h3>
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
@@ -116,7 +116,7 @@ export function DashboardCharts() {
               axisLine={false}
             />
             <Tooltip content={<TooltipRevenue />} />
-            <Bar dataKey="amount" fill="#0E7490" radius={[3, 3, 0, 0]} maxBarSize={20} />
+            <Bar dataKey="amount" fill="#2563EB" radius={[3, 3, 0, 0]} maxBarSize={20} />
           </BarChart>
         </ResponsiveContainer>
       </div>

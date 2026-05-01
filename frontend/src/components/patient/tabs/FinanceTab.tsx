@@ -58,9 +58,9 @@ export function FinanceTab({ patientId, totalPaid, totalOutstanding }: FinanceTa
     <div className="space-y-6" dir="rtl">
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-lg px-4 py-3 bg-teal-50">
+        <div className="rounded-lg px-4 py-3 bg-clinic-blue-50">
           <p className="text-xs text-gray-500">إجمالي المدفوع</p>
-          <p className="text-lg font-bold text-teal-600">{totalPaid.toLocaleString()}</p>
+          <p className="text-lg font-bold text-clinic-blue">{totalPaid.toLocaleString()}</p>
         </div>
         <div className="rounded-lg px-4 py-3 bg-orange-50">
           <p className="text-xs text-gray-500">إجمالي المتبقي</p>
@@ -79,7 +79,7 @@ export function FinanceTab({ patientId, totalPaid, totalOutstanding }: FinanceTa
       {/* Recent Payments */}
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <CreditCard className="w-4 h-4 text-clinic-teal" />
+          <CreditCard className="w-4 h-4 text-clinic-blue" />
           المدفوعات الأخيرة
         </h3>
         {payments.length === 0 ? (
@@ -93,7 +93,7 @@ export function FinanceTab({ patientId, totalPaid, totalOutstanding }: FinanceTa
                   <span className="text-sm text-gray-700">{p.date}</span>
                   {p.method && <span className="text-xs text-gray-400">({p.method})</span>}
                 </div>
-                <span className="text-sm font-semibold text-teal-600">{p.amount.toLocaleString()}</span>
+                <span className="text-sm font-semibold text-clinic-blue">{p.amount.toLocaleString()}</span>
               </div>
             ))}
           </div>
@@ -103,7 +103,7 @@ export function FinanceTab({ patientId, totalPaid, totalOutstanding }: FinanceTa
       {/* Contracts Summary */}
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <FileSignature className="w-4 h-4 text-clinic-teal" />
+          <FileSignature className="w-4 h-4 text-clinic-blue" />
           ملخص العقود
         </h3>
         {contracts.length === 0 ? (

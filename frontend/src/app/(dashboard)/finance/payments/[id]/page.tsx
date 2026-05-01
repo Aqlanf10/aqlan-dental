@@ -37,7 +37,7 @@ export default function PaymentReceiptPage() {
     <div className="space-y-5 max-w-xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/finance" className="hover:text-clinic-teal transition">المالية</Link>
+        <Link href="/finance" className="hover:text-clinic-blue transition">المالية</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">سند قبض #{payment.receiptNumber}</span>
       </div>
@@ -52,7 +52,7 @@ export default function PaymentReceiptPage() {
         </div>
         <button
           onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Printer className="w-4 h-4" />
           طباعة

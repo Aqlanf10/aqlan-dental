@@ -231,7 +231,7 @@ export default function PatientProfilePage() {
     <div className="space-y-5 max-w-5xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/patients" className="hover:text-clinic-teal transition">المرضى</Link>
+        <Link href="/patients" className="hover:text-clinic-blue transition">المرضى</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{patient.firstName} {patient.lastName}</span>
       </div>
@@ -241,7 +241,7 @@ export default function PatientProfilePage() {
         {/* Top row */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
-            <div className="w-14 h-14 clinic-gradient rounded-2xl flex items-center justify-center text-white text-xl font-extrabold flex-shrink-0">
+            <div className="w-14 h-14 blue-gradient rounded-2xl flex items-center justify-center text-white text-xl font-extrabold flex-shrink-0">
               {patient.firstName.charAt(0)}
             </div>
             <div>
@@ -321,7 +321,7 @@ export default function PatientProfilePage() {
           )}
           <Link
             href={`/messages?patientId=${id}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-clinic-teal/30 rounded-lg hover:bg-clinic-teal/5 transition text-clinic-teal flex-shrink-0"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-clinic-blue/30 rounded-lg hover:bg-clinic-blue/5 transition text-clinic-blue flex-shrink-0"
           >
             <MessageCircle className="w-3.5 h-3.5" />
             مراسلة
@@ -334,8 +334,8 @@ export default function PatientProfilePage() {
             { icon: Calendar, label: "المواعيد",     value: summary?.totalAppointments   ?? "—", color: "text-blue-600",   bg: "bg-blue-50" },
             { icon: Calendar, label: "مكتملة",       value: summary?.completedAppointments ?? "—", color: "text-green-600",  bg: "bg-green-50" },
             { icon: Activity, label: "تقويم نشط",   value: summary?.activeOrthoCases    ?? "—", color: "text-purple-600", bg: "bg-purple-50" },
-            { icon: Wallet,   label: "مدفوع",        value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-teal-600",   bg: "bg-teal-50" },
-            { icon: Wallet,   label: "متبقي",        value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-orange-600", bg: "bg-orange-50" },
+            { icon: Wallet,   label: "مدفوع",        value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-clinic-blue", bg: "bg-clinic-blue-50" },
+            { icon: Wallet,   label: "متبقي",        value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-clinic-orange", bg: "bg-clinic-orange-50" },
             { icon: Pill,     label: "الوصفات",      value: summary?.prescriptionsCount  ?? "—", color: "text-rose-600",   bg: "bg-rose-50" },
           ].map(({ icon: Icon, label, value, color, bg }) => (
             <div key={label} className={cn("rounded-lg px-3 py-2 flex items-center gap-2", bg)}>
@@ -352,7 +352,7 @@ export default function PatientProfilePage() {
         <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-50">
           <Link
             href={`/appointments/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             <Plus className="w-3.5 h-3.5" />
             موعد جديد
@@ -402,7 +402,7 @@ export default function PatientProfilePage() {
                 className={cn(
                   "flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition",
                   activeTab === tab.key
-                    ? "border-clinic-teal text-clinic-teal"
+                    ? "border-clinic-blue text-clinic-blue"
                     : "border-transparent text-gray-500 hover:text-gray-900"
                 )}
               >

@@ -148,7 +148,7 @@ export default function MessagesPage() {
         <div className="p-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <MessageCircle className="w-5 h-5 text-clinic-teal" />
+              <MessageCircle className="w-5 h-5 text-clinic-blue" />
               <h2 className="text-lg font-bold text-gray-900">الرسائل</h2>
               {unreadData && unreadData.totalUnread > 0 && (
                 <span className="bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
@@ -158,7 +158,7 @@ export default function MessagesPage() {
             </div>
             <button
               onClick={() => setShowNewChat(true)}
-              className="w-9 h-9 rounded-lg bg-clinic-teal text-white flex items-center justify-center hover:opacity-90 transition"
+              className="w-9 h-9 rounded-lg bg-clinic-blue text-white flex items-center justify-center hover:opacity-90 transition"
               title="محادثة جديدة"
             >
               <Plus className="w-5 h-5" />
@@ -171,7 +171,7 @@ export default function MessagesPage() {
               placeholder="بحث في المحادثات..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal bg-gray-50"
+              className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue bg-gray-50"
             />
           </div>
         </div>
@@ -180,7 +180,7 @@ export default function MessagesPage() {
         <div className="flex-1 overflow-y-auto">
           {convLoading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-6 h-6 border-2 border-clinic-teal border-t-transparent rounded-full" />
+              <div className="animate-spin w-6 h-6 border-2 border-clinic-blue border-t-transparent rounded-full" />
             </div>
           ) : conversations.length === 0 ? (
             <div className="text-center py-12 px-4">
@@ -268,7 +268,7 @@ function ConversationItem({
       onClick={onClick}
       className={cn(
         "w-full flex items-center gap-3 px-4 py-3 text-right transition-colors border-b border-gray-50",
-        isSelected ? "bg-clinic-teal/5 border-r-4 border-r-clinic-teal" : "hover:bg-gray-50"
+        isSelected ? "bg-clinic-blue/5 border-r-4 border-r-clinic-blue" : "hover:bg-gray-50"
       )}
     >
       {/* Avatar */}
@@ -307,7 +307,7 @@ function ConversationItem({
             {conv.lastMessagePreview ?? "لا توجد رسائل"}
           </span>
           {conv.unreadCount > 0 && (
-            <span className="bg-clinic-teal text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+            <span className="bg-clinic-blue text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
               {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
             </span>
           )}
@@ -429,9 +429,9 @@ function ChatArea({
       {/* Reply preview */}
       {replyTo && (
         <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
-          <Reply className="w-4 h-4 text-clinic-teal flex-shrink-0" />
+          <Reply className="w-4 h-4 text-clinic-blue flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-clinic-teal">
+            <p className="text-xs font-semibold text-clinic-blue">
               {replyTo.senderName}
             </p>
             <p className="text-xs text-gray-500 truncate">
@@ -457,7 +457,7 @@ function ChatArea({
             onKeyDown={handleKeyDown}
             placeholder="اكتب رسالتك..."
             rows={1}
-            className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal max-h-32"
+            className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue max-h-32"
             style={{ minHeight: "40px" }}
           />
           <button
@@ -466,7 +466,7 @@ function ChatArea({
             className={cn(
               "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
               input.trim() && !sending
-                ? "bg-clinic-teal text-white hover:opacity-90"
+                ? "bg-clinic-blue text-white hover:opacity-90"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
           >
@@ -524,11 +524,11 @@ function MessageBubble({
         {message.replyToContent && (
           <div
             className={cn(
-              "text-xs px-3 py-1.5 rounded-lg mb-1 border-r-2 border-clinic-teal bg-gray-100",
+              "text-xs px-3 py-1.5 rounded-lg mb-1 border-r-2 border-clinic-blue bg-gray-100",
               isMine ? "text-left" : "text-right"
             )}
           >
-            <span className="font-semibold text-clinic-teal">
+            <span className="font-semibold text-clinic-blue">
               {message.replyToSenderName}
             </span>
             <p className="text-gray-500 truncate">{message.replyToContent}</p>
@@ -540,13 +540,13 @@ function MessageBubble({
           className={cn(
             "px-3 py-2 rounded-2xl text-sm relative",
             isMine
-              ? "bg-clinic-teal text-white rounded-br-md"
+              ? "bg-clinic-blue text-white rounded-br-md"
               : "bg-white border border-gray-200 text-gray-800 rounded-bl-md"
           )}
         >
           {/* Show sender name in group */}
           {!isMine && (
-            <p className="text-xs font-semibold text-clinic-teal mb-0.5">
+            <p className="text-xs font-semibold text-clinic-blue mb-0.5">
               {message.senderName}
             </p>
           )}
@@ -584,7 +584,7 @@ function MessageBubble({
             <CheckCheck
               className={cn(
                 "w-3.5 h-3.5",
-                message.isReadByMe ? "text-clinic-teal" : "text-gray-300"
+                message.isReadByMe ? "text-clinic-blue" : "text-gray-300"
               )}
             />
           )}
@@ -593,7 +593,7 @@ function MessageBubble({
         {/* Reply button (on hover) */}
         <button
           onClick={onReply}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-clinic-teal text-xs mt-0.5 flex items-center gap-1"
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-clinic-blue text-xs mt-0.5 flex items-center gap-1"
         >
           <Reply className="w-3 h-3" />
           رد
@@ -691,7 +691,7 @@ function NewChatDialog({
               placeholder="بحث عن مستخدم..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             />
           </div>
 
@@ -702,14 +702,14 @@ function NewChatDialog({
               placeholder="اسم المجموعة (اختياري)"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             />
           )}
 
           {/* Users list */}
           {loading ? (
             <div className="flex justify-center py-8">
-              <div className="animate-spin w-6 h-6 border-2 border-clinic-teal border-t-transparent rounded-full" />
+              <div className="animate-spin w-6 h-6 border-2 border-clinic-blue border-t-transparent rounded-full" />
             </div>
           ) : (
             <div className="space-y-1">
@@ -720,7 +720,7 @@ function NewChatDialog({
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-right transition-colors",
                     selected.has(u.id)
-                      ? "bg-clinic-teal/10 border border-clinic-teal/30"
+                      ? "bg-clinic-blue/10 border border-clinic-blue/30"
                       : "hover:bg-gray-50 border border-transparent"
                   )}
                 >
@@ -739,7 +739,7 @@ function NewChatDialog({
                     </p>
                   </div>
                   {selected.has(u.id) && (
-                    <div className="w-5 h-5 bg-clinic-teal rounded-full flex items-center justify-center">
+                    <div className="w-5 h-5 bg-clinic-blue rounded-full flex items-center justify-center">
                       <svg
                         className="w-3 h-3 text-white"
                         fill="none"
@@ -768,7 +768,7 @@ function NewChatDialog({
             value={initialMsg}
             onChange={(e) => setInitialMsg(e.target.value)}
             rows={2}
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-teal resize-none"
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue resize-none"
           />
           <button
             onClick={handleCreate}
@@ -776,7 +776,7 @@ function NewChatDialog({
             className={cn(
               "w-full py-2.5 rounded-lg font-semibold text-sm transition",
               selected.size > 0 && !createConv.isPending
-                ? "bg-clinic-teal text-white hover:opacity-90"
+                ? "bg-clinic-blue text-white hover:opacity-90"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
           >

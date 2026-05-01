@@ -71,7 +71,7 @@ export function PerioAssessment({ patientId, existingRecords, onSave }: PerioAss
       onClick={onClick}
       className={cn(
         "w-10 h-10 text-xs font-bold rounded-lg border transition",
-        selected === value ? "border-teal-500 bg-teal-50 text-teal-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"
+        selected === value ? "border-clinic-blue bg-clinic-blue-50 text-clinic-blue" : "border-gray-200 text-gray-500 hover:bg-gray-50"
       )}
       title={label}
     >
@@ -83,7 +83,7 @@ export function PerioAssessment({ patientId, existingRecords, onSave }: PerioAss
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <h3 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
-          <Activity className="w-4 h-4 text-teal-600" />
+          <Activity className="w-4 h-4 text-clinic-blue" />
           تقييم لثة ونسج داعمة
         </h3>
 
@@ -91,19 +91,19 @@ export function PerioAssessment({ patientId, existingRecords, onSave }: PerioAss
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">رقم السن</label>
             <input type="number" value={toothNumber} onChange={(e) => setToothNumber(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
               placeholder="FDI" dir="ltr" />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">عمق الجيب (مم)</label>
             <input type="number" value={probing} onChange={(e) => setProbing(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
               placeholder="0" dir="ltr" step="0.5" />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">الارتباط السريري (مم)</label>
             <input type="number" value={attachment} onChange={(e) => setAttachment(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
               placeholder="0" dir="ltr" step="0.5" />
           </div>
 
@@ -155,14 +155,14 @@ export function PerioAssessment({ patientId, existingRecords, onSave }: PerioAss
           <div className="col-span-2 md:col-span-3">
             <label className="block text-xs font-medium text-gray-600 mb-1">ملاحظات</label>
             <input value={notes} onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              className="w-full px-2 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
               placeholder="ملاحظات إضافية..." />
           </div>
         </div>
 
         <div className="flex justify-end mt-3">
           <button onClick={handleSave} disabled={saving || !toothNumber}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60">
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:bg-clinic-navy-700 disabled:opacity-60">
             <Plus className="w-4 h-4" />
             {saving ? "جارٍ الحفظ..." : "إضافة تسجيل"}
           </button>

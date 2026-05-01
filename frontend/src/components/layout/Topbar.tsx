@@ -167,12 +167,12 @@ export function Topbar() {
   );
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6 flex-shrink-0">
+    <header className="h-14 bg-white border-b border-gray-100 flex items-center justify-between px-4 lg:px-6 flex-shrink-0 shadow-sm">
       {/* Branch name */}
       <div className="flex items-center gap-2">
         <div className="lg:hidden w-10" />
-        <div className="w-2 h-2 rounded-full bg-green-500" />
-        <span className="text-sm text-gray-600 font-medium">مركز د. عقلان الكامل — تعز</span>
+        <div className="w-2 h-2 rounded-full bg-clinic-blue animate-pulse" />
+        <span className="text-sm text-gray-700 font-semibold">مركز د. عقلان الكامل — تعز</span>
       </div>
 
       {/* Right controls */}
@@ -195,7 +195,7 @@ export function Topbar() {
             onChange={handleSearchInput}
             onFocus={() => hasResults && setSearchOpen(true)}
             placeholder="بحث عن مريض، موعد..."
-            className="h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-clinic-teal w-60 transition"
+            className="h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-200 bg-gray-50/80 focus:outline-none focus:ring-2 focus:ring-clinic-blue w-60 transition"
           />
 
           {/* Search dropdown */}
@@ -217,8 +217,8 @@ export function Topbar() {
                           onClick={() => { router.push(`/patients/${p.id}`); setSearchOpen(false); setQuery(""); }}
                           className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 text-start transition"
                         >
-                          <div className="w-7 h-7 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0">
-                            <User className="w-3.5 h-3.5 text-clinic-teal" />
+                          <div className="w-7 h-7 rounded-full bg-clinic-blue-50 flex items-center justify-center flex-shrink-0">
+                            <User className="w-3.5 h-3.5 text-clinic-blue" />
                           </div>
                           <div>
                             <p className="text-sm font-medium text-gray-900">{p.fullName}</p>
@@ -280,7 +280,7 @@ export function Topbar() {
         <div ref={notifRef} className="relative">
           <button
             onClick={openNotifications}
-            className="relative w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+            className="relative w-9 h-9 rounded-lg hover:bg-clinic-blue-50 flex items-center justify-center text-gray-500 transition-colors"
           >
             <Bell className="w-5 h-5" />
             {unreadCount > 0 && (
@@ -296,12 +296,12 @@ export function Topbar() {
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <h3 className="text-sm font-bold text-gray-900">
-                  الإشعارات {unreadCount > 0 && <span className="text-xs text-clinic-teal">({unreadCount} غير مقروء)</span>}
+                  الإشعارات {unreadCount > 0 && <span className="text-xs text-clinic-blue">({unreadCount} غير مقروء)</span>}
                 </h3>
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllRead}
-                    className="flex items-center gap-1 text-xs text-clinic-teal hover:opacity-80 transition"
+                    className="flex items-center gap-1 text-xs text-clinic-blue hover:opacity-80 transition"
                   >
                     <CheckCheck className="w-3.5 h-3.5" />
                     تحديد الكل كمقروء
@@ -338,7 +338,7 @@ export function Topbar() {
                         <p className="text-xs text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        {!n.isRead && <span className="w-2 h-2 rounded-full bg-clinic-teal" />}
+                        {!n.isRead && <span className="w-2 h-2 rounded-full bg-clinic-blue" />}
                         <button
                           onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }}
                           className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-red-500 transition"
@@ -419,7 +419,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
       >
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-          style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
+          style={{ backgroundColor: user?.doctorColor ?? "#2563EB" }}
         >
           {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
         </div>
@@ -432,7 +432,7 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-              style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
+              style={{ backgroundColor: user?.doctorColor ?? "#2563EB" }}
             >
               {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
             </div>
@@ -467,21 +467,21 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
               <input
                 type="password" placeholder="كلمة المرور الحالية"
                 value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
               <input
                 type="password" placeholder="كلمة المرور الجديدة (8 أحرف+)"
                 value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
               <input
                 type="password" placeholder="تأكيد كلمة المرور الجديدة"
                 value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
               />
               <div className="flex gap-2 pt-1">
                 <button type="submit" disabled={pwSaving}
-                  className="flex-1 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+                  className="flex-1 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
                 >
                   {pwSaving ? "جارٍ الحفظ..." : "حفظ"}
                 </button>

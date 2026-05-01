@@ -42,7 +42,7 @@ const ROLE_LABELS: Record<string, string> = {
   BranchManager: "مدير فرع",
 };
 
-const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 
 // ─── Clinic Info Tab ──────────────────────────────────────────────────────────
 function ClinicTab() {
@@ -128,7 +128,7 @@ function ClinicTab() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ الإعدادات"}
@@ -148,7 +148,7 @@ function UsersTab() {
   const [showForm, setShowForm] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#0E7490" });
+  const [form, setForm] = useState({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#2563EB" });
 
   const load = () => {
     setLoading(true);
@@ -174,7 +174,7 @@ function UsersTab() {
         doctorColor: form.doctorName ? form.doctorColor : undefined,
       });
       setShowForm(false);
-      setForm({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#0E7490" });
+      setForm({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#2563EB" });
       load();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -199,7 +199,7 @@ function UsersTab() {
         <p className="text-sm text-gray-500">{users.length} مستخدم</p>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showForm ? "إلغاء" : "مستخدم جديد"}
@@ -247,7 +247,7 @@ function UsersTab() {
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <button type="submit" disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {saving ? "جارٍ الحفظ..." : "إضافة المستخدم"}
@@ -396,7 +396,7 @@ export default function SettingsPage() {
               className={cn(
                 "flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition",
                 activeTab === key
-                  ? "border-clinic-teal text-clinic-teal"
+                  ? "border-clinic-blue text-clinic-blue"
                   : "border-transparent text-gray-500 hover:text-gray-900"
               )}
             >
@@ -417,7 +417,7 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Link
           href="/settings/audit"
-          className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-teal hover:shadow-md transition group"
+          className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-blue hover:shadow-md transition group"
         >
           <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-100 transition">
             <FileSearch className="w-5 h-5 text-purple-600" />

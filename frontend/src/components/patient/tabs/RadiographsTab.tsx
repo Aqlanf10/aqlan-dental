@@ -109,7 +109,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
             <label className="text-xs text-gray-500 block mb-1">ملف الأشعة *</label>
             <label className={cn(
               "flex items-center gap-3 w-full border-2 border-dashed rounded-lg px-4 py-3 cursor-pointer transition",
-              xrayFile ? "border-clinic-teal bg-teal-50" : "border-gray-200 hover:border-gray-300"
+              xrayFile ? "border-clinic-blue bg-clinic-blue-50" : "border-gray-200 hover:border-gray-300"
             )}>
               <input type="file" accept="image/*,.pdf,.dcm" className="sr-only" onChange={(e) => setXrayFile(e.target.files?.[0] ?? null)} />
               <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
@@ -128,7 +128,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
             <select
               value={xrayType}
               onChange={(e) => setXrayType(e.target.value)}
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal bg-white"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue bg-white"
             >
               <option value="OPG">OPG</option>
               <option value="lateral_ceph">Lateral Ceph</option>
@@ -145,14 +145,14 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
               value={xrayNotes}
               onChange={(e) => setXrayNotes(e.target.value)}
               placeholder="ملاحظات اختيارية..."
-              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+              className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
             />
           </div>
         </div>
         <button
           type="submit"
           disabled={addingXray || !xrayFile}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition disabled:opacity-50"
         >
           <Plus className="w-3.5 h-3.5" />
           {addingXray ? "جارٍ الإضافة..." : "إضافة أشعة"}
@@ -194,7 +194,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
                   href={xray.fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-clinic-teal hover:underline truncate flex items-center gap-1"
+                  className="text-xs text-clinic-blue hover:underline truncate flex items-center gap-1"
                 >
                   <ExternalLink className="w-3 h-3 flex-shrink-0" />
                   <span className="truncate">{xray.fileUrl}</span>

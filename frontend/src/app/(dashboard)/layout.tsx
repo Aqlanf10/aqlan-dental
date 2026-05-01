@@ -51,7 +51,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-gray-50/80">
       {/* Sidebar — fixed, right side in RTL */}
       <Sidebar />
 

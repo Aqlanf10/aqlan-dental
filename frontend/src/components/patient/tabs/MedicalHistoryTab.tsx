@@ -82,7 +82,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
       <div className="space-y-4" dir="rtl">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-clinic-teal" />
+            <FileText className="w-4 h-4 text-clinic-blue" />
             تعديل التاريخ الطبي
           </h3>
           <div className="flex gap-2">
@@ -90,7 +90,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
               <X className="w-3.5 h-3.5" />
               إلغاء
             </button>
-            <button onClick={saveEdit} disabled={saving} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-50">
+            <button onClick={saveEdit} disabled={saving} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-50">
               <Save className="w-3.5 h-3.5" />
               {saving ? "جارٍ الحفظ..." : "حفظ"}
             </button>
@@ -99,27 +99,27 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-gray-500 block mb-1">الأمراض المزمنة</label>
-            <textarea value={form.chronicDiseases ?? ""} onChange={(e) => setForm({ ...form, chronicDiseases: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal" rows={2} />
+            <textarea value={form.chronicDiseases ?? ""} onChange={(e) => setForm({ ...form, chronicDiseases: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue" rows={2} />
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">الأدوية الحالية</label>
-            <textarea value={form.currentMedications ?? ""} onChange={(e) => setForm({ ...form, currentMedications: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal" rows={2} />
+            <textarea value={form.currentMedications ?? ""} onChange={(e) => setForm({ ...form, currentMedications: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue" rows={2} />
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">حساسية الأدوية</label>
-            <textarea value={form.drugAllergies ?? ""} onChange={(e) => setForm({ ...form, drugAllergies: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal" rows={2} />
+            <textarea value={form.drugAllergies ?? ""} onChange={(e) => setForm({ ...form, drugAllergies: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue" rows={2} />
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">العمليات السابقة</label>
-            <textarea value={form.previousSurgeries ?? ""} onChange={(e) => setForm({ ...form, previousSurgeries: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal" rows={2} />
+            <textarea value={form.previousSurgeries ?? ""} onChange={(e) => setForm({ ...form, previousSurgeries: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue" rows={2} />
           </div>
           <div className="flex items-center gap-3">
             <label className="text-sm text-gray-700">اضطرابات النزيف</label>
-            <input type="checkbox" checked={form.bleedingDisorders ?? false} onChange={(e) => setForm({ ...form, bleedingDisorders: e.target.checked })} className="w-4 h-4 accent-clinic-teal" />
+            <input type="checkbox" checked={form.bleedingDisorders ?? false} onChange={(e) => setForm({ ...form, bleedingDisorders: e.target.checked })} className="w-4 h-4 accent-clinic-blue" />
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">الحمل</label>
-            <select value={form.isPregnant ?? "na"} onChange={(e) => setForm({ ...form, isPregnant: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal bg-white">
+            <select value={form.isPregnant ?? "na"} onChange={(e) => setForm({ ...form, isPregnant: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue bg-white">
               <option value="na">لا ينطبق</option>
               <option value="yes">نعم</option>
               <option value="no">لا</option>
@@ -127,11 +127,11 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
           </div>
           <div className="flex items-center gap-3">
             <label className="text-sm text-gray-700">مشاكل TMJ</label>
-            <input type="checkbox" checked={form.tmjProblems ?? false} onChange={(e) => setForm({ ...form, tmjProblems: e.target.checked })} className="w-4 h-4 accent-clinic-teal" />
+            <input type="checkbox" checked={form.tmjProblems ?? false} onChange={(e) => setForm({ ...form, tmjProblems: e.target.checked })} className="w-4 h-4 accent-clinic-blue" />
           </div>
           <div className="md:col-span-2">
             <label className="text-xs text-gray-500 block mb-1">ملاحظات</label>
-            <textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal" rows={2} />
+            <textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue" rows={2} />
           </div>
         </div>
       </div>
@@ -143,7 +143,7 @@ export function MedicalHistoryTab({ patientId, initialData }: MedicalHistoryTabP
       <div className="text-center py-12" dir="rtl">
         <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
         <p className="text-sm text-gray-400 mb-3">لا يوجد تاريخ طبي مسجّل</p>
-        <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 mx-auto">
+        <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 mx-auto">
           <Pencil className="w-3.5 h-3.5" />
           إضافة تاريخ طبي
         </button>

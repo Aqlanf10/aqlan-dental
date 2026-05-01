@@ -24,7 +24,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const inputCls = (err?: string) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
   err ? "border-red-400" : "border-gray-300"
 );
 
@@ -59,7 +59,7 @@ export default function NewReferralPage() {
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/referrals" className="hover:text-clinic-teal transition">الإحالات</Link>
+        <Link href="/referrals" className="hover:text-clinic-blue transition">الإحالات</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">إحالة جديدة</span>
       </div>
@@ -121,7 +121,7 @@ export default function NewReferralPage() {
                   <input type="radio" value={v} {...register("priority")} className="sr-only peer" />
                   <div className={cn(
                     "text-center py-2.5 rounded-lg border-2 text-sm font-medium transition",
-                    c, "peer-checked:border-clinic-teal peer-checked:ring-2 peer-checked:ring-clinic-teal/20"
+                    c, "peer-checked:border-clinic-blue peer-checked:ring-2 peer-checked:ring-clinic-blue/20"
                   )}>
                     {l}
                   </div>
@@ -151,7 +151,7 @@ export default function NewReferralPage() {
             إلغاء
           </Link>
           <button type="submit" disabled={saving}
-            className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+            className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
           >
             <Save className="w-4 h-4" />
             {saving ? "جارٍ الإرسال..." : "إرسال الإحالة"}

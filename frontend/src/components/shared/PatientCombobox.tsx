@@ -60,7 +60,7 @@ export function PatientCombobox({
     <div ref={ref} className="relative">
       <Search className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
       {loading && (
-        <Loader2 className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-clinic-teal animate-spin pointer-events-none" />
+        <Loader2 className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-clinic-blue animate-spin pointer-events-none" />
       )}
       <input
         type="text"
@@ -72,7 +72,7 @@ export function PatientCombobox({
         autoComplete="off"
         className={cn(
           "w-full px-3 py-2 text-sm rounded-lg border bg-white",
-          "focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+          "focus:outline-none focus:ring-2 focus:ring-clinic-blue",
           "pe-9", loading && "ps-8",
           error ? "border-red-400" : "border-gray-300",
           readOnly && "bg-gray-50 cursor-not-allowed"

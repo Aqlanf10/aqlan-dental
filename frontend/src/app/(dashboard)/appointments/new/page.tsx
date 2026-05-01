@@ -15,7 +15,7 @@ function NewAppointmentContent() {
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/appointments" className="hover:text-clinic-teal transition">المواعيد</Link>
+        <Link href="/appointments" className="hover:text-clinic-blue transition">المواعيد</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">موعد جديد</span>
       </div>

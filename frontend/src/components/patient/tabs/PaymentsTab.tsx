@@ -61,9 +61,9 @@ export function PaymentsTab({ patientId }: PaymentsTabProps) {
 
   return (
     <div className="space-y-4" dir="rtl">
-      <div className="rounded-lg px-4 py-3 bg-teal-50">
+      <div className="rounded-lg px-4 py-3 bg-clinic-blue-50">
         <p className="text-xs text-gray-500">إجمالي المدفوعات</p>
-        <p className="text-lg font-bold text-teal-600">{total.toLocaleString()}</p>
+        <p className="text-lg font-bold text-clinic-blue">{total.toLocaleString()}</p>
       </div>
 
       <div className="space-y-2">

@@ -138,7 +138,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
               msg.isSystemMessage
                 ? "bg-gray-50 text-center mx-auto"
                 : msg.senderId === currentUserId
-                  ? "bg-clinic-teal/10 mr-auto"
+                  ? "bg-clinic-blue/10 mr-auto"
                   : "bg-gray-50 ml-auto"
             )}>
               {msg.isSystemMessage ? (
@@ -148,7 +148,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
                   <p className="text-sm text-gray-800">{msg.content}</p>
                   <div className="flex items-center gap-2 mt-1">
                     {msg.senderName && (
-                      <span className="text-xs text-clinic-teal font-medium">{msg.senderName}</span>
+                      <span className="text-xs text-clinic-blue font-medium">{msg.senderName}</span>
                     )}
                     <span className="text-xs text-gray-400">{formatArabicDate(msg.createdAt)}</span>
                   </div>
@@ -167,13 +167,13 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="اكتب رسالة..."
-          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
           disabled={sending}
         />
         <button
           type="submit"
           disabled={sending || !newMessage.trim()}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-50 transition"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-50 transition"
         >
           {sending ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />

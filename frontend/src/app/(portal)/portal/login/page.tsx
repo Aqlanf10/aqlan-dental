@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Stethoscope, Phone, Shield, ArrowRight } from "lucide-react";
+import { Phone, Shield, ArrowRight } from "lucide-react";
+import Image from "next/image";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import portalApi from "@/lib/portalApi";
 import { cn } from "@/lib/utils";
@@ -61,11 +62,11 @@ export default function PortalLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-50 to-white flex flex-col" style={{ direction: "rtl" }}>
+    <div className="min-h-screen bg-gradient-to-b from-clinic-blue-50 to-white flex flex-col" style={{ direction: "rtl" }}>
       {/* Header */}
       <div className="clinic-gradient px-6 pt-12 pb-16 text-center text-white">
-        <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-          <Stethoscope className="w-9 h-9 text-white" />
+        <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden backdrop-blur-sm border border-white/10">
+          <Image src="/logo.svg" alt="Aqlan Dental Pro" width={52} height={52} className="w-13 h-13" />
         </div>
         <h1 className="text-2xl font-extrabold">بوابة المريض</h1>
         <p className="mt-1 text-white/80 text-sm">مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
@@ -77,8 +78,8 @@ export default function PortalLoginPage() {
           {step === "phone" ? (
             <>
               <div className="text-center mb-6">
-                <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-                  <Phone className="w-6 h-6 text-teal-700" />
+                <div className="w-12 h-12 bg-clinic-blue-50 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <Phone className="w-6 h-6 text-clinic-blue" />
                 </div>
                 <h2 className="text-lg font-bold text-gray-900">تسجيل الدخول</h2>
                 <p className="text-sm text-gray-500 mt-1">أدخل رقم هاتفك المسجل عندنا</p>
@@ -103,7 +104,7 @@ export default function PortalLoginPage() {
                     dir="ltr"
                     className={cn(
                       "w-full px-4 py-3 rounded-lg border bg-white text-gray-900 text-left",
-                      "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500",
+                      "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-clinic-blue",
                       "border-gray-300"
                     )}
                   />
@@ -126,8 +127,8 @@ export default function PortalLoginPage() {
           ) : (
             <>
               <div className="text-center mb-6">
-                <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-                  <Shield className="w-6 h-6 text-teal-700" />
+                <div className="w-12 h-12 bg-clinic-blue-50 rounded-xl flex items-center justify-center mx-auto mb-3">
+                  <Shield className="w-6 h-6 text-clinic-blue" />
                 </div>
                 <h2 className="text-lg font-bold text-gray-900">رمز التحقق</h2>
                 <p className="text-sm text-gray-500 mt-1">
@@ -161,7 +162,7 @@ export default function PortalLoginPage() {
                     maxLength={6}
                     className={cn(
                       "w-full px-4 py-3 rounded-lg border bg-white text-gray-900 text-center text-2xl tracking-[0.5em] font-mono",
-                      "placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-teal-500",
+                      "placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-blue",
                       "border-gray-300"
                     )}
                   />

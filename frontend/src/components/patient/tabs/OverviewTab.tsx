@@ -49,7 +49,7 @@ const SURGERY_STATUS_LABELS: Record<string, string> = { scheduled: "مجدولة
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled: "bg-blue-100 text-blue-700",
-  Confirmed: "bg-teal-100 text-teal-700",
+  Confirmed: "bg-clinic-blue-50 text-clinic-blue",
   Arrived: "bg-yellow-100 text-yellow-700",
   InProgress: "bg-purple-100 text-purple-700",
   Completed: "bg-green-100 text-green-700",
@@ -94,7 +94,7 @@ export function OverviewTab({ patientId, summary }: OverviewTabProps) {
     { icon: Calendar, label: "المواعيد", value: summary?.totalAppointments ?? "—", color: "text-blue-600", bg: "bg-blue-50" },
     { icon: Calendar, label: "مكتملة", value: summary?.completedAppointments ?? "—", color: "text-green-600", bg: "bg-green-50" },
     { icon: Activity, label: "تقويم نشط", value: summary?.activeOrthoCases ?? "—", color: "text-purple-600", bg: "bg-purple-50" },
-    { icon: Wallet, label: "مدفوع", value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-teal-600", bg: "bg-teal-50" },
+    { icon: Wallet, label: "مدفوع", value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-clinic-blue", bg: "bg-clinic-blue-50" },
     { icon: Wallet, label: "متبقي", value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-orange-600", bg: "bg-orange-50" },
     { icon: Pill, label: "الوصفات", value: summary?.prescriptionsCount ?? "—", color: "text-rose-600", bg: "bg-rose-50" },
   ];
@@ -123,22 +123,22 @@ export function OverviewTab({ patientId, summary }: OverviewTabProps) {
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">الحالات التقويمية</p>
               {orthoCases.map((c) => (
                 <Link key={c.id} href={`/ortho/${c.id}`}
-                  className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg hover:bg-teal-50 hover:border-teal-200 border border-transparent transition"
+                  className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg hover:bg-clinic-blue-50 hover:border-clinic-blue-100 border border-transparent transition"
                 >
                   <div className="flex items-center gap-2">
-                    <Activity className="w-3.5 h-3.5 text-teal-600 flex-shrink-0" />
+                    <Activity className="w-3.5 h-3.5 text-clinic-blue flex-shrink-0" />
                     <span className="text-sm font-medium text-gray-900">{c.caseNumber}</span>
                     {c.applianceType && <span className="text-xs text-gray-500">{c.applianceType}</span>}
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5">
                       <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-clinic-teal rounded-full" style={{ width: `${c.stagePercentage}%` }} />
+                        <div className="h-full bg-clinic-blue rounded-full" style={{ width: `${c.stagePercentage}%` }} />
                       </div>
                       <span className="text-xs text-gray-500">{c.stagePercentage}%</span>
                     </div>
                     <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
-                      c.status === "active" ? "bg-teal-50 text-teal-700" : "bg-gray-100 text-gray-500"
+                      c.status === "active" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
                     )}>
                       {ORTHO_STATUS_LABELS[c.status] ?? c.status}
                     </span>
@@ -184,8 +184,8 @@ export function OverviewTab({ patientId, summary }: OverviewTabProps) {
             <div className="space-y-3">
               {events.slice(0, 5).map((ev) => (
                 <div key={ev.id} className="flex gap-3 relative">
-                  <div className="w-8 h-8 rounded-full bg-white border-2 border-clinic-teal flex items-center justify-center flex-shrink-0 z-10">
-                    <Clock className="w-3.5 h-3.5 text-clinic-teal" />
+                  <div className="w-8 h-8 rounded-full bg-white border-2 border-clinic-blue flex items-center justify-center flex-shrink-0 z-10">
+                    <Clock className="w-3.5 h-3.5 text-clinic-blue" />
                   </div>
                   <div className="flex-1 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
                     <div className="flex items-center justify-between gap-2 flex-wrap">

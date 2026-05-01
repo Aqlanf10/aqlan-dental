@@ -20,7 +20,7 @@ const STATUS_TRANSITIONS: Record<string, { value: string; label: string }[]> = {
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled:  "bg-blue-50 border-blue-200 text-blue-800",
-  Confirmed:  "bg-teal-50 border-teal-200 text-teal-800",
+  Confirmed:  "bg-clinic-blue-50 border-clinic-blue-100 text-clinic-navy-700",
   Arrived:    "bg-yellow-50 border-yellow-200 text-yellow-800",
   InProgress: "bg-purple-50 border-purple-200 text-purple-800",
   Completed:  "bg-green-50 border-green-200 text-green-800",
@@ -72,7 +72,7 @@ export function DaySchedule({ date, doctorId }: Props) {
         <p className="text-sm">لا توجد مواعيد في هذا اليوم</p>
         <Link
           href="/appointments/new"
-          className="mt-3 inline-block text-xs text-clinic-teal hover:underline"
+          className="mt-3 inline-block text-xs text-clinic-blue hover:underline"
         >
           + إضافة موعد
         </Link>
@@ -144,7 +144,7 @@ function AppointmentCard({
       {/* Doctor color bar */}
       <div
         className="w-1 self-stretch rounded-full flex-shrink-0"
-        style={{ backgroundColor: a.doctorColor ?? "#0E7490" }}
+        style={{ backgroundColor: a.doctorColor ?? "#2563EB" }}
       />
 
       {/* Info */}

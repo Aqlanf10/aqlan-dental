@@ -8,19 +8,19 @@
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
-    --primary: 192 91% 31%;
+    --primary: 221 83% 53%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 36 100% 45%;
+    --accent: 25 95% 53%;
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 192 91% 31%;
+    --ring: 221 83% 53%;
     --radius: 0.5rem;
     --font-tajawal: 'Tajawal', sans-serif;
   }
@@ -43,8 +43,10 @@
 }
 
 @layer utilities {
-  .clinic-gradient { background: linear-gradient(135deg, #0E7490 0%, #0891B2 100%); }
-  .gold-gradient { background: linear-gradient(135deg, #D97706 0%, #F59E0B 100%); }
+  .clinic-gradient { background: linear-gradient(135deg, #0F1B2D 0%, #1A2B45 40%, #2563EB 100%); }
+  .navy-gradient { background: linear-gradient(135deg, #0F1B2D 0%, #1A2B45 100%); }
+  .gold-gradient { background: linear-gradient(135deg, #F97316 0%, #FB923C 100%); }
+  .blue-gradient { background: linear-gradient(135deg, #2563EB 0%, #3B82F6 100%); }
   .text-balance { text-wrap: balance; }
 }
 

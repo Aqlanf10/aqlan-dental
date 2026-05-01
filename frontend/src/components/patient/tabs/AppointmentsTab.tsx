@@ -20,7 +20,7 @@ interface AppointmentDto {
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled: "bg-blue-100 text-blue-700",
-  Confirmed: "bg-teal-100 text-teal-700",
+  Confirmed: "bg-clinic-blue-50 text-clinic-blue",
   Arrived: "bg-yellow-100 text-yellow-700",
   InProgress: "bg-purple-100 text-purple-700",
   Completed: "bg-green-100 text-green-700",
@@ -65,7 +65,7 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+            className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
           />
         </div>
         <div>
@@ -74,12 +74,12 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-teal"
+            className="text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
           />
         </div>
         <Link
           href={`/appointments/new?patientId=${patientId}&patientName=${encodeURIComponent(patientName)}`}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-3.5 h-3.5" />
           موعد جديد

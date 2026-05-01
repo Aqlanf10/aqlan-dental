@@ -103,7 +103,7 @@ export default function AuditLogPage() {
     <div className="space-y-5 max-w-6xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/settings" className="hover:text-clinic-teal transition">الإعدادات</Link>
+        <Link href="/settings" className="hover:text-clinic-blue transition">الإعدادات</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">سجل التدقيق</span>
       </div>
@@ -114,7 +114,7 @@ export default function AuditLogPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-extrabold text-gray-900 flex items-center gap-2">
-            <Shield className="w-6 h-6 text-clinic-teal" />
+            <Shield className="w-6 h-6 text-clinic-blue" />
             سجل التدقيق
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">تتبع كل العمليات التي تمت في النظام</p>
@@ -128,7 +128,7 @@ export default function AuditLogPage() {
           <select
             value={resource}
             onChange={e => { setResource(e.target.value); setPage(1); }}
-            className="w-full pe-9 ps-3 h-9 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="w-full pe-9 ps-3 h-9 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           >
             <option value="">كل الوحدات</option>
             {resources.map(r => (
@@ -140,7 +140,7 @@ export default function AuditLogPage() {
         <select
           value={action}
           onChange={e => { setAction(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+          className="h-9 px-3 text-sm rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
         >
           <option value="">كل الإجراءات</option>
           {Object.entries(ACTION_AR).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -148,12 +148,12 @@ export default function AuditLogPage() {
 
         <input
           type="date" value={from} onChange={e => { setFrom(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+          className="h-9 px-3 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
         />
         <span className="text-gray-400 text-sm">—</span>
         <input
           type="date" value={to} onChange={e => { setTo(e.target.value); setPage(1); }}
-          className="h-9 px-3 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+          className="h-9 px-3 text-sm rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
         />
 
         <button

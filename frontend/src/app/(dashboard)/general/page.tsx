@@ -23,7 +23,7 @@ const TREATMENT_TYPES = [
 const ANESTHESIA_TYPES = ["موضعي", "عام", "تخدير سطحي", "بدون تخدير"];
 
 const inputCls = (err?: boolean) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
   err ? "border-red-400" : "border-gray-300"
 );
 
@@ -108,7 +108,7 @@ export default function GeneralPage() {
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showForm ? "إغلاق" : "تسجيل معالجة"}
@@ -129,7 +129,7 @@ export default function GeneralPage() {
             className={cn(
               "px-4 py-2.5 text-sm font-medium border-b-2 transition",
               activeTab === tab.key
-                ? "border-teal-600 text-teal-700"
+                ? "border-clinic-blue text-clinic-blue"
                 : "border-transparent text-gray-500 hover:text-gray-700"
             )}
           >
@@ -151,7 +151,7 @@ export default function GeneralPage() {
           {selectedPatient && (
             <Link
               href={`/patients/${selectedPatient.id}?tab=chart`}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition whitespace-nowrap"
             >
               <UserPlus className="w-4 h-4" />
               {selectedPatient.fullName}
@@ -165,7 +165,7 @@ export default function GeneralPage() {
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <h2 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <Stethoscope className="w-4 h-4 text-clinic-teal" />
+            <Stethoscope className="w-4 h-4 text-clinic-blue" />
             تسجيل معالجة جديدة
           </h2>
 
@@ -247,7 +247,7 @@ export default function GeneralPage() {
               إلغاء
             </button>
             <button type="submit" disabled={saving}
-              className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition">
+              className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition">
               <Save className="w-4 h-4" />
               {saving ? "جارٍ الحفظ..." : "حفظ المعالجة"}
             </button>
@@ -295,7 +295,7 @@ export default function GeneralPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/patients/${t.patientId}`}
-                        className="text-xs text-clinic-teal hover:underline font-medium">
+                        className="text-xs text-clinic-blue hover:underline font-medium">
                         ملف المريض
                       </Link>
                     </td>

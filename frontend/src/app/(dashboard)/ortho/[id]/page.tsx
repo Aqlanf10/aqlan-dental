@@ -49,7 +49,7 @@ interface ClinicalExam {
 }
 
 function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: ClinicalExam | null }) {
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
   const [form, setForm] = useState<ClinicalExam>(initial ?? {});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -148,7 +148,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <input
               id="lipsCompetence"
               type="checkbox"
-              className="w-4 h-4 accent-clinic-teal"
+              className="w-4 h-4 accent-clinic-blue"
               checked={form.lipsCompetence ?? false}
               onChange={(e) => set("lipsCompetence", e.target.checked)}
             />
@@ -231,7 +231,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
-                className="w-4 h-4 accent-clinic-teal"
+                className="w-4 h-4 accent-clinic-blue"
                 checked={form.crossbite ?? false}
                 onChange={(e) => set("crossbite", e.target.checked)}
               />
@@ -240,7 +240,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
-                className="w-4 h-4 accent-clinic-teal"
+                className="w-4 h-4 accent-clinic-blue"
                 checked={form.openBite ?? false}
                 onChange={(e) => set("openBite", e.target.checked)}
               />
@@ -258,7 +258,7 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
             <input
               id="coCrDiscrepancy"
               type="checkbox"
-              className="w-4 h-4 accent-clinic-teal"
+              className="w-4 h-4 accent-clinic-blue"
               checked={form.coCrDiscrepancy ?? false}
               onChange={(e) => set("coCrDiscrepancy", e.target.checked)}
             />
@@ -299,12 +299,12 @@ function ClinicalExamTab({ caseId, initial }: { caseId: string; initial: Clinica
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition disabled:opacity-50"
+          className="px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition disabled:opacity-50"
         >
           {saving ? "جاري الحفظ..." : "حفظ الفحص"}
         </button>
         {saved && (
-          <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>
+          <span className="text-sm text-clinic-blue font-medium">تم الحفظ بنجاح</span>
         )}
       </div>
     </div>
@@ -325,7 +325,7 @@ const CATEGORY_LABELS: Record<string, string> = { skeletal:"هيكلية", denta
 const SEVERITY_COLORS: Record<string, string> = { mild:"bg-yellow-100 text-yellow-700", moderate:"bg-orange-100 text-orange-700", severe:"bg-red-100 text-red-700" };
 
 function ProblemListTab({ caseId }: { caseId: string }) {
-  const inputCls = "px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const inputCls = "px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
   const [items, setItems] = useState<ProblemItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ category: "skeletal", description: "", severity: "" });
@@ -376,7 +376,7 @@ function ProblemListTab({ caseId }: { caseId: string }) {
           </select>
         </div>
         <button onClick={handleAdd} disabled={adding || !form.description.trim()}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Plus className="w-4 h-4" />
           {adding ? "جاري الإضافة..." : "إضافة"}
@@ -425,7 +425,7 @@ interface TreatmentPlanData {
 }
 
 function TreatmentPlanTab({ caseId }: { caseId: string }) {
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
   const [form, setForm] = useState<TreatmentPlanData>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -504,12 +504,12 @@ function TreatmentPlanTab({ caseId }: { caseId: string }) {
 
       <div className="flex items-center gap-3 border-t border-gray-100 pt-4">
         <button onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جاري الحفظ..." : "حفظ الخطة"}
         </button>
-        {saved && <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>}
+        {saved && <span className="text-sm text-clinic-blue font-medium">تم الحفظ بنجاح</span>}
         {form.isApproved && (
           <span className="text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full">
             معتمدة {form.approvedByName ? `بواسطة ${form.approvedByName}` : ""}
@@ -530,7 +530,7 @@ const EXTRACTION_OPTIONS = [
 ];
 
 function ExtractionDecisionTab({ caseId }: { caseId: string }) {
-  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
   const [decision, setDecision] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
@@ -575,15 +575,15 @@ function ExtractionDecisionTab({ caseId }: { caseId: string }) {
             className={cn(
               "flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition",
               decision === opt.value
-                ? "border-clinic-teal bg-teal-50"
+                ? "border-clinic-blue bg-clinic-blue-50"
                 : "border-gray-200 hover:border-gray-300"
             )}
           >
             <input type="radio" name="extraction" value={opt.value} checked={decision === opt.value}
               onChange={() => { setDecision(opt.value); setSaved(false); }}
-              className="text-clinic-teal"
+              className="text-clinic-blue"
             />
-            <span className={cn("text-sm font-medium", decision === opt.value ? "text-clinic-teal" : "text-gray-700")}>
+            <span className={cn("text-sm font-medium", decision === opt.value ? "text-clinic-blue" : "text-gray-700")}>
               {opt.label}
             </span>
           </label>
@@ -612,12 +612,12 @@ function ExtractionDecisionTab({ caseId }: { caseId: string }) {
 
       <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
         <button onClick={handleSave} disabled={saving || !decision}
-          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جاري الحفظ..." : "تأكيد القرار"}
         </button>
-        {saved && <span className="text-sm text-teal-600 font-medium">تم الحفظ بنجاح</span>}
+        {saved && <span className="text-sm text-clinic-blue font-medium">تم الحفظ بنجاح</span>}
         {decidedBy && (
           <span className="text-xs text-gray-400">
             آخر تحديث: {decidedBy} {decidedAt ? `· ${decidedAt}` : ""}
@@ -643,7 +643,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
 
   const STATUS_LABELS: Record<string, string> = { active: "نشط", completed: "مكتمل", cancelled: "ملغى" };
   const STATUS_COLORS: Record<string, string> = {
-    active: "bg-teal-50 text-teal-700",
+    active: "bg-clinic-blue-50 text-clinic-blue",
     completed: "bg-green-50 text-green-700",
     cancelled: "bg-gray-100 text-gray-500",
   };
@@ -661,7 +661,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
         <h3 className="font-semibold text-gray-900">عقود المريض</h3>
         <Link
           href={`/finance/contracts/new?patientId=${patientId}`}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-3.5 h-3.5" />
           عقد جديد
@@ -679,7 +679,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
             const pct = net > 0 ? Math.min(100, Math.round((c.paidAmount / net) * 100)) : 0;
             return (
               <Link key={c.id} href={`/finance/contracts/${c.id}`}
-                className="block bg-gray-50 rounded-xl border border-gray-200 p-4 hover:border-clinic-teal/40 hover:shadow-sm transition"
+                className="block bg-gray-50 rounded-xl border border-gray-200 p-4 hover:border-clinic-blue/40 hover:shadow-sm transition"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -705,7 +705,7 @@ function PatientContractsPanel({ patientId }: { patientId: string }) {
                 <div className="mt-3">
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-clinic-teal rounded-full" style={{ width: `${pct}%` }} />
+                      <div className="h-full bg-clinic-blue rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <span className="text-xs text-gray-500 flex-shrink-0">{pct}%</span>
                   </div>
@@ -775,7 +775,7 @@ export default function OrthoCaseDetailPage() {
     <div className="space-y-5 max-w-5xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/ortho" className="hover:text-clinic-teal transition">التقويم</Link>
+        <Link href="/ortho" className="hover:text-clinic-blue transition">التقويم</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{orthoCase.caseNumber}</span>
       </div>
@@ -785,7 +785,7 @@ export default function OrthoCaseDetailPage() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white flex-shrink-0"
-              style={{ backgroundColor: orthoCase.doctorColor ?? "#0E7490" }}
+              style={{ backgroundColor: orthoCase.doctorColor ?? "#2563EB" }}
             >
               <GitBranch className="w-6 h-6" />
             </div>
@@ -797,7 +797,7 @@ export default function OrthoCaseDetailPage() {
                 </span>
                 <span className={cn(
                   "text-xs px-2 py-0.5 rounded-full font-medium",
-                  orthoCase.status === "active" ? "bg-teal-50 text-teal-700" : "bg-gray-100 text-gray-500"
+                  orthoCase.status === "active" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
                 )}>
                   {orthoCase.status === "active" ? "نشطة" : orthoCase.status}
                 </span>
@@ -824,7 +824,7 @@ export default function OrthoCaseDetailPage() {
               <div className="mt-3 flex items-center gap-3">
                 <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-xs">
                   <div
-                    className="h-full bg-clinic-teal rounded-full transition-all"
+                    className="h-full bg-clinic-blue rounded-full transition-all"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -852,7 +852,7 @@ export default function OrthoCaseDetailPage() {
               className={cn(
                 "flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition",
                 activeTab === key
-                  ? "border-clinic-teal text-clinic-teal"
+                  ? "border-clinic-blue text-clinic-blue"
                   : "border-transparent text-gray-500 hover:text-gray-900"
               )}
             >
@@ -887,7 +887,7 @@ export default function OrthoCaseDetailPage() {
             <div className="pt-2 border-t border-gray-100">
               <Link
                 href={`/ceph/new?orthoCaseId=${id}`}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-teal text-clinic-teal hover:bg-clinic-teal/10 transition"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-blue text-clinic-blue hover:bg-clinic-blue/10 transition"
               >
                 <Activity className="w-4 h-4" />
                 إنشاء تحليل سيفالومتري

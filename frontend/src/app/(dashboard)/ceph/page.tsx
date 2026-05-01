@@ -26,7 +26,7 @@ export default function CephPage() {
           <p className="text-sm text-gray-500 mt-0.5">تحليل الأشعة السيفالومترية وقياسات الهيكل العظمي</p>
         </div>
         <Link href="/ceph/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           تحليل جديد
@@ -90,7 +90,7 @@ export default function CephPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/ceph/${a.id}`}
-                        className="text-xs text-clinic-teal hover:underline font-medium"
+                        className="text-xs text-clinic-blue hover:underline font-medium"
                       >
                         فتح التحليل
                       </Link>

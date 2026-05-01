@@ -65,7 +65,7 @@ export function ToothEditorModal({ toothNumber, data, onSave, onClose }: ToothEd
                   className={cn(
                     "px-2 py-1.5 text-xs rounded-lg border transition",
                     condition === key
-                      ? "border-teal-500 bg-teal-50 text-teal-700 font-medium"
+                      ? "border-clinic-blue bg-clinic-blue-50 text-clinic-blue font-medium"
                       : "border-gray-200 text-gray-600 hover:bg-gray-50"
                   )}
                 >
@@ -87,7 +87,7 @@ export function ToothEditorModal({ toothNumber, data, onSave, onClose }: ToothEd
                     className={cn(
                       "w-10 h-10 text-xs font-bold rounded-lg border transition",
                       surfaces.includes(s)
-                        ? "border-teal-500 bg-teal-50 text-teal-700"
+                        ? "border-clinic-blue bg-clinic-blue-50 text-clinic-blue"
                         : "border-gray-200 text-gray-400 hover:bg-gray-50"
                     )}
                   >
@@ -104,7 +104,7 @@ export function ToothEditorModal({ toothNumber, data, onSave, onClose }: ToothEd
             <select
               value={treatmentDone}
               onChange={(e) => setTreatmentDone(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
             >
               <option value="">لا يوجد</option>
               {TREATMENT_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -118,7 +118,7 @@ export function ToothEditorModal({ toothNumber, data, onSave, onClose }: ToothEd
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none resize-none"
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none resize-none"
               placeholder="ملاحظات إضافية عن السن..."
             />
           </div>
@@ -130,7 +130,7 @@ export function ToothEditorModal({ toothNumber, data, onSave, onClose }: ToothEd
             إلغاء
           </button>
           <button onClick={handleSave} disabled={saving}
-            className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60">
+            className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:bg-clinic-navy-700 disabled:opacity-60">
             <Save className="w-4 h-4" />
             {saving ? "جارٍ الحفظ..." : "حفظ"}
           </button>

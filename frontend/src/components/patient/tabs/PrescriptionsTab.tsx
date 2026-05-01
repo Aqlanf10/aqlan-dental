@@ -40,7 +40,7 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
     return (
       <div className="space-y-2 animate-pulse">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-16 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
         ))}
       </div>
     );
@@ -48,7 +48,7 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
 
   if (prescriptions.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400" dir="rtl">
+      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
         <Pill className="w-10 h-10 mx-auto mb-2 opacity-30" />
         <p className="text-sm">لا توجد وصفات طبية</p>
       </div>
@@ -58,18 +58,18 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
   return (
     <div className="space-y-3" dir="rtl">
       {prescriptions.map((rx) => (
-        <div key={rx.id} className="p-3 bg-white border border-gray-100 rounded-lg hover:border-gray-200 transition">
+        <div key={rx.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition">
           <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
             <div className="flex items-center gap-2">
               <Pill className="w-4 h-4 text-rose-500 flex-shrink-0" />
-              <span className="text-sm font-medium text-gray-900">{formatArabicDate(rx.date)}</span>
-              {rx.doctorName && <span className="text-xs text-gray-500">{rx.doctorName}</span>}
+              <span className="text-sm font-medium text-[#0d2137]">{formatArabicDate(rx.date)}</span>
+              {rx.doctorName && <span className="text-xs text-[#64748b]">{rx.doctorName}</span>}
             </div>
             {rx.status && (
               <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
                 rx.status === "active" ? "bg-green-50 text-green-700" :
                 rx.status === "draft" ? "bg-yellow-50 text-yellow-700" :
-                "bg-gray-100 text-gray-500"
+                "bg-[#f1f5f9] text-[#64748b]"
               )}>
                 {PRESCRIPTION_STATUS_LABELS[rx.status] ?? rx.status}
               </span>
@@ -78,17 +78,17 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
           {rx.items && rx.items.length > 0 && (
             <div className="space-y-1.5 mt-2">
               {rx.items.map((item, idx) => (
-                <div key={idx} className="text-xs bg-gray-50 rounded p-2">
-                  <span className="font-semibold text-gray-700">{item.medicationName}</span>
-                  <span className="text-gray-500 mx-1">—</span>
-                  <span className="text-gray-500">{item.dosage}</span>
-                  {item.frequency && <span className="text-gray-400 mx-1">· {item.frequency}</span>}
-                  {item.duration && <span className="text-gray-400 mx-1">· {item.duration}</span>}
+                <div key={idx} className="text-xs bg-[#f7fafd] rounded p-2">
+                  <span className="font-semibold text-[#0d2137]">{item.medicationName}</span>
+                  <span className="text-[#64748b] mx-1">—</span>
+                  <span className="text-[#64748b]">{item.dosage}</span>
+                  {item.frequency && <span className="text-[#94a3b8] mx-1">· {item.frequency}</span>}
+                  {item.duration && <span className="text-[#94a3b8] mx-1">· {item.duration}</span>}
                 </div>
               ))}
             </div>
           )}
-          {rx.notes && <p className="text-xs text-gray-500 mt-2">{rx.notes}</p>}
+          {rx.notes && <p className="text-xs text-[#64748b] mt-2">{rx.notes}</p>}
         </div>
       ))}
     </div>

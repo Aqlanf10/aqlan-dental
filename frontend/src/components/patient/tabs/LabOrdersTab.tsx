@@ -43,7 +43,7 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
     return (
       <div className="space-y-2 animate-pulse">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-16 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
         ))}
       </div>
     );
@@ -51,7 +51,7 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
 
   if (orders.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400" dir="rtl">
+      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
         <FlaskConical className="w-10 h-10 mx-auto mb-2 opacity-30" />
         <p className="text-sm">لا توجد طلبات مختبر</p>
       </div>
@@ -61,31 +61,31 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
   return (
     <div className="space-y-2" dir="rtl">
       {orders.map((order) => (
-        <div key={order.id} className="p-3 bg-white border border-gray-100 rounded-lg hover:border-gray-200 transition">
+        <div key={order.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <FlaskConical className="w-4 h-4 text-amber-500 flex-shrink-0" />
-              <span className="text-sm font-medium text-gray-900">
+              <span className="text-sm font-medium text-[#0d2137]">
                 {order.workType ?? "طلب مختبر"}
               </span>
-              {order.labName && <span className="text-xs text-gray-500">({order.labName})</span>}
+              {order.labName && <span className="text-xs text-[#64748b]">({order.labName})</span>}
             </div>
             {order.status && (
               <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
                 order.status === "completed" || order.status === "received" ? "bg-green-50 text-green-700" :
                 order.status === "in_progress" || order.status === "sent" ? "bg-yellow-50 text-yellow-700" :
-                order.status === "pending" ? "bg-blue-50 text-blue-700" :
-                "bg-gray-100 text-gray-500"
+                order.status === "pending" ? "bg-[#3d7ab518] text-[#3d7ab5]" :
+                "bg-[#f1f5f9] text-[#64748b]"
               )}>
                 {LAB_STATUS_LABELS[order.status] ?? order.status}
               </span>
             )}
           </div>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs text-gray-400">{formatArabicDate(order.orderDate)}</span>
-            {order.dueDate && <span className="text-xs text-gray-400">موعد التسليم: {formatArabicDate(order.dueDate)}</span>}
+            <span className="text-xs text-[#94a3b8]">{formatArabicDate(order.orderDate)}</span>
+            {order.dueDate && <span className="text-xs text-[#94a3b8]">موعد التسليم: {formatArabicDate(order.dueDate)}</span>}
           </div>
-          {order.notes && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{order.notes}</p>}
+          {order.notes && <p className="text-xs text-[#64748b] mt-1 line-clamp-2">{order.notes}</p>}
         </div>
       ))}
     </div>

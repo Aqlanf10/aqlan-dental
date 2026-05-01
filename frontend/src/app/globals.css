@@ -5,22 +5,22 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 212 55% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 221 83% 53%;
+    --card-foreground: 212 55% 14%;
+    --primary: 209 48% 48%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 25 95% 53%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 212 33% 95%;
+    --secondary-foreground: 212 55% 14%;
+    --muted: 212 33% 95%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 27 91% 57%;
+    --accent-foreground: 212 55% 14%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221 83% 53%;
+    --border: 212 44% 90%;
+    --input: 212 44% 90%;
+    --ring: 209 48% 48%;
     --radius: 0.5rem;
     --font-tajawal: 'Tajawal', sans-serif;
   }
@@ -32,25 +32,46 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
     font-family: var(--font-tajawal), sans-serif;
+    background: #eef3f9;
+    color: #0d2137;
+    -webkit-font-smoothing: antialiased;
   }
 
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { @apply bg-muted; }
-  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c8d8ea; border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: #a8c0d6; }
+
+  input::placeholder { color: #94a3b8 !important; }
 }
 
 @layer utilities {
-  .clinic-gradient { background: linear-gradient(135deg, #0F1B2D 0%, #1A2B45 40%, #2563EB 100%); }
-  .navy-gradient { background: linear-gradient(135deg, #0F1B2D 0%, #1A2B45 100%); }
-  .gold-gradient { background: linear-gradient(135deg, #F97316 0%, #FB923C 100%); }
-  .blue-gradient { background: linear-gradient(135deg, #2563EB 0%, #3B82F6 100%); }
+  /* Login page background gradient — matches ZIP exactly */
+  .clinic-gradient { background: linear-gradient(145deg, #0a1c30 0%, #0d2137 55%, #1a3a5c 100%); }
+  .navy-gradient { background: linear-gradient(135deg, #0d2137 0%, #1a3a5c 100%); }
+  .gold-gradient { background: linear-gradient(135deg, #f5922e 0%, #f7a44f 100%); }
+  .blue-gradient { background: linear-gradient(135deg, #3d7ab5 0%, #5a94c9 100%); }
   .text-balance { text-wrap: balance; }
+
+  /* Page content fade-in — matches ZIP */
+  .page-content { animation: fadeIn 0.2s ease; }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(13,33,55,0.1);
+    transition: all 0.2s;
+  }
 }
 
 @layer utilities {
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
   @keyframes slideInRTL {
     from { transform: translateX(100%); opacity: 0; }
     to   { transform: translateX(0);    opacity: 1; }

@@ -54,13 +54,13 @@ interface Props {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-[#e8f0f9]  overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-5 py-4 text-start hover:bg-gray-50 transition"
       >
-        <h3 className="font-bold text-gray-900">{title}</h3>
+        <h3 className="font-bold text-[#0d2137]">{title}</h3>
         <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", open && "rotate-180")} />
       </button>
       {open && <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>}
@@ -221,7 +221,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
             {duplicateWarning.map((m, i) => (
               <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 p-3">
                 <div>
-                  <p className="font-semibold text-gray-900">{m.fullName}</p>
+                  <p className="font-semibold text-[#0d2137]">{m.fullName}</p>
                   <p className="text-xs text-gray-500">
                     ملف رقم: {m.patientNumber} {m.phone && `· هاتف: ${m.phone}`} · تطابق: {MATCH_LABELS[m.matchType] ?? m.matchType}
                   </p>

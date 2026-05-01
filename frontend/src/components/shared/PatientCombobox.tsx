@@ -80,7 +80,7 @@ export function PatientCombobox({
       />
 
       {showMenu && (
-        <div className="absolute z-50 w-full mt-1 bg-white rounded-lg border border-gray-200 shadow-xl max-h-52 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white rounded-lg border border-[#e8f0f9] shadow-xl max-h-52 overflow-y-auto">
           {loading && (
             <p className="px-3 py-3 text-sm text-gray-400 text-center">جارٍ البحث...</p>
           )}
@@ -99,7 +99,7 @@ export function PatientCombobox({
               onMouseDown={() => { onSelect(p); setQuery(`${p.fullName} (${p.patientNumber})`); setOpen(false); }}
               className="w-full text-start px-3 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between transition"
             >
-              <span className="font-medium text-gray-900">{p.fullName}</span>
+              <span className="font-medium text-[#0d2137]">{p.fullName}</span>
               <span className="text-xs text-gray-400 font-mono">{p.patientNumber}</span>
             </button>
           ))}

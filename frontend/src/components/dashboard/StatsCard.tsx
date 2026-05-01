@@ -1,44 +1,68 @@
 import Link from "next/link";
 import { LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface StatsCardProps {
   title: string;
   value: number | string;
   icon: LucideIcon;
-  color: "blue" | "orange" | "navy" | "green" | "red";
+  color: "blue" | "orange" | "navy" | "green" | "red" | "purple";
   description?: string;
   href?: string;
 }
 
+/* ZIP reference colors:
+   blue: #3d7ab5, orange: #f5922e, purple: #a855f7, green: #22c55e, navy: #0d2137, red: #ef4444
+   Icon bg = color + '18' (hex alpha ~9.4%) */
 const COLOR_MAP = {
-  blue:   { bg: "bg-clinic-blue-50",  icon: "text-clinic-blue",    border: "border-clinic-blue/15",  ring: "ring-clinic-blue/10"   },
-  orange: { bg: "bg-clinic-orange-50", icon: "text-clinic-orange",  border: "border-clinic-orange/15", ring: "ring-clinic-orange/10" },
-  navy:   { bg: "bg-clinic-navy-700/5",icon: "text-clinic-navy-700",border: "border-clinic-navy/10",  ring: "ring-clinic-navy/5"    },
-  green:  { bg: "bg-green-50",         icon: "text-green-600",      border: "border-green-200",        ring: "ring-green-100"        },
-  red:    { bg: "bg-red-50",           icon: "text-red-500",        border: "border-red-200",          ring: "ring-red-100"          },
+  blue:   { icon: "#3d7ab5", bg: "#3d7ab518" },
+  orange: { icon: "#f5922e", bg: "#f5922e18" },
+  purple: { icon: "#a855f7", bg: "#a855f718" },
+  green:  { icon: "#22c55e", bg: "#22c55e18" },
+  navy:   { icon: "#0d2137", bg: "#0d213718" },
+  red:    { icon: "#ef4444", bg: "#ef444418" },
 };
 
 export function StatsCard({ title, value, icon: Icon, color, description, href }: StatsCardProps) {
   const c = COLOR_MAP[color];
+
   const inner = (
     <>
-      <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ring-1", c.bg, c.ring)}>
-        <Icon className={cn("w-6 h-6", c.icon)} />
+      <div className="flex-1">
+        <div className="text-[13px] font-medium mb-1.5" style={{ color: "#64748b" }}>{title}</div>
+        <div className="text-[26px] font-extrabold leading-none" style={{ color: "#0d2137", letterSpacing: -0.5 }}>{value}</div>
+        {description && <div className="text-xs mt-1" style={{ color: "#94a3b8" }}>{description}</div>}
       </div>
-      <div>
-        <p className="text-sm text-gray-500 font-medium">{title}</p>
-        <p className="text-3xl font-extrabold text-gray-900 mt-0.5">{value}</p>
-        {description && <p className="text-xs text-gray-400 mt-1">{description}</p>}
+      <div
+        className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{ background: c.bg }}
+      >
+        <Icon className="w-[22px] h-[22px]" style={{ color: c.icon }} />
       </div>
     </>
   );
 
-  const cls = cn("bg-white rounded-xl border p-5 flex items-start gap-4 shadow-sm", c.border, href && "hover:shadow-md transition-shadow cursor-pointer");
+  const cardStyle: React.CSSProperties = {
+    background: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)",
+    border: "1px solid #e8f0f9",
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  };
 
-  return href ? (
-    <Link href={href} className={cls}>{inner}</Link>
-  ) : (
-    <div className={cls}>{inner}</div>
+  if (href) {
+    return (
+      <Link href={href} style={cardStyle} className="group hover:shadow-card-hover transition-shadow">
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <div style={cardStyle} className="card-hover">
+      {inner}
+    </div>
   );
 }

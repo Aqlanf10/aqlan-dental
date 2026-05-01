@@ -37,7 +37,7 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
     return (
       <div className="space-y-2 animate-pulse">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-16 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
         ))}
       </div>
     );
@@ -45,7 +45,7 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
 
   if (cases.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400" dir="rtl">
+      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
         <Activity className="w-10 h-10 mx-auto mb-2 opacity-30" />
         <p className="text-sm">لا توجد حالات تقويمية</p>
       </div>
@@ -56,7 +56,7 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
     <div className="space-y-2" dir="rtl">
       {cases.map((c) => (
         <Link key={c.id} href={`/ortho/${c.id}`}
-          className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg hover:border-clinic-blue-100 hover:bg-clinic-blue-50/30 transition"
+          className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-clinic-blue-100 hover:bg-clinic-blue-50/30 transition"
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
@@ -64,22 +64,22 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-gray-900">{c.caseNumber}</span>
-                {c.applianceType && <span className="text-xs text-gray-500">{c.applianceType}</span>}
+                <span className="text-sm font-medium text-[#0d2137]">{c.caseNumber}</span>
+                {c.applianceType && <span className="text-xs text-[#64748b]">{c.applianceType}</span>}
               </div>
-              {c.doctorName && <p className="text-xs text-gray-400">{c.doctorName}</p>}
-              {c.startDate && <p className="text-xs text-gray-400">{c.startDate}</p>}
+              {c.doctorName && <p className="text-xs text-[#94a3b8]">{c.doctorName}</p>}
+              {c.startDate && <p className="text-xs text-[#94a3b8]">{c.startDate}</p>}
             </div>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="flex items-center gap-1.5">
-              <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div className="w-20 h-1.5 bg-[#dce8f5] rounded-full overflow-hidden">
                 <div className="h-full bg-clinic-blue rounded-full" style={{ width: `${c.stagePercentage}%` }} />
               </div>
-              <span className="text-xs text-gray-500">{c.stagePercentage}%</span>
+              <span className="text-xs text-[#64748b]">{c.stagePercentage}%</span>
             </div>
             <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
-              c.status === "active" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
+              c.status === "active" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-[#f1f5f9] text-[#64748b]"
             )}>
               {ORTHO_STATUS_LABELS[c.status] ?? c.status}
             </span>

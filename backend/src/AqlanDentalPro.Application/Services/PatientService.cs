@@ -190,6 +190,13 @@ public class PatientService(
                 patient.MedicalHistory.TmjProblems = req.MedicalHistory.TmjProblems;
                 patient.MedicalHistory.PreviousSurgeries = req.MedicalHistory.PreviousSurgeries;
                 patient.MedicalHistory.Notes = req.MedicalHistory.Notes;
+                // Restore if the row was soft-deleted
+                if (!patient.MedicalHistory.IsActive)
+                {
+                    patient.MedicalHistory.IsActive = true;
+                    patient.MedicalHistory.DeletedAt = null;
+                    patient.MedicalHistory.DeletedBy = null;
+                }
             }
         }
 
@@ -220,6 +227,13 @@ public class PatientService(
                 patient.DentalHistory.ThumbSucking = req.DentalHistory.ThumbSucking;
                 patient.DentalHistory.TongueThrusing = req.DentalHistory.TongueThrusing;
                 patient.DentalHistory.Notes = req.DentalHistory.Notes;
+                // Restore if the row was soft-deleted
+                if (!patient.DentalHistory.IsActive)
+                {
+                    patient.DentalHistory.IsActive = true;
+                    patient.DentalHistory.DeletedAt = null;
+                    patient.DentalHistory.DeletedBy = null;
+                }
             }
         }
 

@@ -19,6 +19,23 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
     {
         try
         {
+            // Always ensure missing columns exist, even if tables already exist
+            // Add DeletedAt/DeletedBy to messaging tables
+            var messagingTables = new[] { "Conversations", "ConversationParticipants", "Messages", "MessageReads" };
+            foreach (var table in messagingTables)
+            {
+                await db.Database.ExecuteSqlRawAsync($"""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedAt') THEN
+                            ALTER TABLE "{table}" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedBy') THEN
+                            ALTER TABLE "{table}" ADD COLUMN "DeletedBy" uuid NULL;
+                        END IF;
+                    END $$;
+                """);
+            }
+
             // Check if messaging tables already exist
             bool tablesExist = false;
             try { tablesExist = await db.Database.ExecuteSqlRawAsync("SELECT 1 FROM \"Conversations\" LIMIT 1") > 0; }
@@ -26,7 +43,42 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
 
             if (tablesExist)
             {
-                return Ok(new { message = "جداول المراسلة موجودة بالفعل" });
+                // Tables exist but may be missing columns — add ConversationType/PatientId/BranchId if missing
+                await db.Database.ExecuteSqlRawAsync("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
+                            ALTER TABLE "Conversations" ADD COLUMN "ConversationType" character varying(20) NOT NULL DEFAULT 'StaffToStaff';
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'PatientId') THEN
+                            ALTER TABLE "Conversations" ADD COLUMN "PatientId" uuid NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId') THEN
+                            ALTER TABLE "Conversations" ADD COLUMN "BranchId" uuid NULL;
+                        END IF;
+                    END $$;
+                """);
+
+                await db.Database.ExecuteSqlRawAsync("""
+                    CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId" ON "Conversations" ("PatientId");
+                """);
+                await db.Database.ExecuteSqlRawAsync("""
+                    CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType" ON "Conversations" ("ConversationType");
+                """);
+
+                await db.Database.ExecuteSqlRawAsync("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId') THEN
+                            ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Patients_PatientId" 
+                                FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE SET NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Branches_BranchId') THEN
+                            ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Branches_BranchId" 
+                                FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE SET NULL;
+                        END IF;
+                    END $$;
+                """);
+
+                return Ok(new { message = "تم تحديث أعمدة المراسلة المفقودة بنجاح" });
             }
 
             // Create messaging tables directly via SQL

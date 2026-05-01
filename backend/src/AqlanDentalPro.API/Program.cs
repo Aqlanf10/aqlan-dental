@@ -206,7 +206,17 @@ using (var scope = app.Services.CreateScope())
     try
     {
         // Add DeletedAt/DeletedBy to all tables that inherit BaseEntity
-        var baseEntityTables = new[] { "Patients", "Users", "Doctors", "Branches", "Appointments", "Conversations", "Messages", "Visits", "Payments", "Contracts" };
+        var baseEntityTables = new[] {
+            "Patients", "Users", "Doctors", "Branches", "Appointments",
+            "Conversations", "ConversationParticipants", "Messages", "MessageReads",
+            "Visits", "Payments", "Contracts", "OrthoCases", "OrthoVisits",
+            "TreatmentStages", "RetentionRecords", "SurgeryCases", "Prescriptions",
+            "Notifications", "AuditLogs", "Settings", "Inventory", "LabOrders",
+            "InternalReferrals", "ClinicalPhotos", "Radiographs", "Documents",
+            "DentalCharts", "ToothConditions", "GeneralTreatments",
+            "WhatsAppMessages", "WhatsAppTemplates", "PatientAccounts",
+            "CephAnalyses", "PerioRecords", "GeneralTreatmentPlanItems"
+        };
         foreach (var table in baseEntityTables)
         {
             await db.Database.ExecuteSqlRawAsync($"""

@@ -178,7 +178,7 @@ public class PatientService(
                     PreviousSurgeries = req.MedicalHistory.PreviousSurgeries,
                     Notes = req.MedicalHistory.Notes
                 };
-                repo.AddChild(patient.MedicalHistory);
+                await repo.AddChildAsync(patient.MedicalHistory);
             }
             else
             {
@@ -216,7 +216,7 @@ public class PatientService(
                     TongueThrusing = req.DentalHistory.TongueThrusing,
                     Notes = req.DentalHistory.Notes
                 };
-                repo.AddChild(patient.DentalHistory);
+                await repo.AddChildAsync(patient.DentalHistory);
             }
             else
             {
@@ -305,7 +305,7 @@ public class PatientService(
                 PreviousSurgeries = dto.PreviousSurgeries,
                 Notes = dto.Notes
             };
-            repo.AddChild(patient.MedicalHistory);
+            await repo.AddChildAsync(patient.MedicalHistory);
         }
         else
         {
@@ -367,7 +367,7 @@ public class PatientService(
                 TongueThrusing = dto.TongueThrusing,
                 Notes = dto.Notes
             };
-            repo.AddChild(patient.DentalHistory);
+            await repo.AddChildAsync(patient.DentalHistory);
         }
         else
         {

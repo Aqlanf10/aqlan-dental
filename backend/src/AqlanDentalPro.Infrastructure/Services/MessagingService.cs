@@ -229,7 +229,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 : await GenerateDirectTitleAsync(participantIds),
             IsGroup = request.IsGroup,
             CreatedBy = UserId,
-            ConversationType = conversationType,
+            ConversationType = conversationType.ToString(),
             PatientId = request.PatientId,
             BranchId = currentUser.BranchId,
         };

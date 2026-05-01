@@ -276,7 +276,30 @@ using (var scope = app.Services.CreateScope())
             WHERE "NormalizedWhatsApp" IS NULL AND "WhatsApp" IS NOT NULL AND "WhatsApp" != '';
         """);
 
-        // Create unique indexes for NormalizedPhone/NormalizedWhatsApp
+        // Create unique indexes for NormalizedPhone/NormalizedWhatsApp (with deduplication)
+        // First: NULL out duplicates, keeping only the first (oldest) record
+        await db.Database.ExecuteSqlRawAsync("""
+            WITH duplicates AS (
+                SELECT "Id", "NormalizedPhone", 
+                       ROW_NUMBER() OVER (PARTITION BY "NormalizedPhone" ORDER BY "CreatedAt" ASC) as rn
+                FROM "Patients" 
+                WHERE "NormalizedPhone" IS NOT NULL AND "NormalizedPhone" != ''
+            )
+            UPDATE "Patients" SET "NormalizedPhone" = NULL
+            FROM duplicates
+            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            WITH duplicates AS (
+                SELECT "Id", "NormalizedWhatsApp", 
+                       ROW_NUMBER() OVER (PARTITION BY "NormalizedWhatsApp" ORDER BY "CreatedAt" ASC) as rn
+                FROM "Patients" 
+                WHERE "NormalizedWhatsApp" IS NOT NULL AND "NormalizedWhatsApp" != ''
+            )
+            UPDATE "Patients" SET "NormalizedWhatsApp" = NULL
+            FROM duplicates
+            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
+        """);
         await db.Database.ExecuteSqlRawAsync("""
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedPhone" 
                 ON "Patients" ("NormalizedPhone") 

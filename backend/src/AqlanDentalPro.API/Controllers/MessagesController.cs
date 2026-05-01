@@ -36,10 +36,18 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
                 """);
             }
 
-            // Check if messaging tables already exist
+            // Check if messaging tables already exist using raw SQL query
             bool tablesExist = false;
-            try { tablesExist = await db.Database.ExecuteSqlRawAsync("SELECT 1 FROM \"Conversations\" LIMIT 1") > 0; }
+            try
+            {
+                using var cmd = db.Database.GetDbConnection().CreateCommand();
+                cmd.CommandText = "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Conversations')";
+                await db.Database.OpenConnectionAsync();
+                tablesExist = (bool?)await cmd.ExecuteScalarAsync() ?? false;
+                await db.Database.CloseConnectionAsync();
+            }
             catch { tablesExist = false; }
+            finally { await db.Database.CloseConnectionAsync(); }
 
             if (tablesExist)
             {

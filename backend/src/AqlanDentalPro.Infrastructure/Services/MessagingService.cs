@@ -150,6 +150,11 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 return (await GetConversationAsync(existing.Id))!;
         }
 
+        // Parse ConversationType from request
+        var conversationType = ConversationType.StaffToStaff;
+        if (!string.IsNullOrWhiteSpace(request.ConversationType) && Enum.TryParse<ConversationType>(request.ConversationType, true, out var parsedType))
+            conversationType = parsedType;
+
         var conv = new Conversation
         {
             Title = request.IsGroup
@@ -157,7 +162,21 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 : await GenerateDirectTitleAsync(participantIds),
             IsGroup = request.IsGroup,
             CreatedBy = UserId,
+            ConversationType = conversationType,
+            PatientId = request.PatientId,
+            BranchId = currentUser.BranchId,
         };
+
+        // For StaffToPatient with a patient, set a descriptive title
+        if (conversationType == ConversationType.StaffToPatient && request.PatientId.HasValue)
+        {
+            var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == request.PatientId.Value);
+            if (patient != null)
+            {
+                var patientName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim();
+                conv.Title = $"محادثة المريض - {patientName}";
+            }
+        }
 
         await db.Conversations.AddAsync(conv);
 

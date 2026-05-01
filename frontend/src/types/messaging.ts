@@ -59,6 +59,8 @@ export interface CreateConversationRequest {
   isGroup?: boolean;
   participantIds: string[];
   initialMessage?: string;
+  conversationType?: string;
+  patientId?: string;
 }
 
 export interface SendMessageRequest {

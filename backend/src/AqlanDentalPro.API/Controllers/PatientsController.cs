@@ -157,14 +157,6 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         return success ? Ok(new { message = "تم أرشفة المريض بنجاح" }) : NotFound(new { message = "المريض غير موجود" });
     }
 
-    [HttpPost("{id:guid}/restore")]
-    [Authorize(Policy = "AdminOnly")]
-    public async Task<IActionResult> Restore(Guid id)
-    {
-        var success = await service.RestoreAsync(id);
-        return success ? Ok(new { message = "تم استعادة المريض بنجاح" }) : NotFound(new { message = "المريض غير موجود" });
-    }
-
     [HttpPut("{id:guid}/archive")]
     [Authorize(Roles = "Admin,admin")]
     public async Task<IActionResult> Archive(Guid id)
@@ -173,12 +165,13 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         return success ? Ok(new { message = "تم أرشفة المريض" }) : NotFound(new { message = "المريض غير موجود" });
     }
 
+    [HttpPost("{id:guid}/restore")]
     [HttpPut("{id:guid}/restore")]
-    [Authorize(Roles = "Admin,admin")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Restore(Guid id)
     {
         var success = await service.RestoreAsync(id);
-        return success ? Ok(new { message = "تم استعادة المريض" }) : NotFound(new { message = "المريض غير موجود" });
+        return success ? Ok(new { message = "تم استعادة المريض بنجاح" }) : NotFound(new { message = "المريض غير موجود" });
     }
 
     [HttpGet("{id:guid}/medical-history")]

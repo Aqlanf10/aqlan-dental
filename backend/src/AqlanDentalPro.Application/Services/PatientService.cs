@@ -178,7 +178,7 @@ public class PatientService(
                     PreviousSurgeries = req.MedicalHistory.PreviousSurgeries,
                     Notes = req.MedicalHistory.Notes
                 };
-                await repo.AddChildAsync(patient.MedicalHistory);
+                repo.AddChild(patient.MedicalHistory);
             }
             else
             {
@@ -216,7 +216,7 @@ public class PatientService(
                     TongueThrusing = req.DentalHistory.TongueThrusing,
                     Notes = req.DentalHistory.Notes
                 };
-                await repo.AddChildAsync(patient.DentalHistory);
+                repo.AddChild(patient.DentalHistory);
             }
             else
             {
@@ -240,7 +240,7 @@ public class PatientService(
         // Don't use repo.Update(patient) here — it would mark the entire entity graph as Modified,
         // overriding the Added state of newly created child entities. Since the patient is already
         // tracked by the change tracker (loaded via GetWithHistoriesAsync), property changes above
-        // are automatically detected. The new children were explicitly Added via AddChildAsync.
+        // are automatically detected. The new children were explicitly Added via AddChild.
         patient.UpdatedAt = DateTime.UtcNow;
         await repo.SaveChangesAsync();
         return ToProfileDto(patient);
@@ -305,7 +305,7 @@ public class PatientService(
                 PreviousSurgeries = dto.PreviousSurgeries,
                 Notes = dto.Notes
             };
-            await repo.AddChildAsync(patient.MedicalHistory);
+            repo.AddChild(patient.MedicalHistory);
         }
         else
         {
@@ -367,7 +367,7 @@ public class PatientService(
                 TongueThrusing = dto.TongueThrusing,
                 Notes = dto.Notes
             };
-            await repo.AddChildAsync(patient.DentalHistory);
+            repo.AddChild(patient.DentalHistory);
         }
         else
         {

@@ -34,12 +34,12 @@ public class GenericRepository<T>(AppDbContext context) : IGenericRepository<T> 
     public void Detach(T entity) =>
         Context.Entry(entity).State = EntityState.Detached;
 
-    public async Task AddChildAsync<TChild>(TChild entity) where TChild : class
+    public void AddChild<TChild>(TChild entity) where TChild : class
     {
-        // Add the child entity to the DbContext so EF Core tracks it as Added
+        // Add the child entity to the DbContext so EF Core tracks it as Added.
         // This is used when creating new child entities (e.g., MedicalHistory, DentalHistory)
         // for an existing parent, where DbSet.Update(parent) would incorrectly mark them as Modified.
-        await Context.Set<TChild>().AddAsync(entity);
+        Context.Set<TChild>().Add(entity);
     }
 
     public async Task<int> SaveChangesAsync() =>

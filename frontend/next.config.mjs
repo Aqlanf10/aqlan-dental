@@ -1,8 +1,5 @@
-import type { NextConfig } from "next";
-
-const backendUrl = process.env.BACKEND_URL ?? "http://localhost:5000";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   output: "standalone",
   images: {
     remotePatterns: [
@@ -11,6 +8,7 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
+    const backendUrl = process.env.BACKEND_URL ?? "http://localhost:5000";
     return [
       {
         source: "/api/:path*",

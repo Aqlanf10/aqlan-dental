@@ -134,7 +134,6 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const dateOfBirth = watch("dateOfBirth");
 
   const checkDuplicates = useCallback(async () => {
-    if (patientId) return; // Skip for editing existing patient
     try {
       const params = new URLSearchParams();
       if (phone) params.set("phone", normalizePhone(phone));
@@ -142,6 +141,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
       if (firstName) params.set("firstName", firstName);
       if (lastName) params.set("lastName", lastName);
       if (dateOfBirth) params.set("dateOfBirth", dateOfBirth);
+      if (patientId) params.set("excludeId", patientId);
       if (!params.toString()) { setDuplicateWarning(null); return; }
 
       const { data } = await api.get(`/api/patients/check-duplicate?${params}`);

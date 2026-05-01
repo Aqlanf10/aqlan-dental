@@ -97,7 +97,7 @@ export default function ReportsPage() {
   const handleExport = async (type: "patients" | "payments" | "appointments") => {
     setExporting(true);
     try {
-      const token = sessionStorage.getItem("accessToken") ?? "";
+      const token = localStorage.getItem("access_token") ?? "";
       const params = type === "patients" ? "" : `?from=${from}&to=${to}`;
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/reports/export/${type}${params}`, {
         headers: { Authorization: `Bearer ${token}` },

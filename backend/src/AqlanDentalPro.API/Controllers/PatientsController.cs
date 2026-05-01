@@ -61,7 +61,8 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         [FromQuery] string? patientNumber,
         [FromQuery] string? firstName,
         [FromQuery] string? lastName,
-        [FromQuery] string? dateOfBirth)
+        [FromQuery] string? dateOfBirth,
+        [FromQuery] Guid? excludeId)
     {
         var duplicates = new List<object>();
 
@@ -72,9 +73,11 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         // Check by normalized phone
         if (normalizedPhone != null)
         {
-            var match = await db.Patients
+            var query = db.Patients
                 .IgnoreQueryFilters()
-                .Where(p => p.IsActive && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone))
+                .Where(p => p.IsActive && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
+            if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
+            var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "phone" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
@@ -83,9 +86,11 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         // Check by normalized WhatsApp
         if (normalizedWhatsApp != null && !duplicates.Any())
         {
-            var match = await db.Patients
+            var query = db.Patients
                 .IgnoreQueryFilters()
-                .Where(p => p.IsActive && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp))
+                .Where(p => p.IsActive && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp));
+            if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
+            var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "whatsapp" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
@@ -94,9 +99,11 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         // Check by patient number
         if (!string.IsNullOrWhiteSpace(patientNumber))
         {
-            var match = await db.Patients
+            var query = db.Patients
                 .IgnoreQueryFilters()
-                .Where(p => p.PatientNumber == patientNumber && p.IsActive)
+                .Where(p => p.PatientNumber == patientNumber && p.IsActive);
+            if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
+            var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "patientNumber" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
@@ -106,6 +113,7 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         if (!string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(lastName))
         {
             var nameQuery = db.Patients.IgnoreQueryFilters().Where(p => p.IsActive && p.FirstName == firstName && p.LastName == lastName);
+            if (excludeId.HasValue) nameQuery = nameQuery.Where(p => p.Id != excludeId.Value);
             if (!string.IsNullOrWhiteSpace(dateOfBirth) && DateOnly.TryParse(dateOfBirth, out var dob))
                 nameQuery = nameQuery.Where(p => p.DateOfBirth == dob);
 

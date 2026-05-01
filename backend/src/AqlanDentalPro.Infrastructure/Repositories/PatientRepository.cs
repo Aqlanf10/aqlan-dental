@@ -38,12 +38,18 @@ public class PatientRepository(AppDbContext context)
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
+            // Normalize search term for phone matching
+            var normalizedTerm = AqlanDentalPro.Application.Services.PhoneNormalizer.Normalize(term);
             query = query.Where(p =>
                 p.FirstName.ToLower().Contains(term) ||
                 p.LastName.ToLower().Contains(term) ||
                 (p.MiddleName != null && p.MiddleName.ToLower().Contains(term)) ||
                 p.PatientNumber.ToLower().Contains(term) ||
-                (p.Phone != null && p.Phone.Contains(term)));
+                (p.Phone != null && p.Phone.Contains(term)) ||
+                (normalizedTerm != null && (
+                    (p.NormalizedPhone != null && p.NormalizedPhone.Contains(normalizedTerm)) ||
+                    (p.NormalizedWhatsApp != null && p.NormalizedWhatsApp.Contains(normalizedTerm))
+                )));
         }
 
         if (!string.IsNullOrWhiteSpace(gender) &&

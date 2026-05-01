@@ -12,9 +12,11 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 {
     private Guid UserId => currentUser.UserId ?? throw new UnauthorizedAccessException();
 
+    private const int MaxMessageLength = 2000;
+
     // ─── محادثاتي ──────────────────────────────────────────────────────────────
     public async Task<PaginatedResponse<ConversationListDto>> GetMyConversationsAsync(
-        int page = 1, int pageSize = 20, string? search = null)
+        int page = 1, int pageSize = 20, string? search = null, string? type = null)
     {
         // Query conversations directly (not through participants) to allow Include
         var myConversationIds = await db.ConversationParticipants
@@ -28,15 +30,24 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
-            .Include(c => c.Patient)
             .AsQueryable();
 
+        // Filter by conversation type
+        if (!string.IsNullOrWhiteSpace(type) && Enum.TryParse<ConversationType>(type, true, out var convType))
+        {
+            var typeStr = convType.ToString();
+            query = query.Where(c => c.ConversationType == typeStr);
+        }
+
+        // Search across title, participant names, patient name, patient number, and message content
         if (!string.IsNullOrWhiteSpace(search))
         {
             query = query.Where(c =>
                 c.Title.Contains(search) ||
                 c.Participants.Any(p => p.User.Doctor != null && p.User.Doctor.Name.Contains(search)) ||
-                c.Participants.Any(p => p.User.Username.Contains(search)));
+                c.Participants.Any(p => p.User.Username.Contains(search)) ||
+                (c.Patient != null && (c.Patient.FirstName + " " + c.Patient.LastName).Contains(search)) ||
+                (c.Patient != null && c.Patient.PatientNumber.Contains(search)));
         }
 
         var total = await query.CountAsync();
@@ -103,6 +114,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         // Get patient info if this is a patient conversation
         string? patientName = null;
         string? patientPhone = null;
+        string? patientNumber = null;
         if (conv.PatientId.HasValue)
         {
             var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == conv.PatientId.Value);
@@ -110,6 +122,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             {
                 patientName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim();
                 patientPhone = patient.Phone;
+                patientNumber = patient.PatientNumber;
             }
         }
 
@@ -123,6 +136,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             ConversationType = conv.ConversationType,
             PatientId = conv.PatientId,
             PatientName = patientName,
+            PatientNumber = patientNumber,
             PatientPhone = patientPhone,
             Participants = conv.Participants.Select(MapParticipantDto).ToList(),
             Messages = messages.Select(MapMessageDto).ToList(),
@@ -191,6 +205,29 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
         await db.SaveChangesAsync();
         return (await GetConversationAsync(conv.Id))!;
+    }
+
+    // ─── جلب محادثة مريض بدون إنشاء ──────────────────────────────────────────────
+    public async Task<ConversationDetailDto?> GetPatientConversationAsync(Guid patientId)
+    {
+        // Verify patient exists
+        var patientExists = await db.Patients.IgnoreQueryFilters().AnyAsync(p => p.Id == patientId);
+        if (!patientExists)
+            throw new KeyNotFoundException("المريض غير موجود");
+
+        // Find existing StaffToPatient conversation for this patient
+        var existing = await db.Conversations
+            .Include(c => c.Participants)
+            .FirstOrDefaultAsync(c => c.PatientId == patientId && c.ConversationType == "StaffToPatient");
+
+        if (existing == null)
+            return null;
+
+        // Verify current user is a participant
+        if (!existing.Participants.Any(p => p.UserId == UserId))
+            return null;
+
+        return await GetConversationAsync(existing.Id);
     }
 
     // ─── إنشاء محادثة ──────────────────────────────────────────────────────────
@@ -285,11 +322,18 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         if (!await IsParticipantAsync(conversationId))
             throw new UnauthorizedAccessException("لست مشاركاً في هذه المحادثة");
 
+        // Validate content
+        var content = request.Content?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(content))
+            throw new ArgumentException("محتوى الرسالة لا يمكن أن يكون فارغاً");
+        if (content.Length > MaxMessageLength)
+            throw new ArgumentException($"محتوى الرسالة طويل جداً. الحد الأقصى {MaxMessageLength} حرف");
+
         var msg = new Message
         {
             ConversationId = conversationId,
             SenderId = UserId,
-            Content = request.Content,
+            Content = content,
             AttachmentUrl = request.AttachmentUrl,
             AttachmentName = request.AttachmentName,
             AttachmentType = request.AttachmentType,
@@ -303,9 +347,9 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         if (conv != null)
         {
             conv.LastMessageAt = DateTime.UtcNow;
-            conv.LastMessagePreview = request.Content.Length > 200
-                ? request.Content[..200] + "..."
-                : request.Content;
+            conv.LastMessagePreview = content.Length > 200
+                ? content[..200] + "..."
+                : content;
         }
 
         await db.SaveChangesAsync();
@@ -491,6 +535,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         var patientName = conv.Patient != null
             ? $"{conv.Patient.FirstName} {conv.Patient.LastName}".Trim()
             : null;
+        var patientNumber = conv.Patient?.PatientNumber;
 
         return new ConversationListDto
         {
@@ -502,6 +547,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             ConversationType = conv.ConversationType,
             PatientId = conv.PatientId,
             PatientName = patientName,
+            PatientNumber = patientNumber,
             LastMessageAt = conv.LastMessageAt,
             LastMessagePreview = conv.LastMessagePreview,
             OtherParticipant = otherParticipant != null ? MapParticipantDto(otherParticipant) : null,

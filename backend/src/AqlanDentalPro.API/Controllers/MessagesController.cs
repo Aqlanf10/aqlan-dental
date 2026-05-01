@@ -355,9 +355,10 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
     public async Task<ActionResult<object>> GetConversations(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] string? type = null)
     {
-        var result = await messagingService.GetMyConversationsAsync(page, pageSize, search);
+        var result = await messagingService.GetMyConversationsAsync(page, pageSize, search, type);
         return Ok(new { result.Data, result.TotalCount, result.Page, result.PageSize, result.TotalPages, result.HasNextPage, result.HasPreviousPage });
     }
 
@@ -394,6 +395,10 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         {
             return Forbid(ex.Message);
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>تحديد الرسائل كمقروءة</summary>
@@ -427,6 +432,23 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         try
         {
             var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>جلب محادثة مريض موجودة (GET) — لا تنشئ واحدة جديدة</summary>
+    [HttpGet("patient/{patientId:guid}")]
+    public async Task<ActionResult<ConversationDetailDto>> GetPatientConversation(Guid patientId)
+    {
+        try
+        {
+            var result = await messagingService.GetPatientConversationAsync(patientId);
+            if (result == null)
+                return NotFound(new { message = "لا توجد محادثة مرتبطة بهذا المريض" });
             return Ok(result);
         }
         catch (KeyNotFoundException ex)

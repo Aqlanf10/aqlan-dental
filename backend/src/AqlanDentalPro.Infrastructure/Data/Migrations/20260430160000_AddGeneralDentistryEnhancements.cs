@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[Migration("20260430160000_AddGeneralDentistryEnhancements")]
 public partial class AddGeneralDentistryEnhancements : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

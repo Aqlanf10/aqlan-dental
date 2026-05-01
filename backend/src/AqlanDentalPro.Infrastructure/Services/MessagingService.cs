@@ -2,12 +2,13 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Messaging;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
+public class MessagingService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications)
 {
     private Guid UserId => currentUser.UserId ?? throw new UnauthorizedAccessException();
 
@@ -15,9 +16,14 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
     public async Task<PaginatedResponse<ConversationListDto>> GetMyConversationsAsync(
         int page = 1, int pageSize = 20, string? search = null)
     {
-        var query = db.ConversationParticipants
+        // Query conversations directly (not through participants) to allow Include
+        var myConversationIds = await db.ConversationParticipants
             .Where(cp => cp.UserId == UserId)
-            .Select(cp => cp.Conversation)
+            .Select(cp => cp.ConversationId)
+            .ToListAsync();
+
+        var query = db.Conversations
+            .Where(c => myConversationIds.Contains(c.Id))
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
@@ -39,11 +45,20 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
             .Take(pageSize)
             .ToListAsync();
 
+        // Batch fetch unread counts to avoid N+1
+        var unreadCounts = await db.Messages
+            .Where(m => myConversationIds.Contains(m.ConversationId)
+                     && m.SenderId != UserId
+                     && !m.Reads.Any(r => r.UserId == UserId))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => new { ConversationId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ConversationId, x => x.Count);
+
         var result = new List<ConversationListDto>();
         foreach (var conv in conversations)
         {
             var dto = MapToListDto(conv);
-            dto.UnreadCount = await GetUnreadCountAsync(conv.Id);
+            dto.UnreadCount = unreadCounts.GetValueOrDefault(conv.Id);
             result.Add(dto);
         }
 
@@ -172,6 +187,13 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
     {
         var participantIds = request.ParticipantIds.Distinct().ToList();
 
+        // Validate messaging permissions for each participant
+        foreach (var pid in participantIds)
+        {
+            if (pid != UserId && !await CanMessageUserAsync(pid))
+                throw new UnauthorizedAccessException($"ليس لديك صلاحية مراسلة هذا المستخدم");
+        }
+
         // Add current user if not included
         if (!participantIds.Contains(UserId))
             participantIds.Add(UserId);
@@ -266,6 +288,19 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
             .Include(m => m.ReplyTo)
             .FirstAsync(m => m.Id == msg.Id);
 
+        // Notify other participants
+        var senderName = loaded.Sender?.Doctor?.Name ?? loaded.Sender?.Username ?? "مستخدم";
+        var otherParticipants = await db.ConversationParticipants
+            .Where(cp => cp.ConversationId == conversationId && cp.UserId != UserId)
+            .Select(cp => cp.UserId)
+            .ToListAsync();
+
+        foreach (var pid in otherParticipants)
+        {
+            await notifications.NotifyAsync(pid, "message", "رسالة جديدة",
+                $"رسالة جديدة من {senderName}", "Conversation", conversationId);
+        }
+
         return MapMessageDto(loaded);
     }
 
@@ -305,15 +340,17 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
             .Select(cp => cp.ConversationId)
             .ToListAsync();
 
-        var totalUnread = 0;
-        var unreadConvs = 0;
+        // Batch fetch all unread counts in one query
+        var unreadByConv = await db.Messages
+            .Where(m => myConversationIds.Contains(m.ConversationId)
+                     && m.SenderId != UserId
+                     && !m.Reads.Any(r => r.UserId == UserId))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => new { ConversationId = g.Key, Count = g.Count() })
+            .ToListAsync();
 
-        foreach (var convId in myConversationIds)
-        {
-            var count = await GetUnreadCountAsync(convId);
-            totalUnread += count;
-            if (count > 0) unreadConvs++;
-        }
+        var totalUnread = unreadByConv.Sum(x => x.Count);
+        var unreadConvs = unreadByConv.Count(x => x.Count > 0);
 
         return new UnreadCountDto
         {
@@ -342,6 +379,49 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
 
         await db.SaveChangesAsync();
     }
+
+    // ─── التحقق من صلاحية المراسلة ─────────────────────────────────────────────
+    private async Task<bool> CanMessageUserAsync(Guid targetUserId)
+    {
+        var currentUser = await db.Users.Include(u => u.Doctor).FirstOrDefaultAsync(u => u.Id == UserId);
+        var targetUser = await db.Users.FirstOrDefaultAsync(u => u.Id == targetUserId);
+        if (currentUser == null || targetUser == null) return false;
+
+        // Admin and BranchManager can message everyone
+        if (currentUser.Role is UserRole.Admin or UserRole.BranchManager) return true;
+
+        var targetRole = targetUser.Role;
+
+        // All internal staff can message each other
+        return currentUser.Role switch
+        {
+            UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                => targetRole is UserRole.Reception or UserRole.Accountant or UserRole.Admin
+                    or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    or UserRole.Assistant or UserRole.BranchManager,
+            UserRole.Reception
+                => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    or UserRole.Admin or UserRole.Accountant or UserRole.Assistant or UserRole.BranchManager,
+            UserRole.Accountant
+                => targetRole is UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist
+                    or UserRole.OralSurgeon or UserRole.Reception or UserRole.Assistant or UserRole.BranchManager,
+            UserRole.Assistant
+                => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    or UserRole.Reception or UserRole.Admin or UserRole.Accountant or UserRole.BranchManager,
+            _ => false
+        };
+    }
+
+    // ─── محادثة مع مريض ──────────────────────────────────────────────────────
+    public async Task<ConversationDetailDto?> GetOrCreatePatientConversationAsync(Guid patientId)
+    {
+        // Patient messaging is not supported in this version
+        // Patients don't have user accounts in the staff system
+        return null;
+    }
+
+    // ─── التحقق من صلاحية المراسلة (عام) ────────────────────────────────────────
+    public async Task<bool> CanMessageUserPublicAsync(Guid targetUserId) => await CanMessageUserAsync(targetUserId);
 
     // ─── Private Helpers ─────────────────────────────────────────────────────
     private async Task<bool> IsParticipantAsync(Guid conversationId)

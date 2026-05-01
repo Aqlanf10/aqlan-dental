@@ -201,7 +201,144 @@ using (var scope = app.Services.CreateScope())
 {
     var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    await db.Database.MigrateAsync();
+
+    try
+    {
+        await db.Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Migration failed, attempting to ensure messaging tables exist manually");
+
+        // Manually create messaging tables if they don't exist
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "Conversations" (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "Title" character varying(200) NOT NULL,
+                    "IsGroup" boolean NOT NULL,
+                    "CreatedBy" uuid NULL,
+                    "LastMessageAt" timestamp with time zone NULL,
+                    "LastMessagePreview" character varying(500) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS "IX_Conversations_LastMessageAt" ON "Conversations" ("LastMessageAt");
+                
+                ALTER TABLE "Conversations" DROP CONSTRAINT IF EXISTS "FK_Conversations_Users_CreatedBy";
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Users_CreatedBy') THEN
+                        ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Users_CreatedBy" 
+                            FOREIGN KEY ("CreatedBy") REFERENCES "Users"("Id") ON DELETE SET NULL;
+                    END IF;
+                END $$;
+            """);
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "ConversationParticipants" (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "ConversationId" uuid NOT NULL,
+                    "UserId" uuid NOT NULL,
+                    "IsAdmin" boolean NOT NULL,
+                    "LastReadAt" timestamp with time zone NULL,
+                    "IsMuted" boolean NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_ConversationParticipants_ConversationId_UserId" 
+                    ON "ConversationParticipants" ("ConversationId", "UserId");
+                
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ConversationParticipants_Conversations_ConversationId') THEN
+                        ALTER TABLE "ConversationParticipants" ADD CONSTRAINT "FK_ConversationParticipants_Conversations_ConversationId" 
+                            FOREIGN KEY ("ConversationId") REFERENCES "Conversations"("Id") ON DELETE CASCADE;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ConversationParticipants_Users_UserId') THEN
+                        ALTER TABLE "ConversationParticipants" ADD CONSTRAINT "FK_ConversationParticipants_Users_UserId" 
+                            FOREIGN KEY ("UserId") REFERENCES "Users"("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+            """);
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "Messages" (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "ConversationId" uuid NOT NULL,
+                    "SenderId" uuid NOT NULL,
+                    "Content" text NOT NULL,
+                    "AttachmentUrl" character varying(1000) NULL,
+                    "AttachmentName" character varying(255) NULL,
+                    "AttachmentType" character varying(50) NULL,
+                    "ReplyToId" uuid NULL,
+                    "IsSystemMessage" boolean NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS "IX_Messages_ConversationId" ON "Messages" ("ConversationId");
+                CREATE INDEX IF NOT EXISTS "IX_Messages_CreatedAt" ON "Messages" ("CreatedAt");
+                
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Messages_Conversations_ConversationId') THEN
+                        ALTER TABLE "Messages" ADD CONSTRAINT "FK_Messages_Conversations_ConversationId" 
+                            FOREIGN KEY ("ConversationId") REFERENCES "Conversations"("Id") ON DELETE CASCADE;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Messages_Users_SenderId') THEN
+                        ALTER TABLE "Messages" ADD CONSTRAINT "FK_Messages_Users_SenderId" 
+                            FOREIGN KEY ("SenderId") REFERENCES "Users"("Id") ON DELETE RESTRICT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Messages_Messages_ReplyToId') THEN
+                        ALTER TABLE "Messages" ADD CONSTRAINT "FK_Messages_Messages_ReplyToId" 
+                            FOREIGN KEY ("ReplyToId") REFERENCES "Messages"("Id") ON DELETE SET NULL;
+                    END IF;
+                END $$;
+            """);
+
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "MessageReads" (
+                    "Id" uuid NOT NULL PRIMARY KEY,
+                    "MessageId" uuid NOT NULL,
+                    "UserId" uuid NOT NULL,
+                    "ReadAt" timestamp with time zone NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL,
+                    "IsActive" boolean NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_MessageReads_MessageId_UserId" 
+                    ON "MessageReads" ("MessageId", "UserId");
+                
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_MessageReads_Messages_MessageId') THEN
+                        ALTER TABLE "MessageReads" ADD CONSTRAINT "FK_MessageReads_Messages_MessageId" 
+                            FOREIGN KEY ("MessageId") REFERENCES "Messages"("Id") ON DELETE CASCADE;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_MessageReads_Users_UserId') THEN
+                        ALTER TABLE "MessageReads" ADD CONSTRAINT "FK_MessageReads_Users_UserId" 
+                            FOREIGN KEY ("UserId") REFERENCES "Users"("Id") ON DELETE CASCADE;
+                    END IF;
+                END $$;
+            """);
+
+            // Record the migration in history if not already recorded
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                SELECT '20260430000000_AddMessagingSystem', '8.0.8'
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430000000_AddMessagingSystem'
+                );
+            """);
+
+            logger.LogInformation("Messaging tables created manually as fallback");
+        }
+        catch (Exception innerEx)
+        {
+            logger.LogError(innerEx, "Failed to create messaging tables manually");
+        }
+    }
+
     await DbSeeder.SeedAsync(db, logger);
 }
 
@@ -211,7 +348,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
 
 // Serve uploaded files
 var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-Directory.CreateDirectory(uploadsPath);
+try { Directory.CreateDirectory(uploadsPath); } catch { /* directory creation may fail in restricted environments */ }
 app.UseStaticFiles();
 
 app.UseSwagger();

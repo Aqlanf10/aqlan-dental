@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[Migration("20260430140000_AddWhatsAppIntegration")]
 public partial class AddWhatsAppIntegration : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

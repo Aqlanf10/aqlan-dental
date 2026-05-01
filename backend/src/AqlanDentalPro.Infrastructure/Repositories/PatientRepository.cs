@@ -3,12 +3,15 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace AqlanDentalPro.Infrastructure.Repositories;
 
 public class PatientRepository(AppDbContext context)
     : GenericRepository<Patient>(context), IPatientRepository
 {
+    public async Task<Patient?> FirstOrDefaultAsync(Expression<Func<Patient, bool>> predicate) =>
+        await DbSet.FirstOrDefaultAsync(predicate);
     public async Task<PaginatedResponse<Patient>> SearchAsync(
         string? search, int page, int pageSize, Guid? branchId,
         string? gender = null, Guid? doctorId = null, string? status = "active")

@@ -12,6 +12,7 @@ import {
   Users,
   ArrowLeft,
   CheckCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -79,6 +80,7 @@ export default function MessagesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [isMobileDetail, setIsMobileDetail] = useState(false);
+  const [patientConvError, setPatientConvError] = useState("");
 
   const { data: convData, isLoading: convLoading } = useConversations(1, searchQuery || undefined);
   const { data: conversation } = useConversation(selectedConvId);
@@ -125,6 +127,16 @@ export default function MessagesPage() {
 
   return (
     <div className="h-[calc(100vh-4rem)] flex gap-4">
+      {/* Patient conversation error */}
+      {patientConvError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-2 text-sm shadow-lg flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {patientConvError}
+          <button onClick={() => setPatientConvError("")} className="text-amber-600 hover:text-amber-800 ms-2">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
       {/* ─── قائمة المحادثات ──────────────────────────────────────────── */}
       <div
         className={cn(

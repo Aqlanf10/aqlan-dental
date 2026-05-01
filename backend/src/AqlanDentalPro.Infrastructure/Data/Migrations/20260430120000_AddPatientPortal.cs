@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
+[Migration("20260430120000_AddPatientPortal")]
 public partial class AddPatientPortal : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

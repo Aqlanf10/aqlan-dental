@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Domain.Entities;
+using System.Linq.Expressions;
 
 namespace AqlanDentalPro.Application.Interfaces.Repositories;
 
@@ -10,4 +11,5 @@ public interface IPatientRepository : IGenericRepository<Patient>
     Task<Patient?> GetArchivedByIdAsync(Guid id);
     Task<Patient?> FindByNormalizedPhoneAsync(string normalizedPhone, Guid? excludeId = null);
     Task<string> GeneratePatientNumberAsync(string prefix);
+    Task<Patient?> FirstOrDefaultAsync(Expression<Func<Patient, bool>> predicate);
 }

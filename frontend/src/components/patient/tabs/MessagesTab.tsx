@@ -5,6 +5,7 @@ import { MessageCircle, Send, Loader2 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
+import { useAuthStore } from "@/stores/authStore";
 import type { ConversationDetail } from "@/types/messaging";
 
 interface MessagesTabProps {
@@ -12,6 +13,7 @@ interface MessagesTabProps {
 }
 
 export function MessagesTab({ patientId }: MessagesTabProps) {
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [newMessage, setNewMessage] = useState("");
@@ -135,9 +137,9 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
               "p-3 rounded-lg max-w-[80%]",
               msg.isSystemMessage
                 ? "bg-gray-50 text-center mx-auto"
-                : msg.senderId === conversation?.id
-                  ? "bg-gray-50 ml-auto"
-                  : "bg-clinic-teal/10 mr-auto"
+                : msg.senderId === currentUserId
+                  ? "bg-clinic-teal/10 mr-auto"
+                  : "bg-gray-50 ml-auto"
             )}>
               {msg.isSystemMessage ? (
                 <p className="text-xs text-gray-500 italic">{msg.content}</p>

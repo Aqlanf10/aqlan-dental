@@ -114,8 +114,13 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
   };
 
   const handleDeletePhoto = async (id: string) => {
-    await api.delete(`/api/clinical-photos/${id}`).catch(() => {});
-    setPhotos((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await api.delete(`/api/clinical-photos/${id}`);
+      setPhotos((prev) => prev.filter((p) => p.id !== id));
+      toast.success("تم حذف الصورة");
+    } catch {
+      toast.error("فشل حذف الصورة — حاول مجدداً");
+    }
   };
 
   return (

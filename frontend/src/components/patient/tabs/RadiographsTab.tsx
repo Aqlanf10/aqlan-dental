@@ -90,8 +90,13 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
   };
 
   const handleDeleteXray = async (id: string) => {
-    await api.delete(`/api/radiographs/${id}`).catch(() => {});
-    setXrays((prev) => prev.filter((x) => x.id !== id));
+    try {
+      await api.delete(`/api/radiographs/${id}`);
+      setXrays((prev) => prev.filter((x) => x.id !== id));
+      toast.success("تم حذف ملف الأشعة");
+    } catch {
+      toast.error("فشل حذف ملف الأشعة — حاول مجدداً");
+    }
   };
 
   return (

@@ -42,7 +42,7 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
     return (
       <div className="space-y-2 animate-pulse">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-16 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
         ))}
       </div>
     );
@@ -50,7 +50,7 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
 
   if (cases.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400" dir="rtl">
+      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
         <Scissors className="w-10 h-10 mx-auto mb-2 opacity-30" />
         <p className="text-sm">لا توجد حالات جراحية</p>
       </div>
@@ -61,7 +61,7 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
     <div className="space-y-2" dir="rtl">
       {cases.map((c) => (
         <Link key={c.id} href={`/surgery/${c.id}`}
-          className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg hover:border-red-200 hover:bg-red-50/30 transition"
+          className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-red-200 hover:bg-red-50/30 transition"
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
@@ -69,18 +69,18 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-gray-900">{c.caseNumber}</span>
-                <span className="text-xs text-gray-500">{c.surgeryType}</span>
+                <span className="text-sm font-medium text-[#0d2137]">{c.caseNumber}</span>
+                <span className="text-xs text-[#64748b]">{c.surgeryType}</span>
               </div>
-              {c.doctorName && <p className="text-xs text-gray-400">{c.doctorName}</p>}
-              {c.scheduledDate && <p className="text-xs text-gray-400">{c.scheduledDate}</p>}
+              {c.doctorName && <p className="text-xs text-[#94a3b8]">{c.doctorName}</p>}
+              {c.scheduledDate && <p className="text-xs text-[#94a3b8]">{c.scheduledDate}</p>}
             </div>
           </div>
           <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0",
             c.status === "completed" ? "bg-green-50 text-green-700" :
             c.status === "in_progress" ? "bg-yellow-50 text-yellow-700" :
-            c.status === "scheduled" ? "bg-blue-50 text-blue-700" :
-            "bg-gray-100 text-gray-500"
+            c.status === "scheduled" ? "bg-[#3d7ab518] text-[#3d7ab5]" :
+            "bg-[#f1f5f9] text-[#64748b]"
           )}>
             {SURGERY_STATUS_LABELS[c.status] ?? c.status}
           </span>

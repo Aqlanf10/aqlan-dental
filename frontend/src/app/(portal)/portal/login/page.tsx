@@ -66,7 +66,7 @@ export default function PortalLoginPage() {
       {/* Header */}
       <div className="clinic-gradient px-6 pt-12 pb-16 text-center text-white">
         <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden backdrop-blur-sm border border-white/10">
-          <Image src="/logo.svg" alt="Aqlan Dental Pro" width={52} height={52} className="w-13 h-13" />
+          <Image src="/logo.png" alt="Aqlan Dental Pro" width={52} height={52} className="w-13 h-13" />
         </div>
         <h1 className="text-2xl font-extrabold">بوابة المريض</h1>
         <p className="mt-1 text-white/80 text-sm">مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
@@ -81,8 +81,8 @@ export default function PortalLoginPage() {
                 <div className="w-12 h-12 bg-clinic-blue-50 rounded-xl flex items-center justify-center mx-auto mb-3">
                   <Phone className="w-6 h-6 text-clinic-blue" />
                 </div>
-                <h2 className="text-lg font-bold text-gray-900">تسجيل الدخول</h2>
-                <p className="text-sm text-gray-500 mt-1">أدخل رقم هاتفك المسجل عندنا</p>
+                <h2 className="text-lg font-bold text-[#0d2137]">تسجيل الدخول</h2>
+                <p className="text-sm text-[#64748b] mt-1">أدخل رقم هاتفك المسجل عندنا</p>
               </div>
 
               <form onSubmit={handleSendCode} className="space-y-4">
@@ -93,7 +93,7 @@ export default function PortalLoginPage() {
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-sm font-medium text-[#0d2137] mb-1.5">
                     رقم الهاتف
                   </label>
                   <input
@@ -103,12 +103,12 @@ export default function PortalLoginPage() {
                     placeholder="770123456"
                     dir="ltr"
                     className={cn(
-                      "w-full px-4 py-3 rounded-lg border bg-white text-gray-900 text-left",
-                      "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-clinic-blue",
+                      "w-full px-4 py-3 rounded-lg border bg-white text-[#0d2137] text-left",
+                      "placeholder:text-[#94a3b8] focus:outline-none focus:ring-2 focus:ring-clinic-blue",
                       "border-gray-300"
                     )}
                   />
-                  <p className="mt-1 text-xs text-gray-400">أدخل الرقم بدون رمز الدولة (967+)</p>
+                  <p className="mt-1 text-xs text-[#94a3b8]">أدخل الرقم بدون رمز الدولة (967+)</p>
                 </div>
 
                 <button
@@ -130,9 +130,9 @@ export default function PortalLoginPage() {
                 <div className="w-12 h-12 bg-clinic-blue-50 rounded-xl flex items-center justify-center mx-auto mb-3">
                   <Shield className="w-6 h-6 text-clinic-blue" />
                 </div>
-                <h2 className="text-lg font-bold text-gray-900">رمز التحقق</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  أدخل الرمز المرسل إلى <span className="font-mono text-gray-700" dir="ltr">{phoneNumber}</span>
+                <h2 className="text-lg font-bold text-[#0d2137]">رمز التحقق</h2>
+                <p className="text-sm text-[#64748b] mt-1">
+                  أدخل الرمز المرسل إلى <span className="font-mono text-[#0d2137]" dir="ltr">{phoneNumber}</span>
                 </p>
               </div>
 
@@ -150,7 +150,7 @@ export default function PortalLoginPage() {
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-sm font-medium text-[#0d2137] mb-1.5">
                     رمز التحقق
                   </label>
                   <input
@@ -161,7 +161,7 @@ export default function PortalLoginPage() {
                     dir="ltr"
                     maxLength={6}
                     className={cn(
-                      "w-full px-4 py-3 rounded-lg border bg-white text-gray-900 text-center text-2xl tracking-[0.5em] font-mono",
+                      "w-full px-4 py-3 rounded-lg border bg-white text-[#0d2137] text-center text-2xl tracking-[0.5em] font-mono",
                       "placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-blue",
                       "border-gray-300"
                     )}
@@ -183,7 +183,7 @@ export default function PortalLoginPage() {
                 <button
                   type="button"
                   onClick={() => { setStep("phone"); setError(""); setSuccess(""); }}
-                  className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition flex items-center justify-center gap-1"
+                  className="w-full py-2 text-sm text-[#64748b] hover:text-[#0d2137] transition flex items-center justify-center gap-1"
                 >
                   <ArrowRight className="w-3 h-3" />
                   تغيير رقم الهاتف
@@ -195,7 +195,7 @@ export default function PortalLoginPage() {
       </div>
 
       {/* Footer */}
-      <div className="p-4 text-center text-xs text-gray-400">
+      <div className="p-4 text-center text-xs text-[#94a3b8]">
         © {new Date().getFullYear()} مركز د. عقلان الكامل · جميع الحقوق محفوظة
       </div>
     </div>

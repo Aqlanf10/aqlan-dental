@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   title: "Aqlan Dental Pro — مركز د. عقلان الكامل",
   description: "نظام إدارة مركز د. عقلان الكامل لطب وتقويم الأسنان — تعز، اليمن",
   icons: {
-    icon: "/logo.svg",
+    icon: "/logo.png",
   },
 };
 

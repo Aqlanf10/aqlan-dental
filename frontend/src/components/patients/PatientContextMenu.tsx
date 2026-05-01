@@ -150,7 +150,7 @@ export function PatientContextMenu({
     <div
       ref={menuRef}
       style={{ position: "fixed", top: y, left: x, zIndex: 9999, minWidth: menuWidth }}
-      className="bg-white rounded-xl shadow-2xl border border-gray-200 py-1 text-sm"
+      className="bg-white rounded-xl shadow-2xl border border-[#e8f0f9] py-1 text-sm"
       dir="rtl"
     >
       {/* Header */}
@@ -161,7 +161,7 @@ export function PatientContextMenu({
       {/* Items */}
       {items.map((item, i) => (
         <div key={i}>
-          {item.divider && i > 0 && <div className="h-px bg-gray-100 my-1" />}
+          {item.divider && i > 0 && <div className="h-px bg-[#f1f5f9] my-1" />}
           <button
             onClick={item.action}
             className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition text-gray-700 ${item.className ?? ""}`}

@@ -114,7 +114,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
     return (
       <div className="space-y-2 animate-pulse">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-14 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-14 bg-[#f1f5f9] rounded-lg" />
         ))}
       </div>
     );
@@ -128,29 +128,29 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
       <div className="max-h-80 overflow-y-auto space-y-2">
         {messages.length === 0 ? (
           <div className="text-center py-8">
-            <MessageCircle className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm text-gray-400 mb-3">لا توجد رسائل مع هذا المريض بعد</p>
+            <MessageCircle className="w-10 h-10 mx-auto mb-2 text-[#cbd5e1]" />
+            <p className="text-sm text-[#94a3b8] mb-3">لا توجد رسائل مع هذا المريض بعد</p>
           </div>
         ) : (
           messages.map((msg) => (
             <div key={msg.id} className={cn(
               "p-3 rounded-lg max-w-[80%]",
               msg.isSystemMessage
-                ? "bg-gray-50 text-center mx-auto"
+                ? "bg-[#f7fafd] text-center mx-auto"
                 : msg.senderId === currentUserId
                   ? "bg-clinic-blue/10 mr-auto"
-                  : "bg-gray-50 ml-auto"
+                  : "bg-[#f7fafd] ml-auto"
             )}>
               {msg.isSystemMessage ? (
-                <p className="text-xs text-gray-500 italic">{msg.content}</p>
+                <p className="text-xs text-[#64748b] italic">{msg.content}</p>
               ) : (
                 <>
-                  <p className="text-sm text-gray-800">{msg.content}</p>
+                  <p className="text-sm text-[#0d2137]">{msg.content}</p>
                   <div className="flex items-center gap-2 mt-1">
                     {msg.senderName && (
                       <span className="text-xs text-clinic-blue font-medium">{msg.senderName}</span>
                     )}
-                    <span className="text-xs text-gray-400">{formatArabicDate(msg.createdAt)}</span>
+                    <span className="text-xs text-[#94a3b8]">{formatArabicDate(msg.createdAt)}</span>
                   </div>
                 </>
               )}
@@ -167,7 +167,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="اكتب رسالة..."
-          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
+          className="flex-1 text-sm border border-[#e8f0f9] rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue"
           disabled={sending}
         />
         <button

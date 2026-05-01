@@ -42,7 +42,7 @@ export function PaymentsTab({ patientId }: PaymentsTabProps) {
     return (
       <div className="space-y-2 animate-pulse">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-14 bg-gray-100 rounded-lg" />
+          <div key={i} className="h-14 bg-[#f1f5f9] rounded-lg" />
         ))}
       </div>
     );
@@ -50,7 +50,7 @@ export function PaymentsTab({ patientId }: PaymentsTabProps) {
 
   if (payments.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-400" dir="rtl">
+      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
         <CreditCard className="w-10 h-10 mx-auto mb-2 opacity-30" />
         <p className="text-sm">لا توجد مدفوعات مسجّلة</p>
       </div>
@@ -62,29 +62,29 @@ export function PaymentsTab({ patientId }: PaymentsTabProps) {
   return (
     <div className="space-y-4" dir="rtl">
       <div className="rounded-lg px-4 py-3 bg-clinic-blue-50">
-        <p className="text-xs text-gray-500">إجمالي المدفوعات</p>
+        <p className="text-xs text-[#64748b]">إجمالي المدفوعات</p>
         <p className="text-lg font-bold text-clinic-blue">{total.toLocaleString()}</p>
       </div>
 
       <div className="space-y-2">
         {payments.map((p) => (
-          <div key={p.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg hover:border-gray-200 transition">
+          <div key={p.id} className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
                 <CreditCard className="w-5 h-5 text-green-500" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-gray-900">{p.amount.toLocaleString()}</span>
+                  <span className="text-sm font-medium text-[#0d2137]">{p.amount.toLocaleString()}</span>
                   {p.method && (
-                    <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                    <span className="text-xs bg-[#f1f5f9] text-[#64748b] px-1.5 py-0.5 rounded">
                       {METHOD_LABELS[p.method] ?? p.method}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400">{formatArabicDate(p.date)}</p>
-                {p.contractNumber && <p className="text-xs text-gray-500">عقد: {p.contractNumber}</p>}
-                {p.notes && <p className="text-xs text-gray-500 line-clamp-1">{p.notes}</p>}
+                <p className="text-xs text-[#94a3b8]">{formatArabicDate(p.date)}</p>
+                {p.contractNumber && <p className="text-xs text-[#64748b]">عقد: {p.contractNumber}</p>}
+                {p.notes && <p className="text-xs text-[#64748b] line-clamp-1">{p.notes}</p>}
               </div>
             </div>
           </div>

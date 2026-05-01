@@ -80,7 +80,7 @@ export default function LoginPage() {
             }}
           >
             <Image
-              src="/logo.svg"
+              src="/logo.png"
               alt="Aqlan Dental Pro"
               width={70}
               height={70}

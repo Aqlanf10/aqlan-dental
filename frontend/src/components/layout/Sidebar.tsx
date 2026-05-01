@@ -130,7 +130,7 @@ export function Sidebar() {
           <div className="flex items-center gap-2.5 flex-1">
             <div className="w-[38px] h-[38px] rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ background: "#fff", padding: 2 }}>
               <Image
-                src="/logo.svg"
+                src="/logo.png"
                 alt="Aqlan Dental Pro"
                 width={34}
                 height={34}

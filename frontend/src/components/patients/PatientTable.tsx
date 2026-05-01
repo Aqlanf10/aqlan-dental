@@ -43,6 +43,7 @@ export function PatientTable() {
   const [gender, setGender] = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [status, setStatus] = useState<"active" | "archived" | "all">("active");
+  const [typeFilter, setTypeFilter] = useState<string>(""); // ZIP pill-style filter
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -82,20 +83,21 @@ export function PatientTable() {
       if (search) params.set("search", search);
       if (gender) params.set("gender", gender);
       if (doctorId) params.set("doctorId", doctorId);
+      if (typeFilter) params.set("type", typeFilter);
       const { data: res } = await api.get<PaginatedResponse<PatientListItem>>(
         `/api/patients?${params}`
       );
       setData(res);
     } catch { /* ignore */ }
     setLoading(false);
-  }, [page, search, gender, doctorId, status]);
+  }, [page, search, gender, doctorId, status, typeFilter]);
 
   useEffect(() => {
     const timer = setTimeout(fetchPatients, 300);
     return () => clearTimeout(timer);
   }, [fetchPatients]);
 
-  useEffect(() => { setPage(1); }, [search, gender, doctorId, status]);
+  useEffect(() => { setPage(1); }, [search, gender, doctorId, status, typeFilter]);
 
   const handleExport = async () => {
     try {
@@ -157,7 +159,30 @@ export function PatientTable() {
               <Search className="w-[15px] h-[15px]" />
             </span>
           </div>
-          {/* Status filter — matches ZIP pill buttons */}
+          {/* Type filter — ZIP pill-style buttons */}
+          <div className="flex gap-1.5">
+            {[
+              { value: "", label: "الكل" },
+              { value: "Orthodontic", label: "تقويم" },
+              { value: "General", label: "طب عام" },
+              { value: "Surgery", label: "جراحة" },
+            ].map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setTypeFilter(f.value)}
+                className="h-9 px-3.5 text-[13px] font-semibold rounded-lg transition cursor-pointer"
+                style={{
+                  border: `1.5px solid ${typeFilter === f.value ? "#3d7ab5" : "#dce8f5"}`,
+                  background: typeFilter === f.value ? "#3d7ab5" : "#fff",
+                  color: typeFilter === f.value ? "#fff" : "#64748b",
+                  fontFamily: "Tajawal",
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {/* Status filter */}
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as "active" | "archived" | "all")}

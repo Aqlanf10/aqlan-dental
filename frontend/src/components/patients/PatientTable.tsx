@@ -5,7 +5,7 @@ import { Search, UserPlus, ChevronRight, ChevronLeft, Eye, Pencil, Download, Arc
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
-import { cn, GENDER_LABELS } from "@/lib/utils";
+import { cn, GENDER_LABELS, formatPhoneForWhatsApp } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -80,7 +80,7 @@ function PatientContextMenu({
     { icon: Wallet, label: "إضافة دفعة", href: `/finance/payments?patientId=${menu.patientId}`, show: canFinance && menu.isActive },
     { icon: Activity, label: "الحالة التقويمية", href: `/ortho/new?patientId=${menu.patientId}&patientName=${encodeURIComponent(menu.patientName)}`, show: canOrtho && menu.isActive },
     { icon: MessageCircle, label: "رسالة داخلية", href: `/messages?patientId=${menu.patientId}`, show: true },
-    { icon: Phone, label: "واتساب", href: menu.phone ? `https://wa.me/${menu.phone.replace(/^0/, '967')}` : "#", show: !!menu.phone, external: true },
+    { icon: Phone, label: "واتساب", href: menu.phone ? `https://wa.me/${formatPhoneForWhatsApp(menu.phone)}` : "#", show: !!menu.phone, external: true },
     { icon: Printer, label: "طباعة ملخص", href: `/patients/${menu.patientId}?print=1`, show: true },
     { icon: Archive, label: "أرشفة المريض", action: "archive" as const, show: isAdmin && menu.isActive, danger: true },
     { icon: RotateCcw, label: "استعادة المريض", action: "restore" as const, show: isAdmin && !menu.isActive, success: true },
@@ -204,7 +204,9 @@ export function PatientTable() {
       if (search)   params.set("search", search);
       if (gender)   params.set("gender", gender);
       if (doctorId) params.set("doctorId", doctorId);
-      if (statusFilter && statusFilter !== "active") params.set("status", statusFilter);
+      if (statusFilter === "archived") params.set("status", "archived");
+      else if (statusFilter === "all") params.set("status", "all");
+      // "active" is the default — no status param needed
       const { data: res } = await api.get<PaginatedResponse<PatientListItem>>(
         `/api/patients?${params}`
       );
@@ -226,7 +228,8 @@ export function PatientTable() {
       if (search)   params.set("search", search);
       if (gender)   params.set("gender", gender);
       if (doctorId) params.set("doctorId", doctorId);
-      if (statusFilter && statusFilter !== "active") params.set("status", statusFilter);
+      if (statusFilter === "archived") params.set("status", "archived");
+      else if (statusFilter === "all") params.set("status", "all");
       const { data: res } = await api.get<PaginatedResponse<PatientListItem>>(`/api/patients?${params}`);
       exportCsv(res.data);
     } catch {}

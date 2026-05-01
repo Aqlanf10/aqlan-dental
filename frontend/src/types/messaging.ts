@@ -1,3 +1,7 @@
+export type ConversationType = "StaffToStaff" | "StaffToPatient";
+
+export type ConversationFilter = "all" | "unread" | "StaffToStaff" | "StaffToPatient";
+
 export interface ConversationParticipant {
   userId: string;
   username: string;
@@ -12,9 +16,10 @@ export interface ConversationListItem {
   id: string;
   title: string;
   isGroup: boolean;
-  conversationType: "StaffToStaff" | "StaffToPatient";
+  conversationType: ConversationType;
   patientId?: string;
   patientName?: string;
+  patientNumber?: string;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
   unreadCount: number;
@@ -46,9 +51,10 @@ export interface ConversationDetail {
   id: string;
   title: string;
   isGroup: boolean;
-  conversationType: "StaffToStaff" | "StaffToPatient";
+  conversationType: ConversationType;
   patientId?: string;
   patientName?: string;
+  patientNumber?: string;
   patientPhone?: string;
   participants: ConversationParticipant[];
   messages: Message[];

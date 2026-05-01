@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   MessageCircle,
   Search,
@@ -13,6 +13,10 @@ import {
   ArrowLeft,
   CheckCheck,
   AlertTriangle,
+  User,
+  Phone,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -25,7 +29,12 @@ import {
   useMarkAsRead,
   useUnreadCount,
 } from "@/hooks/useMessaging";
-import type { ConversationListItem, ConversationDetail, Message } from "@/types/messaging";
+import type {
+  ConversationListItem,
+  ConversationDetail,
+  Message,
+  ConversationFilter,
+} from "@/types/messaging";
 import api from "@/lib/api";
 
 // ─── مستخدمو النظام (للمحادثة الجديدة) ───────────────────────────────────────
@@ -54,7 +63,8 @@ function formatTime(dateStr: string) {
 
   if (mins < 1) return "الآن";
   if (mins < 60) return `منذ ${mins} د`;
-  if (hours < 24) return d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+  if (hours < 24)
+    return d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
   if (days < 7) return `منذ ${days} ي`;
   return d.toLocaleDateString("ar-SA", { month: "short", day: "numeric" });
 }
@@ -70,19 +80,44 @@ function formatFullTime(dateStr: string) {
   });
 }
 
+// ─── مكونات الفلتر ────────────────────────────────────────────────────────────
+const FILTER_OPTIONS: { value: ConversationFilter; label: string }[] = [
+  { value: "all", label: "الكل" },
+  { value: "unread", label: "غير مقروء" },
+  { value: "StaffToStaff", label: "موظفين" },
+  { value: "StaffToPatient", label: "مرضى" },
+];
+
+const ROLE_LABELS: Record<string, string> = {
+  Admin: "مدير",
+  Orthodontist: "تقويم",
+  GeneralDentist: "أسنان عام",
+  OralSurgeon: "جراح",
+  Reception: "استقبال",
+  Accountant: "محاسب",
+  Assistant: "مساعد",
+  BranchManager: "مدير فرع",
+};
+
 // ─── المكون الرئيسي ──────────────────────────────────────────────────────────
 export default function MessagesPage() {
   const { user } = useAuthStore();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const patientIdFromUrl = searchParams?.get("patientId");
 
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<ConversationFilter>("all");
   const [showNewChat, setShowNewChat] = useState(false);
   const [isMobileDetail, setIsMobileDetail] = useState(false);
   const [patientConvError, setPatientConvError] = useState("");
 
-  const { data: convData, isLoading: convLoading } = useConversations(1, searchQuery || undefined);
+  const { data: convData, isLoading: convLoading } = useConversations(
+    1,
+    searchQuery || undefined,
+    activeFilter
+  );
   const { data: conversation } = useConversation(selectedConvId);
   const sendMessage = useSendMessage(selectedConvId ?? "");
   const markAsRead = useMarkAsRead(selectedConvId ?? "");
@@ -99,9 +134,12 @@ export default function MessagesPage() {
           setSelectedConvId(conv.id);
           setIsMobileDetail(true);
         },
+        onError: () => {
+          setPatientConvError("فشل فتح محادثة المريض");
+        },
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientIdFromUrl]);
 
   // Mark as read when selecting a conversation
@@ -110,15 +148,13 @@ export default function MessagesPage() {
       markAsRead.mutate();
       setIsMobileDetail(true);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConvId]);
 
-  const handleSelectConv = useCallback(
-    (id: string) => {
-      setSelectedConvId(id);
-    },
-    []
-  );
+  const handleSelectConv = useCallback((id: string) => {
+    setSelectedConvId(id);
+    setPatientConvError("");
+  }, []);
 
   const handleBack = useCallback(() => {
     setIsMobileDetail(false);
@@ -126,17 +162,21 @@ export default function MessagesPage() {
   }, []);
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex gap-4">
-      {/* Patient conversation error */}
+    <div className="h-[calc(100vh-4rem)] flex gap-4" dir="rtl">
+      {/* Patient conversation error toast */}
       {patientConvError && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-2 text-sm shadow-lg flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           {patientConvError}
-          <button onClick={() => setPatientConvError("")} className="text-amber-600 hover:text-amber-800 ms-2">
+          <button
+            onClick={() => setPatientConvError("")}
+            className="text-amber-600 hover:text-amber-800 ms-2"
+          >
             <X className="w-3 h-3" />
           </button>
         </div>
       )}
+
       {/* ─── قائمة المحادثات ──────────────────────────────────────────── */}
       <div
         className={cn(
@@ -152,7 +192,7 @@ export default function MessagesPage() {
               <h2 className="text-lg font-bold text-gray-900">الرسائل</h2>
               {unreadData && unreadData.totalUnread > 0 && (
                 <span className="bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
-                  {unreadData.totalUnread}
+                  {unreadData.totalUnread > 99 ? "99+" : unreadData.totalUnread}
                 </span>
               )}
             </div>
@@ -164,30 +204,62 @@ export default function MessagesPage() {
               <Plus className="w-5 h-5" />
             </button>
           </div>
-          <div className="relative">
+
+          {/* Search */}
+          <div className="relative mb-3">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="بحث في المحادثات..."
+              placeholder="بحث بالاسم، رقم المريض، أو نص الرسالة..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue bg-gray-50"
             />
+          </div>
+
+          {/* Filters */}
+          <div className="flex gap-1.5 flex-wrap">
+            {FILTER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setActiveFilter(opt.value)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium transition-colors",
+                  activeFilter === opt.value
+                    ? "bg-clinic-blue text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                )}
+              >
+                {opt.label}
+                {opt.value === "unread" && unreadData && unreadData.unreadConversations > 0 && (
+                  <span className="ms-1 bg-red-500 text-white rounded-full px-1.5 py-0.5 text-[10px]">
+                    {unreadData.unreadConversations}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
         {/* Conversations list */}
         <div className="flex-1 overflow-y-auto">
           {convLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-6 h-6 border-2 border-clinic-blue border-t-transparent rounded-full" />
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <Loader2 className="w-6 h-6 animate-spin text-clinic-blue" />
+              <p className="text-sm text-gray-400">جارٍ تحميل المحادثات...</p>
             </div>
           ) : conversations.length === 0 ? (
             <div className="text-center py-12 px-4">
               <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 text-sm">لا توجد محادثات بعد</p>
+              <p className="text-gray-500 text-sm">
+                {searchQuery || activeFilter !== "all"
+                  ? "لا توجد نتائج مطابقة"
+                  : "لا توجد محادثات بعد"}
+              </p>
               <p className="text-gray-400 text-xs mt-1">
-                اضغط + لبدء محادثة جديدة
+                {searchQuery || activeFilter !== "all"
+                  ? "جرّب تغيير البحث أو الفلتر"
+                  : "اضغط + لبدء محادثة جديدة"}
               </p>
             </div>
           ) : (
@@ -216,10 +288,14 @@ export default function MessagesPage() {
             conversation={conversation}
             currentUserId={user?.id ?? ""}
             onBack={handleBack}
-            onSend={(content) =>
-              sendMessage.mutate({ content })
-            }
+            onSend={(content) => sendMessage.mutate({ content })}
             sending={sendMessage.isPending}
+            onOpenPatient={(patientId) => router.push(`/patients/${patientId}`)}
+            sendError={
+              sendMessage.isError
+                ? "فشل إرسال الرسالة — تحقق من الاتصال وحاول مجدداً"
+                : undefined
+            }
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -261,19 +337,25 @@ function ConversationItem({
   onClick: () => void;
 }) {
   const other = conv.otherParticipant;
-  const isOnline = false;
+  const isPatientConv = conv.conversationType === "StaffToPatient";
 
   return (
     <button
       onClick={onClick}
       className={cn(
         "w-full flex items-center gap-3 px-4 py-3 text-right transition-colors border-b border-gray-50",
-        isSelected ? "bg-clinic-blue/5 border-r-4 border-r-clinic-blue" : "hover:bg-gray-50"
+        isSelected
+          ? "bg-clinic-blue/5 border-r-4 border-r-clinic-blue"
+          : "hover:bg-gray-50"
       )}
     >
       {/* Avatar */}
       <div className="relative flex-shrink-0">
-        {conv.isGroup ? (
+        {isPatientConv ? (
+          <div className="w-11 h-11 rounded-full bg-clinic-orange/15 flex items-center justify-center">
+            <User className="w-5 h-5 text-clinic-orange" />
+          </div>
+        ) : conv.isGroup ? (
           <div className="w-11 h-11 rounded-full bg-gray-200 flex items-center justify-center">
             <Users className="w-5 h-5 text-gray-500" />
           </div>
@@ -284,9 +366,6 @@ function ConversationItem({
           >
             {other?.avatarInitials ?? other?.displayName?.charAt(1) ?? "?"}
           </div>
-        )}
-        {isOnline && !conv.isGroup && (
-          <span className="absolute bottom-0 left-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
         )}
       </div>
 
@@ -302,6 +381,13 @@ function ConversationItem({
             </span>
           )}
         </div>
+        {/* Patient number badge */}
+        {isPatientConv && conv.patientNumber && (
+          <p className="text-[10px] text-clinic-orange font-medium mt-0.5">
+            #{conv.patientNumber}
+            {conv.patientName && ` — ${conv.patientName}`}
+          </p>
+        )}
         <div className="flex items-center justify-between mt-0.5">
           <span className="text-xs text-gray-500 truncate">
             {conv.lastMessagePreview ?? "لا توجد رسائل"}
@@ -324,12 +410,16 @@ function ChatArea({
   onBack,
   onSend,
   sending,
+  onOpenPatient,
+  sendError,
 }: {
   conversation: ConversationDetail;
   currentUserId: string;
   onBack: () => void;
   onSend: (content: string) => void;
   sending: boolean;
+  onOpenPatient: (patientId: string) => void;
+  sendError?: string;
 }) {
   const [input, setInput] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -343,6 +433,7 @@ function ChatArea({
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed || sending) return;
+    if (trimmed.length > 2000) return; // frontend validation
     onSend(trimmed);
     setInput("");
     setReplyTo(null);
@@ -359,9 +450,15 @@ function ChatArea({
   const otherParticipants = conversation.participants.filter(
     (p) => p.userId !== currentUserId
   );
-  const title = conversation.isGroup
-    ? conversation.title
-    : otherParticipants[0]?.displayName ?? conversation.title;
+  const isPatientConv = conversation.conversationType === "StaffToPatient";
+
+  const title = isPatientConv
+    ? conversation.patientName
+      ? `المريض: ${conversation.patientName}`
+      : conversation.title
+    : conversation.isGroup
+      ? conversation.title
+      : otherParticipants[0]?.displayName ?? conversation.title;
 
   return (
     <>
@@ -374,47 +471,71 @@ function ChatArea({
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        {conversation.isGroup ? (
+        {isPatientConv ? (
+          <div className="w-10 h-10 rounded-full bg-clinic-orange/15 flex items-center justify-center">
+            <User className="w-5 h-5 text-clinic-orange" />
+          </div>
+        ) : conversation.isGroup ? (
           <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
             <Users className="w-5 h-5 text-gray-500" />
           </div>
         ) : (
           <div
             className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
-            style={{
-              backgroundColor: otherParticipants[0]?.color ?? "#6B7280",
-            }}
+            style={{ backgroundColor: otherParticipants[0]?.color ?? "#6B7280" }}
           >
             {otherParticipants[0]?.avatarInitials ?? "?"}
           </div>
         )}
 
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-gray-900 text-sm truncate">
-            {title}
-          </h3>
-          <p className="text-xs text-gray-400">
-            {conversation.isGroup
-              ? `${conversation.participants.length} مشارك`
-              : otherParticipants[0]?.role === "Orthodontist"
-                ? "أخصائي تقويم"
-                : otherParticipants[0]?.role === "GeneralDentist"
-                  ? "طبيب أسنان عام"
-                  : otherParticipants[0]?.role === "OralSurgeon"
-                    ? "جراح فم وفكين"
-                    : otherParticipants[0]?.role === "Reception"
-                      ? "استقبال"
-                      : otherParticipants[0]?.role === "Accountant"
-                        ? "محاسب"
-                        : otherParticipants[0]?.role === "Admin"
-                          ? "مدير النظام"
-                          : "متصل"}
-          </p>
+          <h3 className="font-semibold text-gray-900 text-sm truncate">{title}</h3>
+          {isPatientConv && conversation.patientNumber && (
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs text-clinic-orange font-medium">
+                #{conversation.patientNumber}
+              </span>
+              {conversation.patientPhone && (
+                <span className="text-xs text-gray-400 flex items-center gap-1">
+                  <Phone className="w-3 h-3" />
+                  {conversation.patientPhone}
+                </span>
+              )}
+            </div>
+          )}
+          {!isPatientConv && !conversation.isGroup && (
+            <p className="text-xs text-gray-400">
+              {ROLE_LABELS[otherParticipants[0]?.role ?? ""] ?? otherParticipants[0]?.role ?? "متصل"}
+            </p>
+          )}
+          {conversation.isGroup && !isPatientConv && (
+            <p className="text-xs text-gray-400">
+              {conversation.participants.length} مشارك
+            </p>
+          )}
         </div>
+
+        {/* Open patient file button */}
+        {isPatientConv && conversation.patientId && (
+          <button
+            onClick={() => onOpenPatient(conversation.patientId!)}
+            className="w-9 h-9 rounded-lg bg-clinic-navy/5 hover:bg-clinic-navy/10 flex items-center justify-center text-clinic-navy transition"
+            title="فتح ملف المريض"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-gray-50/50">
+        {conversation.messages.length === 0 && (
+          <div className="text-center py-8">
+            <MessageCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">لا توجد رسائل بعد</p>
+            <p className="text-xs text-gray-300">ابدأ المحادثة بكتابة رسالة</p>
+          </div>
+        )}
         {conversation.messages.map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -426,6 +547,14 @@ function ChatArea({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Send error */}
+      {sendError && (
+        <div className="px-4 py-2 bg-red-50 border-t border-red-200 text-red-700 text-xs flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          {sendError}
+        </div>
+      )}
+
       {/* Reply preview */}
       {replyTo && (
         <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
@@ -434,9 +563,7 @@ function ChatArea({
             <p className="text-xs font-semibold text-clinic-blue">
               {replyTo.senderName}
             </p>
-            <p className="text-xs text-gray-500 truncate">
-              {replyTo.content}
-            </p>
+            <p className="text-xs text-gray-500 truncate">{replyTo.content}</p>
           </div>
           <button
             onClick={() => setReplyTo(null)}
@@ -457,26 +584,32 @@ function ChatArea({
             onKeyDown={handleKeyDown}
             placeholder="اكتب رسالتك..."
             rows={1}
+            maxLength={2000}
             className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue max-h-32"
             style={{ minHeight: "40px" }}
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || sending}
+            disabled={!input.trim() || sending || input.length > 2000}
             className={cn(
               "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
-              input.trim() && !sending
+              input.trim() && !sending && input.length <= 2000
                 ? "bg-clinic-blue text-white hover:opacity-90"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
           >
             {sending ? (
-              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Send className="w-4 h-4" />
             )}
           </button>
         </div>
+        {input.length > 1800 && (
+          <p className="text-xs text-amber-500 mt-1 text-left" dir="ltr">
+            {input.length}/2000
+          </p>
+        )}
       </div>
     </>
   );
@@ -515,7 +648,7 @@ function MessageBubble({
           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-auto"
           style={{ backgroundColor: message.senderColor ?? "#6B7280" }}
         >
-          {message.senderInitials ?? message.senderName.charAt(1)}
+          {message.senderInitials ?? message.senderName.charAt(0)}
         </div>
       )}
 
@@ -544,7 +677,7 @@ function MessageBubble({
               : "bg-white border border-gray-200 text-gray-800 rounded-bl-md"
           )}
         >
-          {/* Show sender name in group */}
+          {/* Show sender name in group conversations */}
           {!isMine && (
             <p className="text-xs font-semibold text-clinic-blue mb-0.5">
               {message.senderName}
@@ -619,6 +752,7 @@ function NewChatDialog({
   const [title, setTitle] = useState("");
   const [initialMsg, setInitialMsg] = useState("");
   const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
   const createConv = useCreateConversation();
 
   useEffect(() => {
@@ -647,6 +781,7 @@ function NewChatDialog({
     if (selected.size === 0) return;
     const isGroup = selected.size > 1;
     try {
+      setError("");
       const result = await createConv.mutateAsync({
         participantIds: Array.from(selected),
         isGroup,
@@ -655,17 +790,8 @@ function NewChatDialog({
       });
       onCreated(result.id);
     } catch {
-      // error handled by mutation
+      setError("فشل إنشاء المحادثة — تحقق من الصلاحيات وحاول مجدداً");
     }
-  };
-
-  const ROLE_LABELS: Record<string, string> = {
-    Admin: "مدير",
-    Orthodontist: "تقويم",
-    GeneralDentist: "أسنان عام",
-    OralSurgeon: "جراح",
-    Reception: "استقبال",
-    Accountant: "محاسب",
   };
 
   return (
@@ -708,8 +834,14 @@ function NewChatDialog({
 
           {/* Users list */}
           {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin w-6 h-6 border-2 border-clinic-blue border-t-transparent rounded-full" />
+            <div className="flex flex-col items-center justify-center py-8 gap-2">
+              <Loader2 className="w-6 h-6 animate-spin text-clinic-blue" />
+              <p className="text-sm text-gray-400">جارٍ تحميل المستخدمين...</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">لا يوجد مستخدمون مطابقون</p>
             </div>
           ) : (
             <div className="space-y-1">
@@ -761,6 +893,13 @@ function NewChatDialog({
           )}
         </div>
 
+        {/* Error */}
+        {error && (
+          <div className="px-5 py-2 bg-red-50 border-t border-red-200 text-red-700 text-xs">
+            {error}
+          </div>
+        )}
+
         {/* Initial message + Create */}
         <div className="px-5 py-4 border-t border-gray-100 space-y-3">
           <textarea
@@ -768,6 +907,7 @@ function NewChatDialog({
             value={initialMsg}
             onChange={(e) => setInitialMsg(e.target.value)}
             rows={2}
+            maxLength={2000}
             className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-clinic-blue resize-none"
           />
           <button

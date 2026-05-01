@@ -194,9 +194,17 @@ export default function PortalLoginPage() {
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="p-4 text-center text-xs text-[#94a3b8]">
-        © {new Date().getFullYear()} مركز د. عقلان الكامل · جميع الحقوق محفوظة
+      {/* Back to staff login + Footer */}
+      <div className="p-4 text-center space-y-2">
+        <a
+          href="/login"
+          className="inline-block text-sm text-clinic-blue hover:text-clinic-blue/80 transition font-medium no-underline"
+        >
+          ← العودة إلى دخول الطاقم
+        </a>
+        <div className="text-xs text-[#94a3b8]">
+          © {new Date().getFullYear()} مركز د. عقلان الكامل · جميع الحقوق محفوظة
+        </div>
       </div>
     </div>
   );

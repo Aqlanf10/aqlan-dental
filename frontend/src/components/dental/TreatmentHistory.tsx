@@ -27,7 +27,7 @@ const TREATMENT_TYPES = [
 ];
 
 const inputCls = (err?: string) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
   err ? "border-red-400" : "border-gray-300"
 );
 
@@ -89,7 +89,7 @@ export function TreatmentHistory({ patientId }: Props) {
         <h3 className="font-bold text-gray-900">سجل المعالجات</h3>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           معالجة جديدة
@@ -98,7 +98,7 @@ export function TreatmentHistory({ patientId }: Props) {
 
       {/* Form */}
       {showForm && (
-        <form onSubmit={handleSubmit(onSubmit)} className="bg-teal-50 rounded-xl border border-teal-200 p-4 space-y-3">
+        <form onSubmit={handleSubmit(onSubmit)} className="bg-clinic-blue-50 rounded-xl border border-clinic-blue-100 p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">نوع العلاج *</label>
@@ -144,7 +144,7 @@ export function TreatmentHistory({ patientId }: Props) {
             <button type="button" onClick={() => { setShowForm(false); reset(); }} className="px-4 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition">
               إلغاء
             </button>
-            <button type="submit" disabled={saving} className="px-4 py-1.5 text-sm bg-clinic-teal text-white rounded-lg hover:opacity-90 disabled:opacity-60 transition">
+            <button type="submit" disabled={saving} className="px-4 py-1.5 text-sm bg-clinic-blue text-white rounded-lg hover:opacity-90 disabled:opacity-60 transition">
               {saving ? "جارٍ الحفظ..." : "حفظ المعالجة"}
             </button>
           </div>

@@ -17,8 +17,11 @@ const tajawal = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "مركز د. عقلان الكامل لطب وتقويم الأسنان",
+  title: "Aqlan Dental Pro — مركز د. عقلان الكامل",
   description: "نظام إدارة مركز د. عقلان الكامل لطب وتقويم الأسنان — تعز، اليمن",
+  icons: {
+    icon: "/logo.svg",
+  },
 };
 
 export default function RootLayout({

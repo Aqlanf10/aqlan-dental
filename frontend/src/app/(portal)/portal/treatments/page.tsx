@@ -45,7 +45,7 @@ export default function PortalTreatmentsPage() {
             onClick={() => setTab("treatments")}
             className={cn(
               "px-4 py-1.5 text-xs font-medium rounded-full transition",
-              tab === "treatments" ? "bg-teal-100 text-teal-700" : "bg-gray-100 text-gray-500"
+              tab === "treatments" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
             )}
           >
             العلاجات
@@ -54,7 +54,7 @@ export default function PortalTreatmentsPage() {
             onClick={() => setTab("prescriptions")}
             className={cn(
               "px-4 py-1.5 text-xs font-medium rounded-full transition",
-              tab === "prescriptions" ? "bg-teal-100 text-teal-700" : "bg-gray-100 text-gray-500"
+              tab === "prescriptions" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
             )}
           >
             الوصفات

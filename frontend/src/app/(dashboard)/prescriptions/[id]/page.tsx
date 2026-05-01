@@ -50,9 +50,9 @@ export default function PrescriptionDetailPage() {
     <div className="space-y-5 max-w-2xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/prescriptions" className="hover:text-clinic-teal transition">الوصفات</Link>
+        <Link href="/prescriptions" className="hover:text-clinic-blue transition">الوصفات</Link>
         <span>/</span>
-        <Link href={`/patients/${prescription.patientId}`} className="hover:text-clinic-teal transition">
+        <Link href={`/patients/${prescription.patientId}`} className="hover:text-clinic-blue transition">
           {prescription.patientName}
         </Link>
         <span>/</span>
@@ -70,7 +70,7 @@ export default function PrescriptionDetailPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             <Printer className="w-4 h-4" />
             طباعة

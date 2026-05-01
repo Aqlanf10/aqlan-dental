@@ -48,7 +48,7 @@ export default function OverduePage() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">العقود النشطة التي تأخر سدادها</p>
         </div>
-        <Link href="/finance" className="text-sm text-clinic-teal hover:underline">
+        <Link href="/finance" className="text-sm text-clinic-blue hover:underline">
           العودة للمالية
         </Link>
       </div>
@@ -95,7 +95,7 @@ export default function OverduePage() {
                 {contracts.map((c) => (
                   <tr key={c.contractId} className="hover:bg-red-50 transition">
                     <td className="px-4 py-3">
-                      <Link href={`/patients/${c.patientId}`} className="font-semibold text-gray-900 hover:text-clinic-teal transition block">
+                      <Link href={`/patients/${c.patientId}`} className="font-semibold text-gray-900 hover:text-clinic-blue transition block">
                         {c.patientName}
                       </Link>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -129,7 +129,7 @@ export default function OverduePage() {
                     <td className="px-4 py-3">
                       <Link
                         href={`/finance/contracts/${c.contractId}`}
-                        className="flex items-center gap-1 text-xs text-clinic-teal hover:underline whitespace-nowrap"
+                        className="flex items-center gap-1 text-xs text-clinic-blue hover:underline whitespace-nowrap"
                       >
                         <FileText className="w-3.5 h-3.5" />
                         العقد

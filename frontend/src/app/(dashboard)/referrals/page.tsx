@@ -68,7 +68,7 @@ export default function ReferralsPage() {
           <p className="text-sm text-gray-500 mt-0.5">الإحالات الداخلية بين الأطباء</p>
         </div>
         <Link href="/referrals/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           إحالة جديدة
@@ -82,7 +82,7 @@ export default function ReferralsPage() {
             className={cn(
               "px-3 py-1.5 text-sm rounded-lg border transition font-medium",
               filter === s
-                ? "bg-clinic-teal text-white border-clinic-teal"
+                ? "bg-clinic-blue text-white border-clinic-blue"
                 : "border-gray-200 text-gray-600 hover:bg-gray-50"
             )}
           >
@@ -108,7 +108,7 @@ export default function ReferralsPage() {
                 <div className="flex-1 min-w-0">
                   {/* Patient + flow */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Link href={`/patients/${r.patientId}`} className="font-semibold text-gray-900 hover:text-clinic-teal">
+                    <Link href={`/patients/${r.patientId}`} className="font-semibold text-gray-900 hover:text-clinic-blue">
                       {r.patientName}
                     </Link>
                     <span className="font-mono text-xs text-gray-400">{r.patientNumber}</span>
@@ -122,12 +122,12 @@ export default function ReferralsPage() {
 
                   <div className="mt-2 flex items-center gap-2 flex-wrap text-sm">
                     <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.fromDoctorColor ?? "#0E7490" }} />
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.fromDoctorColor ?? "#2563EB" }} />
                       <span className="text-gray-600">{r.fromDoctorName}</span>
                     </div>
                     <ArrowLeftRight className="w-3.5 h-3.5 text-gray-400" />
                     <div className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.toDoctorColor ?? "#0E7490" }} />
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.toDoctorColor ?? "#2563EB" }} />
                       <span className="text-gray-600 font-medium">{r.toDoctorName}</span>
                     </div>
                   </div>

@@ -26,7 +26,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const inputCls = (err?: string) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
   err ? "border-red-400" : "border-gray-300"
 );
 
@@ -146,7 +146,7 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
 
         {/* Summary */}
         {totalAmount > 0 && (
-          <div className="md:col-span-2 bg-teal-50 rounded-lg p-3 text-sm">
+          <div className="md:col-span-2 bg-clinic-blue-50 rounded-lg p-3 text-sm">
             <div className="grid grid-cols-3 gap-3 text-center">
               <div>
                 <p className="text-xs text-gray-500">صافي المبلغ</p>
@@ -154,7 +154,7 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
               </div>
               <div>
                 <p className="text-xs text-gray-500">بعد الدفعة الأولى</p>
-                <p className="font-bold text-teal-700">{netAmount.toLocaleString()} ر.ي</p>
+                <p className="font-bold text-clinic-blue">{netAmount.toLocaleString()} ر.ي</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">القسط الشهري</p>
@@ -176,7 +176,7 @@ export function ContractForm({ defaultPatientId, defaultPatientName }: Props) {
           className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
         >إلغاء</button>
         <button type="submit" disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ العقد"}

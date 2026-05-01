@@ -8,7 +8,7 @@ import { cn, formatTime } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled:  "bg-blue-100 text-blue-700",
-  Confirmed:  "bg-teal-100 text-teal-700",
+  Confirmed:  "bg-clinic-blue-50 text-clinic-blue",
   Arrived:    "bg-yellow-100 text-yellow-700",
   InProgress: "bg-purple-100 text-purple-700",
   Completed:  "bg-green-100 text-green-700",
@@ -40,7 +40,7 @@ export function TodaySchedule() {
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-clinic-teal" />
+          <Calendar className="w-4 h-4 text-clinic-blue" />
           <h3 className="font-bold text-gray-900 text-sm">مواعيد اليوم</h3>
           {!loading && (
             <span className="text-xs text-gray-400">
@@ -48,7 +48,7 @@ export function TodaySchedule() {
             </span>
           )}
         </div>
-        <Link href="/appointments" className="text-xs text-clinic-teal hover:underline">
+        <Link href="/appointments" className="text-xs text-clinic-blue hover:underline">
           عرض الجدول
         </Link>
       </div>
@@ -73,7 +73,7 @@ export function TodaySchedule() {
                 {/* Doctor color dot */}
                 <div
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: appt.doctorColor ?? "#0E7490" }}
+                  style={{ backgroundColor: appt.doctorColor ?? "#2563EB" }}
                 />
                 {/* Time */}
                 <div className="text-xs font-mono text-gray-500 w-12 flex-shrink-0" dir="ltr">
@@ -83,7 +83,7 @@ export function TodaySchedule() {
                 <div className="flex-1 min-w-0">
                   <Link
                     href={`/patients/${appt.patientId}`}
-                    className="text-sm font-semibold text-gray-900 hover:text-clinic-teal transition truncate block"
+                    className="text-sm font-semibold text-gray-900 hover:text-clinic-blue transition truncate block"
                   >
                     {appt.patientName}
                   </Link>

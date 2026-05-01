@@ -68,9 +68,9 @@ export default function PatientEditPage() {
     <div className="space-y-5 max-w-5xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/patients" className="hover:text-clinic-teal transition">المرضى</Link>
+        <Link href="/patients" className="hover:text-clinic-blue transition">المرضى</Link>
         <span>/</span>
-        <Link href={`/patients/${id}`} className="hover:text-clinic-teal transition">
+        <Link href={`/patients/${id}`} className="hover:text-clinic-blue transition">
           {patient.firstName} {patient.lastName}
         </Link>
         <span>/</span>

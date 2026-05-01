@@ -81,9 +81,9 @@ function Field({ label, error, required, children }: { label: string; error?: st
 }
 
 const inputCls = (err?: string) =>
-  cn("w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal", err ? "border-red-400" : "border-gray-300");
+  cn("w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue", err ? "border-red-400" : "border-gray-300");
 
-const checkboxCls = "w-4 h-4 accent-clinic-teal rounded";
+const checkboxCls = "w-4 h-4 accent-clinic-blue rounded";
 
 export function PatientForm({ defaultValues, patientId }: Props) {
   const router = useRouter();
@@ -229,7 +229,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
                 <button
                   type="button"
                   onClick={() => router.push(`/patients/${m.id}`)}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
                 >
                   <ExternalLink className="w-3 h-3" />
                   فتح الملف
@@ -367,7 +367,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         <button type="button" onClick={() => router.back()} className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
           إلغاء
         </button>
-        <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition">
+        <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition">
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ المريض"}
         </button>

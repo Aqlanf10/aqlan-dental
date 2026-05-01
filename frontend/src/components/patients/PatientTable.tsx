@@ -145,14 +145,14 @@ export function PatientTable() {
             <input
               type="search" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="البحث بالاسم أو رقم المريض أو الهاتف..."
-              className="w-full h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              className="w-full h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             />
           </div>
           {/* Status filter */}
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as "active" | "archived" | "all")}
-            className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           >
             <option value="active">النشطون</option>
             {isAdmin && <option value="archived">المؤرشفون</option>}
@@ -161,7 +161,7 @@ export function PatientTable() {
           {/* Gender filter */}
           <select
             value={gender} onChange={(e) => setGender(e.target.value)}
-            className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           >
             <option value="">الجنسان</option>
             <option value="Male">ذكر</option>
@@ -171,7 +171,7 @@ export function PatientTable() {
           {doctors.length > 0 && (
             <select
               value={doctorId} onChange={(e) => setDoctorId(e.target.value)}
-              className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             >
               <option value="">كل الأطباء</option>
               {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -189,7 +189,7 @@ export function PatientTable() {
         </div>
         <Link
           href="/patients/new"
-          className="flex items-center gap-2 px-4 py-2 bg-clinic-teal text-white text-sm font-medium rounded-lg hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 bg-clinic-blue text-white text-sm font-medium rounded-lg hover:opacity-90 transition"
         >
           <UserPlus className="w-4 h-4" />
           مريض جديد
@@ -265,7 +265,7 @@ export function PatientTable() {
                       <div className="flex items-center gap-1">
                         <Link
                           href={`/patients/${p.id}`}
-                          className="p-1.5 text-gray-400 hover:text-clinic-teal hover:bg-clinic-teal-light rounded-lg transition"
+                          className="p-1.5 text-gray-400 hover:text-clinic-blue hover:bg-clinic-blue-light rounded-lg transition"
                           title="عرض الملف"
                         >
                           <Eye className="w-4 h-4" />
@@ -273,7 +273,7 @@ export function PatientTable() {
                         {p.isActive && (
                           <Link
                             href={`/patients/${p.id}/edit`}
-                            className="p-1.5 text-gray-400 hover:text-clinic-gold hover:bg-clinic-gold-light rounded-lg transition"
+                            className="p-1.5 text-gray-400 hover:text-clinic-orange hover:bg-clinic-orange-light rounded-lg transition"
                             title="تعديل"
                           >
                             <Pencil className="w-4 h-4" />

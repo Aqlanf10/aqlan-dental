@@ -16,7 +16,7 @@ interface TimelineEvent {
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled: "bg-blue-100 text-blue-700",
-  Confirmed: "bg-teal-100 text-teal-700",
+  Confirmed: "bg-clinic-blue-50 text-clinic-blue",
   Arrived: "bg-yellow-100 text-yellow-700",
   InProgress: "bg-purple-100 text-purple-700",
   Completed: "bg-green-100 text-green-700",
@@ -64,8 +64,8 @@ export function TimelineTab({ patientId }: TimelineTabProps) {
       <div className="space-y-4">
         {events.map((ev) => (
           <div key={ev.id} className="flex gap-4 relative">
-            <div className="w-10 h-10 rounded-full bg-white border-2 border-clinic-teal flex items-center justify-center flex-shrink-0 z-10">
-              <Clock className="w-4 h-4 text-clinic-teal" />
+            <div className="w-10 h-10 rounded-full bg-white border-2 border-clinic-blue flex items-center justify-center flex-shrink-0 z-10">
+              <Clock className="w-4 h-4 text-clinic-blue" />
             </div>
             <div className="flex-1 bg-gray-50 rounded-lg p-3 border border-gray-100">
               <div className="flex items-center justify-between gap-2 flex-wrap">

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, Stethoscope } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+import Image from "next/image";
 import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 
@@ -15,10 +16,10 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const DOCTORS = [
-  { name: "د. عقلان الكامل", specialty: "أخصائي تقويم الأسنان", color: "#0E7490" },
+  { name: "د. عقلان الكامل", specialty: "أخصائي تقويم الأسنان", color: "#2563EB" },
   { name: "د. عائشة غازي", specialty: "طب أسنان عام", color: "#7C3AED" },
   { name: "د. إيمان الكامل", specialty: "طب أسنان عام", color: "#059669" },
-  { name: "د. هشام القدسي", specialty: "طب أسنان عام", color: "#D97706" },
+  { name: "د. هشام القدسي", specialty: "طب أسنان عام", color: "#F97316" },
   { name: "د. خلدون البريهي", specialty: "أخصائي جراحة وجه وفكين", color: "#DC2626" },
 ];
 
@@ -46,53 +47,69 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex" style={{ direction: "rtl" }}>
-      {/* Right Panel — Clinic Identity */}
-      <div className="hidden lg:flex lg:w-1/2 clinic-gradient flex-col justify-between p-10 text-white">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-            <Stethoscope className="w-7 h-7 text-white" />
+      {/* Right Panel — Clinic Identity (Navy Gradient) */}
+      <div className="hidden lg:flex lg:w-1/2 clinic-gradient flex-col justify-between p-10 text-white relative overflow-hidden">
+        {/* Subtle decorative elements */}
+        <div className="absolute top-0 left-0 w-96 h-96 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2" />
+        <div className="absolute bottom-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full translate-x-1/3 translate-y-1/3" />
+
+        <div className="relative flex items-center gap-3">
+          <div className="w-12 h-12 bg-white/15 rounded-xl flex items-center justify-center overflow-hidden backdrop-blur-sm border border-white/10">
+            <Image
+              src="/logo.svg"
+              alt="Aqlan Dental Pro"
+              width={40}
+              height={40}
+              className="w-10 h-10"
+            />
           </div>
           <div>
-            <p className="text-white/70 text-sm">نظام إدارة</p>
+            <p className="text-white/60 text-sm">نظام إدارة</p>
             <p className="font-bold text-lg leading-tight">Aqlan Dental Pro</p>
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div className="relative space-y-8">
           <div>
             <h1 className="text-3xl font-extrabold leading-snug">
               مركز د. عقلان الكامل
               <br />
               لطب وتقويم الأسنان
             </h1>
-            <div className="mt-3 space-y-1 text-white/80 text-sm">
-              <p>📍 تعز، اليمن — شارع التحرير الأعلى</p>
-              <p>📞 04-253028 · 770-245745 · 711-752823</p>
+            <div className="mt-4 space-y-2 text-white/70 text-sm">
+              <p className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-clinic-orange flex-shrink-0" />
+                تعز، اليمن — شارع التحرير الأعلى
+              </p>
+              <p className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-clinic-blue flex-shrink-0" />
+                04-253028 · 770-245745 · 711-752823
+              </p>
             </div>
           </div>
 
           <div className="space-y-3">
-            <p className="text-white/60 text-xs font-semibold tracking-widest uppercase">
+            <p className="text-white/50 text-xs font-semibold tracking-widest uppercase">
               الفريق الطبي
             </p>
             {DOCTORS.map((doc) => (
-              <div key={doc.name} className="flex items-center gap-3">
+              <div key={doc.name} className="flex items-center gap-3 bg-white/5 rounded-lg px-3 py-2 backdrop-blur-sm">
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                  style={{ backgroundColor: doc.color + "80" }}
+                  style={{ backgroundColor: doc.color + "40", border: `1px solid ${doc.color}60` }}
                 >
                   {doc.name.charAt(3)}
                 </div>
                 <div>
                   <p className="font-semibold text-sm">{doc.name}</p>
-                  <p className="text-white/60 text-xs">{doc.specialty}</p>
+                  <p className="text-white/50 text-xs">{doc.specialty}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <p className="text-white/40 text-xs">
+        <p className="relative text-white/30 text-xs">
           © {new Date().getFullYear()} Aqlan Dental Pro · جميع الحقوق محفوظة
         </p>
       </div>
@@ -100,10 +117,16 @@ export default function LoginPage() {
       {/* Left Panel — Login Form */}
       <div className="flex-1 flex items-center justify-center bg-gray-50 p-6">
         <div className="w-full max-w-md space-y-8">
-          {/* Mobile: clinic name */}
+          {/* Mobile: clinic name with logo */}
           <div className="lg:hidden text-center">
-            <div className="w-16 h-16 clinic-gradient rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <Stethoscope className="w-9 h-9 text-white" />
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-3 overflow-hidden shadow-lg">
+              <Image
+                src="/logo.svg"
+                alt="Aqlan Dental Pro"
+                width={64}
+                height={64}
+                className="w-16 h-16"
+              />
             </div>
             <h2 className="text-xl font-extrabold text-gray-900">
               مركز د. عقلان الكامل
@@ -140,7 +163,7 @@ export default function LoginPage() {
                 placeholder="أدخل اسم المستخدم"
                 className={cn(
                   "w-full px-4 py-2.5 rounded-lg border bg-white text-gray-900",
-                  "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+                  "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-clinic-blue",
                   errors.username ? "border-red-400" : "border-gray-300"
                 )}
               />
@@ -164,7 +187,7 @@ export default function LoginPage() {
                   placeholder="أدخل كلمة المرور"
                   className={cn(
                     "w-full px-4 py-2.5 rounded-lg border bg-white text-gray-900 pe-10",
-                    "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+                    "placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-clinic-blue",
                     errors.password ? "border-red-400" : "border-gray-300"
                   )}
                 />
@@ -193,7 +216,7 @@ export default function LoginPage() {
               disabled={isLoading}
               className={cn(
                 "w-full py-3 px-4 rounded-lg font-semibold text-white transition-all",
-                "clinic-gradient hover:opacity-90 active:scale-[0.98]",
+                "blue-gradient hover:opacity-90 active:scale-[0.98] shadow-md shadow-blue-500/20",
                 "disabled:opacity-60 disabled:cursor-not-allowed"
               )}
             >

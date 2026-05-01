@@ -29,9 +29,15 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-extrabold text-gray-900">لوحة التحكم</h1>
-        <p className="text-sm text-gray-500 mt-1">{today}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-extrabold text-gray-900">لوحة التحكم</h1>
+          <p className="text-sm text-gray-500 mt-1">{today}</p>
+        </div>
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-clinic-navy/5 border border-clinic-navy/10">
+          <div className="w-2 h-2 rounded-full bg-clinic-blue" />
+          <span className="text-xs font-medium text-clinic-navy-700">النظام يعمل</span>
+        </div>
       </div>
 
       {/* Stats grid */}
@@ -40,21 +46,21 @@ export default function DashboardPage() {
           title="مواعيد اليوم"
           value={loading ? "—" : (stats?.appointmentsToday ?? 0)}
           icon={Calendar}
-          color="teal"
+          color="blue"
           description="إجمالي مواعيد اليوم"
         />
         <StatsCard
           title="مرضى جدد اليوم"
           value={loading ? "—" : (stats?.newPatientsToday ?? 0)}
           icon={Users}
-          color="gold"
+          color="orange"
           description="مسجّلون اليوم"
         />
         <StatsCard
           title="حالات تقويم نشطة"
           value={loading ? "—" : (stats?.activeOrthoCases ?? 0)}
           icon={Activity}
-          color="purple"
+          color="navy"
           description="حالات جارية"
         />
         <StatsCard
@@ -68,7 +74,7 @@ export default function DashboardPage() {
           title="إيرادات الشهر"
           value={loading ? "—" : (stats ? `${stats.totalRevenueMTD.toLocaleString()} ر.ي` : 0)}
           icon={Wallet}
-          color="teal"
+          color="blue"
           description="المحصّل هذا الشهر"
           href="/finance"
         />
@@ -108,7 +114,7 @@ export default function DashboardPage() {
               {["المرضى ✓", "المواعيد ✓", "التقويم ✓", "السيفالومتري ✓", "المالية ✓", "الجراحة ✓", "الإحالات ✓", "التقارير ✓"].map((f) => (
                 <span
                   key={f}
-                  className="text-xs px-2.5 py-1 rounded-full bg-green-100 text-green-700"
+                  className="text-xs px-2.5 py-1 rounded-full bg-clinic-blue-50 text-clinic-blue"
                 >
                   {f}
                 </span>

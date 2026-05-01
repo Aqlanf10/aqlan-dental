@@ -66,7 +66,7 @@ export function EnhancedDentalChart({ teeth, onToothClick, selectedTooth, readOn
         className={cn(
           "relative flex flex-col items-center justify-center w-8 h-10 rounded-md text-[10px] font-bold transition-all",
           "hover:scale-110 hover:shadow-md",
-          isSelected ? "ring-2 ring-teal-600 shadow-lg" : "",
+          isSelected ? "ring-2 ring-clinic-blue shadow-lg" : "",
           readOnly ? "cursor-default" : "cursor-pointer"
         )}
         style={{ backgroundColor: color + "40", color: "#374151" }}
@@ -74,7 +74,7 @@ export function EnhancedDentalChart({ teeth, onToothClick, selectedTooth, readOn
       >
         <span className="text-[9px] leading-none">{num}</span>
         {data?.treatmentDone && (
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-teal-500 rounded-full border border-white" />
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-clinic-blue-500 rounded-full border border-white" />
         )}
       </button>
     );

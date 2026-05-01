@@ -20,7 +20,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50" style={{ direction: "rtl" }}>
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <div className="w-10 h-10 border-4 border-clinic-blue border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-gray-500">جارٍ التحويل...</p>
         </div>
       </div>
@@ -58,7 +58,7 @@ function PortalNavBar({ pathname }: { pathname: string }) {
               key={item.path}
               onClick={() => router.push(item.path)}
               className={`flex flex-col items-center py-2 px-3 text-xs transition ${
-                isActive ? "text-teal-700" : "text-gray-400"
+                isActive ? "text-clinic-blue" : "text-gray-400"
               }`}
             >
               <span className="text-lg mb-0.5">{item.icon}</span>

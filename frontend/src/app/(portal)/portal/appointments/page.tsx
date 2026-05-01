@@ -94,7 +94,7 @@ export default function PortalAppointmentsPage() {
             onClick={() => setShowForm(!showForm)}
             className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition",
-              showForm ? "bg-gray-100 text-gray-600" : "bg-teal-600 text-white hover:bg-teal-700"
+              showForm ? "bg-gray-100 text-gray-600" : "bg-clinic-blue text-white hover:bg-clinic-navy-700"
             )}
           >
             {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -114,7 +114,7 @@ export default function PortalAppointmentsPage() {
               onClick={() => setFilter(f.key)}
               className={cn(
                 "px-4 py-1.5 text-xs font-medium rounded-full transition",
-                filter === f.key ? "bg-teal-100 text-teal-700" : "bg-gray-100 text-gray-500"
+                filter === f.key ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
               )}
             >
               {f.label}
@@ -134,17 +134,17 @@ export default function PortalAppointmentsPage() {
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">التاريخ</label>
               <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none" dir="ltr" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none" dir="ltr" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">الوقت</label>
               <input type="time" value={apptTime} onChange={(e) => setApptTime(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none" dir="ltr" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none" dir="ltr" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">نوع الموعد</label>
               <select value={apptType} onChange={(e) => setApptType(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none">
                 <option value="">اختر...</option>
                 {APPOINTMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -153,7 +153,7 @@ export default function PortalAppointmentsPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">الطبيب</label>
                 <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none">
                   <option value="">تلقائي</option>
                   {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
@@ -162,11 +162,11 @@ export default function PortalAppointmentsPage() {
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">ملاحظات</label>
               <input value={notes} onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
                 placeholder="ملاحظات إضافية..." />
             </div>
             <button type="submit" disabled={saving}
-              className="w-full py-2.5 text-sm font-semibold rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 transition">
+              className="w-full py-2.5 text-sm font-semibold rounded-lg bg-clinic-blue text-white hover:bg-clinic-navy-700 disabled:opacity-60 transition">
               {saving ? "جارٍ الحجز..." : "تأكيد الحجز"}
             </button>
           </form>

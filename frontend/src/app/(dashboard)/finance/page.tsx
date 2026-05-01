@@ -19,7 +19,7 @@ export default function FinancePage() {
 
   const stats = summary
     ? [
-        { label: "محصّل اليوم",       value: formatYemeniRiyal(summary.todayCollected),   icon: TrendingUp, color: "bg-teal-50 text-teal-600 border-teal-200" },
+        { label: "محصّل اليوم",       value: formatYemeniRiyal(summary.todayCollected),   icon: TrendingUp, color: "bg-clinic-blue-50 text-clinic-blue border-clinic-blue-100" },
         { label: "محصّل هذا الشهر",   value: formatYemeniRiyal(summary.monthCollected),   icon: Wallet,     color: "bg-blue-50 text-blue-600 border-blue-200" },
         { label: "المبالغ المستحقة",  value: formatYemeniRiyal(summary.totalOutstanding), icon: AlertCircle,color: "bg-red-50 text-red-600 border-red-200" },
         { label: "العقود النشطة",      value: summary.activeContracts.toString(),          icon: FileText,   color: "bg-purple-50 text-purple-600 border-purple-200" },
@@ -41,13 +41,13 @@ export default function FinancePage() {
             متأخرات
           </Link>
           <Link href="/finance/contracts/new"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-teal text-clinic-teal hover:bg-teal-50 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-clinic-blue text-clinic-blue hover:bg-clinic-blue-50 transition"
           >
             <FileText className="w-4 h-4" />
             عقد جديد
           </Link>
           <Link href="/finance/payments"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             <Plus className="w-4 h-4" />
             دفعة جديدة
@@ -76,7 +76,7 @@ export default function FinancePage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900">آخر الدفعات</h2>
-          <Link href="/finance/contracts" className="text-sm text-clinic-teal hover:underline">
+          <Link href="/finance/contracts" className="text-sm text-clinic-blue hover:underline">
             عرض العقود
           </Link>
         </div>
@@ -110,7 +110,7 @@ export default function FinancePage() {
                     <td className="px-4 py-3">
                       <Link
                         href={`/finance/payments/${p.id}`}
-                        className="flex items-center gap-1 text-xs text-clinic-teal hover:underline whitespace-nowrap"
+                        className="flex items-center gap-1 text-xs text-clinic-blue hover:underline whitespace-nowrap"
                       >
                         <Printer className="w-3.5 h-3.5" />
                         طباعة

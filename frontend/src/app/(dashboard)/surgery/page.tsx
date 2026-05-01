@@ -81,7 +81,7 @@ export default function SurgeryPage() {
           <p className="text-sm text-gray-500 mt-0.5">الحالات الجراحية</p>
         </div>
         <Link href="/surgery/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           حالة جراحية
@@ -97,7 +97,7 @@ export default function SurgeryPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث بالاسم أو رقم الحالة..."
-            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           />
         </div>
         {["", "scheduled", "in_progress", "completed"].map((s) => (
@@ -105,7 +105,7 @@ export default function SurgeryPage() {
             className={cn(
               "px-3 py-1.5 text-sm rounded-lg border transition font-medium",
               filter === s
-                ? "bg-clinic-teal text-white border-clinic-teal"
+                ? "bg-clinic-blue text-white border-clinic-blue"
                 : "border-gray-200 text-gray-600 hover:bg-gray-50"
             )}
           >
@@ -137,11 +137,11 @@ export default function SurgeryPage() {
               <tbody className="divide-y divide-gray-100">
                 {cases.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-mono font-semibold text-clinic-teal text-xs">
+                    <td className="px-4 py-3 font-mono font-semibold text-clinic-blue text-xs">
                       <Link href={`/surgery/${c.id}`} className="hover:underline">{c.caseNumber}</Link>
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/patients/${c.patientId}`} className="font-medium text-gray-900 hover:text-clinic-teal">
+                      <Link href={`/patients/${c.patientId}`} className="font-medium text-gray-900 hover:text-clinic-blue">
                         {c.patientName}
                       </Link>
                       <div className="text-xs text-gray-400 font-mono">{c.patientNumber}</div>
@@ -151,7 +151,7 @@ export default function SurgeryPage() {
                     <td className="px-4 py-3">
                       {c.doctorName ? (
                         <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: c.doctorColor ?? "#0E7490" }} />
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: c.doctorColor ?? "#2563EB" }} />
                           <span className="text-gray-700">{c.doctorName}</span>
                         </div>
                       ) : "—"}
@@ -165,7 +165,7 @@ export default function SurgeryPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 flex items-center gap-2">
-                      <Link href={`/surgery/${c.id}`} className="text-xs text-clinic-teal hover:underline font-medium">عرض</Link>
+                      <Link href={`/surgery/${c.id}`} className="text-xs text-clinic-blue hover:underline font-medium">عرض</Link>
                       {c.status === "scheduled" && (
                         <button onClick={() => handleStatus(c.id, "in_progress")}
                           className="text-xs text-yellow-700 hover:underline font-medium"
@@ -200,7 +200,7 @@ export default function SurgeryPage() {
                 </div>
                 <Link
                   href={`/surgery/new?patientId=${p.id}&patientName=${encodeURIComponent(p.fullName)}`}
-                  className="flex items-center gap-1.5 text-xs font-medium text-clinic-teal hover:opacity-80 transition"
+                  className="flex items-center gap-1.5 text-xs font-medium text-clinic-blue hover:opacity-80 transition"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   إنشاء حالة جراحية

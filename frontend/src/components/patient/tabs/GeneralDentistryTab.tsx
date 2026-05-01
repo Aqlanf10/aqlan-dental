@@ -42,7 +42,7 @@ export function GeneralDentistryTab({ patientId }: GeneralDentistryTabProps) {
       {/* Treatments List */}
       <div className="border-t border-gray-100 pt-6">
         <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <Grid3x3 className="w-4 h-4 text-clinic-teal" />
+          <Grid3x3 className="w-4 h-4 text-clinic-blue" />
           العلاجات العامة
         </h3>
         {loading ? (
@@ -58,8 +58,8 @@ export function GeneralDentistryTab({ patientId }: GeneralDentistryTabProps) {
             {treatments.map((t) => (
               <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
-                    <Grid3x3 className="w-4 h-4 text-teal-500" />
+                  <div className="w-8 h-8 rounded-lg bg-clinic-blue-50 flex items-center justify-center flex-shrink-0">
+                    <Grid3x3 className="w-4 h-4 text-clinic-blue" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">

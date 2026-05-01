@@ -13,7 +13,7 @@ function NewPrescriptionContent() {
   return (
     <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/prescriptions" className="hover:text-clinic-teal transition">الوصفات</Link>
+        <Link href="/prescriptions" className="hover:text-clinic-blue transition">الوصفات</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">وصفة جديدة</span>
       </div>

@@ -14,9 +14,16 @@ public class PatientRepository(AppDbContext context)
         await DbSet.FirstOrDefaultAsync(predicate);
     public async Task<PaginatedResponse<Patient>> SearchAsync(
         string? search, int page, int pageSize, Guid? branchId,
-        string? gender = null, Guid? doctorId = null, string? status = null)
+        string? gender = null, Guid? doctorId = null, string? status = "active")
     {
-        var query = DbSet
+        var baseQuery = status?.ToLower() switch
+        {
+            "archived" => DbSet.IgnoreQueryFilters().Where(p => !p.IsActive),
+            "all"      => DbSet.IgnoreQueryFilters(),
+            _          => DbSet.AsQueryable(), // "active" — global filter applies
+        };
+
+        var query = baseQuery
             .Include(p => p.PrimaryDoctor)
             .Include(p => p.Branch)
             .AsQueryable();
@@ -96,39 +103,34 @@ public class PatientRepository(AppDbContext context)
     public async Task<Patient?> GetByIdIgnoreFiltersAsync(Guid id) =>
         await DbSet.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == id);
 
+    public async Task<Patient?> GetArchivedByIdAsync(Guid id) =>
+        await DbSet
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> FindByNormalizedPhoneAsync(string normalizedPhone, Guid? excludeId = null) =>
+        await DbSet
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p =>
+                p.NormalizedPhone == normalizedPhone &&
+                (excludeId == null || p.Id != excludeId));
+
     public async Task<string> GeneratePatientNumberAsync(string prefix)
     {
         var year = DateTime.Today.Year;
-        var baseNum = $"{prefix}-{year}-";
-        
-        // Use retry loop to handle concurrent inserts
-        for (int attempt = 0; attempt < 10; attempt++)
-        {
-            var count = await DbSet
-                .IgnoreQueryFilters()
-                .CountAsync(p => p.PatientNumber.StartsWith(baseNum));
+        var yearPrefix = $"{prefix}-{year}-";
 
-            var number = $"{baseNum}{(count + 1 + attempt):D3}";
-            
-            // Check if this number already exists
-            var exists = await DbSet
-                .IgnoreQueryFilters()
-                .AnyAsync(p => p.PatientNumber == number);
-            
-            if (!exists) return number;
-        }
-        
-        // Fallback: use max + 1
-        var maxNumber = await DbSet
+        // Use MAX of the numeric suffix so gaps (soft-deleted rows) don't cause reuse
+        var maxSuffix = await DbSet
             .IgnoreQueryFilters()
-            .Where(p => p.PatientNumber.StartsWith(baseNum))
-            .OrderByDescending(p => p.PatientNumber)
-            .Select(p => p.PatientNumber)
-            .FirstOrDefaultAsync();
-        
-        if (int.TryParse(maxNumber?.Split('-').Last(), out var maxSeq))
-            return $"{baseNum}{(maxSeq + 1):D3}";
-        
-        return $"{baseNum}001";
+            .Where(p => p.PatientNumber.StartsWith(yearPrefix))
+            .Select(p => p.PatientNumber.Substring(yearPrefix.Length))
+            .ToListAsync()
+            .ContinueWith(t => t.Result
+                .Select(s => int.TryParse(s, out var n) ? n : 0)
+                .DefaultIfEmpty(0)
+                .Max());
+
+        return $"{yearPrefix}{(maxSuffix + 1):D3}";
     }
 }

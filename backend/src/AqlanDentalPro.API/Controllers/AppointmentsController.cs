@@ -30,6 +30,13 @@ public class AppointmentsController(AppointmentService service) : ControllerBase
         return Ok(list);
     }
 
+    [HttpGet("patient/{patientId:guid}")]
+    public async Task<IActionResult> GetByPatient(Guid patientId)
+    {
+        var list = await service.GetByPatientAsync(patientId);
+        return Ok(list);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AppointmentDto>> GetById(Guid id)
     {

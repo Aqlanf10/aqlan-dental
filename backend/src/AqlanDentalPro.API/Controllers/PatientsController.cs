@@ -19,7 +19,7 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         [FromQuery] int pageSize = 20,
         [FromQuery] string? gender = null,
         [FromQuery] Guid? doctorId = null,
-        [FromQuery] string? status = null)
+        [FromQuery] string? status = "active")
     {
         var result = await service.GetListAsync(search, page, pageSize, gender, doctorId, status);
         return Ok(result);
@@ -163,6 +163,22 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     {
         var success = await service.RestoreAsync(id);
         return success ? Ok(new { message = "تم استعادة المريض بنجاح" }) : NotFound(new { message = "المريض غير موجود" });
+    }
+
+    [HttpPut("{id:guid}/archive")]
+    [Authorize(Roles = "Admin,admin")]
+    public async Task<IActionResult> Archive(Guid id)
+    {
+        var success = await service.ArchiveAsync(id);
+        return success ? Ok(new { message = "تم أرشفة المريض" }) : NotFound(new { message = "المريض غير موجود" });
+    }
+
+    [HttpPut("{id:guid}/restore")]
+    [Authorize(Roles = "Admin,admin")]
+    public async Task<IActionResult> Restore(Guid id)
+    {
+        var success = await service.RestoreAsync(id);
+        return success ? Ok(new { message = "تم استعادة المريض" }) : NotFound(new { message = "المريض غير موجود" });
     }
 
     [HttpGet("{id:guid}/medical-history")]

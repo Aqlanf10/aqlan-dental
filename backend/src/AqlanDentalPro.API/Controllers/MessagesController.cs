@@ -420,19 +420,35 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         return NoContent();
     }
 
-    /// <summary>إنشاء أو جلب محادثة مع مريض بواسطة معرف المريض</summary>
-    [HttpGet("patient/{patientId:guid}")]
+    /// <summary>إنشاء/جلب محادثة داخلية حول مريض (StaffToPatient)</summary>
+    [HttpPost("conversations/patient/{patientId:guid}")]
     public async Task<ActionResult<ConversationDetailDto>> GetOrCreatePatientConversation(Guid patientId)
     {
         try
         {
             var result = await messagingService.GetOrCreatePatientConversationAsync(patientId);
-            if (result == null) return NotFound(new { message = "المريض غير موجود" });
             return Ok(result);
         }
-        catch (UnauthorizedAccessException ex)
+        catch (KeyNotFoundException ex)
         {
-            return Forbid(ex.Message);
+            return NotFound(new { message = ex.Message });
         }
+    }
+
+    /// <summary>جلب رسائل جديدة منذ آخر رسالة (للـ polling)</summary>
+    [HttpGet("conversations/{conversationId:guid}/poll")]
+    public async Task<IActionResult> PollMessages(Guid conversationId, [FromQuery] string? since = null)
+    {
+        var result = await messagingService.GetConversationAsync(conversationId, 1, 50);
+        if (result == null) return NotFound(new { message = "المحادثة غير موجودة" });
+
+        if (since != null && DateTime.TryParse(since, null, System.Globalization.DateTimeStyles.RoundtripKind, out var sinceDate))
+        {
+            result.Messages = result.Messages
+                .Where(m => m.CreatedAt > sinceDate)
+                .ToList();
+        }
+
+        return Ok(result);
     }
 }

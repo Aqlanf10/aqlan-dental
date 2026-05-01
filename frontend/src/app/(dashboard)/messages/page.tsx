@@ -13,8 +13,6 @@ import {
   ArrowLeft,
   CheckCheck,
   AlertTriangle,
-  User,
-  Phone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -22,6 +20,7 @@ import {
   useConversations,
   useConversation,
   useCreateConversation,
+  usePatientConversation,
   useSendMessage,
   useMarkAsRead,
   useUnreadCount,
@@ -75,12 +74,12 @@ function formatFullTime(dateStr: string) {
 export default function MessagesPage() {
   const { user } = useAuthStore();
   const searchParams = useSearchParams();
-  const patientIdParam = searchParams.get("patientId");
+  const patientIdFromUrl = searchParams?.get("patientId");
+
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [isMobileDetail, setIsMobileDetail] = useState(false);
-  const [, setPatientConvLoading] = useState(false);
   const [patientConvError, setPatientConvError] = useState("");
 
   const { data: convData, isLoading: convLoading } = useConversations(1, searchQuery || undefined);
@@ -88,28 +87,22 @@ export default function MessagesPage() {
   const sendMessage = useSendMessage(selectedConvId ?? "");
   const markAsRead = useMarkAsRead(selectedConvId ?? "");
   const { data: unreadData } = useUnreadCount();
+  const patientConv = usePatientConversation();
 
   const conversations = convData?.data ?? [];
 
-  // Auto-open patient conversation when navigated from patient file
+  // Auto-open patient conversation if navigated with ?patientId=
   useEffect(() => {
-    if (patientIdParam && !selectedConvId) {
-      setPatientConvLoading(true);
-      setPatientConvError("");
-      api.get(`/api/messages/patient/${patientIdParam}`)
-        .then(({ data }) => {
-          if (data?.id) {
-            setSelectedConvId(data.id);
-            setIsMobileDetail(true);
-          }
-        })
-        .catch((err) => {
-          const msg = err?.response?.data?.message ?? "لا يمكن فتح محادثة مع هذا المريض";
-          setPatientConvError(msg);
-        })
-        .finally(() => setPatientConvLoading(false));
+    if (patientIdFromUrl && !selectedConvId) {
+      patientConv.mutate(patientIdFromUrl, {
+        onSuccess: (conv) => {
+          setSelectedConvId(conv.id);
+          setIsMobileDetail(true);
+        },
+      });
     }
-  }, [patientIdParam, selectedConvId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientIdFromUrl]);
 
   // Mark as read when selecting a conversation
   useEffect(() => {
@@ -268,7 +261,6 @@ function ConversationItem({
   onClick: () => void;
 }) {
   const other = conv.otherParticipant;
-  const isPatientConv = conv.conversationType === "StaffToPatient";
   const isOnline = false;
 
   return (
@@ -281,11 +273,7 @@ function ConversationItem({
     >
       {/* Avatar */}
       <div className="relative flex-shrink-0">
-        {isPatientConv ? (
-          <div className="w-11 h-11 rounded-full bg-amber-100 flex items-center justify-center">
-            <User className="w-5 h-5 text-amber-600" />
-          </div>
-        ) : conv.isGroup ? (
+        {conv.isGroup ? (
           <div className="w-11 h-11 rounded-full bg-gray-200 flex items-center justify-center">
             <Users className="w-5 h-5 text-gray-500" />
           </div>
@@ -390,10 +378,6 @@ function ChatArea({
           <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
             <Users className="w-5 h-5 text-gray-500" />
           </div>
-        ) : conversation.patientName ? (
-          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-            <User className="w-5 h-5 text-amber-600" />
-          </div>
         ) : (
           <div
             className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
@@ -409,37 +393,23 @@ function ChatArea({
           <h3 className="font-semibold text-gray-900 text-sm truncate">
             {title}
           </h3>
-          {conversation.patientName && (
-            <p className="text-xs text-gray-400 flex items-center gap-1">
-              <User className="w-3 h-3" />
-              <span>مريض: {conversation.patientName}</span>
-              {conversation.patientPhone && (
-                <a href={`https://wa.me/${conversation.patientPhone.replace(/^0/, '967')}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:underline flex items-center gap-0.5" dir="ltr">
-                  <Phone className="w-3 h-3" />
-                  {conversation.patientPhone}
-                </a>
-              )}
-            </p>
-          )}
-          {!conversation.patientName && (
-            <p className="text-xs text-gray-400">
-              {conversation.isGroup
-                ? `${conversation.participants.length} مشارك`
-                : otherParticipants[0]?.role === "Orthodontist"
-                  ? "أخصائي تقويم"
-                  : otherParticipants[0]?.role === "GeneralDentist"
-                    ? "طبيب أسنان عام"
-                    : otherParticipants[0]?.role === "OralSurgeon"
-                      ? "جراح فم وفكين"
-                      : otherParticipants[0]?.role === "Reception"
-                        ? "استقبال"
-                        : otherParticipants[0]?.role === "Accountant"
-                          ? "محاسب"
-                          : otherParticipants[0]?.role === "Admin"
-                            ? "مدير النظام"
-                            : "متصل"}
-            </p>
-          )}
+          <p className="text-xs text-gray-400">
+            {conversation.isGroup
+              ? `${conversation.participants.length} مشارك`
+              : otherParticipants[0]?.role === "Orthodontist"
+                ? "أخصائي تقويم"
+                : otherParticipants[0]?.role === "GeneralDentist"
+                  ? "طبيب أسنان عام"
+                  : otherParticipants[0]?.role === "OralSurgeon"
+                    ? "جراح فم وفكين"
+                    : otherParticipants[0]?.role === "Reception"
+                      ? "استقبال"
+                      : otherParticipants[0]?.role === "Accountant"
+                        ? "محاسب"
+                        : otherParticipants[0]?.role === "Admin"
+                          ? "مدير النظام"
+                          : "متصل"}
+          </p>
         </div>
       </div>
 
@@ -614,7 +584,7 @@ function MessageBubble({
             <CheckCheck
               className={cn(
                 "w-3.5 h-3.5",
-                message.readCount > 1 ? "text-clinic-teal" : "text-gray-300"
+                message.isReadByMe ? "text-clinic-teal" : "text-gray-300"
               )}
             />
           )}

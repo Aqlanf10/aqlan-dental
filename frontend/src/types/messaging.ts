@@ -12,8 +12,9 @@ export interface ConversationListItem {
   id: string;
   title: string;
   isGroup: boolean;
-  conversationType?: string;
+  conversationType: "StaffToStaff" | "StaffToPatient";
   patientId?: string;
+  patientName?: string;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
   unreadCount: number;
@@ -45,7 +46,7 @@ export interface ConversationDetail {
   id: string;
   title: string;
   isGroup: boolean;
-  conversationType?: string;
+  conversationType: "StaffToStaff" | "StaffToPatient";
   patientId?: string;
   patientName?: string;
   patientPhone?: string;

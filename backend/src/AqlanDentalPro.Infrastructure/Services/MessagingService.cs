@@ -24,6 +24,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
         var query = db.Conversations
             .Where(c => myConversationIds.Contains(c.Id))
+            .Include(c => c.Patient)
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
@@ -99,9 +100,18 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         // Mark as read
         await MarkAsReadAsync(conversationId);
 
-        var patientName = conv.Patient != null
-            ? $"{conv.Patient.FirstName} {conv.Patient.LastName}".Trim()
-            : null;
+        // Get patient info if this is a patient conversation
+        string? patientName = null;
+        string? patientPhone = null;
+        if (conv.PatientId.HasValue)
+        {
+            var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == conv.PatientId.Value);
+            if (patient != null)
+            {
+                patientName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim();
+                patientPhone = patient.Phone;
+            }
+        }
 
         return new ConversationDetailDto
         {
@@ -113,6 +123,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             ConversationType = conv.ConversationType,
             PatientId = conv.PatientId,
             PatientName = patientName,
+            PatientPhone = patientPhone,
             Participants = conv.Participants.Select(MapParticipantDto).ToList(),
             Messages = messages.Select(MapMessageDto).ToList(),
             CreatedAt = conv.CreatedAt
@@ -206,6 +217,11 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 return (await GetConversationAsync(existing.Id))!;
         }
 
+        // Parse ConversationType from request
+        var conversationType = ConversationType.StaffToStaff;
+        if (!string.IsNullOrWhiteSpace(request.ConversationType) && Enum.TryParse<ConversationType>(request.ConversationType, true, out var parsedType))
+            conversationType = parsedType;
+
         var conv = new Conversation
         {
             Title = request.IsGroup
@@ -213,7 +229,21 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 : await GenerateDirectTitleAsync(participantIds),
             IsGroup = request.IsGroup,
             CreatedBy = UserId,
+            ConversationType = conversationType,
+            PatientId = request.PatientId,
+            BranchId = currentUser.BranchId,
         };
+
+        // For StaffToPatient with a patient, set a descriptive title
+        if (conversationType == ConversationType.StaffToPatient && request.PatientId.HasValue)
+        {
+            var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == request.PatientId.Value);
+            if (patient != null)
+            {
+                var patientName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim();
+                conv.Title = $"محادثة المريض - {patientName}";
+            }
+        }
 
         await db.Conversations.AddAsync(conv);
 

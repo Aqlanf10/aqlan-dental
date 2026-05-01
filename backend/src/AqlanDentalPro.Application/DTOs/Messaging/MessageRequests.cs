@@ -7,6 +7,12 @@ public class CreateConversationRequest
     public bool IsGroup { get; set; } = false;
     public List<Guid> ParticipantIds { get; set; } = [];
     public string? InitialMessage { get; set; }
+
+    /// <summary>نوع المحادثة: StaffToStaff أو StaffToPatient</summary>
+    public string? ConversationType { get; set; }
+
+    /// <summary>معرف المريض للمحادثة المرتبطة بمريض</summary>
+    public Guid? PatientId { get; set; }
 }
 
 /// <summary>إرسال رسالة</summary>

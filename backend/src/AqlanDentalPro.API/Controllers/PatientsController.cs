@@ -44,11 +44,13 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         {
             return Conflict(new { message = ex.Message });
         }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_Phone") == true
+        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_NormalizedPhone") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_NormalizedWhatsApp") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_Phone") == true
                                          || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
                                          || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
         {
-            return Conflict(new { message = "البيانات مكررة — رقم الهاتف أو رقم الملف موجود مسبقاً" });
+            return Conflict(new { message = "البيانات مكررة — رقم الهاتف أو الواتساب أو رقم الملف موجود مسبقاً" });
         }
     }
 
@@ -59,25 +61,36 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         [FromQuery] string? patientNumber,
         [FromQuery] string? firstName,
         [FromQuery] string? lastName,
-        [FromQuery] string? dateOfBirth)
+        [FromQuery] string? dateOfBirth,
+        [FromQuery] Guid? excludeId)
     {
         var duplicates = new List<object>();
 
-        // Check by phone
-        if (!string.IsNullOrWhiteSpace(phone))
+        // Normalize phone for checking
+        var normalizedPhone = PhoneNormalizer.Normalize(phone);
+        var normalizedWhatsApp = PhoneNormalizer.Normalize(whatsApp);
+
+        // Check by normalized phone
+        if (normalizedPhone != null)
         {
-            var match = await db.Patients
-                .Where(p => (p.Phone == phone || p.WhatsApp == phone) && p.IsActive)
+            var query = db.Patients
+                .IgnoreQueryFilters()
+                .Where(p => p.IsActive && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
+            if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
+            var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "phone" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
         }
 
-        // Check by WhatsApp
-        if (!string.IsNullOrWhiteSpace(whatsApp) && !duplicates.Any(d => ((dynamic)d).MatchType == "phone"))
+        // Check by normalized WhatsApp
+        if (normalizedWhatsApp != null && !duplicates.Any())
         {
-            var match = await db.Patients
-                .Where(p => (p.WhatsApp == whatsApp || p.Phone == whatsApp) && p.IsActive)
+            var query = db.Patients
+                .IgnoreQueryFilters()
+                .Where(p => p.IsActive && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp));
+            if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
+            var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "whatsapp" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
@@ -86,8 +99,11 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         // Check by patient number
         if (!string.IsNullOrWhiteSpace(patientNumber))
         {
-            var match = await db.Patients
-                .Where(p => p.PatientNumber == patientNumber && p.IsActive)
+            var query = db.Patients
+                .IgnoreQueryFilters()
+                .Where(p => p.PatientNumber == patientNumber && p.IsActive);
+            if (excludeId.HasValue) query = query.Where(p => p.Id != excludeId.Value);
+            var match = await query
                 .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "patientNumber" })
                 .FirstOrDefaultAsync();
             if (match != null) duplicates.Add(match);
@@ -96,7 +112,8 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         // Check by similar name + date of birth
         if (!string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(lastName))
         {
-            var nameQuery = db.Patients.Where(p => p.IsActive && p.FirstName == firstName && p.LastName == lastName);
+            var nameQuery = db.Patients.IgnoreQueryFilters().Where(p => p.IsActive && p.FirstName == firstName && p.LastName == lastName);
+            if (excludeId.HasValue) nameQuery = nameQuery.Where(p => p.Id != excludeId.Value);
             if (!string.IsNullOrWhiteSpace(dateOfBirth) && DateOnly.TryParse(dateOfBirth, out var dob))
                 nameQuery = nameQuery.Where(p => p.DateOfBirth == dob);
 
@@ -113,15 +130,39 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<PatientProfileDto>> Update(Guid id, [FromBody] UpdatePatientRequest req)
     {
-        var result = await service.UpdateAsync(id, req);
-        return result == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(result);
+        try
+        {
+            var result = await service.UpdateAsync(id, req);
+            return result == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_NormalizedPhone") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_NormalizedWhatsApp") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_Phone") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
+        {
+            return Conflict(new { message = "رقم الهاتف أو الواتساب مستخدم مسبقاً لمريض آخر." });
+        }
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var success = await service.SoftDeleteAsync(id);
-        return success ? NoContent() : NotFound(new { message = "المريض غير موجود" });
+        return success ? Ok(new { message = "تم أرشفة المريض بنجاح" }) : NotFound(new { message = "المريض غير موجود" });
+    }
+
+    [HttpPost("{id:guid}/restore")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> Restore(Guid id)
+    {
+        var success = await service.RestoreAsync(id);
+        return success ? Ok(new { message = "تم استعادة المريض بنجاح" }) : NotFound(new { message = "المريض غير موجود" });
     }
 
     [HttpPut("{id:guid}/archive")]

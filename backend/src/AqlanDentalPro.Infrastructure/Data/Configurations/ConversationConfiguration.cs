@@ -1,4 +1,5 @@
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -13,6 +14,8 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
         builder.Property(c => c.Title).HasMaxLength(200);
         builder.Property(c => c.LastMessagePreview).HasMaxLength(500);
 
+        builder.Property(c => c.ConversationType).HasConversion<string>().HasMaxLength(20).HasDefaultValue(ConversationType.StaffToStaff);
+
         builder.HasOne(c => c.Creator)
             .WithMany()
             .HasForeignKey(c => c.CreatedBy)
@@ -23,8 +26,14 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
             .HasForeignKey(c => c.PatientId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasOne(c => c.Branch)
+            .WithMany()
+            .HasForeignKey(c => c.BranchId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasIndex(c => c.LastMessageAt);
         builder.HasIndex(c => c.PatientId);
+        builder.HasIndex(c => c.ConversationType);
     }
 }
 

@@ -28,18 +28,35 @@ public class PatientRepository(AppDbContext context)
             .Include(p => p.Branch)
             .AsQueryable();
 
+        // Status filtering
+        if (status == "archived")
+        {
+            query = query.IgnoreQueryFilters().Where(p => !p.IsActive);
+        }
+        else if (status == "all")
+        {
+            query = query.IgnoreQueryFilters();
+        }
+        // else status == null or "active": global filter already applies (IsActive = true)
+
         if (branchId.HasValue)
             query = query.Where(p => p.BranchId == branchId);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
+            // Normalize search term for phone matching
+            var normalizedTerm = AqlanDentalPro.Application.Services.PhoneNormalizer.Normalize(term);
             query = query.Where(p =>
                 p.FirstName.ToLower().Contains(term) ||
                 p.LastName.ToLower().Contains(term) ||
                 (p.MiddleName != null && p.MiddleName.ToLower().Contains(term)) ||
                 p.PatientNumber.ToLower().Contains(term) ||
-                (p.Phone != null && p.Phone.Contains(term)));
+                (p.Phone != null && p.Phone.Contains(term)) ||
+                (normalizedTerm != null && (
+                    (p.NormalizedPhone != null && p.NormalizedPhone.Contains(normalizedTerm)) ||
+                    (p.NormalizedWhatsApp != null && p.NormalizedWhatsApp.Contains(normalizedTerm))
+                )));
         }
 
         if (!string.IsNullOrWhiteSpace(gender) &&
@@ -73,6 +90,18 @@ public class PatientRepository(AppDbContext context)
             .Include(p => p.PrimaryDoctor)
             .Include(p => p.Branch)
             .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> GetWithHistoriesIgnoreFiltersAsync(Guid id) =>
+        await DbSet
+            .IgnoreQueryFilters()
+            .Include(p => p.MedicalHistory)
+            .Include(p => p.DentalHistory)
+            .Include(p => p.PrimaryDoctor)
+            .Include(p => p.Branch)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> GetByIdIgnoreFiltersAsync(Guid id) =>
+        await DbSet.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == id);
 
     public async Task<Patient?> GetArchivedByIdAsync(Guid id) =>
         await DbSet

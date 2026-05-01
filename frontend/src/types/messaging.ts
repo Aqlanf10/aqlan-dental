@@ -49,6 +49,7 @@ export interface ConversationDetail {
   conversationType: "StaffToStaff" | "StaffToPatient";
   patientId?: string;
   patientName?: string;
+  patientPhone?: string;
   participants: ConversationParticipant[];
   messages: Message[];
   createdAt: string;
@@ -59,6 +60,8 @@ export interface CreateConversationRequest {
   isGroup?: boolean;
   participantIds: string[];
   initialMessage?: string;
+  conversationType?: string;
+  patientId?: string;
 }
 
 export interface SendMessageRequest {

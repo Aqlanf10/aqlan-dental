@@ -1,3 +1,5 @@
+using AqlanDentalPro.Domain.Enums;
+
 namespace AqlanDentalPro.Domain.Entities;
 
 /// <summary>
@@ -16,10 +18,12 @@ public class Conversation : BaseEntity
 
     /// <summary>للمحادثات المتعلقة بمريض — لا يحتاج المريض حساب مستخدم</summary>
     public Guid? PatientId { get; set; }
+    public Guid? BranchId { get; set; }
 
     // Navigation
     public User? Creator { get; set; }
     public Patient? Patient { get; set; }
+    public Branch? Branch { get; set; }
     public ICollection<ConversationParticipant> Participants { get; set; } = [];
     public ICollection<Message> Messages { get; set; } = [];
 }

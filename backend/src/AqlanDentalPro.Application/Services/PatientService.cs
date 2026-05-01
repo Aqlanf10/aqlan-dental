@@ -34,6 +34,9 @@ public class PatientService(
     public async Task<PatientProfileDto?> GetByIdAsync(Guid id)
     {
         var patient = await repo.GetWithHistoriesAsync(id);
+        // If not found (may be archived and filtered by global filter), try ignoring filters
+        if (patient == null)
+            patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
         return patient == null ? null : ToProfileDto(patient);
     }
 
@@ -122,6 +125,26 @@ public class PatientService(
     {
         var patient = await repo.GetWithHistoriesAsync(id);
         if (patient == null) return null;
+
+        // Normalize and check duplicates before updating
+        var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+        var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+
+        if (normalizedPhone != null)
+        {
+            var existingPhone = await repo.FirstOrDefaultAsync(p => 
+                p.Id != id && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone) && p.IsActive);
+            if (existingPhone != null)
+                throw new InvalidOperationException($"رقم الهاتف أو الواتساب مستخدم مسبقاً لمريض آخر: {existingPhone.FirstName} {existingPhone.LastName} (ملف رقم {existingPhone.PatientNumber})");
+        }
+
+        if (normalizedWhatsApp != null)
+        {
+            var existingWA = await repo.FirstOrDefaultAsync(p => 
+                p.Id != id && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp) && p.IsActive);
+            if (existingWA != null)
+                throw new InvalidOperationException($"رقم واتساب أو الهاتف مستخدم مسبقاً لمريض آخر: {existingWA.FirstName} {existingWA.LastName} (ملف رقم {existingWA.PatientNumber})");
+        }
 
         patient.FirstName = req.FirstName;
         patient.MiddleName = req.MiddleName;

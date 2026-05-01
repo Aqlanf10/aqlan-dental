@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
+import { useUnreadCount } from "@/hooks/useMessaging";
 
 /* ─── Role-based navigation permissions ────────────────────────────────────── */
 type NavItem = {
@@ -56,6 +57,7 @@ export function Sidebar() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: unreadData } = useUnreadCount();
 
   const userRole = user?.role ?? "";
 
@@ -146,6 +148,9 @@ export function Sidebar() {
               ? pathname === "/"
               : pathname.startsWith(href);
 
+            // Show unread badge on messages link
+            const unreadCount = href === "/messages" ? unreadData?.totalUnread : undefined;
+
             return (
               <Link
                 key={href}
@@ -158,7 +163,15 @@ export function Sidebar() {
                 )}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                <span>{label}</span>
+                <span className="flex-1">{label}</span>
+                {unreadCount && unreadCount > 0 && (
+                  <span className={cn(
+                    "text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5",
+                    isCurrent ? "bg-white/20 text-white" : "bg-red-500 text-white"
+                  )}>
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
               </Link>
             );
           })}

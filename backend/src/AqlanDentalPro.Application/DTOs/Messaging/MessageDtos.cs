@@ -59,6 +59,7 @@ public class ConversationDetailDto
     public string ConversationType { get; set; } = "StaffToStaff";
     public Guid? PatientId { get; set; }
     public string? PatientName { get; set; }
+    public string? PatientPhone { get; set; }
     public List<ConversationParticipantDto> Participants { get; set; } = [];
     public List<MessageDto> Messages { get; set; } = [];
     public DateTime CreatedAt { get; set; }

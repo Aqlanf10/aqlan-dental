@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, ChevronDown, AlertTriangle, ExternalLink, X } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, normalizePhone } from "@/lib/utils";
 
 const schema = z.object({
   firstName:   z.string().min(1, "الاسم الأول مطلوب"),
@@ -109,14 +109,14 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const dateOfBirth = watch("dateOfBirth");
 
   const checkDuplicates = useCallback(async () => {
-    if (patientId) return; // Skip for editing existing patient
     try {
       const params = new URLSearchParams();
-      if (phone) params.set("phone", phone);
-      if (whatsApp) params.set("whatsApp", whatsApp);
+      if (phone) params.set("phone", normalizePhone(phone));
+      if (whatsApp) params.set("whatsApp", normalizePhone(whatsApp));
       if (firstName) params.set("firstName", firstName);
       if (lastName) params.set("lastName", lastName);
       if (dateOfBirth) params.set("dateOfBirth", dateOfBirth);
+      if (patientId) params.set("excludeId", patientId);
       if (!params.toString()) { setDuplicateWarning(null); return; }
 
       const { data } = await api.get(`/api/patients/check-duplicate?${params}`);
@@ -136,10 +136,20 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   };
 
   const onSubmit = async (data: FormData) => {
-    // If duplicates found and user hasn't confirmed, show warning
-    if (duplicateWarning && duplicateWarning.length > 0 && !forceSave) {
-      setServerError("يوجد مريض مشابه — راجع التحذير أعلاه قبل الحفظ");
-      return;
+    // If duplicates found by phone/whatsapp/patientNumber — prevent save entirely
+    if (duplicateWarning && duplicateWarning.length > 0) {
+      const hasPhoneOrNumberMatch = duplicateWarning.some(
+        (m) => m.matchType === "phone" || m.matchType === "whatsapp" || m.matchType === "patientNumber"
+      );
+      if (hasPhoneOrNumberMatch) {
+        setServerError("لا يمكن حفظ المريض — رقم الهاتف أو الواتساب أو رقم الملف مكرر. راجع الملف الموجود.");
+        return;
+      }
+      // Name-only match: allow force save
+      if (!forceSave) {
+        setServerError("يوجد مريض مشابه بالاسم — راجع التحذير أعلاه أو اضغط 'حفظ على أي حال'");
+        return;
+      }
     }
 
     setSaving(true);
@@ -228,13 +238,15 @@ export function PatientForm({ defaultValues, patientId }: Props) {
             ))}
           </div>
           <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => { setForceSave(true); setServerError(""); }}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-100 transition"
-            >
-              حفظ على أي حال (مريض مختلف)
-            </button>
+            {duplicateWarning.every((m) => m.matchType === "name") && (
+              <button
+                type="button"
+                onClick={() => { setForceSave(true); setServerError(""); }}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-100 transition"
+              >
+                حفظ على أي حال (مريض مختلف)
+              </button>
+            )}
           </div>
         </div>
       )}

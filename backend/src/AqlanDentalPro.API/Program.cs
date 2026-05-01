@@ -215,7 +215,8 @@ using (var scope = app.Services.CreateScope())
             "InternalReferrals", "ClinicalPhotos", "Radiographs", "Documents",
             "DentalCharts", "ToothConditions", "GeneralTreatments",
             "WhatsAppMessages", "WhatsAppTemplates", "PatientAccounts",
-            "CephAnalyses", "PerioRecords", "GeneralTreatmentPlanItems"
+            "CephAnalyses", "PerioRecords", "GeneralTreatmentPlanItems",
+            "MedicalHistories", "DentalHistories", "Receipts"
         };
         foreach (var table in baseEntityTables)
         {

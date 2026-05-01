@@ -7,32 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, ChevronDown, AlertTriangle, ExternalLink, X } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
-
-// ─── توحيد صيغة رقم الهاتف اليمنية ──────────────────────────────────────────
-function normalizePhone(phone: string): string {
-  if (!phone) return "";
-  let result = phone
-    // Convert Arabic/Indic digits to English
-    .replace(/[٠٠-٩۹]/g, (c) => {
-      const map: Record<string, string> = {
-        '٠': '0', '۰': '0', '١': '1', '۱': '1', '٢': '2', '۲': '2',
-        '٣': '3', '۳': '3', '٤': '4', '۴': '4', '٥': '5', '۵': '5',
-        '٦': '6', '۶': '6', '٧': '7', '۷': '7', '٨': '8', '۸': '8',
-        '٩': '9', '۹': '9',
-      };
-      return map[c] ?? c;
-    })
-    // Remove spaces, dashes, parentheses, dots
-    .replace(/[\s\-.()]/g, "");
-  
-  if (result.startsWith("+")) result = result.slice(1);
-  if (result.startsWith("00")) result = result.slice(2);
-  if (result.startsWith("0") && result.length >= 9) result = "967" + result.slice(1);
-  else if (result.startsWith("7") && result.length === 9) result = "967" + result;
-  
-  return result;
-}
+import { cn, normalizePhone } from "@/lib/utils";
 
 const schema = z.object({
   firstName:   z.string().min(1, "الاسم الأول مطلوب"),

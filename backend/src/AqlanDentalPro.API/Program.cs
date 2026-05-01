@@ -368,6 +368,13 @@ using (var scope = app.Services.CreateScope())
                 SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
             );
         """);
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260501020000_AddSoftDeleteToMessagingTables', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501020000_AddSoftDeleteToMessagingTables'
+            );
+        """);
 
         logger.LogInformation("Pre-migration schema updates applied successfully");
     }

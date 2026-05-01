@@ -124,10 +124,19 @@ allowedOrigins = [..allowedOrigins,
     "https://aqlan-dental-pro.vercel.app",
     "https://aqlan-dental.vercel.app"];
 builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
-    policy.WithOrigins(allowedOrigins)
+{
+    policy.SetIsOriginAllowed(origin =>
+        {
+            // Allow configured origins
+            if (allowedOrigins.Contains(origin)) return true;
+            // Allow any Vercel preview deployment URL (*.vercel.app)
+            if (origin.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        })
         .AllowAnyHeader()
         .AllowAnyMethod()
-        .AllowCredentials()));
+        .AllowCredentials();
+}));
 
 // ── DI — Repositories ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUserRepository, UserRepository>();

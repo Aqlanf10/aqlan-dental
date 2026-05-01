@@ -196,6 +196,10 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         {
             return Conflict(new { message = "تعارض في تحديث السجل الطبي — حاول مرة أخرى" });
         }
+        catch (DbUpdateException)
+        {
+            return StatusCode(500, new { message = "حدث خطأ أثناء حفظ التاريخ الطبي — حاول مرة أخرى لاحقاً" });
+        }
     }
 
     [HttpGet("{id:guid}/dental-history")]
@@ -219,6 +223,10 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         catch (DbUpdateConcurrencyException)
         {
             return Conflict(new { message = "تعارض في تحديث السجل السني — حاول مرة أخرى" });
+        }
+        catch (DbUpdateException)
+        {
+            return StatusCode(500, new { message = "حدث خطأ أثناء حفظ التاريخ السني — حاول مرة أخرى لاحقاً" });
         }
     }
 

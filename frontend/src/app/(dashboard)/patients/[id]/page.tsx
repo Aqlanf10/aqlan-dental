@@ -228,20 +228,20 @@ export default function PatientProfilePage() {
   // ─── Main Render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-5 max-w-5xl">
+    <div className="space-y-5 max-w-5xl page-content">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/patients" className="hover:text-clinic-blue transition">المرضى</Link>
+      <div className="flex items-center gap-2 text-sm" style={{ color: "#64748b" }}>
+        <Link href="/patients" className="transition" style={{ color: "#64748b" }} onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#3d7ab5")} onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#64748b")}>المرضى</Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">{patient.firstName} {patient.lastName}</span>
+        <span className="font-medium" style={{ color: "#0d2137" }}>{patient.firstName} {patient.lastName}</span>
       </div>
 
-      {/* Banner */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+      {/* Banner — matches ZIP card style */}
+      <div className="p-5 space-y-4" style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)", border: "1px solid #e8f0f9" }}>
         {/* Top row */}
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
-            <div className="w-14 h-14 blue-gradient rounded-2xl flex items-center justify-center text-white text-xl font-extrabold flex-shrink-0">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-extrabold flex-shrink-0" style={{ background: "#3d7ab518", color: "#3d7ab5" }}>
               {patient.firstName.charAt(0)}
             </div>
             <div>
@@ -249,19 +249,20 @@ export default function PatientProfilePage() {
                 <h1 className="text-xl font-extrabold text-gray-900">
                   {patient.firstName} {patient.middleName} {patient.lastName}
                 </h1>
-                <span className="font-mono text-xs bg-gray-100 px-2.5 py-1 rounded text-gray-600">
+                <span className="font-mono text-xs px-2.5 py-1 rounded" style={{ background: "#3d7ab518", color: "#3d7ab5" }}>
                   {patient.patientNumber}
                 </span>
-                <span className={cn(
-                  "text-xs px-2 py-0.5 rounded-full font-medium",
-                  patient.isActive
-                    ? "bg-green-100 text-green-700"
-                    : "bg-orange-100 text-orange-600"
-                )}>
+                <span
+                  className="text-xs px-2.5 py-0.5 rounded-full font-semibold"
+                  style={{
+                    color: patient.isActive ? "#22c55e" : "#94a3b8",
+                    background: patient.isActive ? "#22c55e18" : "#94a3b818",
+                  }}
+                >
                   {patient.isActive ? "نشط" : "مؤرشف"}
                 </span>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+              <div className="mt-2 flex flex-wrap items-center gap-4 text-sm" style={{ color: "#94a3b8" }}>
                 {patient.gender && (
                   <span className="flex items-center gap-1">
                     <User className="w-3.5 h-3.5" />
@@ -287,7 +288,7 @@ export default function PatientProfilePage() {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
                 تسجيل: {formatArabicDate(patient.createdAt)}
               </p>
             </div>
@@ -295,7 +296,10 @@ export default function PatientProfilePage() {
           {patient.isActive && (
             <Link
               href={`/patients/${id}/edit`}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition text-gray-600 flex-shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg transition flex-shrink-0"
+              style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
             >
               <Pencil className="w-3.5 h-3.5" />
               تعديل
@@ -304,7 +308,10 @@ export default function PatientProfilePage() {
           {user?.role === "Admin" && patient.isActive && (
             <button
               onClick={() => handleArchivePatient(id, patientName)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-orange-200 rounded-lg hover:bg-orange-50 transition text-orange-600 flex-shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg transition flex-shrink-0"
+              style={{ background: "#f5922e", color: "#fff" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#e07d1e")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#f5922e")}
             >
               <Archive className="w-3.5 h-3.5" />
               أرشفة
@@ -321,7 +328,10 @@ export default function PatientProfilePage() {
           )}
           <Link
             href={`/messages?patientId=${id}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-clinic-blue/30 rounded-lg hover:bg-clinic-blue/5 transition text-clinic-blue flex-shrink-0"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg transition flex-shrink-0"
+            style={{ background: "#3d7ab5", color: "#fff" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#2d5e8e")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#3d7ab5")}
           >
             <MessageCircle className="w-3.5 h-3.5" />
             مراسلة
@@ -329,58 +339,73 @@ export default function PatientProfilePage() {
         </div>
 
         {/* Quick stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1 border-t border-gray-50">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
           {[
-            { icon: Calendar, label: "المواعيد",     value: summary?.totalAppointments   ?? "—", color: "text-blue-600",   bg: "bg-blue-50" },
-            { icon: Calendar, label: "مكتملة",       value: summary?.completedAppointments ?? "—", color: "text-green-600",  bg: "bg-green-50" },
-            { icon: Activity, label: "تقويم نشط",   value: summary?.activeOrthoCases    ?? "—", color: "text-purple-600", bg: "bg-purple-50" },
-            { icon: Wallet,   label: "مدفوع",        value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-clinic-blue", bg: "bg-clinic-blue-50" },
-            { icon: Wallet,   label: "متبقي",        value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-clinic-orange", bg: "bg-clinic-orange-50" },
-            { icon: Pill,     label: "الوصفات",      value: summary?.prescriptionsCount  ?? "—", color: "text-rose-600",   bg: "bg-rose-50" },
+            { icon: Calendar, label: "المواعيد",     value: summary?.totalAppointments   ?? "—", color: "#3d7ab5", bg: "#3d7ab518" },
+            { icon: Calendar, label: "مكتملة",       value: summary?.completedAppointments ?? "—", color: "#22c55e",  bg: "#22c55e18" },
+            { icon: Activity, label: "تقويم نشط",   value: summary?.activeOrthoCases    ?? "—", color: "#a855f7", bg: "#a855f718" },
+            { icon: Wallet,   label: "مدفوع",        value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "#3d7ab5", bg: "#3d7ab518" },
+            { icon: Wallet,   label: "متبقي",        value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "#f5922e", bg: "#f5922e18" },
+            { icon: Pill,     label: "الوصفات",      value: summary?.prescriptionsCount  ?? "—", color: "#ef4444",   bg: "#ef444418" },
           ].map(({ icon: Icon, label, value, color, bg }) => (
-            <div key={label} className={cn("rounded-lg px-3 py-2 flex items-center gap-2", bg)}>
-              <Icon className={cn("w-4 h-4 flex-shrink-0", color)} />
+            <div key={label} className="rounded-lg px-3 py-2 flex items-center gap-2" style={{ background: bg }}>
+              <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
               <div className="min-w-0">
-                <p className="text-xs text-gray-500 truncate">{label}</p>
-                <p className={cn("text-sm font-bold truncate", color)}>{value}</p>
+                <p className="text-xs truncate" style={{ color: "#94a3b8" }}>{label}</p>
+                <p className="text-sm font-bold truncate" style={{ color }}>{value}</p>
               </div>
             </div>
           ))}
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-50">
+        <div className="flex flex-wrap gap-2 pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
           <Link
             href={`/appointments/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"
+            style={{ background: "#3d7ab5" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#2d5e8e")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#3d7ab5")}
           >
             <Plus className="w-3.5 h-3.5" />
             موعد جديد
           </Link>
           <Link
             href={`/prescriptions/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+            style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
           >
             <Pill className="w-3.5 h-3.5" />
             وصفة طبية
           </Link>
           <Link
             href={`/finance/contracts/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+            style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
           >
             <Wallet className="w-3.5 h-3.5" />
             عقد جديد
           </Link>
           <Link
             href={`/ortho/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+            style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
           >
             <Activity className="w-3.5 h-3.5" />
             حالة تقويمية
           </Link>
           <Link
             href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+            style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
           >
             <Scissors className="w-3.5 h-3.5" />
             حالة جراحية
@@ -388,23 +413,24 @@ export default function PatientProfilePage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="flex border-b border-gray-100 overflow-x-auto" dir="rtl">
+      {/* Tabs — matches ZIP tab style */}
+      <div className="overflow-hidden" style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)", border: "1px solid #e8f0f9" }}>
+        <div className="flex overflow-x-auto" dir="rtl" style={{ borderBottom: "2px solid #e8f0f9" }}>
           {TABS.map((tab, idx) => (
             <span key={tab.key} className="contents">
               {/* Group separator */}
               {idx > 0 && TABS[idx - 1].group !== tab.group && (
-                <div className="w-px self-stretch bg-gray-200 my-2 flex-shrink-0" />
+                <div className="w-px self-stretch my-2 flex-shrink-0" style={{ background: "#e8f0f9" }} />
               )}
               <button
                 onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  "flex items-center gap-1.5 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition",
-                  activeTab === tab.key
-                    ? "border-clinic-blue text-clinic-blue"
-                    : "border-transparent text-gray-500 hover:text-gray-900"
-                )}
+                className="flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium whitespace-nowrap transition"
+                style={{
+                  borderBottom: activeTab === tab.key ? "2px solid #3d7ab5" : "2px solid transparent",
+                  color: activeTab === tab.key ? "#3d7ab5" : "#64748b",
+                  fontWeight: activeTab === tab.key ? 700 : 500,
+                  marginBottom: -2,
+                }}
               >
                 <tab.icon className="w-3.5 h-3.5" />
                 {tab.label}

@@ -3,13 +3,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Search, UserPlus, ChevronRight, ChevronLeft, Eye, Pencil,
+  Search, UserPlus, Eye, Pencil,
   Download, MoreVertical, Archive, RotateCcw,
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
-import { cn, GENDER_LABELS } from "@/lib/utils";
+import { GENDER_LABELS } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
@@ -136,23 +136,33 @@ export function PatientTable() {
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
+      {/* Toolbar — matches ZIP filter row */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 flex-1">
-          {/* Search */}
-          <div className="relative flex-1 min-w-48">
-            <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-gray-400" />
+          {/* Search — matches ZIP */}
+          <div className="relative flex-1 min-w-48 max-w-xs">
             <input
               type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="البحث بالاسم أو رقم المريض أو الهاتف..."
-              className="w-full h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              placeholder="بحث بالاسم أو رقم الملف أو الهاتف..."
+              className="w-full h-9 pe-9 ps-3 text-[13px] rounded-[10px] outline-none"
+              style={{
+                border: "1.5px solid #dce8f5",
+                background: "#fff",
+                color: "#0d2137",
+                direction: "rtl",
+                fontFamily: "Tajawal",
+              }}
             />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#94a3b8" }}>
+              <Search className="w-[15px] h-[15px]" />
+            </span>
           </div>
-          {/* Status filter */}
+          {/* Status filter — matches ZIP pill buttons */}
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as "active" | "archived" | "all")}
-            className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+            className="h-9 px-3 text-[13px] font-semibold rounded-lg outline-none"
+            style={{ border: "1.5px solid #dce8f5", background: "#fff", color: "#64748b", fontFamily: "Tajawal" }}
           >
             <option value="active">النشطون</option>
             {isAdmin && <option value="archived">المؤرشفون</option>}
@@ -161,7 +171,8 @@ export function PatientTable() {
           {/* Gender filter */}
           <select
             value={gender} onChange={(e) => setGender(e.target.value)}
-            className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+            className="h-9 px-3 text-[13px] font-semibold rounded-lg outline-none"
+            style={{ border: "1.5px solid #dce8f5", background: "#fff", color: "#64748b", fontFamily: "Tajawal" }}
           >
             <option value="">الجنسان</option>
             <option value="Male">ذكر</option>
@@ -171,7 +182,8 @@ export function PatientTable() {
           {doctors.length > 0 && (
             <select
               value={doctorId} onChange={(e) => setDoctorId(e.target.value)}
-              className="h-9 px-3 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+              className="h-9 px-3 text-[13px] font-semibold rounded-lg outline-none"
+              style={{ border: "1.5px solid #dce8f5", background: "#fff", color: "#64748b", fontFamily: "Tajawal" }}
             >
               <option value="">كل الأطباء</option>
               {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -180,7 +192,8 @@ export function PatientTable() {
           {/* Export */}
           <button
             onClick={handleExport}
-            className="h-9 flex items-center gap-1.5 px-3 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            className="h-9 flex items-center gap-1.5 px-3 text-[13px] font-semibold rounded-lg transition"
+            style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
             title="تصدير CSV"
           >
             <Download className="w-4 h-4" />
@@ -189,44 +202,50 @@ export function PatientTable() {
         </div>
         <Link
           href="/patients/new"
-          className="flex items-center gap-2 px-4 py-2 bg-clinic-blue text-white text-sm font-medium rounded-lg hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-white text-[14px] font-semibold rounded-lg transition"
+          style={{ background: "#3d7ab5" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#2d5e8e")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#3d7ab5")}
         >
           <UserPlus className="w-4 h-4" />
           مريض جديد
         </Link>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      {/* Table — matches ZIP card + table style */}
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{
+          background: "#fff",
+          boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)",
+          border: "1px solid #e8f0f9",
+        }}
+      >
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[13px]">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-gray-500 text-xs font-semibold">
-                <th className="px-4 py-3 text-start">رقم المريض</th>
-                <th className="px-4 py-3 text-start">الاسم</th>
-                <th className="px-4 py-3 text-start">الجنس</th>
-                <th className="px-4 py-3 text-start">العمر</th>
-                <th className="px-4 py-3 text-start">الهاتف</th>
-                <th className="px-4 py-3 text-start">الطبيب</th>
-                <th className="px-4 py-3 text-start">تاريخ التسجيل</th>
-                <th className="px-4 py-3 text-start">الحالة</th>
-                <th className="px-4 py-3 text-start">إجراءات</th>
+              <tr style={{ background: "#f7fafd", borderBottom: "2px solid #e8f0f9" }}>
+                {["رقم الملف", "اسم المريض", "العمر", "الجنس", "الطبيب المعالج", "آخر زيارة", "الحالة", ""].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-start text-xs font-bold whitespace-nowrap" style={{ color: "#64748b" }}>
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
-                        <div className="h-4 bg-gray-100 rounded animate-pulse w-20" />
+                        <div className="h-4 rounded animate-pulse w-20" style={{ background: "#f1f5f9" }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : !data?.data.length ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-gray-400">
+                  <td colSpan={8} className="text-center py-12" style={{ color: "#94a3b8" }}>
                     {search ? "لا توجد نتائج مطابقة" : status === "archived" ? "لا يوجد مرضى مؤرشفون" : "لا يوجد مرضى بعد"}
                   </td>
                 </tr>
@@ -235,100 +254,112 @@ export function PatientTable() {
                   <tr
                     key={p.id}
                     onContextMenu={(e) => handleContextMenu(e, p)}
-                    className={cn(
-                      "hover:bg-gray-50 transition-colors cursor-context-menu select-none",
-                      !p.isActive && "opacity-60"
-                    )}
+                    className="transition cursor-pointer"
+                    style={{
+                      borderBottom: "1px solid #f1f5f9",
+                      opacity: p.isActive ? 1 : 0.6,
+                    }}
+                    onClick={() => router.push(`/patients/${p.id}`)}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                   >
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-700">
-                        {p.patientNumber}
-                      </span>
+                    <td className="px-4 py-3 font-bold" style={{ color: "#3d7ab5" }}>
+                      {p.patientNumber}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-gray-900">{p.fullName}</td>
-                    <td className="px-4 py-3 text-gray-600">{GENDER_LABELS[p.gender ?? ""] ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.age ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-600 font-mono text-xs">{p.phone ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.primaryDoctorName ?? "—"}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="w-[30px] h-[30px] rounded-full flex items-center justify-center text-[13px] font-extrabold flex-shrink-0"
+                          style={{ background: "#3d7ab518", color: "#3d7ab5" }}
+                        >
+                          {p.fullName.charAt(0)}
+                        </div>
+                        <span className="font-semibold" style={{ color: "#0d2137" }}>{p.fullName}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3" style={{ color: "#64748b" }}>{p.age ?? "—"}</td>
+                    <td className="px-4 py-3" style={{ color: "#64748b" }}>{GENDER_LABELS[p.gender ?? ""] ?? "—"}</td>
+                    <td className="px-4 py-3" style={{ color: "#64748b", fontSize: 12 }}>{p.primaryDoctorName ?? "—"}</td>
+                    <td className="px-4 py-3" style={{ color: "#94a3b8", fontSize: 12 }}>
                       {new Date(p.createdAt).toLocaleDateString("ar-YE")}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={cn(
-                        "text-xs px-2 py-0.5 rounded-full font-medium",
-                        p.isActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
-                      )}>
+                      <span
+                        className="text-[12px] px-2.5 py-0.5 rounded-full font-semibold"
+                        style={{
+                          color: p.isActive ? "#22c55e" : "#94a3b8",
+                          background: p.isActive ? "#22c55e18" : "#94a3b818",
+                        }}
+                      >
                         {p.isActive ? "نشط" : "مؤرشف"}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <Link
-                          href={`/patients/${p.id}`}
-                          className="p-1.5 text-gray-400 hover:text-clinic-blue hover:bg-clinic-blue-light rounded-lg transition"
-                          title="عرض الملف"
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); router.push(`/patients/${p.id}`); }}
+                          className="px-2 py-1 rounded-md text-[11px] font-semibold transition"
+                          style={{ border: "1px solid #dce8f5", background: "#fff", color: "#3d7ab5" }}
                         >
-                          <Eye className="w-4 h-4" />
-                        </Link>
-                        {p.isActive && (
-                          <Link
-                            href={`/patients/${p.id}/edit`}
-                            className="p-1.5 text-gray-400 hover:text-clinic-orange hover:bg-clinic-orange-light rounded-lg transition"
-                            title="تعديل"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Link>
-                        )}
+                          عرض
+                        </button>
                         {/* ⋮ More actions */}
                         <div className="relative" ref={rowMenuId === p.id ? rowMenuRef : null}>
                           <button
                             onClick={(e) => { e.stopPropagation(); setRowMenuId(rowMenuId === p.id ? null : p.id); }}
-                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
-                            title="المزيد"
+                            className="p-1 rounded-lg transition"
+                            style={{ color: "#94a3b8" }}
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
                           {rowMenuId === p.id && (
-                            <div className="absolute left-0 top-8 z-30 bg-white rounded-xl shadow-xl border border-gray-200 py-1 min-w-44 text-sm" dir="rtl">
+                            <div
+                              className="absolute left-0 top-8 z-30 bg-white rounded-xl py-1 min-w-44 text-sm"
+                              dir="rtl"
+                              style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
+                            >
                               <Link
                                 href={`/patients/${p.id}`}
-                                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-gray-700"
+                                className="flex items-center gap-2 px-3 py-2 transition"
+                                style={{ color: "#0d2137" }}
                                 onClick={() => setRowMenuId(null)}
+                                onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                               >
-                                <Eye className="w-4 h-4 text-gray-400" /> عرض الملف
+                                <Eye className="w-4 h-4" style={{ color: "#64748b" }} /> عرض الملف
                               </Link>
                               {p.isActive && (
                                 <Link
                                   href={`/patients/${p.id}/edit`}
-                                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-gray-700"
+                                  className="flex items-center gap-2 px-3 py-2 transition"
+                                  style={{ color: "#0d2137" }}
                                   onClick={() => setRowMenuId(null)}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                                 >
-                                  <Pencil className="w-4 h-4 text-gray-400" /> تعديل البيانات
-                                </Link>
-                              )}
-                              {p.isActive && (
-                                <Link
-                                  href={`/appointments/new?patientId=${p.id}`}
-                                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-gray-700"
-                                  onClick={() => setRowMenuId(null)}
-                                >
-                                  <Pencil className="w-4 h-4 text-gray-400" /> موعد جديد
+                                  <Pencil className="w-4 h-4" style={{ color: "#64748b" }} /> تعديل البيانات
                                 </Link>
                               )}
                               {isAdmin && (
                                 <>
-                                  <div className="h-px bg-gray-100 my-1" />
+                                  <div className="h-px my-1" style={{ background: "#f1f5f9" }} />
                                   {p.isActive ? (
                                     <button
                                       onClick={() => { setRowMenuId(null); setConfirm({ open: true, patient: p, action: "archive" }); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-red-50 text-red-600"
+                                      className="w-full flex items-center gap-2 px-3 py-2 transition"
+                                      style={{ color: "#ef4444" }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                                     >
                                       <Archive className="w-4 h-4" /> أرشفة المريض
                                     </button>
                                   ) : (
                                     <button
                                       onClick={() => { setRowMenuId(null); setConfirm({ open: true, patient: p, action: "restore" }); }}
-                                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-green-50 text-green-700"
+                                      className="w-full flex items-center gap-2 px-3 py-2 transition"
+                                      style={{ color: "#22c55e" }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = "#f0fdf4")}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                                     >
                                       <RotateCcw className="w-4 h-4" /> استعادة المريض
                                     </button>
@@ -347,28 +378,27 @@ export function PatientTable() {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination — matches ZIP */}
         {data && data.totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50">
-            <p className="text-xs text-gray-500">
+          <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: "1px solid #f1f5f9" }}>
+            <span className="text-xs" style={{ color: "#94a3b8" }}>
               عرض {(page - 1) * 20 + 1}–{Math.min(page * 20, data.totalCount)} من {data.totalCount}
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={!data.hasPreviousPage}
-                className="p-1.5 rounded-lg text-gray-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-              <span className="text-xs px-2 text-gray-600">{page} / {data.totalPages}</span>
-              <button
-                onClick={() => setPage((p) => p + 1)}
-                disabled={!data.hasNextPage}
-                className="p-1.5 rounded-lg text-gray-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
+            </span>
+            <div className="flex items-center gap-1.5">
+              {[...Array(Math.min(data.totalPages, 3))].map((_, n) => (
+                <button
+                  key={n + 1}
+                  onClick={() => setPage(n + 1)}
+                  className="w-7 h-7 rounded-md text-xs font-semibold transition"
+                  style={{
+                    border: "1px solid #dce8f5",
+                    background: page === n + 1 ? "#3d7ab5" : "#fff",
+                    color: page === n + 1 ? "#fff" : "#64748b",
+                  }}
+                >
+                  {n + 1}
+                </button>
+              ))}
             </div>
           </div>
         )}

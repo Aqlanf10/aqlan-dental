@@ -227,20 +227,26 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == patientId);
             if (patient == null) return;
 
+            // Check if a User with this patient's number already exists (from seed or previous runs)
+            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == patient.PatientNumber);
+
             if (account == null)
             {
-                // Create PatientAccount + linked User for messaging
-                var linkedUser = new User
+                // No PatientAccount exists — create linked User + PatientAccount
+                if (existingUser == null)
                 {
-                    Username = patient.PatientNumber,
-                    PasswordHash = "",
-                    PasswordSalt = "",
-                    Role = UserRole.Patient,
-                    Phone = patient.Phone,
-                    IsActive = true
-                };
-                db.Users.Add(linkedUser);
-                await db.SaveChangesAsync();
+                    existingUser = new User
+                    {
+                        Username = patient.PatientNumber,
+                        PasswordHash = "",
+                        PasswordSalt = "",
+                        Role = UserRole.Patient,
+                        Phone = patient.Phone,
+                        IsActive = true
+                    };
+                    db.Users.Add(existingUser);
+                    await db.SaveChangesAsync();
+                }
 
                 account = new PatientAccount
                 {
@@ -251,26 +257,30 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                     MustChangePassword = true,
                     PortalAccountActive = false,
                     IsActive = true,
-                    LinkedUserId = linkedUser.Id
+                    LinkedUserId = existingUser.Id
                 };
                 db.PatientAccounts.Add(account);
                 await db.SaveChangesAsync();
             }
             else
             {
-                // Account exists but no linked user — create one
-                var linkedUser = new User
+                // PatientAccount exists but no linked user — create or reuse one
+                if (existingUser == null)
                 {
-                    Username = patient.PatientNumber,
-                    PasswordHash = "",
-                    PasswordSalt = "",
-                    Role = UserRole.Patient,
-                    Phone = patient.Phone,
-                    IsActive = true
-                };
-                db.Users.Add(linkedUser);
-                await db.SaveChangesAsync();
-                account.LinkedUserId = linkedUser.Id;
+                    existingUser = new User
+                    {
+                        Username = patient.PatientNumber,
+                        PasswordHash = "",
+                        PasswordSalt = "",
+                        Role = UserRole.Patient,
+                        Phone = patient.Phone,
+                        IsActive = true
+                    };
+                    db.Users.Add(existingUser);
+                    await db.SaveChangesAsync();
+                }
+
+                account.LinkedUserId = existingUser.Id;
                 await db.SaveChangesAsync();
             }
         }

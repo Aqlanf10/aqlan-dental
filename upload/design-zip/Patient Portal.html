@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>Aqlan — بوابة المريض</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:#f0f4f8;font-family:'Tajawal',sans-serif;direction:rtl;-webkit-font-smoothing:antialiased}
+    #root{height:100%;display:flex;justify-content:center;align-items:flex-start;background:#dde4ec}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+    @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+    @keyframes slideInBottom{from{transform:translateY(100%)}to{transform:translateY(0)}}
+    input:focus{outline:none}
+    ::-webkit-scrollbar{width:3px}
+    ::-webkit-scrollbar-thumb{background:#c8d8ea;border-radius:99px}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState, useEffect, useRef} = React;
+
+// ── Theme ──────────────────────
+const C = {
+  primary: '#0d2137',
+  blue: '#3d7ab5',
+  orange: '#f5922e',
+  green: '#22c55e',
+  red: '#ef4444',
+  purple: '#a855f7',
+  bg: '#f0f4f8',
+  white: '#ffffff',
+  gray: '#64748b',
+  lightGray: '#94a3b8',
+  border: '#e2eaf4',
+  card: '#ffffff',
+};
+
+// ── Mock Data ──────────────────────
+const PATIENT = {
+  id: 'P001',
+  name: 'أحمد محمد الشيباني',
+  username: 'ahmed.shb',
+  password: '1234',
+  fileNumber: 'OR-2024-108',
+  age: 22,
+  doctor: 'د. عقلان الكامل',
+  specialty: 'تقويم أسنان',
+  startDate: '15 مارس 2024',
+  appliance: 'براكيت MBT 0.022',
+  stage: 'مرحلة المحاذاة والتسوية',
+  stageProgress: 65,
+  nextAppt: { date: '3 ديسمبر 2024', time: '10:00 ص', type: 'تفعيل تقويم', doctor: 'د. عقلان الكامل' },
+  avatar: 'أ',
+};
+
+const APPOINTMENTS = [
+  { id: 1, date: '3 ديسمبر 2024', time: '10:00 ص', type: 'تفعيل تقويم', doctor: 'د. عقلان الكامل', status: 'upcoming' },
+  { id: 2, date: '22 أكتوبر 2024', time: '09:30 ص', type: 'تفعيل تقويم', doctor: 'د. عقلان الكامل', status: 'completed' },
+  { id: 3, date: '15 سبتمبر 2024', time: '10:00 ص', type: 'مراجعة', doctor: 'د. عقلان الكامل', status: 'completed' },
+  { id: 4, date: '1 أغسطس 2024', time: '09:00 ص', type: 'تفعيل تقويم', doctor: 'د. عقلان الكامل', status: 'completed' },
+  { id: 5, date: '15 يونيو 2024', time: '11:00 ص', type: 'تفعيل تقويم', doctor: 'د. عقلان الكامل', status: 'completed' },
+  { id: 6, date: '1 مايو 2024', time: '10:00 ص', type: 'تفعيل تقويم', doctor: 'د. عقلان الكامل', status: 'completed' },
+  { id: 7, date: '15 مارس 2024', time: '09:00 ص', type: 'Bonding — تركيب البراكيت', doctor: 'د. عقلان الكامل', status: 'completed' },
+];
+
+const INSTRUCTIONS = [
+  { id: 1, title: 'تعليمات العناية بالبراكيت', date: '15 مارس 2024', icon: '🦷', content: 'تجنب الأطعمة الصلبة والمقرمشة. استخدم فرشاة الأسنان بعد كل وجبة. استخدم خيط الأسنان يومياً باستخدام الإبرة التقويمية. راجع طبيبك إذا كسر أي براكيت أو أي سلك.', category: 'عناية' },
+  { id: 2, title: 'تعليمات ارتداء الـ Elastics', date: '1 أغسطس 2024', icon: '💡', content: 'ارتدِ الـ Elastics 22 ساعة يومياً. أزلها فقط عند الأكل والتنظيف. غيّرها يومياً أو عند الانقطاع. تذكر: كلما التزمت أكثر، قلّت مدة العلاج.', category: 'ارشادات' },
+  { id: 3, title: 'الأطعمة المسموحة والممنوعة', date: '15 مارس 2024', icon: '🥗', content: 'مسموح: اللحوم الطرية، الخضار المطبوخة، الفواكه الطرية، الأرز، المعكرونة. ممنوع: العلكة، الكراميل، الحلوى الصلبة، المكسرات، الذرة، الخبز القاسي.', category: 'غذاء' },
+  { id: 4, title: 'ماذا تفعل إذا حدث طارئ؟', date: '15 مارس 2024', icon: '🚨', content: 'إذا انكسر البراكيت: لا تقلق، اتصل بالعيادة. إذا خرج السلك: استخدم شمع الأسنان لتغطيته مؤقتاً. إذا ألم شديد: اتصل فوراً على: 770-245745', category: 'طوارئ' },
+];
+
+const ACCOUNT = {
+  total: 1800000,
+  paid: 1050000,
+  installments: 12,
+  monthlyInstallment: 150000,
+  payments: [
+    { id: 1, date: '22 أكتوبر 2024', amount: 150000, method: 'نقدي', receipt: 'R-10234', status: 'paid' },
+    { id: 2, date: '22 سبتمبر 2024', amount: 150000, method: 'نقدي', receipt: 'R-10198', status: 'paid' },
+    { id: 3, date: '22 أغسطس 2024', amount: 150000, method: 'تحويل', receipt: 'R-10156', status: 'paid' },
+    { id: 4, date: '22 يوليو 2024', amount: 150000, method: 'نقدي', receipt: 'R-10102', status: 'paid' },
+    { id: 5, date: '22 يونيو 2024', amount: 150000, method: 'نقدي', receipt: 'R-10071', status: 'paid' },
+    { id: 6, date: '22 مايو 2024', amount: 150000, method: 'تحويل', receipt: 'R-10043', status: 'paid' },
+    { id: 7, date: '22 مارس 2024', amount: 150000, method: 'نقدي', receipt: 'R-10001', status: 'paid' },
+    { id: 8, date: '22 نوفمبر 2024', amount: 150000, method: '—', receipt: '—', status: 'upcoming' },
+  ],
+};
+
+const MESSAGES_INIT = [
+  { id: 1, from: 'clinic', name: 'مركز د. عقلان', text: 'أهلاً أحمد! يسعدنا خدمتك. يمكنك الآن التواصل معنا مباشرة عبر هذه الرسائل. موعدك القادم في 3 ديسمبر 2024 الساعة 10:00 صباحاً.', time: '10:00 ص', date: '28 أكتوبر 2024', read: true },
+  { id: 2, from: 'patient', text: 'شكراً جزيلاً! عندي استفسار، هل يمكن تأجيل موعد 3 ديسمبر لأسبوع؟', time: '10:15 ص', date: '28 أكتوبر 2024', read: true },
+  { id: 3, from: 'clinic', name: 'ريم (الاستقبال)', text: 'بالتأكيد أحمد! سنرتب لك موعداً بديلاً في 10 ديسمبر الساعة 10:00 صباحاً. هل يناسبك ذلك؟', time: '11:30 ص', date: '28 أكتوبر 2024', read: true },
+  { id: 4, from: 'patient', text: 'ممتاز، يناسبني تماماً. شكراً!', time: '11:45 ص', date: '28 أكتوبر 2024', read: true },
+  { id: 5, from: 'clinic', name: 'مركز د. عقلان', text: '✅ تم تعديل الموعد إلى: الثلاثاء 10 ديسمبر 2024 / الساعة 10:00 ص', time: '12:00 م', date: '28 أكتوبر 2024', read: false },
+];
+
+// ── Components ──────────────────────
+function PhoneShell({children}) {
+  return (
+    <div style={{
+      width: 390, minHeight: '100vh', maxHeight: '100vh',
+      background: C.bg, display: 'flex', flexDirection: 'column',
+      position: 'relative', overflow: 'hidden',
+      boxShadow: '0 0 60px rgba(0,0,0,0.25)',
+    }}>
+      {/* Status bar */}
+      <div style={{height: 44, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', flexShrink: 0}}>
+        <span style={{color: '#fff', fontSize: 12, fontWeight: 700}}>9:41</span>
+        <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+          <span style={{color: '#fff', fontSize: 10}}>●●●</span>
+          <span style={{color: '#fff', fontSize: 10}}>WiFi</span>
+          <span style={{color: '#fff', fontSize: 12}}>🔋</span>
+        </div>
+      </div>
+      <div style={{flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column'}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Btn({children, variant='primary', full=false, onClick, small=false, disabled=false}) {
+  const bg = {primary: C.blue, orange: C.orange, ghost: 'transparent', danger: C.red, white: '#fff'};
+  const col = {primary: '#fff', orange: '#fff', ghost: C.blue, danger: '#fff', white: C.blue};
+  const border = {ghost: `1.5px solid ${C.blue}`, white: `1.5px solid ${C.border}`};
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: full ? '100%' : 'auto',
+        padding: small ? '8px 16px' : '13px 20px',
+        borderRadius: 12, border: border[variant] || 'none',
+        background: disabled ? '#e2eaf4' : bg[variant] || C.blue,
+        color: disabled ? C.lightGray : col[variant] || '#fff',
+        fontFamily: 'Tajawal', fontWeight: 700,
+        fontSize: small ? 13 : 15,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        transition: 'all 0.15s',
+        boxShadow: variant === 'primary' && !disabled ? '0 4px 12px rgba(61,122,181,0.3)' : 'none',
+      }}
+    >{children}</button>
+  );
+}
+
+function Badge({children, color=C.blue}) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center',
+      padding: '3px 10px', borderRadius: 99,
+      fontSize: 11, fontWeight: 700,
+      color, background: color + '18',
+    }}>{children}</span>
+  );
+}
+
+function Card({children, style={}, onClick, padding=16}) {
+  return (
+    <div onClick={onClick} style={{
+      background: C.white, borderRadius: 16,
+      padding, boxShadow: '0 2px 10px rgba(13,33,55,0.06)',
+      border: `1px solid ${C.border}`, ...style,
+      cursor: onClick ? 'pointer' : 'default',
+    }}>{children}</div>
+  );
+}
+
+// ── Login Screen ──────────────────────
+function LoginScreen({onLogin}) {
+  const [user, setUser] = useState('ahmed.shb');
+  const [pass, setPass] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (user === PATIENT.username && pass === PATIENT.password) {
+      setLoading(true);
+      setTimeout(onLogin, 1000);
+    } else {
+      setErr('اسم المستخدم أو كلمة المرور غير صحيحة');
+    }
+  };
+
+  return (
+    <div style={{flex: 1, display: 'flex', flexDirection: 'column', background: 'linear-gradient(160deg, #0a1c30 0%, #0d2137 60%, #1a3a5c 100%)', padding: '40px 24px 32px', justifyContent: 'space-between', overflowY: 'auto'}}>
+      {/* Logo area */}
+      <div style={{textAlign: 'center', animation: 'fadeUp 0.5s ease'}}>
+        <div style={{width: 80, height: 80, borderRadius: 22, background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', backdropFilter: 'blur(10px)'}}>
+          <img src="uploads/logo_upload-1777339394562.png" style={{width: 62, height: 62, objectFit: 'contain'}} alt="Aqlan"/>
+        </div>
+        <div style={{color: '#fff', fontSize: 22, fontWeight: 800, marginBottom: 4}}>بوابة المريض</div>
+        <div style={{color: 'rgba(255,255,255,0.5)', fontSize: 13}}>مركز د. عقلان الكامل لطب وتقويم الأسنان</div>
+      </div>
+
+      {/* Form */}
+      <form onSubmit={handleLogin} style={{animation: 'fadeUp 0.6s ease'}}>
+        <div style={{background: 'rgba(255,255,255,0.06)', borderRadius: 20, padding: 24, border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(12px)', marginBottom: 16}}>
+          <div style={{fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 20}}>تسجيل الدخول</div>
+
+          <div style={{marginBottom: 14}}>
+            <label style={{display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6, fontWeight: 600}}>اسم المستخدم</label>
+            <input value={user} onChange={e => setUser(e.target.value)}
+              style={{width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontFamily: 'Tajawal', fontSize: 14, direction: 'ltr', textAlign: 'right'}}
+              placeholder="ahmed.shb"
+            />
+          </div>
+
+          <div style={{marginBottom: 8}}>
+            <label style={{display: 'block', fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 6, fontWeight: 600}}>كلمة المرور</label>
+            <input type="password" value={pass} onChange={e => { setPass(e.target.value); setErr(''); }}
+              style={{width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.08)', color: '#fff', fontFamily: 'Tajawal', fontSize: 14}}
+              placeholder="••••••••"
+            />
+          </div>
+
+          {err && <div style={{color: '#fca5a5', fontSize: 12, marginBottom: 8}}>{err}</div>}
+
+          <div style={{textAlign: 'left', marginBottom: 20}}>
+            <span style={{color: C.orange, fontSize: 12, cursor: 'pointer', fontWeight: 600}}>نسيت كلمة المرور؟</span>
+          </div>
+
+          <button type="submit" disabled={loading} style={{width: '100%', padding: '13px', borderRadius: 12, background: loading ? '#2d5e8e' : C.blue, color: '#fff', border: 'none', fontFamily: 'Tajawal', fontSize: 15, fontWeight: 700, cursor: loading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(61,122,181,0.4)'}}>
+            {loading ? <><div style={{width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: 99, animation: 'spin 0.7s linear infinite'}}/> جارٍ الدخول...</> : '🔑 دخول'}
+          </button>
+        </div>
+
+        <div style={{textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 12}}>
+          تجربة: اسم المستخدم: <strong style={{color: 'rgba(255,255,255,0.6)'}}>ahmed.shb</strong> / كلمة المرور: <strong style={{color: 'rgba(255,255,255,0.6)'}}>1234</strong>
+        </div>
+      </form>
+
+      {/* Footer */}
+      <div style={{textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 11}}>
+        للتواصل: 770-245745 · 04-253028
+      </div>
+    </div>
+  );
+}
+
+// ── Bottom Nav ──────────────────────
+function BottomNav({active, onChange, msgCount=0}) {
+  const tabs = [
+    {id:'home', icon:'🏠', label:'الرئيسية'},
+    {id:'appointments', icon:'📅', label:'المواعيد'},
+    {id:'instructions', icon:'📋', label:'التعليمات'},
+    {id:'account', icon:'💰', label:'الحساب'},
+    {id:'messages', icon:'💬', label:'الرسائل', badge: msgCount},
+  ];
+  return (
+    <div style={{height: 74, background: '#fff', borderTop: `1px solid ${C.border}`, display: 'flex', alignItems: 'stretch', flexShrink: 0, paddingBottom: 8}}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)} style={{
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+          border: 'none', background: 'none', cursor: 'pointer', position: 'relative',
+          transition: 'all 0.15s',
+        }}>
+          <div style={{fontSize: active === t.id ? 22 : 20, filter: active !== t.id ? 'grayscale(1) opacity(0.5)' : 'none', transition: 'all 0.15s', transform: active === t.id ? 'scale(1.1)' : 'scale(1)'}}>
+            {t.icon}
+          </div>
+          <div style={{fontSize: 10, fontWeight: active === t.id ? 700 : 500, color: active === t.id ? C.blue : C.lightGray}}>{t.label}</div>
+          {t.badge > 0 && (
+            <div style={{position: 'absolute', top: 6, right: '50%', marginRight: -18, width: 16, height: 16, borderRadius: 99, background: C.red, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff', border: '2px solid #fff'}}>
+              {t.badge}
+            </div>
+          )}
+          {active === t.id && <div style={{position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, borderRadius: 99, background: C.blue}}/>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Header ──────────────────────
+function Header({title, showBack=false, onBack, right}) {
+  return (
+    <div style={{height: 56, background: C.primary, display: 'flex', alignItems: 'center', padding: '0 18px', gap: 12, flexShrink: 0}}>
+      {showBack && (
+        <button onClick={onBack} style={{background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 10, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0}}>
+          <span style={{color: '#fff', fontSize: 18}}>›</span>
+        </button>
+      )}
+      <div style={{flex: 1, color: '#fff', fontWeight: 800, fontSize: 16}}>{title}</div>
+      {right}
+    </div>
+  );
+}
+
+// ── Home Screen ──────────────────────
+function HomeScreen({onNavigate}) {
+  const pct = Math.round((ACCOUNT.paid / ACCOUNT.total) * 100);
+
+  return (
+    <div style={{flex: 1, overflowY: 'auto', padding: '0 0 16px'}}>
+      {/* Header */}
+      <div style={{background: C.primary, padding: '16px 20px 24px'}}>
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
+          <div>
+            <div style={{color: 'rgba(255,255,255,0.6)', fontSize: 13}}>أهلاً،</div>
+            <div style={{color: '#fff', fontSize: 20, fontWeight: 800}}>{PATIENT.name.split(' ')[0]} 👋</div>
+          </div>
+          <div style={{width: 44, height: 44, borderRadius: 99, background: C.blue, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: '#fff', border: '2px solid rgba(255,255,255,0.2)'}}>
+            {PATIENT.avatar}
+          </div>
+        </div>
+
+        {/* Progress card */}
+        <div style={{background: 'rgba(255,255,255,0.1)', borderRadius: 16, padding: 16, border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)'}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10}}>
+            <div>
+              <div style={{color: 'rgba(255,255,255,0.6)', fontSize: 11, marginBottom: 2}}>تقدم العلاج التقويمي</div>
+              <div style={{color: '#fff', fontSize: 14, fontWeight: 700}}>{PATIENT.stage}</div>
+            </div>
+            <div style={{fontSize: 24, fontWeight: 800, color: C.orange}}>{PATIENT.stageProgress}%</div>
+          </div>
+          <div style={{height: 8, background: 'rgba(255,255,255,0.15)', borderRadius: 99, overflow: 'hidden'}}>
+            <div style={{width: `${PATIENT.stageProgress}%`, height: '100%', background: `linear-gradient(90deg, ${C.blue}, ${C.orange})`, borderRadius: 99}}/>
+          </div>
+          <div style={{display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'rgba(255,255,255,0.5)'}}>
+            <span>البداية: {PATIENT.startDate}</span>
+            <span>الجهاز: {PATIENT.appliance}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding: '16px 16px 0'}}>
+        {/* Next appointment */}
+        <div style={{fontSize: 13, fontWeight: 700, color: C.gray, marginBottom: 10}}>الموعد القادم</div>
+        <Card style={{marginBottom: 16, background: `linear-gradient(135deg, ${C.blue}15, ${C.blue}05)`}} onClick={() => onNavigate('appointments')}>
+          <div style={{display: 'flex', gap: 14, alignItems: 'center'}}>
+            <div style={{width: 50, height: 50, borderRadius: 14, background: C.blue, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0}}>
+              <span style={{fontSize: 18}}>📅</span>
+            </div>
+            <div style={{flex: 1}}>
+              <div style={{fontWeight: 800, fontSize: 15, color: C.primary, marginBottom: 4}}>{PATIENT.nextAppt.type}</div>
+              <div style={{fontSize: 13, color: C.gray, marginBottom: 2}}>📆 {PATIENT.nextAppt.date}</div>
+              <div style={{fontSize: 13, color: C.gray}}>🕙 {PATIENT.nextAppt.time} · {PATIENT.nextAppt.doctor}</div>
+            </div>
+            <div style={{fontSize: 20, color: C.lightGray}}>›</div>
+          </div>
+          <div style={{marginTop: 12, display: 'flex', gap: 8}}>
+            <Btn variant="ghost" small onClick={e => { e.stopPropagation(); }}>📍 الموقع</Btn>
+            <Btn variant="ghost" small>📞 اتصل بنا</Btn>
+          </div>
+        </Card>
+
+        {/* Quick actions */}
+        <div style={{fontSize: 13, fontWeight: 700, color: C.gray, marginBottom: 10}}>وصول سريع</div>
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16}}>
+          {[
+            {icon: '📋', label: 'تعليماتي', color: C.blue, page: 'instructions'},
+            {icon: '💰', label: 'كشف حسابي', color: C.green, page: 'account'},
+            {icon: '💬', label: 'راسلنا', color: C.orange, page: 'messages'},
+            {icon: '🦷', label: 'ملفي الطبي', color: C.purple, page: 'home'},
+          ].map(a => (
+            <Card key={a.label} onClick={() => onNavigate(a.page)} style={{cursor: 'pointer', textAlign: 'center', padding: 16}}>
+              <div style={{fontSize: 28, marginBottom: 6}}>{a.icon}</div>
+              <div style={{fontSize: 13, fontWeight: 700, color: a.color}}>{a.label}</div>
+            </Card>
+          ))}
+        </div>
+
+        {/* Account summary */}
+        <div style={{fontSize: 13, fontWeight: 700, color: C.gray, marginBottom: 10}}>ملخص الحساب</div>
+        <Card style={{marginBottom: 16}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: 12}}>
+            <div style={{textAlign: 'center'}}>
+              <div style={{fontSize: 11, color: C.lightGray, marginBottom: 4}}>إجمالي العقد</div>
+              <div style={{fontSize: 15, fontWeight: 800, color: C.primary}}>{(ACCOUNT.total/1000).toFixed(0)}K ر.ي</div>
+            </div>
+            <div style={{textAlign: 'center'}}>
+              <div style={{fontSize: 11, color: C.lightGray, marginBottom: 4}}>المدفوع</div>
+              <div style={{fontSize: 15, fontWeight: 800, color: C.green}}>{(ACCOUNT.paid/1000).toFixed(0)}K ر.ي</div>
+            </div>
+            <div style={{textAlign: 'center'}}>
+              <div style={{fontSize: 11, color: C.lightGray, marginBottom: 4}}>المتبقي</div>
+              <div style={{fontSize: 15, fontWeight: 800, color: C.orange}}>{((ACCOUNT.total-ACCOUNT.paid)/1000).toFixed(0)}K ر.ي</div>
+            </div>
+          </div>
+          <div style={{height: 6, background: C.border, borderRadius: 99, overflow: 'hidden', marginBottom: 4}}>
+            <div style={{width: `${pct}%`, height: '100%', background: `linear-gradient(90deg, ${C.green}, #16a34a)`, borderRadius: 99}}/>
+          </div>
+          <div style={{fontSize: 11, color: C.lightGray, textAlign: 'center'}}>{pct}% تم تحصيله</div>
+        </Card>
+
+        {/* Clinic info */}
+        <Card style={{background: C.primary + '08', border: `1px solid ${C.blue}20`}}>
+          <div style={{fontWeight: 700, fontSize: 14, color: C.primary, marginBottom: 10}}>🏥 مركز د. عقلان الكامل</div>
+          <div style={{fontSize: 13, color: C.gray, lineHeight: 1.8}}>
+            📍 تعز — شارع التحرير الأعلى<br/>
+            📞 04-253028 · 770-245745<br/>
+            ⏰ السبت – الخميس: 9 ص – 9 م
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ── Appointments Screen ──────────────────────
+function AppointmentsScreen() {
+  const [filter, setFilter] = useState('all');
+  const filtered = filter === 'all' ? APPOINTMENTS : APPOINTMENTS.filter(a => a.status === filter);
+
+  return (
+    <div style={{flex: 1, overflowY: 'auto'}}>
+      <Header title="مواعيدي" right={
+        <div style={{background: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#fff'}}>
+          {APPOINTMENTS.length} موعد
+        </div>
+      }/>
+
+      {/* Filters */}
+      <div style={{display: 'flex', gap: 8, padding: '12px 16px', background: '#fff', borderBottom: `1px solid ${C.border}`, overflowX: 'auto'}}>
+        {[['all','الكل'],['upcoming','القادمة'],['completed','المكتملة']].map(([val,lbl]) => (
+          <button key={val} onClick={() => setFilter(val)} style={{
+            padding: '6px 16px', borderRadius: 99, border: `1.5px solid ${filter===val ? C.blue : C.border}`,
+            background: filter===val ? C.blue : '#fff', color: filter===val ? '#fff' : C.gray,
+            fontFamily: 'Tajawal', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
+          }}>{lbl}</button>
+        ))}
+      </div>
+
+      <div style={{padding: 16, display: 'flex', flexDirection: 'column', gap: 10}}>
+        {filtered.map(a => (
+          <Card key={a.id} style={{animation: 'fadeUp 0.3s ease'}}>
+            <div style={{display: 'flex', gap: 14, alignItems: 'flex-start'}}>
+              <div style={{
+                width: 46, height: 46, borderRadius: 12,
+                background: a.status === 'upcoming' ? C.blue : C.border,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0,
+              }}>
+                {a.status === 'upcoming' ? '📅' : '✅'}
+              </div>
+              <div style={{flex: 1}}>
+                <div style={{fontWeight: 800, fontSize: 14, color: C.primary, marginBottom: 4}}>{a.type}</div>
+                <div style={{fontSize: 12, color: C.gray, marginBottom: 2}}>📆 {a.date}</div>
+                <div style={{fontSize: 12, color: C.gray, marginBottom: 6}}>🕙 {a.time} · {a.doctor}</div>
+                <Badge color={a.status === 'upcoming' ? C.blue : C.green}>
+                  {a.status === 'upcoming' ? 'قادم' : 'مكتمل'}
+                </Badge>
+              </div>
+            </div>
+            {a.status === 'upcoming' && (
+              <div style={{marginTop: 12, display: 'flex', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 12}}>
+                <Btn variant="ghost" small full>📍 الاتجاهات</Btn>
+                <Btn variant="orange" small full>📞 تأكيد الموعد</Btn>
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Instructions Screen ──────────────────────
+function InstructionsScreen() {
+  const [selected, setSelected] = useState(null);
+  const catColors = {'عناية': C.blue, 'ارشادات': C.orange, 'غذاء': C.green, 'طوارئ': C.red};
+
+  if (selected) {
+    const inst = INSTRUCTIONS.find(i => i.id === selected);
+    return (
+      <div style={{flex: 1, display: 'flex', flexDirection: 'column'}}>
+        <Header title={inst.title} showBack onBack={() => setSelected(null)}/>
+        <div style={{flex: 1, overflowY: 'auto', padding: 16}}>
+          <Card>
+            <div style={{textAlign: 'center', fontSize: 48, marginBottom: 16}}>{inst.icon}</div>
+            <Badge color={catColors[inst.category] || C.blue} style={{marginBottom: 12}}>{inst.category}</Badge>
+            <h2 style={{fontSize: 17, fontWeight: 800, color: C.primary, marginBottom: 12, marginTop: 8}}>{inst.title}</h2>
+            <p style={{fontSize: 14, color: C.gray, lineHeight: 2}}>{inst.content}</p>
+            <div style={{marginTop: 16, fontSize: 12, color: C.lightGray}}>📅 صدر بتاريخ: {inst.date}</div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{flex: 1, overflowY: 'auto'}}>
+      <Header title="التعليمات الطبية"/>
+      <div style={{padding: 16, display: 'flex', flexDirection: 'column', gap: 10}}>
+        {INSTRUCTIONS.map(inst => (
+          <Card key={inst.id} onClick={() => setSelected(inst.id)} style={{animation: 'fadeUp 0.3s ease', cursor: 'pointer'}}>
+            <div style={{display: 'flex', gap: 14, alignItems: 'center'}}>
+              <div style={{width: 48, height: 48, borderRadius: 14, background: (catColors[inst.category]||C.blue) + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0}}>
+                {inst.icon}
+              </div>
+              <div style={{flex: 1}}>
+                <div style={{fontWeight: 700, fontSize: 14, color: C.primary, marginBottom: 4}}>{inst.title}</div>
+                <div style={{fontSize: 12, color: C.lightGray, marginBottom: 6}}>{inst.date}</div>
+                <Badge color={catColors[inst.category] || C.blue}>{inst.category}</Badge>
+              </div>
+              <div style={{fontSize: 20, color: C.lightGray}}>›</div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Account Screen ──────────────────────
+function AccountScreen() {
+  const pct = Math.round((ACCOUNT.paid / ACCOUNT.total) * 100);
+  const remaining = ACCOUNT.total - ACCOUNT.paid;
+  const paidCount = ACCOUNT.payments.filter(p => p.status === 'paid').length;
+
+  return (
+    <div style={{flex: 1, overflowY: 'auto'}}>
+      <Header title="كشف حسابي"/>
+
+      {/* Summary card */}
+      <div style={{padding: 16}}>
+        <div style={{background: `linear-gradient(135deg, ${C.primary}, #1a3a5c)`, borderRadius: 20, padding: 20, marginBottom: 16, color: '#fff'}}>
+          <div style={{fontSize: 12, opacity: 0.6, marginBottom: 4}}>إجمالي عقد العلاج</div>
+          <div style={{fontSize: 28, fontWeight: 800, marginBottom: 16}}>{ACCOUNT.total.toLocaleString()} ر.ي</div>
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16}}>
+            {[
+              {label: 'المدفوع', val: ACCOUNT.paid, color: C.green},
+              {label: 'المتبقي', val: remaining, color: C.orange},
+              {label: 'الأقساط', val: ACCOUNT.installments + ' قسط', color: 'rgba(255,255,255,0.8)', noFormat: true},
+            ].map(s => (
+              <div key={s.label} style={{background: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 10, textAlign: 'center'}}>
+                <div style={{fontSize: 10, opacity: 0.6, marginBottom: 4}}>{s.label}</div>
+                <div style={{fontSize: 13, fontWeight: 800, color: s.color}}>
+                  {s.noFormat ? s.val : (s.val/1000).toFixed(0) + 'K'}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginBottom: 6}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', fontSize: 11, opacity: 0.7, marginBottom: 4}}>
+              <span>نسبة التحصيل</span><span>{pct}%</span>
+            </div>
+            <div style={{height: 8, background: 'rgba(255,255,255,0.15)', borderRadius: 99, overflow: 'hidden'}}>
+              <div style={{width: `${pct}%`, height: '100%', background: `linear-gradient(90deg, ${C.green}, #16a34a)`, borderRadius: 99}}/>
+            </div>
+          </div>
+          <div style={{fontSize: 12, opacity: 0.6}}>
+            ✅ {paidCount} أقساط مدفوعة من أصل {ACCOUNT.installments}
+          </div>
+        </div>
+
+        {/* Next payment */}
+        <Card style={{marginBottom: 16, border: `1.5px solid ${C.orange}30`, background: C.orange + '06'}}>
+          <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
+            <div style={{fontSize: 28}}>💳</div>
+            <div>
+              <div style={{fontSize: 13, color: C.gray, marginBottom: 2}}>القسط القادم</div>
+              <div style={{fontSize: 16, fontWeight: 800, color: C.primary}}>{ACCOUNT.monthlyInstallment.toLocaleString()} ر.ي</div>
+              <div style={{fontSize: 12, color: C.orange}}>📅 22 نوفمبر 2024</div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Payments list */}
+        <div style={{fontWeight: 700, fontSize: 14, color: C.primary, marginBottom: 10}}>سجل المدفوعات</div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+          {ACCOUNT.payments.map(p => (
+            <Card key={p.id} padding={12}>
+              <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
+                <div style={{width: 36, height: 36, borderRadius: 99, background: p.status === 'paid' ? C.green + '18' : C.orange + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0}}>
+                  <span style={{fontSize: 16}}>{p.status === 'paid' ? '✅' : '⏳'}</span>
+                </div>
+                <div style={{flex: 1}}>
+                  <div style={{fontSize: 13, fontWeight: 700, color: C.primary}}>{p.status === 'paid' ? p.date : 'قادم — ' + p.date}</div>
+                  <div style={{fontSize: 11, color: C.lightGray}}>
+                    {p.status === 'paid' ? `${p.method} · ${p.receipt}` : 'لم يُسدَّد بعد'}
+                  </div>
+                </div>
+                <div style={{fontSize: 14, fontWeight: 800, color: p.status === 'paid' ? C.green : C.orange}}>
+                  {p.amount.toLocaleString()} ر.ي
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Messages Screen ──────────────────────
+function MessagesScreen({onNewMsg}) {
+  const [messages, setMessages] = useState(MESSAGES_INIT);
+  const [input, setInput] = useState('');
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.parentElement.scrollTop = bottomRef.current.offsetTop;
+    }
+  }, [messages]);
+
+  const sendMessage = () => {
+    if (!input.trim()) return;
+    setMessages(prev => [...prev, {
+      id: Date.now(), from: 'patient',
+      text: input.trim(),
+      time: '9:41 ص', date: 'الآن', read: true,
+    }]);
+    setInput('');
+    if (onNewMsg) onNewMsg();
+    // Simulate reply after delay
+    setTimeout(() => {
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1, from: 'clinic',
+        name: 'ريم (الاستقبال)',
+        text: 'شكراً لتواصلك معنا! سيتم الرد عليك في أقرب وقت ممكن خلال أوقات العمل.',
+        time: '9:42 ص', date: 'الآن', read: true,
+      }]);
+    }, 1500);
+  };
+
+  return (
+    <div style={{flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
+      <Header title="رسائلي" right={
+        <div style={{display: 'flex', gap: 6, alignItems: 'center'}}>
+          <div style={{width: 8, height: 8, borderRadius: 99, background: C.green, animation: 'pulse 2s infinite'}}/>
+          <span style={{color: 'rgba(255,255,255,0.7)', fontSize: 11}}>متصل</span>
+        </div>
+      }/>
+
+      {/* Clinic info bar */}
+      <div style={{background: C.blue + '10', padding: '10px 16px', display: 'flex', gap: 10, alignItems: 'center', borderBottom: `1px solid ${C.border}`, flexShrink: 0}}>
+        <div style={{width: 36, height: 36, borderRadius: 99, background: C.blue, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: '#fff', flexShrink: 0}}>ع</div>
+        <div>
+          <div style={{fontWeight: 700, fontSize: 13, color: C.primary}}>مركز د. عقلان الكامل</div>
+          <div style={{fontSize: 11, color: C.green}}>● متاح الآن</div>
+        </div>
+        <div style={{marginRight: 'auto', fontSize: 11, color: C.lightGray}}>الأوقات: 9ص–9م</div>
+      </div>
+
+      {/* Messages */}
+      <div style={{flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10}}>
+        {messages.map(m => {
+          const isPatient = m.from === 'patient';
+          return (
+            <div key={m.id} style={{display: 'flex', flexDirection: 'column', alignItems: isPatient ? 'flex-start' : 'flex-end', animation: 'fadeUp 0.2s ease'}}>
+              {!isPatient && m.name && (
+                <div style={{fontSize: 10, color: C.lightGray, marginBottom: 3, marginLeft: 8}}>{m.name}</div>
+              )}
+              <div style={{
+                maxWidth: '78%', padding: '10px 14px', borderRadius: isPatient ? '16px 16px 16px 4px' : '16px 16px 4px 16px',
+                background: isPatient ? '#fff' : C.blue,
+                color: isPatient ? C.primary : '#fff',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                border: isPatient ? `1px solid ${C.border}` : 'none',
+                fontSize: 13, lineHeight: 1.6, fontWeight: 500,
+              }}>
+                {m.text}
+              </div>
+              <div style={{fontSize: 10, color: C.lightGray, marginTop: 3, marginLeft: 4, marginRight: 4}}>
+                {m.time} · {m.date}
+                {isPatient && ' ✓'}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef}/>
+      </div>
+
+      {/* Input */}
+      <div style={{padding: '10px 12px', background: '#fff', borderTop: `1px solid ${C.border}`, display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0}}>
+        <button style={{width: 40, height: 40, borderRadius: 99, background: C.border, border: 'none', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0}}>
+          📎
+        </button>
+        <div style={{flex: 1, background: C.bg, borderRadius: 20, padding: '8px 14px', border: `1.5px solid ${C.border}`}}>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+            placeholder="اكتب رسالتك هنا..."
+            style={{width: '100%', background: 'none', border: 'none', fontFamily: 'Tajawal', fontSize: 13, color: C.primary, resize: 'none', outline: 'none', maxHeight: 80, minHeight: 20, direction: 'rtl'}}
+            rows={1}
+          />
+        </div>
+        <button
+          onClick={sendMessage}
+          disabled={!input.trim()}
+          style={{width: 40, height: 40, borderRadius: 99, background: input.trim() ? C.blue : C.border, border: 'none', cursor: input.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: input.trim() ? '0 3px 10px rgba(61,122,181,0.4)' : 'none', transition: 'all 0.15s'}}>
+          <span style={{fontSize: 18, transform: 'scaleX(-1)', display: 'block'}}>➤</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────
+function PatientApp() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [tab, setTab] = useState('home');
+  const [unreadMsgs, setUnreadMsgs] = useState(1);
+
+  const SCREENS = {
+    home: <HomeScreen onNavigate={setTab}/>,
+    appointments: <AppointmentsScreen/>,
+    instructions: <InstructionsScreen/>,
+    account: <AccountScreen/>,
+    messages: <MessagesScreen onNewMsg={() => {}}/>,
+  };
+
+  return (
+    <PhoneShell>
+      {!loggedIn ? (
+        <LoginScreen onLogin={() => setLoggedIn(true)}/>
+      ) : (
+        <>
+          <div style={{flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', animation: 'fadeUp 0.3s ease'}}>
+            {SCREENS[tab]}
+          </div>
+          <BottomNav active={tab} onChange={(t) => { setTab(t); if(t==='messages') setUnreadMsgs(0); }} msgCount={unreadMsgs}/>
+        </>
+      )}
+    </PhoneShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<PatientApp/>);
+</script>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
+    <rect width="120" height="80" fill="#0d2137"/>
+    <rect x="35" y="5" width="50" height="70" rx="8" fill="#1a3a5c"/>
+    <rect x="35" y="5" width="50" height="8" rx="4" fill="#0a1520"/>
+    <rect x="40" y="18" width="40" height="20" rx="4" fill="#3d7ab5" opacity="0.4"/>
+    <rect x="40" y="42" width="40" height="6" rx="3" fill="rgba(255,255,255,0.1)"/>
+    <rect x="40" y="52" width="28" height="6" rx="3" fill="rgba(255,255,255,0.07)"/>
+    <rect x="35" y="65" width="50" height="10" rx="0" fill="#162e49"/>
+  </svg>
+</template>
+</body>
+</html>

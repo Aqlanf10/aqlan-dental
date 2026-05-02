@@ -264,7 +264,7 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
         var patient = await service.GetByIdAsync(id);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
 
-        var appointments = await db.Appointments
+        var appointmentEvents = await db.Appointments
             .Where(a => a.PatientId == id)
             .Include(a => a.Doctor)
             .OrderByDescending(a => a.AppointmentDate).ThenByDescending(a => a.StartTime)
@@ -280,6 +280,32 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
             .Take(50)
             .ToListAsync();
 
-        return Ok(appointments);
+        var visitEvents = await db.Visits
+            .Where(v => v.PatientId == id)
+            .Include(v => v.Doctor)
+            .OrderByDescending(v => v.VisitDate)
+            .Select(v => new
+            {
+                type = "visit",
+                id = v.Id,
+                date = v.VisitDate.ToString("yyyy-MM-dd"),
+                title = "زيارة سريرية",
+                description = v.Doctor != null
+                    ? (v.Diagnosis != null ? $"{v.Doctor.Name} · {v.Diagnosis}" : $"{v.Doctor.Name} · {(v.VisitType ?? "استشارة")}")
+                    : (v.Diagnosis ?? v.VisitType ?? "زيارة"),
+                status = (string?)null
+            })
+            .Take(50)
+            .ToListAsync();
+
+        // Merge and sort by date descending
+        var allEvents = appointmentEvents
+            .Cast<object>()
+            .Concat(visitEvents)
+            .OrderByDescending(e => ((dynamic)e).date)
+            .Take(50)
+            .ToList();
+
+        return Ok(allEvents);
     }
 }

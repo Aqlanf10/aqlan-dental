@@ -339,15 +339,17 @@ export default function PatientProfilePage() {
               استعادة
             </button>
           )}
+          {/* Patient-facing conversation shortcut — visible to patient in portal */}
           <Link
             href={`/messages?patientId=${id}`}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg transition flex-shrink-0"
-            style={{ background: "#3d7ab5", color: "#fff" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#2d5e8e")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#3d7ab5")}
+            style={{ background: "#f5922e", color: "#fff" }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#e07d1e")}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#f5922e")}
+            title="فتح المحادثة المرئية للمريض في بوابته"
           >
             <MessageCircle className="w-3.5 h-3.5" />
-            مراسلة
+            راسل المريض
           </Link>
         </div>
 

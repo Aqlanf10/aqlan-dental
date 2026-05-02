@@ -156,15 +156,13 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
       {conversation && (
         <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <MessageCircle className="w-4 h-4 text-clinic-blue" />
+            <MessageCircle className="w-4 h-4 text-clinic-orange" />
             <span className="text-sm font-medium text-gray-700">
-              محادثة داخلية
+              محادثة مع المريض
             </span>
-            {conversation.participants.length > 0 && (
-              <span className="text-xs text-gray-400">
-                ({conversation.participants.length} مشارك)
-              </span>
-            )}
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-clinic-orange/10 text-clinic-orange font-semibold">
+              مرئية للمريض
+            </span>
           </div>
           <button
             onClick={() => router.push(`/messages?patientId=${patientId}`)}

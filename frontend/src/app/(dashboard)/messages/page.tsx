@@ -338,6 +338,7 @@ function ConversationItem({
 }) {
   const other = conv.otherParticipant;
   const isPatientConv = conv.conversationType === "StaffToPatient";
+  const hasUnread = conv.unreadCount > 0;
 
   return (
     <button
@@ -367,37 +368,60 @@ function ConversationItem({
             {other?.avatarInitials ?? other?.displayName?.charAt(1) ?? "?"}
           </div>
         )}
+        {/* Unread dot on avatar */}
+        {hasUnread && !isSelected && (
+          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 border-2 border-white rounded-full" />
+        )}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold text-sm text-gray-900 truncate">
-            {conv.title}
-          </span>
-          {conv.lastMessageAt && (
-            <span className="text-xs text-gray-400 flex-shrink-0">
-              {formatTime(conv.lastMessageAt)}
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={cn(
+                "text-sm truncate",
+                hasUnread ? "font-bold text-gray-900" : "font-semibold text-gray-800"
+              )}
+            >
+              {conv.title}
             </span>
-          )}
+            {/* Patient-facing conversation badge */}
+            {isPatientConv && (
+              <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-clinic-orange/15 text-clinic-orange leading-none">
+                مريض
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {conv.lastMessageAt && (
+              <span className="text-[10px] text-gray-400">
+                {formatTime(conv.lastMessageAt)}
+              </span>
+            )}
+            {hasUnread && (
+              <span className="bg-clinic-blue text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0">
+                {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
+              </span>
+            )}
+          </div>
         </div>
-        {/* Patient number badge */}
-        {isPatientConv && conv.patientNumber && (
-          <p className="text-[10px] text-clinic-orange font-medium mt-0.5">
-            #{conv.patientNumber}
-            {conv.patientName && ` — ${conv.patientName}`}
+        {/* Patient number + name row */}
+        {isPatientConv && (conv.patientNumber || conv.patientName) && (
+          <p className="text-[10px] text-clinic-orange font-medium mt-0.5 flex items-center gap-1">
+            {conv.patientNumber && <span>#{conv.patientNumber}</span>}
+            {conv.patientName && conv.patientNumber && <span className="text-gray-300">·</span>}
+            {conv.patientName && <span>{conv.patientName}</span>}
           </p>
         )}
-        <div className="flex items-center justify-between mt-0.5">
-          <span className="text-xs text-gray-500 truncate">
-            {conv.lastMessagePreview ?? "لا توجد رسائل"}
-          </span>
-          {conv.unreadCount > 0 && (
-            <span className="bg-clinic-blue text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
-              {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
-            </span>
+        <p
+          className={cn(
+            "text-xs mt-0.5 truncate",
+            hasUnread ? "text-gray-700 font-medium" : "text-gray-500"
           )}
-        </div>
+        >
+          {conv.lastMessagePreview ?? "لا توجد رسائل"}
+        </p>
       </div>
     </button>
   );

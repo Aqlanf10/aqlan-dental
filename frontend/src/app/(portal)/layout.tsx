@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
+import { usePortalUnreadCount } from "@/hooks/usePortalMessaging";
 import { Home, Calendar, Stethoscope, Pill, CreditCard, UserCircle, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,15 +42,17 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
 function PortalNavBar({ pathname }: { pathname: string }) {
   const router = useRouter();
+  const { data: unreadData } = usePortalUnreadCount();
+  const totalUnread = unreadData?.totalUnread ?? 0;
 
   const items = [
-    { path: "/portal", icon: Home, label: "الرئيسية" },
-    { path: "/portal/appointments", icon: Calendar, label: "المواعيد" },
-    { path: "/portal/messages", icon: MessageCircle, label: "الرسائل" },
-    { path: "/portal/treatments", icon: Stethoscope, label: "العلاجات" },
-    { path: "/portal/prescriptions", icon: Pill, label: "الوصفات" },
-    { path: "/portal/finance", icon: CreditCard, label: "المالية" },
-    { path: "/portal/profile", icon: UserCircle, label: "بياناتي" },
+    { path: "/portal",              icon: Home,          label: "الرئيسية" },
+    { path: "/portal/appointments", icon: Calendar,      label: "المواعيد" },
+    { path: "/portal/messages",     icon: MessageCircle, label: "الرسائل",  badge: totalUnread },
+    { path: "/portal/treatments",   icon: Stethoscope,   label: "العلاجات" },
+    { path: "/portal/prescriptions",icon: Pill,          label: "الوصفات" },
+    { path: "/portal/finance",      icon: CreditCard,    label: "المالية" },
+    { path: "/portal/profile",      icon: UserCircle,    label: "بياناتي" },
   ];
 
   return (
@@ -58,16 +61,24 @@ function PortalNavBar({ pathname }: { pathname: string }) {
         {items.map((item) => {
           const isActive = pathname === item.path;
           const Icon = item.icon;
+          const hasBadge = (item.badge ?? 0) > 0;
           return (
             <button
               key={item.path}
               onClick={() => router.push(item.path)}
               className={cn(
-                "flex flex-col items-center py-2 px-2 text-[10px] transition",
+                "flex flex-col items-center py-2 px-2 text-[10px] transition relative",
                 isActive ? "text-clinic-blue" : "text-gray-400"
               )}
             >
-              <Icon className={cn("w-5 h-5 mb-0.5", isActive ? "stroke-[2.5px]" : "stroke-[1.5px]")} />
+              <div className="relative">
+                <Icon className={cn("w-5 h-5 mb-0.5", isActive ? "stroke-[2.5px]" : "stroke-[1.5px]")} />
+                {hasBadge && (
+                  <span className="absolute -top-1 -left-1 min-w-[14px] h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                    {(item.badge ?? 0) > 9 ? "9+" : item.badge}
+                  </span>
+                )}
+              </div>
               <span className="font-medium">{item.label}</span>
             </button>
           );

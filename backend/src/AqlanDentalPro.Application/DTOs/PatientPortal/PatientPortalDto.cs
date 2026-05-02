@@ -19,6 +19,17 @@ public class PatientResetPasswordRequest
     public string NewPassword { get; set; } = string.Empty;
 }
 
+public class PatientChangePasswordRequest
+{
+    public string CurrentPassword { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
+}
+
+public class PatientRefreshTokenRequest
+{
+    public string RefreshToken { get; set; } = string.Empty;
+}
+
 public class PatientAuthResponse
 {
     public string AccessToken { get; set; } = string.Empty;

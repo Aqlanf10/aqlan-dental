@@ -7,17 +7,22 @@ import { Home, Calendar, Stethoscope, Pill, CreditCard, UserCircle, MessageCircl
 import { cn } from "@/lib/utils";
 
 const PUBLIC_PATHS = ["/portal/login"];
+const CHANGE_PASSWORD_PATH = "/portal/change-password";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAuthenticated, profile } = usePatientAuthStore();
+  const { isAuthenticated, mustChangePassword } = usePatientAuthStore();
 
   useEffect(() => {
     if (!isAuthenticated && !PUBLIC_PATHS.includes(pathname)) {
       router.replace("/portal/login");
     }
-  }, [isAuthenticated, pathname, router]);
+    // If mustChangePassword, force redirect to change-password page
+    if (isAuthenticated && mustChangePassword && pathname !== CHANGE_PASSWORD_PATH) {
+      router.replace(CHANGE_PASSWORD_PATH);
+    }
+  }, [isAuthenticated, mustChangePassword, pathname, router]);
 
   if (!isAuthenticated && !PUBLIC_PATHS.includes(pathname)) {
     return (
@@ -30,10 +35,13 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     );
   }
 
+  // When mustChangePassword is true, only show the change-password page
+  const isLockedToChangePassword = isAuthenticated && mustChangePassword;
+
   return (
     <div className="min-h-screen bg-gray-50" style={{ direction: "rtl" }}>
       {children}
-      {isAuthenticated && !PUBLIC_PATHS.includes(pathname) && profile && (
+      {isAuthenticated && !PUBLIC_PATHS.includes(pathname) && !isLockedToChangePassword && (
         <PortalNavBar pathname={pathname} />
       )}
     </div>

@@ -244,9 +244,15 @@ export default function PortalDashboard() {
                 )}
               </div>
             </div>
-            {/* Future messaging placeholder */}
+            {/* Direct messaging link */}
             <div className="mt-3 pt-3 border-t border-gray-100">
-              <p className="text-xs text-gray-400 text-center">التواصل المباشر عبر البوابة — قريباً</p>
+              <Link
+                href="/portal/messages"
+                className="flex items-center gap-2 text-xs text-teal-600 hover:text-teal-700 font-semibold transition"
+              >
+                <MessageCircle className="w-4 h-4" />
+                تواصل معنا مباشرة عبر الرسائل
+              </Link>
             </div>
           </div>
         )}

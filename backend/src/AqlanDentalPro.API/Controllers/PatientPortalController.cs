@@ -59,6 +59,44 @@ public class PatientPortalController(IPatientPortalService portalService) : Cont
         }
     }
 
+    [HttpPost("auth/change-password")]
+    [Authorize(Policy = "PatientAccess")]
+    public async Task<IActionResult> ChangePassword([FromBody] PatientChangePasswordRequest req)
+    {
+        var patientId = GetPatientId();
+        if (patientId == null) return Unauthorized(new { message = "غير مصرح" });
+
+        try
+        {
+            var (response, error) = await portalService.ChangePasswordAsync(patientId.Value, req.CurrentPassword, req.NewPassword);
+            if (response == null) return BadRequest(new { message = error });
+            return Ok(response);
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "حدث خطأ أثناء تغيير كلمة المرور. يرجى المحاولة لاحقاً" });
+        }
+    }
+
+    [HttpPost("auth/refresh-token")]
+    [Authorize(Policy = "PatientAccess")]
+    public async Task<IActionResult> RefreshToken([FromBody] PatientRefreshTokenRequest req)
+    {
+        var patientId = GetPatientId();
+        if (patientId == null) return Unauthorized(new { message = "غير مصرح" });
+
+        try
+        {
+            var (response, error) = await portalService.RefreshTokenAsync(patientId.Value, req.RefreshToken);
+            if (response == null) return BadRequest(new { message = error });
+            return Ok(response);
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحديث الجلسة. يرجى تسجيل الدخول مرة أخرى" });
+        }
+    }
+
     // ── Staff-Only Endpoints ────────────────────────────────────────────────
 
     [HttpGet("credentials/{patientId:guid}")]

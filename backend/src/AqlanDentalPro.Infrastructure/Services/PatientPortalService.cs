@@ -63,38 +63,13 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
                 await db.SaveChangesAsync();
                 account.LinkedUserId = linkedUser.Id;
             }
+            logger.LogInformation("Auto-linked PatientAccount {Username} to messaging User {UserId}", account.Username, account.LinkedUserId);
         }
 
         account.IsVerified = true;
         account.LastLogin = DateTime.UtcNow;
         account.VerificationCode = null;
         account.VerificationCodeExpiry = null;
-
-        // Auto-link to messaging User if not already linked
-        if (!account.LinkedUserId.HasValue)
-        {
-            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == account.Username);
-            if (existingUser != null)
-            {
-                account.LinkedUserId = existingUser.Id;
-            }
-            else
-            {
-                var linkedUser = new User
-                {
-                    Username = account.Username ?? account.Patient.PatientNumber,
-                    PasswordHash = account.PasswordHash,
-                    PasswordSalt = account.PasswordSalt,
-                    Role = UserRole.Patient,
-                    Phone = account.PhoneNumber,
-                    IsActive = true
-                };
-                db.Users.Add(linkedUser);
-                await db.SaveChangesAsync();
-                account.LinkedUserId = linkedUser.Id;
-            }
-            logger.LogInformation("Auto-linked PatientAccount {Username} to messaging User {UserId}", account.Username, account.LinkedUserId);
-        }
 
         var accessToken = GeneratePatientToken(account);
         var refreshToken = GenerateRefreshToken();
@@ -167,6 +142,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         var hash = AuthService.HashPassword(newPassword, salt);
         account.PasswordSalt = salt;
         account.PasswordHash = hash;
+        account.MustChangePassword = false; // Password was just set by the user
         account.VerificationCode = null;
         account.VerificationCodeExpiry = null;
         account.IsVerified = true;
@@ -182,7 +158,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         return (new PatientAuthResponse
         {
             AccessToken = accessToken,
-            Profile = MapProfile(account.Patient, account)
+            Profile = MapProfile(account.Patient, account),
+            MustChangePassword = false
         }, null);
     }
 
@@ -297,7 +274,6 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         account.PasswordHash = hash;
         account.PasswordSalt = salt;
-        account.InitialPassword = null;  // Remove any stored plain-text password
         account.MustChangePassword = true;
         account.PortalAccountActive = true;
 
@@ -308,6 +284,81 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             TemporaryPassword = tempPassword,
             Username = account.Username ?? "",
             Message = "تم إعادة تعيين كلمة المرور بنجاح. اعرض الكلمة للمريض الآن، لن تظهر مرة أخرى."
+        }, null);
+    }
+
+    public async Task<(PatientAuthResponse? response, string? error)> ChangePasswordAsync(Guid patientId, string currentPassword, string newPassword)
+    {
+        var account = await db.PatientAccounts
+            .Include(a => a.Patient)
+                .ThenInclude(p => p!.PrimaryDoctor)
+            .FirstOrDefaultAsync(a => a.PatientId == patientId);
+
+        if (account == null)
+            return (null, "الحساب غير موجود");
+
+        if (string.IsNullOrEmpty(account.PasswordHash) || string.IsNullOrEmpty(account.PasswordSalt))
+            return (null, "حسابك غير مفعّل بعد");
+
+        // Verify current password
+        var hash = AuthService.HashPassword(currentPassword, account.PasswordSalt);
+        if (hash != account.PasswordHash)
+            return (null, "كلمة المرور الحالية غير صحيحة");
+
+        if (newPassword.Length < 4)
+            return (null, "كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل");
+
+        // Update password
+        var salt = AuthService.GenerateSalt();
+        var newHash = AuthService.HashPassword(newPassword, salt);
+        account.PasswordSalt = salt;
+        account.PasswordHash = newHash;
+        account.MustChangePassword = false;
+
+        var accessToken = GeneratePatientToken(account);
+        var refreshToken = GenerateRefreshToken();
+        account.RefreshToken = refreshToken;
+        account.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+
+        await db.SaveChangesAsync();
+
+        return (new PatientAuthResponse
+        {
+            AccessToken = accessToken,
+            Profile = MapProfile(account.Patient, account),
+            MustChangePassword = false
+        }, null);
+    }
+
+    public async Task<(PatientAuthResponse? response, string? error)> RefreshTokenAsync(Guid patientId, string refreshToken)
+    {
+        var account = await db.PatientAccounts
+            .Include(a => a.Patient)
+                .ThenInclude(p => p!.PrimaryDoctor)
+            .FirstOrDefaultAsync(a => a.PatientId == patientId);
+
+        if (account == null)
+            return (null, "الحساب غير موجود");
+
+        if (account.RefreshToken != refreshToken)
+            return (null, "رمز التحديث غير صالح");
+
+        if (account.RefreshTokenExpiry < DateTime.UtcNow)
+            return (null, "انتهت صلاحية رمز التحديث");
+
+        // Generate new tokens
+        var accessToken = GeneratePatientToken(account);
+        var newRefreshToken = GenerateRefreshToken();
+        account.RefreshToken = newRefreshToken;
+        account.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+
+        await db.SaveChangesAsync();
+
+        return (new PatientAuthResponse
+        {
+            AccessToken = accessToken,
+            Profile = MapProfile(account.Patient, account),
+            MustChangePassword = account.MustChangePassword
         }, null);
     }
 

@@ -15,7 +15,7 @@ interface PatientAuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   mustChangePassword: boolean;
-  setAuth: (profile: PatientPortalProfile, token: string, mustChangePassword?: boolean) => void;
+  setAuth: (profile: PatientPortalProfile, token: string, mustChangePassword?: boolean, refreshToken?: string) => void;
   logout: () => void;
   setMustChangePassword: (val: boolean) => void;
 }
@@ -28,14 +28,18 @@ export const usePatientAuthStore = create<PatientAuthState>()(
       isLoading: false,
       mustChangePassword: false,
 
-      setAuth: (profile, token, mustChangePassword = false) => {
+      setAuth: (profile, token, mustChangePassword = false, refreshToken) => {
         localStorage.setItem("portal_token", token);
+        if (refreshToken) {
+          localStorage.setItem("portal_refresh_token", refreshToken);
+        }
         setPortalCookie(true);
         set({ profile, isAuthenticated: true, mustChangePassword });
       },
 
       logout: () => {
         localStorage.removeItem("portal_token");
+        localStorage.removeItem("portal_refresh_token");
         setPortalCookie(false);
         set({ profile: null, isAuthenticated: false, mustChangePassword: false });
       },

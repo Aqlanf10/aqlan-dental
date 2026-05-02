@@ -61,6 +61,24 @@ export default function PortalLoginPage() {
     }
   };
 
+  const [resent, setResent] = useState(false);
+
+  const handleResendCode = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { data } = await portalApi.post("/api/portal/auth/forgot-password", { phoneNumber });
+      setSuccess(data.message || "تم إعادة إرسال رمز التحقق");
+      setResent(true);
+      setTimeout(() => setResent(false), 30000); // Prevent spam for 30 seconds
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg || "حدث خطأ أثناء إعادة إرسال الرمز");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || code.length < 6) {
@@ -321,11 +339,11 @@ export default function PortalLoginPage() {
 
                 <button
                   type="button"
-                  onClick={() => { setStep("forgot"); setError(""); setSuccess(""); setCode(""); }}
-                  className="w-full py-2 text-sm text-[#64748b] hover:text-[#0d2137] transition flex items-center justify-center gap-1"
+                  onClick={handleResendCode}
+                  disabled={loading || resent}
+                  className="w-full py-2 text-sm text-[#64748b] hover:text-[#0d2137] transition flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <ArrowRight className="w-3 h-3" />
-                  إعادة إرسال الرمز
+                  {resent ? "تم إعادة الإرسال ✓" : "إعادة إرسال الرمز"}
                 </button>
               </form>
             </>

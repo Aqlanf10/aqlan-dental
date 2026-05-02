@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { User, Phone, MessageCircle, MapPin, Calendar, Shield, Save, CheckCircle } from "lucide-react";
+import { User, Phone, MessageCircle, MapPin, Calendar, Shield, Save, CheckCircle, KeyRound } from "lucide-react";
 import portalApi from "@/lib/portalApi";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import type { PatientPortalProfile } from "@/types/patientPortal";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 export default function PortalProfilePage() {
   const { profile: storeProfile } = usePatientAuthStore();
@@ -253,6 +254,15 @@ export default function PortalProfilePage() {
               <span className="text-gray-500">آخر تسجيل دخول</span>
               <span className="text-gray-900">{profile?.lastLogin || "—"}</span>
             </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <Link
+              href="/portal/change-password"
+              className="flex items-center gap-2 text-sm text-clinic-blue hover:text-clinic-navy-700 font-medium transition"
+            >
+              <KeyRound className="w-4 h-4" />
+              تغيير كلمة المرور
+            </Link>
           </div>
         </div>
       </div>

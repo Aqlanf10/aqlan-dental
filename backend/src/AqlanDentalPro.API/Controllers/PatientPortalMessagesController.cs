@@ -21,9 +21,6 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     private Guid PatientId => Guid.Parse(User.FindFirst("patientId")!.Value);
     private Guid? LinkedUserId => Guid.TryParse(User.FindFirst("userId")?.Value, out var id) ? id : null;
 
-    // ─── Security constants ───────────────────────────────────────────────────
-    private const string PatientFacingType = "PatientFacing";
-
     /// <summary>
     /// Resolves the patient's messaging User ID. Returns null if not linked.
     /// </summary>
@@ -86,7 +83,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             return (userId, null, NotFound(new { message = "المحادثة غير موجودة" }));
 
         // SECURITY: Must be PatientFacing — never expose internal staff conversations
-        if (conv.ConversationType != PatientFacingType)
+        if (conv.ConversationType != ConversationType.PatientFacing.ToString())
             return (userId, null, NotFound(new { message = "المحادثة غير موجودة" }));
 
         // SECURITY: Must belong to this patient
@@ -122,7 +119,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
-            .Where(c => c.ConversationType == PatientFacingType && c.PatientId == PatientId)
+            .Where(c => c.ConversationType == ConversationType.PatientFacing.ToString() && c.PatientId == PatientId)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -191,7 +188,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Include(c => c.Patient)
             .FirstOrDefaultAsync(c =>
                 c.PatientId == PatientId &&
-                c.ConversationType == PatientFacingType); // SECURITY: PatientFacing only
+                c.ConversationType == ConversationType.PatientFacing.ToString()); // SECURITY: PatientFacing only
 
         if (existingConv != null)
         {
@@ -235,7 +232,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         {
             Title = convTitle,
             IsGroup = true,
-            ConversationType = PatientFacingType, // SECURITY: Always PatientFacing
+            ConversationType = ConversationType.PatientFacing.ToString(), // SECURITY: Always PatientFacing
             PatientId = PatientId,
             CreatedBy = userId.Value,
             LastMessageAt = DateTime.UtcNow
@@ -412,7 +409,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         // SECURITY: Only count PatientFacing conversations belonging to this patient
         var patientFacingConvIds = await db.Conversations
             .Where(c => c.PatientId == PatientId
-                     && c.ConversationType == PatientFacingType
+                     && c.ConversationType == ConversationType.PatientFacing.ToString()
                      && c.Participants.Any(p => p.UserId == userId.Value))
             .Select(c => c.Id)
             .ToListAsync();
@@ -504,7 +501,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     {
         // SECURITY: Only PatientFacing conversations for this patient
         var patientFacingConvIds = await db.Conversations
-            .Where(c => c.PatientId == PatientId && c.ConversationType == PatientFacingType)
+            .Where(c => c.PatientId == PatientId && c.ConversationType == ConversationType.PatientFacing.ToString())
             .Select(c => c.Id)
             .ToListAsync();
 

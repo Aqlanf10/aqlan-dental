@@ -400,6 +400,64 @@ using (var scope = app.Services.CreateScope())
             );
         """);
 
+        // Ensure PatientAccounts table exists for portal auth
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "PatientAccounts" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "PatientId" uuid NOT NULL,
+                "PhoneNumber" character varying(20) NOT NULL,
+                "VerificationCode" character varying(10) NULL,
+                "VerificationCodeExpiry" timestamp with time zone NULL,
+                "IsVerified" boolean NOT NULL DEFAULT FALSE,
+                "LastLogin" timestamp with time zone NULL,
+                "DeviceToken" character varying(500) NULL,
+                "RefreshToken" character varying(256) NULL,
+                "RefreshTokenExpiry" timestamp with time zone NULL,
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NOT NULL,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_PatientAccounts_Patients_PatientId') THEN
+                    ALTER TABLE "PatientAccounts" ADD CONSTRAINT "FK_PatientAccounts_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE CASCADE;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_PatientId"
+                ON "PatientAccounts" ("PatientId");
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_PhoneNumber"
+                ON "PatientAccounts" ("PhoneNumber");
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260430120000_AddPatientPortal', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430120000_AddPatientPortal'
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260430140000_AddWhatsAppIntegration', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430140000_AddWhatsAppIntegration'
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260430160000_AddGeneralDentistryEnhancements', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430160000_AddGeneralDentistryEnhancements'
+            );
+        """);
+
         logger.LogInformation("Pre-migration schema updates applied successfully");
     }
     catch (Exception ex)

@@ -16,18 +16,34 @@ public class PatientPortalController(IPatientPortalService portalService) : Cont
     [AllowAnonymous]
     public async Task<IActionResult> SendVerificationCode([FromBody] PatientLoginRequest req)
     {
-        var (success, error) = await portalService.SendVerificationCodeAsync(req.PhoneNumber);
-        if (!success) return BadRequest(new { message = error });
-        return Ok(new { message = "تم إرسال رمز التحقق بنجاح" });
+        try
+        {
+            var (success, error) = await portalService.SendVerificationCodeAsync(req.PhoneNumber);
+            if (!success) return BadRequest(new { message = error });
+            return Ok(new { message = "تم إرسال رمز التحقق بنجاح" });
+        }
+        catch (Exception ex)
+        {
+            // Log the raw error but return a safe Arabic message to the client
+            return StatusCode(500, new { message = "حدث خطأ أثناء إرسال رمز التحقق. يرجى المحاولة لاحقاً" });
+        }
     }
 
     [HttpPost("auth/verify")]
     [AllowAnonymous]
     public async Task<IActionResult> VerifyCode([FromBody] PatientVerifyRequest req)
     {
-        var (response, error) = await portalService.VerifyCodeAsync(req.PhoneNumber, req.Code);
-        if (response == null) return BadRequest(new { message = error });
-        return Ok(response);
+        try
+        {
+            var (response, error) = await portalService.VerifyCodeAsync(req.PhoneNumber, req.Code);
+            if (response == null) return BadRequest(new { message = error });
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            // Log the raw error but return a safe Arabic message to the client
+            return StatusCode(500, new { message = "حدث خطأ أثناء التحقق من الرمز. يرجى المحاولة لاحقاً" });
+        }
     }
 
     // ── Protected Endpoints (Patient auth required) ────────────────────────

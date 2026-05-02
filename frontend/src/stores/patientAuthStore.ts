@@ -14,10 +14,8 @@ interface PatientAuthState {
   profile: PatientPortalProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  phoneNumber: string;
   setAuth: (profile: PatientPortalProfile, token: string) => void;
   logout: () => void;
-  setPhoneNumber: (phone: string) => void;
 }
 
 export const usePatientAuthStore = create<PatientAuthState>()(
@@ -26,7 +24,6 @@ export const usePatientAuthStore = create<PatientAuthState>()(
       profile: null,
       isAuthenticated: false,
       isLoading: false,
-      phoneNumber: "",
 
       setAuth: (profile, token) => {
         localStorage.setItem("portal_token", token);
@@ -39,8 +36,6 @@ export const usePatientAuthStore = create<PatientAuthState>()(
         setPortalCookie(false);
         set({ profile: null, isAuthenticated: false });
       },
-
-      setPhoneNumber: (phone) => set({ phoneNumber: phone }),
     }),
     {
       name: "aqlan-patient-auth",

@@ -37,6 +37,8 @@ public class PatientProfileDto
     public bool IsActive { get; set; }
     public MedicalHistoryDto? MedicalHistory { get; set; }
     public DentalHistoryDto? DentalHistory { get; set; }
+    public string? PortalUsername { get; set; }
+    public string? PortalPassword { get; set; }
 }
 
 public class MedicalHistoryDto

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, Phone, Shield, ArrowRight, Loader2 } from "lucide-react";
+import { Eye, EyeOff, User as UserIcon, ArrowRight, Loader2, Phone, KeyRound } from "lucide-react";
+// Shield removed - no longer used after OTP removal
 import Image from "next/image";
 import { useAuthStore } from "@/stores/authStore";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
@@ -278,18 +279,42 @@ function StaffLoginPanel() {
   );
 }
 
-// ─── Patient Login Panel (Option B: embedded flow) ───────────────────────────
+// ─── Patient Login Panel (Username/Password) ─────────────────────────────────
 function PatientLoginPanel() {
   const router = useRouter();
-  const { setAuth, setPhoneNumber: savePhoneToStore, phoneNumber: storedPhone } = usePatientAuthStore();
-  const [step, setStep] = useState<"phone" | "verify">("phone");
-  const [phoneNumber, setPhoneNumber] = useState(storedPhone || "");
+  const { setAuth } = usePatientAuthStore();
+  const [step, setStep] = useState<"login" | "forgot" | "reset">("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const handleSendCode = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password) {
+      setError("أدخل اسم المستخدم وكلمة المرور");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const { data } = await portalApi.post("/api/portal/auth/login", { username, password });
+      setAuth(data.profile, data.accessToken);
+      router.push("/portal");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phoneNumber || phoneNumber.length < 9) {
       setError("أدخل رقم هاتف صحيح");
@@ -298,10 +323,9 @@ function PatientLoginPanel() {
     setLoading(true);
     setError("");
     try {
-      const { data } = await portalApi.post("/api/portal/auth/send-code", { phoneNumber });
-      setSuccess(data.message || "تم إرسال رمز التحقق");
-      savePhoneToStore(phoneNumber);
-      setStep("verify");
+      const { data } = await portalApi.post("/api/portal/auth/forgot-password", { phoneNumber });
+      setSuccess(data.message || "تم إرسال رمز التحقق عبر واتساب");
+      setStep("reset");
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(msg || "حدث خطأ أثناء إرسال الرمز");
@@ -310,24 +334,29 @@ function PatientLoginPanel() {
     }
   };
 
-  const handleVerify = async (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || code.length < 6) {
       setError("أدخل رمز التحقق المكون من 6 أرقام");
       return;
     }
+    if (!newPassword || newPassword.length < 4) {
+      setError("أدخل كلمة مرور جديدة (4 أحرف على الأقل)");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const { data } = await portalApi.post("/api/portal/auth/verify", {
+      const { data } = await portalApi.post("/api/portal/auth/reset-password", {
         phoneNumber,
         code,
+        newPassword,
       });
       setAuth(data.profile, data.accessToken);
       router.push("/portal");
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setError(msg || "رمز التحقق غير صحيح");
+      setError(msg || "رمز التحقق غير صحيح أو منتهي الصلاحية");
     } finally {
       setLoading(false);
     }
@@ -349,7 +378,7 @@ function PatientLoginPanel() {
             className="w-8 h-8 rounded-lg flex items-center justify-center"
             style={{ background: "rgba(245,146,46,0.15)" }}
           >
-            <Phone className="w-4 h-4 text-[#f5922e]" />
+            <UserIcon className="w-4 h-4 text-[#f5922e]" />
           </div>
           <h2 className="text-lg font-bold text-white">دخول المرضى</h2>
         </div>
@@ -358,14 +387,118 @@ function PatientLoginPanel() {
         </p>
       </div>
 
-      {step === "phone" ? (
-        <form onSubmit={handleSendCode} className="space-y-4 flex-1">
+      {step === "login" ? (
+        <form onSubmit={handleLogin} className="space-y-4 flex-1">
           {/* Error */}
           {error && (
             <div className="text-[13px]" style={{ color: "#fca5a5" }}>
               {error}
             </div>
           )}
+
+          {/* Username input */}
+          <div>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+              اسم المستخدم
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => { setUsername(e.target.value); setError(""); }}
+              placeholder="GM0001"
+              dir="ltr"
+              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/25"
+              style={inputStyle(!!error)}
+              onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
+              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+            />
+            <p className="mt-1 text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+              رقم الملف (مثل GM0001)
+            </p>
+          </div>
+
+          {/* Password input */}
+          <div>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+              كلمة المرور
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                placeholder="••••••"
+                dir="ltr"
+                className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/25"
+                style={inputStyle(!!error)}
+                onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
+                onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 start-3 flex items-center"
+                style={{ color: "rgba(255,255,255,0.4)" }}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Forgot password link */}
+          <div className="text-left">
+            <button
+              type="button"
+              onClick={() => { setStep("forgot"); setError(""); setSuccess(""); }}
+              className="text-[12px] no-underline bg-transparent border-none cursor-pointer"
+              style={{ color: "#f5922e" }}
+            >
+              نسيت كلمة المرور؟
+            </button>
+          </div>
+
+          {/* Login button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
+            style={{
+              background: loading ? "#c47022" : "#f5922e",
+            }}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#c47022")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#c47022" : "#f5922e")}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                جارٍ الدخول...
+              </>
+            ) : (
+              "دخول إلى بوابة المريض"
+            )}
+          </button>
+        </form>
+      ) : step === "forgot" ? (
+        <form onSubmit={handleForgotPassword} className="space-y-4 flex-1">
+          {/* Error */}
+          {error && (
+            <div className="text-[13px]" style={{ color: "#fca5a5" }}>
+              {error}
+            </div>
+          )}
+
+          {/* Info */}
+          <div className="text-center">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2"
+              style={{ background: "rgba(245,146,46,0.15)" }}
+            >
+              <Phone className="w-5 h-5 text-[#f5922e]" />
+            </div>
+            <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+              أدخل رقم هاتفك المسجل عندنا لإرسال رمز التحقق عبر واتساب
+            </p>
+          </div>
 
           {/* Phone input */}
           <div>
@@ -408,9 +541,20 @@ function PatientLoginPanel() {
               "إرسال رمز التحقق"
             )}
           </button>
+
+          {/* Back to login */}
+          <button
+            type="button"
+            onClick={() => { setStep("login"); setError(""); setSuccess(""); }}
+            className="w-full py-2 text-[12px] transition flex items-center justify-center gap-1 bg-transparent border-none cursor-pointer"
+            style={{ color: "rgba(255,255,255,0.4)" }}
+          >
+            <ArrowRight className="w-3 h-3" />
+            العودة إلى تسجيل الدخول
+          </button>
         </form>
       ) : (
-        <form onSubmit={handleVerify} className="space-y-4 flex-1">
+        <form onSubmit={handleResetPassword} className="space-y-4 flex-1">
           {/* Success message */}
           {success && (
             <div className="text-[13px]" style={{ color: "#86efac" }}>
@@ -425,16 +569,16 @@ function PatientLoginPanel() {
             </div>
           )}
 
-          {/* Verify header */}
+          {/* Info */}
           <div className="text-center">
             <div
               className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2"
               style={{ background: "rgba(245,146,46,0.15)" }}
             >
-              <Shield className="w-5 h-5 text-[#f5922e]" />
+              <KeyRound className="w-5 h-5 text-[#f5922e]" />
             </div>
             <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.5)" }}>
-              أدخل الرمز المرسل إلى <span className="font-mono text-white/70" dir="ltr">{phoneNumber}</span>
+              أدخل الرمز المرسل وكلمة المرور الجديدة
             </p>
           </div>
 
@@ -458,7 +602,25 @@ function PatientLoginPanel() {
             />
           </div>
 
-          {/* Verify button */}
+          {/* New password input */}
+          <div>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+              كلمة المرور الجديدة
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => { setNewPassword(e.target.value); setError(""); }}
+              placeholder="أدخل كلمة مرور جديدة"
+              dir="ltr"
+              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/25"
+              style={inputStyle(!!error)}
+              onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
+              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+            />
+          </div>
+
+          {/* Reset button */}
           <button
             type="submit"
             disabled={loading}
@@ -475,19 +637,19 @@ function PatientLoginPanel() {
                 جارٍ التحقق...
               </>
             ) : (
-              "دخول إلى بوابة المريض"
+              "إعادة تعيين كلمة المرور"
             )}
           </button>
 
-          {/* Change phone */}
+          {/* Back to forgot */}
           <button
             type="button"
-            onClick={() => { setStep("phone"); setError(""); setSuccess(""); setCode(""); }}
-            className="w-full py-2 text-[12px] transition flex items-center justify-center gap-1"
+            onClick={() => { setStep("forgot"); setError(""); setSuccess(""); setCode(""); }}
+            className="w-full py-2 text-[12px] transition flex items-center justify-center gap-1 bg-transparent border-none cursor-pointer"
             style={{ color: "rgba(255,255,255,0.4)" }}
           >
             <ArrowRight className="w-3 h-3" />
-            تغيير رقم الهاتف
+            إعادة إرسال الرمز
           </button>
         </form>
       )}

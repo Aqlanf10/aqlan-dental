@@ -474,6 +474,35 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Failed to ensure PatientAccounts table exists");
     }
 
+    // Add Username/PasswordHash/PasswordSalt/InitialPassword columns to PatientAccounts
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'Username') THEN
+                    ALTER TABLE "PatientAccounts" ADD COLUMN "Username" character varying(50) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash') THEN
+                    ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordHash" character varying(256) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordSalt') THEN
+                    ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordSalt" character varying(128) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'InitialPassword') THEN
+                    ALTER TABLE "PatientAccounts" ADD COLUMN "InitialPassword" character varying(20) NULL;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_Username" ON "PatientAccounts" ("Username") WHERE "Username" IS NOT NULL;
+        """);
+        logger.LogInformation("PatientAccounts username/password columns ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to add username/password columns to PatientAccounts");
+    }
+
     // Ensure Visits/Documents new columns exist — separate try/catch for Sprint 4
     try
     {
@@ -783,6 +812,28 @@ using (var scope = app.Services.CreateScope())
     }
 
     await DbSeeder.SeedAsync(db, logger);
+
+    // Seed PatientAccounts for existing patients
+    try
+    {
+        using var seedScope = app.Services.CreateScope();
+        var portalSvc = seedScope.ServiceProvider.GetRequiredService<IPatientPortalService>();
+        var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var patientsWithoutAccount = await seedDb.Patients
+            .Where(p => p.IsActive && !seedDb.PatientAccounts.Any(a => a.PatientId == p.Id))
+            .Take(100)
+            .ToListAsync();
+        foreach (var p in patientsWithoutAccount)
+        {
+            await portalSvc.EnsurePatientAccountAsync(p.Id, p.PatientNumber, p.Phone);
+        }
+        if (patientsWithoutAccount.Count > 0)
+            logger.LogInformation("Seeded PatientAccounts for {Count} existing patients", patientsWithoutAccount.Count);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to seed PatientAccounts for existing patients");
+    }
 }
 
 // ── Middleware Pipeline ───────────────────────────────────────────────────────

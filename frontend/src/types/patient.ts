@@ -54,6 +54,8 @@ export interface PatientProfile {
   isActive: boolean;
   medicalHistory?: MedicalHistory;
   dentalHistory?: DentalHistory;
+  portalUsername?: string;
+  portalPassword?: string;
 }
 
 export interface CreatePatientRequest {

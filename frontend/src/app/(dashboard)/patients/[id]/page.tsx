@@ -7,7 +7,7 @@ import {
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image as ImageIcon,
   MessageCircle, Archive, RotateCcw, ClipboardList, CreditCard,
   FileSignature, ScanLine, ArrowRightLeft, FolderOpen, FlaskConical,
-  LayoutDashboard,
+  LayoutDashboard, KeyRound,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
@@ -102,6 +102,7 @@ export default function PatientProfilePage() {
   const [summary, setSummary] = useState<PatientSummary | null>(null);
   const [orthoCases, setOrthoCases] = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
+  const [portalCreds, setPortalCreds] = useState<{ username: string; password: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const { user } = useAuthStore();
@@ -152,6 +153,9 @@ export default function PatientProfilePage() {
       .catch(() => {});
     api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${id}&pageSize=10`)
       .then((r) => setSurgeryCases(r.data.data ?? []))
+      .catch(() => {});
+    api.get<{ username: string; password: string }>(`/api/patients/${id}/portal-credentials`)
+      .then((r) => setPortalCreds(r.data))
       .catch(() => {});
   }, [id]);
 
@@ -291,6 +295,15 @@ export default function PatientProfilePage() {
               <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
                 تسجيل: {formatArabicDate(patient.createdAt)}
               </p>
+              {portalCreds && (
+                <div className="mt-2 flex items-center gap-2 text-xs" style={{ background: "#f5922e18", borderRadius: 8, padding: "6px 10px", border: "1px solid #f5922e30" }}>
+                  <KeyRound className="w-3.5 h-3.5" style={{ color: "#f5922e" }} />
+                  <span style={{ color: "#f5922e" }}>بوابة المريض:</span>
+                  <span className="font-mono" style={{ color: "#0d2137" }}>اسم المستخدم: <strong>{portalCreds.username}</strong></span>
+                  <span style={{ color: "#94a3b8" }}>|</span>
+                  <span className="font-mono" style={{ color: "#0d2137" }}>كلمة المرور: <strong>{portalCreds.password}</strong></span>
+                </div>
+              )}
             </div>
           </div>
           {patient.isActive && (

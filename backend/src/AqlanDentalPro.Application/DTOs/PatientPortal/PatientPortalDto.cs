@@ -3,19 +3,33 @@ namespace AqlanDentalPro.Application.DTOs.PatientPortal;
 // Auth
 public class PatientLoginRequest
 {
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+}
+
+public class PatientForgotPasswordRequest
+{
     public string PhoneNumber { get; set; } = string.Empty;
 }
 
-public class PatientVerifyRequest
+public class PatientResetPasswordRequest
 {
     public string PhoneNumber { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
 }
 
 public class PatientAuthResponse
 {
     public string AccessToken { get; set; } = string.Empty;
     public PatientPortalProfileDto Profile { get; set; } = null!;
+}
+
+// Credentials — for staff to view patient portal login info
+public class PatientPortalCredentialsDto
+{
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;  // Initial plain-text password
 }
 
 // Profile — extended with more patient-facing fields
@@ -33,6 +47,7 @@ public class PatientPortalProfileDto
     public string? PrimaryDoctorName { get; set; }
     public string AccountStatus { get; set; } = "active";
     public string? LastLogin { get; set; }
+    public string? Username { get; set; }
 }
 
 // Profile update request — patient can only update limited fields

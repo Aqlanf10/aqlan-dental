@@ -11,36 +11,63 @@ public class PatientPortalController(IPatientPortalService portalService) : Cont
 {
     // ── Auth Endpoints (No auth required) ───────────────────────────────────
 
-    [HttpPost("auth/send-code")]
+    [HttpPost("auth/login")]
     [AllowAnonymous]
-    public async Task<IActionResult> SendVerificationCode([FromBody] PatientLoginRequest req)
+    public async Task<IActionResult> Login([FromBody] PatientLoginRequest req)
     {
         try
         {
-            var (success, error) = await portalService.SendVerificationCodeAsync(req.PhoneNumber);
-            if (!success) return BadRequest(new { message = error });
-            return Ok(new { message = "تم إرسال رمز التحقق بنجاح" });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { message = "حدث خطأ أثناء إرسال رمز التحقق. يرجى المحاولة لاحقاً" });
-        }
-    }
-
-    [HttpPost("auth/verify")]
-    [AllowAnonymous]
-    public async Task<IActionResult> VerifyCode([FromBody] PatientVerifyRequest req)
-    {
-        try
-        {
-            var (response, error) = await portalService.VerifyCodeAsync(req.PhoneNumber, req.Code);
+            var (response, error) = await portalService.LoginAsync(req.Username, req.Password);
             if (response == null) return BadRequest(new { message = error });
             return Ok(response);
         }
         catch (Exception)
         {
-            return StatusCode(500, new { message = "حدث خطأ أثناء التحقق من الرمز. يرجى المحاولة لاحقاً" });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة لاحقاً" });
         }
+    }
+
+    [HttpPost("auth/forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
+    {
+        try
+        {
+            var (success, error) = await portalService.ForgotPasswordAsync(req.PhoneNumber);
+            if (!success) return BadRequest(new { message = error });
+            return Ok(new { message = "تم إرسال رمز التحقق عبر واتساب" });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "حدث خطأ أثناء إرسال الرمز. يرجى المحاولة لاحقاً" });
+        }
+    }
+
+    [HttpPost("auth/reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] PatientResetPasswordRequest req)
+    {
+        try
+        {
+            var (response, error) = await portalService.ResetPasswordAsync(req.PhoneNumber, req.Code, req.NewPassword);
+            if (response == null) return BadRequest(new { message = error });
+            return Ok(response);
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "حدث خطأ أثناء إعادة تعيين كلمة المرور. يرجى المحاولة لاحقاً" });
+        }
+    }
+
+    // ── Staff-Only Endpoints ────────────────────────────────────────────────
+
+    [HttpGet("credentials/{patientId:guid}")]
+    [Authorize(Policy = "DoctorAccess")]
+    public async Task<IActionResult> GetPatientCredentials(Guid patientId)
+    {
+        var creds = await portalService.GetPatientCredentialsAsync(patientId);
+        if (creds == null) return NotFound(new { message = "لا يوجد حساب بوابة لهذا المريض" });
+        return Ok(creds);
     }
 
     // ── Protected Endpoints (Patient auth required) ────────────────────────

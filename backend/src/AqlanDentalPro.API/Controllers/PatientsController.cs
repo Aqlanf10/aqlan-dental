@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Patients;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +11,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patients")]
 [Authorize]
-public class PatientsController(PatientService service, AppDbContext db) : ControllerBase
+public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -307,5 +308,17 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
             .ToList();
 
         return Ok(allEvents);
+    }
+
+    [HttpGet("{id:guid}/portal-credentials")]
+    [Authorize(Policy = "DoctorAccess")]
+    public async Task<IActionResult> GetPortalCredentials(Guid id)
+    {
+        var exists = await db.Patients.AnyAsync(p => p.Id == id);
+        if (!exists) return NotFound(new { message = "المريض غير موجود" });
+
+        var creds = await portalService.GetPatientCredentialsAsync(id);
+        if (creds == null) return NotFound(new { message = "لا يوجد حساب بوابة لهذا المريض" });
+        return Ok(creds);
     }
 }

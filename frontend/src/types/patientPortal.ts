@@ -1,11 +1,17 @@
 // Auth
 export interface PatientLoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface PatientForgotPasswordRequest {
   phoneNumber: string;
 }
 
-export interface PatientVerifyRequest {
+export interface PatientResetPasswordRequest {
   phoneNumber: string;
   code: string;
+  newPassword: string;
 }
 
 export interface PatientAuthResponse {
@@ -27,12 +33,19 @@ export interface PatientPortalProfile {
   primaryDoctorName?: string;
   accountStatus: string;
   lastLogin?: string;
+  username?: string;
 }
 
 export interface PatientProfileUpdate {
   phone?: string;
   whatsapp?: string;
   address?: string;
+}
+
+// Credentials — for staff to view patient portal login info
+export interface PatientPortalCredentials {
+  username: string;
+  password: string;
 }
 
 // Appointments

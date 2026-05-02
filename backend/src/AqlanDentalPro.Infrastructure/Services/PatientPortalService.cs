@@ -1,67 +1,44 @@
 using AqlanDentalPro.Application.DTOs.PatientPortal;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Json;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class PatientPortalService(AppDbContext db, IConfiguration config) : IPatientPortalService
+public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<PatientPortalService> logger) : IPatientPortalService
 {
-    public async Task<(bool success, string? error)> SendVerificationCodeAsync(string phoneNumber)
+    public async Task<(PatientAuthResponse? response, string? error)> LoginAsync(string username, string password)
     {
-        var normalizedPhone = NormalizePhone(phoneNumber);
-        var phoneVariants = GetPhoneVariants(phoneNumber);
-        var patient = await db.Patients.FirstOrDefaultAsync(p =>
-            phoneVariants.Contains(p.Phone) || phoneVariants.Contains(p.WhatsApp) ||
-            phoneVariants.Contains(p.NormalizedPhone) || phoneVariants.Contains(p.NormalizedWhatsApp));
-        if (patient == null)
-            return (false, "رقم الهاتف غير مسجل في النظام");
-
-        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patient.Id);
-        if (account == null)
-        {
-            account = new PatientAccount
-            {
-                PatientId = patient.Id,
-                PhoneNumber = normalizedPhone,
-                IsActive = true
-            };
-            db.PatientAccounts.Add(account);
-        }
-
-        var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
-        account.VerificationCode = code;
-        account.VerificationCodeExpiry = DateTime.UtcNow.AddMinutes(10);
-
-        await db.SaveChangesAsync();
-        // TODO: Integrate with SMS gateway (e.g., Twilio, Yemen SMS provider)
-        return (true, null);
-    }
-
-    public async Task<(PatientAuthResponse? response, string? error)> VerifyCodeAsync(string phoneNumber, string code)
-    {
-        var normalizedPhone = NormalizePhone(phoneNumber);
-        var phoneVariants = GetPhoneVariants(phoneNumber);
         var account = await db.PatientAccounts
             .Include(a => a.Patient)
                 .ThenInclude(p => p!.PrimaryDoctor)
-            .FirstOrDefaultAsync(a => phoneVariants.Contains(a.PhoneNumber));
+            .FirstOrDefaultAsync(a => a.Username == username);
 
         if (account == null)
-            return (null, "الحساب غير موجود");
-        if (account.VerificationCode != code)
-            return (null, "رمز التحقق غير صحيح");
-        if (account.VerificationCodeExpiry < DateTime.UtcNow)
-            return (null, "انتهت صلاحية رمز التحقق");
+            return (null, "اسم المستخدم أو كلمة المرور غير صحيحة");
+
+        if (string.IsNullOrEmpty(account.PasswordHash) || string.IsNullOrEmpty(account.PasswordSalt))
+            return (null, "حسابك غير مفعّل بعد. تواصل مع العيادة للحصول على بيانات الدخول.");
+
+        // Verify password with Argon2id
+        var hash = AuthService.HashPassword(password, account.PasswordSalt);
+        if (hash != account.PasswordHash)
+            return (null, "اسم المستخدم أو كلمة المرور غير صحيحة");
+
+        if (!account.Patient.IsActive)
+            return (null, "تم تعطيل هذا الحساب");
 
         account.IsVerified = true;
         account.LastLogin = DateTime.UtcNow;
@@ -80,6 +57,127 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
             AccessToken = accessToken,
             Profile = MapProfile(account.Patient, account)
         }, null);
+    }
+
+    public async Task<(bool success, string? error)> ForgotPasswordAsync(string phoneNumber)
+    {
+        var normalizedPhone = NormalizePhone(phoneNumber);
+        var phoneVariants = GetPhoneVariants(phoneNumber);
+        var patient = await db.Patients.FirstOrDefaultAsync(p =>
+            phoneVariants.Contains(p.Phone) || phoneVariants.Contains(p.WhatsApp) ||
+            phoneVariants.Contains(p.NormalizedPhone) || phoneVariants.Contains(p.NormalizedWhatsApp));
+        if (patient == null)
+            return (false, "رقم الهاتف غير مسجل في النظام");
+
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patient.Id);
+        if (account == null)
+            return (false, "لا يوجد حساب بوابة لهذا المريض. تواصل مع العيادة.");
+
+        var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+        account.VerificationCode = code;
+        account.VerificationCodeExpiry = DateTime.UtcNow.AddMinutes(10);
+
+        await db.SaveChangesAsync();
+
+        // Send the code via WhatsApp
+        var whatsappPhone = patient.WhatsApp ?? patient.Phone;
+        if (!string.IsNullOrEmpty(whatsappPhone))
+        {
+            await SendOtpViaWhatsAppAsync(NormalizePhone(whatsappPhone), code, "رمز إعادة تعيين كلمة المرور");
+        }
+
+        return (true, null);
+    }
+
+    public async Task<(PatientAuthResponse? response, string? error)> ResetPasswordAsync(string phoneNumber, string code, string newPassword)
+    {
+        var normalizedPhone = NormalizePhone(phoneNumber);
+        var phoneVariants = GetPhoneVariants(phoneNumber);
+        var account = await db.PatientAccounts
+            .Include(a => a.Patient)
+                .ThenInclude(p => p!.PrimaryDoctor)
+            .FirstOrDefaultAsync(a => a.PatientId != Guid.Empty && // ensure join
+                (phoneVariants.Contains(a.PhoneNumber) ||
+                 phoneVariants.Contains(a.Patient.Phone) ||
+                 phoneVariants.Contains(a.Patient.WhatsApp)));
+
+        if (account == null)
+            return (null, "الحساب غير موجود");
+
+        if (account.VerificationCode != code)
+            return (null, "رمز التحقق غير صحيح");
+
+        if (account.VerificationCodeExpiry < DateTime.UtcNow)
+            return (null, "انتهت صلاحية رمز التحقق");
+
+        // Update password
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(newPassword, salt);
+        account.PasswordSalt = salt;
+        account.PasswordHash = hash;
+        account.VerificationCode = null;
+        account.VerificationCodeExpiry = null;
+        account.IsVerified = true;
+        account.LastLogin = DateTime.UtcNow;
+
+        var accessToken = GeneratePatientToken(account);
+        var refreshToken = GenerateRefreshToken();
+        account.RefreshToken = refreshToken;
+        account.RefreshTokenExpiry = DateTime.UtcNow.AddDays(30);
+
+        await db.SaveChangesAsync();
+
+        return (new PatientAuthResponse
+        {
+            AccessToken = accessToken,
+            Profile = MapProfile(account.Patient, account)
+        }, null);
+    }
+
+    public async Task<(string username, string plainPassword)> EnsurePatientAccountAsync(Guid patientId, string patientNumber, string? phone)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (account != null)
+        {
+            // Account already exists, return existing credentials
+            return (account.Username ?? patientNumber, account.InitialPassword ?? "");
+        }
+
+        // Generate a random 6-digit password
+        var plainPassword = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(plainPassword, salt);
+
+        account = new PatientAccount
+        {
+            PatientId = patientId,
+            PhoneNumber = phone ?? "",
+            Username = patientNumber,
+            PasswordHash = hash,
+            PasswordSalt = salt,
+            InitialPassword = plainPassword,
+            IsVerified = true,
+            IsActive = true
+        };
+
+        db.PatientAccounts.Add(account);
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("Created PatientAccount for patient {PatientId} with username {Username}", patientId, patientNumber);
+
+        return (patientNumber, plainPassword);
+    }
+
+    public async Task<PatientPortalCredentialsDto?> GetPatientCredentialsAsync(Guid patientId)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (account == null) return null;
+
+        return new PatientPortalCredentialsDto
+        {
+            Username = account.Username ?? "",
+            Password = account.InitialPassword ?? "تم التغيير"
+        };
     }
 
     public async Task<PatientPortalDashboardDto> GetDashboardAsync(Guid patientId)
@@ -488,7 +586,6 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 
     private static PatientClinicInfoDto GetClinicInfo()
     {
-        // These can be moved to a Settings table in a future sprint
         return new PatientClinicInfoDto
         {
             ClinicName = "مركز د. عقلان الكامل لطب وتقويم الأسنان",
@@ -595,8 +692,62 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         Address = patient.Address,
         PrimaryDoctorName = patient.PrimaryDoctor?.Name,
         AccountStatus = account?.IsVerified == true ? "active" : account != null ? "pending" : "none",
-        LastLogin = account?.LastLogin.HasValue == true ? account.LastLogin!.Value.ToString("yyyy-MM-dd HH:mm") : null
+        LastLogin = account?.LastLogin.HasValue == true ? account.LastLogin!.Value.ToString("yyyy-MM-dd HH:mm") : null,
+        Username = account?.Username
     };
+
+    private async Task SendOtpViaWhatsAppAsync(string phone, string code, string? purpose = null)
+    {
+        try
+        {
+            var apiUrl = config["WhatsApp:ApiUrl"];
+            var apiToken = config["WhatsApp:ApiToken"];
+
+            if (string.IsNullOrEmpty(apiUrl) || string.IsNullOrEmpty(apiToken))
+            {
+                // Demo mode: log the code instead of sending
+                logger.LogInformation("WhatsApp OTP (demo mode): Code {Code} for phone {Phone} - {Purpose}", code, phone, purpose ?? "verification");
+                return;
+            }
+
+            var client = httpClientFactory.CreateClient("WhatsApp");
+            var messageBody = purpose != null
+                ? $"{purpose} الخاص بك في مركز د. عقلان الكامل هو: {code}\nهذا الرمز صالح لمدة 10 دقائق."
+                : $"رمز التحقق الخاص بك في مركز د. عقلان الكامل هو: {code}\nهذا الرمز صالح لمدة 10 دقائق.";
+
+            var payload = new
+            {
+                messaging_product = "whatsapp",
+                to = phone,
+                type = "text",
+                text = new
+                {
+                    body = messageBody
+                }
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/messages")
+            {
+                Headers = { { "Authorization", $"Bearer {apiToken}" } },
+                Content = JsonContent.Create(payload)
+            };
+
+            var response = await client.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                logger.LogInformation("WhatsApp OTP sent successfully to {Phone}", phone);
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                logger.LogWarning("WhatsApp OTP failed for {Phone}: {Status} - {Body}", phone, response.StatusCode, body);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send WhatsApp OTP to {Phone}", phone);
+        }
+    }
 
     private static int CalculateAge(DateOnly dob)
     {

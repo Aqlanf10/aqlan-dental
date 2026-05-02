@@ -12,7 +12,8 @@ namespace AqlanDentalPro.Application.Services;
 public class PatientService(
     IPatientRepository repo,
     ICurrentUserService currentUser,
-    IConfiguration config)
+    IConfiguration config,
+    IPatientPortalService portalService)
 {
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
@@ -102,7 +103,33 @@ public class PatientService(
             {
                 await repo.AddAsync(patient);
                 await repo.SaveChangesAsync();
-                return await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+
+                // Auto-create patient portal account
+                try
+                {
+                    await portalService.EnsurePatientAccountAsync(patient.Id, patient.PatientNumber, patient.Phone);
+                }
+                catch (Exception ex)
+                {
+                    // Don't fail patient creation if portal account creation fails
+                    System.Diagnostics.Debug.WriteLine($"Failed to create portal account: {ex.Message}");
+                }
+
+                var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+
+                // Attach portal credentials to the result
+                try
+                {
+                    var creds = await portalService.GetPatientCredentialsAsync(patient.Id);
+                    if (creds != null)
+                    {
+                        result.PortalUsername = creds.Username;
+                        result.PortalPassword = creds.Password;
+                    }
+                }
+                catch { /* non-critical */ }
+
+                return result;
             }
             catch (Exception ex) when (IsPatientNumberConflict(ex))
             {

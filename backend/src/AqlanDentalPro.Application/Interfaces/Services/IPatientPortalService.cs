@@ -4,8 +4,11 @@ namespace AqlanDentalPro.Application.Interfaces.Services;
 
 public interface IPatientPortalService
 {
-    Task<(bool success, string? error)> SendVerificationCodeAsync(string phoneNumber);
-    Task<(PatientAuthResponse? response, string? error)> VerifyCodeAsync(string phoneNumber, string code);
+    Task<(PatientAuthResponse? response, string? error)> LoginAsync(string username, string password);
+    Task<(bool success, string? error)> ForgotPasswordAsync(string phoneNumber);
+    Task<(PatientAuthResponse? response, string? error)> ResetPasswordAsync(string phoneNumber, string code, string newPassword);
+    Task<(string username, string plainPassword)> EnsurePatientAccountAsync(Guid patientId, string patientNumber, string? phone);
+    Task<PatientPortalCredentialsDto?> GetPatientCredentialsAsync(Guid patientId);
     Task<PatientPortalDashboardDto> GetDashboardAsync(Guid patientId);
     Task<PatientPortalProfileDto> GetProfileAsync(Guid patientId);
     Task<(PatientPortalProfileDto? result, string? error)> UpdateProfileAsync(Guid patientId, PatientProfileUpdateDto req);

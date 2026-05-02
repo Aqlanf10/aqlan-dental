@@ -20,6 +20,24 @@ public static class DbSeeder
             await context.Database.ExecuteSqlRawAsync(
                 @"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""PasswordSalt"" text NOT NULL DEFAULT ''");
 
+            // Add unique index on Phone if not exists
+            var addPhoneIndexSql = @"
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Patients_Phone') THEN
+                        CREATE UNIQUE INDEX ""IX_Patients_Phone"" ON ""Patients"" (""Phone"") WHERE ""Phone"" IS NOT NULL AND ""Phone"" != '';
+                    END IF;
+                END $$;";
+            await context.Database.ExecuteSqlRawAsync(addPhoneIndexSql);
+
+            // Add unique index on WhatsApp if not exists
+            var addWhatsAppIndexSql = @"
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Patients_WhatsApp') THEN
+                        CREATE UNIQUE INDEX ""IX_Patients_WhatsApp"" ON ""Patients"" (""WhatsApp"") WHERE ""WhatsApp"" IS NOT NULL AND ""WhatsApp"" != '';
+                    END IF;
+                END $$;";
+            await context.Database.ExecuteSqlRawAsync(addWhatsAppIndexSql);
+
             await context.Database.MigrateAsync();
 
             if (!await context.Branches.AnyAsync())

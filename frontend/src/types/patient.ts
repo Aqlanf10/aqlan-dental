@@ -53,6 +53,9 @@ export interface PatientProfile {
   createdAt: string;
   medicalHistory?: MedicalHistory;
   dentalHistory?: DentalHistory;
+  // Portal credentials (only on creation, never persisted)
+  portalUsername?: string;
+  portalTemporaryPassword?: string;
 }
 
 export interface CreatePatientRequest {

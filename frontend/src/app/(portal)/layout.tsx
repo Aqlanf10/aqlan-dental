@@ -44,6 +44,7 @@ function PortalNavBar({ pathname }: { pathname: string }) {
   const items = [
     { path: "/portal", icon: "🏠", label: "الرئيسية" },
     { path: "/portal/appointments", icon: "📅", label: "المواعيد" },
+    { path: "/portal/messages", icon: "💬", label: "الرسائل" },
     { path: "/portal/treatments", icon: "🦷", label: "العلاجات" },
     { path: "/portal/finance", icon: "💰", label: "المالية" },
   ];

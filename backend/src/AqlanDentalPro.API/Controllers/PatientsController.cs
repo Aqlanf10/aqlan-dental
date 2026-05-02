@@ -1,4 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Patients;
+using AqlanDentalPro.Application.DTOs.PatientPortal;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +12,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patients")]
 [Authorize]
-public class PatientsController(PatientService service, AppDbContext db) : ControllerBase
+public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -34,8 +36,79 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
     [HttpPost]
     public async Task<ActionResult<PatientProfileDto>> Create([FromBody] CreatePatientRequest req)
     {
-        var patient = await service.CreateAsync(req);
-        return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
+        try
+        {
+            var patient = await service.CreateAsync(req);
+            return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_Phone") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
+                                         || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
+        {
+            return Conflict(new { message = "البيانات مكررة — رقم الهاتف أو رقم الملف موجود مسبقاً" });
+        }
+    }
+
+    [HttpGet("check-duplicate")]
+    public async Task<IActionResult> CheckDuplicate(
+        [FromQuery] string? phone,
+        [FromQuery] string? whatsApp,
+        [FromQuery] string? patientNumber,
+        [FromQuery] string? firstName,
+        [FromQuery] string? lastName,
+        [FromQuery] string? dateOfBirth)
+    {
+        var duplicates = new List<object>();
+
+        // Check by phone
+        if (!string.IsNullOrWhiteSpace(phone))
+        {
+            var match = await db.Patients
+                .Where(p => (p.Phone == phone || p.WhatsApp == phone) && p.IsActive)
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "phone" })
+                .FirstOrDefaultAsync();
+            if (match != null) duplicates.Add(match);
+        }
+
+        // Check by WhatsApp
+        if (!string.IsNullOrWhiteSpace(whatsApp) && !duplicates.Any(d => ((dynamic)d).MatchType == "phone"))
+        {
+            var match = await db.Patients
+                .Where(p => (p.WhatsApp == whatsApp || p.Phone == whatsApp) && p.IsActive)
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "whatsapp" })
+                .FirstOrDefaultAsync();
+            if (match != null) duplicates.Add(match);
+        }
+
+        // Check by patient number
+        if (!string.IsNullOrWhiteSpace(patientNumber))
+        {
+            var match = await db.Patients
+                .Where(p => p.PatientNumber == patientNumber && p.IsActive)
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "patientNumber" })
+                .FirstOrDefaultAsync();
+            if (match != null) duplicates.Add(match);
+        }
+
+        // Check by similar name + date of birth
+        if (!string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(lastName))
+        {
+            var nameQuery = db.Patients.Where(p => p.IsActive && p.FirstName == firstName && p.LastName == lastName);
+            if (!string.IsNullOrWhiteSpace(dateOfBirth) && DateOnly.TryParse(dateOfBirth, out var dob))
+                nameQuery = nameQuery.Where(p => p.DateOfBirth == dob);
+
+            var nameMatches = await nameQuery
+                .Select(p => new { p.Id, p.PatientNumber, FullName = p.FirstName + " " + p.MiddleName + " " + p.LastName, p.Phone, MatchType = "name" })
+                .Take(5)
+                .ToListAsync();
+            duplicates.AddRange(nameMatches.Where(nm => !duplicates.Any(d => ((dynamic)d).Id == nm.Id)));
+        }
+
+        return Ok(new { isDuplicate = duplicates.Count > 0, matches = duplicates });
     }
 
     [HttpPut("{id:guid}")]
@@ -145,6 +218,27 @@ public class PatientsController(PatientService service, AppDbContext db) : Contr
             totalOutstanding,
             prescriptionsCount
         });
+    }
+
+    /// <summary>معلومات حساب بوابة المريض</summary>
+    [HttpGet("{id:guid}/portal-account")]
+    public async Task<ActionResult<PatientPortalAccountInfoDto>> GetPortalAccount(Guid id)
+    {
+        var (info, error) = await portalService.GetPortalAccountInfoAsync(id);
+        if (info == null) return NotFound(new { message = error });
+        return Ok(info);
+    }
+
+    /// <summary>إعادة تعيين كلمة مرور بوابة المريض</summary>
+    [HttpPost("{id:guid}/portal-account/reset-password")]
+    public async Task<ActionResult<PatientPasswordResetResponseDto>> ResetPortalPassword(Guid id)
+    {
+        var exists = await db.Patients.AnyAsync(p => p.Id == id);
+        if (!exists) return NotFound(new { message = "المريض غير موجود" });
+
+        var (result, error) = await portalService.ResetPasswordAsync(id);
+        if (result == null) return BadRequest(new { message = error });
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}/timeline")]

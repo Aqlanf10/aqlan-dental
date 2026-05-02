@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   User, FileText, Stethoscope, Clock, Phone, MapPin, Pencil, Grid3x3,
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image,
-  Trash2, ExternalLink,
+  Trash2, ExternalLink, Shield, RefreshCw, AlertTriangle,
 } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
@@ -177,6 +177,129 @@ function PatientCasesPanel({ patientId }: { patientId: string }) {
               </Link>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Portal Account Panel ────────────────────────────────────────────────────
+interface PortalAccountInfo {
+  patientId: string;
+  username: string;
+  accountActive: boolean;
+  mustChangePassword: boolean;
+  lastLogin?: string;
+  hasPortalAccount: boolean;
+}
+
+interface PasswordResetResponse {
+  temporaryPassword: string;
+  username: string;
+  message: string;
+}
+
+function PortalAccountPanel({ patientId }: { patientId: string }) {
+  const [accountInfo, setAccountInfo] = useState<PortalAccountInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<PasswordResetResponse | null>(null);
+
+  const fetchAccountInfo = () => {
+    setLoading(true);
+    api.get<PortalAccountInfo>(`/api/patients/${patientId}/portal-account`)
+      .then((r) => setAccountInfo(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchAccountInfo();
+  }, [patientId]);
+
+  const handleResetPassword = async () => {
+    if (!confirm("هل أنت متأكد من إعادة تعيين كلمة مرور بوابة المريض؟")) return;
+    setResetting(true);
+    setResetResult(null);
+    try {
+      const { data } = await api.post<PasswordResetResponse>(`/api/patients/${patientId}/portal-account/reset-password`);
+      setResetResult(data);
+      fetchAccountInfo();
+      toast.success("تم إعادة تعيين كلمة المرور");
+    } catch {
+      toast.error("فشل إعادة تعيين كلمة المرور");
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="h-20 bg-gray-50 rounded-lg animate-pulse" />;
+  }
+
+  return (
+    <div className="md:col-span-2 border border-gray-100 rounded-lg p-4 bg-gray-50/50 space-y-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Shield className="w-4 h-4 text-teal-600" />
+        <h4 className="text-sm font-bold text-gray-800">حساب بوابة المريض</h4>
+      </div>
+
+      {accountInfo?.hasPortalAccount ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <p className="text-xs text-gray-400">اسم المستخدم</p>
+              <p className="text-sm font-mono font-medium text-gray-900" dir="ltr">{accountInfo.username}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">حالة الحساب</p>
+              <span className={cn(
+                "text-xs px-2 py-0.5 rounded-full font-medium inline-block mt-0.5",
+                accountInfo.accountActive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+              )}>
+                {accountInfo.accountActive ? "مفعّل" : "معطّل"}
+              </span>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">آخر دخول</p>
+              <p className="text-sm text-gray-900">{accountInfo.lastLogin ? formatArabicDate(accountInfo.lastLogin) : "لم يسجل بعد"}</p>
+            </div>
+          </div>
+
+          {resetResult && (
+            <div className={cn(
+              "rounded-lg p-3 border space-y-2",
+              "bg-amber-50 border-amber-200"
+            )}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">اعرض هذه الكلمة للمريض الآن، لن تظهر مرة أخرى</p>
+                  <div className="mt-2 bg-white rounded-md p-2 border border-amber-200">
+                    <p className="text-xs text-gray-500">اسم المستخدم: <span className="font-mono font-bold text-gray-900" dir="ltr">{resetResult.username}</span></p>
+                    <p className="text-xs text-gray-500">كلمة المرور المؤقتة: <span className="font-mono font-bold text-amber-700 text-sm" dir="ltr">{resetResult.temporaryPassword}</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={handleResetPassword}
+            disabled={resetting}
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg transition",
+              "border border-orange-200 text-orange-700 hover:bg-orange-50",
+              "disabled:opacity-50 disabled:cursor-not-allowed"
+            )}
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", resetting && "animate-spin")} />
+            {resetting ? "جارٍ إعادة التعيين..." : "إعادة تعيين كلمة مرور بوابة المريض"}
+          </button>
+        </div>
+      ) : (
+        <div className="text-sm text-gray-500">
+          لا يوجد حساب بوابة لهذا المريض
         </div>
       )}
     </div>
@@ -838,6 +961,7 @@ export default function PatientProfilePage() {
                 </div>
               ))}
               <PatientCasesPanel patientId={id} />
+              <PortalAccountPanel patientId={id} />
             </div>
           )}
 

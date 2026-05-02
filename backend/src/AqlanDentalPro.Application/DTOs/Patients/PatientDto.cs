@@ -36,6 +36,10 @@ public class PatientProfileDto
     public DateTime CreatedAt { get; set; }
     public MedicalHistoryDto? MedicalHistory { get; set; }
     public DentalHistoryDto? DentalHistory { get; set; }
+
+    // Portal account credentials (only populated on patient creation, never persisted)
+    public string? PortalUsername { get; set; }
+    public string? PortalTemporaryPassword { get; set; }
 }
 
 public class MedicalHistoryDto

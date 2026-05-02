@@ -12,22 +12,24 @@ public class PatientPortalController(IPatientPortalService portalService) : Cont
 {
     // ── Auth Endpoints (No auth required) ───────────────────────────────────
 
-    [HttpPost("auth/send-code")]
+    /// <summary>تسجيل دخول المريض باسم المستخدم وكلمة المرور</summary>
+    [HttpPost("auth/login")]
     [AllowAnonymous]
-    public async Task<IActionResult> SendVerificationCode([FromBody] PatientLoginRequest req)
+    public async Task<IActionResult> Login([FromBody] PatientPasswordLoginRequest req)
     {
-        var (success, error) = await portalService.SendVerificationCodeAsync(req.PhoneNumber);
-        if (!success) return BadRequest(new { message = error });
-        return Ok(new { message = "تم إرسال رمز التحقق بنجاح" });
-    }
-
-    [HttpPost("auth/verify")]
-    [AllowAnonymous]
-    public async Task<IActionResult> VerifyCode([FromBody] PatientVerifyRequest req)
-    {
-        var (response, error) = await portalService.VerifyCodeAsync(req.PhoneNumber, req.Code);
+        var (response, error) = await portalService.LoginAsync(req.Username, req.Password);
         if (response == null) return BadRequest(new { message = error });
         return Ok(response);
+    }
+
+    /// <summary>طلب بيانات الدخول عبر الواتساب</summary>
+    [HttpPost("auth/request-credentials")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RequestCredentials([FromBody] PatientCredentialsRequest req)
+    {
+        var (success, error) = await portalService.RequestCredentialsViaWhatsAppAsync(req.PhoneNumber);
+        if (!success) return BadRequest(new { message = error });
+        return Ok(new { message = "تم إرسال بيانات الدخول عبر الواتساب إذا كان الرقم مسجلاً لدينا" });
     }
 
     // ── Protected Endpoints (Patient auth required) ────────────────────────

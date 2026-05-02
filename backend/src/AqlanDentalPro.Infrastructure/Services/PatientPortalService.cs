@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.PatientPortal;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -14,65 +15,33 @@ using System.Text.Json;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class PatientPortalService(AppDbContext db, IConfiguration config) : IPatientPortalService
+public class PatientPortalService(
+    AppDbContext db,
+    IConfiguration config,
+    IWhatsAppService whatsappService) : IPatientPortalService
 {
-    public async Task<(bool success, string? error)> SendVerificationCodeAsync(string phoneNumber)
+    // ── Auth: Username/Password Login ──────────────────────────────────────
+
+    public async Task<(PatientAuthResponse? response, string? error)> LoginAsync(string username, string password)
     {
-        // Normalize phone number
-        var normalizedPhone = NormalizePhone(phoneNumber);
-        
-        // Find patient with this phone number
-        var patient = await db.Patients.FirstOrDefaultAsync(p => p.Phone == normalizedPhone || p.WhatsApp == normalizedPhone);
-        if (patient == null)
-            return (false, "رقم الهاتف غير مسجل في النظام");
-
-        // Get or create patient account
-        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patient.Id);
-        if (account == null)
-        {
-            account = new PatientAccount
-            {
-                PatientId = patient.Id,
-                PhoneNumber = normalizedPhone,
-                IsActive = true
-            };
-            db.PatientAccounts.Add(account);
-        }
-
-        // Generate 6-digit code
-        var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
-        account.VerificationCode = code;
-        account.VerificationCodeExpiry = DateTime.UtcNow.AddMinutes(10);
-
-        await db.SaveChangesAsync();
-
-        // In production, send SMS here. For now, return success.
-        // TODO: Integrate with SMS gateway (e.g., Twilio, Yemen SMS provider)
-        
-        return (true, null);
-    }
-
-    public async Task<(PatientAuthResponse? response, string? error)> VerifyCodeAsync(string phoneNumber, string code)
-    {
-        var normalizedPhone = NormalizePhone(phoneNumber);
-        
         var account = await db.PatientAccounts
             .Include(a => a.Patient)
                 .ThenInclude(p => p!.PrimaryDoctor)
-            .FirstOrDefaultAsync(a => a.PhoneNumber == normalizedPhone);
+            .FirstOrDefaultAsync(a => a.Username == username);
 
         if (account == null)
-            return (null, "الحساب غير موجود");
+            return (null, "اسم المستخدم أو كلمة المرور غير صحيحة");
 
-        if (account.VerificationCode != code)
-            return (null, "رمز التحقق غير صحيح");
+        if (!account.PortalAccountActive)
+            return (null, "حسابك معطّل، تواصل مع العيادة");
 
-        if (account.VerificationCodeExpiry < DateTime.UtcNow)
-            return (null, "انتهت صلاحية رمز التحقق");
+        // Verify password using Argon2id
+        if (!VerifyPassword(password, account.PasswordHash, account.PasswordSalt))
+            return (null, "اسم المستخدم أو كلمة المرور غير صحيحة");
 
         account.IsVerified = true;
         account.LastLogin = DateTime.UtcNow;
-        account.VerificationCode = null; // Clear code after use
+        account.VerificationCode = null;
         account.VerificationCodeExpiry = null;
 
         // Generate JWT
@@ -86,9 +55,172 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         return (new PatientAuthResponse
         {
             AccessToken = accessToken,
-            Profile = MapProfile(account.Patient)
+            Profile = MapProfile(account.Patient),
+            MustChangePassword = account.MustChangePassword
         }, null);
     }
+
+    // ── Request Credentials via WhatsApp ──────────────────────────────────
+
+    public async Task<(bool success, string? error)> RequestCredentialsViaWhatsAppAsync(string phoneNumber)
+    {
+        var normalizedPhone = NormalizePhone(phoneNumber);
+
+        // Find patient with this phone number
+        var patient = await db.Patients.FirstOrDefaultAsync(p => p.Phone == normalizedPhone || p.WhatsApp == normalizedPhone);
+        if (patient == null)
+            return (false, "رقم الهاتف غير مسجل في النظام");
+
+        // Ensure patient has a portal account
+        var (creationResult, creationError) = await EnsurePortalAccountAsync(patient.Id);
+        if (creationResult == null)
+            return (false, creationError ?? "فشل في إنشاء حساب البوابة");
+
+        // Reset password to generate a new temporary one
+        var (resetResult, resetError) = await ResetPasswordAsync(patient.Id);
+        if (resetResult == null)
+            return (false, resetError ?? "فشل في إعادة تعيين كلمة المرور");
+
+        // Send credentials via WhatsApp
+        try
+        {
+            await whatsappService.SendMessageAsync(new Application.DTOs.WhatsApp.SendMessageRequest
+            {
+                PatientId = patient.Id,
+                TemplateType = "portal_credentials",
+                CustomMessage = $"مرحباً {patient.FirstName}\n\nبيانات الدخول لبوابة المريض:\nاسم المستخدم: {resetResult.Username}\nكلمة المرور: {resetResult.TemporaryPassword}\n\nرابط البوابة: https://portal.aqlandental.com\n\nيُنصح بتغيير كلمة المرور بعد الدخول"
+            });
+        }
+        catch
+        {
+            // WhatsApp sending failed, but account is created
+            return (true, null);
+        }
+
+        return (true, null);
+    }
+
+    // ── Portal Account Management ─────────────────────────────────────────
+
+    public async Task<(PatientPortalAccountInfoDto? info, string? error)> GetPortalAccountInfoAsync(Guid patientId)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null)
+            return (null, "المريض غير موجود");
+
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+
+        return (new PatientPortalAccountInfoDto
+        {
+            PatientId = patientId,
+            Username = account?.Username ?? patient.PatientNumber,
+            AccountActive = account?.PortalAccountActive ?? false,
+            MustChangePassword = account?.MustChangePassword ?? true,
+            LastLogin = account?.LastLogin,
+            HasPortalAccount = account != null
+        }, null);
+    }
+
+    public async Task<(PatientPasswordResetResponseDto? result, string? error)> ResetPasswordAsync(Guid patientId)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (account == null)
+        {
+            // Create account if it doesn't exist
+            var (creationResult, creationError) = await EnsurePortalAccountAsync(patientId);
+            if (creationResult == null)
+                return (null, creationError ?? "فشل في إنشاء حساب البوابة");
+            account = await db.PatientAccounts.FirstAsync(a => a.PatientId == patientId);
+        }
+
+        // Generate new temporary password
+        var tempPassword = GenerateTemporaryPassword();
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(tempPassword, salt);
+
+        account.PasswordHash = hash;
+        account.PasswordSalt = salt;
+        account.MustChangePassword = true;
+        account.PortalAccountActive = true;
+
+        await db.SaveChangesAsync();
+
+        return (new PatientPasswordResetResponseDto
+        {
+            TemporaryPassword = tempPassword,
+            Username = account.Username,
+            Message = "تم إعادة تعيين كلمة المرور بنجاح. اعرض الكلمة للمريض الآن، لن تظهر مرة أخرى."
+        }, null);
+    }
+
+    public async Task<(PatientAccountCreationResult? result, string? error)> EnsurePortalAccountAsync(Guid patientId)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null)
+            return (null, "المريض غير موجود");
+
+        var existingAccount = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (existingAccount != null)
+            return (new PatientAccountCreationResult
+            {
+                Username = existingAccount.Username,
+                TemporaryPassword = "" // Already has account, no password to show
+            }, null);
+
+        // Create new portal account
+        var username = patient.PatientNumber;
+        var tempPassword = GenerateTemporaryPassword();
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(tempPassword, salt);
+
+        var account = new PatientAccount
+        {
+            PatientId = patientId,
+            PhoneNumber = patient.Phone ?? patient.WhatsApp ?? "",
+            Username = username,
+            PasswordHash = hash,
+            PasswordSalt = salt,
+            MustChangePassword = true,
+            PortalAccountActive = true,
+            IsVerified = false,
+            IsActive = true
+        };
+
+        db.PatientAccounts.Add(account);
+
+        // Also create a User record for messaging system integration
+        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        if (existingUser == null)
+        {
+            var linkedUser = new User
+            {
+                Username = username,
+                PasswordHash = hash,
+                PasswordSalt = salt,
+                Role = UserRole.Patient,
+                Phone = patient.Phone,
+                BranchId = patient.BranchId,
+                IsActive = true
+            };
+            db.Users.Add(linkedUser);
+            await db.SaveChangesAsync();
+            account.LinkedUserId = linkedUser.Id;
+        }
+        else
+        {
+            account.LinkedUserId = existingUser.Id;
+        }
+
+        await db.SaveChangesAsync();
+
+        return (new PatientAccountCreationResult
+        {
+            Username = username,
+            TemporaryPassword = tempPassword
+        }, null);
+    }
+
+    // ── Dashboard & Data ──────────────────────────────────────────────────
 
     public async Task<PatientPortalDashboardDto> GetDashboardAsync(Guid patientId)
     {
@@ -107,7 +239,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 
         var totalAppts = await db.Appointments.CountAsync(a => a.PatientId == patientId);
         var completedTreatments = await db.GeneralTreatments.CountAsync(t => t.PatientId == patientId);
-        
+
         var totalPaid = await db.Payments.Where(p => p.PatientId == patientId).SumAsync(p => (decimal?)p.Amount) ?? 0;
         var totalOutstanding = await db.Contracts
             .Where(c => c.PatientId == patientId && c.Status == "active")
@@ -268,8 +400,6 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 
     public async Task<List<PatientPrescriptionDto>> GetPrescriptionsAsync(Guid patientId, int limit = 20)
     {
-        // Prescription entity uses Drugs (JsonDocument) and Diagnosis/Notes
-        // We map the available fields to the DTO
         var prescriptions = await db.Prescriptions
             .Include(p => p.Doctor)
             .Where(p => p.PatientId == patientId)
@@ -337,14 +467,35 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
     {
         // Remove spaces, dashes, parentheses
         var cleaned = new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray());
-        
+
         // Convert Yemen numbers: 7XX → +9677XX
         if (cleaned.StartsWith("7") && cleaned.Length == 9)
             cleaned = "+967" + cleaned;
         else if (cleaned.StartsWith("0") && cleaned.Length == 10)
             cleaned = "+967" + cleaned[1..];
-        
+
         return cleaned;
+    }
+
+    private static string GenerateTemporaryPassword()
+    {
+        // Generate an 8-character temporary password with letters and digits
+        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+        var bytes = RandomNumberGenerator.GetBytes(8);
+        return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
+    }
+
+    private static bool VerifyPassword(string password, string storedHash, string storedSalt)
+    {
+        try
+        {
+            var hash = AuthService.HashPassword(password, storedSalt);
+            return hash == storedHash;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private string GeneratePatientToken(PatientAccount account)
@@ -352,14 +503,20 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:SecretKey"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, account.PatientId.ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("patientId", account.PatientId.ToString()),
-            new Claim(ClaimTypes.Role, "Patient"),
-            new Claim("portal", "true")
+            new(JwtRegisteredClaimNames.Sub, account.PatientId.ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("patientId", account.PatientId.ToString()),
+            new(ClaimTypes.Role, "Patient"),
+            new("portal", "true")
         };
+
+        // Include linked user ID for messaging system integration
+        if (account.LinkedUserId.HasValue)
+        {
+            claims.Add(new Claim("userId", account.LinkedUserId.Value.ToString()));
+        }
 
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"],

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, ChevronDown } from "lucide-react";
+import { Save, ChevronDown, Shield, AlertTriangle, Copy, Check } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -90,6 +90,8 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
+  const [portalCredentials, setPortalCredentials] = useState<{ username: string; temporaryPassword: string; patientId: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const {
     register,
@@ -145,12 +147,17 @@ export function PatientForm({ defaultValues, patientId }: Props) {
 
       if (patientId) {
         await api.put(`/api/patients/${patientId}`, payload);
+        router.push(`/patients/${patientId}`);
       } else {
-        const { data: created } = await api.post<{ id: string }>("/api/patients", payload);
-        router.push(`/patients/${created.id}`);
+        const { data: created } = await api.post<{ id: string; portalUsername?: string; portalTemporaryPassword?: string }>('/api/patients', payload);
+        // Show portal credentials if returned
+        if (created.portalUsername && created.portalTemporaryPassword) {
+          setPortalCredentials({ username: created.portalUsername, temporaryPassword: created.portalTemporaryPassword, patientId: created.id });
+        } else {
+          router.push(`/patients/${created.id}`);
+        }
         return;
       }
-      router.push(`/patients/${patientId}`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setServerError(msg ?? "حدث خطأ أثناء الحفظ");
@@ -158,6 +165,72 @@ export function PatientForm({ defaultValues, patientId }: Props) {
       setSaving(false);
     }
   };
+
+  const handleCopy = () => {
+    if (!portalCredentials) return;
+    navigator.clipboard.writeText(`اسم المستخدم: ${portalCredentials.username}\nكلمة المرور: ${portalCredentials.temporaryPassword}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (portalCredentials) {
+    return (
+      <div className="max-w-md mx-auto text-center space-y-6 py-8">
+        <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto">
+          <Check className="w-8 h-8 text-green-600" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">تم تسجيل المريض بنجاح</h2>
+          <p className="text-sm text-gray-500 mt-1">تم إنشاء حساب بوابة المريض تلقائياً</p>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-right space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-amber-800">اعرض هذه البيانات للمريض الآن، لن تظهر مرة أخرى</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg p-3 border border-amber-200 space-y-2">
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-teal-600 flex-shrink-0" />
+              <span className="text-xs font-semibold text-gray-600">بيانات دخول بوابة المريض</span>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">اسم المستخدم</p>
+              <p className="text-sm font-mono font-bold text-gray-900" dir="ltr">{portalCredentials.username}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">كلمة المرور المؤقتة</p>
+              <p className="text-sm font-mono font-bold text-amber-700" dir="ltr">{portalCredentials.temporaryPassword}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 text-xs text-teal-700 hover:text-teal-800 transition"
+          >
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? "تم النسخ" : "نسخ البيانات"}
+          </button>
+        </div>
+
+        <div className="flex gap-3 justify-center">
+          <button
+            onClick={() => router.push(`/patients/${portalCredentials.patientId}`)}
+            className="px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          >
+            الذهاب لملف المريض
+          </button>
+          <button
+            onClick={() => router.push('/patients')}
+            className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+          >
+            قائمة المرضى
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">

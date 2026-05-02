@@ -1,21 +1,24 @@
+using AqlanDentalPro.Application.DTOs.Patients;
+
 namespace AqlanDentalPro.Application.DTOs.PatientPortal;
 
 // Auth
-public class PatientLoginRequest
+public class PatientPasswordLoginRequest
 {
-    public string PhoneNumber { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
 }
 
-public class PatientVerifyRequest
+public class PatientCredentialsRequest
 {
     public string PhoneNumber { get; set; } = string.Empty;
-    public string Code { get; set; } = string.Empty;
 }
 
 public class PatientAuthResponse
 {
     public string AccessToken { get; set; } = string.Empty;
     public PatientPortalProfileDto Profile { get; set; } = null!;
+    public bool MustChangePassword { get; set; }
 }
 
 // Profile
@@ -28,6 +31,34 @@ public class PatientPortalProfileDto
     public string? Gender { get; set; }
     public int? Age { get; set; }
     public string? PrimaryDoctorName { get; set; }
+}
+
+// Portal Account Info (for staff dashboard)
+public class PatientPortalAccountInfoDto
+{
+    public Guid PatientId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public bool AccountActive { get; set; }
+    public bool MustChangePassword { get; set; }
+    public DateTime? LastLogin { get; set; }
+    public bool HasPortalAccount { get; set; }
+}
+
+// Password Reset (staff initiates)
+public class PatientPasswordResetResponseDto
+{
+    public string TemporaryPassword { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+}
+
+// Patient creation response includes temporary credentials
+public class PatientCreatedWithCredentialsDto
+{
+    public PatientProfileDto Patient { get; set; } = null!;
+    public string PortalUsername { get; set; } = string.Empty;
+    public string PortalTemporaryPassword { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
 }
 
 // Appointment

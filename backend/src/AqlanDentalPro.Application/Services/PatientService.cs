@@ -11,7 +11,8 @@ namespace AqlanDentalPro.Application.Services;
 public class PatientService(
     IPatientRepository repo,
     ICurrentUserService currentUser,
-    IConfiguration config)
+    IConfiguration config,
+    IPatientPortalService portalService)
 {
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
@@ -38,6 +39,22 @@ public class PatientService(
 
     public async Task<PatientProfileDto> CreateAsync(CreatePatientRequest req)
     {
+        // Check for duplicate phone
+        if (!string.IsNullOrWhiteSpace(req.Phone))
+        {
+            var existingPhone = await repo.FirstOrDefaultAsync(p => (p.Phone == req.Phone || p.WhatsApp == req.Phone) && p.IsActive);
+            if (existingPhone != null)
+                throw new InvalidOperationException($"رقم الهاتف مضاف مسبقاً لمريض آخر: {existingPhone.FirstName} {existingPhone.LastName} (ملف رقم {existingPhone.PatientNumber})");
+        }
+
+        // Check for duplicate WhatsApp
+        if (!string.IsNullOrWhiteSpace(req.WhatsApp))
+        {
+            var existingWA = await repo.FirstOrDefaultAsync(p => (p.WhatsApp == req.WhatsApp || p.Phone == req.WhatsApp) && p.IsActive);
+            if (existingWA != null)
+                throw new InvalidOperationException($"رقم واتساب مضاف مسبقاً لمريض آخر: {existingWA.FirstName} {existingWA.LastName} (ملف رقم {existingWA.PatientNumber})");
+        }
+
         var number = await repo.GeneratePatientNumberAsync(NumberPrefix);
 
         var patient = new Patient
@@ -89,7 +106,19 @@ public class PatientService(
         await repo.AddAsync(patient);
         await repo.SaveChangesAsync();
 
-        return await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+        // Auto-create patient portal account
+        var portalResult = await portalService.EnsurePortalAccountAsync(patient.Id);
+
+        var profile = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+        
+        // Attach portal credentials to the profile if available
+        if (portalResult != null && !string.IsNullOrEmpty(portalResult.TemporaryPassword))
+        {
+            profile.PortalUsername = portalResult.Username;
+            profile.PortalTemporaryPassword = portalResult.TemporaryPassword;
+        }
+        
+        return profile;
     }
 
     public async Task<PatientProfileDto?> UpdateAsync(Guid id, UpdatePatientRequest req)

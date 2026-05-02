@@ -2,12 +2,13 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Messaging;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
+public class MessagingService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications)
 {
     private Guid UserId => currentUser.UserId ?? throw new UnauthorizedAccessException();
 
@@ -97,6 +98,13 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
     public async Task<ConversationDetailDto> CreateConversationAsync(CreateConversationRequest request)
     {
         var participantIds = request.ParticipantIds.Distinct().ToList();
+
+        // Validate messaging permissions for each participant
+        foreach (var pid in participantIds)
+        {
+            if (pid != UserId && !await CanMessageUserAsync(pid))
+                throw new UnauthorizedAccessException($"ليس لديك صلاحية مراسلة هذا المستخدم");
+        }
 
         // Add current user if not included
         if (!participantIds.Contains(UserId))
@@ -192,6 +200,19 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
             .Include(m => m.ReplyTo)
             .FirstAsync(m => m.Id == msg.Id);
 
+        // Notify other participants
+        var senderName = loaded.Sender?.Doctor?.Name ?? loaded.Sender?.Username ?? "مستخدم";
+        var otherParticipants = await db.ConversationParticipants
+            .Where(cp => cp.ConversationId == conversationId && cp.UserId != UserId)
+            .Select(cp => cp.UserId)
+            .ToListAsync();
+
+        foreach (var pid in otherParticipants)
+        {
+            await notifications.NotifyAsync(pid, "message", "رسالة جديدة",
+                $"رسالة جديدة من {senderName}", "Conversation", conversationId);
+        }
+
         return MapMessageDto(loaded);
     }
 
@@ -268,6 +289,77 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser)
 
         await db.SaveChangesAsync();
     }
+
+    // ─── التحقق من صلاحية المراسلة ─────────────────────────────────────────────
+    private async Task<bool> CanMessageUserAsync(Guid targetUserId)
+    {
+        var currentUser = await db.Users.Include(u => u.Doctor).FirstOrDefaultAsync(u => u.Id == UserId);
+        var targetUser = await db.Users.FirstOrDefaultAsync(u => u.Id == targetUserId);
+        if (currentUser == null || targetUser == null) return false;
+
+        // Admin can message everyone
+        if (currentUser.Role == UserRole.Admin) return true;
+
+        var targetRole = targetUser.Role;
+
+        return currentUser.Role switch
+        {
+            UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                => targetRole is UserRole.Patient or UserRole.Reception or UserRole.Accountant or UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon,
+            UserRole.Reception
+                => targetRole is UserRole.Patient or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon or UserRole.Admin or UserRole.Accountant,
+            UserRole.Accountant
+                => targetRole is UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon or UserRole.Reception,
+            UserRole.Patient
+                => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon or UserRole.Reception or UserRole.Admin,
+            _ => false
+        };
+    }
+
+    // ─── محادثة مع مريض ──────────────────────────────────────────────────────
+    public async Task<ConversationDetailDto?> GetOrCreatePatientConversationAsync(Guid patientId)
+    {
+        // Find patient's linked user account via PatientAccount
+        var patientAccount = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (patientAccount == null) return null;
+
+        Guid patientUserId;
+        if (patientAccount.LinkedUserId.HasValue)
+        {
+            patientUserId = patientAccount.LinkedUserId.Value;
+        }
+        else
+        {
+            // Fallback: find by phone and role
+            var patient = await db.Patients.FindAsync(patientId);
+            if (patient == null) return null;
+
+            var patientUser = await db.Users.FirstOrDefaultAsync(u => u.Phone == patient.Phone && u.Role == UserRole.Patient);
+            if (patientUser == null) return null;
+            patientUserId = patientUser.Id;
+        }
+
+        // Verify user exists and is active
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == patientUserId && u.IsActive);
+        if (user == null) return null;
+
+        // Check messaging permission
+        if (!await CanMessageUserAsync(patientUserId))
+            throw new UnauthorizedAccessException("ليس لديك صلاحية مراسلة هذا المريض");
+
+        // Find existing direct conversation or create new
+        var existing = await FindDirectConversationAsync(UserId, patientUserId);
+        if (existing != null) return await GetConversationAsync(existing.Id);
+
+        return await CreateConversationAsync(new CreateConversationRequest
+        {
+            ParticipantIds = [patientUserId],
+            InitialMessage = null
+        });
+    }
+
+    // ─── التحقق من صلاحية المراسلة (عام) ────────────────────────────────────────
+    public async Task<bool> CanMessageUserPublicAsync(Guid targetUserId) => await CanMessageUserAsync(targetUserId);
 
     // ─── Private Helpers ─────────────────────────────────────────────────────
     private async Task<bool> IsParticipantAsync(Guid conversationId)

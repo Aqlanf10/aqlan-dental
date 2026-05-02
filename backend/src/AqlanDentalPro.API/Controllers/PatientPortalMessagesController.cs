@@ -1,5 +1,4 @@
 using AqlanDentalPro.Application.DTOs.Messaging;
-using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -20,15 +19,66 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     private Guid PatientId => Guid.Parse(User.FindFirst("patientId")!.Value);
     private Guid? LinkedUserId => Guid.TryParse(User.FindFirst("userId")?.Value, out var id) ? id : null;
 
+    /// <summary>
+    /// Ensures the patient has a LinkedUserId and is a participant in their StaffToPatient conversation.
+    /// Returns the messaging User ID.
+    /// </summary>
+    private async Task<Guid?> EnsureLinkedUserAsync()
+    {
+        var userId = LinkedUserId;
+        if (userId != null) return userId;
+
+        // Fallback: look up PatientAccount and link if not yet linked
+        var account = await db.PatientAccounts
+            .Include(a => a.Patient)
+            .FirstOrDefaultAsync(a => a.PatientId == PatientId);
+
+        if (account == null) return null;
+
+        if (account.LinkedUserId.HasValue)
+            return account.LinkedUserId.Value;
+
+        // Try to find existing User by username
+        var username = account.Username ?? account.Patient?.PatientNumber;
+        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+
+        if (existingUser != null)
+        {
+            account.LinkedUserId = existingUser.Id;
+            await db.SaveChangesAsync();
+            return existingUser.Id;
+        }
+
+        // Create a new User record for messaging
+        var linkedUser = new User
+        {
+            Username = username ?? $"patient-{PatientId}",
+            PasswordHash = account.PasswordHash ?? "",
+            PasswordSalt = account.PasswordSalt ?? "",
+            Role = UserRole.Patient,
+            Phone = account.PhoneNumber,
+            IsActive = true
+        };
+        db.Users.Add(linkedUser);
+        await db.SaveChangesAsync();
+        account.LinkedUserId = linkedUser.Id;
+        await db.SaveChangesAsync();
+
+        return linkedUser.Id;
+    }
+
     [HttpGet("conversations")]
     public async Task<ActionResult<object>> GetConversations(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null)
     {
-        var userId = LinkedUserId;
+        var userId = await EnsureLinkedUserAsync();
         if (userId == null)
             return Ok(new { Data = Array.Empty<object>(), TotalCount = 0, Page = 1, PageSize = pageSize, TotalPages = 0, HasNextPage = false, HasPreviousPage = false });
+
+        // Also ensure patient is a participant in their StaffToPatient conversations
+        await EnsurePatientParticipantAsync(userId.Value);
 
         var query = db.ConversationParticipants
             .Where(cp => cp.UserId == userId.Value)
@@ -36,7 +86,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
-            .Include(c => c.Patient)
+            .Where(c => c.ConversationType == "StaffToPatient")
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -53,145 +103,165 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Take(pageSize)
             .ToListAsync();
 
-        // Batch unread counts
-        var convIds = conversations.Select(c => c.Id).ToList();
-        var unreadCounts = await db.Messages
-            .Where(m => convIds.Contains(m.ConversationId) && m.SenderId != userId.Value && !m.Reads.Any(r => r.UserId == userId.Value))
-            .GroupBy(m => m.ConversationId)
-            .Select(g => new { ConvId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.ConvId, x => x.Count);
-
         var result = new List<ConversationListDto>();
         foreach (var conv in conversations)
         {
             var otherParticipant = conv.Participants.FirstOrDefault(p => p.UserId != userId.Value);
-            var patientName = conv.Patient != null ? $"{conv.Patient.FirstName} {conv.Patient.LastName}".Trim() : null;
             var dto = new ConversationListDto
             {
                 Id = conv.Id,
-                Title = conv.ConversationType == "StaffToPatient" && patientName != null
-                    ? $"محادثة مع المركز — {patientName}"
-                    : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title),
+                Title = conv.IsGroup ? conv.Title : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title),
                 IsGroup = conv.IsGroup,
                 ConversationType = conv.ConversationType,
                 PatientId = conv.PatientId,
-                PatientName = patientName,
+                PatientName = conv.PatientId.HasValue ? (conv.Patient?.FirstName + " " + conv.Patient?.LastName) : null,
                 LastMessageAt = conv.LastMessageAt,
                 LastMessagePreview = conv.LastMessagePreview,
-                UnreadCount = unreadCounts.GetValueOrDefault(conv.Id),
+                UnreadCount = await db.Messages
+                    .Where(m => m.ConversationId == conv.Id && m.SenderId != userId.Value && !m.Reads.Any(r => r.UserId == userId.Value))
+                    .CountAsync(),
                 OtherParticipant = otherParticipant != null ? MapParticipant(otherParticipant) : null,
                 Participants = conv.Participants.Select(MapParticipant).ToList()
             };
             result.Add(dto);
         }
 
-        return Ok(new { Data = result, TotalCount = total, Page = page, PageSize = pageSize });
+        return Ok(new { Data = result, TotalCount = total, Page = page, PageSize = pageSize, TotalPages = (int)Math.Ceiling((double)total / pageSize), HasNextPage = page * pageSize < total, HasPreviousPage = page > 1 });
     }
 
-    /// <summary>المريض يبدأ محادثة مع المركز — ينشئ أو يجلب محادثة StaffToPatient خاصة به</summary>
+    /// <summary>
+    /// Start a conversation with the clinic (patient-initiated)
+    /// </summary>
     [HttpPost("conversations")]
-    public async Task<ActionResult<ConversationDetailDto>> StartConversation([FromBody] StartConversationRequest? request = null)
+    public async Task<ActionResult<ConversationDetailDto>> StartConversation([FromBody] StartConversationRequest? request)
     {
-        var userId = LinkedUserId;
-        if (userId == null) return BadRequest(new { message = "حساب البوابة غير مرتبط بحساب مراسلة" });
+        var userId = await EnsureLinkedUserAsync();
+        if (userId == null) return Forbid("حساب البوابة غير مرتبط بحساب مراسلة");
 
-        var patientId = PatientId;
+        // Check if a StaffToPatient conversation already exists for this patient
+        var existingConv = await db.Conversations
+            .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
+            .Include(c => c.Patient)
+            .FirstOrDefaultAsync(c => c.PatientId == PatientId && c.ConversationType == "StaffToPatient");
 
-        // Find or create a StaffToPatient conversation for this patient
-        var existing = await db.Conversations
-            .Include(c => c.Participants)
-            .FirstOrDefaultAsync(c => c.PatientId == patientId && c.ConversationType == "StaffToPatient");
-
-        if (existing != null)
+        if (existingConv != null)
         {
-            // Already exists — return it
-            return await GetConversation(existing.Id);
+            // Patient is already a participant? Just return it
+            var isAlreadyParticipant = await db.ConversationParticipants
+                .AnyAsync(cp => cp.ConversationId == existingConv.Id && cp.UserId == userId.Value);
+
+            if (!isAlreadyParticipant)
+            {
+                db.ConversationParticipants.Add(new ConversationParticipant
+                {
+                    ConversationId = existingConv.Id,
+                    UserId = userId.Value,
+                    IsAdmin = false,
+                    LastReadAt = DateTime.UtcNow
+                });
+                await db.SaveChangesAsync();
+            }
+
+            // Send initial message if provided
+            if (request?.InitialMessage != null)
+            {
+                var initMsg = new Message
+                {
+                    ConversationId = existingConv.Id,
+                    SenderId = userId.Value,
+                    Content = request.InitialMessage
+                };
+                db.Messages.Add(initMsg);
+                existingConv.LastMessageAt = DateTime.UtcNow;
+                existingConv.LastMessagePreview = request.InitialMessage.Length > 200
+                    ? request.InitialMessage[..200] + "..." : request.InitialMessage;
+                await db.SaveChangesAsync();
+            }
+
+            return await GetConversation(existingConv.Id);
         }
 
-        // Create new conversation
-        var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == patientId);
-        var patientName = patient != null ? $"{patient.FirstName} {patient.LastName}".Trim() : "مريض";
-        var patientNumber = patient?.PatientNumber ?? "";
+        // Create a new StaffToPatient conversation
+        var patient = await db.Patients.FindAsync(PatientId);
+        var convTitle = patient != null ? $"المريض: {patient.FirstName} {patient.LastName}" : "محادثة مريض";
 
         var conv = new Conversation
         {
-            Title = $"المريض: {patientName}",
+            Title = convTitle,
             IsGroup = true,
             ConversationType = "StaffToPatient",
-            PatientId = patientId,
+            PatientId = PatientId,
+            CreatedBy = userId.Value,
+            LastMessageAt = DateTime.UtcNow
         };
 
-        await db.Conversations.AddAsync(conv);
+        db.Conversations.Add(conv);
+        await db.SaveChangesAsync();
 
         // Add patient as participant
-        await db.ConversationParticipants.AddAsync(new ConversationParticipant
+        db.ConversationParticipants.Add(new ConversationParticipant
         {
             ConversationId = conv.Id,
             UserId = userId.Value,
-            IsAdmin = false
+            IsAdmin = false,
+            LastReadAt = DateTime.UtcNow
         });
 
-        // Find staff to add (admin or the patient's primary doctor)
-        var staffUser = await db.Users
-            .Include(u => u.Doctor)
-            .FirstOrDefaultAsync(u => u.Role == UserRole.Admin && u.IsActive);
-        
-        if (staffUser == null)
+        // Add all admin users as participants (so someone from the clinic can respond)
+        var adminUsers = await db.Users.Where(u => u.Role == UserRole.Admin && u.IsActive).ToListAsync();
+        foreach (var admin in adminUsers)
         {
-            // Try primary doctor
-            if (patient?.PrimaryDoctorId != null)
-            {
-                staffUser = await db.Users
-                    .Include(u => u.Doctor)
-                    .FirstOrDefaultAsync(u => u.Doctor != null && u.Doctor.Id == patient.PrimaryDoctorId && u.IsActive);
-            }
-        }
-
-        if (staffUser != null)
-        {
-            await db.ConversationParticipants.AddAsync(new ConversationParticipant
+            db.ConversationParticipants.Add(new ConversationParticipant
             {
                 ConversationId = conv.Id,
-                UserId = staffUser.Id,
+                UserId = admin.Id,
                 IsAdmin = true
             });
         }
 
-        // Add system message
-        var initialContent = request?.InitialMessage;
-        if (!string.IsNullOrWhiteSpace(initialContent))
+        // Add the patient's primary doctor if assigned
+        if (patient?.PrimaryDoctorId != null)
         {
-            await db.Messages.AddAsync(new Message
+            var doctorUser = await db.Doctors.Where(d => d.Id == patient.PrimaryDoctorId)
+                .Select(d => d.UserId).FirstOrDefaultAsync();
+            if (doctorUser.HasValue && doctorUser.Value != Guid.Empty)
             {
-                ConversationId = conv.Id,
-                SenderId = userId.Value,
-                Content = initialContent,
-                IsSystemMessage = false
-            });
-            conv.LastMessageAt = DateTime.UtcNow;
-            conv.LastMessagePreview = initialContent.Length > 200 ? initialContent[..200] + "..." : initialContent;
+                var alreadyAdded = adminUsers.Any(a => a.Id == doctorUser.Value);
+                if (!alreadyAdded)
+                {
+                    db.ConversationParticipants.Add(new ConversationParticipant
+                    {
+                        ConversationId = conv.Id,
+                        UserId = doctorUser.Value,
+                        IsAdmin = false
+                    });
+                }
+            }
         }
-        else
+
+        // Add system message
+        db.Messages.Add(new Message
         {
-            await db.Messages.AddAsync(new Message
+            ConversationId = conv.Id,
+            SenderId = userId.Value,
+            Content = $"تم إنشاء محادثة مع المريض {patient?.FirstName} {patient?.LastName} — {patient?.PatientNumber}",
+            IsSystemMessage = true
+        });
+
+        // Add initial message if provided
+        if (request?.InitialMessage != null)
+        {
+            db.Messages.Add(new Message
             {
                 ConversationId = conv.Id,
                 SenderId = userId.Value,
-                Content = $"بدأ المريض {patientName} محادثة مع المركز",
-                IsSystemMessage = true
+                Content = request.InitialMessage
             });
-            conv.LastMessageAt = DateTime.UtcNow;
-            conv.LastMessagePreview = $"محادثة جديدة: {patientName}";
+            conv.LastMessagePreview = request.InitialMessage.Length > 200
+                ? request.InitialMessage[..200] + "..." : request.InitialMessage;
         }
 
         await db.SaveChangesAsync();
-
-        // Notify staff participants
-        if (staffUser != null)
-        {
-            await notifications.NotifyAsync(staffUser.Id, "message", "رسالة جديدة من مريض",
-                $"المريض {patientName} بدأ محادثة", "Conversation", conv.Id);
-        }
 
         return await GetConversation(conv.Id);
     }
@@ -200,7 +270,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     public async Task<ActionResult<ConversationDetailDto>> GetConversation(
         Guid conversationId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
-        var userId = LinkedUserId;
+        var userId = await EnsureLinkedUserAsync();
         if (userId == null) return NotFound(new { message = "حساب البوابة غير مرتبط بحساب مراسلة" });
 
         var isParticipant = await db.ConversationParticipants
@@ -236,22 +306,14 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
 
         await db.SaveChangesAsync();
 
-        var patientName = conv.Patient != null ? $"{conv.Patient.FirstName} {conv.Patient.LastName}".Trim() : null;
-        var patientPhone = conv.Patient?.Phone;
-        var patientNumber = conv.Patient?.PatientNumber;
-
         return Ok(new ConversationDetailDto
         {
-            Id = conv.Id,
-            Title = conv.ConversationType == "StaffToPatient" && patientName != null
-                ? $"محادثة مع المركز — {patientName}"
-                : conv.Title,
-            IsGroup = conv.IsGroup,
+            Id = conv.Id, Title = conv.Title, IsGroup = conv.IsGroup,
             ConversationType = conv.ConversationType,
             PatientId = conv.PatientId,
-            PatientName = patientName,
-            PatientNumber = patientNumber,
-            PatientPhone = patientPhone,
+            PatientName = conv.PatientId.HasValue && conv.Patient != null ? $"{conv.Patient.FirstName} {conv.Patient.LastName}" : null,
+            PatientNumber = conv.Patient?.PatientNumber,
+            PatientPhone = conv.Patient?.Phone,
             Participants = conv.Participants.Select(MapParticipant).ToList(),
             Messages = messages.Select(MapMessage).ToList(),
             CreatedAt = conv.CreatedAt
@@ -261,21 +323,17 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     [HttpPost("conversations/{conversationId:guid}/messages")]
     public async Task<ActionResult<MessageDto>> SendMessage(Guid conversationId, [FromBody] SendMessageRequest request)
     {
-        var userId = LinkedUserId;
+        var userId = await EnsureLinkedUserAsync();
         if (userId == null) return Forbid("حساب البوابة غير مرتبط بحساب مراسلة");
 
         var isParticipant = await db.ConversationParticipants
             .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == userId.Value);
         if (!isParticipant) return Forbid("لست مشاركاً في هذه المحادثة");
 
-        var content = request.Content?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(content))
-            return BadRequest(new { message = "محتوى الرسالة لا يمكن أن يكون فارغاً" });
-
         var msg = new Message
         {
             ConversationId = conversationId, SenderId = userId.Value,
-            Content = content, AttachmentUrl = request.AttachmentUrl,
+            Content = request.Content, AttachmentUrl = request.AttachmentUrl,
             AttachmentName = request.AttachmentName, AttachmentType = request.AttachmentType,
             ReplyToId = request.ReplyToId,
         };
@@ -286,7 +344,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         if (conv != null)
         {
             conv.LastMessageAt = DateTime.UtcNow;
-            conv.LastMessagePreview = content.Length > 200 ? content[..200] + "..." : content;
+            conv.LastMessagePreview = request.Content.Length > 200 ? request.Content[..200] + "..." : request.Content;
         }
 
         await db.SaveChangesAsync();
@@ -311,7 +369,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     [HttpPost("conversations/{conversationId:guid}/read")]
     public async Task<IActionResult> MarkAsRead(Guid conversationId)
     {
-        var userId = LinkedUserId;
+        var userId = await EnsureLinkedUserAsync();
         if (userId == null) return NoContent();
 
         var unread = await db.Messages
@@ -332,7 +390,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     [HttpGet("unread-count")]
     public async Task<ActionResult<UnreadCountDto>> GetUnreadCount()
     {
-        var userId = LinkedUserId;
+        var userId = await EnsureLinkedUserAsync();
         if (userId == null) return Ok(new UnreadCountDto { TotalUnread = 0, UnreadConversations = 0 });
 
         var myConvIds = await db.ConversationParticipants
@@ -352,12 +410,41 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Ensures the patient's messaging User is a participant in their StaffToPatient conversations.
+    /// This handles the case where staff created the conversation before the patient was linked.
+    /// </summary>
+    private async Task EnsurePatientParticipantAsync(Guid userId)
+    {
+        var patientConvs = await db.Conversations
+            .Where(c => c.PatientId == PatientId && c.ConversationType == "StaffToPatient")
+            .Select(c => c.Id)
+            .ToListAsync();
+
+        foreach (var convId in patientConvs)
+        {
+            var isParticipant = await db.ConversationParticipants
+                .AnyAsync(cp => cp.ConversationId == convId && cp.UserId == userId);
+            if (!isParticipant)
+            {
+                db.ConversationParticipants.Add(new ConversationParticipant
+                {
+                    ConversationId = convId,
+                    UserId = userId,
+                    IsAdmin = false,
+                    LastReadAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
+
     private static ConversationParticipantDto MapParticipant(ConversationParticipant cp) => new()
     {
         UserId = cp.UserId, Username = cp.User?.Username ?? "",
-        DisplayName = cp.User?.Role == UserRole.Patient
-            ? (cp.User.Username != "" ? $"مريض ({cp.User.Username})" : "مريض")
-            : (cp.User?.Doctor?.Name ?? cp.User?.Username),
+        DisplayName = cp.User?.Doctor?.Name ?? cp.User?.Username,
         Role = cp.User?.Role.ToString(), AvatarInitials = cp.User?.Doctor?.AvatarInitials,
         Color = cp.User?.Doctor?.Color, IsAdmin = cp.IsAdmin
     };
@@ -365,9 +452,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     private MessageDto MapMessage(Message m) => new()
     {
         Id = m.Id, ConversationId = m.ConversationId, SenderId = m.SenderId,
-        SenderName = m.Sender?.Role == UserRole.Patient
-            ? "مريض"
-            : (m.Sender?.Doctor?.Name ?? m.Sender?.Username ?? "غير معروف"),
+        SenderName = m.Sender?.Doctor?.Name ?? m.Sender?.Username ?? "غير معروف",
         SenderInitials = m.Sender?.Doctor?.AvatarInitials, SenderColor = m.Sender?.Doctor?.Color,
         Content = m.Content, AttachmentUrl = m.AttachmentUrl,
         AttachmentName = m.AttachmentName, AttachmentType = m.AttachmentType,

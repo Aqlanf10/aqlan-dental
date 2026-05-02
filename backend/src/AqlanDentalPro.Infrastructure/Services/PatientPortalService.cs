@@ -70,6 +70,32 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         account.VerificationCode = null;
         account.VerificationCodeExpiry = null;
 
+        // Auto-link to messaging User if not already linked
+        if (!account.LinkedUserId.HasValue)
+        {
+            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == account.Username);
+            if (existingUser != null)
+            {
+                account.LinkedUserId = existingUser.Id;
+            }
+            else
+            {
+                var linkedUser = new User
+                {
+                    Username = account.Username ?? account.Patient.PatientNumber,
+                    PasswordHash = account.PasswordHash,
+                    PasswordSalt = account.PasswordSalt,
+                    Role = UserRole.Patient,
+                    Phone = account.PhoneNumber,
+                    IsActive = true
+                };
+                db.Users.Add(linkedUser);
+                await db.SaveChangesAsync();
+                account.LinkedUserId = linkedUser.Id;
+            }
+            logger.LogInformation("Auto-linked PatientAccount {Username} to messaging User {UserId}", account.Username, account.LinkedUserId);
+        }
+
         var accessToken = GeneratePatientToken(account);
         var refreshToken = GenerateRefreshToken();
         account.RefreshToken = refreshToken;
@@ -166,6 +192,31 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (account != null)
         {
             // Account already exists - do NOT return existing password
+            // But ensure the LinkedUserId is set for messaging system integration
+            if (!account.LinkedUserId.HasValue)
+            {
+                var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == patientNumber);
+                if (existingUser != null)
+                {
+                    account.LinkedUserId = existingUser.Id;
+                }
+                else
+                {
+                    var linkedUser = new User
+                    {
+                        Username = patientNumber,
+                        PasswordHash = account.PasswordHash,
+                        PasswordSalt = account.PasswordSalt,
+                        Role = UserRole.Patient,
+                        Phone = phone,
+                        IsActive = true
+                    };
+                    db.Users.Add(linkedUser);
+                    await db.SaveChangesAsync();
+                    account.LinkedUserId = linkedUser.Id;
+                }
+                await db.SaveChangesAsync();
+            }
             return (account.Username ?? patientNumber, "");
         }
 

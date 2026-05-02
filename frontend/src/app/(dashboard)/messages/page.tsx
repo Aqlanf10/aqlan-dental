@@ -85,7 +85,8 @@ const FILTER_OPTIONS: { value: ConversationFilter; label: string }[] = [
   { value: "all", label: "الكل" },
   { value: "unread", label: "غير مقروء" },
   { value: "StaffToStaff", label: "موظفين" },
-  { value: "StaffToPatient", label: "مرضى" },
+  { value: "StaffToPatient", label: "داخلية مرضى" },
+  { value: "PatientFacing", label: "مراسلة مرضى" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -337,7 +338,10 @@ function ConversationItem({
   onClick: () => void;
 }) {
   const other = conv.otherParticipant;
-  const isPatientConv = conv.conversationType === "StaffToPatient";
+  const isPatientConv =
+    conv.conversationType === "StaffToPatient" || conv.conversationType === "PatientFacing";
+  const isPatientFacing = conv.conversationType === "PatientFacing";
+  const isInternalPatient = conv.conversationType === "StaffToPatient";
   const hasUnread = conv.unreadCount > 0;
 
   return (
@@ -353,8 +357,11 @@ function ConversationItem({
       {/* Avatar */}
       <div className="relative flex-shrink-0">
         {isPatientConv ? (
-          <div className="w-11 h-11 rounded-full bg-clinic-orange/15 flex items-center justify-center">
-            <User className="w-5 h-5 text-clinic-orange" />
+          <div className={cn(
+            "w-11 h-11 rounded-full flex items-center justify-center",
+            isPatientFacing ? "bg-teal-50" : "bg-clinic-orange/15"
+          )}>
+            <User className={cn("w-5 h-5", isPatientFacing ? "text-teal-600" : "text-clinic-orange")} />
           </div>
         ) : conv.isGroup ? (
           <div className="w-11 h-11 rounded-full bg-gray-200 flex items-center justify-center">
@@ -386,10 +393,15 @@ function ConversationItem({
             >
               {conv.title}
             </span>
-            {/* Patient-facing conversation badge */}
-            {isPatientConv && (
+            {/* Conversation type badge */}
+            {isPatientFacing && (
+              <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700 leading-none">
+                مرئية للمريض
+              </span>
+            )}
+            {isInternalPatient && (
               <span className="flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-clinic-orange/15 text-clinic-orange leading-none">
-                مريض
+                داخلية
               </span>
             )}
           </div>
@@ -474,11 +486,14 @@ function ChatArea({
   const otherParticipants = conversation.participants.filter(
     (p) => p.userId !== currentUserId
   );
-  const isPatientConv = conversation.conversationType === "StaffToPatient";
+  const isPatientConv =
+    conversation.conversationType === "StaffToPatient" ||
+    conversation.conversationType === "PatientFacing";
+  const isPatientFacing = conversation.conversationType === "PatientFacing";
 
   const title = isPatientConv
     ? conversation.patientName
-      ? `المريض: ${conversation.patientName}`
+      ? `${isPatientFacing ? "مراسلة" : "ملف"} المريض: ${conversation.patientName}`
       : conversation.title
     : conversation.isGroup
       ? conversation.title
@@ -496,8 +511,11 @@ function ChatArea({
         </button>
 
         {isPatientConv ? (
-          <div className="w-10 h-10 rounded-full bg-clinic-orange/15 flex items-center justify-center">
-            <User className="w-5 h-5 text-clinic-orange" />
+          <div className={cn(
+            "w-10 h-10 rounded-full flex items-center justify-center",
+            isPatientFacing ? "bg-teal-50" : "bg-clinic-orange/15"
+          )}>
+            <User className={cn("w-5 h-5", isPatientFacing ? "text-teal-600" : "text-clinic-orange")} />
           </div>
         ) : conversation.isGroup ? (
           <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
@@ -536,6 +554,16 @@ function ChatArea({
             <p className="text-xs text-gray-400">
               {conversation.participants.length} مشارك
             </p>
+          )}
+          {isPatientConv && (
+            <span className={cn(
+              "text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-block mt-0.5",
+              isPatientFacing
+                ? "bg-teal-50 text-teal-700"
+                : "bg-clinic-orange/15 text-clinic-orange"
+            )}>
+              {isPatientFacing ? "مرئية للمريض" : "داخلية — لا تظهر للمريض"}
+            </span>
           )}
         </div>
 

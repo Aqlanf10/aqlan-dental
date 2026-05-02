@@ -425,9 +425,30 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         return NoContent();
     }
 
-    /// <summary>إنشاء/جلب محادثة داخلية حول مريض (StaffToPatient)</summary>
+    /// <summary>
+    /// إنشاء/جلب محادثة PatientFacing مع مريض — مرئية للمريض في بوابته
+    /// يُستخدم من زر "راسل المريض" وصفحة الرسائل
+    /// </summary>
     [HttpPost("conversations/patient/{patientId:guid}")]
-    public async Task<ActionResult<ConversationDetailDto>> GetOrCreatePatientConversation(Guid patientId)
+    public async Task<ActionResult<ConversationDetailDto>> GetOrCreatePatientFacingConversation(Guid patientId)
+    {
+        try
+        {
+            var result = await messagingService.GetOrCreatePatientFacingConversationAsync(patientId);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// إنشاء/جلب محادثة داخلية حول مريض (StaffToPatient) — يراها الطاقم فقط
+    /// يُستخدم من تبويب الرسائل الداخلية في ملف المريض
+    /// </summary>
+    [HttpPost("internal-patient/{patientId:guid}")]
+    public async Task<ActionResult<ConversationDetailDto>> GetOrCreateInternalPatientConversation(Guid patientId)
     {
         try
         {
@@ -440,15 +461,15 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
     }
 
-    /// <summary>جلب محادثة مريض موجودة (GET) — لا تنشئ واحدة جديدة</summary>
+    /// <summary>جلب محادثة مريض الداخلية الموجودة (GET) — لا تنشئ واحدة جديدة</summary>
     [HttpGet("patient/{patientId:guid}")]
-    public async Task<ActionResult<ConversationDetailDto>> GetPatientConversation(Guid patientId)
+    public async Task<ActionResult<ConversationDetailDto>> GetInternalPatientConversation(Guid patientId)
     {
         try
         {
             var result = await messagingService.GetPatientConversationAsync(patientId);
             if (result == null)
-                return NotFound(new { message = "لا توجد محادثة مرتبطة بهذا المريض" });
+                return NotFound(new { message = "لا توجد محادثة داخلية مرتبطة بهذا المريض" });
             return Ok(result);
         }
         catch (KeyNotFoundException ex)

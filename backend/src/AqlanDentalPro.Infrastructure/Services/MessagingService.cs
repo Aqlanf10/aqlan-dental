@@ -299,6 +299,75 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         }
     }
 
+    // ─── إنشاء/جلب محادثة PatientFacing (مرئية للمريض) ─────────────────────────
+    public async Task<ConversationDetailDto> GetOrCreatePatientFacingConversationAsync(Guid patientId)
+    {
+        var patient = await db.Patients
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == patientId)
+            ?? throw new KeyNotFoundException("المريض غير موجود");
+
+        // Find existing PatientFacing conversation for this patient
+        var existing = await db.Conversations
+            .Include(c => c.Participants)
+            .FirstOrDefaultAsync(c => c.PatientId == patientId && c.ConversationType == "PatientFacing");
+
+        if (existing != null)
+        {
+            // Add current staff user as participant if not already
+            if (!existing.Participants.Any(p => p.UserId == UserId))
+            {
+                await db.ConversationParticipants.AddAsync(new ConversationParticipant
+                {
+                    ConversationId = existing.Id,
+                    UserId = UserId,
+                    IsAdmin = false
+                });
+            }
+
+            // Ensure patient's linked user is a participant
+            await EnsurePatientParticipantAsync(existing.Id, patientId);
+            await db.SaveChangesAsync();
+            return (await GetConversationAsync(existing.Id))!;
+        }
+
+        var patientName = $"{patient.FirstName} {patient.LastName}".Trim();
+        var conv = new Conversation
+        {
+            Title = $"محادثة مع المريض: {patientName}",
+            IsGroup = true,
+            ConversationType = "PatientFacing",
+            CreatedBy = UserId,
+            PatientId = patientId,
+        };
+
+        await db.Conversations.AddAsync(conv);
+        await db.ConversationParticipants.AddAsync(new ConversationParticipant
+        {
+            ConversationId = conv.Id,
+            UserId = UserId,
+            IsAdmin = true
+        });
+
+        // Add patient's linked user as participant so they can see and reply from portal
+        await EnsurePatientParticipantAsync(conv.Id, patientId);
+
+        // Initial system message clearly stating this is visible to the patient
+        await db.Messages.AddAsync(new Message
+        {
+            ConversationId = conv.Id,
+            SenderId = UserId,
+            Content = $"تم فتح محادثة مع المريض {patientName} ({patient.PatientNumber}) — هذه المحادثة مرئية للمريض في بوابته",
+            IsSystemMessage = true
+        });
+
+        conv.LastMessageAt = DateTime.UtcNow;
+        conv.LastMessagePreview = $"محادثة مع المريض: {patientName}";
+
+        await db.SaveChangesAsync();
+        return (await GetConversationAsync(conv.Id))!;
+    }
+
     // ─── جلب محادثة مريض بدون إنشاء ──────────────────────────────────────────────
     public async Task<ConversationDetailDto?> GetPatientConversationAsync(Guid patientId)
     {

@@ -1,6 +1,6 @@
-export type ConversationType = "StaffToStaff" | "StaffToPatient";
+export type ConversationType = "StaffToStaff" | "StaffToPatient" | "PatientFacing";
 
-export type ConversationFilter = "all" | "unread" | "StaffToStaff" | "StaffToPatient";
+export type ConversationFilter = "all" | "unread" | "StaffToStaff" | "StaffToPatient" | "PatientFacing";
 
 export interface ConversationParticipant {
   userId: string;

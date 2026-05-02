@@ -23,7 +23,7 @@ export function useConversations(
       if (search) params.set("search", search);
 
       // Map frontend filter to backend type parameter
-      if (filter === "StaffToStaff" || filter === "StaffToPatient") {
+      if (filter === "StaffToStaff" || filter === "StaffToPatient" || filter === "PatientFacing") {
         params.set("type", filter);
       }
 
@@ -94,13 +94,30 @@ export function useCreateConversation() {
   });
 }
 
-// ─── إنشاء/جلب محادثة مريض (StaffToPatient) ─────────────────────────────────
+// ─── إنشاء/جلب محادثة PatientFacing (مرئية للمريض) ──────────────────────────
 export function usePatientConversation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (patientId: string) => {
       const { data } = await api.post(
         `/api/messages/conversations/patient/${patientId}`
+      );
+      return data as ConversationDetail;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
+    },
+  });
+}
+
+// ─── إنشاء/جلب محادثة StaffToPatient (داخلية — لا تظهر للمريض) ──────────────
+export function useInternalPatientConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const { data } = await api.post(
+        `/api/messages/internal-patient/${patientId}`
       );
       return data as ConversationDetail;
     },

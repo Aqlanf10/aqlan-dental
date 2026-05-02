@@ -28,14 +28,14 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  // Fetch or create patient conversation using the dedicated endpoint
+  // Fetch internal patient conversation (StaffToPatient — not visible to patient)
   const fetchConversation = useCallback(async () => {
     // Prevent concurrent fetches
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     try {
       const { data } = await api.get<ConversationDetail>(
-        `/api/messages/conversations/patient/${patientId}`
+        `/api/messages/patient/${patientId}`
       );
       setConversation(data);
       setError("");
@@ -83,12 +83,12 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
     setSending(true);
     setError("");
     try {
-      // Step 1: Ensure a conversation exists (get-or-create via POST)
+      // Step 1: Ensure an internal conversation exists (get-or-create via POST)
       let convId = conversation?.id;
 
       if (!convId) {
         const { data: convDetail } = await api.post<ConversationDetail>(
-          `/api/messages/conversations/patient/${patientId}`
+          `/api/messages/internal-patient/${patientId}`
         );
         convId = convDetail.id;
         setConversation(convDetail);
@@ -105,7 +105,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
       // Step 4: Refetch conversation from backend to get the real message
       // (with server-assigned id, timestamp, sender info, etc.)
       const { data: updated } = await api.get<ConversationDetail>(
-        `/api/messages/conversations/patient/${patientId}`
+        `/api/messages/patient/${patientId}`
       );
       setConversation(updated);
 
@@ -156,16 +156,16 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
       {conversation && (
         <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <MessageCircle className="w-4 h-4 text-clinic-orange" />
+            <MessageCircle className="w-4 h-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">
-              محادثة مع المريض
+              محادثة داخلية حول المريض
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-clinic-orange/10 text-clinic-orange font-semibold">
-              مرئية للمريض
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">
+              لا تظهر للمريض
             </span>
           </div>
           <button
-            onClick={() => router.push(`/messages?patientId=${patientId}`)}
+            onClick={() => router.push(`/messages`)}
             className="text-xs text-clinic-blue hover:underline flex items-center gap-1"
           >
             <ExternalLink className="w-3 h-3" />
@@ -200,7 +200,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
               لا توجد رسائل مع هذا المريض بعد
             </p>
             <p className="text-xs text-gray-300">
-              اكتب رسالة لبدء محادثة داخلية
+              اكتب رسالة لبدء نقاش داخلي حول هذا المريض
             </p>
           </div>
         ) : (

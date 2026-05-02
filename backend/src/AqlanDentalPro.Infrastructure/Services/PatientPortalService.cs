@@ -18,15 +18,11 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 {
     public async Task<(bool success, string? error)> SendVerificationCodeAsync(string phoneNumber)
     {
-        // Normalize phone number
         var normalizedPhone = NormalizePhone(phoneNumber);
-        
-        // Find patient with this phone number
         var patient = await db.Patients.FirstOrDefaultAsync(p => p.Phone == normalizedPhone || p.WhatsApp == normalizedPhone);
         if (patient == null)
             return (false, "رقم الهاتف غير مسجل في النظام");
 
-        // Get or create patient account
         var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patient.Id);
         if (account == null)
         {
@@ -39,23 +35,18 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
             db.PatientAccounts.Add(account);
         }
 
-        // Generate 6-digit code
         var code = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
         account.VerificationCode = code;
         account.VerificationCodeExpiry = DateTime.UtcNow.AddMinutes(10);
 
         await db.SaveChangesAsync();
-
-        // In production, send SMS here. For now, return success.
         // TODO: Integrate with SMS gateway (e.g., Twilio, Yemen SMS provider)
-        
         return (true, null);
     }
 
     public async Task<(PatientAuthResponse? response, string? error)> VerifyCodeAsync(string phoneNumber, string code)
     {
         var normalizedPhone = NormalizePhone(phoneNumber);
-        
         var account = await db.PatientAccounts
             .Include(a => a.Patient)
                 .ThenInclude(p => p!.PrimaryDoctor)
@@ -63,19 +54,16 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 
         if (account == null)
             return (null, "الحساب غير موجود");
-
         if (account.VerificationCode != code)
             return (null, "رمز التحقق غير صحيح");
-
         if (account.VerificationCodeExpiry < DateTime.UtcNow)
             return (null, "انتهت صلاحية رمز التحقق");
 
         account.IsVerified = true;
         account.LastLogin = DateTime.UtcNow;
-        account.VerificationCode = null; // Clear code after use
+        account.VerificationCode = null;
         account.VerificationCodeExpiry = null;
 
-        // Generate JWT
         var accessToken = GeneratePatientToken(account);
         var refreshToken = GenerateRefreshToken();
         account.RefreshToken = refreshToken;
@@ -86,7 +74,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         return (new PatientAuthResponse
         {
             AccessToken = accessToken,
-            Profile = MapProfile(account.Patient)
+            Profile = MapProfile(account.Patient, account)
         }, null);
     }
 
@@ -95,25 +83,31 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         var patient = await db.Patients
             .Include(p => p.PrimaryDoctor)
             .FirstOrDefaultAsync(p => p.Id == patientId);
-
         if (patient == null) throw new InvalidOperationException("المريض غير موجود");
+
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
 
         var now = DateOnly.FromDateTime(DateTime.Today);
         var nextAppt = await db.Appointments
             .Include(a => a.Doctor)
-            .Where(a => a.PatientId == patientId && a.AppointmentDate >= now && a.Status == AppointmentStatus.Scheduled)
+            .Where(a => a.PatientId == patientId && a.AppointmentDate >= now
+                && (a.Status == AppointmentStatus.Scheduled || a.Status == AppointmentStatus.Confirmed))
             .OrderBy(a => a.AppointmentDate).ThenBy(a => a.StartTime)
             .FirstOrDefaultAsync();
 
         var totalAppts = await db.Appointments.CountAsync(a => a.PatientId == patientId);
+        var upcomingAppts = await db.Appointments.CountAsync(a => a.PatientId == patientId
+            && a.AppointmentDate >= now
+            && (a.Status == AppointmentStatus.Scheduled || a.Status == AppointmentStatus.Confirmed));
         var completedTreatments = await db.GeneralTreatments.CountAsync(t => t.PatientId == patientId);
-        
+
         var totalPaid = await db.Payments.Where(p => p.PatientId == patientId).SumAsync(p => (decimal?)p.Amount) ?? 0;
         var totalOutstanding = await db.Contracts
             .Where(c => c.PatientId == patientId && c.Status == "active")
             .Include(c => c.Payments)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
+        var totalAmount = totalPaid + totalOutstanding;
         var activeContracts = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == "active");
 
         var recentPayments = await db.Payments
@@ -126,56 +120,88 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
                 Id = p.Id,
                 Amount = p.Amount,
                 PaymentMethod = p.PaymentMethod ?? "نقدي",
+                ServiceDescription = p.ServiceDescription,
                 ReceiptNumber = p.Receipt != null ? p.Receipt.ReceiptNumber : null,
                 CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd")
             })
             .ToListAsync();
 
+        // Latest prescription
+        var latestPrescription = await db.Prescriptions
+            .Include(p => p.Doctor)
+            .Where(p => p.PatientId == patientId)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+
         return new PatientPortalDashboardDto
         {
-            Profile = MapProfile(patient),
-            NextAppointment = nextAppt != null ? new PatientAppointmentDto
-            {
-                Id = nextAppt.Id,
-                AppointmentDate = nextAppt.AppointmentDate.ToString("yyyy-MM-dd"),
-                StartTime = nextAppt.StartTime.ToString("HH:mm"),
-                EndTime = nextAppt.EndTime.ToString("HH:mm"),
-                AppointmentType = nextAppt.AppointmentType,
-                DoctorName = nextAppt.Doctor.Name,
-                Status = nextAppt.Status.ToString(),
-                Notes = nextAppt.Notes
-            } : null,
+            Profile = MapProfile(patient, account),
+            NextAppointment = nextAppt != null ? MapAppointment(nextAppt) : null,
             TotalAppointments = totalAppts,
+            UpcomingAppointments = upcomingAppts,
             CompletedTreatments = completedTreatments,
             Finance = new PatientFinancialSummaryDto
             {
+                TotalAmount = totalAmount,
                 TotalPaid = totalPaid,
                 TotalOutstanding = totalOutstanding,
                 ActiveContracts = activeContracts,
                 RecentPayments = recentPayments
-            }
+            },
+            LatestPrescription = latestPrescription != null ? MapPrescription(latestPrescription) : null,
+            ClinicInfo = GetClinicInfo()
         };
+    }
+
+    public async Task<PatientPortalProfileDto> GetProfileAsync(Guid patientId)
+    {
+        var patient = await db.Patients
+            .Include(p => p.PrimaryDoctor)
+            .FirstOrDefaultAsync(p => p.Id == patientId);
+        if (patient == null) throw new InvalidOperationException("المريض غير موجود");
+
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        return MapProfile(patient, account);
+    }
+
+    public async Task<(PatientPortalProfileDto? result, string? error)> UpdateProfileAsync(Guid patientId, PatientProfileUpdateDto req)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null) return (null, "المريض غير موجود");
+
+        // Only allow updating safe fields
+        if (req.Phone != null)
+        {
+            patient.Phone = NormalizePhone(req.Phone);
+            patient.NormalizedPhone = patient.Phone;
+        }
+        if (req.WhatsApp != null)
+        {
+            patient.WhatsApp = NormalizePhone(req.WhatsApp);
+            patient.NormalizedWhatsApp = patient.WhatsApp;
+        }
+        if (req.Address != null)
+        {
+            patient.Address = req.Address;
+        }
+
+        await db.SaveChangesAsync();
+
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        return (MapProfile(patient, account), null);
     }
 
     public async Task<List<PatientAppointmentDto>> GetAppointmentsAsync(Guid patientId, int limit = 20)
     {
-        return await db.Appointments
+        var now = DateOnly.FromDateTime(DateTime.Today);
+        var appointments = await db.Appointments
             .Include(a => a.Doctor)
             .Where(a => a.PatientId == patientId)
             .OrderByDescending(a => a.AppointmentDate).ThenByDescending(a => a.StartTime)
             .Take(limit)
-            .Select(a => new PatientAppointmentDto
-            {
-                Id = a.Id,
-                AppointmentDate = a.AppointmentDate.ToString("yyyy-MM-dd"),
-                StartTime = a.StartTime.ToString("HH:mm"),
-                EndTime = a.EndTime.ToString("HH:mm"),
-                AppointmentType = a.AppointmentType,
-                DoctorName = a.Doctor.Name,
-                Status = a.Status.ToString(),
-                Notes = a.Notes
-            })
             .ToListAsync();
+
+        return appointments.Select(a => MapAppointment(a, now)).ToList();
     }
 
     public async Task<(PatientAppointmentDto? result, string? error)> RequestAppointmentAsync(Guid patientId, PatientAppointmentRequestDto req)
@@ -187,14 +213,16 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         var start = TimeOnly.Parse(req.StartTime);
         var end = start.AddMinutes(30);
 
-        // Find doctor - use primary doctor or specified one
+        // Cannot book in the past
+        if (date < DateOnly.FromDateTime(DateTime.Today))
+            return (null, "لا يمكن حجز موعد في تاريخ سابق");
+
         var doctorId = req.DoctorId ?? patient.PrimaryDoctorId;
         if (doctorId == null) return (null, "لم يتم تحديد الطبيب");
 
         var doctor = await db.Doctors.FindAsync(doctorId.Value);
         if (doctor == null) return (null, "الطبيب غير موجود");
 
-        // Check for conflicts
         var hasConflict = await db.Appointments.AnyAsync(a =>
             a.DoctorId == doctorId.Value &&
             a.AppointmentDate == date &&
@@ -219,20 +247,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 
         db.Appointments.Add(appointment);
         await db.SaveChangesAsync();
-
         await db.Entry(appointment).Reference(a => a.Doctor).LoadAsync();
 
-        return (new PatientAppointmentDto
-        {
-            Id = appointment.Id,
-            AppointmentDate = appointment.AppointmentDate.ToString("yyyy-MM-dd"),
-            StartTime = appointment.StartTime.ToString("HH:mm"),
-            EndTime = appointment.EndTime.ToString("HH:mm"),
-            AppointmentType = appointment.AppointmentType,
-            DoctorName = appointment.Doctor.Name,
-            Status = appointment.Status.ToString(),
-            Notes = appointment.Notes
-        }, null);
+        return (MapAppointment(appointment), null);
     }
 
     public async Task<(bool success, string? error)> CancelAppointmentAsync(Guid patientId, Guid appointmentId)
@@ -240,6 +257,18 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         var appointment = await db.Appointments.FindAsync(appointmentId);
         if (appointment == null) return (false, "الموعد غير موجود");
         if (appointment.PatientId != patientId) return (false, "غير مصرح بهذا الإجراء");
+
+        // Cannot cancel completed appointments
+        if (appointment.Status == AppointmentStatus.Completed)
+            return (false, "لا يمكن إلغاء موعد مكتمل");
+
+        // Cannot cancel appointments in progress
+        if (appointment.Status == AppointmentStatus.InProgress)
+            return (false, "لا يمكن إلغاء موعد جارٍ التنفيذ");
+
+        // Cannot cancel past appointments
+        if (appointment.AppointmentDate < DateOnly.FromDateTime(DateTime.Today))
+            return (false, "لا يمكن إلغاء موعد سابق");
 
         appointment.Status = AppointmentStatus.Cancelled;
         await db.SaveChangesAsync();
@@ -250,6 +279,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
     {
         return await db.GeneralTreatments
             .Include(t => t.Doctor)
+            .Include(t => t.Visit)
             .Where(t => t.PatientId == patientId)
             .OrderByDescending(t => t.CreatedAt)
             .Take(limit)
@@ -260,16 +290,41 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
                 ToothNumber = t.ToothNumber,
                 MaterialUsed = t.MaterialUsed,
                 DoctorName = t.Doctor != null ? t.Doctor.Name : null,
+                VisitDate = t.Visit != null ? t.Visit.VisitDate.ToString("yyyy-MM-dd") : null,
+                Specialty = t.Visit != null ? t.Visit.Specialty.ToString() : null,
                 CreatedAt = t.CreatedAt.ToString("yyyy-MM-dd"),
                 Notes = t.Notes
             })
             .ToListAsync();
     }
 
+    public async Task<List<PatientVisitDto>> GetVisitsAsync(Guid patientId, int limit = 20)
+    {
+        return await db.Visits
+            .Include(v => v.Doctor)
+            .Include(v => v.GeneralTreatments)
+            .Where(v => v.PatientId == patientId)
+            .OrderByDescending(v => v.VisitDate)
+            .Take(limit)
+            .Select(v => new PatientVisitDto
+            {
+                Id = v.Id,
+                VisitDate = v.VisitDate.ToString("yyyy-MM-dd"),
+                VisitType = v.VisitType,
+                Specialty = v.Specialty.ToString(),
+                DoctorName = v.Doctor != null ? v.Doctor.Name : null,
+                ChiefComplaint = v.ChiefComplaint,
+                TreatmentDone = v.TreatmentDone,
+                Instructions = v.Instructions,
+                NextVisitPlan = v.NextVisitPlan,
+                NextVisitDate = v.NextVisitDate.HasValue ? v.NextVisitDate.Value.ToString("yyyy-MM-dd") : null,
+                TreatmentCount = v.GeneralTreatments.Count
+            })
+            .ToListAsync();
+    }
+
     public async Task<List<PatientPrescriptionDto>> GetPrescriptionsAsync(Guid patientId, int limit = 20)
     {
-        // Prescription entity uses Drugs (JsonDocument) and Diagnosis/Notes
-        // We map the available fields to the DTO
         var prescriptions = await db.Prescriptions
             .Include(p => p.Doctor)
             .Where(p => p.PatientId == patientId)
@@ -277,39 +332,45 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
             .Take(limit)
             .ToListAsync();
 
-        return prescriptions.Select(p => new PatientPrescriptionDto
-        {
-            Id = p.Id,
-            MedicationName = ExtractFirstDrugName(p.Drugs),
-            Dosage = null,
-            Frequency = null,
-            Duration = null,
-            Instructions = p.Notes,
-            DoctorName = p.Doctor?.Name ?? "",
-            CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd")
-        }).ToList();
+        return prescriptions.Select(MapPrescription).ToList();
     }
 
     public async Task<PatientFinancialSummaryDto> GetFinancialSummaryAsync(Guid patientId)
     {
         var totalPaid = await db.Payments.Where(p => p.PatientId == patientId).SumAsync(p => (decimal?)p.Amount) ?? 0;
-        var totalOutstanding = await db.Contracts
-            .Where(c => c.PatientId == patientId && c.Status == "active")
+
+        var contracts = await db.Contracts
             .Include(c => c.Payments)
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
-            .SumAsync(r => (decimal?)r) ?? 0;
-        var activeContracts = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == "active");
+            .Where(c => c.PatientId == patientId)
+            .ToListAsync();
+
+        var activeContracts = contracts.Where(c => c.Status == "active").ToList();
+        var totalOutstanding = activeContracts
+            .Sum(c => Math.Max(0, c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)));
+        var totalAmount = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
+
+        var contractDtos = activeContracts.Select(c => new PatientContractDto
+        {
+            Id = c.Id,
+            Specialty = c.Specialty,
+            TotalAmount = c.TotalAmount - c.DiscountAmount,
+            PaidAmount = c.Payments.Sum(p => p.Amount),
+            RemainingAmount = Math.Max(0, c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)),
+            Status = c.Status,
+            StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : null
+        }).ToList();
 
         var recentPayments = await db.Payments
             .Include(p => p.Receipt)
             .Where(p => p.PatientId == patientId)
             .OrderByDescending(p => p.CreatedAt)
-            .Take(10)
+            .Take(20)
             .Select(p => new PatientPaymentDto
             {
                 Id = p.Id,
                 Amount = p.Amount,
                 PaymentMethod = p.PaymentMethod ?? "نقدي",
+                ServiceDescription = p.ServiceDescription,
                 ReceiptNumber = p.Receipt != null ? p.Receipt.ReceiptNumber : null,
                 CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd")
             })
@@ -317,11 +378,32 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 
         return new PatientFinancialSummaryDto
         {
+            TotalAmount = totalAmount,
             TotalPaid = totalPaid,
             TotalOutstanding = totalOutstanding,
-            ActiveContracts = activeContracts,
+            ActiveContracts = activeContracts.Count,
+            Contracts = contractDtos,
             RecentPayments = recentPayments
         };
+    }
+
+    public async Task<List<PatientDoctorDto>> GetDoctorsAsync()
+    {
+        return await db.Doctors
+            .Where(d => d.IsActive)
+            .OrderBy(d => d.Name)
+            .Select(d => new PatientDoctorDto
+            {
+                Id = d.Id,
+                Name = d.Name,
+                Specialty = d.Specialty
+            })
+            .ToListAsync();
+    }
+
+    public Task<PatientClinicInfoDto> GetClinicInfoAsync()
+    {
+        return Task.FromResult(GetClinicInfo());
     }
 
     public async Task<Guid?> GetPatientIdByPhoneAsync(string phoneNumber)
@@ -333,17 +415,93 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
 
     // ── Private Helpers ──────────────────────────────────────────────────────
 
+    private static PatientAppointmentDto MapAppointment(Appointment a, DateOnly? now = null)
+    {
+        var today = now ?? DateOnly.FromDateTime(DateTime.Today);
+        var canCancel = a.AppointmentDate >= today
+            && a.Status != AppointmentStatus.Completed
+            && a.Status != AppointmentStatus.InProgress
+            && a.Status != AppointmentStatus.Cancelled
+            && a.Status != AppointmentStatus.NoShow;
+
+        return new PatientAppointmentDto
+        {
+            Id = a.Id,
+            AppointmentDate = a.AppointmentDate.ToString("yyyy-MM-dd"),
+            StartTime = a.StartTime.ToString("HH:mm"),
+            EndTime = a.EndTime.ToString("HH:mm"),
+            AppointmentType = a.AppointmentType,
+            DoctorName = a.Doctor.Name,
+            Status = a.Status.ToString(),
+            Notes = a.Notes,
+            CanCancel = canCancel
+        };
+    }
+
+    private static PatientPrescriptionDto MapPrescription(Prescription p)
+    {
+        return new PatientPrescriptionDto
+        {
+            Id = p.Id,
+            Diagnosis = p.Diagnosis,
+            Drugs = ParseDrugs(p.Drugs),
+            Instructions = p.Notes,
+            DoctorName = p.Doctor?.Name ?? "",
+            CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd")
+        };
+    }
+
+    private static List<PrescriptionDrugDto> ParseDrugs(JsonDocument? drugs)
+    {
+        if (drugs == null) return [];
+        try
+        {
+            var root = drugs.RootElement;
+            if (root.ValueKind != JsonValueKind.Array) return [];
+
+            var result = new List<PrescriptionDrugDto>();
+            foreach (var item in root.EnumerateArray())
+            {
+                result.Add(new PrescriptionDrugDto
+                {
+                    Name = item.TryGetProperty("name", out var n) ? n.GetString() ?? ""
+                         : item.TryGetProperty("medication", out var m) ? m.GetString() ?? ""
+                         : "",
+                    Dosage = item.TryGetProperty("dose", out var d) ? d.GetString()
+                          : item.TryGetProperty("dosage", out var d2) ? d2.GetString() : null,
+                    Frequency = item.TryGetProperty("frequency", out var f) ? f.GetString() : null,
+                    Duration = item.TryGetProperty("duration", out var du) ? du.GetString() : null,
+                    Notes = item.TryGetProperty("notes", out var nt) ? nt.GetString() : null
+                });
+            }
+            return result;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static PatientClinicInfoDto GetClinicInfo()
+    {
+        // These can be moved to a Settings table in a future sprint
+        return new PatientClinicInfoDto
+        {
+            ClinicName = "مركز د. عقلان الكامل لطب وتقويم الأسنان",
+            Phone = "+967123456789",
+            WhatsApp = "+967123456789",
+            Address = "اليمن",
+            WorkingHours = "السبت - الأربعاء: ٩ ص - ٩ م"
+        };
+    }
+
     private static string NormalizePhone(string phone)
     {
-        // Remove spaces, dashes, parentheses
         var cleaned = new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray());
-        
-        // Convert Yemen numbers: 7XX → +9677XX
         if (cleaned.StartsWith("7") && cleaned.Length == 9)
             cleaned = "+967" + cleaned;
         else if (cleaned.StartsWith("0") && cleaned.Length == 10)
             cleaned = "+967" + cleaned[1..];
-        
         return cleaned;
     }
 
@@ -377,15 +535,20 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
     }
 
-    private static PatientPortalProfileDto MapProfile(Patient patient) => new()
+    private static PatientPortalProfileDto MapProfile(Patient patient, PatientAccount? account = null) => new()
     {
         Id = patient.Id,
         PatientNumber = patient.PatientNumber,
         FullName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim(),
         Phone = patient.Phone,
+        WhatsApp = patient.WhatsApp,
         Gender = patient.Gender?.ToString(),
         Age = patient.DateOfBirth.HasValue ? CalculateAge(patient.DateOfBirth.Value) : null,
-        PrimaryDoctorName = patient.PrimaryDoctor?.Name
+        DateOfBirth = patient.DateOfBirth.HasValue ? patient.DateOfBirth.Value.ToString("yyyy-MM-dd") : null,
+        Address = patient.Address,
+        PrimaryDoctorName = patient.PrimaryDoctor?.Name,
+        AccountStatus = account?.IsVerified == true ? "active" : account != null ? "pending" : "none",
+        LastLogin = account?.LastLogin.HasValue == true ? account.LastLogin!.Value.ToString("yyyy-MM-dd HH:mm") : null
     };
 
     private static int CalculateAge(DateOnly dob)
@@ -395,32 +558,4 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         if (dob > today.AddYears(-age)) age--;
         return age;
     }
-
-    private static string ExtractFirstDrugName(JsonDocument? drugs)
-    {
-        if (drugs == null) return "";
-        try
-        {
-            var root = drugs.RootElement;
-            if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
-            {
-                var first = root[0];
-                if (first.TryGetProperty("name", out var nameEl))
-                    return nameEl.GetString() ?? "";
-                if (first.TryGetProperty("medication", out var medEl))
-                    return medEl.GetString() ?? "";
-            }
-            return root.GetRawText().Truncate(80);
-        }
-        catch
-        {
-            return "";
-        }
-    }
-}
-
-file static class StringExtensions
-{
-    public static string Truncate(this string value, int maxLength) =>
-        string.IsNullOrEmpty(value) ? value : value.Length <= maxLength ? value : value[..maxLength] + "…";
 }

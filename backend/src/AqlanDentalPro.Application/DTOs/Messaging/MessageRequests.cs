@@ -31,3 +31,9 @@ public class UnreadCountDto
     public int TotalUnread { get; set; }
     public int UnreadConversations { get; set; }
 }
+
+/// <summary>المريض يبدأ محادثة مع المركز</summary>
+public class StartConversationRequest
+{
+    public string? InitialMessage { get; set; }
+}

@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Messaging;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -377,9 +378,4 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         IsReadByMe = m.Reads.Any(r => r.UserId == LinkedUserId),
         ReadCount = m.Reads.Count, CreatedAt = m.CreatedAt
     };
-}
-
-public class StartConversationRequest
-{
-    public string? InitialMessage { get; set; }
 }

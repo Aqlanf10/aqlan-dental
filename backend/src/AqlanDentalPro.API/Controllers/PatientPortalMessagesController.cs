@@ -23,6 +23,10 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
 
     /// <summary>
     /// Resolves the patient's messaging User ID. Returns null if not linked.
+    /// Checks JWT claim first, then falls back to DB lookup/create.
+    /// NOTE: The same linking logic exists in PatientPortalService.EnsureLinkedUserAsync().
+    /// Both must be kept in sync. The controller version exists as a runtime fallback
+    /// for cases where the JWT was issued before linking was completed.
     /// </summary>
     private async Task<Guid?> EnsureLinkedUserAsync()
     {
@@ -34,33 +38,38 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .FirstOrDefaultAsync(a => a.PatientId == PatientId);
 
         if (account == null) return null;
-        if (account.LinkedUserId.HasValue) return account.LinkedUserId.Value;
+        if (account.LinkedUserId.HasValue)
+        {
+            // Already linked — just return the value (JWT will have it on next login)
+            return account.LinkedUserId.Value;
+        }
 
-        var username = account.Username ?? account.Patient?.PatientNumber;
+        // Not yet linked — create the link using the same logic as PatientPortalService
+        var username = account.Username ?? account.Patient?.PatientNumber ?? $"patient-{PatientId}";
         var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
 
         if (existingUser != null)
         {
             account.LinkedUserId = existingUser.Id;
+        }
+        else
+        {
+            var linkedUser = new User
+            {
+                Username = username,
+                PasswordHash = account.PasswordHash ?? "",
+                PasswordSalt = account.PasswordSalt ?? "",
+                Role = UserRole.Patient,
+                Phone = account.PhoneNumber,
+                IsActive = true
+            };
+            db.Users.Add(linkedUser);
             await db.SaveChangesAsync();
-            return existingUser.Id;
+            account.LinkedUserId = linkedUser.Id;
         }
 
-        var linkedUser = new User
-        {
-            Username = username ?? $"patient-{PatientId}",
-            PasswordHash = account.PasswordHash ?? "",
-            PasswordSalt = account.PasswordSalt ?? "",
-            Role = UserRole.Patient,
-            Phone = account.PhoneNumber,
-            IsActive = true
-        };
-        db.Users.Add(linkedUser);
         await db.SaveChangesAsync();
-        account.LinkedUserId = linkedUser.Id;
-        await db.SaveChangesAsync();
-
-        return linkedUser.Id;
+        return account.LinkedUserId.Value;
     }
 
     /// <summary>

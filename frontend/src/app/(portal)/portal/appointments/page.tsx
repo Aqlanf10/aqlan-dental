@@ -37,7 +37,7 @@ export default function PortalAppointmentsPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
-  const [filter, setFilter] = useState<"all" | "upcoming" | "past">("all");
+  const [filter, setFilter] = useState<"all" | "upcoming" | "past" | "cancelled">("all");
 
   useEffect(() => {
     portalApi.get<PatientAppointment[]>("/api/portal/appointments?limit=50")
@@ -95,10 +95,12 @@ export default function PortalAppointmentsPage() {
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
   const filteredAppts = appointments.filter((a) => {
-    const isUpcoming = a.appointmentDate >= todayStr && (a.status === "Scheduled" || a.status === "Confirmed");
-    const isPast = a.appointmentDate < todayStr || (a.status !== "Scheduled" && a.status !== "Confirmed");
+    const isCancelled = a.status === "Cancelled";
+    const isUpcoming = !isCancelled && a.appointmentDate >= todayStr && (a.status === "Scheduled" || a.status === "Confirmed");
+    const isPast = !isCancelled && (a.appointmentDate < todayStr || (a.status !== "Scheduled" && a.status !== "Confirmed"));
     if (filter === "upcoming") return isUpcoming;
     if (filter === "past") return isPast;
+    if (filter === "cancelled") return isCancelled;
     return true;
   });
 
@@ -126,6 +128,7 @@ export default function PortalAppointmentsPage() {
             { key: "all" as const, label: "الكل" },
             { key: "upcoming" as const, label: "قادمة" },
             { key: "past" as const, label: "سابقة" },
+            { key: "cancelled" as const, label: "ملغاة" },
           ].map((f) => (
             <button
               key={f.key}
@@ -212,7 +215,7 @@ export default function PortalAppointmentsPage() {
           <div className="text-center py-16">
             <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-500">
-              {filter === "upcoming" ? "لا توجد مواعيد قادمة" : filter === "past" ? "لا توجد مواعيد سابقة" : "لا توجد مواعيد"}
+              {filter === "upcoming" ? "لا توجد مواعيد قادمة" : filter === "past" ? "لا توجد مواعيد سابقة" : filter === "cancelled" ? "لا توجد مواعيد ملغاة" : "لا توجد مواعيد"}
             </p>
             {filter === "upcoming" && (
               <button onClick={() => setShowForm(true)} className="text-xs text-clinic-blue hover:underline mt-2 inline-block">

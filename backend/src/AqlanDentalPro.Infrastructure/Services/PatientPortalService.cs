@@ -41,30 +41,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             return (null, "تم تعطيل هذا الحساب");
 
         // Ensure the PatientAccount has a LinkedUserId for messaging integration
-        if (!account.LinkedUserId.HasValue)
-        {
-            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == account.Username);
-            if (existingUser != null)
-            {
-                account.LinkedUserId = existingUser.Id;
-            }
-            else
-            {
-                var linkedUser = new User
-                {
-                    Username = account.Username ?? account.Patient.PatientNumber,
-                    PasswordHash = account.PasswordHash ?? "",
-                    PasswordSalt = account.PasswordSalt ?? "",
-                    Role = UserRole.Patient,
-                    Phone = account.Patient.Phone,
-                    IsActive = true
-                };
-                db.Users.Add(linkedUser);
-                await db.SaveChangesAsync();
-                account.LinkedUserId = linkedUser.Id;
-            }
-            logger.LogInformation("Auto-linked PatientAccount {Username} to messaging User {UserId}", account.Username, account.LinkedUserId);
-        }
+        await EnsureLinkedUserAsync(account);
 
         account.IsVerified = true;
         account.LastLogin = DateTime.UtcNow;
@@ -165,35 +142,15 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public async Task<(string username, string plainPassword)> EnsurePatientAccountAsync(Guid patientId, string patientNumber, string? phone)
     {
-        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        var account = await db.PatientAccounts
+            .Include(a => a.Patient)
+            .FirstOrDefaultAsync(a => a.PatientId == patientId);
         if (account != null)
         {
             // Account already exists - do NOT return existing password
             // But ensure the LinkedUserId is set for messaging system integration
-            if (!account.LinkedUserId.HasValue)
-            {
-                var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == patientNumber);
-                if (existingUser != null)
-                {
-                    account.LinkedUserId = existingUser.Id;
-                }
-                else
-                {
-                    var linkedUser = new User
-                    {
-                        Username = patientNumber,
-                        PasswordHash = account.PasswordHash,
-                        PasswordSalt = account.PasswordSalt,
-                        Role = UserRole.Patient,
-                        Phone = phone,
-                        IsActive = true
-                    };
-                    db.Users.Add(linkedUser);
-                    await db.SaveChangesAsync();
-                    account.LinkedUserId = linkedUser.Id;
-                }
-                await db.SaveChangesAsync();
-            }
+            await EnsureLinkedUserAsync(account);
+            await db.SaveChangesAsync();
             return (account.Username ?? patientNumber, "");
         }
 
@@ -217,27 +174,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         db.PatientAccounts.Add(account);
 
-        // Also create a User record for messaging system integration
-        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == patientNumber);
-        if (existingUser == null)
-        {
-            var linkedUser = new User
-            {
-                Username = patientNumber,
-                PasswordHash = hash,
-                PasswordSalt = salt,
-                Role = UserRole.Patient,
-                Phone = phone,
-                IsActive = true
-            };
-            db.Users.Add(linkedUser);
-            await db.SaveChangesAsync();
-            account.LinkedUserId = linkedUser.Id;
-        }
-        else
-        {
-            account.LinkedUserId = existingUser.Id;
-        }
+        // Ensure LinkedUserId for messaging — use the unified helper
+        await EnsureLinkedUserAsync(account, phone);
 
         await db.SaveChangesAsync();
 
@@ -698,6 +636,43 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
     }
 
     // ── Private Helpers ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Ensures a PatientAccount has a LinkedUserId for messaging system integration.
+    /// Finds an existing User by username or creates a new one, then links it.
+    /// This is the single source of truth for the linking logic.
+    /// </summary>
+    private async Task<Guid> EnsureLinkedUserAsync(PatientAccount account, string? phone = null)
+    {
+        if (account.LinkedUserId.HasValue)
+            return account.LinkedUserId.Value;
+
+        var username = account.Username ?? account.Patient?.PatientNumber ?? $"patient-{account.PatientId}";
+        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+
+        if (existingUser != null)
+        {
+            account.LinkedUserId = existingUser.Id;
+        }
+        else
+        {
+            var linkedUser = new User
+            {
+                Username = username,
+                PasswordHash = account.PasswordHash ?? "",
+                PasswordSalt = account.PasswordSalt ?? "",
+                Role = UserRole.Patient,
+                Phone = phone ?? account.PhoneNumber ?? account.Patient?.Phone,
+                IsActive = true
+            };
+            db.Users.Add(linkedUser);
+            await db.SaveChangesAsync();
+            account.LinkedUserId = linkedUser.Id;
+        }
+
+        logger.LogInformation("Auto-linked PatientAccount {Username} to messaging User {UserId}", account.Username, account.LinkedUserId);
+        return account.LinkedUserId.Value;
+    }
 
     private static PatientAppointmentDto MapAppointment(Appointment a, DateOnly? now = null)
     {

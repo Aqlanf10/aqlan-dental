@@ -19,7 +19,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
     public async Task<(bool success, string? error)> SendVerificationCodeAsync(string phoneNumber)
     {
         var normalizedPhone = NormalizePhone(phoneNumber);
-        var patient = await db.Patients.FirstOrDefaultAsync(p => p.Phone == normalizedPhone || p.WhatsApp == normalizedPhone);
+        var phoneVariants = GetPhoneVariants(phoneNumber);
+        var patient = await db.Patients.FirstOrDefaultAsync(p =>
+            phoneVariants.Contains(p.Phone) || phoneVariants.Contains(p.WhatsApp));
         if (patient == null)
             return (false, "رقم الهاتف غير مسجل في النظام");
 
@@ -47,10 +49,11 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
     public async Task<(PatientAuthResponse? response, string? error)> VerifyCodeAsync(string phoneNumber, string code)
     {
         var normalizedPhone = NormalizePhone(phoneNumber);
+        var phoneVariants = GetPhoneVariants(phoneNumber);
         var account = await db.PatientAccounts
             .Include(a => a.Patient)
                 .ThenInclude(p => p!.PrimaryDoctor)
-            .FirstOrDefaultAsync(a => a.PhoneNumber == normalizedPhone);
+            .FirstOrDefaultAsync(a => phoneVariants.Contains(a.PhoneNumber));
 
         if (account == null)
             return (null, "الحساب غير موجود");
@@ -503,6 +506,49 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         else if (cleaned.StartsWith("0") && cleaned.Length == 10)
             cleaned = "+967" + cleaned[1..];
         return cleaned;
+    }
+
+    /// <summary>
+    /// Returns all possible phone formats for matching against stored data.
+    /// Handles: +967770111001, 770111001, 0770111001, 967770111001
+    /// </summary>
+    private static List<string> GetPhoneVariants(string phone)
+    {
+        var variants = new List<string>();
+        var cleaned = new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray());
+
+        // Add as-is
+        variants.Add(cleaned);
+
+        // If starts with +967, also add without prefix
+        if (cleaned.StartsWith("+967"))
+        {
+            variants.Add(cleaned[4..]);           // 770111001
+            variants.Add("0" + cleaned[4..]);     // 0770111001
+            variants.Add(cleaned[1..]);            // 967770111001
+        }
+        // If starts with 967 without +, also add variants
+        else if (cleaned.StartsWith("967"))
+        {
+            variants.Add("+" + cleaned);          // +967770111001
+            variants.Add(cleaned[3..]);            // 770111001
+            variants.Add("0" + cleaned[3..]);      // 0770111001
+        }
+        // If starts with 0, also add variants
+        else if (cleaned.StartsWith("0"))
+        {
+            variants.Add("+967" + cleaned[1..]);  // +967770111001
+            variants.Add(cleaned[1..]);            // 770111001
+        }
+        // If starts with 7 (Yemen local format), also add variants
+        else if (cleaned.StartsWith("7"))
+        {
+            variants.Add("+967" + cleaned);       // +967770111001
+            variants.Add("0" + cleaned);           // 0770111001
+            variants.Add("967" + cleaned);         // 967770111001
+        }
+
+        return variants.Distinct().ToList();
     }
 
     private string GeneratePatientToken(PatientAccount account)

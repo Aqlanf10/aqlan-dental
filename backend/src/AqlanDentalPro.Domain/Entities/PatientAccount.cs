@@ -15,13 +15,15 @@ public class PatientAccount : BaseEntity
     public DateTime? RefreshTokenExpiry { get; set; }
 
     // Username/Password authentication
-    public string? Username { get; set; }            // Auto-generated (e.g., "GM0001")
+    public string? Username { get; set; }            // Auto-generated (= patient number)
     public string? PasswordHash { get; set; }         // Argon2id hashed
     public string? PasswordSalt { get; set; }          // Random salt
-    public string? InitialPassword { get; set; }       // Plain-text initial password shown to staff
+    public bool MustChangePassword { get; set; } = true;
+    public bool PortalAccountActive { get; set; } = true;
 
-    [NotMapped]
-    public string? PlainPassword { get; set; }         // NOT persisted - for display only
+    // Linked User account for messaging system integration
+    public Guid? LinkedUserId { get; set; }
+    public User? LinkedUser { get; set; }
 
     public Patient Patient { get; set; } = null!;
 }

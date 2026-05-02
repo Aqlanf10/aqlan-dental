@@ -23,13 +23,25 @@ public class PatientAuthResponse
 {
     public string AccessToken { get; set; } = string.Empty;
     public PatientPortalProfileDto Profile { get; set; } = null!;
+    public bool MustChangePassword { get; set; }
 }
 
-// Credentials — for staff to view patient portal login info
+// Credentials — for staff to view patient portal account info (no password)
 public class PatientPortalCredentialsDto
 {
     public string Username { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;  // Initial plain-text password
+    public bool AccountActive { get; set; }
+    public bool MustChangePassword { get; set; }
+    public DateTime? LastLogin { get; set; }
+    public bool HasPortalAccount { get; set; }
+}
+
+// Password reset response — temporary password shown once only
+public class PatientPasswordResetResponseDto
+{
+    public string TemporaryPassword { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
 }
 
 // Profile — extended with more patient-facing fields

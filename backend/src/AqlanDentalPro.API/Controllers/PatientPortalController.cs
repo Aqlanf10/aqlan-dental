@@ -70,6 +70,16 @@ public class PatientPortalController(IPatientPortalService portalService) : Cont
         return Ok(creds);
     }
 
+    /// <summary>إعادة تعيين كلمة مرور بوابة المريض (يعرض الكلمة المؤقتة مرة واحدة فقط)</summary>
+    [HttpPost("credentials/{patientId:guid}/reset-password")]
+    [Authorize(Policy = "DoctorAccess")]
+    public async Task<ActionResult<PatientPasswordResetResponseDto>> ResetPortalPassword(Guid patientId)
+    {
+        var (result, error) = await portalService.StaffResetPasswordAsync(patientId);
+        if (result == null) return BadRequest(new { message = error });
+        return Ok(result);
+    }
+
     // ── Protected Endpoints (Patient auth required) ────────────────────────
 
     [HttpGet("dashboard")]

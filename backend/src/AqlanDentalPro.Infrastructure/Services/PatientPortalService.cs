@@ -55,7 +55,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         return (new PatientAuthResponse
         {
             AccessToken = accessToken,
-            Profile = MapProfile(account.Patient, account)
+            Profile = MapProfile(account.Patient, account),
+            MustChangePassword = account.MustChangePassword
         }, null);
     }
 
@@ -139,12 +140,12 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
         if (account != null)
         {
-            // Account already exists, return existing credentials
-            return (account.Username ?? patientNumber, account.InitialPassword ?? "");
+            // Account already exists - do NOT return existing password
+            return (account.Username ?? patientNumber, "");
         }
 
-        // Generate a random 6-digit password
-        var plainPassword = RandomNumberGenerator.GetInt32(100000, 999999).ToString();
+        // Generate a random 8-character password (secure, no plain-text storage)
+        var plainPassword = GenerateTemporaryPassword();
         var salt = AuthService.GenerateSalt();
         var hash = AuthService.HashPassword(plainPassword, salt);
 
@@ -155,12 +156,36 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             Username = patientNumber,
             PasswordHash = hash,
             PasswordSalt = salt,
-            InitialPassword = plainPassword,
+            MustChangePassword = true,
+            PortalAccountActive = true,
             IsVerified = true,
             IsActive = true
         };
 
         db.PatientAccounts.Add(account);
+
+        // Also create a User record for messaging system integration
+        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == patientNumber);
+        if (existingUser == null)
+        {
+            var linkedUser = new User
+            {
+                Username = patientNumber,
+                PasswordHash = hash,
+                PasswordSalt = salt,
+                Role = UserRole.Patient,
+                Phone = phone,
+                IsActive = true
+            };
+            db.Users.Add(linkedUser);
+            await db.SaveChangesAsync();
+            account.LinkedUserId = linkedUser.Id;
+        }
+        else
+        {
+            account.LinkedUserId = existingUser.Id;
+        }
+
         await db.SaveChangesAsync();
 
         logger.LogInformation("Created PatientAccount for patient {PatientId} with username {Username}", patientId, patientNumber);
@@ -171,13 +196,43 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
     public async Task<PatientPortalCredentialsDto?> GetPatientCredentialsAsync(Guid patientId)
     {
         var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
-        if (account == null) return null;
+        if (account == null) return new PatientPortalCredentialsDto { HasPortalAccount = false };
 
         return new PatientPortalCredentialsDto
         {
             Username = account.Username ?? "",
-            Password = account.InitialPassword ?? "تم التغيير"
+            AccountActive = account.PortalAccountActive,
+            MustChangePassword = account.MustChangePassword,
+            LastLogin = account.LastLogin,
+            HasPortalAccount = true
         };
+    }
+
+    public async Task<(PatientPasswordResetResponseDto? result, string? error)> StaffResetPasswordAsync(Guid patientId)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (account == null)
+            return (null, "لا يوجد حساب بوابة لهذا المريض");
+
+        // Generate new temporary password
+        var tempPassword = GenerateTemporaryPassword();
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(tempPassword, salt);
+
+        account.PasswordHash = hash;
+        account.PasswordSalt = salt;
+        account.InitialPassword = null;  // Remove any stored plain-text password
+        account.MustChangePassword = true;
+        account.PortalAccountActive = true;
+
+        await db.SaveChangesAsync();
+
+        return (new PatientPasswordResetResponseDto
+        {
+            TemporaryPassword = tempPassword,
+            Username = account.Username ?? "",
+            Message = "تم إعادة تعيين كلمة المرور بنجاح. اعرض الكلمة للمريض الآن، لن تظهر مرة أخرى."
+        }, null);
     }
 
     public async Task<PatientPortalDashboardDto> GetDashboardAsync(Guid patientId)
@@ -654,14 +709,20 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:SecretKey"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, account.PatientId.ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("patientId", account.PatientId.ToString()),
-            new Claim(ClaimTypes.Role, "Patient"),
-            new Claim("portal", "true")
+            new(JwtRegisteredClaimNames.Sub, account.PatientId.ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("patientId", account.PatientId.ToString()),
+            new(ClaimTypes.Role, "Patient"),
+            new("portal", "true")
         };
+
+        // Include linked user ID for messaging system integration
+        if (account.LinkedUserId.HasValue)
+        {
+            claims.Add(new Claim("userId", account.LinkedUserId.Value.ToString()));
+        }
 
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"],
@@ -677,6 +738,13 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
     private static string GenerateRefreshToken()
     {
         return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+    }
+
+    private static string GenerateTemporaryPassword()
+    {
+        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+        var bytes = RandomNumberGenerator.GetBytes(8);
+        return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
     }
 
     private static PatientPortalProfileDto MapProfile(Patient patient, PatientAccount? account = null) => new()

@@ -17,6 +17,7 @@ export interface PatientResetPasswordRequest {
 export interface PatientAuthResponse {
   accessToken: string;
   profile: PatientPortalProfile;
+  mustChangePassword: boolean;
 }
 
 // Profile — extended with more fields
@@ -42,10 +43,19 @@ export interface PatientProfileUpdate {
   address?: string;
 }
 
-// Credentials — for staff to view patient portal login info
+// Credentials — for staff to view patient portal account info (no password)
 export interface PatientPortalCredentials {
   username: string;
-  password: string;
+  accountActive: boolean;
+  mustChangePassword: boolean;
+  lastLogin?: string;
+  hasPortalAccount: boolean;
+}
+
+export interface PatientPasswordResetResponse {
+  temporaryPassword: string;
+  username: string;
+  message: string;
 }
 
 // Appointments

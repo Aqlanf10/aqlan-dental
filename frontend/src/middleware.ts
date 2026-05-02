@@ -11,7 +11,7 @@ import type { NextRequest } from "next/server";
  *   but this middleware prevents the flash of content before redirect.
  */
 
-const PUBLIC_PATHS = ["/login", "/api/auth", "/portal/login"];
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/portal/auth", "/portal/login"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

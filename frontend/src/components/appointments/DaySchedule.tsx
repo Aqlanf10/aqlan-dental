@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical, Pencil } from "lucide-react";
+import { MoreVertical, Pencil, Stethoscope } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
@@ -119,8 +120,20 @@ function AppointmentCard({
   onStatusChange: (id: string, status: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [visitExists, setVisitExists] = useState(false);
+  const [startingVisit, setStartingVisit] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
+
+  // Check if a visit already exists for this appointment
+  useEffect(() => {
+    api.get<{ data: { appointmentId?: string }[] }>(`/api/visits?patientId=${a.patientId}`)
+      .then((r) => {
+        const hasVisit = (r.data.data ?? []).some((v: { appointmentId?: string }) => v.appointmentId === a.id);
+        setVisitExists(hasVisit);
+      })
+      .catch(() => {});
+  }, [a.patientId, a.id]);
 
   // Close menu on outside click
   useEffect(() => {
@@ -133,6 +146,26 @@ function AppointmentCard({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
+
+  const handleStartVisit = async () => {
+    setStartingVisit(true);
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/start-visit`);
+      toast.success(data.message ?? "تم إنشاء الزيارة بنجاح");
+      setVisitExists(true);
+      // Update status locally to InProgress
+      onStatusChange(a.id, "InProgress");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل إنشاء الزيارة");
+    } finally {
+      setStartingVisit(false);
+    }
+  };
+
+  // Determine if "بدء الزيارة" should be shown
+  const canStartVisit = !visitExists && ["Scheduled", "Confirmed", "Arrived", "InProgress"].includes(a.status);
 
   return (
     <div
@@ -182,7 +215,7 @@ function AppointmentCard({
           <MoreVertical className="w-4 h-4" />
         </button>
         {menuOpen && (
-          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px]">
             <Link
               href={`/appointments/${a.id}/edit`}
               onClick={() => setMenuOpen(false)}
@@ -191,6 +224,26 @@ function AppointmentCard({
               <Pencil className="w-3.5 h-3.5" />
               تعديل الموعد
             </Link>
+            {canStartVisit && (
+              <button
+                onClick={handleStartVisit}
+                disabled={startingVisit}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-green-700 font-medium disabled:opacity-50"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                {startingVisit ? "جاري الإنشاء..." : "بدء الزيارة"}
+              </button>
+            )}
+            {visitExists && (
+              <Link
+                href={`/patients/${a.patientId}`}
+                onClick={() => setMenuOpen(false)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#3d7ab5]"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                فتح ملف المريض
+              </Link>
+            )}
             {transitions.length > 0 && (
               <div className="border-t border-gray-100 mt-1 pt-1">
                 {transitions.map(({ value, label }) => (

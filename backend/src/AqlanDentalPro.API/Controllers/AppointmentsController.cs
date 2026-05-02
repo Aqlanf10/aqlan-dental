@@ -1,14 +1,19 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/appointments")]
 [Authorize]
-public class AppointmentsController(AppointmentService service) : ControllerBase
+public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet("today")]
     public async Task<IActionResult> GetToday([FromQuery] Guid? doctorId)
@@ -68,5 +73,68 @@ public class AppointmentsController(AppointmentService service) : ControllerBase
         var (result, error) = await service.UpdateStatusAsync(id, req.Status);
         if (error != null) return BadRequest(new { message = error });
         return result == null ? NotFound() : Ok(result);
+    }
+
+    // ─── POST /api/appointments/{id}/start-visit ──────────────────────────────
+    [HttpPost("{id:guid}/start-visit")]
+    public async Task<IActionResult> StartVisit(Guid id)
+    {
+        // 1. Find appointment
+        var appointment = await db.Appointments
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .FirstOrDefaultAsync(a => a.Id == id);
+
+        if (appointment is null)
+            return NotFound(new { message = "الموعد غير موجود" });
+
+        // 2. Validate patient exists and is active
+        if (appointment.Patient == null || !appointment.Patient.IsActive)
+            return BadRequest(new { message = "المريض غير موجود أو مؤرشف" });
+
+        // 3. Prevent duplicate visit for same appointment
+        var existingVisit = await db.Visits
+            .AnyAsync(v => v.AppointmentId == id && v.IsActive);
+
+        if (existingVisit)
+            return Conflict(new { message = "تم إنشاء زيارة لهذا الموعد مسبقًا" });
+
+        // 4. Validate appointment status — only certain statuses can start a visit
+        var allowedStatuses = new[] { AppointmentStatus.Scheduled, AppointmentStatus.Confirmed, AppointmentStatus.Arrived, AppointmentStatus.InProgress };
+        if (!allowedStatuses.Contains(appointment.Status))
+            return BadRequest(new { message = "لا يمكن بدء زيارة لموعد بحالة " + appointment.Status.ToString() });
+
+        // 5. Create visit linked to appointment
+        var visit = new Visit
+        {
+            PatientId = appointment.PatientId,
+            AppointmentId = appointment.Id,
+            DoctorId = appointment.DoctorId,
+            VisitDate = appointment.AppointmentDate,
+            VisitType = "Consultation",
+            Specialty = appointment.Specialty,
+            ChiefComplaint = appointment.Notes,
+        };
+
+        db.Visits.Add(visit);
+
+        // 6. Update appointment status to InProgress
+        appointment.Status = AppointmentStatus.InProgress;
+        appointment.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+
+        // Load navigation for response
+        await db.Entry(visit).Reference(v => v.Doctor).LoadAsync();
+
+        return Ok(new
+        {
+            visit.Id,
+            visit.PatientId,
+            visit.AppointmentId,
+            VisitDate = visit.VisitDate.ToString("yyyy-MM-dd"),
+            DoctorName = visit.Doctor?.Name,
+            message = "تم إنشاء الزيارة بنجاح"
+        });
     }
 }

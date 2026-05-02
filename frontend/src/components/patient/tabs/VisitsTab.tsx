@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ClipboardList, Plus, Pencil, Trash2, X, Stethoscope, ChevronDown, ChevronUp } from "lucide-react";
+import { ClipboardList, Plus, Pencil, Trash2, X, Stethoscope, ChevronDown, ChevronUp, Calendar } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -257,6 +257,12 @@ export function VisitsTab({ patientId }: VisitsTabProps) {
                         )}
                         {visit.chiefComplaint && (
                           <span className="text-xs text-[#94a3b8] truncate max-w-[200px]">{visit.chiefComplaint}</span>
+                        )}
+                        {visit.appointmentId && (
+                          <span className="flex items-center gap-1 text-xs text-[#3d7ab5]">
+                            <Calendar className="w-3 h-3" />
+                            مرتبط بموعد
+                          </span>
                         )}
                       </div>
                     </div>

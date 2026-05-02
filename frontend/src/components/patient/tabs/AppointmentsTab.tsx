@@ -49,11 +49,11 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
 
   useEffect(() => {
     setLoading(true);
-    api.get<AppointmentDto[]>(`/api/appointments?from=${fromDate}&to=${toDate}&patientId=${patientId}`)
+    api.get<AppointmentDto[]>(`/api/appointments/patient/${patientId}`)
       .then((r) => setAppointments(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [patientId, fromDate, toDate]);
+  }, [patientId]);
 
   return (
     <div className="space-y-4" dir="rtl">

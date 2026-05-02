@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Application.DTOs.WhatsApp;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -13,7 +14,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/appointments")]
 [Authorize]
-public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp) : ControllerBase
 {
     [HttpGet("today")]
     public async Task<IActionResult> GetToday([FromQuery] Guid? doctorId)
@@ -26,12 +27,13 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     public async Task<IActionResult> GetByRange(
         [FromQuery] string? from,
         [FromQuery] string? to,
-        [FromQuery] Guid? doctorId)
+        [FromQuery] Guid? doctorId,
+        [FromQuery] Guid? patientId)
     {
         var fromDate = from != null ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today);
         var toDate = to != null ? DateOnly.Parse(to) : fromDate;
 
-        var list = await service.GetByDateRangeAsync(fromDate, toDate, doctorId);
+        var list = await service.GetByDateRangeAsync(fromDate, toDate, doctorId, patientId);
         return Ok(list);
     }
 
@@ -73,6 +75,69 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var (result, error) = await service.UpdateStatusAsync(id, req.Status);
         if (error != null) return BadRequest(new { message = error });
         return result == null ? NotFound() : Ok(result);
+    }
+
+    // ─── DELETE /api/appointments/{id} (soft-delete) ─────────────────────────
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var appointment = await db.Appointments.FindAsync(id);
+        if (appointment is null)
+            return NotFound(new { message = "الموعد غير موجود" });
+
+        if (!appointment.IsActive)
+            return BadRequest(new { message = "الموعد محذوف بالفعل" });
+
+        appointment.IsActive = false;
+        appointment.DeletedAt = DateTime.UtcNow;
+        appointment.DeletedBy = currentUser.UserId;
+        appointment.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم حذف الموعد بنجاح" });
+    }
+
+    // ─── POST /api/appointments/{id}/send-reminder ───────────────────────────
+    [HttpPost("{id:guid}/send-reminder")]
+    public async Task<IActionResult> SendReminder(Guid id)
+    {
+        var appointment = await db.Appointments
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .FirstOrDefaultAsync(a => a.Id == id);
+
+        if (appointment is null)
+            return NotFound(new { message = "الموعد غير موجود" });
+
+        if (appointment.Patient is null)
+            return BadRequest(new { message = "بيانات المريض غير متوفرة" });
+
+        var patientName = $"{appointment.Patient.FirstName} {appointment.Patient.LastName}".Trim();
+        var doctorName = appointment.Doctor?.Name ?? "الطبيب";
+        var dateStr = appointment.AppointmentDate.ToString("yyyy/MM/dd");
+        var timeStr = appointment.StartTime.ToString("HH:mm");
+
+        try
+        {
+            var result = await whatsapp.SendAppointmentReminderAsync(new SendAppointmentReminderRequest
+            {
+                AppointmentId = appointment.Id,
+                HoursBefore = 0 // manual trigger = send now regardless of timing
+            });
+
+            if (result is null)
+                return BadRequest(new { message = "فشل إرسال التذكير عبر واتساب" });
+
+            appointment.ConfirmationSent = true;
+            appointment.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            return Ok(new { message = "تم إرسال التذكير بنجاح" });
+        }
+        catch
+        {
+            return BadRequest(new { message = "فشل إرسال التذكير عبر واتساب" });
+        }
     }
 
     // ─── POST /api/appointments/{id}/start-visit ──────────────────────────────

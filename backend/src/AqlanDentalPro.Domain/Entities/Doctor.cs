@@ -14,4 +14,5 @@ public class Doctor : BaseEntity
     public Branch? Branch { get; set; }
     public ICollection<Patient> PrimaryPatients { get; set; } = [];
     public ICollection<Appointment> Appointments { get; set; } = [];
+    public ICollection<DoctorSchedule> Schedules { get; set; } = [];
 }

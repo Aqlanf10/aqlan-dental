@@ -573,6 +573,59 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Failed to ensure Sprint 4.5 queue columns");
     }
 
+    // Ensure Sprint 5 DoctorSchedules table exists
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "DoctorSchedules" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "DoctorId" uuid NOT NULL,
+                "DayOfWeek" integer NOT NULL,
+                "StartTime" time without time zone NOT NULL,
+                "EndTime" time without time zone NOT NULL,
+                "IsWorking" boolean NOT NULL DEFAULT TRUE,
+                "BreakStart" time without time zone NULL,
+                "BreakEnd" time without time zone NULL,
+                "SlotDurationMinutes" integer NOT NULL DEFAULT 30,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_DoctorSchedules_Doctors_DoctorId') THEN
+                    ALTER TABLE "DoctorSchedules" ADD CONSTRAINT "FK_DoctorSchedules_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE CASCADE;
+                END IF;
+            END $$;
+        """);
+
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_DoctorSchedules_DoctorId_DayOfWeek"
+                ON "DoctorSchedules" ("DoctorId", "DayOfWeek")
+                WHERE "IsActive" = TRUE;
+        """);
+
+        // Record Sprint 5 migration in history
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260502120000_AddDoctorSchedules', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502120000_AddDoctorSchedules'
+            );
+        """);
+
+        logger.LogInformation("Sprint 5 DoctorSchedules table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Sprint 5 DoctorSchedules table");
+    }
+
     try
     {
         await db.Database.MigrateAsync();

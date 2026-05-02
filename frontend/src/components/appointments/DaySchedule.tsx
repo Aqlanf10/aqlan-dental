@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical, Pencil, Stethoscope } from "lucide-react";
+import { MoreVertical, Pencil, Stethoscope, Send, Trash2 } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
@@ -165,7 +165,32 @@ function AppointmentCard({
   };
 
   // Determine if "بدء الزيارة" should be shown
-  const canStartVisit = !visitExists && ["Scheduled", "Confirmed", "Arrived", "InProgress"].includes(a.status);
+  const canStartVisit = !visitExists && ["Scheduled", "Confirmed", "Arrived", "Waiting", "Called", "InRoom", "InProgress"].includes(a.status);
+  const canDelete = !["InProgress", "Completed"].includes(a.status);
+
+  const handleSendReminder = async () => {
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/send-reminder`);
+      toast.success(data.message ?? "تم إرسال التذكير");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل إرسال التذكير");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("هل أنت متأكد من حذف هذا الموعد؟")) return;
+    try {
+      await api.delete(`/api/appointments/${a.id}`);
+      toast.success("تم حذف الموعد");
+      onStatusChange(a.id, "Cancelled"); // remove from view
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل حذف الموعد");
+    }
+  };
 
   return (
     <div
@@ -232,6 +257,22 @@ function AppointmentCard({
               >
                 <Stethoscope className="w-3.5 h-3.5" />
                 {startingVisit ? "جاري الإنشاء..." : "بدء الزيارة"}
+              </button>
+            )}
+            <button
+              onClick={handleSendReminder}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#f5922e]"
+            >
+              <Send className="w-3.5 h-3.5" />
+              إرسال تذكير
+            </button>
+            {canDelete && (
+              <button
+                onClick={handleDelete}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-red-600"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                حذف الموعد
               </button>
             )}
             {visitExists && (

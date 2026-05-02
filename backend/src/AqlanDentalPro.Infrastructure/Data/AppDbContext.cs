@@ -63,6 +63,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
     public DbSet<PerioRecord> PerioRecords => Set<PerioRecord>();
     public DbSet<GeneralTreatmentPlanItem> GeneralTreatmentPlanItems => Set<GeneralTreatmentPlanItem>();
+    public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

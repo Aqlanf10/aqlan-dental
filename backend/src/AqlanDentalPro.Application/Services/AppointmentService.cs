@@ -16,10 +16,10 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
     }
 
     public async Task<IEnumerable<AppointmentDto>> GetByDateRangeAsync(
-        DateOnly from, DateOnly to, Guid? doctorId = null)
+        DateOnly from, DateOnly to, Guid? doctorId = null, Guid? patientId = null)
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
-        var list = await repo.GetByDateRangeAsync(from, to, branchId, doctorId);
+        var list = await repo.GetByDateRangeAsync(from, to, branchId, doctorId, patientId);
         return list.Select(ToDto);
     }
 

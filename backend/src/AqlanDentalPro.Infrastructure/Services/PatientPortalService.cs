@@ -21,7 +21,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config) : IPat
         var normalizedPhone = NormalizePhone(phoneNumber);
         var phoneVariants = GetPhoneVariants(phoneNumber);
         var patient = await db.Patients.FirstOrDefaultAsync(p =>
-            phoneVariants.Contains(p.Phone) || phoneVariants.Contains(p.WhatsApp));
+            phoneVariants.Contains(p.Phone) || phoneVariants.Contains(p.WhatsApp) ||
+            phoneVariants.Contains(p.NormalizedPhone) || phoneVariants.Contains(p.NormalizedWhatsApp));
         if (patient == null)
             return (false, "رقم الهاتف غير مسجل في النظام");
 

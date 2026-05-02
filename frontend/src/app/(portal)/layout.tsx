@@ -2,6 +2,8 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
+import { Home, Calendar, Stethoscope, Pill, CreditCard, UserCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const PUBLIC_PATHS = ["/portal/login"];
 
@@ -30,7 +32,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-screen bg-gray-50" style={{ direction: "rtl" }}>
       {children}
-      {/* Bottom Navigation - only for authenticated pages */}
       {isAuthenticated && !PUBLIC_PATHS.includes(pathname) && profile && (
         <PortalNavBar pathname={pathname} />
       )}
@@ -42,26 +43,30 @@ function PortalNavBar({ pathname }: { pathname: string }) {
   const router = useRouter();
 
   const items = [
-    { path: "/portal", icon: "🏠", label: "الرئيسية" },
-    { path: "/portal/appointments", icon: "📅", label: "المواعيد" },
-    { path: "/portal/treatments", icon: "🦷", label: "العلاجات" },
-    { path: "/portal/finance", icon: "💰", label: "المالية" },
+    { path: "/portal", icon: Home, label: "الرئيسية" },
+    { path: "/portal/appointments", icon: Calendar, label: "المواعيد" },
+    { path: "/portal/treatments", icon: Stethoscope, label: "العلاجات" },
+    { path: "/portal/prescriptions", icon: Pill, label: "الوصفات" },
+    { path: "/portal/finance", icon: CreditCard, label: "المالية" },
+    { path: "/portal/profile", icon: UserCircle, label: "بياناتي" },
   ];
 
   return (
     <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 z-50 safe-area-bottom">
-      <div className="flex items-center justify-around max-w-md mx-auto">
+      <div className="flex items-center justify-around max-w-lg mx-auto">
         {items.map((item) => {
           const isActive = pathname === item.path;
+          const Icon = item.icon;
           return (
             <button
               key={item.path}
               onClick={() => router.push(item.path)}
-              className={`flex flex-col items-center py-2 px-3 text-xs transition ${
+              className={cn(
+                "flex flex-col items-center py-2 px-2 text-[10px] transition",
                 isActive ? "text-clinic-blue" : "text-gray-400"
-              }`}
+              )}
             >
-              <span className="text-lg mb-0.5">{item.icon}</span>
+              <Icon className={cn("w-5 h-5 mb-0.5", isActive ? "stroke-[2.5px]" : "stroke-[1.5px]")} />
               <span className="font-medium">{item.label}</span>
             </button>
           );

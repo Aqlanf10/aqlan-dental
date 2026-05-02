@@ -24,6 +24,7 @@ export default function PortalAppointmentsPage() {
   usePatientAuthStore();
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [doctors, setDoctors] = useState<PatientDoctor[]>([]);
 
@@ -41,13 +42,13 @@ export default function PortalAppointmentsPage() {
   useEffect(() => {
     portalApi.get<PatientAppointment[]>("/api/portal/appointments?limit=50")
       .then((r) => setAppointments(r.data))
-      .catch(() => {})
+      .catch((err) => setLoadError(err?.response?.data?.message || "حدث خطأ في تحميل المواعيد"))
       .finally(() => setLoading(false));
 
     // Use portal-specific doctors endpoint
     portalApi.get<PatientDoctor[]>("/api/portal/doctors")
       .then((r) => setDoctors(r.data))
-      .catch(() => {});
+      .catch(() => {}); // Non-critical: doctors list is optional for the form
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -141,6 +142,12 @@ export default function PortalAppointmentsPage() {
       </div>
 
       <div className="px-4 mt-4 space-y-3">
+        {/* Load Error */}
+        {loadError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl p-4 text-center">
+            {loadError}
+          </div>
+        )}
         {/* Success Message */}
         {formSuccess && (
           <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl p-3">{formSuccess}</div>

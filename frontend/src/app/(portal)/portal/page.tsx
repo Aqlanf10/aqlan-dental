@@ -11,11 +11,15 @@ export default function PortalDashboard() {
   const { profile, logout } = usePatientAuthStore();
   const [dashboard, setDashboard] = useState<PatientPortalDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     portalApi.get<PatientPortalDashboard>("/api/portal/dashboard")
       .then((r) => setDashboard(r.data))
-      .catch(() => {})
+      .catch((err) => {
+        const msg = err?.response?.data?.message;
+        setError(msg || "حدث خطأ في تحميل لوحة التحكم");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -65,6 +69,13 @@ export default function PortalDashboard() {
       </div>
 
       <div className="px-4 -mt-4 space-y-4">
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl p-4 text-center">
+            {error}
+            <button onClick={() => { setError(null); setLoading(true); portalApi.get<PatientPortalDashboard>("/api/portal/dashboard").then((r) => setDashboard(r.data)).catch((err) => setError(err?.response?.data?.message || "حدث خطأ")).finally(() => setLoading(false)); }} className="block mx-auto mt-2 text-xs text-red-600 hover:text-red-800 underline">إعادة المحاولة</button>
+          </div>
+        )}
         {/* Next Appointment Card */}
         {dashboard?.nextAppointment ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">

@@ -52,6 +52,14 @@ portalApi.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
+    // Handle 403 with MUST_CHANGE_PASSWORD code — redirect to change password
+    if (error.response?.status === 403 && error.response?.data?.code === "MUST_CHANGE_PASSWORD") {
+      if (typeof window !== "undefined") {
+        window.location.href = "/portal/change-password";
+      }
+      return Promise.reject(error);
+    }
+
     // If not a 401 or already retried, reject
     if (error.response?.status !== 401 || originalRequest._retry) {
       if (error.response?.status === 401) {

@@ -8,11 +8,12 @@ import { formatYemeniRiyal } from "@/lib/utils";
 export default function PortalFinancePage() {
   const [finance, setFinance] = useState<PatientFinancialSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     portalApi.get<PatientFinancialSummary>("/api/portal/finance")
       .then((r) => setFinance(r.data))
-      .catch(() => {})
+      .catch((err) => setError(err?.response?.data?.message || "حدث خطأ في تحميل البيانات المالية"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -24,6 +25,11 @@ export default function PortalFinancePage() {
       </div>
 
       <div className="px-4 mt-4 space-y-4">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl p-4 text-center">
+            {error}
+          </div>
+        )}
         {loading ? (
           <div className="space-y-4 animate-pulse">
             <div className="bg-white rounded-2xl h-32" />

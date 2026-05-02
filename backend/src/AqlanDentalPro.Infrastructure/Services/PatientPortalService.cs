@@ -842,7 +842,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new("patientId", account.PatientId.ToString()),
             new(ClaimTypes.Role, "Patient"),
-            new("portal", "true")
+            new("portal", "true"),
+            new("mustChangePassword", account.MustChangePassword.ToString().ToLowerInvariant())
         };
 
         // Include linked user ID for messaging system integration

@@ -11,6 +11,7 @@ export default function PortalProfilePage() {
   const { profile: storeProfile } = usePatientAuthStore();
   const [profile, setProfile] = useState<PatientPortalProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Editable fields
   const [editPhone, setEditPhone] = useState("");
@@ -29,7 +30,7 @@ export default function PortalProfilePage() {
         setEditWhatsapp(r.data.whatsapp || "");
         setEditAddress(r.data.address || "");
       })
-      .catch(() => {})
+      .catch((err) => setLoadError(err?.response?.data?.message || "حدث خطأ في تحميل البيانات"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -82,6 +83,12 @@ export default function PortalProfilePage() {
       </div>
 
       <div className="px-4 -mt-4 space-y-4">
+        {/* Load Error */}
+        {loadError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl p-4 text-center">
+            {loadError}
+          </div>
+        )}
         {/* Success/Error Messages */}
         {editSuccess && (
           <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">

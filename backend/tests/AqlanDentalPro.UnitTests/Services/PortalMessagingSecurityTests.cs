@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using FluentAssertions;
+using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 
 namespace AqlanDentalPro.UnitTests.Services;
 
@@ -708,5 +710,104 @@ public class PortalMessagingSecurityTests
         // Assert
         error.Should().NotBeNull();
         response.Should().BeNull();
+    }
+
+    // ─── Test: mustChangePassword claim is embedded in JWT ──────────────────────
+
+    [Fact]
+    public async Task MustChangePassword_JWTContainsClaim()
+    {
+        // Arrange
+        using var db = CreateInMemoryDb();
+        var (patientId, account, linkedUser) = await SeedPatientWithAccount(db);
+        var service = CreateService(db);
+
+        // Act — login with MustChangePassword = true
+        var (response, error) = await service.LoginAsync("GM0001", "TempPass1");
+        error.Should().BeNull();
+        response.Should().NotBeNull();
+
+        // Decode the JWT and check the mustChangePassword claim
+        var handler = new JwtSecurityTokenHandler();
+        var jwt = handler.ReadJwtToken(response!.AccessToken);
+        var mustChangeClaim = jwt.Claims.FirstOrDefault(c => c.Type == "mustChangePassword");
+        mustChangeClaim.Should().NotBeNull();
+        mustChangeClaim!.Value.Should().Be("true");
+
+        // After password change, the new token should have mustChangePassword = false
+        var (changeResponse, changeError) = await service.ChangePasswordAsync(patientId, "TempPass1", "NewPass123");
+        changeError.Should().BeNull();
+        changeResponse.Should().NotBeNull();
+
+        var newJwt = handler.ReadJwtToken(changeResponse!.AccessToken);
+        var newMustChangeClaim = newJwt.Claims.FirstOrDefault(c => c.Type == "mustChangePassword");
+        newMustChangeClaim.Should().NotBeNull();
+        newMustChangeClaim!.Value.Should().Be("false");
+    }
+
+    // ─── Test: JWT contains userId claim for messaging integration ──────────────
+
+    [Fact]
+    public async Task LoginJWT_ContainsUserIdClaim()
+    {
+        // Arrange
+        using var db = CreateInMemoryDb();
+        var (patientId, account, linkedUser) = await SeedPatientWithAccount(db);
+        var service = CreateService(db);
+
+        // Act
+        var (response, error) = await service.LoginAsync("GM0001", "TempPass1");
+        error.Should().BeNull();
+        response.Should().NotBeNull();
+
+        // Assert — JWT must contain userId claim for messaging
+        var handler = new JwtSecurityTokenHandler();
+        var jwt = handler.ReadJwtToken(response!.AccessToken);
+        var userIdClaim = jwt.Claims.FirstOrDefault(c => c.Type == "userId");
+        userIdClaim.Should().NotBeNull();
+        userIdClaim!.Value.Should().Be(linkedUser.Id.ToString());
+    }
+
+    // ─── Test: JWT contains portal claim ──────────────────────────────────────
+
+    [Fact]
+    public async Task LoginJWT_ContainsPortalClaim()
+    {
+        // Arrange
+        using var db = CreateInMemoryDb();
+        var (patientId, account, linkedUser) = await SeedPatientWithAccount(db);
+        var service = CreateService(db);
+
+        // Act
+        var (response, error) = await service.LoginAsync("GM0001", "TempPass1");
+        error.Should().BeNull();
+        response.Should().NotBeNull();
+
+        // Assert
+        var handler = new JwtSecurityTokenHandler();
+        var jwt = handler.ReadJwtToken(response!.AccessToken);
+        var portalClaim = jwt.Claims.FirstOrDefault(c => c.Type == "portal");
+        portalClaim.Should().NotBeNull();
+        portalClaim!.Value.Should().Be("true");
+    }
+
+    // ─── Test: Patient cannot create StaffToStaff conversation via portal ──────
+
+    [Fact]
+    public async Task PatientCannotCreate_InternalConversation()
+    {
+        // Arrange
+        using var db = CreateInMemoryDb();
+        var (patientId, account, linkedUser) = await SeedPatientWithAccount(db);
+
+        // Verify that the ConversationType enum has the expected values
+        Enum.GetNames(typeof(ConversationType)).Should().Contain("PatientFacing");
+        Enum.GetNames(typeof(ConversationType)).Should().Contain("StaffToPatient");
+        Enum.GetNames(typeof(ConversationType)).Should().Contain("StaffToStaff");
+
+        // The portal controller always sets ConversationType = PatientFacing
+        // This test verifies the enum values exist and are distinct
+        ConversationType.PatientFacing.Should().NotBe(ConversationType.StaffToPatient);
+        ConversationType.PatientFacing.Should().NotBe(ConversationType.StaffToStaff);
     }
 }

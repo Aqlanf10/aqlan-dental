@@ -2,13 +2,17 @@ using AqlanDentalPro.Application.DTOs.PatientPortal;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/portal")]
-public class PatientPortalController(IPatientPortalService portalService) : ControllerBase
+public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration) : ControllerBase
 {
+    private readonly IConfiguration Configuration = configuration;
     // ── Auth Endpoints (No auth required) ───────────────────────────────────
 
     [HttpPost("auth/login")]
@@ -79,11 +83,12 @@ public class PatientPortalController(IPatientPortalService portalService) : Cont
     }
 
     [HttpPost("auth/refresh-token")]
-    [Authorize(Policy = "PatientAccess")]
+    [AllowAnonymous]
     public async Task<IActionResult> RefreshToken([FromBody] PatientRefreshTokenRequest req)
     {
-        var patientId = GetPatientId();
-        if (patientId == null) return Unauthorized(new { message = "غير مصرح" });
+        // Extract patientId from the (possibly expired) JWT in the Authorization header
+        var patientId = ExtractPatientIdFromToken();
+        if (patientId == null) return Unauthorized(new { message = "غير مصرح — رمز التحديث غير صالح" });
 
         try
         {
@@ -94,6 +99,44 @@ public class PatientPortalController(IPatientPortalService portalService) : Cont
         catch (Exception)
         {
             return StatusCode(500, new { message = "حدث خطأ أثناء تحديث الجلسة. يرجى تسجيل الدخول مرة أخرى" });
+        }
+    }
+
+    /// <summary>
+    /// Extracts patientId from the Authorization header JWT, allowing expired tokens.
+    /// This is needed because the refresh-token endpoint must work when the access token has expired.
+    /// </summary>
+    private Guid? ExtractPatientIdFromToken()
+    {
+        var authHeader = HttpContext.Request.Headers.Authorization.FirstOrDefault();
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var token = authHeader["Bearer ".Length..].Trim();
+        if (string.IsNullOrEmpty(token))
+            return null;
+
+        try
+        {
+            var handler = new JwtSecurityTokenHandler();
+            var parameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = false, // Allow expired tokens — this is the refresh flow
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = Configuration["Jwt:Issuer"],
+                ValidAudience = Configuration["Jwt:Audience"],
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:SecretKey"]!))
+            };
+
+            var principal = handler.ValidateToken(token, parameters, out _);
+            var patientIdClaim = principal.FindFirst("patientId")?.Value;
+            return Guid.TryParse(patientIdClaim, out var id) ? id : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 

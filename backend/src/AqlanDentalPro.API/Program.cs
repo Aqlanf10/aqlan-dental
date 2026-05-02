@@ -852,6 +852,7 @@ app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<MustChangePasswordMiddleware>();
 app.UseMiddleware<AuditLogMiddleware>();
 app.MapControllers();
 

@@ -21,18 +21,20 @@ export default function PortalTreatmentsPage() {
   const [treatments, setTreatments] = useState<PatientTreatment[]>([]);
   const [visits, setVisits] = useState<PatientVisit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
+    setError(null);
     if (tab === "treatments") {
       portalApi.get<PatientTreatment[]>("/api/portal/treatments?limit=50")
         .then((r) => setTreatments(r.data))
-        .catch(() => {})
+        .catch((err) => setError(err?.response?.data?.message || "حدث خطأ في تحميل العلاجات"))
         .finally(() => setLoading(false));
     } else {
       portalApi.get<PatientVisit[]>("/api/portal/visits?limit=50")
         .then((r) => setVisits(r.data))
-        .catch(() => {})
+        .catch((err) => setError(err?.response?.data?.message || "حدث خطأ في تحميل الزيارات"))
         .finally(() => setLoading(false));
     }
   }, [tab]);
@@ -65,6 +67,11 @@ export default function PortalTreatmentsPage() {
       </div>
 
       <div className="px-4 mt-4 space-y-3">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl p-4 text-center">
+            {error}
+          </div>
+        )}
         {loading ? (
           <div className="space-y-3 animate-pulse">
             {Array.from({ length: 5 }).map((_, i) => (

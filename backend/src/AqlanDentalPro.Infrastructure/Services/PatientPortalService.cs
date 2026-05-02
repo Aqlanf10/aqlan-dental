@@ -40,6 +40,31 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (!account.Patient.IsActive)
             return (null, "تم تعطيل هذا الحساب");
 
+        // Ensure the PatientAccount has a LinkedUserId for messaging integration
+        if (!account.LinkedUserId.HasValue)
+        {
+            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == account.Username);
+            if (existingUser != null)
+            {
+                account.LinkedUserId = existingUser.Id;
+            }
+            else
+            {
+                var linkedUser = new User
+                {
+                    Username = account.Username ?? account.Patient.PatientNumber,
+                    PasswordHash = account.PasswordHash ?? "",
+                    PasswordSalt = account.PasswordSalt ?? "",
+                    Role = UserRole.Patient,
+                    Phone = account.Patient.Phone,
+                    IsActive = true
+                };
+                db.Users.Add(linkedUser);
+                await db.SaveChangesAsync();
+                account.LinkedUserId = linkedUser.Id;
+            }
+        }
+
         account.IsVerified = true;
         account.LastLogin = DateTime.UtcNow;
         account.VerificationCode = null;

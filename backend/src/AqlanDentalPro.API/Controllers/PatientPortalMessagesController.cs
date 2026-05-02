@@ -35,6 +35,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
+            .Include(c => c.Patient)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -51,20 +52,32 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Take(pageSize)
             .ToListAsync();
 
+        // Batch unread counts
+        var convIds = conversations.Select(c => c.Id).ToList();
+        var unreadCounts = await db.Messages
+            .Where(m => convIds.Contains(m.ConversationId) && m.SenderId != userId.Value && !m.Reads.Any(r => r.UserId == userId.Value))
+            .GroupBy(m => m.ConversationId)
+            .Select(g => new { ConvId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ConvId, x => x.Count);
+
         var result = new List<ConversationListDto>();
         foreach (var conv in conversations)
         {
             var otherParticipant = conv.Participants.FirstOrDefault(p => p.UserId != userId.Value);
+            var patientName = conv.Patient != null ? $"{conv.Patient.FirstName} {conv.Patient.LastName}".Trim() : null;
             var dto = new ConversationListDto
             {
                 Id = conv.Id,
-                Title = conv.IsGroup ? conv.Title : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title),
+                Title = conv.ConversationType == "StaffToPatient" && patientName != null
+                    ? $"محادثة مع المركز — {patientName}"
+                    : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title),
                 IsGroup = conv.IsGroup,
+                ConversationType = conv.ConversationType,
+                PatientId = conv.PatientId,
+                PatientName = patientName,
                 LastMessageAt = conv.LastMessageAt,
                 LastMessagePreview = conv.LastMessagePreview,
-                UnreadCount = await db.Messages
-                    .Where(m => m.ConversationId == conv.Id && m.SenderId != userId.Value && !m.Reads.Any(r => r.UserId == userId.Value))
-                    .CountAsync(),
+                UnreadCount = unreadCounts.GetValueOrDefault(conv.Id),
                 OtherParticipant = otherParticipant != null ? MapParticipant(otherParticipant) : null,
                 Participants = conv.Participants.Select(MapParticipant).ToList()
             };
@@ -72,6 +85,114 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         }
 
         return Ok(new { Data = result, TotalCount = total, Page = page, PageSize = pageSize });
+    }
+
+    /// <summary>المريض يبدأ محادثة مع المركز — ينشئ أو يجلب محادثة StaffToPatient خاصة به</summary>
+    [HttpPost("conversations")]
+    public async Task<ActionResult<ConversationDetailDto>> StartConversation([FromBody] StartConversationRequest? request = null)
+    {
+        var userId = LinkedUserId;
+        if (userId == null) return BadRequest(new { message = "حساب البوابة غير مرتبط بحساب مراسلة" });
+
+        var patientId = PatientId;
+
+        // Find or create a StaffToPatient conversation for this patient
+        var existing = await db.Conversations
+            .Include(c => c.Participants)
+            .FirstOrDefaultAsync(c => c.PatientId == patientId && c.ConversationType == "StaffToPatient");
+
+        if (existing != null)
+        {
+            // Already exists — return it
+            return await GetConversation(existing.Id);
+        }
+
+        // Create new conversation
+        var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == patientId);
+        var patientName = patient != null ? $"{patient.FirstName} {patient.LastName}".Trim() : "مريض";
+        var patientNumber = patient?.PatientNumber ?? "";
+
+        var conv = new Conversation
+        {
+            Title = $"المريض: {patientName}",
+            IsGroup = true,
+            ConversationType = "StaffToPatient",
+            PatientId = patientId,
+        };
+
+        await db.Conversations.AddAsync(conv);
+
+        // Add patient as participant
+        await db.ConversationParticipants.AddAsync(new ConversationParticipant
+        {
+            ConversationId = conv.Id,
+            UserId = userId.Value,
+            IsAdmin = false
+        });
+
+        // Find staff to add (admin or the patient's primary doctor)
+        var staffUser = await db.Users
+            .Include(u => u.Doctor)
+            .FirstOrDefaultAsync(u => u.Role == UserRole.Admin && u.IsActive);
+        
+        if (staffUser == null)
+        {
+            // Try primary doctor
+            if (patient?.PrimaryDoctorId != null)
+            {
+                staffUser = await db.Users
+                    .Include(u => u.Doctor)
+                    .FirstOrDefaultAsync(u => u.Doctor != null && u.Doctor.Id == patient.PrimaryDoctorId && u.IsActive);
+            }
+        }
+
+        if (staffUser != null)
+        {
+            await db.ConversationParticipants.AddAsync(new ConversationParticipant
+            {
+                ConversationId = conv.Id,
+                UserId = staffUser.Id,
+                IsAdmin = true
+            });
+        }
+
+        // Add system message
+        var initialContent = request?.InitialMessage;
+        if (!string.IsNullOrWhiteSpace(initialContent))
+        {
+            await db.Messages.AddAsync(new Message
+            {
+                ConversationId = conv.Id,
+                SenderId = userId.Value,
+                Content = initialContent,
+                IsSystemMessage = false
+            });
+            conv.LastMessageAt = DateTime.UtcNow;
+            conv.LastMessagePreview = initialContent.Length > 200 ? initialContent[..200] + "..." : initialContent;
+        }
+        else
+        {
+            await db.Messages.AddAsync(new Message
+            {
+                ConversationId = conv.Id,
+                SenderId = userId.Value,
+                Content = $"بدأ المريض {patientName} محادثة مع المركز",
+                IsSystemMessage = true
+            });
+            conv.LastMessageAt = DateTime.UtcNow;
+            conv.LastMessagePreview = $"محادثة جديدة: {patientName}";
+        }
+
+        await db.SaveChangesAsync();
+
+        // Notify staff participants
+        if (staffUser != null)
+        {
+            await notifications.NotifyAsync(staffUser.Id, "message", "رسالة جديدة من مريض",
+                $"المريض {patientName} بدأ محادثة", "Conversation", conv.Id);
+        }
+
+        return await GetConversation(conv.Id);
     }
 
     [HttpGet("conversations/{conversationId:guid}")]
@@ -87,6 +208,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
 
         var conv = await db.Conversations
             .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
+            .Include(c => c.Patient)
             .FirstOrDefaultAsync(c => c.Id == conversationId);
         if (conv == null) return NotFound();
 
@@ -113,9 +235,22 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
 
         await db.SaveChangesAsync();
 
+        var patientName = conv.Patient != null ? $"{conv.Patient.FirstName} {conv.Patient.LastName}".Trim() : null;
+        var patientPhone = conv.Patient?.Phone;
+        var patientNumber = conv.Patient?.PatientNumber;
+
         return Ok(new ConversationDetailDto
         {
-            Id = conv.Id, Title = conv.Title, IsGroup = conv.IsGroup,
+            Id = conv.Id,
+            Title = conv.ConversationType == "StaffToPatient" && patientName != null
+                ? $"محادثة مع المركز — {patientName}"
+                : conv.Title,
+            IsGroup = conv.IsGroup,
+            ConversationType = conv.ConversationType,
+            PatientId = conv.PatientId,
+            PatientName = patientName,
+            PatientNumber = patientNumber,
+            PatientPhone = patientPhone,
             Participants = conv.Participants.Select(MapParticipant).ToList(),
             Messages = messages.Select(MapMessage).ToList(),
             CreatedAt = conv.CreatedAt
@@ -132,10 +267,14 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == userId.Value);
         if (!isParticipant) return Forbid("لست مشاركاً في هذه المحادثة");
 
+        var content = request.Content?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(content))
+            return BadRequest(new { message = "محتوى الرسالة لا يمكن أن يكون فارغاً" });
+
         var msg = new Message
         {
             ConversationId = conversationId, SenderId = userId.Value,
-            Content = request.Content, AttachmentUrl = request.AttachmentUrl,
+            Content = content, AttachmentUrl = request.AttachmentUrl,
             AttachmentName = request.AttachmentName, AttachmentType = request.AttachmentType,
             ReplyToId = request.ReplyToId,
         };
@@ -146,7 +285,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         if (conv != null)
         {
             conv.LastMessageAt = DateTime.UtcNow;
-            conv.LastMessagePreview = request.Content.Length > 200 ? request.Content[..200] + "..." : request.Content;
+            conv.LastMessagePreview = content.Length > 200 ? content[..200] + "..." : content;
         }
 
         await db.SaveChangesAsync();
@@ -215,7 +354,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     private static ConversationParticipantDto MapParticipant(ConversationParticipant cp) => new()
     {
         UserId = cp.UserId, Username = cp.User?.Username ?? "",
-        DisplayName = cp.User?.Doctor?.Name ?? cp.User?.Username,
+        DisplayName = cp.User?.Role == UserRole.Patient
+            ? (cp.User.Username != "" ? $"مريض ({cp.User.Username})" : "مريض")
+            : (cp.User?.Doctor?.Name ?? cp.User?.Username),
         Role = cp.User?.Role.ToString(), AvatarInitials = cp.User?.Doctor?.AvatarInitials,
         Color = cp.User?.Doctor?.Color, IsAdmin = cp.IsAdmin
     };
@@ -223,7 +364,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     private MessageDto MapMessage(Message m) => new()
     {
         Id = m.Id, ConversationId = m.ConversationId, SenderId = m.SenderId,
-        SenderName = m.Sender?.Doctor?.Name ?? m.Sender?.Username ?? "غير معروف",
+        SenderName = m.Sender?.Role == UserRole.Patient
+            ? "مريض"
+            : (m.Sender?.Doctor?.Name ?? m.Sender?.Username ?? "غير معروف"),
         SenderInitials = m.Sender?.Doctor?.AvatarInitials, SenderColor = m.Sender?.Doctor?.Color,
         Content = m.Content, AttachmentUrl = m.AttachmentUrl,
         AttachmentName = m.AttachmentName, AttachmentType = m.AttachmentType,
@@ -234,4 +377,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         IsReadByMe = m.Reads.Any(r => r.UserId == LinkedUserId),
         ReadCount = m.Reads.Count, CreatedAt = m.CreatedAt
     };
+}
+
+public class StartConversationRequest
+{
+    public string? InitialMessage { get; set; }
 }

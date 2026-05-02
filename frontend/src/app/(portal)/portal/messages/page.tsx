@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { MessageCircle, Send, ArrowRight } from "lucide-react";
+import { MessageCircle, Send, ArrowRight, Plus, Loader2 } from "lucide-react";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import portalApi from "@/lib/portalApi";
 import { cn } from "@/lib/utils";
 
-interface ConvList { id: string; title: string; isGroup: boolean; lastMessageAt?: string; lastMessagePreview?: string; unreadCount: number; }
+interface ConvList { id: string; title: string; isGroup: boolean; conversationType?: string; lastMessageAt?: string; lastMessagePreview?: string; unreadCount: number; }
 interface ConvDetail { id: string; title: string; isGroup: boolean; participants: { userId: string; displayName?: string; role?: string }[]; messages: MsgItem[]; createdAt: string; }
 interface MsgItem { id: string; senderId: string; senderName: string; content: string; isSystemMessage: boolean; createdAt: string; }
 
@@ -17,8 +17,25 @@ export default function PortalMessagesPage() {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showList, setShowList] = useState(true);
+  const [showStartDialog, setShowStartDialog] = useState(false);
+  const [startMessage, setStartMessage] = useState("");
+  const [starting, setStarting] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Get the patient's userId from the JWT (stored in localStorage)
+  const getPatientUserId = useCallback(() => {
+    try {
+      const token = localStorage.getItem("portal_token");
+      if (!token) return null;
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      return payload.userId || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const patientUserId = getPatientUserId();
 
   const fetchConversations = useCallback(() => {
     portalApi.get<{ Data: ConvList[] }>("/api/portal/messages/conversations")
@@ -28,6 +45,12 @@ export default function PortalMessagesPage() {
   }, []);
 
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
+
+  // Auto-refresh every 15s
+  useEffect(() => {
+    const interval = setInterval(fetchConversations, 15000);
+    return () => clearInterval(interval);
+  }, [fetchConversations]);
 
   const openConversation = async (convId: string) => {
     try {
@@ -51,6 +74,41 @@ export default function PortalMessagesPage() {
     finally { setSending(false); }
   };
 
+  const handleStartConversation = async () => {
+    setStarting(true);
+    try {
+      const payload: { initialMessage?: string } = {};
+      if (startMessage.trim()) {
+        payload.initialMessage = startMessage.trim();
+      }
+      const { data } = await portalApi.post<ConvDetail>("/api/portal/messages/conversations", payload);
+      setSelectedConv(data);
+      setMessages(data.messages);
+      setStartMessage("");
+      setShowStartDialog(false);
+      setShowList(false);
+      fetchConversations();
+    } catch {
+      // If conversation already exists, just refresh list
+      fetchConversations();
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  // Poll for new messages in open conversation
+  useEffect(() => {
+    if (!selectedConv) return;
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await portalApi.get<ConvDetail>(`/api/portal/messages/conversations/${selectedConv.id}`);
+        setSelectedConv(data);
+        setMessages(data.messages);
+      } catch { /* ignore */ }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [selectedConv]);
+
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   if (loading) {
@@ -61,20 +119,28 @@ export default function PortalMessagesPage() {
     );
   }
 
-  const patientUserId = selectedConv?.participants.find((p) => p.role === "Patient")?.userId;
-
   return (
     <div className="px-4 pb-20" dir="rtl">
       <div className="flex items-center justify-between mb-4 pt-4">
         <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
           <MessageCircle className="w-5 h-5 text-teal-600" />
-          الرسائل
+          التواصل مع المركز
         </h1>
-        {profile && <span className="text-xs text-gray-400">{profile.fullName}</span>}
+        <div className="flex items-center gap-2">
+          {profile && <span className="text-xs text-gray-400">{profile.fullName}</span>}
+          <button
+            onClick={() => setShowStartDialog(true)}
+            className="w-8 h-8 rounded-full bg-teal-500 text-white flex items-center justify-center hover:bg-teal-600 transition"
+            title="محادثة جديدة"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden" style={{ height: "calc(100vh - 160px)" }}>
         <div className="flex h-full">
+          {/* Conversation List */}
           <div className={cn("w-full md:w-80 border-l border-gray-100 flex flex-col", !showList && "hidden md:flex", showList && "flex")}>
             <div className="p-3 border-b border-gray-100 bg-gray-50">
               <p className="text-xs font-semibold text-gray-500">المحادثات</p>
@@ -84,7 +150,7 @@ export default function PortalMessagesPage() {
                 <div className="text-center py-12 text-gray-400">
                   <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">لا توجد محادثات</p>
-                  <p className="text-xs mt-1">سيظهر هنا تواصلك مع الطاقم الطبي</p>
+                  <p className="text-xs mt-1">اضغط + للتواصل مع المركز</p>
                 </div>
               ) : conversations.map((conv) => (
                 <button key={conv.id} onClick={() => openConversation(conv.id)}
@@ -102,6 +168,7 @@ export default function PortalMessagesPage() {
             </div>
           </div>
 
+          {/* Chat Area */}
           <div className={cn("flex-1 flex flex-col", showList && "hidden md:flex")}>
             {selectedConv ? (
               <>
@@ -145,6 +212,49 @@ export default function PortalMessagesPage() {
           </div>
         </div>
       </div>
+
+      {/* Start Conversation Dialog */}
+      {showStartDialog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" dir="rtl">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-bold text-gray-900">تواصل مع المركز</h3>
+              <button onClick={() => setShowStartDialog(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600">اكتب رسالتك وسيتواصل معك الطاقم الطبي في أقرب وقت.</p>
+              <textarea
+                value={startMessage}
+                onChange={(e) => setStartMessage(e.target.value)}
+                placeholder="مثال: أريد حجز موعد... / عندي استفسار عن..."
+                rows={4}
+                maxLength={2000}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
+                autoFocus
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100">
+              <button
+                onClick={handleStartConversation}
+                disabled={starting}
+                className="w-full py-3 rounded-xl font-semibold text-sm transition bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {starting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    جارٍ الإرسال...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    إرسال الرسالة
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

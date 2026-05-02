@@ -159,7 +159,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
         if (existing != null)
         {
-            // Add current user as participant if not already
+            // Add current staff user as participant if not already
             if (!existing.Participants.Any(p => p.UserId == UserId))
             {
                 await db.ConversationParticipants.AddAsync(new ConversationParticipant
@@ -168,8 +168,12 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                     UserId = UserId,
                     IsAdmin = false
                 });
-                await db.SaveChangesAsync();
             }
+
+            // Also add patient's linked user as participant if not already
+            await EnsurePatientParticipantAsync(existing.Id, patientId);
+
+            await db.SaveChangesAsync();
             return (await GetConversationAsync(existing.Id))!;
         }
 
@@ -191,20 +195,98 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             IsAdmin = true
         });
 
+        // Add patient's linked user as participant so they can see/reply from portal
+        await EnsurePatientParticipantAsync(conv.Id, patientId);
+
         // Add initial system message
         await db.Messages.AddAsync(new Message
         {
             ConversationId = conv.Id,
             SenderId = UserId,
-            Content = $"تم إنشاء محادثة داخلية للمريض {patientName} — {patient.PatientNumber}",
+            Content = $"تم إنشاء محادثة للمريض {patientName} — {patient.PatientNumber}",
             IsSystemMessage = true
         });
 
         conv.LastMessageAt = DateTime.UtcNow;
-        conv.LastMessagePreview = $"محادثة داخلية: {patientName}";
+        conv.LastMessagePreview = $"محادثة: {patientName}";
 
         await db.SaveChangesAsync();
         return (await GetConversationAsync(conv.Id))!;
+    }
+
+    /// <summary>
+    /// Ensures the patient's linked User (for messaging) is a participant in the conversation.
+    /// If no PatientAccount or linked User exists yet, creates them.
+    /// </summary>
+    private async Task EnsurePatientParticipantAsync(Guid conversationId, Guid patientId)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (account?.LinkedUserId == null)
+        {
+            // Patient doesn't have a messaging account yet — create one
+            var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == patientId);
+            if (patient == null) return;
+
+            if (account == null)
+            {
+                // Create PatientAccount + linked User for messaging
+                var linkedUser = new User
+                {
+                    Username = patient.PatientNumber,
+                    PasswordHash = "",
+                    PasswordSalt = "",
+                    Role = UserRole.Patient,
+                    Phone = patient.Phone,
+                    IsActive = true
+                };
+                db.Users.Add(linkedUser);
+                await db.SaveChangesAsync();
+
+                account = new PatientAccount
+                {
+                    PatientId = patientId,
+                    PhoneNumber = patient.Phone ?? "",
+                    Username = patient.PatientNumber,
+                    IsVerified = false,
+                    MustChangePassword = true,
+                    PortalAccountActive = false,
+                    IsActive = true,
+                    LinkedUserId = linkedUser.Id
+                };
+                db.PatientAccounts.Add(account);
+                await db.SaveChangesAsync();
+            }
+            else
+            {
+                // Account exists but no linked user — create one
+                var linkedUser = new User
+                {
+                    Username = patient.PatientNumber,
+                    PasswordHash = "",
+                    PasswordSalt = "",
+                    Role = UserRole.Patient,
+                    Phone = patient.Phone,
+                    IsActive = true
+                };
+                db.Users.Add(linkedUser);
+                await db.SaveChangesAsync();
+                account.LinkedUserId = linkedUser.Id;
+                await db.SaveChangesAsync();
+            }
+        }
+
+        // Add linked user as participant if not already
+        var alreadyParticipant = await db.ConversationParticipants
+            .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == account.LinkedUserId.Value);
+        if (!alreadyParticipant)
+        {
+            await db.ConversationParticipants.AddAsync(new ConversationParticipant
+            {
+                ConversationId = conversationId,
+                UserId = account.LinkedUserId.Value,
+                IsAdmin = false
+            });
+        }
     }
 
     // ─── جلب محادثة مريض بدون إنشاء ──────────────────────────────────────────────
@@ -464,7 +546,9 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         // Admin and BranchManager can message everyone
         if (currentUser.Role is UserRole.Admin or UserRole.BranchManager) return true;
 
+        // All staff roles can message Patient users
         var targetRole = targetUser.Role;
+        if (targetRole == UserRole.Patient) return true;
 
         // All internal staff can message each other
         return currentUser.Role switch

@@ -13,8 +13,17 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.Property(a => a.Status).HasConversion<string>().HasMaxLength(50);
         builder.Property(a => a.Specialty).HasConversion<string>().HasMaxLength(50);
 
+        // Queue / clinic-flow fields (Sprint 4.5)
+        builder.Property(a => a.RoomName).HasMaxLength(50);
+        builder.Property(a => a.ArrivedAt).IsRequired(false);
+        builder.Property(a => a.CalledAt).IsRequired(false);
+        builder.Property(a => a.InRoomAt).IsRequired(false);
+
         // Composite index for conflict detection
         builder.HasIndex(a => new { a.DoctorId, a.AppointmentDate, a.StartTime });
+
+        // Index for queue queries
+        builder.HasIndex(a => a.AppointmentDate);
 
         builder.HasOne(a => a.Patient)
             .WithMany(p => p.Appointments)

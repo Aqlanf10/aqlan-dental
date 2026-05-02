@@ -534,6 +534,45 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Failed to ensure Sprint 4 Visits/Documents columns");
     }
 
+    // Ensure Sprint 4.5 queue columns exist on Appointments table
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Appointments') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'RoomName') THEN
+                        ALTER TABLE "Appointments" ADD COLUMN "RoomName" character varying(50) NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'ArrivedAt') THEN
+                        ALTER TABLE "Appointments" ADD COLUMN "ArrivedAt" timestamp with time zone NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'CalledAt') THEN
+                        ALTER TABLE "Appointments" ADD COLUMN "CalledAt" timestamp with time zone NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'InRoomAt') THEN
+                        ALTER TABLE "Appointments" ADD COLUMN "InRoomAt" timestamp with time zone NULL;
+                    END IF;
+                    CREATE INDEX IF NOT EXISTS "IX_Appointments_AppointmentDate" ON "Appointments" ("AppointmentDate");
+                END IF;
+            END $$;
+        """);
+
+        // Record Sprint 4.5 migration in history
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260502100000_AddQueueFieldsToAppointments', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502100000_AddQueueFieldsToAppointments'
+            );
+        """);
+
+        logger.LogInformation("Sprint 4.5 queue columns ensured on Appointments table");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Sprint 4.5 queue columns");
+    }
+
     try
     {
         await db.Database.MigrateAsync();

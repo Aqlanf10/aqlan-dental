@@ -17,6 +17,12 @@ public class AppointmentDto
     public string? Specialty { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? Notes { get; set; }
+
+    // Queue / clinic-flow fields (Sprint 4.5)
+    public string? RoomName { get; set; }
+    public DateTime? ArrivedAt { get; set; }
+    public DateTime? CalledAt { get; set; }
+    public DateTime? InRoomAt { get; set; }
 }
 
 public class CreateAppointmentRequest
@@ -34,4 +40,10 @@ public class CreateAppointmentRequest
 public class UpdateAppointmentStatusRequest
 {
     public string Status { get; set; } = string.Empty;
+}
+
+/// <summary>Request body for calling a patient to a room.</summary>
+public class CallPatientRequest
+{
+    public string RoomName { get; set; } = string.Empty;
 }

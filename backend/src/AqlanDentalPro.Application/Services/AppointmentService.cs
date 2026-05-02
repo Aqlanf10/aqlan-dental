@@ -143,6 +143,10 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         AppointmentType = a.AppointmentType,
         Specialty = a.Specialty?.ToString(),
         Status = a.Status.ToString(),
-        Notes = a.Notes
+        Notes = a.Notes,
+        RoomName = a.RoomName,
+        ArrivedAt = a.ArrivedAt,
+        CalledAt = a.CalledAt,
+        InRoomAt = a.InRoomAt
     };
 }

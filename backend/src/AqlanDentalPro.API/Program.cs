@@ -474,6 +474,66 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Failed to ensure PatientAccounts table exists");
     }
 
+    // Ensure Visits/Documents new columns exist — separate try/catch for Sprint 4
+    try
+    {
+        // Add Diagnosis column to Visits
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Visits') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'Diagnosis') THEN
+                        ALTER TABLE "Visits" ADD COLUMN "Diagnosis" text NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'NextVisitPlan') THEN
+                        ALTER TABLE "Visits" ADD COLUMN "NextVisitPlan" text NULL;
+                    END IF;
+                    CREATE INDEX IF NOT EXISTS "IX_Visits_PatientId" ON "Visits" ("PatientId");
+                    CREATE INDEX IF NOT EXISTS "IX_Visits_VisitDate" ON "Visits" ("VisitDate");
+                END IF;
+            END $$;
+        """);
+
+        // Add new columns to Documents
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Documents') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'FileName') THEN
+                        ALTER TABLE "Documents" ADD COLUMN "FileName" text NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'FileSize') THEN
+                        ALTER TABLE "Documents" ADD COLUMN "FileSize" bigint NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'MimeType') THEN
+                        ALTER TABLE "Documents" ADD COLUMN "MimeType" text NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'Notes') THEN
+                        ALTER TABLE "Documents" ADD COLUMN "Notes" text NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'UploadedBy') THEN
+                        ALTER TABLE "Documents" ADD COLUMN "UploadedBy" uuid NULL;
+                    END IF;
+                    CREATE INDEX IF NOT EXISTS "IX_Documents_PatientId" ON "Documents" ("PatientId");
+                    CREATE INDEX IF NOT EXISTS "IX_Documents_DocumentType" ON "Documents" ("DocumentType");
+                END IF;
+            END $$;
+        """);
+
+        // Record Sprint 4 migration in history
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260502000000_AddVisitsDocumentsFields', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502000000_AddVisitsDocumentsFields'
+            );
+        """);
+
+        logger.LogInformation("Sprint 4 Visits/Documents columns ensured successfully");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Sprint 4 Visits/Documents columns");
+    }
+
     try
     {
         await db.Database.MigrateAsync();

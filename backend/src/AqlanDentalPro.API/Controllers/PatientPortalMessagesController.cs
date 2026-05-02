@@ -60,7 +60,6 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 PasswordHash = account.PasswordHash ?? "",
                 PasswordSalt = account.PasswordSalt ?? "",
                 Role = UserRole.Patient,
-                Phone = account.PhoneNumber,
                 IsActive = true
             };
             db.Users.Add(linkedUser);

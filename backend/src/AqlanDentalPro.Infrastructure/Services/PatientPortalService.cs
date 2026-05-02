@@ -662,7 +662,6 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
                 PasswordHash = account.PasswordHash ?? "",
                 PasswordSalt = account.PasswordSalt ?? "",
                 Role = UserRole.Patient,
-                Phone = phone ?? account.PhoneNumber ?? account.Patient?.Phone,
                 IsActive = true
             };
             db.Users.Add(linkedUser);

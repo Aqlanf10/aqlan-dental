@@ -241,7 +241,6 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                         PasswordHash = "",
                         PasswordSalt = "",
                         Role = UserRole.Patient,
-                        Phone = patient.Phone,
                         IsActive = true
                     };
                     db.Users.Add(existingUser);
@@ -273,7 +272,6 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                         PasswordHash = "",
                         PasswordSalt = "",
                         Role = UserRole.Patient,
-                        Phone = patient.Phone,
                         IsActive = true
                     };
                     db.Users.Add(existingUser);

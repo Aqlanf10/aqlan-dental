@@ -100,7 +100,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             return Conflict(new { message = "تم إنشاء زيارة لهذا الموعد مسبقًا" });
 
         // 4. Validate appointment status — only certain statuses can start a visit
-        var allowedStatuses = new[] { AppointmentStatus.Scheduled, AppointmentStatus.Confirmed, AppointmentStatus.Arrived, AppointmentStatus.InProgress };
+        var allowedStatuses = new[] { AppointmentStatus.Scheduled, AppointmentStatus.Confirmed, AppointmentStatus.Arrived, AppointmentStatus.Waiting, AppointmentStatus.Called, AppointmentStatus.InRoom, AppointmentStatus.InProgress };
         if (!allowedStatuses.Contains(appointment.Status))
             return BadRequest(new { message = "لا يمكن بدء زيارة لموعد بحالة " + appointment.Status.ToString() });
 

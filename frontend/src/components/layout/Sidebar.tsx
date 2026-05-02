@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   BarChart2, Package, FlaskConical, Settings, LogOut,
-  Pill, X, Menu, MessageCircle, MessageSquare,
+  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/",             label: "لوحة التحكم",       icon: LayoutDashboard, roles: [], section: "رئيسي" },
   { href: "/patients",     label: "المرضى",             icon: Users,           roles: [] },
   { href: "/appointments", label: "المواعيد",           icon: Calendar,        roles: [] },
+  { href: "/clinic-queue", label: "طابور العيادة",     icon: ClipboardList,   roles: [] },
   // Section: تخصصات
   { href: "/ortho",        label: "التقويم",            icon: GitBranch,       roles: ["Admin", "Orthodontist"], section: "تخصصات" },
   { href: "/ceph",         label: "السيفالومتري",       icon: Activity,        roles: ["Admin", "Orthodontist"] },

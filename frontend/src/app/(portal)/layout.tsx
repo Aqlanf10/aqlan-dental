@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
-import { Home, Calendar, Stethoscope, Pill, CreditCard, UserCircle } from "lucide-react";
+import { Home, Calendar, Stethoscope, Pill, CreditCard, UserCircle, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const PUBLIC_PATHS = ["/portal/login"];
@@ -45,6 +45,7 @@ function PortalNavBar({ pathname }: { pathname: string }) {
   const items = [
     { path: "/portal", icon: Home, label: "الرئيسية" },
     { path: "/portal/appointments", icon: Calendar, label: "المواعيد" },
+    { path: "/portal/messages", icon: MessageCircle, label: "الرسائل" },
     { path: "/portal/treatments", icon: Stethoscope, label: "العلاجات" },
     { path: "/portal/prescriptions", icon: Pill, label: "الوصفات" },
     { path: "/portal/finance", icon: CreditCard, label: "المالية" },

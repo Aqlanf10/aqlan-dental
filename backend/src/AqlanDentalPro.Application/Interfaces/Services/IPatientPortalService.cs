@@ -9,6 +9,7 @@ public interface IPatientPortalService
     Task<(PatientAuthResponse? response, string? error)> ResetPasswordAsync(string phoneNumber, string code, string newPassword);
     Task<(string username, string plainPassword)> EnsurePatientAccountAsync(Guid patientId, string patientNumber, string? phone);
     Task<PatientPortalCredentialsDto?> GetPatientCredentialsAsync(Guid patientId);
+    Task<(PatientPasswordResetResponseDto? result, string? error)> StaffResetPasswordAsync(Guid patientId);
     Task<PatientPortalDashboardDto> GetDashboardAsync(Guid patientId);
     Task<PatientPortalProfileDto> GetProfileAsync(Guid patientId);
     Task<(PatientPortalProfileDto? result, string? error)> UpdateProfileAsync(Guid patientId, PatientProfileUpdateDto req);

@@ -14,8 +14,10 @@ interface PatientAuthState {
   profile: PatientPortalProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  setAuth: (profile: PatientPortalProfile, token: string) => void;
+  mustChangePassword: boolean;
+  setAuth: (profile: PatientPortalProfile, token: string, mustChangePassword?: boolean) => void;
   logout: () => void;
+  setMustChangePassword: (val: boolean) => void;
 }
 
 export const usePatientAuthStore = create<PatientAuthState>()(
@@ -24,22 +26,25 @@ export const usePatientAuthStore = create<PatientAuthState>()(
       profile: null,
       isAuthenticated: false,
       isLoading: false,
+      mustChangePassword: false,
 
-      setAuth: (profile, token) => {
+      setAuth: (profile, token, mustChangePassword = false) => {
         localStorage.setItem("portal_token", token);
         setPortalCookie(true);
-        set({ profile, isAuthenticated: true });
+        set({ profile, isAuthenticated: true, mustChangePassword });
       },
 
       logout: () => {
         localStorage.removeItem("portal_token");
         setPortalCookie(false);
-        set({ profile: null, isAuthenticated: false });
+        set({ profile: null, isAuthenticated: false, mustChangePassword: false });
       },
+
+      setMustChangePassword: (val) => set({ mustChangePassword: val }),
     }),
     {
       name: "aqlan-patient-auth",
-      partialize: (s) => ({ profile: s.profile, isAuthenticated: s.isAuthenticated }),
+      partialize: (s) => ({ profile: s.profile, isAuthenticated: s.isAuthenticated, mustChangePassword: s.mustChangePassword }),
       onRehydrateStorage: () => (state) => {
         if (state?.isAuthenticated) {
           setPortalCookie(true);

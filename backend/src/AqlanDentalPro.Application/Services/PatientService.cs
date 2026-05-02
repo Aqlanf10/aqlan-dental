@@ -117,14 +117,14 @@ public class PatientService(
 
                 var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
 
-                // Attach portal credentials to the result
+                // Attach portal credentials to the result (temp password shown only once)
                 try
                 {
-                    var creds = await portalService.GetPatientCredentialsAsync(patient.Id);
-                    if (creds != null)
+                    var (username, plainPassword) = await portalService.EnsurePatientAccountAsync(patient.Id, patient.PatientNumber, patient.Phone);
+                    result.PortalUsername = username;
+                    if (!string.IsNullOrEmpty(plainPassword))
                     {
-                        result.PortalUsername = creds.Username;
-                        result.PortalPassword = creds.Password;
+                        result.PortalTemporaryPassword = plainPassword;
                     }
                 }
                 catch { /* non-critical */ }

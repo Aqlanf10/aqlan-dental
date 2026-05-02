@@ -191,7 +191,7 @@ export default function PatientProfilePage() {
       case "appointments":
         return <AppointmentsTab patientId={id} patientName={patientName} />;
       case "visits":
-        return <VisitsTab />;
+        return <VisitsTab patientId={id} />;
       case "finance":
         return <FinanceTab patientId={id} totalPaid={summary?.totalPaid ?? 0} totalOutstanding={summary?.totalOutstanding ?? 0} />;
       case "contracts":
@@ -215,7 +215,7 @@ export default function PatientProfilePage() {
       case "referrals":
         return <ReferralsTab patientId={id} />;
       case "documents":
-        return <DocumentsTab />;
+        return <DocumentsTab patientId={id} />;
       case "lab-orders":
         return <LabOrdersTab patientId={id} />;
       case "timeline":

@@ -400,7 +400,17 @@ using (var scope = app.Services.CreateScope())
             );
         """);
 
-        // Ensure PatientAccounts table exists for portal auth
+        logger.LogInformation("Pre-migration schema updates applied successfully");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to apply pre-migration schema updates");
+    }
+
+    // Ensure PatientAccounts table exists — separate try/catch so failures
+    // in the main pre-migration block don't prevent this from running.
+    try
+    {
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "PatientAccounts" (
                 "Id" uuid NOT NULL PRIMARY KEY,
@@ -414,8 +424,8 @@ using (var scope = app.Services.CreateScope())
                 "RefreshToken" character varying(256) NULL,
                 "RefreshTokenExpiry" timestamp with time zone NULL,
                 "IsActive" boolean NOT NULL DEFAULT TRUE,
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "UpdatedAt" timestamp with time zone NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
                 "DeletedAt" timestamp with time zone NULL,
                 "DeletedBy" uuid NULL
             );
@@ -457,12 +467,11 @@ using (var scope = app.Services.CreateScope())
                 SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430160000_AddGeneralDentistryEnhancements'
             );
         """);
-
-        logger.LogInformation("Pre-migration schema updates applied successfully");
+        logger.LogInformation("PatientAccounts table ensured and migration history updated");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Failed to apply pre-migration schema updates");
+        logger.LogError(ex, "Failed to ensure PatientAccounts table exists");
     }
 
     try

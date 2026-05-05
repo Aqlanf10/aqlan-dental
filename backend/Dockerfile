@@ -31,5 +31,7 @@ COPY --from=build --chown=appuser:appgroup /app/publish .
 USER appuser
 
 EXPOSE 8080
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_URLS=http://+:8080
 
 ENTRYPOINT ["dotnet", "AqlanDentalPro.API.dll"]

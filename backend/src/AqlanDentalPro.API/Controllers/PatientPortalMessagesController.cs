@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Messaging;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;

@@ -210,11 +210,16 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ── Migrate + Seed ────────────────────────────────────────────────────────────
-using (var scope = app.Services.CreateScope())
+// ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
+var enableStartupDbMaintenance =
+    builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");
+
+if (enableStartupDbMaintenance)
 {
-    var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    using (var scope = app.Services.CreateScope())
+    {
+        var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
     // Pre-migration: Add new columns that EF Core expects but may not exist yet
     try
@@ -834,6 +839,11 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogWarning(ex, "Failed to seed PatientAccounts for existing patients");
     }
+    } // end using scope
+} // end if (enableStartupDbMaintenance)
+else
+{
+    app.Logger.LogInformation("Startup DB maintenance is disabled (ENABLE_STARTUP_DB_MAINTENANCE=false). Skipping migrations and seed.");
 }
 
 // ── Middleware Pipeline ───────────────────────────────────────────────────────

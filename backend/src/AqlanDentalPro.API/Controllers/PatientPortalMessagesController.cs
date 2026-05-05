@@ -281,13 +281,13 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 .Select(d => d.UserId)
                 .FirstOrDefaultAsync();
 
-            if (doctorUserId.HasValue && doctorUserId.Value != Guid.Empty
-                && !adminUsers.Any(a => a.Id == doctorUserId.Value))
+            if (doctorUserId != Guid.Empty
+                && !adminUsers.Any(a => a.Id == doctorUserId))
             {
                 db.ConversationParticipants.Add(new ConversationParticipant
                 {
                     ConversationId = conv.Id,
-                    UserId = doctorUserId.Value,
+                    UserId = doctorUserId,
                     IsAdmin = false
                 });
             }

@@ -10,9 +10,10 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/portal")]
-public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration) : ControllerBase
+public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration, ILogger<PatientPortalController> logger) : ControllerBase
 {
     private readonly IConfiguration Configuration = configuration;
+    private readonly ILogger<PatientPortalController> Logger = logger;
     // ── Auth Endpoints (No auth required) ───────────────────────────────────
 
     [HttpPost("auth/login")]
@@ -25,8 +26,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             if (response == null) return BadRequest(new { message = error });
             return Ok(response);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Portal login failed for username {Username}", req.Username);
             return StatusCode(500, new { message = "حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة لاحقاً" });
         }
     }
@@ -41,8 +43,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             if (!success) return BadRequest(new { message = error });
             return Ok(new { message = "تم إرسال رمز التحقق عبر واتساب" });
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Portal forgot-password failed for phone {Phone}", req.PhoneNumber);
             return StatusCode(500, new { message = "حدث خطأ أثناء إرسال الرمز. يرجى المحاولة لاحقاً" });
         }
     }
@@ -57,8 +60,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             if (response == null) return BadRequest(new { message = error });
             return Ok(response);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Portal reset-password failed");
             return StatusCode(500, new { message = "حدث خطأ أثناء إعادة تعيين كلمة المرور. يرجى المحاولة لاحقاً" });
         }
     }
@@ -76,8 +80,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             if (response == null) return BadRequest(new { message = error });
             return Ok(response);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Portal change-password failed for patient {PatientId}", patientId);
             return StatusCode(500, new { message = "حدث خطأ أثناء تغيير كلمة المرور. يرجى المحاولة لاحقاً" });
         }
     }
@@ -96,8 +101,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
             if (response == null) return BadRequest(new { message = error });
             return Ok(response);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Portal refresh-token failed for patient {PatientId}", patientId);
             return StatusCode(500, new { message = "حدث خطأ أثناء تحديث الجلسة. يرجى تسجيل الدخول مرة أخرى" });
         }
     }

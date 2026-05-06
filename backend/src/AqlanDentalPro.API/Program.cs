@@ -111,6 +111,10 @@ builder.Services.AddAuthorization(opts =>
             nameof(UserRole.GeneralDentist),
             nameof(UserRole.OralSurgeon)));
 
+    // Patient portal credentials management: Admin + Reception only
+    opts.AddPolicy("AdminOrReception", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Reception)));
+
     // Patient portal access - for patient-facing mobile app
     opts.AddPolicy("PatientAccess", policy =>
         policy.RequireRole("Patient"));

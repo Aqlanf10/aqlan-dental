@@ -95,17 +95,39 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
 
     /// <summary>
     /// Verifies a password against the stored hash and salt.
+    /// Supports both per-user salt (current) and legacy fixed-salt (Phase 1) hashes.
     /// </summary>
     private static bool VerifyPassword(string password, string storedHash, string storedSalt)
     {
         try
         {
-            var hash = HashPassword(password, storedSalt);
-            return hash == storedHash;
+            // Primary: per-user salt (Phase 2+)
+            if (!string.IsNullOrEmpty(storedSalt))
+            {
+                var hash = HashPassword(password, storedSalt);
+                if (hash == storedHash) return true;
+            }
+
+            // Fallback: legacy Phase 1 fixed-salt hash (DOP=1, fixed salt)
+            var legacyHash = HashPasswordLegacy(password);
+            return legacyHash == storedHash;
         }
         catch
         {
             return false;
         }
+    }
+
+    // Legacy hash format from Phase 1 (fixed global salt, DOP=1)
+    private static string HashPasswordLegacy(string password)
+    {
+        var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))
+        {
+            Salt = Encoding.UTF8.GetBytes("AqlanDentalSalt!"),
+            DegreeOfParallelism = 1,
+            MemorySize = 65536,
+            Iterations = 3
+        };
+        return Convert.ToBase64String(argon2.GetBytes(32));
     }
 }

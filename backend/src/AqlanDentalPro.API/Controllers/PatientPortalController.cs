@@ -149,7 +149,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     // ── Staff-Only Endpoints ────────────────────────────────────────────────
 
     [HttpGet("credentials/{patientId:guid}")]
-    [Authorize(Policy = "DoctorAccess")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> GetPatientCredentials(Guid patientId)
     {
         var creds = await portalService.GetPatientCredentialsAsync(patientId);

@@ -111,6 +111,10 @@ builder.Services.AddAuthorization(opts =>
             nameof(UserRole.GeneralDentist),
             nameof(UserRole.OralSurgeon)));
 
+    // Patient portal credentials management: Admin + Reception only
+    opts.AddPolicy("AdminOrReception", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Reception)));
+
     // Patient portal access - for patient-facing mobile app
     opts.AddPolicy("PatientAccess", policy =>
         policy.RequireRole("Patient"));
@@ -209,6 +213,44 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// ── PatientAccounts Schema Hotfix (unconditional, idempotent) ────────────────
+// Adds missing columns for portal authentication. Uses IF NOT EXISTS so it is safe to run repeatedly.
+try
+{
+    using var hotfixScope = app.Services.CreateScope();
+    var hotfixDb = hotfixScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var hotfixLogger = hotfixScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await hotfixDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'Username') THEN
+                ALTER TABLE "PatientAccounts" ADD COLUMN "Username" text NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash') THEN
+                ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordHash" text NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordSalt') THEN
+                ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordSalt" text NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'MustChangePassword') THEN
+                ALTER TABLE "PatientAccounts" ADD COLUMN "MustChangePassword" boolean NOT NULL DEFAULT true;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PortalAccountActive') THEN
+                ALTER TABLE "PatientAccounts" ADD COLUMN "PortalAccountActive" boolean NOT NULL DEFAULT true;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'LinkedUserId') THEN
+                ALTER TABLE "PatientAccounts" ADD COLUMN "LinkedUserId" uuid NULL;
+            END IF;
+        END $$;
+    """);
+    hotfixLogger.LogInformation("PatientAccounts schema hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var hotfixLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    hotfixLogger2.LogWarning(ex, "PatientAccounts schema hotfix failed (non-fatal)");
+}
 
 // ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
 var enableStartupDbMaintenance =

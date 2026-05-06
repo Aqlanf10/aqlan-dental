@@ -314,9 +314,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpGet("clinic-info")]
     [AllowAnonymous]
-    public IActionResult GetClinicInfo()
+    public async Task<IActionResult> GetClinicInfo()
     {
-        var info = portalService.GetClinicInfoAsync();
+        var info = await portalService.GetClinicInfoAsync();
         return Ok(info);
     }
 

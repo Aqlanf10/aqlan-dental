@@ -52,6 +52,15 @@ export interface PatientPortalCredentials {
   hasPortalAccount: boolean;
 }
 
+// Create portal account response
+export interface CreatePortalAccountResponse {
+  username: string;
+  temporaryPassword?: string;
+  message: string;
+  alreadyExists: boolean;
+}
+
+// Reset portal password response
 export interface PatientPasswordResetResponse {
   temporaryPassword: string;
   username: string;

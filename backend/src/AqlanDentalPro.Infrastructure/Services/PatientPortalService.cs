@@ -37,7 +37,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (hash != account.PasswordHash)
             return (null, "اسم المستخدم أو كلمة المرور غير صحيحة");
 
-        if (!account.Patient.IsActive)
+        // Patient navigation may be null if the patient is archived (soft-delete query filter)
+        if (account.Patient == null || !account.Patient.IsActive)
             return (null, "تم تعطيل هذا الحساب");
 
         // Ensure the PatientAccount has a LinkedUserId for messaging integration
@@ -102,11 +103,14 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
                 .ThenInclude(p => p!.PrimaryDoctor)
             .FirstOrDefaultAsync(a => a.PatientId != Guid.Empty && // ensure join
                 (phoneVariants.Contains(a.PhoneNumber) ||
-                 phoneVariants.Contains(a.Patient.Phone) ||
-                 phoneVariants.Contains(a.Patient.WhatsApp)));
+                 (a.Patient != null && phoneVariants.Contains(a.Patient.Phone)) ||
+                 (a.Patient != null && phoneVariants.Contains(a.Patient.WhatsApp))));
 
         if (account == null)
             return (null, "الحساب غير موجود");
+
+        if (account.Patient == null)
+            return (null, "تم تعطيل هذا الحساب");
 
         if (account.VerificationCode != code)
             return (null, "رمز التحقق غير صحيح");
@@ -235,6 +239,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (account == null)
             return (null, "الحساب غير موجود");
 
+        if (account.Patient == null)
+            return (null, "تم تعطيل هذا الحساب");
+
         if (string.IsNullOrEmpty(account.PasswordHash) || string.IsNullOrEmpty(account.PasswordSalt))
             return (null, "حسابك غير مفعّل بعد");
 
@@ -277,6 +284,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         if (account == null)
             return (null, "الحساب غير موجود");
+
+        if (account.Patient == null)
+            return (null, "تم تعطيل هذا الحساب");
 
         if (account.RefreshToken != refreshToken)
             return (null, "رمز التحديث غير صالح");
@@ -633,6 +643,18 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         var normalizedPhone = NormalizePhone(phoneNumber);
         var patient = await db.Patients.FirstOrDefaultAsync(p => p.Phone == normalizedPhone || p.WhatsApp == normalizedPhone);
         return patient?.Id;
+    }
+
+    public async Task<PatientAccountInfoDto?> GetPatientInfoForAccountCreationAsync(Guid patientId)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null) return null;
+
+        return new PatientAccountInfoDto
+        {
+            PatientNumber = patient.PatientNumber,
+            Phone = patient.Phone
+        };
     }
 
     // ── Private Helpers ──────────────────────────────────────────────────────

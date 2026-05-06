@@ -25,4 +25,5 @@ public interface IPatientPortalService
     Task<List<PatientDoctorDto>> GetDoctorsAsync();
     Task<PatientClinicInfoDto> GetClinicInfoAsync();
     Task<Guid?> GetPatientIdByPhoneAsync(string phoneNumber);
+    Task<PatientAccountInfoDto?> GetPatientInfoForAccountCreationAsync(Guid patientId);
 }

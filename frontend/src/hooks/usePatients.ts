@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { PatientListItem, PatientProfile, CreatePatientRequest } from "@/types/patient";
+import type { PatientPortalCredentials, CreatePortalAccountResponse, PatientPasswordResetResponse } from "@/types/patientPortal";
 import type { PaginatedResponse } from "@/types/api";
 
 interface PatientFilters {
@@ -153,5 +154,50 @@ export function usePatientSummary(id: string | null) {
     },
     enabled: !!id,
     staleTime: 30_000,
+  });
+}
+
+// ── Portal Access Hooks ──────────────────────────────────────────────────
+
+/** Hook: Fetch patient portal credentials (staff only) */
+export function usePatientPortalCredentials(patientId: string | null) {
+  return useQuery({
+    queryKey: ["patient-portal-credentials", patientId],
+    queryFn: async () => {
+      const { data } = await api.get<PatientPortalCredentials>(`/api/portal/credentials/${patientId}`);
+      return data;
+    },
+    enabled: !!patientId,
+    staleTime: 30_000,
+  });
+}
+
+/** Hook: Create portal account for a patient */
+export function useCreatePortalAccount() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const { data } = await api.post<CreatePortalAccountResponse>(`/api/portal/credentials/${patientId}/create`);
+      return data;
+    },
+    onSuccess: (_data, patientId) => {
+      queryClient.invalidateQueries({ queryKey: ["patient-portal-credentials", patientId] });
+    },
+  });
+}
+
+/** Hook: Reset portal account password */
+export function useResetPortalPassword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const { data } = await api.post<PatientPasswordResetResponse>(`/api/portal/credentials/${patientId}/reset-password`);
+      return data;
+    },
+    onSuccess: (_data, patientId) => {
+      queryClient.invalidateQueries({ queryKey: ["patient-portal-credentials", patientId] });
+    },
   });
 }

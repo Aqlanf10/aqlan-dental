@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { MessageCircle, Send, Loader2, AlertTriangle, ExternalLink } from "lucide-react";
+import { MessageCircle, Send, Loader2, AlertTriangle, ExternalLink, Eye } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -21,6 +21,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  // PatientFacing warning is shown inline via conversation.conversationType check
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
 
@@ -149,7 +150,6 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   }
 
   const messages = conversation?.messages ?? [];
-
   return (
     <div className="flex flex-col h-full" dir="rtl">
       {/* Header with open in messages page link */}
@@ -158,11 +158,18 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
           <div className="flex items-center gap-2">
             <MessageCircle className="w-4 h-4 text-gray-500" />
             <span className="text-sm font-medium text-gray-700">
-              محادثة داخلية حول المريض
+              محادثة حول المريض
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">
-              لا تظهر للمريض
-            </span>
+            {conversation.conversationType === "PatientFacing" ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600 font-semibold flex items-center gap-1">
+                <Eye className="w-2.5 h-2.5" />
+                مرئية للمريض
+              </span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">
+                لا تظهر للمريض
+              </span>
+            )}
           </div>
           <button
             onClick={() => router.push(`/messages`)}
@@ -214,6 +221,24 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* PatientFacing warning — shown when conversation is visible to patient */}
+      {conversation?.conversationType === "PatientFacing" && (
+        <div
+          className="mb-3 p-3 rounded-lg flex items-start gap-2"
+          style={{ background: "#f5922e10", border: "1px solid #f5922e30" }}
+        >
+          <Eye className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: "#f5922e" }} />
+          <div className="flex-1">
+            <p className="text-xs font-bold" style={{ color: "#f5922e" }}>
+              هذه المحادثة مرئية للمريض في البوابة
+            </p>
+            <p className="text-[11px] mt-0.5" style={{ color: "#c2410c" }}>
+              الرسائل المُرسلة هنا ستظهر للمريض عند تسجيل دخوله في البوابة. لا تكتب معلومات سرية أو ملاحظات داخلية.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Send form */}
       <form onSubmit={handleSend} className="flex gap-2 pt-3 border-t border-gray-100">

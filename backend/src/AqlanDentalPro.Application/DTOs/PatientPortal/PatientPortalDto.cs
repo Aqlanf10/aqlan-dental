@@ -37,6 +37,13 @@ public class PatientAuthResponse
     public bool MustChangePassword { get; set; }
 }
 
+// Account info — lightweight DTO for account creation
+public class PatientAccountInfoDto
+{
+    public string PatientNumber { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+}
+
 // Credentials — for staff to view patient portal account info (no password)
 public class PatientPortalCredentialsDto
 {

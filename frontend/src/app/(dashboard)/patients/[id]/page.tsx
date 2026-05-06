@@ -37,6 +37,7 @@ import { ReferralsTab } from "@/components/patient/tabs/ReferralsTab";
 import { DocumentsTab } from "@/components/patient/tabs/DocumentsTab";
 import { LabOrdersTab } from "@/components/patient/tabs/LabOrdersTab";
 import { TimelineTab } from "@/components/patient/tabs/TimelineTab";
+import { PortalAccessTab } from "@/components/patient/tabs/PortalAccessTab";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ interface SurgeryCase { id: string; caseNumber: string; surgeryType: string; sta
 type Tab = "overview" | "info" | "medical" | "dental" | "appointments" | "visits" |
   "finance" | "contracts" | "payments" | "messages" | "orthodontics" | "general" |
   "surgery" | "photos" | "radiographs" | "prescriptions" | "referrals" |
-  "documents" | "lab-orders" | "timeline";
+  "documents" | "lab-orders" | "timeline" | "portal-access";
 
 interface TabDef {
   key: Tab;
@@ -92,6 +93,8 @@ const TABS: TabDef[] = [
   // Group 4 — Communication & History
   { key: "messages",      label: "الرسائل",             icon: MessageCircle,    group: 4 },
   { key: "timeline",      label: "السجل الزمني",        icon: Clock,            group: 4 },
+  // Group 5 — Portal
+  { key: "portal-access", label: "بوابة المريض",        icon: KeyRound,         group: 5 },
 ];
 
 // ─── Page Component ─────────────────────────────────────────────────────────────
@@ -102,7 +105,7 @@ export default function PatientProfilePage() {
   const [summary, setSummary] = useState<PatientSummary | null>(null);
   const [orthoCases, setOrthoCases] = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
-  const [portalCreds, setPortalCreds] = useState<{ username: string; password: string } | null>(null);
+  // portalCreds state removed — now handled by PortalAccessTab
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const { user } = useAuthStore();
@@ -154,9 +157,7 @@ export default function PatientProfilePage() {
     api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${id}&pageSize=10`)
       .then((r) => setSurgeryCases(r.data.data ?? []))
       .catch(() => {});
-    api.get<{ username: string; password: string }>(`/api/patients/${id}/portal-credentials`)
-      .then((r) => setPortalCreds(r.data))
-      .catch(() => {});
+    // Portal credentials now fetched by PortalAccessTab
   }, [id]);
 
   // ─── Loading & Not Found ────────────────────────────────────────────────────
@@ -224,6 +225,8 @@ export default function PatientProfilePage() {
         return <LabOrdersTab patientId={id} />;
       case "timeline":
         return <TimelineTab patientId={id} />;
+      case "portal-access":
+        return <PortalAccessTab patientId={id} patientNumber={patient.patientNumber} />;
       default:
         return null;
     }
@@ -295,15 +298,16 @@ export default function PatientProfilePage() {
               <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
                 تسجيل: {formatArabicDate(patient.createdAt)}
               </p>
-              {portalCreds && (
-                <div className="mt-2 flex items-center gap-2 text-xs" style={{ background: "#f5922e18", borderRadius: 8, padding: "6px 10px", border: "1px solid #f5922e30" }}>
-                  <KeyRound className="w-3.5 h-3.5" style={{ color: "#f5922e" }} />
-                  <span style={{ color: "#f5922e" }}>بوابة المريض:</span>
-                  <span className="font-mono" style={{ color: "#0d2137" }}>اسم المستخدم: <strong>{portalCreds.username}</strong></span>
-                  <span style={{ color: "#94a3b8" }}>|</span>
-                  <span className="font-mono" style={{ color: "#0d2137" }}>كلمة المرور: <strong>{portalCreds.password}</strong></span>
-                </div>
-              )}
+              {/* Portal status badge — links to portal tab */}
+              <button
+                onClick={() => setActiveTab("portal-access")}
+                className="mt-2 flex items-center gap-2 text-xs transition cursor-pointer"
+                style={{ background: "#3d7ab510", borderRadius: 8, padding: "6px 10px", border: "1px solid #3d7ab520" }}
+              >
+                <KeyRound className="w-3.5 h-3.5" style={{ color: "#3d7ab5" }} />
+                <span style={{ color: "#3d7ab5" }}>بوابة المريض</span>
+                <span style={{ color: "#94a3b8" }}>→ اضغط للتفاصيل</span>
+              </button>
             </div>
           </div>
           {patient.isActive && (

@@ -121,14 +121,14 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         // Ensure patient is a participant in their PatientFacing conversations
         await EnsurePatientInPatientFacingConversationsAsync(userId.Value);
 
-        // SECURITY: Only PatientFacing conversations for this patient
-        var query = db.ConversationParticipants
-            .Where(cp => cp.UserId == userId.Value)
-            .Select(cp => cp.Conversation)
+        // SECURITY: Only PatientFacing conversations for this patient where patient is a participant
+        var query = db.Conversations
+            .Where(c => c.ConversationType == ConversationType.PatientFacing.ToString()
+                      && c.PatientId == PatientId
+                      && c.Participants.Any(p => p.UserId == userId.Value))
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
-            .Where(c => c.ConversationType == ConversationType.PatientFacing.ToString() && c.PatientId == PatientId)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))

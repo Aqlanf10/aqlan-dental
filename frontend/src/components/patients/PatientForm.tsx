@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, ChevronDown, AlertTriangle, ExternalLink, X } from "lucide-react";
+import { Save, ChevronDown, AlertTriangle, ExternalLink, X, KeyRound, Copy, Check } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, normalizePhone } from "@/lib/utils";
@@ -91,6 +91,8 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const [serverError, setServerError] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState<DuplicateMatch[] | null>(null);
   const [forceSave, setForceSave] = useState(false);
+  const [portalDialog, setPortalDialog] = useState<{ username: string; temporaryPassword: string; patientId: string } | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
@@ -179,7 +181,31 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         await api.put(`/api/patients/${patientId}`, payload);
         router.push(`/patients/${patientId}`);
       } else {
-        const { data: created } = await api.post<{ id: string }>("/api/patients", payload);
+        const { data: created } = await api.post<{ id: string; patientNumber?: string }>("/api/patients", payload);
+
+        // Try to create portal account automatically (Admin/Reception only)
+        const role = typeof window !== "undefined" ? localStorage.getItem("aqlan-auth") : null;
+        try {
+          const { data: portalData } = await api.post<{
+            username: string;
+            temporaryPassword?: string;
+            message: string;
+            alreadyExists: boolean;
+          }>(`/api/portal/credentials/${created.id}/create`);
+
+          if (!portalData.alreadyExists && portalData.temporaryPassword) {
+            // Show portal credentials dialog
+            setPortalDialog({
+              username: portalData.username,
+              temporaryPassword: portalData.temporaryPassword,
+              patientId: created.id,
+            });
+            return; // Don't navigate yet — let user see the dialog
+          }
+        } catch {
+          // Portal creation failed — not critical, just navigate
+        }
+
         router.push(`/patients/${created.id}`);
       }
     } catch (err: unknown) {
@@ -192,6 +218,16 @@ export function PatientForm({ defaultValues, patientId }: Props) {
 
   const MATCH_LABELS: Record<string, string> = {
     phone: "رقم الهاتف", whatsapp: "واتساب", patientNumber: "رقم الملف", name: "الاسم",
+  };
+
+  const copyField = async (text: string, field: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      /* silent */
+    }
   };
 
   return (
@@ -361,6 +397,111 @@ export function PatientForm({ defaultValues, patientId }: Props) {
           </Field>
         </div>
       </Section>
+
+      {/* Portal Credentials Dialog — shown once after patient creation */}
+      {portalDialog && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div
+            className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+            dir="rtl"
+          >
+            {/* Header */}
+            <div className="px-6 py-4" style={{ background: "#0d2137" }}>
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5" style={{ color: "#f5922e" }} />
+                <h3 className="text-white font-bold">تم إنشاء حساب بوابة المريض</h3>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Warning */}
+              <div
+                className="flex items-start gap-2 p-3 rounded-lg"
+                style={{ background: "#ef444410", border: "1px solid #ef444430" }}
+              >
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
+                <div>
+                  <p className="text-sm font-bold" style={{ color: "#ef4444" }}>تحذير مهم</p>
+                  <p className="text-xs mt-0.5" style={{ color: "#dc2626" }}>
+                    كلمة المرور المؤقتة ستظهر مرة واحدة فقط! احفظها الآن قبل الإغلاق.
+                  </p>
+                </div>
+              </div>
+
+              {/* Username */}
+              <div className="p-3 rounded-lg" style={{ background: "#f8fafc" }}>
+                <p className="text-xs mb-1" style={{ color: "#64748b" }}>اسم المستخدم</p>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-base font-bold" style={{ color: "#0d2137" }}>
+                    {portalDialog.username}
+                  </span>
+                  <button
+                    onClick={() => copyField(portalDialog.username, "dlg-username")}
+                    className="p-1.5 rounded hover:bg-gray-200 transition"
+                  >
+                    {copiedField === "dlg-username" ? <Check className="w-4 h-4" style={{ color: "#22c55e" }} /> : <Copy className="w-4 h-4" style={{ color: "#3d7ab5" }} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Temporary Password */}
+              <div className="p-3 rounded-lg" style={{ background: "#f5922e08", border: "1px solid #f5922e20" }}>
+                <p className="text-xs mb-1" style={{ color: "#f5922e" }}>كلمة المرور المؤقتة</p>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-base font-bold" style={{ color: "#0d2137" }} dir="ltr">
+                    {portalDialog.temporaryPassword}
+                  </span>
+                  <button
+                    onClick={() => copyField(portalDialog.temporaryPassword, "dlg-password")}
+                    className="p-1.5 rounded hover:bg-gray-200 transition"
+                  >
+                    {copiedField === "dlg-password" ? <Check className="w-4 h-4" style={{ color: "#22c55e" }} /> : <Copy className="w-4 h-4" style={{ color: "#f5922e" }} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Portal URL */}
+              <div className="p-3 rounded-lg" style={{ background: "#f8fafc" }}>
+                <p className="text-xs mb-1" style={{ color: "#64748b" }}>رابط بوابة المريض</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono break-all" style={{ color: "#3d7ab5" }} dir="ltr">
+                    {typeof window !== "undefined" ? `${window.location.origin}/portal/login` : "/portal/login"}
+                  </span>
+                  <button
+                    onClick={() => copyField(`${typeof window !== "undefined" ? window.location.origin : ""}/portal/login`, "dlg-url")}
+                    className="p-1.5 rounded hover:bg-gray-200 transition flex-shrink-0 ms-2"
+                  >
+                    {copiedField === "dlg-url" ? <Check className="w-4 h-4" style={{ color: "#22c55e" }} /> : <Copy className="w-4 h-4" style={{ color: "#94a3b8" }} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Copy all */}
+              <button
+                onClick={() => {
+                  const info = `بيانات دخول بوابة المريض\nاسم المستخدم: ${portalDialog.username}\nكلمة المرور المؤقتة: ${portalDialog.temporaryPassword}\nرابط البوابة: ${typeof window !== "undefined" ? window.location.origin : ""}/portal/login`;
+                  copyField(info, "dlg-all");
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition"
+                style={{ background: copiedField === "dlg-all" ? "#22c55e" : "#3d7ab5", color: "#fff" }}
+              >
+                {copiedField === "dlg-all" ? <><Check className="w-4 h-4" /> تم النسخ</> : <><Copy className="w-4 h-4" /> نسخ كل بيانات الدخول</>}
+              </button>
+
+              {/* Close & Navigate */}
+              <button
+                onClick={() => {
+                  setPortalDialog(null);
+                  router.push(`/patients/${portalDialog.patientId}`);
+                }}
+                className="w-full py-2.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+              >
+                إغلاق والانتقال لملف المريض
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Submit */}
       <div className="flex justify-end gap-3 pb-4">

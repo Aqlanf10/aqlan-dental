@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { MessageCircle, Send, Loader2, AlertTriangle, ExternalLink, Eye, Shield } from "lucide-react";
+import { MessageCircle, Send, Loader2, AlertTriangle, ExternalLink, Eye } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
-import type { ConversationDetail, Message, ConversationType } from "@/types/messaging";
+import type { ConversationDetail, Message } from "@/types/messaging";
 import { useRouter } from "next/navigation";
 
 interface MessagesTabProps {
@@ -21,7 +21,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  const [showPatientFacingWarning, setShowPatientFacingWarning] = useState(false);
+  // PatientFacing warning is shown inline via conversation.conversationType check
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
 
@@ -150,8 +150,6 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   }
 
   const messages = conversation?.messages ?? [];
-  const isPatientFacing = conversation?.conversationType === "PatientFacing";
-
   return (
     <div className="flex flex-col h-full" dir="rtl">
       {/* Header with open in messages page link */}

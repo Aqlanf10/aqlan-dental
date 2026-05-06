@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, ChevronDown, AlertTriangle, ExternalLink, X, KeyRound, Copy, Check } from "lucide-react";
 import type { CreatePatientRequest } from "@/types/patient";
 import api from "@/lib/api";
+import { useAuthStore } from "@/stores/authStore";
 import { cn, normalizePhone } from "@/lib/utils";
 
 const schema = z.object({
@@ -184,8 +185,9 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         const { data: created } = await api.post<{ id: string; patientNumber?: string }>("/api/patients", payload);
 
         // Try to create portal account automatically (Admin/Reception only)
-        const role = typeof window !== "undefined" ? localStorage.getItem("aqlan-auth") : null;
-        try {
+        const userRole = useAuthStore.getState().user?.role;
+        if (userRole === "Admin" || userRole === "Reception") {
+          try {
           const { data: portalData } = await api.post<{
             username: string;
             temporaryPassword?: string;
@@ -205,6 +207,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         } catch {
           // Portal creation failed — not critical, just navigate
         }
+        } // end Admin/Reception check
 
         router.push(`/patients/${created.id}`);
       }

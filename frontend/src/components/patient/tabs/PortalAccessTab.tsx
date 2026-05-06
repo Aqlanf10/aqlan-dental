@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   KeyRound, UserCircle, Shield, Clock, Copy, Check, Plus,
-  RotateCcw, ExternalLink, AlertTriangle, Loader2, Eye, EyeOff,
+  RotateCcw, ExternalLink, AlertTriangle, Loader2,
 } from "lucide-react";
 import api from "@/lib/api";
 import { formatArabicDate } from "@/lib/utils";

@@ -635,6 +635,18 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         return patient?.Id;
     }
 
+    public async Task<PatientAccountInfoDto?> GetPatientInfoForAccountCreationAsync(Guid patientId)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null) return null;
+
+        return new PatientAccountInfoDto
+        {
+            PatientNumber = patient.PatientNumber,
+            Phone = patient.Phone
+        };
+    }
+
     // ── Private Helpers ──────────────────────────────────────────────────────
 
     /// <summary>

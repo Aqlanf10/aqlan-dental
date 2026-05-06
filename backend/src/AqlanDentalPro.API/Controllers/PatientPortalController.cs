@@ -151,9 +151,37 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
         return Ok(creds);
     }
 
+    /// <summary>إنشاء حساب بوابة المريض (يعرض كلمة المرور المؤقتة مرة واحدة فقط)</summary>
+    [HttpPost("credentials/{patientId:guid}/create")]
+    [Authorize(Policy = "AdminOrReception")]
+    public async Task<IActionResult> CreatePortalAccount(Guid patientId)
+    {
+        try
+        {
+            // Fetch patient info to get patientNumber and phone
+            var patient = await portalService.GetPatientInfoForAccountCreationAsync(patientId);
+            if (patient == null) return NotFound(new { message = "المريض غير موجود" });
+
+            var (username, plainPassword) = await portalService.EnsurePatientAccountAsync(patientId, patient.PatientNumber, patient.Phone);
+
+            if (string.IsNullOrEmpty(plainPassword))
+            {
+                // Account already existed — return credentials info without password
+                var existingCreds = await portalService.GetPatientCredentialsAsync(patientId);
+                return Ok(new { message = "الحساب موجود بالفعل", username = existingCreds?.Username ?? username, alreadyExists = true });
+            }
+
+            return Ok(new { username, temporaryPassword = plainPassword, message = "تم إنشاء حساب البوابة بنجاح", alreadyExists = false });
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, new { message = "حدث خطأ أثناء إنشاء حساب البوابة. يرجى المحاولة لاحقاً" });
+        }
+    }
+
     /// <summary>إعادة تعيين كلمة مرور بوابة المريض (يعرض الكلمة المؤقتة مرة واحدة فقط)</summary>
     [HttpPost("credentials/{patientId:guid}/reset-password")]
-    [Authorize(Policy = "DoctorAccess")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<ActionResult<PatientPasswordResetResponseDto>> ResetPortalPassword(Guid patientId)
     {
         var (result, error) = await portalService.StaffResetPasswordAsync(patientId);

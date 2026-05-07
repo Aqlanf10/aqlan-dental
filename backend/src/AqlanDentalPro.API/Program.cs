@@ -934,20 +934,30 @@ else
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
-// Serve uploaded files — resolve writable uploads directory (fallback to /tmp if wwwroot is read-only)
-var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-try
+// Serve uploaded files — resolve writable uploads directory
+// Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback
+var uploadsPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+if (!string.IsNullOrWhiteSpace(uploadsPath))
 {
+    // UPLOADS_PATH is set — use the persistent volume path directly
     Directory.CreateDirectory(uploadsPath);
-    var testFile = Path.Combine(uploadsPath, $".write-test-{Guid.NewGuid()}");
-    File.WriteAllText(testFile, "test");
-    File.Delete(testFile);
 }
-catch
+else
 {
-    // wwwroot not writable (e.g., container running as non-root without pre-created dir)
-    uploadsPath = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
-    Directory.CreateDirectory(uploadsPath);
+    uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+    try
+    {
+        Directory.CreateDirectory(uploadsPath);
+        var testFile = Path.Combine(uploadsPath, $".write-test-{Guid.NewGuid()}");
+        File.WriteAllText(testFile, "test");
+        File.Delete(testFile);
+    }
+    catch
+    {
+        // wwwroot not writable (e.g., container running as non-root without pre-created dir)
+        uploadsPath = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
+        Directory.CreateDirectory(uploadsPath);
+    }
 }
 
 app.UseStaticFiles(new StaticFileOptions

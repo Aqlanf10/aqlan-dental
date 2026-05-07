@@ -33,8 +33,8 @@ public class UploadsController : ControllerBase
             Directory.CreateDirectory(primaryPath);
             // Test write permission
             var testFile = Path.Combine(primaryPath, $".write-test-{Guid.NewGuid()}");
-            File.WriteAllText(testFile, "test");
-            File.Delete(testFile);
+            System.IO.File.WriteAllText(testFile, "test");
+            System.IO.File.Delete(testFile);
             return primaryPath;
         }
         catch

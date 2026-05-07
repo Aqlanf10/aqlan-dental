@@ -15,7 +15,6 @@ interface PatientAuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   mustChangePassword: boolean;
-  _hasRehydrated: boolean;
   setAuth: (profile: PatientPortalProfile, token: string, mustChangePassword?: boolean, refreshToken?: string) => void;
   logout: () => void;
   setMustChangePassword: (val: boolean) => void;
@@ -28,7 +27,6 @@ export const usePatientAuthStore = create<PatientAuthState>()(
       isAuthenticated: false,
       isLoading: false,
       mustChangePassword: false,
-      _hasRehydrated: false,
 
       setAuth: (profile, token, mustChangePassword = false, refreshToken) => {
         localStorage.setItem("portal_token", token);
@@ -51,16 +49,9 @@ export const usePatientAuthStore = create<PatientAuthState>()(
     {
       name: "aqlan-patient-auth",
       partialize: (s) => ({ profile: s.profile, isAuthenticated: s.isAuthenticated, mustChangePassword: s.mustChangePassword }),
-      onRehydrateStorage: () => (state, error) => {
-        if (!error && state?.isAuthenticated) {
+      onRehydrateStorage: () => (state) => {
+        if (state?.isAuthenticated) {
           setPortalCookie(true);
-        }
-        // Mark rehydration as complete so the layout can safely make
-        // redirect decisions without racing against the default state.
-        if (!error) {
-          // Use setState directly on the store — the callback runs after
-          // the store is fully created, so the reference is available.
-          usePatientAuthStore.setState({ _hasRehydrated: true });
         }
       },
     }

@@ -10,13 +10,12 @@ public class UploadsController : ControllerBase
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif",
-        "application/pdf"
+        "image/jpeg", "image/png", "application/pdf"
     };
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf"
+        ".jpg", ".jpeg", ".png", ".pdf"
     };
 
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
@@ -58,7 +57,7 @@ public class UploadsController : ControllerBase
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (!AllowedExtensions.Contains(ext))
-            return BadRequest(new { message = "نوع الملف غير مدعوم. المسموح به: JPG، PNG، WebP، GIF، PDF" });
+            return BadRequest(new { message = "نوع الملف غير مدعوم. المسموح به: JPG، PNG، PDF" });
 
         if (!AllowedMimeTypes.Contains(file.ContentType))
             return BadRequest(new { message = "نوع MIME غير مدعوم" });

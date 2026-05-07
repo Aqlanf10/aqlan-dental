@@ -252,6 +252,44 @@ catch (Exception ex)
     hotfixLogger2.LogWarning(ex, "PatientAccounts schema hotfix failed (non-fatal)");
 }
 
+// ── Conversation RecipientType Hotfix (unconditional, idempotent) ────────────
+try
+{
+    using var recipientHotfixScope = app.Services.CreateScope();
+    var recipientHotfixDb = recipientHotfixScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var recipientHotfixLogger = recipientHotfixScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientType') THEN
+                ALTER TABLE "Conversations" ADD COLUMN "RecipientType" character varying(20) NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientUserId') THEN
+                ALTER TABLE "Conversations" ADD COLUMN "RecipientUserId" uuid NULL;
+            END IF;
+        END $$;
+    """);
+    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientType" ON "Conversations" ("RecipientType");
+    """);
+    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientUserId" ON "Conversations" ("RecipientUserId");
+    """);
+    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT '20260503000000_AddConversationRecipientType', '8.0.8'
+        WHERE NOT EXISTS (
+            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType'
+        );
+    """);
+    recipientHotfixLogger.LogInformation("Conversation RecipientType/RecipientUserId hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var recipientHotfixLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    recipientHotfixLogger2.LogWarning(ex, "Conversation RecipientType hotfix failed (non-fatal)");
+}
+
 // ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");

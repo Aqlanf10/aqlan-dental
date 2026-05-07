@@ -77,6 +77,7 @@ export function useUnreadCount() {
     },
     staleTime: 10_000,
     refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 }
 

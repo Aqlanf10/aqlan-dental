@@ -132,7 +132,7 @@ function PortalNavBar({ pathname }: { pathname: string }) {
                 <Icon className={cn("w-5 h-5 mb-0.5", isActive ? "stroke-[2.5px]" : "stroke-[1.5px]")} />
                 {hasBadge && (
                   <span className="absolute -top-1 -left-1 min-w-[14px] h-3.5 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
-                    {(item.badge ?? 0) > 9 ? "9+" : item.badge}
+                    {(item.badge ?? 0) > 99 ? "99+" : item.badge}
                   </span>
                 )}
               </div>

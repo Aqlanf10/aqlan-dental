@@ -15,6 +15,12 @@ public class ConversationListDto
     public int UnreadCount { get; set; }
     public ConversationParticipantDto? OtherParticipant { get; set; }
     public List<ConversationParticipantDto> Participants { get; set; } = [];
+
+    /// <summary>نوع المستلم للمحادثات الموجهة من المريض: TreatingDoctor | Reception | Admin</summary>
+    public string? RecipientType { get; set; }
+
+    /// <summary>معرف المستخدم المستلم المحدد</summary>
+    public Guid? RecipientUserId { get; set; }
 }
 
 /// <summary>مشارك في محادثة</summary>
@@ -65,4 +71,10 @@ public class ConversationDetailDto
     public List<ConversationParticipantDto> Participants { get; set; } = [];
     public List<MessageDto> Messages { get; set; } = [];
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>نوع المستلم للمحادثات الموجهة من المريض: TreatingDoctor | Reception | Admin</summary>
+    public string? RecipientType { get; set; }
+
+    /// <summary>معرف المستخدم المستلم المحدد</summary>
+    public Guid? RecipientUserId { get; set; }
 }

@@ -2,6 +2,8 @@ export type ConversationType = "StaffToStaff" | "StaffToPatient" | "PatientFacin
 
 export type ConversationFilter = "all" | "unread" | "StaffToStaff" | "StaffToPatient" | "PatientFacing";
 
+export type RecipientType = "TreatingDoctor" | "Reception" | "Admin";
+
 export interface ConversationParticipant {
   userId: string;
   username: string;
@@ -25,6 +27,8 @@ export interface ConversationListItem {
   unreadCount: number;
   otherParticipant?: ConversationParticipant;
   participants: ConversationParticipant[];
+  recipientType?: string | null;
+  recipientUserId?: string | null;
 }
 
 export interface Message {
@@ -59,6 +63,8 @@ export interface ConversationDetail {
   participants: ConversationParticipant[];
   messages: Message[];
   createdAt: string;
+  recipientType?: string | null;
+  recipientUserId?: string | null;
 }
 
 export interface CreateConversationRequest {

@@ -20,6 +20,18 @@ public class Conversation : BaseEntity
     public Guid? PatientId { get; set; }
     public Guid? BranchId { get; set; }
 
+    /// <summary>
+    /// نوع المستلم للمحادثات الموجهة من المريض: TreatingDoctor | Reception | Admin
+    /// يُستخدم فقط مع المحادثات من نوع PatientFacing
+    /// </summary>
+    public string? RecipientType { get; set; }
+
+    /// <summary>
+    /// معرف المستخدم المستلم المحدد (مثل معرف الطبيب المعالج)
+    /// يُستخدم فقط عندما يكون RecipientType = TreatingDoctor ويكون الطبيب معروفاً
+    /// </summary>
+    public Guid? RecipientUserId { get; set; }
+
     // Navigation
     public User? Creator { get; set; }
     public Patient? Patient { get; set; }

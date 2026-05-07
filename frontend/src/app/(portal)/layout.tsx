@@ -12,9 +12,17 @@ const CHANGE_PASSWORD_PATH = "/portal/change-password";
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAuthenticated, mustChangePassword } = usePatientAuthStore();
+  const { isAuthenticated, mustChangePassword, _hasRehydrated } = usePatientAuthStore();
 
   useEffect(() => {
+    // Do NOT make any redirect decisions until Zustand persist has
+    // rehydrated from localStorage. Without this guard the layout
+    // sees the default state (isAuthenticated=false) on first render
+    // and immediately redirects to /portal/login, even though the
+    // persisted state says the user IS authenticated — causing an
+    // infinite redirect loop between login and change-password.
+    if (!_hasRehydrated) return;
+
     if (!isAuthenticated && !PUBLIC_PATHS.includes(pathname)) {
       router.replace("/portal/login");
     }
@@ -22,7 +30,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     if (isAuthenticated && mustChangePassword && pathname !== CHANGE_PASSWORD_PATH) {
       router.replace(CHANGE_PASSWORD_PATH);
     }
-  }, [isAuthenticated, mustChangePassword, pathname, router]);
+  }, [_hasRehydrated, isAuthenticated, mustChangePassword, pathname, router]);
+
+  // While Zustand persist is rehydrating, show a loading spinner
+  // instead of making premature redirect decisions.
+  if (!_hasRehydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50" style={{ direction: "rtl" }}>
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-clinic-blue border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-500">جارٍ التحميل...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated && !PUBLIC_PATHS.includes(pathname)) {
     return (

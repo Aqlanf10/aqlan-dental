@@ -1,4 +1,5 @@
 import axios, { type InternalAxiosRequestConfig } from "axios";
+import { usePatientAuthStore } from "@/stores/patientAuthStore";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -44,6 +45,8 @@ function clearAuthAndRedirect() {
   localStorage.removeItem("portal_token");
   localStorage.removeItem("portal_refresh_token");
   document.cookie = "aqlan_portal_auth=; path=/portal; max-age=0";
+  // Use store logout to keep state consistent
+  usePatientAuthStore.getState().logout();
   window.location.href = "/portal/login";
 }
 
@@ -52,10 +55,27 @@ portalApi.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // Handle 403 with MUST_CHANGE_PASSWORD code — redirect to change password
+    // Handle 403 with MUST_CHANGE_PASSWORD code — update the store and let
+    // the portal layout handle the redirect. Do NOT use window.location.href
+    // here because it causes a full page reload, which triggers the Zustand
+    // persist rehydration race condition (the layout sees default state
+    // {isAuthenticated:false} before rehydration completes, causing an
+    // infinite redirect loop between /portal/login and /portal/change-password).
     if (error.response?.status === 403 && error.response?.data?.code === "MUST_CHANGE_PASSWORD") {
       if (typeof window !== "undefined") {
-        window.location.href = "/portal/change-password";
+        const store = usePatientAuthStore.getState();
+        // Only update and redirect if the store doesn't already know
+        if (!store.mustChangePassword) {
+          store.setMustChangePassword(true);
+        }
+        // Use client-side navigation instead of hard reload
+        // Only redirect if not already on the change-password page
+        if (window.location.pathname !== "/portal/change-password") {
+          // Use Next.js router if available, otherwise fall back to location
+          // (we can't import useRouter here, so use pushState + popstate)
+          window.history.pushState(null, "", "/portal/change-password");
+          window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+        }
       }
       return Promise.reject(error);
     }
@@ -96,6 +116,11 @@ portalApi.interceptors.response.use(
       localStorage.setItem("portal_token", data.accessToken);
       if (data.refreshToken) {
         localStorage.setItem("portal_refresh_token", data.refreshToken);
+      }
+
+      // If the refreshed token indicates mustChangePassword, update the store
+      if (data.mustChangePassword) {
+        usePatientAuthStore.getState().setMustChangePassword(true);
       }
 
       // Update the original request with new token

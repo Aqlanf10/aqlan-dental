@@ -21,11 +21,26 @@ public class UploadsController : ControllerBase
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
 
     /// <summary>
-    /// Resolves the uploads directory path. Tries wwwroot/uploads first,
-    /// falls back to /tmp/uploads if the primary path is not writable.
+    /// Resolves the uploads directory path. Priority:
+    /// 1. UPLOADS_PATH environment variable (for Railway persistent volumes)
+    /// 2. wwwroot/uploads relative to current directory
+    /// 3. /tmp/aqlan-uploads fallback for read-only container environments
     /// </summary>
     private static string EnsureUploadsDirectory()
     {
+        // 1. Check UPLOADS_PATH env var (set by Railway for persistent volume)
+        var envPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+        if (!string.IsNullOrWhiteSpace(envPath))
+        {
+            Directory.CreateDirectory(envPath);
+            // Verify write permission
+            var testFile = Path.Combine(envPath, $".write-test-{Guid.NewGuid()}");
+            System.IO.File.WriteAllText(testFile, "test");
+            System.IO.File.Delete(testFile);
+            return envPath;
+        }
+
+        // 2. Try wwwroot/uploads (works if directory is pre-created with proper ownership)
         var primaryPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
         try
         {
@@ -38,7 +53,7 @@ public class UploadsController : ControllerBase
         }
         catch
         {
-            // Fallback to /tmp/uploads for containerized environments where wwwroot is read-only
+            // 3. Fallback to /tmp for containerized environments where wwwroot is read-only
             var fallbackPath = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
             Directory.CreateDirectory(fallbackPath);
             return fallbackPath;

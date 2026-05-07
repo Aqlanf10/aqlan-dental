@@ -68,3 +68,39 @@ Stage Summary:
 - Backend: fully functional with RecipientType/RecipientUserId columns
 - Frontend: deployed with recipient selection feature code
 - Patient login issue: test account GM-2026-010 password may have been changed (unrelated to this PR)
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Final Stabilization Check for PR #32 Database Hotfix
+
+Work Log:
+- Verified Program.cs hotfix is fully idempotent (all IF NOT EXISTS, no destructive SQL)
+- Verified production DB schema: RecipientType, RecipientUserId columns exist, indexes exist
+- Verified __EFMigrationsHistory: migration 20260503000000_AddConversationRecipientType registered by hotfix
+- Found triple redundancy: unconditional + gated + fallback blocks — all idempotent, no conflicts
+- Noted: hotfix creates IX_Conversations_RecipientUserId index that EF migration doesn't have (safe extra index)
+- Ran 11 live production tests:
+  1. ✅ Patient login (correct field: "username" not "patientNumber")
+  2. ✅ GET /api/portal/messages/recipients returns 3 recipient types
+  3. ✅ Patient starts Reception conversation (recipientType=Reception)
+  4. ✅ Reception sees the conversation
+  5. ✅ Patient starts Admin conversation (migrated legacy conv to recipientType=Admin)
+  6. ✅ Admin-directed conversation visible in staff API
+  7. ⚠️ TreatingDoctor conversation created even without primary doctor (no doctor participant added — needs frontend guard)
+  8. ✅ Doctor sees conversation when assigned as primary doctor
+  9. ✅ Legacy PatientFacing conversation still opens (17 messages)
+  10. ✅ StaffToPatient internal conversations hidden from patient
+  11. ✅ Cross-patient isolation works (denied access, minor: returns 400 instead of 403)
+- Test accounts cleaned up: passwords reset to random, MustChangePassword=true, primary doctor removed
+- Known bugs found:
+  1. TreatingDoctor conversation allowed without primary doctor (should be blocked by frontend isAvailable=false)
+  2. Forbid() returns 400 instead of 403 for cross-patient access (ASP.NET auth scheme issue)
+
+Stage Summary:
+- Hotfix SQL: ✅ Fully idempotent, no destructive operations
+- DB schema: ✅ Columns and indexes exist in production
+- Migration history: ✅ Registered, no future conflicts expected
+- Live tests: 9/11 pass cleanly, 2 minor issues documented
+- Test accounts: ✅ Secured (random password + must change)
+- Risks: Triple redundancy in Program.cs (safe but should be cleaned up), TreatingDoctor edge case

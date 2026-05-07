@@ -164,6 +164,7 @@ builder.Services.AddScoped<IPatientPortalService, PatientPortalService>();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();
 builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
+builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
 builder.Services.AddHttpClient("WhatsApp");
 
 builder.Services.AddHttpContextAccessor();
@@ -288,6 +289,56 @@ catch (Exception ex)
 {
     var recipientHotfixLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
     recipientHotfixLogger2.LogWarning(ex, "Conversation RecipientType hotfix failed (non-fatal)");
+}
+
+// ── BookingRequests Table Hotfix (unconditional, idempotent) ─────────────────
+try
+{
+    using var brScope = app.Services.CreateScope();
+    var brDb = brScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var brLogger = brScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await brDb.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "BookingRequests" (
+            "Id" uuid NOT NULL PRIMARY KEY,
+            "PatientName" character varying(100) NOT NULL,
+            "PhoneNumber" character varying(20) NOT NULL,
+            "Email" character varying(150) NULL,
+            "ServiceType" character varying(100) NULL,
+            "PreferredDate" character varying(50) NULL,
+            "PreferredTime" character varying(50) NULL,
+            "Notes" character varying(500) NULL,
+            "Status" integer NOT NULL DEFAULT 0,
+            "StaffNotes" text NULL,
+            "ReviewedBy" uuid NULL,
+            "ReviewedAt" timestamp with time zone NULL,
+            "ConvertedToAppointmentId" uuid NULL,
+            "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+            "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+            "IsActive" boolean NOT NULL DEFAULT TRUE,
+            "DeletedAt" timestamp with time zone NULL,
+            "DeletedBy" uuid NULL
+        );
+    """);
+    await brDb.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_Status" ON "BookingRequests" ("Status");
+    """);
+    await brDb.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_CreatedAt" ON "BookingRequests" ("CreatedAt");
+    """);
+    await brDb.Database.ExecuteSqlRawAsync("""
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT '20260507000000_AddBookingRequests', '8.0.8'
+        WHERE NOT EXISTS (
+            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
+        );
+    """);
+    brLogger.LogInformation("BookingRequests table hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var brLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    brLogger2.LogWarning(ex, "BookingRequests table hotfix failed (non-fatal)");
 }
 
 // ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────

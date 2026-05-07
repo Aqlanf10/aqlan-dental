@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import { usePortalUnreadCount } from "@/hooks/usePortalMessaging";
@@ -9,12 +9,48 @@ import { cn } from "@/lib/utils";
 const PUBLIC_PATHS = ["/portal/login"];
 const CHANGE_PASSWORD_PATH = "/portal/change-password";
 
+/**
+ * Hook that tracks whether Zustand persist has finished rehydrating
+ * the patient auth store from localStorage. Until rehydration completes,
+ * the store holds default values (isAuthenticated=false), which would
+ * cause incorrect redirect decisions.
+ */
+function useHasRehydrated() {
+  const [hasRehydrated, setHasRehydrated] = useState(false);
+
+  useEffect(() => {
+    // If hydration already happened synchronously, mark immediately
+    if (usePatientAuthStore.persist.hasHydrated()) {
+      setHasRehydrated(true);
+      return;
+    }
+
+    // Otherwise, listen for the hydration finish event
+    const unsub = usePatientAuthStore.persist.onFinishHydration(() => {
+      setHasRehydrated(true);
+    });
+
+    return unsub;
+  }, []);
+
+  return hasRehydrated;
+}
+
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, mustChangePassword } = usePatientAuthStore();
+  const hasRehydrated = useHasRehydrated();
 
   useEffect(() => {
+    // Do NOT make any redirect decisions until Zustand persist has
+    // rehydrated from localStorage. Without this guard the layout
+    // sees the default state (isAuthenticated=false) on first render
+    // and immediately redirects to /portal/login, even though the
+    // persisted state says the user IS authenticated — causing an
+    // infinite redirect loop between login and change-password.
+    if (!hasRehydrated) return;
+
     if (!isAuthenticated && !PUBLIC_PATHS.includes(pathname)) {
       router.replace("/portal/login");
     }
@@ -22,7 +58,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     if (isAuthenticated && mustChangePassword && pathname !== CHANGE_PASSWORD_PATH) {
       router.replace(CHANGE_PASSWORD_PATH);
     }
-  }, [isAuthenticated, mustChangePassword, pathname, router]);
+  }, [hasRehydrated, isAuthenticated, mustChangePassword, pathname, router]);
+
+  // While Zustand persist is rehydrating, show a loading spinner
+  // instead of making premature redirect decisions.
+  if (!hasRehydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50" style={{ direction: "rtl" }}>
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-clinic-blue border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-500">جارٍ التحميل...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated && !PUBLIC_PATHS.includes(pathname)) {
     return (

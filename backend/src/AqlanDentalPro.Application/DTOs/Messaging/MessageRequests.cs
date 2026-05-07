@@ -36,4 +36,21 @@ public class UnreadCountDto
 public class StartConversationRequest
 {
     public string? InitialMessage { get; set; }
+
+    /// <summary>نوع المستلم: TreatingDoctor | Reception | Admin</summary>
+    public string? RecipientType { get; set; }
+
+    /// <summary>معرف المستخدم المستلم المحدد (مثل معرف الطبيب)</summary>
+    public Guid? RecipientUserId { get; set; }
+}
+
+/// <summary>مستلم متاح للمريض</summary>
+public class PortalRecipientDto
+{
+    public string Type { get; set; } = string.Empty; // TreatingDoctor | Reception | Admin
+    public Guid? UserId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string? Role { get; set; }
+    public string? AvatarInitials { get; set; }
+    public string? Color { get; set; }
 }

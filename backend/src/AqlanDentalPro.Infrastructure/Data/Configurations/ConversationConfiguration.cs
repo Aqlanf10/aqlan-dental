@@ -31,9 +31,12 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
             .HasForeignKey(c => c.BranchId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.Property(c => c.RecipientType).HasMaxLength(20);
+
         builder.HasIndex(c => c.LastMessageAt);
         builder.HasIndex(c => c.PatientId);
         builder.HasIndex(c => c.ConversationType);
+        builder.HasIndex(c => c.RecipientType);
     }
 }
 

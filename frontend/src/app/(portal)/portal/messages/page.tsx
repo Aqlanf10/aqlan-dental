@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   MessageCircle, Send, Plus, ArrowRight, Loader2,
   X, AlertTriangle, CheckCheck, User,
+  Stethoscope, Building2, ShieldCheck, ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
@@ -13,9 +14,13 @@ import {
   usePortalMarkAsRead,
   usePortalStartConversation,
   usePortalUnreadCount,
+  usePortalRecipients,
   type PortalConversationListItem,
   type PortalConversationDetail,
   type PortalMessage,
+  type PortalRecipient,
+  type RecipientType,
+  type StartConversationPayload,
 } from "@/hooks/usePortalMessaging";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -72,6 +77,57 @@ function getErrorMessage(error: unknown): { title: string; detail: string } {
   return { title: "حدث خطأ", detail: message ?? "فشل تحميل البيانات" };
 }
 
+const RECIPIENT_TYPE_LABELS: Record<string, string> = {
+  TreatingDoctor: "الطبيب المسؤول",
+  Reception: "الاستقبال",
+  Admin: "الإدارة / الدعم",
+};
+
+function getRecipientBadgeLabel(type: string | null | undefined): string | null {
+  if (!type) return null;
+  return RECIPIENT_TYPE_LABELS[type] ?? null;
+}
+
+// ─── Recipient option config ──────────────────────────────────────────────────
+
+const RECIPIENT_OPTIONS: {
+  type: RecipientType;
+  label: string;
+  description: string;
+  icon: typeof Stethoscope;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+}[] = [
+  {
+    type: "TreatingDoctor",
+    label: "الطبيب المسؤول",
+    description: "تواصل مع طبيبك المعالج مباشرة",
+    icon: Stethoscope,
+    color: "text-emerald-600",
+    bgColor: "bg-emerald-50",
+    borderColor: "border-emerald-200 hover:border-emerald-400",
+  },
+  {
+    type: "Reception",
+    label: "الاستقبال",
+    description: "حجز مواعيد، استفسارات عامة",
+    icon: Building2,
+    color: "text-amber-600",
+    bgColor: "bg-amber-50",
+    borderColor: "border-amber-200 hover:border-amber-400",
+  },
+  {
+    type: "Admin",
+    label: "الإدارة / الدعم",
+    description: "شكاوى، اقتراحات، مشاكل تقنية",
+    icon: ShieldCheck,
+    color: "text-purple-600",
+    bgColor: "bg-purple-50",
+    borderColor: "border-purple-200 hover:border-purple-400",
+  },
+];
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PortalMessagesPage() {
@@ -117,13 +173,12 @@ export default function PortalMessagesPage() {
   );
 
   const handleStartConversation = useCallback(
-    async (initialMessage?: string) => {
+    async (payload: StartConversationPayload) => {
       try {
-        const conv = await startConversation.mutateAsync(initialMessage);
+        const conv = await startConversation.mutateAsync(payload);
         setSelectedConvId(conv.id);
         setShowStartDialog(false);
       } catch {
-        // Conversation might already exist — try opening existing one
         setShowStartDialog(false);
       }
     },
@@ -290,7 +345,12 @@ function ConversationItem({
   onClick: () => void;
 }) {
   const staffParticipant = conv.otherParticipant ?? conv.participants[0];
-  const displayName = conv.title || staffParticipant?.displayName || "المركز";
+  const recipientLabel = getRecipientBadgeLabel(conv.recipientType);
+  const displayName = recipientLabel
+    ? conv.recipientType === "TreatingDoctor" && staffParticipant?.displayName
+      ? `${staffParticipant.displayName} — ${recipientLabel}`
+      : recipientLabel
+    : (conv.title || staffParticipant?.displayName || "المركز");
   const initial = getInitials(displayName);
   const avatarColor = staffParticipant?.color ?? "#0d9488";
   const avatarInitials = staffParticipant?.avatarInitials ?? initial;
@@ -391,11 +451,16 @@ function ChatArea({
   const staffParticipants = conversation.participants.filter(
     (p) => p.userId !== patientUserId
   );
+  const recipientLabel = getRecipientBadgeLabel(conversation.recipientType);
   const headerName =
-    conversation.title ||
-    (staffParticipants.length === 1
-      ? staffParticipants[0].displayName ?? "المركز"
-      : `${staffParticipants[0]?.displayName ?? "المركز"} و${staffParticipants.length - 1} آخرين`);
+    recipientLabel
+      ? conversation.recipientType === "TreatingDoctor" && staffParticipants[0]?.displayName
+        ? `${staffParticipants[0].displayName} — ${recipientLabel}`
+        : recipientLabel
+      : (conversation.title ||
+        (staffParticipants.length === 1
+          ? staffParticipants[0].displayName ?? "المركز"
+          : `${staffParticipants[0]?.displayName ?? "المركز"} و${staffParticipants.length - 1} آخرين`));
 
   const avatarColor = staffParticipants[0]?.color ?? "#0d9488";
   const avatarInitials =
@@ -612,7 +677,7 @@ function MessageBubble({
   );
 }
 
-// ─── Start Conversation Dialog ────────────────────────────────────────────────
+// ─── Start Conversation Dialog (Two-Step) ─────────────────────────────────────
 
 function StartConversationDialog({
   open,
@@ -622,22 +687,63 @@ function StartConversationDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onStart: (initialMessage?: string) => void;
+  onStart: (payload: StartConversationPayload) => void;
   loading: boolean;
 }) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [selectedType, setSelectedType] = useState<RecipientType | null>(null);
+  const [selectedRecipient, setSelectedRecipient] = useState<PortalRecipient | null>(null);
   const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const { data: recipients = [], isLoading: recipientsLoading } = usePortalRecipients();
+
+  // Reset state when dialog opens
   useEffect(() => {
     if (open) {
+      setStep(1);
+      setSelectedType(null);
+      setSelectedRecipient(null);
       setMessage("");
-      // Small delay to allow animation to start before focusing
-      const timer = setTimeout(() => textareaRef.current?.focus(), 100);
-      return () => clearTimeout(timer);
     }
   }, [open]);
 
+  // Focus textarea when moving to step 2
+  useEffect(() => {
+    if (step === 2) {
+      const timer = setTimeout(() => textareaRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
+
   if (!open) return null;
+
+  const handleSelectType = (type: RecipientType) => {
+    setSelectedType(type);
+    // Find the matching recipient from the API data
+    const matched = recipients.find((r) => r.type === type) ?? null;
+    setSelectedRecipient(matched);
+    setStep(2);
+  };
+
+  const handleBackToStep1 = () => {
+    setStep(1);
+    setSelectedType(null);
+    setSelectedRecipient(null);
+  };
+
+  const handleSend = () => {
+    const trimmed = message.trim();
+    onStart({
+      initialMessage: trimmed || undefined,
+      recipientType: selectedType ?? undefined,
+      recipientUserId: selectedRecipient?.userId ?? undefined,
+    });
+  };
+
+  // Check if TreatingDoctor is available (has a userId)
+  const treatingDoctorRecipient = recipients.find((r) => r.type === "TreatingDoctor");
+  const isTreatingDoctorAvailable = !!treatingDoctorRecipient?.userId;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
@@ -648,10 +754,20 @@ function StartConversationDialog({
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            {step === 2 && (
+              <button
+                onClick={handleBackToStep1}
+                className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 transition"
+              >
+                <ChevronLeft className="w-4 h-4 rotate-180" />
+              </button>
+            )}
             <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center">
               <MessageCircle className="w-4 h-4 text-teal-600" />
             </div>
-            <h3 className="font-bold text-gray-900">تواصل مع المركز</h3>
+            <h3 className="font-bold text-gray-900">
+              {step === 1 ? "تواصل مع المركز" : "اكتب رسالتك"}
+            </h3>
           </div>
           <button
             onClick={onClose}
@@ -661,48 +777,139 @@ function StartConversationDialog({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-5 space-y-3">
-          <p className="text-sm text-gray-500">
-            اكتب رسالتك وسيتواصل معك الطاقم في أقرب وقت ممكن.
-          </p>
-          <textarea
-            ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="مثال: أريد حجز موعد... / عندي استفسار عن..."
-            rows={4}
-            maxLength={2000}
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none transition"
-          />
-          <p className={cn(
-            "text-[10px] text-left",
-            message.length > 1800 ? "text-amber-500" : "text-gray-400"
-          )} dir="ltr">
-            {message.length}/2000
-          </p>
-        </div>
+        {/* Step 1: Recipient Selection */}
+        {step === 1 && (
+          <div className="p-5 space-y-3">
+            <p className="text-sm text-gray-500 mb-4">
+              اختر الجهة التي تريد التواصل معها
+            </p>
+
+            {recipientsLoading ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-3">
+                <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
+                <p className="text-sm text-gray-400">جارٍ تحميل جهات الاتصال...</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {RECIPIENT_OPTIONS.map((opt) => {
+                  const Icon = opt.icon;
+                  const isDisabled = opt.type === "TreatingDoctor" && !isTreatingDoctorAvailable;
+
+                  return (
+                    <button
+                      key={opt.type}
+                      onClick={() => !isDisabled && handleSelectType(opt.type)}
+                      disabled={isDisabled}
+                      className={cn(
+                        "w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border-2 text-right transition-all duration-150",
+                        isDisabled
+                          ? "opacity-40 cursor-not-allowed border-gray-100 bg-gray-50"
+                          : cn(opt.borderColor, opt.bgColor, "active:scale-[0.99]")
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0",
+                          opt.bgColor
+                        )}
+                      >
+                        <Icon className={cn("w-5 h-5", opt.color)} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={cn("text-sm font-bold", opt.color)}>
+                          {opt.label}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {isDisabled
+                            ? "لم يتم تحديد الطبيب المسؤول بعد"
+                            : opt.description}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 2: Message Input */}
+        {step === 2 && selectedType && (
+          <div className="p-5 space-y-3">
+            {/* Selected recipient chip */}
+            <div className="flex items-center gap-2 mb-2">
+              {(() => {
+                const opt = RECIPIENT_OPTIONS.find((o) => o.type === selectedType);
+                if (!opt) return null;
+                const Icon = opt.icon;
+                return (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold",
+                      opt.bgColor,
+                      opt.color,
+                      "border",
+                      opt.borderColor
+                    )}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {opt.label}
+                  </span>
+                );
+              })()}
+              {selectedRecipient?.displayName && selectedType === "TreatingDoctor" && (
+                <span className="text-xs text-gray-500">
+                  — {selectedRecipient.displayName}
+                </span>
+              )}
+            </div>
+
+            <textarea
+              ref={textareaRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder={
+                selectedType === "TreatingDoctor"
+                  ? "اكتب رسالتك للطبيب المسؤول..."
+                  : selectedType === "Reception"
+                    ? "اكتب استفسارك أو طلب حجز موعد..."
+                    : "اكتب رسالتك للإدارة..."
+              }
+              rows={4}
+              maxLength={2000}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none transition"
+            />
+            <p className={cn(
+              "text-[10px] text-left",
+              message.length > 1800 ? "text-amber-500" : "text-gray-400"
+            )} dir="ltr">
+              {message.length}/2000
+            </p>
+          </div>
+        )}
 
         {/* Footer */}
-        <div className="px-5 pb-5">
-          <button
-            onClick={() => onStart(message.trim() || undefined)}
-            disabled={loading}
-            className="w-full py-3 rounded-xl font-semibold text-sm bg-teal-500 text-white hover:bg-teal-600 active:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2 transition"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                جارٍ الإرسال...
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                إرسال
-              </>
-            )}
-          </button>
-        </div>
+        {step === 2 && (
+          <div className="px-5 pb-5">
+            <button
+              onClick={handleSend}
+              disabled={loading}
+              className="w-full py-3 rounded-xl font-semibold text-sm bg-teal-500 text-white hover:bg-teal-600 active:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2 transition"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  جارٍ الإرسال...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  إرسال
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

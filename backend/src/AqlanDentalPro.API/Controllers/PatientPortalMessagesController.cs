@@ -19,6 +19,11 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "PatientAccess")]
 public class PatientPortalMessagesController(AppDbContext db, INotificationService notifications) : ControllerBase
 {
+    private static readonly HashSet<string> ValidRecipientTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "TreatingDoctor", "Reception", "Admin"
+    };
+
     private Guid PatientId => Guid.Parse(User.FindFirst("patientId")!.Value);
     private Guid? LinkedUserId => Guid.TryParse(User.FindFirst("userId")?.Value, out var id) ? id : null;
 
@@ -107,6 +112,78 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         return (userId, conv, null);
     }
 
+    // ─── GET /api/portal/messages/recipients ────────────────────────────────────
+    /// <summary>
+    /// Returns the available recipients for this patient to start a conversation with.
+    /// SECURITY: Only returns staff associated with this patient's clinic.
+    /// </summary>
+    [HttpGet("recipients")]
+    public async Task<ActionResult<List<PortalRecipientDto>>> GetRecipients()
+    {
+        var userId = await EnsureLinkedUserAsync();
+        if (userId == null) return Forbid("حساب البوابة غير مرتبط بحساب مراسلة");
+
+        var patient = await db.Patients
+            .Include(p => p.PrimaryDoctor)
+                .ThenInclude(d => d!.User)
+            .FirstOrDefaultAsync(p => p.Id == PatientId);
+
+        var recipients = new List<PortalRecipientDto>();
+
+        // 1. Treating Doctor
+        if (patient?.PrimaryDoctorId != null && patient.PrimaryDoctor != null)
+        {
+            var doctor = patient.PrimaryDoctor;
+            var doctorUser = doctor.User;
+            recipients.Add(new PortalRecipientDto
+            {
+                Type = "TreatingDoctor",
+                UserId = doctor.UserId,
+                DisplayName = $"د. {doctor.Name}",
+                Role = doctorUser?.Role.ToString() ?? "Doctor",
+                AvatarInitials = doctor.AvatarInitials ?? doctor.Name?.Substring(0, 1),
+                Color = doctor.Color ?? "#0d9488"
+            });
+        }
+        else
+        {
+            // No treating doctor assigned — still show the option but with null userId
+            recipients.Add(new PortalRecipientDto
+            {
+                Type = "TreatingDoctor",
+                UserId = null,
+                DisplayName = "لم يتم تحديد الطبيب المسؤول بعد",
+                Role = "Doctor"
+            });
+        }
+
+        // 2. Reception — find active reception staff
+        var receptionUser = await db.Users
+            .Where(u => u.Role == UserRole.Reception && u.IsActive)
+            .FirstOrDefaultAsync();
+        recipients.Add(new PortalRecipientDto
+        {
+            Type = "Reception",
+            UserId = receptionUser?.Id,
+            DisplayName = "الاستقبال",
+            Role = receptionUser?.Role.ToString() ?? "Reception"
+        });
+
+        // 3. Admin / Support
+        var adminUser = await db.Users
+            .Where(u => u.Role == UserRole.Admin && u.IsActive)
+            .FirstOrDefaultAsync();
+        recipients.Add(new PortalRecipientDto
+        {
+            Type = "Admin",
+            UserId = adminUser?.Id,
+            DisplayName = "الإدارة / الدعم",
+            Role = adminUser?.Role.ToString() ?? "Admin"
+        });
+
+        return Ok(recipients);
+    }
+
     // ─── GET /api/portal/messages/conversations ───────────────────────────────
     [HttpGet("conversations")]
     public async Task<ActionResult<object>> GetConversations(
@@ -153,9 +230,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             var dto = new ConversationListDto
             {
                 Id = conv.Id,
-                Title = conv.IsGroup
-                    ? conv.Title
-                    : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title),
+                Title = BuildConversationTitle(conv, otherParticipant),
                 IsGroup = conv.IsGroup,
                 ConversationType = conv.ConversationType,
                 PatientId = conv.PatientId,
@@ -167,7 +242,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                              && !m.Reads.Any(r => r.UserId == userId.Value))
                     .CountAsync(),
                 OtherParticipant = otherParticipant != null ? MapParticipant(otherParticipant) : null,
-                Participants = conv.Participants.Select(MapParticipant).ToList()
+                Participants = conv.Participants.Select(MapParticipant).ToList(),
+                RecipientType = conv.RecipientType,
+                RecipientUserId = conv.RecipientUserId
             };
             result.Add(dto);
         }
@@ -183,7 +260,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     }
 
     // ─── POST /api/portal/messages/conversations ──────────────────────────────
-    /// <summary>Start or open a PatientFacing conversation with the clinic</summary>
+    /// <summary>Start or open a PatientFacing conversation with a specific recipient category</summary>
     [HttpPost("conversations")]
     public async Task<ActionResult<ConversationDetailDto>> StartConversation(
         [FromBody] StartConversationRequest? request)
@@ -191,13 +268,63 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         var userId = await EnsureLinkedUserAsync();
         if (userId == null) return Forbid("حساب البوابة غير مرتبط بحساب مراسلة");
 
-        // Check if a PatientFacing conversation already exists for this patient
+        var recipientType = request?.RecipientType ?? "Admin"; // Default fallback
+        var recipientUserId = request?.RecipientUserId;
+
+        // SECURITY: Validate recipientType
+        if (!ValidRecipientTypes.Contains(recipientType))
+            return BadRequest(new { message = $"نوع المستلم غير صالح: {recipientType}. القيم المسموحة: TreatingDoctor, Reception, Admin" });
+
+        // SECURITY: Validate recipientUserId if provided
+        if (recipientUserId.HasValue)
+        {
+            var allowedUser = await db.Users
+                .Where(u => u.Id == recipientUserId.Value && u.IsActive)
+                .FirstOrDefaultAsync();
+            if (allowedUser == null)
+                return BadRequest(new { message = "المستلم المحدد غير موجود أو غير نشط" });
+
+            // SECURITY: Verify the recipientUserId matches the recipientType
+            if (recipientType.Equals("TreatingDoctor", StringComparison.OrdinalIgnoreCase))
+            {
+                // Must be a doctor user
+                var isDoctor = allowedUser.Role == UserRole.Orthodontist
+                            || allowedUser.Role == UserRole.GeneralDentist
+                            || allowedUser.Role == UserRole.OralSurgeon
+                            || allowedUser.Doctor != null;
+                if (!isDoctor)
+                    return BadRequest(new { message = "المستلم المحدد ليس طبيباً" });
+            }
+        }
+
+        // Check if a PatientFacing conversation with the same recipient type already exists for this patient
         var existingConv = await db.Conversations
             .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
             .Include(c => c.Patient)
             .FirstOrDefaultAsync(c =>
                 c.PatientId == PatientId &&
-                c.ConversationType == ConversationType.PatientFacing.ToString()); // SECURITY: PatientFacing only
+                c.ConversationType == ConversationType.PatientFacing.ToString() &&
+                c.RecipientType == recipientType); // Match by recipient type
+
+        // Backward compatibility: If no conversation found with recipient type,
+        // check for legacy conversations without a recipient type
+        if (existingConv == null && !string.IsNullOrEmpty(recipientType))
+        {
+            var legacyConv = await db.Conversations
+                .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
+                .Include(c => c.Patient)
+                .FirstOrDefaultAsync(c =>
+                    c.PatientId == PatientId &&
+                    c.ConversationType == ConversationType.PatientFacing.ToString() &&
+                    c.RecipientType == null);
+
+            if (legacyConv != null)
+            {
+                // Migrate legacy conversation to have a recipient type
+                legacyConv.RecipientType = recipientType;
+                existingConv = legacyConv;
+            }
+        }
 
         if (existingConv != null)
         {
@@ -232,11 +359,11 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         }
 
         // Create a new PatientFacing conversation
-        var patient = await db.Patients.FindAsync(PatientId);
-        var convTitle = patient != null
-            ? $"محادثة مع المريض: {patient.FirstName} {patient.LastName}"
-            : "محادثة مريض";
+        var patient = await db.Patients
+            .Include(p => p.PrimaryDoctor)
+            .FirstOrDefaultAsync(p => p.Id == PatientId);
 
+        var convTitle = BuildNewConversationTitle(recipientType, patient);
         var conv = new Conversation
         {
             Title = convTitle,
@@ -244,7 +371,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             ConversationType = ConversationType.PatientFacing.ToString(), // SECURITY: Always PatientFacing
             PatientId = PatientId,
             CreatedBy = userId.Value,
-            LastMessageAt = DateTime.UtcNow
+            LastMessageAt = DateTime.UtcNow,
+            RecipientType = recipientType,
+            RecipientUserId = recipientUserId
         };
 
         db.Conversations.Add(conv);
@@ -259,46 +388,16 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             LastReadAt = DateTime.UtcNow
         });
 
-        // Add all active admin users so the clinic can respond
-        var adminUsers = await db.Users
-            .Where(u => u.Role == UserRole.Admin && u.IsActive)
-            .ToListAsync();
-        foreach (var admin in adminUsers)
-        {
-            db.ConversationParticipants.Add(new ConversationParticipant
-            {
-                ConversationId = conv.Id,
-                UserId = admin.Id,
-                IsAdmin = true
-            });
-        }
+        // Add participants based on recipient type
+        await AddRecipientsAsParticipantsAsync(conv.Id, recipientType, recipientUserId, patient);
 
-        // Add the patient's primary doctor if assigned
-        if (patient?.PrimaryDoctorId != null)
-        {
-            var doctorUserId = await db.Doctors
-                .Where(d => d.Id == patient.PrimaryDoctorId)
-                .Select(d => d.UserId)
-                .FirstOrDefaultAsync();
-
-            if (doctorUserId != Guid.Empty
-                && !adminUsers.Any(a => a.Id == doctorUserId))
-            {
-                db.ConversationParticipants.Add(new ConversationParticipant
-                {
-                    ConversationId = conv.Id,
-                    UserId = doctorUserId,
-                    IsAdmin = false
-                });
-            }
-        }
-
-        // System message clarifying this is patient-visible
+        // System message clarifying the conversation target
+        var recipientLabel = GetRecipientTypeLabelArabic(recipientType);
         db.Messages.Add(new Message
         {
             ConversationId = conv.Id,
             SenderId = userId.Value,
-            Content = $"بدأ المريض {patient?.FirstName} {patient?.LastName} ({patient?.PatientNumber}) محادثة من البوابة — محادثة مع المريض (مرئية للمريض)",
+            Content = $"بدأ المريض {patient?.FirstName} {patient?.LastName} ({patient?.PatientNumber}) محادثة من البوابة — موجهة إلى: {recipientLabel}",
             IsSystemMessage = true
         });
 
@@ -444,6 +543,151 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     // ─── Private helpers ──────────────────────────────────────────────────────
 
     /// <summary>
+    /// Adds the appropriate staff participants based on the recipient type.
+    /// TreatingDoctor: only the patient's primary doctor
+    /// Reception: only reception staff
+    /// Admin: admin users
+    /// Always adds admin users as fallback participants for visibility.
+    /// </summary>
+    private async Task AddRecipientsAsParticipantsAsync(
+        Guid conversationId,
+        string recipientType,
+        Guid? recipientUserId,
+        Patient? patient)
+    {
+        var addedUserIds = new HashSet<Guid>();
+
+        switch (recipientType.ToLowerInvariant())
+        {
+            case "treatingdoctor":
+                // Add the specific treating doctor
+                if (recipientUserId.HasValue)
+                {
+                    db.ConversationParticipants.Add(new ConversationParticipant
+                    {
+                        ConversationId = conversationId,
+                        UserId = recipientUserId.Value,
+                        IsAdmin = false
+                    });
+                    addedUserIds.Add(recipientUserId.Value);
+                }
+                else if (patient?.PrimaryDoctorId != null)
+                {
+                    var doctorUserId = await db.Doctors
+                        .Where(d => d.Id == patient.PrimaryDoctorId)
+                        .Select(d => d.UserId)
+                        .FirstOrDefaultAsync();
+
+                    if (doctorUserId != Guid.Empty)
+                    {
+                        db.ConversationParticipants.Add(new ConversationParticipant
+                        {
+                            ConversationId = conversationId,
+                            UserId = doctorUserId,
+                            IsAdmin = false
+                        });
+                        addedUserIds.Add(doctorUserId);
+                    }
+                }
+                // Also add admin users for visibility
+                await AddAdminParticipantsAsync(conversationId, addedUserIds);
+                break;
+
+            case "reception":
+                // Add reception staff
+                var receptionUsers = await db.Users
+                    .Where(u => u.Role == UserRole.Reception && u.IsActive)
+                    .ToListAsync();
+                foreach (var receptionist in receptionUsers)
+                {
+                    if (addedUserIds.Add(receptionist.Id))
+                    {
+                        db.ConversationParticipants.Add(new ConversationParticipant
+                        {
+                            ConversationId = conversationId,
+                            UserId = receptionist.Id,
+                            IsAdmin = false
+                        });
+                    }
+                }
+                // Also add admin users for visibility
+                await AddAdminParticipantsAsync(conversationId, addedUserIds);
+                break;
+
+            case "admin":
+                // Add admin users as primary recipients
+                var adminUsers = await db.Users
+                    .Where(u => u.Role == UserRole.Admin && u.IsActive)
+                    .ToListAsync();
+                foreach (var admin in adminUsers)
+                {
+                    if (addedUserIds.Add(admin.Id))
+                    {
+                        db.ConversationParticipants.Add(new ConversationParticipant
+                        {
+                            ConversationId = conversationId,
+                            UserId = admin.Id,
+                            IsAdmin = true
+                        });
+                    }
+                }
+                break;
+        }
+    }
+
+    private async Task AddAdminParticipantsAsync(Guid conversationId, HashSet<Guid> addedUserIds)
+    {
+        var adminUsers = await db.Users
+            .Where(u => u.Role == UserRole.Admin && u.IsActive)
+            .ToListAsync();
+        foreach (var admin in adminUsers)
+        {
+            if (addedUserIds.Add(admin.Id))
+            {
+                db.ConversationParticipants.Add(new ConversationParticipant
+                {
+                    ConversationId = conversationId,
+                    UserId = admin.Id,
+                    IsAdmin = true
+                });
+            }
+        }
+    }
+
+    private static string GetRecipientTypeLabelArabic(string recipientType) => recipientType.ToLowerInvariant() switch
+    {
+        "treatingdoctor" => "الطبيب المسؤول",
+        "reception" => "الاستقبال",
+        "admin" => "الإدارة / الدعم",
+        _ => "المركز"
+    };
+
+    private static string BuildConversationTitle(Conversation conv, ConversationParticipant? otherParticipant)
+    {
+        // If conversation has a recipient type, use it for the title
+        if (!string.IsNullOrEmpty(conv.RecipientType))
+        {
+            var label = GetRecipientTypeLabelArabic(conv.RecipientType);
+            var doctorName = otherParticipant?.User?.Doctor?.Name;
+            return conv.RecipientType.Equals("TreatingDoctor", StringComparison.OrdinalIgnoreCase) && doctorName != null
+                ? $"د. {doctorName} — {label}"
+                : label;
+        }
+        // Fallback for legacy conversations without recipient type
+        return conv.IsGroup
+            ? conv.Title
+            : (otherParticipant?.User?.Doctor?.Name ?? otherParticipant?.User?.Username ?? conv.Title);
+    }
+
+    private static string BuildNewConversationTitle(string recipientType, Patient? patient)
+    {
+        var recipientLabel = GetRecipientTypeLabelArabic(recipientType);
+        return patient != null
+            ? $"محادثة مع المريض: {patient.FirstName} {patient.LastName} — موجهة إلى: {recipientLabel}"
+            : $"محادثة مريض — موجهة إلى: {recipientLabel}";
+    }
+
+    /// <summary>
     /// Returns conversation detail for a given ID and userId (for patient portal).
     /// Assumes access has already been verified.
     /// </summary>
@@ -498,7 +742,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             PatientPhone = conv.Patient?.Phone,
             Participants = conv.Participants.Select(MapParticipant).ToList(),
             Messages = messages.Select(m => MapMessage(m, userId)).ToList(),
-            CreatedAt = conv.CreatedAt
+            CreatedAt = conv.CreatedAt,
+            RecipientType = conv.RecipientType,
+            RecipientUserId = conv.RecipientUserId
         });
     }
 

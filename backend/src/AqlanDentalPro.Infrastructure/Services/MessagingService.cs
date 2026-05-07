@@ -140,7 +140,9 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             PatientPhone = patientPhone,
             Participants = conv.Participants.Select(MapParticipantDto).ToList(),
             Messages = messages.Select(MapMessageDto).ToList(),
-            CreatedAt = conv.CreatedAt
+            CreatedAt = conv.CreatedAt,
+            RecipientType = conv.RecipientType,
+            RecipientUserId = conv.RecipientUserId
         };
     }
 
@@ -713,6 +715,8 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             LastMessagePreview = conv.LastMessagePreview,
             OtherParticipant = otherParticipant != null ? MapParticipantDto(otherParticipant) : null,
             Participants = conv.Participants.Select(MapParticipantDto).ToList(),
+            RecipientType = conv.RecipientType,
+            RecipientUserId = conv.RecipientUserId
         };
     }
 

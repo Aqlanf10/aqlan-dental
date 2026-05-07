@@ -27,6 +27,17 @@ export interface PortalMessage {
   createdAt: string;
 }
 
+export type RecipientType = "TreatingDoctor" | "Reception" | "Admin";
+
+export interface PortalRecipient {
+  type: RecipientType;
+  userId?: string | null;
+  displayName: string;
+  role?: string;
+  avatarInitials?: string;
+  color?: string;
+}
+
 export interface PortalConversationListItem {
   id: string;
   title: string;
@@ -37,6 +48,8 @@ export interface PortalConversationListItem {
   unreadCount: number;
   otherParticipant?: PortalParticipant;
   participants: PortalParticipant[];
+  recipientType?: string | null;
+  recipientUserId?: string | null;
 }
 
 export interface PortalConversationDetail {
@@ -47,11 +60,19 @@ export interface PortalConversationDetail {
   participants: PortalParticipant[];
   messages: PortalMessage[];
   createdAt: string;
+  recipientType?: string | null;
+  recipientUserId?: string | null;
 }
 
 export interface PortalUnreadCount {
   totalUnread: number;
   unreadConversations: number;
+}
+
+export interface StartConversationPayload {
+  initialMessage?: string;
+  recipientType?: RecipientType;
+  recipientUserId?: string | null;
 }
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
@@ -132,13 +153,27 @@ export function usePortalMarkAsRead(conversationId: string | null) {
   });
 }
 
+export function usePortalRecipients() {
+  return useQuery({
+    queryKey: ["portalRecipients"],
+    queryFn: async () => {
+      const { data } = await portalApi.get<PortalRecipient[]>(
+        "/api/portal/messages/recipients"
+      );
+      return data;
+    },
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
+
 export function usePortalStartConversation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (initialMessage?: string) => {
+    mutationFn: async (payload: StartConversationPayload) => {
       const { data } = await portalApi.post<PortalConversationDetail>(
         "/api/portal/messages/conversations",
-        initialMessage ? { initialMessage } : {}
+        payload
       );
       return data;
     },

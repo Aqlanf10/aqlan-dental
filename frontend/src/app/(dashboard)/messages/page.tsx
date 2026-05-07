@@ -22,7 +22,9 @@ import {
   Shield,
   ChevronLeft,
   ChevronRight,
-  
+  Stethoscope,
+  Building2,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -132,6 +134,36 @@ function ConversationTypeBadge({ type }: { type: ConversationType }) {
         <span className="flex-shrink-0 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 leading-none">
           <Shield className="w-2.5 h-2.5" />
           طاقم
+        </span>
+      );
+    default:
+      return null;
+  }
+}
+
+// ─── شارة نوع المستلم ──────────────────────────────────────────────────────────
+function RecipientTypeBadge({ recipientType }: { recipientType?: string | null }) {
+  if (!recipientType) return null;
+  switch (recipientType) {
+    case "TreatingDoctor":
+      return (
+        <span className="flex-shrink-0 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 leading-none">
+          <Stethoscope className="w-2.5 h-2.5" />
+          موجهة إلى الطبيب
+        </span>
+      );
+    case "Reception":
+      return (
+        <span className="flex-shrink-0 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 leading-none">
+          <Building2 className="w-2.5 h-2.5" />
+          موجهة إلى الاستقبال
+        </span>
+      );
+    case "Admin":
+      return (
+        <span className="flex-shrink-0 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200 leading-none">
+          <ShieldCheck className="w-2.5 h-2.5" />
+          موجهة إلى الإدارة
         </span>
       );
     default:
@@ -530,6 +562,10 @@ function ConversationItem({
             </span>
             {/* Conversation type badge */}
             <ConversationTypeBadge type={conv.conversationType} />
+            {/* Recipient type badge (for patient-facing conversations) */}
+            {conv.conversationType === "PatientFacing" && (
+              <RecipientTypeBadge recipientType={conv.recipientType} />
+            )}
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {conv.lastMessageAt && (
@@ -689,7 +725,12 @@ function ChatArea({
             </p>
           )}
           {isPatientConv && (
-            <ConversationTypeBadge type={conversation.conversationType} />
+            <div className="flex items-center gap-1.5">
+              <ConversationTypeBadge type={conversation.conversationType} />
+              {isPatientFacing && (
+                <RecipientTypeBadge recipientType={conversation.recipientType} />
+              )}
+            </div>
           )}
         </div>
 
@@ -712,6 +753,9 @@ function ChatArea({
           <p className="text-xs text-emerald-700 font-medium">
             محادثة مع المريض — هذه المحادثة مرئية للمريض
           </p>
+          {conversation.recipientType && (
+            <RecipientTypeBadge recipientType={conversation.recipientType} />
+          )}
         </div>
       )}
       {isStaffToPatient && (

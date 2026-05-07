@@ -96,7 +96,7 @@ public class UploadsController : ControllerBase
     public IActionResult Delete(string fileName)
     {
         // Prevent path traversal
-        if (fileName.Contains('/') || fileName.Contains('\') || fileName.Contains(".."))
+        if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(".."))
             return BadRequest(new { message = "اسم الملف غير صالح" });
 
         var uploadsPath = EnsureUploadsDirectory();

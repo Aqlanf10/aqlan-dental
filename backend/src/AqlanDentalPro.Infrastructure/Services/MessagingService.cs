@@ -483,12 +483,26 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         if (!await IsParticipantAsync(conversationId))
             throw new UnauthorizedAccessException("لست مشاركاً في هذه المحادثة");
 
-        // Validate content
+        // Validate content: allow attachment-only messages (either Content or AttachmentUrl must be present)
         var content = request.Content?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(content))
-            throw new ArgumentException("محتوى الرسالة لا يمكن أن يكون فارغاً");
+        if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(request.AttachmentUrl))
+            throw new ArgumentException("يجب أن تحتوي الرسالة على نص أو مرفق");
         if (content.Length > MaxMessageLength)
             throw new ArgumentException($"محتوى الرسالة طويل جداً. الحد الأقصى {MaxMessageLength} حرف");
+
+        // Validate attachment if provided
+        if (!string.IsNullOrWhiteSpace(request.AttachmentUrl))
+        {
+            if (!request.AttachmentUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("رابط المرفق غير صالح");
+
+            var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "image/jpeg", "image/png", "application/pdf"
+            };
+            if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
+                throw new ArgumentException("نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF");
+        }
 
         var msg = new Message
         {
@@ -508,9 +522,11 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         if (conv != null)
         {
             conv.LastMessageAt = DateTime.UtcNow;
-            conv.LastMessagePreview = content.Length > 200
-                ? content[..200] + "..."
-                : content;
+            var previewText = !string.IsNullOrWhiteSpace(content) ? content
+                : (!string.IsNullOrWhiteSpace(request.AttachmentName) ? "📎 " + request.AttachmentName : "مرفق");
+            conv.LastMessagePreview = previewText.Length > 200
+                ? previewText[..200] + "..."
+                : previewText;
         }
 
         await db.SaveChangesAsync();

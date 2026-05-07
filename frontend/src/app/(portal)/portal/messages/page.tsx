@@ -4,6 +4,7 @@ import {
   MessageCircle, Send, Plus, ArrowRight, Loader2,
   X, AlertTriangle, CheckCheck, User,
   Stethoscope, Building2, ShieldCheck, ChevronLeft,
+  Paperclip, Image as ImageIcon, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
@@ -21,7 +22,9 @@ import {
   type PortalRecipient,
   type RecipientType,
   type StartConversationPayload,
+  type PortalSendMessageRequest,
 } from "@/hooks/usePortalMessaging";
+import portalApi from "@/lib/portalApi";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -89,6 +92,30 @@ function getRecipientBadgeLabel(type: string | null | undefined): string | null 
 }
 
 // ─── Recipient option config ──────────────────────────────────────────────────
+
+// ─── Attachment constants ─────────────────────────────────────────────────────
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"];
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+
+/** Convert a full upload URL to a relative /uploads/ path for the backend */
+function toRelativeUploadUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.pathname; // e.g. /uploads/guid.ext
+  } catch {
+    // Already a relative path
+    return url;
+  }
+}
+
+/** Convert a relative /uploads/ path to a full URL for display (img src, links) */
+function toFullUploadUrl(url: string): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  const base = process.env.NEXT_PUBLIC_API_URL ?? "";
+  return `${base}${url}`;
+}
 
 const RECIPIENT_OPTIONS: {
   type: RecipientType;
@@ -165,9 +192,9 @@ export default function PortalMessagesPage() {
   }, []);
 
   const handleSend = useCallback(
-    (content: string) => {
+    (req: PortalSendMessageRequest) => {
       if (!selectedConvId) return;
-      sendMessage.mutate(content);
+      sendMessage.mutate(req);
     },
     [selectedConvId, sendMessage]
   );
@@ -432,24 +459,93 @@ function ChatArea({
   conversation: PortalConversationDetail;
   patientUserId: string | null;
   onBack: () => void;
-  onSend: (content: string) => void;
+  onSend: (req: PortalSendMessageRequest) => void;
   sending: boolean;
   sendError?: string;
 }) {
   const [input, setInput] = useState("");
+  const [attachmentPreview, setAttachmentPreview] = useState<{
+    url: string; name: string; type: string;
+  } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation.messages.length]);
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset file input so re-selecting the same file works
+    e.target.value = "";
+    setUploadError(null);
+
+    // Validate extension
+    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF");
+      return;
+    }
+
+    // Validate MIME type
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF");
+      return;
+    }
+
+    // Validate size
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadError("حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت.");
+      return;
+    }
+
+    // Upload
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data } = await portalApi.post<{
+        url: string; fileName: string; originalName: string; size: number; contentType: string;
+      }>("/api/uploads", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setAttachmentPreview({
+        url: data.url,
+        name: data.originalName,
+        type: data.contentType,
+      });
+    } catch {
+      setUploadError("فشل رفع الملف. حاول مرة أخرى.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const removeAttachment = () => {
+    setAttachmentPreview(null);
+    setUploadError(null);
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || sending || trimmed.length > 2000) return;
-    onSend(trimmed);
+    if ((!trimmed && !attachmentPreview) || sending || trimmed.length > 2000 || isUploading) return;
+
+    const req: PortalSendMessageRequest = { content: trimmed };
+    if (attachmentPreview) {
+      req.attachmentUrl = toRelativeUploadUrl(attachmentPreview.url);
+      req.attachmentName = attachmentPreview.name;
+      req.attachmentType = attachmentPreview.type;
+    }
+    onSend(req);
     setInput("");
+    setAttachmentPreview(null);
+    setUploadError(null);
     inputRef.current?.focus();
   };
 
@@ -532,9 +628,55 @@ function ChatArea({
         </div>
       )}
 
+      {/* Upload error */}
+      {uploadError && (
+        <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+          <p className="text-xs text-amber-700">{uploadError}</p>
+          <button onClick={() => setUploadError(null)} className="ms-auto">
+            <X className="w-3 h-3 text-amber-500" />
+          </button>
+        </div>
+      )}
+
       {/* Input area */}
       <div className="px-4 py-3 border-t border-gray-100 bg-white">
+        {/* Attachment preview chip */}
+        {attachmentPreview && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 rounded-lg">
+            {attachmentPreview.type.startsWith("image/") ? (
+              <ImageIcon className="w-4 h-4 text-teal-600 flex-shrink-0" />
+            ) : (
+              <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+            )}
+            <span className="text-xs text-gray-700 truncate flex-1">{attachmentPreview.name}</span>
+            <button
+              type="button"
+              onClick={removeAttachment}
+              className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition flex-shrink-0"
+            >
+              <X className="w-3 h-3 text-gray-500" />
+            </button>
+          </div>
+        )}
+
+        {/* Uploading indicator */}
+        {isUploading && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-teal-50 rounded-lg">
+            <Loader2 className="w-4 h-4 text-teal-600 animate-spin" />
+            <span className="text-xs text-teal-700">جارٍ رفع الملف...</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.pdf"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
           <input
             ref={inputRef}
             type="text"
@@ -542,15 +684,30 @@ function ChatArea({
             onChange={(e) => setInput(e.target.value)}
             placeholder="اكتب رسالتك..."
             maxLength={2000}
-            disabled={sending}
+            disabled={sending || isUploading}
             className="flex-1 px-4 py-2.5 rounded-full border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50 disabled:opacity-50 transition"
           />
+          {/* Paperclip button */}
           <button
-            type="submit"
-            disabled={!input.trim() || sending || input.length > 2000}
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || isUploading || !!attachmentPreview}
             className={cn(
               "w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0",
-              input.trim() && !sending && input.length <= 2000
+              sending || isUploading || attachmentPreview
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
+            )}
+            title="إرفاق ملف"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          <button
+            type="submit"
+            disabled={(!input.trim() && !attachmentPreview) || sending || isUploading || input.length > 2000}
+            className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0",
+              (input.trim() || attachmentPreview) && !sending && !isUploading && input.length <= 2000
                 ? "bg-teal-500 text-white hover:bg-teal-600 active:bg-teal-700 shadow-sm"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
@@ -657,6 +814,52 @@ function MessageBubble({
           )}
         >
           {message.content}
+
+          {/* Attachment rendering */}
+          {message.attachmentUrl && (
+            message.attachmentType?.startsWith("image/") ? (
+              <a
+                href={toFullUploadUrl(message.attachmentUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block mt-2"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={toFullUploadUrl(message.attachmentUrl)}
+                  alt={message.attachmentName ?? "صورة مرفقة"}
+                  className="max-w-[200px] rounded-lg cursor-pointer"
+                />
+              </a>
+            ) : message.attachmentType === "application/pdf" ? (
+              <div className={cn(
+                "mt-2 p-2.5 rounded-lg flex items-center gap-2.5",
+                isMine ? "bg-white/15" : "bg-gray-50 border border-gray-200"
+              )}>
+                <FileText className={cn("w-5 h-5 flex-shrink-0", isMine ? "text-white/80" : "text-red-500")} />
+                <span className="text-xs truncate flex-1">{message.attachmentName ?? "مرفق PDF"}</span>
+                <a
+                  href={toFullUploadUrl(message.attachmentUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "text-xs font-semibold underline",
+                    isMine ? "text-white/90 hover:text-white" : "text-teal-600 hover:text-teal-800"
+                  )}
+                >
+                  فتح
+                </a>
+              </div>
+            ) : (
+              <div className={cn(
+                "mt-2 p-2 rounded-lg flex items-center gap-2",
+                isMine ? "bg-white/10" : "bg-gray-50"
+              )}>
+                <Paperclip className="w-4 h-4 flex-shrink-0" />
+                <span className="text-xs truncate">{message.attachmentName ?? "مرفق"}</span>
+              </div>
+            )
+          )}
         </div>
 
         {/* Timestamp + read status */}

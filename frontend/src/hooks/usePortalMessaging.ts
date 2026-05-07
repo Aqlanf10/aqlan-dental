@@ -22,6 +22,9 @@ export interface PortalMessage {
   senderInitials?: string;
   senderColor?: string;
   content: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
   isSystemMessage: boolean;
   isReadByMe: boolean;
   createdAt: string;
@@ -121,13 +124,20 @@ export function usePortalUnreadCount() {
   });
 }
 
+export interface PortalSendMessageRequest {
+  content: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: string;
+}
+
 export function usePortalSendMessage(conversationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (content: string) => {
+    mutationFn: async (req: PortalSendMessageRequest) => {
       const { data } = await portalApi.post<PortalMessage>(
         `/api/portal/messages/conversations/${conversationId}/messages`,
-        { content }
+        req
       );
       return data;
     },

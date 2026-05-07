@@ -456,16 +456,33 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         var (userId, conv, error) = await VerifyPatientFacingAccessAsync(conversationId);
         if (error != null) return (ActionResult)error;
 
-        if (string.IsNullOrWhiteSpace(request.Content))
-            return BadRequest(new { message = "محتوى الرسالة لا يمكن أن يكون فارغاً" });
-        if (request.Content.Length > 2000)
+        var content = request.Content?.Trim() ?? string.Empty;
+
+        // Allow attachment-only messages: either Content or AttachmentUrl must be present
+        if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(request.AttachmentUrl))
+            return BadRequest(new { message = "يجب أن تحتوي الرسالة على نص أو مرفق" });
+        if (content.Length > 2000)
             return BadRequest(new { message = "محتوى الرسالة طويل جداً، الحد الأقصى 2000 حرف" });
+
+        // Validate attachment if provided
+        if (!string.IsNullOrWhiteSpace(request.AttachmentUrl))
+        {
+            if (!request.AttachmentUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "رابط المرفق غير صالح" });
+
+            var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "image/jpeg", "image/png", "application/pdf"
+            };
+            if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
+                return BadRequest(new { message = "نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF" });
+        }
 
         var msg = new Message
         {
             ConversationId = conversationId,
             SenderId = userId!.Value,
-            Content = request.Content.Trim(),
+            Content = content,
             AttachmentUrl = request.AttachmentUrl,
             AttachmentName = request.AttachmentName,
             AttachmentType = request.AttachmentType,
@@ -475,8 +492,10 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         db.Messages.Add(msg);
 
         conv!.LastMessageAt = DateTime.UtcNow;
-        conv.LastMessagePreview = request.Content.Length > 200
-            ? request.Content[..200] + "..." : request.Content;
+        var previewText = !string.IsNullOrWhiteSpace(content) ? content
+            : (!string.IsNullOrWhiteSpace(request.AttachmentName) ? "📎 " + request.AttachmentName : "مرفق");
+        conv.LastMessagePreview = previewText.Length > 200
+            ? previewText[..200] + "..." : previewText;
 
         await db.SaveChangesAsync();
 

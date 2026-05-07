@@ -178,8 +178,14 @@ export default function PortalMessagesPage() {
         const conv = await startConversation.mutateAsync(payload);
         setSelectedConvId(conv.id);
         setShowStartDialog(false);
-      } catch {
+      } catch (err: unknown) {
         setShowStartDialog(false);
+        // Show friendly Arabic error if backend returned a message
+        const axiosErr = err as { response?: { data?: { message?: string } } };
+        const msg = axiosErr?.response?.data?.message;
+        if (msg) {
+          alert(msg);
+        }
       }
     },
     [startConversation]
@@ -816,15 +822,22 @@ function StartConversationDialog({
                         <Icon className={cn("w-5 h-5", opt.color)} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={cn("text-sm font-bold", opt.color)}>
+                        <p className={cn("text-sm font-bold", isDisabled ? "text-gray-400" : opt.color)}>
                           {opt.label}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {isDisabled
-                            ? "لم يتم تحديد الطبيب المسؤول بعد"
+                            ? "لم يتم تحديد الطبيب المسؤول بعد، يمكنك التواصل مع الاستقبال."
                             : opt.description}
                         </p>
                       </div>
+                      {isDisabled && (
+                        <div className="flex-shrink-0">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-400">
+                            غير متاح
+                          </span>
+                        </div>
+                      )}
                     </button>
                   );
                 })}

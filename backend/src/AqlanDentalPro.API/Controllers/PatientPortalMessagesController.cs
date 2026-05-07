@@ -85,7 +85,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     {
         var userId = await EnsureLinkedUserAsync();
         if (userId == null)
-            return (null, null, Forbid("حساب البوابة غير مرتبط بحساب مراسلة"));
+            return (null, null, StatusCode(403, new { message = "حساب البوابة غير مرتبط بحساب مراسلة" }));
 
         var conv = await db.Conversations
             .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
@@ -102,12 +102,12 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
 
         // SECURITY: Must belong to this patient
         if (conv.PatientId != PatientId)
-            return (userId, null, Forbid("ليس لديك صلاحية الوصول لهذه المحادثة"));
+            return (userId, null, StatusCode(403, new { message = "ليس لديك صلاحية الوصول لهذه المحادثة" }));
 
         // SECURITY: Patient must be a participant
         var isParticipant = conv.Participants.Any(p => p.UserId == userId.Value);
         if (!isParticipant)
-            return (userId, null, Forbid("لست مشاركاً في هذه المحادثة"));
+            return (userId, null, StatusCode(403, new { message = "لست مشاركاً في هذه المحادثة" }));
 
         return (userId, conv, null);
     }
@@ -121,7 +121,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     public async Task<ActionResult<List<PortalRecipientDto>>> GetRecipients()
     {
         var userId = await EnsureLinkedUserAsync();
-        if (userId == null) return Forbid("حساب البوابة غير مرتبط بحساب مراسلة");
+        if (userId == null) return StatusCode(403, new { message = "حساب البوابة غير مرتبط بحساب مراسلة" });
 
         var patient = await db.Patients
             .Include(p => p.PrimaryDoctor)
@@ -129,8 +129,6 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .FirstOrDefaultAsync(p => p.Id == PatientId);
 
         var recipients = new List<PortalRecipientDto>();
-
-        // 1. Treating Doctor
         if (patient?.PrimaryDoctorId != null && patient.PrimaryDoctor != null)
         {
             var doctor = patient.PrimaryDoctor;
@@ -266,7 +264,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         [FromBody] StartConversationRequest? request)
     {
         var userId = await EnsureLinkedUserAsync();
-        if (userId == null) return Forbid("حساب البوابة غير مرتبط بحساب مراسلة");
+        if (userId == null) return StatusCode(403, new { message = "حساب البوابة غير مرتبط بحساب مراسلة" });
 
         var recipientType = request?.RecipientType ?? "Admin"; // Default fallback
         var recipientUserId = request?.RecipientUserId;
@@ -274,6 +272,25 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         // SECURITY: Validate recipientType
         if (!ValidRecipientTypes.Contains(recipientType))
             return BadRequest(new { message = $"نوع المستلم غير صالح: {recipientType}. القيم المسموحة: TreatingDoctor, Reception, Admin" });
+
+        // SECURITY: Prevent TreatingDoctor conversation when no primary doctor is assigned
+        if (recipientType.Equals("TreatingDoctor", StringComparison.OrdinalIgnoreCase))
+        {
+            var patientForCheck = await db.Patients
+                .Include(p => p.PrimaryDoctor)
+                .FirstOrDefaultAsync(p => p.Id == PatientId);
+
+            if (patientForCheck?.PrimaryDoctorId == null || patientForCheck.PrimaryDoctor == null)
+            {
+                return BadRequest(new { message = "لم يتم تحديد الطبيب المسؤول لهذا المريض" });
+            }
+
+            // Auto-resolve the doctor's UserId if not explicitly provided
+            if (!recipientUserId.HasValue)
+            {
+                recipientUserId = patientForCheck.PrimaryDoctor.UserId;
+            }
+        }
 
         // SECURITY: Validate recipientUserId if provided
         if (recipientUserId.HasValue)

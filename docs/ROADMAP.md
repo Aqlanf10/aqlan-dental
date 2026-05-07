@@ -261,7 +261,149 @@ Add or support:
 7. Auto-refresh or realtime update.
 8. Clear Arabic error messages.
 
-## 11. Sprint 6 — Finance Basics
+### Sprint 5b — Message Attachments & Notifications
+
+> **Prerequisites**: Sprint 5 (Messaging) must be stable.
+> **Status**: Planned — not yet started.
+
+#### Message Attachments
+
+1. Allow file attachments in conversations (images, PDFs, documents).
+2. Attachment storage via existing upload infrastructure.
+3. Attachment preview for images.
+4. Download link for non-image files.
+5. File size limit enforcement.
+6. Attachment metadata: FileName, FileSize, ContentType, UploadedBy, UploadedAt.
+
+#### Basic Message Notifications
+
+1. In-app notification badge for unread messages.
+2. Notification dropdown with recent messages.
+3. Mark-as-read on message open.
+4. Browser notification permission prompt (optional).
+5. WhatsApp notification link for new messages (Stage 2 — manual only).
+
+## 11. Sprint 5c — Public Website & Appointment Booking Requests
+
+> **Prerequisites**: Sprint 5 (Messaging) stabilized, Sprint 5b (Attachments & Notifications).
+> **Status**: Planned — not yet started.
+> **Position**: After messaging stabilization/attachments/notifications, before Patient Dashboard polish, Settings, and Real-time messaging.
+
+### Goal
+
+Develop the public homepage into a professional clinic website and add a public appointment booking request system for visitors who do not have a patient portal account.
+
+### Important Concept
+
+This is **not** direct appointment booking. It creates a **booking request** that reception/admin must review and confirm. Public visitors must **not** create confirmed appointments directly.
+
+### Public Homepage Improvements
+
+1. Professional hero section for Dr. Aqlan Al-Kamel Dental Center.
+2. Clear clinic identity and slogan.
+3. Services section:
+   - Orthodontics (تقويم الأسنان)
+   - Dental implants (زراعة الأسنان)
+   - Cosmetic dentistry (تجميل الأسنان)
+   - Root canal treatment (علاج العصب)
+   - Prosthodontics (تركيبات الأسنان)
+   - Pediatric dentistry (طب أسنان الأطفال)
+   - Oral surgery (جراحة الفم والفكين)
+   - General consultation (استشارة عامة)
+4. Why choose us section.
+5. Doctor/team section.
+6. Clinic gallery section.
+7. Contact section.
+8. WhatsApp and phone quick actions.
+9. Patient Portal login button.
+10. Main CTA button: "احجز موعدك الآن"
+
+### Public Booking Request Form
+
+Fields:
+
+- Full name (الاسم الكامل)
+- Phone / WhatsApp number (رقم الهاتف / واتساب)
+- Age (العمر)
+- Gender (الجنس)
+- Requested service (الخدمة المطلوبة)
+- Short problem description (وصف مختصر للمشكلة)
+- Preferred date (التاريخ المفضل)
+- Preferred time period (الفترة المفضلة):
+  - صباحًا (Morning)
+  - عصرًا (Afternoon)
+  - مساءً (Evening)
+
+After-submit message:
+
+> تم استلم طلبك بنجاح، سيتواصل معك فريق المركز لتأكيد الموعد.
+
+### Reception/Admin Side
+
+New page: "طلبات الحجز" (Booking Requests)
+
+#### Request Statuses
+
+| Status | Arabic | Description |
+|--------|--------|-------------|
+| New | جديد | Fresh request, not yet reviewed |
+| Contacted | تم التواصل | Reception has reached out to the visitor |
+| Confirmed | تم تأكيد الموعد | Appointment has been created and confirmed |
+| Rejected | مرفوض | Request denied with reason |
+| Converted | تم تحويله إلى مريض | Visitor has been registered as a patient |
+
+#### Staff Actions
+
+1. View request details.
+2. Mark as contacted.
+3. Add internal notes.
+4. Convert request to confirmed appointment.
+5. Create new patient from request.
+6. Link request to existing patient by phone number.
+
+### Data Model
+
+```
+BookingRequest:
+  Id              Guid (PK)
+  FullName        string (required)
+  Phone           string (required, normalized)
+  Age             int? (optional)
+  Gender          string? (optional)
+  RequestedService string? (optional)
+  ProblemDescription string? (optional)
+  PreferredDate   DateOnly? (optional)
+  PreferredTimePeriod string? (optional: صباحًا / عصرًا / مساءً)
+  Status          BookingRequestStatus (enum: New, Contacted, Confirmed, Rejected, Converted)
+  Notes           string? (staff notes)
+  PatientId       Guid? (FK, nullable — linked after conversion)
+  AppointmentId   Guid? (FK, nullable — linked after confirmation)
+  CreatedAt       DateTime
+  UpdatedAt       DateTime
+  BranchId        Guid (FK)
+  HandledBy       Guid? (FK to Users — staff who handled the request)
+```
+
+### Security Requirements
+
+1. Public users must **not** see internal appointment calendar.
+2. Public users must **not** access patient data.
+3. Do **not** create patient portal accounts automatically from booking requests.
+4. Add input validation and basic spam protection (rate limiting, honeypot field, reCAPTCHA if feasible).
+5. Staff actions must be logged in Audit Log.
+6. Booking request endpoints must be public (no auth required) but rate-limited.
+7. Staff booking request management endpoints require Reception/Admin role.
+
+### Implementation Notes
+
+- The public homepage replaces the current login-only landing page at `/`.
+- The login page moves to `/login` (already the case).
+- Booking request form is accessible at `/booking` or embedded in the homepage.
+- Staff booking requests page is at `/dashboard/booking-requests`.
+- The booking request flow is intentionally asynchronous: submit → wait for contact.
+- Conversion to patient and appointment is a separate staff-initiated action, not automatic.
+
+## 13. Sprint 6 — Finance Basics
 
 ### Existing features
 
@@ -283,7 +425,7 @@ Add or support:
 9. Specialty revenue report.
 10. Overdue report.
 
-## 12. Sprint 7 — Desktop Finance Features
+## 14. Sprint 7 — Desktop Finance Features
 
 Merge useful finance features from older desktop systems.
 
@@ -344,7 +486,7 @@ InvoiceItem:
 - PaidBy
 - Notes
 
-## 13. Sprint 8 — Service Catalog
+## 15. Sprint 8 — Service Catalog
 
 Add a service and price catalog:
 
@@ -377,7 +519,7 @@ Service catalog must link to:
 - Doctor revenue
 - Reports
 
-## 14. Sprint 9 — Orthodontic Module
+## 16. Sprint 9 — Orthodontic Module
 
 ### Existing features
 
@@ -406,7 +548,7 @@ Service catalog must link to:
 13. Link ceph analyses.
 14. Link contracts and payments.
 
-## 15. Sprint 10 — Cephalometric Module
+## 17. Sprint 10 — Cephalometric Module
 
 ### Existing features
 
@@ -432,7 +574,7 @@ Service catalog must link to:
 
 Important: simulated AI is demo only and must be clearly labeled as simulation.
 
-## 16. Sprint 11 — General Dentistry
+## 18. Sprint 11 — General Dentistry
 
 Required features:
 
@@ -460,7 +602,7 @@ Tooth conditions:
 - Implant
 - Prosthesis
 
-## 17. Sprint 12 — Surgery
+## 19. Sprint 12 — Surgery
 
 Required features:
 
@@ -477,7 +619,7 @@ Required features:
 11. Prescription.
 12. Patient timeline integration.
 
-## 18. Sprint 13 — Lab Module
+## 20. Sprint 13 — Lab Module
 
 Required features:
 
@@ -515,7 +657,7 @@ Shade examples:
 - B1, B2
 - C1, C2
 
-## 19. Sprint 14 — Inventory, Suppliers, Purchases
+## 21. Sprint 14 — Inventory, Suppliers, Purchases
 
 ### Suppliers
 
@@ -560,7 +702,7 @@ Shade examples:
 - Inventory report
 - Item movement
 
-## 20. Sprint 15 — HR and Employees
+## 22. Sprint 15 — HR and Employees
 
 Required features:
 
@@ -600,7 +742,7 @@ Salary:
 - NetSalary
 - PaidAt
 
-## 21. Sprint 16 — Reports and Printing
+## 23. Sprint 16 — Reports and Printing
 
 Required reports:
 
@@ -631,7 +773,7 @@ PDF must include:
 - Arabic RTL layout
 - Yemeni Rial currency
 
-## 22. Sprint 17 — Settings and Permissions
+## 24. Sprint 17 — Settings and Permissions
 
 Resources needing permissions:
 
@@ -674,7 +816,7 @@ Settings:
 8. Backup settings.
 9. Report settings.
 
-## 23. Sprint 18 — Backup and Security
+## 25. Sprint 18 — Backup and Security
 
 ### Backup
 
@@ -696,7 +838,7 @@ Settings:
 8. Rate limiting later.
 9. 2FA later.
 
-## 24. Sprint 19 — WhatsApp
+## 26. Sprint 19 — WhatsApp
 
 ### Stage 1
 
@@ -716,7 +858,7 @@ Message templates:
 
 WhatsApp Business API later.
 
-## 25. Sprint 20 — AI
+## 27. Sprint 20 — AI
 
 AI comes after the core system is stable.
 
@@ -732,7 +874,7 @@ Potential AI features:
 
 AI rule: AI provides suggestions only. The final decision belongs to the doctor.
 
-## 26. First Practical Step
+## 28. First Practical Step
 
 Do not start new modules immediately.
 

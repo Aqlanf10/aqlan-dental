@@ -25,6 +25,8 @@ import {
   Stethoscope,
   Building2,
   ShieldCheck,
+  Image as ImageIcon,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -43,9 +45,33 @@ import type {
   Message,
   ConversationFilter,
   ConversationType,
-
+  SendMessageRequest,
 } from "@/types/messaging";
 import api from "@/lib/api";
+
+// ─── Attachment constants ─────────────────────────────────────────────────────
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"];
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+
+/** Convert a full upload URL to a relative /uploads/ path for the backend */
+function toRelativeUploadUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.pathname; // e.g. /uploads/guid.ext
+  } catch {
+    // Already a relative path
+    return url;
+  }
+}
+
+/** Convert a relative /uploads/ path to a full URL for display (img src, links) */
+function toFullUploadUrl(url: string): string {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  const base = process.env.NEXT_PUBLIC_API_URL ?? "";
+  return `${base}${url}`;
+}
 
 // ─── مستخدمو النظام (للمحادثة الجديدة) ───────────────────────────────────────
 interface SystemUser {
@@ -455,7 +481,7 @@ export default function MessagesPage() {
               conversation={conversation}
               currentUserId={user?.id ?? ""}
               onBack={handleBack}
-              onSend={(content) => sendMessage.mutate({ content })}
+              onSend={(req: SendMessageRequest) => sendMessage.mutate(req)}
               sending={sendMessage.isPending}
               onOpenPatient={(patientId) => router.push(`/patients/${patientId}`)}
               sendError={
@@ -614,27 +640,98 @@ function ChatArea({
   conversation: ConversationDetail;
   currentUserId: string;
   onBack: () => void;
-  onSend: (content: string) => void;
+  onSend: (req: SendMessageRequest) => void;
   sending: boolean;
   onOpenPatient: (patientId: string) => void;
   sendError?: string;
 }) {
   const [input, setInput] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<{
+    url: string; name: string; type: string;
+  } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation.messages]);
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset file input so re-selecting the same file works
+    e.target.value = "";
+    setUploadError(null);
+
+    // Validate extension
+    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF");
+      return;
+    }
+
+    // Validate MIME type
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF");
+      return;
+    }
+
+    // Validate size
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadError("حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت.");
+      return;
+    }
+
+    // Upload
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data } = await api.post<{
+        url: string; fileName: string; originalName: string; size: number; contentType: string;
+      }>("/api/uploads", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setAttachmentPreview({
+        url: data.url,
+        name: data.originalName,
+        type: data.contentType,
+      });
+    } catch {
+      setUploadError("فشل رفع الملف. حاول مرة أخرى.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const removeAttachment = () => {
+    setAttachmentPreview(null);
+    setUploadError(null);
+  };
+
   const handleSend = () => {
     const trimmed = input.trim();
-    if (!trimmed || sending) return;
-    if (trimmed.length > 2000) return; // frontend validation
-    onSend(trimmed);
+    if ((!trimmed && !attachmentPreview) || sending || trimmed.length > 2000 || isUploading) return;
+
+    const req: SendMessageRequest = { content: trimmed };
+    if (replyTo) {
+      req.replyToId = replyTo.id;
+    }
+    if (attachmentPreview) {
+      req.attachmentUrl = toRelativeUploadUrl(attachmentPreview.url);
+      req.attachmentName = attachmentPreview.name;
+      req.attachmentType = attachmentPreview.type;
+    }
+    onSend(req);
     setInput("");
     setReplyTo(null);
+    setAttachmentPreview(null);
+    setUploadError(null);
     inputRef.current?.focus();
   };
 
@@ -815,9 +912,55 @@ function ChatArea({
         </div>
       )}
 
+      {/* Upload error */}
+      {uploadError && (
+        <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+          <p className="text-xs text-amber-700">{uploadError}</p>
+          <button onClick={() => setUploadError(null)} className="ms-auto">
+            <X className="w-3 h-3 text-amber-500" />
+          </button>
+        </div>
+      )}
+
       {/* Input area */}
       <div className="px-4 py-3 border-t border-gray-100 bg-white">
+        {/* Attachment preview chip */}
+        {attachmentPreview && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 rounded-lg">
+            {attachmentPreview.type.startsWith("image/") ? (
+              <ImageIcon className="w-4 h-4 text-[#0d9488] flex-shrink-0" />
+            ) : (
+              <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
+            )}
+            <span className="text-xs text-gray-700 truncate flex-1">{attachmentPreview.name}</span>
+            <button
+              type="button"
+              onClick={removeAttachment}
+              className="w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition flex-shrink-0"
+            >
+              <X className="w-3 h-3 text-gray-500" />
+            </button>
+          </div>
+        )}
+
+        {/* Uploading indicator */}
+        {isUploading && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-[#0d9488]/5 rounded-lg">
+            <Loader2 className="w-4 h-4 text-[#0d9488] animate-spin" />
+            <span className="text-xs text-[#0d9488]">جارٍ رفع الملف...</span>
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.pdf"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
           <textarea
             ref={inputRef}
             value={input}
@@ -826,15 +969,31 @@ function ChatArea({
             placeholder="اكتب رسالتك..."
             rows={1}
             maxLength={2000}
-            className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] max-h-32"
+            disabled={sending || isUploading}
+            className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] max-h-32 disabled:opacity-50"
             style={{ minHeight: "40px" }}
           />
+          {/* Paperclip button */}
           <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending || input.length > 2000}
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || isUploading || !!attachmentPreview}
             className={cn(
               "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
-              input.trim() && !sending && input.length <= 2000
+              sending || isUploading || attachmentPreview
+                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
+            )}
+            title="إرفاق ملف"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleSend}
+            disabled={(!input.trim() && !attachmentPreview) || sending || isUploading || input.length > 2000}
+            className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
+              (input.trim() || attachmentPreview) && !sending && !isUploading && input.length <= 2000
                 ? "bg-[#0d9488] text-white hover:opacity-90"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
@@ -940,17 +1099,55 @@ function MessageBubble({
 
           {/* Attachment */}
           {message.attachmentUrl && (
-            <div
-              className={cn(
-                "mt-2 p-2 rounded-lg flex items-center gap-2",
-                isMine ? "bg-white/10" : "bg-gray-50"
-              )}
-            >
-              <Paperclip className="w-4 h-4 flex-shrink-0" />
-              <span className="text-xs truncate">
-                {message.attachmentName ?? "مرفق"}
-              </span>
-            </div>
+            message.attachmentType?.startsWith("image/") ? (
+              <a
+                href={toFullUploadUrl(message.attachmentUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block mt-2"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={toFullUploadUrl(message.attachmentUrl)}
+                  alt={message.attachmentName ?? "صورة مرفقة"}
+                  className="max-w-[200px] rounded-lg cursor-pointer"
+                />
+              </a>
+            ) : message.attachmentType === "application/pdf" ? (
+              <div className={cn(
+                "mt-2 p-2.5 rounded-lg flex items-center gap-2.5",
+                isMine ? "bg-white/15" : "bg-gray-50 border border-gray-200"
+              )}>
+                <FileText className={cn("w-5 h-5 flex-shrink-0", isMine ? "text-white/80" : "text-red-500")} />
+                <span className="text-xs truncate flex-1">{message.attachmentName ?? "مرفق PDF"}</span>
+                <a
+                  href={toFullUploadUrl(message.attachmentUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "text-xs font-semibold underline",
+                    isMine ? "text-white/90 hover:text-white" : "text-[#0d9488] hover:text-[#0d9488]/80"
+                  )}
+                >
+                  فتح
+                </a>
+              </div>
+            ) : (
+              <a
+                href={toFullUploadUrl(message.attachmentUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "mt-2 p-2 rounded-lg flex items-center gap-2",
+                  isMine ? "bg-white/10" : "bg-gray-50"
+                )}
+              >
+                <Paperclip className="w-4 h-4 flex-shrink-0" />
+                <span className="text-xs truncate underline">
+                  {message.attachmentName ?? "مرفق"}
+                </span>
+              </a>
+            )
           )}
         </div>
 

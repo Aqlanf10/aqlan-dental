@@ -934,10 +934,27 @@ else
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
-// Serve uploaded files
+// Serve uploaded files — resolve writable uploads directory (fallback to /tmp if wwwroot is read-only)
 var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-try { Directory.CreateDirectory(uploadsPath); } catch { /* directory creation may fail in restricted environments */ }
-app.UseStaticFiles();
+try
+{
+    Directory.CreateDirectory(uploadsPath);
+    var testFile = Path.Combine(uploadsPath, $".write-test-{Guid.NewGuid()}");
+    File.WriteAllText(testFile, "test");
+    File.Delete(testFile);
+}
+catch
+{
+    // wwwroot not writable (e.g., container running as non-root without pre-created dir)
+    uploadsPath = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
+    Directory.CreateDirectory(uploadsPath);
+}
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
+    RequestPath = "/uploads"
+});
 
 app.UseSwagger();
 app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Dental Pro v1"));

@@ -28,6 +28,9 @@ RUN addgroup --system --gid 1001 appgroup && \
 
 COPY --from=build --chown=appuser:appgroup /app/publish .
 
+# Pre-create uploads directory with write permissions for non-root user
+RUN mkdir -p /app/wwwroot/uploads && chown appuser:appgroup /app/wwwroot/uploads
+
 USER appuser
 
 EXPOSE 8080

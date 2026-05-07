@@ -12,12 +12,13 @@ import {
   usePortalSendMessage,
   usePortalMarkAsRead,
   usePortalStartConversation,
+  usePortalUnreadCount,
   type PortalConversationListItem,
   type PortalConversationDetail,
   type PortalMessage,
 } from "@/hooks/usePortalMessaging";
 
-// ─── Helpers ─────────────────────────���────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getPatientUserId(): string | null {
   if (typeof window === "undefined") return null;
@@ -57,7 +58,21 @@ function getInitials(name: string) {
   return name.trim().charAt(0).toUpperCase();
 }
 
-// ─── Main Page ────────────────────────────────���──────────────────────────���────
+function getErrorMessage(error: unknown): { title: string; detail: string } {
+  const err = error as { message?: string; status?: number; response?: { status?: number } } | null;
+  const status = err?.status ?? err?.response?.status;
+  const message = err?.message;
+
+  if (status === 403) {
+    return { title: "غير مصرّح بالوصول", detail: "ليس لديك صلاحية لعرض هذا المحتوى" };
+  }
+  if (status === 404) {
+    return { title: "المحتوى غير موجود", detail: "البيانات المطلوبة غير متوفرة" };
+  }
+  return { title: "حدث خطأ", detail: message ?? "فشل تحميل البيانات" };
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PortalMessagesPage() {
   const { profile } = usePatientAuthStore();
@@ -68,9 +83,12 @@ export default function PortalMessagesPage() {
 
   const { data: conversations = [], isLoading, isError, error } = usePortalConversations();
   const { data: conversation } = usePortalConversation(selectedConvId);
+  const { data: unreadData } = usePortalUnreadCount();
   const markAsRead = usePortalMarkAsRead(selectedConvId);
   const sendMessage = usePortalSendMessage(selectedConvId ?? "");
   const startConversation = usePortalStartConversation();
+
+  const totalUnread = unreadData?.totalUnread ?? conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
   // Mark as read when opening a conversation
   useEffect(() => {
@@ -119,9 +137,9 @@ export default function PortalMessagesPage() {
         <div className="flex items-center gap-2">
           <MessageCircle className="w-5 h-5 text-teal-600" />
           <h1 className="text-lg font-bold text-gray-900">الرسائل</h1>
-          {conversations.filter((c) => c.unreadCount > 0).length > 0 && (
+          {totalUnread > 0 && (
             <span className="bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5 leading-none">
-              {conversations.reduce((sum, c) => sum + c.unreadCount, 0)}
+              {totalUnread > 99 ? "99+" : totalUnread}
             </span>
           )}
         </div>
@@ -154,10 +172,15 @@ export default function PortalMessagesPage() {
               showMobileChat ? "hidden md:flex" : "flex"
             )}
           >
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/80">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/80 flex items-center justify-between">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 المحادثات
               </p>
+              {totalUnread > 0 && (
+                <span className="text-[10px] font-bold text-teal-600 bg-teal-50 rounded-full px-2 py-0.5">
+                  {totalUnread} غير مقروءة
+                </span>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto">
@@ -171,14 +194,16 @@ export default function PortalMessagesPage() {
               ) : conversations.length === 0 ? (
                 <ConvListEmpty onNew={() => setShowStartDialog(true)} />
               ) : (
-                conversations.map((conv) => (
-                  <ConversationItem
-                    key={conv.id}
-                    conv={conv}
-                    isSelected={conv.id === selectedConvId}
-                    onClick={() => handleSelectConv(conv.id)}
-                  />
-                ))
+                <div className="p-2 space-y-1">
+                  {conversations.map((conv) => (
+                    <ConversationItem
+                      key={conv.id}
+                      conv={conv}
+                      isSelected={conv.id === selectedConvId}
+                      onClick={() => handleSelectConv(conv.id)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -207,30 +232,29 @@ export default function PortalMessagesPage() {
       </div>
 
       {/* ── Start Conversation Dialog ── */}
-      {showStartDialog && (
-        <StartConversationDialog
-          onClose={() => setShowStartDialog(false)}
-          onStart={handleStartConversation}
-          loading={startConversation.isPending}
-        />
-      )}
+      <StartConversationDialog
+        open={showStartDialog}
+        onClose={() => setShowStartDialog(false)}
+        onStart={handleStartConversation}
+        loading={startConversation.isPending}
+      />
     </div>
   );
 }
 
-// ─── Conversation List States ────────────────────��────────────────────────────
+// ─── Conversation List States ─────────────────────────────────────────────────
 
 function ConvListEmpty({ onNew }: { onNew: () => void }) {
   return (
     <div className="text-center py-14 px-4">
-      <div className="w-14 h-14 rounded-full bg-teal-50 flex items-center justify-center mx-auto mb-3">
-        <MessageCircle className="w-7 h-7 text-teal-400" />
+      <div className="w-16 h-16 rounded-2xl bg-teal-50 flex items-center justify-center mx-auto mb-4">
+        <MessageCircle className="w-8 h-8 text-teal-400" />
       </div>
       <p className="text-sm font-semibold text-gray-700 mb-1">لا توجد محادثات</p>
-      <p className="text-xs text-gray-400 mb-4">تواصل مع المركز للاستفسار أو الحجز</p>
+      <p className="text-xs text-gray-400 mb-5">تواصل مع المركز للاستفسار أو الحجز</p>
       <button
         onClick={onNew}
-        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 transition"
+        className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 active:bg-teal-700 transition shadow-sm"
       >
         <Plus className="w-3.5 h-3.5" />
         بدء محادثة
@@ -240,16 +264,21 @@ function ConvListEmpty({ onNew }: { onNew: () => void }) {
 }
 
 function ConvListError({ error }: { error: unknown }) {
-  const msg = (error as { message?: string })?.message;
+  const { title, detail } = getErrorMessage(error);
   return (
-    <div className="m-3 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
-      <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-      <p className="text-xs text-amber-700">{msg ?? "فشل تحميل المحادثات"}</p>
+    <div className="m-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+      <div className="flex items-start gap-2.5">
+        <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-xs font-semibold text-amber-800">{title}</p>
+          <p className="text-xs text-amber-600 mt-0.5">{detail}</p>
+        </div>
+      </div>
     </div>
   );
 }
 
-// ─── Conversation Item ───────────────────────────────��────────────────────────
+// ─── Conversation Item ────────────────────────────────────────────────────────
 
 function ConversationItem({
   conv,
@@ -271,10 +300,10 @@ function ConversationItem({
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-3 px-4 py-3.5 text-right transition-colors border-b border-gray-50",
+        "w-full flex items-center gap-3 px-4 py-3.5 text-right transition-all duration-150 rounded-xl",
         isSelected
-          ? "bg-teal-50 border-r-4 border-r-teal-500"
-          : "hover:bg-gray-50 active:bg-gray-100"
+          ? "bg-teal-50 border border-teal-200"
+          : "hover:bg-gray-50 active:scale-[0.99] border border-transparent"
       )}
     >
       {/* Avatar */}
@@ -324,7 +353,7 @@ function ConversationItem({
   );
 }
 
-// ─── Chat Area ─────────────────────────��───────────────────────────���──────────
+// ─── Chat Area ────────────────────────────────────────────────────────────────
 
 function ChatArea({
   conversation,
@@ -349,19 +378,13 @@ function ChatArea({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation.messages.length]);
 
-  const handleSend = () => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || sending || trimmed.length > 2000) return;
     onSend(trimmed);
     setInput("");
     inputRef.current?.focus();
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
   };
 
   // Build display name for header
@@ -396,54 +419,63 @@ function ChatArea({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-900 truncate">{headerName}</p>
-          <p className="text-xs text-teal-600">مركز عقلان للأسنان</p>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+            <p className="text-xs text-green-600">متصل الآن</p>
+          </div>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2 bg-gray-50/30">
-        {conversation.messages.length === 0 ? (
-          <div className="text-center py-12">
-            <MessageCircle className="w-10 h-10 text-gray-200 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">لا توجد رسائل بعد</p>
-            <p className="text-xs text-gray-300 mt-1">ابدأ المحادثة بكتابة رسالة</p>
-          </div>
-        ) : (
-          conversation.messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              message={msg}
-              isMine={patientUserId ? msg.senderId === patientUserId : false}
-            />
-          ))
-        )}
-        <div ref={messagesEndRef} />
+      <div className="flex-1 overflow-y-auto px-4 py-4 bg-gray-50/30">
+        <div className="max-w-2xl mx-auto space-y-2">
+          {conversation.messages.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                <MessageCircle className="w-7 h-7 text-gray-300" />
+              </div>
+              <p className="text-sm font-medium text-gray-500">لا توجد رسائل بعد</p>
+              <p className="text-xs text-gray-400 mt-1">ابدأ المحادثة بكتابة رسالة</p>
+            </div>
+          ) : (
+            conversation.messages.map((msg) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                isMine={patientUserId ? msg.senderId === patientUserId : false}
+              />
+            ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Send error */}
       {sendError && (
-        <div className="px-4 py-2 bg-red-50 border-t border-red-200 text-red-700 text-xs flex items-center gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-          {sendError}
+        <div className="px-4 py-2 bg-red-50 border-t border-red-200 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-red-700">فشل الإرسال</p>
+            <p className="text-[10px] text-red-600">{sendError}</p>
+          </div>
         </div>
       )}
 
       {/* Input area */}
       <div className="px-4 py-3 border-t border-gray-100 bg-white">
-        <div className="flex items-center gap-2">
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
           <input
             ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
             placeholder="اكتب رسالتك..."
             maxLength={2000}
             disabled={sending}
             className="flex-1 px-4 py-2.5 rounded-full border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50 disabled:opacity-50 transition"
           />
           <button
-            onClick={handleSend}
+            type="submit"
             disabled={!input.trim() || sending || input.length > 2000}
             className={cn(
               "w-10 h-10 rounded-full flex items-center justify-center transition flex-shrink-0",
@@ -458,9 +490,12 @@ function ChatArea({
               <Send className="w-4 h-4" />
             )}
           </button>
-        </div>
+        </form>
         {input.length > 1800 && (
-          <p className="text-[10px] text-amber-500 mt-1 text-left" dir="ltr">
+          <p className={cn(
+            "text-[10px] mt-1 text-left",
+            input.length > 2000 ? "text-red-500" : "text-amber-500"
+          )} dir="ltr">
             {input.length}/2000
           </p>
         )}
@@ -469,20 +504,20 @@ function ChatArea({
   );
 }
 
-// ─── Empty Chat Placeholder ────────────────────────────────��──────────────────
+// ─── Empty Chat Placeholder ───────────────────────────────────────────────────
 
 function EmptyChatPlaceholder({ onNew }: { onNew: () => void }) {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center px-6">
-        <div className="w-16 h-16 rounded-full bg-teal-50 flex items-center justify-center mx-auto mb-4">
-          <MessageCircle className="w-8 h-8 text-teal-400" />
+        <div className="w-20 h-20 rounded-2xl bg-teal-50 flex items-center justify-center mx-auto mb-5">
+          <MessageCircle className="w-10 h-10 text-teal-300" />
         </div>
-        <p className="text-gray-500 text-base font-semibold mb-1">اختر محادثة للبدء</p>
-        <p className="text-gray-400 text-sm mb-4">أو تواصل مع المركز مباشرة</p>
+        <p className="text-gray-600 text-base font-semibold mb-1">اختر محادثة للبدء</p>
+        <p className="text-gray-400 text-sm mb-5">أو تواصل مع المركز مباشرة</p>
         <button
           onClick={onNew}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 transition"
+          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 active:bg-teal-700 transition shadow-sm"
         >
           <Plus className="w-3.5 h-3.5" />
           محادثة جديدة
@@ -577,22 +612,39 @@ function MessageBubble({
   );
 }
 
-// ─── Start Conversation Dialog ─────────────────────��──────────────────────────
+// ─── Start Conversation Dialog ────────────────────────────────────────────────
 
 function StartConversationDialog({
+  open,
   onClose,
   onStart,
   loading,
 }: {
+  open: boolean;
   onClose: () => void;
   onStart: (initialMessage?: string) => void;
   loading: boolean;
 }) {
   const [message, setMessage] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setMessage("");
+      // Small delay to allow animation to start before focusing
+      const timer = setTimeout(() => textareaRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
+  if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" dir="rtl">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
+      <div
+        className="bg-white rounded-2xl w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+        dir="rtl"
+      >
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -615,19 +667,20 @@ function StartConversationDialog({
             اكتب رسالتك وسيتواصل معك الطاقم في أقرب وقت ممكن.
           </p>
           <textarea
+            ref={textareaRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="مثال: أريد حجز موعد... / عندي استفسار عن..."
             rows={4}
             maxLength={2000}
-            autoFocus
             className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none transition"
           />
-          {message.length > 1800 && (
-            <p className="text-[10px] text-amber-500 text-left" dir="ltr">
-              {message.length}/2000
-            </p>
-          )}
+          <p className={cn(
+            "text-[10px] text-left",
+            message.length > 1800 ? "text-amber-500" : "text-gray-400"
+          )} dir="ltr">
+            {message.length}/2000
+          </p>
         </div>
 
         {/* Footer */}

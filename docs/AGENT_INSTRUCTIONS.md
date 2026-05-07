@@ -63,6 +63,21 @@
 - Allow internal staff-to-patient-file conversations even if the patient has no portal account.
 - Add unread count, notifications, and auto-refresh.
 
+### Sprint 5b — Message Attachments & Notifications
+
+- Allow file attachments in conversations.
+- Add in-app notification badge for unread messages.
+- Mark-as-read on message open.
+
+### Sprint 5c — Public Website & Appointment Booking Requests
+
+- Develop professional public homepage for the clinic.
+- Add public booking request form (not direct booking — requests must be reviewed by staff).
+- Add "طلبات الحجز" page for reception/admin to manage booking requests.
+- Request statuses: جديد → تم التواصل → تم تأكيد الموعد / مرفوض / تم تحويله إلى مريض.
+- Security: public users must not access internal calendar, patient data, or create portal accounts automatically.
+- See ROADMAP.md for full specification.
+
 ### Sprint 4 — Appointments and Visits
 
 - Complete appointment workflow.

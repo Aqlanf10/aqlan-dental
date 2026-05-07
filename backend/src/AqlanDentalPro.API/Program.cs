@@ -702,6 +702,39 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to ensure Sprint 5 DoctorSchedules table");
     }
 
+    // Ensure Conversation RecipientType/RecipientUserId columns exist (PR #32)
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientType') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "RecipientType" character varying(20) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientUserId') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "RecipientUserId" uuid NULL;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientType" ON "Conversations" ("RecipientType");
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientUserId" ON "Conversations" ("RecipientUserId");
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260503000000_AddConversationRecipientType', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType'
+            );
+        """);
+        logger.LogInformation("Conversation RecipientType/RecipientUserId columns ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Conversation RecipientType/RecipientUserId columns");
+    }
+
     try
     {
         await db.Database.MigrateAsync();
@@ -751,8 +784,16 @@ if (enableStartupDbMaintenance)
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId') THEN
                     ALTER TABLE "Conversations" ADD COLUMN "BranchId" uuid NULL;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientType') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "RecipientType" character varying(20) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientUserId') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "RecipientUserId" uuid NULL;
+                END IF;
                 CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId" ON "Conversations" ("PatientId");
                 CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType" ON "Conversations" ("ConversationType");
+                CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientType" ON "Conversations" ("RecipientType");
+                CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientUserId" ON "Conversations" ("RecipientUserId");
             """);
 
             await db.Database.ExecuteSqlRawAsync("""

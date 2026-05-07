@@ -601,7 +601,7 @@ function ConversationItem({
             )}
             {hasUnread && (
               <span className="bg-[#0d9488] text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0">
-                {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
+                {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
               </span>
             )}
           </div>

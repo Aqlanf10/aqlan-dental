@@ -8,6 +8,7 @@ import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { ConversationDetail, Message } from "@/types/messaging";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface MessagesTabProps {
   patientId: string;
@@ -15,6 +16,7 @@ interface MessagesTabProps {
 
 export function MessagesTab({ patientId }: MessagesTabProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,6 +114,10 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
 
       // Step 5: Only now show success toast
       toast.success("تم إرسال الرسالة");
+
+      // Invalidate unread count so sidebar/topbar badges update
+      queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 403) {

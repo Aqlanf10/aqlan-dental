@@ -121,6 +121,7 @@ export function usePortalUnreadCount() {
     },
     staleTime: 15_000,
     refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 }
 

@@ -1,10 +1,12 @@
 "use client";
-import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound } from "lucide-react";
+import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, MessageCircle } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useUnreadCount } from "@/hooks/useMessaging";
 
 /* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
 function LiveClock() {
@@ -115,12 +117,26 @@ export function Topbar() {
     searchTimer.current = setTimeout(() => runSearch(val), 300);
   };
 
-  /* ── Fetch unread count on mount ── */
+  /* ── Notification unread count with polling ── */
+  const { data: notifData } = useQuery({
+    queryKey: ["notificationUnreadCount"],
+    queryFn: async () => {
+      const { data } = await api.get<{ count: number }>("/api/notifications/unread-count");
+      return data;
+    },
+    staleTime: 20_000,
+    refetchInterval: 25_000,
+    refetchOnWindowFocus: true,
+  });
+
+  // Keep local unreadCount in sync with the query
+  const queryClient = useQueryClient();
   useEffect(() => {
-    api.get<{ count: number }>("/api/notifications/unread-count")
-      .then(r => setUnreadCount(r.data.count))
-      .catch(() => {});
-  }, []);
+    if (notifData?.count !== undefined) setUnreadCount(notifData.count);
+  }, [notifData]);
+
+  /* ── Message unread count with polling ── */
+  const { data: msgUnreadData } = useUnreadCount();
 
   /* ── Open notifications dropdown ── */
   const openNotifications = async () => {
@@ -144,12 +160,14 @@ export function Topbar() {
     await api.put("/api/notifications/read-all").catch(() => {});
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     setUnreadCount(0);
+    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
   };
 
   const markRead = async (id: string) => {
     await api.put(`/api/notifications/${id}/read`).catch(() => {});
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
+    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
   };
 
   const handleNotifClick = async (n: NotificationItem) => {
@@ -202,6 +220,29 @@ export function Topbar() {
       <div className="flex items-center gap-3.5">
         {/* Live Clock */}
         <LiveClock />
+
+        {/* ── Message icon with unread badge ── */}
+        <button
+          onClick={() => router.push("/messages")}
+          className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
+          style={{ background: "#f0f5fb", color: "#64748b" }}
+          title="الرسائل"
+        >
+          <MessageCircle className="w-[18px] h-[18px]" />
+          {msgUnreadData && msgUnreadData.totalUnread > 0 && (
+            <span
+              className="absolute rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none"
+              style={{
+                top: 4, right: 4,
+                minWidth: 16, height: 16,
+                background: "#0d9488",
+                padding: "0 3px",
+              }}
+            >
+              {msgUnreadData.totalUnread > 99 ? "99+" : msgUnreadData.totalUnread}
+            </span>
+          )}
+        </button>
 
         {/* ── Search ── */}
         <div ref={searchRef} className="relative hidden md:block">

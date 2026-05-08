@@ -254,6 +254,16 @@ export default function PublicHomePage() {
                 04-253028
               </a>
             </div>
+
+            {/* Soft secondary links */}
+            <div className="mt-4 flex items-center gap-4 justify-center md:justify-start">
+              <Link
+                href="/portal/login"
+                className="text-blue-200/70 hover:text-blue-100 text-sm transition-colors inline-flex items-center gap-1.5"
+              >
+                بوابة المرضى
+              </Link>
+            </div>
           </div>
 
           {/* Stats grid */}

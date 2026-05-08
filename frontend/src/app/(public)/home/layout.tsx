@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Phone, MessageCircle, MapPin, Clock } from "lucide-react";
+import { Phone, MessageCircle, MapPin, Clock, ChevronDown } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "مركز د. عقلان الكامل لطب وتقويم الأسنان — تعز، اليمن",
@@ -27,11 +27,49 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             <a href="#team" className="hover:text-white transition-colors">فريق الأطباء</a>
             <a href="#contact" className="hover:text-white transition-colors">تواصل معنا</a>
           </nav>
-          <Link
-            href="/home/book"
-            className="bg-clinic-orange hover:bg-orange-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
-          >
-            احجز موعدك
+          <div className="flex items-center gap-2">
+            {/* Login dropdown — desktop */}
+            <div className="relative group hidden md:block">
+              <button className="flex items-center gap-1.5 text-sm text-blue-100 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/10 border border-white/20">
+                تسجيل الدخول
+                <ChevronDown className="w-3.5 h-3.5 transition-transform group-hover:rotate-180" />
+              </button>
+              <div className="absolute top-full left-0 mt-1 w-44 bg-white rounded-xl shadow-dropdown py-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-50">
+                <Link
+                  href="/portal/login"
+                  className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-clinic-blue-50 hover:text-clinic-blue transition-colors"
+                >
+                  <span className="w-2 h-2 rounded-full bg-clinic-orange flex-shrink-0" />
+                  بوابة المرضى
+                </Link>
+                <div className="mx-3 border-t border-gray-100" />
+                <Link
+                  href="/login"
+                  className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-clinic-blue-50 hover:text-clinic-blue transition-colors"
+                >
+                  <span className="w-2 h-2 rounded-full bg-clinic-blue flex-shrink-0" />
+                  دخول الكادر
+                </Link>
+              </div>
+            </div>
+
+            <Link
+              href="/home/book"
+              className="bg-clinic-orange hover:bg-orange-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+            >
+              احجز موعدك
+            </Link>
+          </div>
+        </div>
+
+        {/* Login strip — mobile only */}
+        <div className="md:hidden border-t border-white/10 px-4 py-2 flex items-center justify-end gap-5" dir="rtl">
+          <span className="text-blue-300/60 text-xs">تسجيل الدخول:</span>
+          <Link href="/portal/login" className="text-blue-100 hover:text-white text-xs font-medium transition-colors">
+            بوابة المرضى
+          </Link>
+          <Link href="/login" className="text-blue-100 hover:text-white text-xs font-medium transition-colors">
+            دخول الكادر
           </Link>
         </div>
       </header>
@@ -130,6 +168,15 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
                   <span className="bg-clinic-orange text-white text-xs px-1.5 py-0.5 rounded-full font-bold leading-none">
                     جديد
                   </span>
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/login"
+                  className="text-blue-200 hover:text-white transition-colors text-sm inline-flex items-center gap-1.5"
+                >
+                  <span className="w-1 h-1 rounded-full bg-blue-400/60 inline-block flex-shrink-0" />
+                  دخول الكادر
                 </Link>
               </li>
             </ul>

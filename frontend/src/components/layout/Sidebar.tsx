@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
+import { useUnreadCount } from "@/hooks/useMessaging";
 
 /* ─── Role-based navigation permissions ────────────────────────────────────── */
 type NavItem = {
@@ -59,6 +60,7 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const userRole = user?.role ?? "";
+  const { data: unreadData } = useUnreadCount();
 
   // Filter nav items by role
   const visibleItems = NAV_ITEMS.filter(
@@ -159,7 +161,12 @@ export function Sidebar() {
                 )}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
-                <span>{label}</span>
+                <span className="flex-1">{label}</span>
+                {href === "/messages" && unreadData && unreadData.totalUnread > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                    {unreadData.totalUnread > 9 ? "9+" : unreadData.totalUnread}
+                  </span>
+                )}
               </Link>
             );
           })}

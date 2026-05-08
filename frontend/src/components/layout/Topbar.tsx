@@ -1,10 +1,12 @@
 "use client";
-import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, ChevronDown } from "lucide-react";
+import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, ChevronDown, MessageCircle } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useUnreadCount } from "@/hooks/useMessaging";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface SearchResult {
@@ -55,6 +57,7 @@ function timeAgo(iso: string): string {
 export function Topbar() {
   const { user } = useAuthStore();
   const router   = useRouter();
+  const { data: msgUnread } = useUnreadCount();
 
   /* Search state */
   const [query,        setQuery]        = useState("");
@@ -275,6 +278,20 @@ export function Topbar() {
             </div>
           )}
         </div>
+
+        {/* ── Messages ── */}
+        <Link
+          href="/messages"
+          className="relative w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+          title="الرسائل"
+        >
+          <MessageCircle className="w-5 h-5" />
+          {msgUnread && msgUnread.totalUnread > 0 && (
+            <span className="absolute -top-0.5 -end-0.5 min-w-[18px] h-[18px] bg-clinic-teal rounded-full flex items-center justify-center text-white text-[10px] font-bold px-1">
+              {msgUnread.totalUnread > 99 ? "99+" : msgUnread.totalUnread}
+            </span>
+          )}
+        </Link>
 
         {/* ── Notifications Bell ── */}
         <div ref={notifRef} className="relative">

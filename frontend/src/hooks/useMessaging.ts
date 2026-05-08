@@ -109,6 +109,19 @@ export function useSendMessage(conversationId: string) {
   });
 }
 
+// ─── حذف رسالة ────────────────────────────────────────────────────────────────
+export function useDeleteMessage(conversationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (messageId: string) => {
+      await api.delete(`/api/messages/conversations/${conversationId}/messages/${messageId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+    },
+  });
+}
+
 // ─── تحديد كمقروء ────────────────────────────────────────────────────────────
 export function useMarkAsRead(conversationId: string) {
   const queryClient = useQueryClient();

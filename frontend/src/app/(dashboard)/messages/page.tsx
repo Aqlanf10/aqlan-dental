@@ -12,6 +12,7 @@ import {
   Users,
   ArrowLeft,
   CheckCheck,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -23,6 +24,7 @@ import {
   useSendMessage,
   useMarkAsRead,
   useUnreadCount,
+  useDeleteMessage,
 } from "@/hooks/useMessaging";
 import type { ConversationListItem, ConversationDetail, Message } from "@/types/messaging";
 import api from "@/lib/api";
@@ -204,10 +206,11 @@ export default function MessagesPage() {
             conversation={conversation}
             currentUserId={user?.id ?? ""}
             onBack={handleBack}
-            onSend={(content) =>
-              sendMessage.mutate({ content })
+            onSend={(content, attachmentUrl, attachmentName, attachmentType) =>
+              sendMessage.mutate({ content, attachmentUrl, attachmentName, attachmentType })
             }
             sending={sendMessage.isPending}
+            conversationId={selectedConvId}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center">
@@ -312,17 +315,22 @@ function ChatArea({
   onBack,
   onSend,
   sending,
+  conversationId,
 }: {
   conversation: ConversationDetail;
   currentUserId: string;
   onBack: () => void;
-  onSend: (content: string) => void;
+  onSend: (content: string, attachmentUrl?: string, attachmentName?: string, attachmentType?: string) => void;
   sending: boolean;
+  conversationId: string;
 }) {
   const [input, setInput] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const deleteMessage = useDeleteMessage(conversationId);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -335,6 +343,30 @@ function ChatArea({
     setInput("");
     setReplyTo(null);
     inputRef.current?.focus();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data } = await api.post<{ url: string; originalName: string; contentType: string }>(
+        "/api/uploads",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+      onSend(input.trim() || " ", data.url, data.originalName, data.contentType);
+      setInput("");
+      setReplyTo(null);
+    } catch {
+      // silently fail — user can retry
+    } finally {
+      setUploading(false);
+      // reset file input so same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -409,6 +441,7 @@ function ChatArea({
             message={msg}
             isMine={msg.senderId === currentUserId}
             onReply={() => setReplyTo(msg)}
+            onDelete={(id) => deleteMessage.mutate(id)}
           />
         ))}
         <div ref={messagesEndRef} />
@@ -437,7 +470,26 @@ function ChatArea({
 
       {/* Input area */}
       <div className="px-4 py-3 border-t border-gray-100 bg-white">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,application/pdf"
+          className="hidden"
+          onChange={handleFileChange}
+        />
         <div className="flex items-end gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading || sending}
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-400 hover:text-clinic-teal hover:bg-gray-100 transition flex-shrink-0 disabled:opacity-50"
+            title="إرفاق ملف"
+          >
+            {uploading ? (
+              <div className="animate-spin w-4 h-4 border-2 border-clinic-teal border-t-transparent rounded-full" />
+            ) : (
+              <Paperclip className="w-4 h-4" />
+            )}
+          </button>
           <textarea
             ref={inputRef}
             value={input}
@@ -475,10 +527,12 @@ function MessageBubble({
   message,
   isMine,
   onReply,
+  onDelete,
 }: {
   message: Message;
   isMine: boolean;
   onReply: () => void;
+  onDelete: (id: string) => void;
 }) {
   if (message.isSystemMessage) {
     return (
@@ -578,14 +632,25 @@ function MessageBubble({
           )}
         </div>
 
-        {/* Reply button (on hover) */}
-        <button
-          onClick={onReply}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-clinic-teal text-xs mt-0.5 flex items-center gap-1"
-        >
-          <Reply className="w-3 h-3" />
-          رد
-        </button>
+        {/* Actions (reply + delete on hover) */}
+        <div className={cn("flex items-center gap-2 mt-0.5", isMine ? "flex-row-reverse" : "flex-row")}>
+          <button
+            onClick={onReply}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-clinic-teal text-xs flex items-center gap-1"
+          >
+            <Reply className="w-3 h-3" />
+            رد
+          </button>
+          {isMine && (
+            <button
+              onClick={() => onDelete(message.id)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-500 text-xs flex items-center gap-1"
+              title="حذف"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

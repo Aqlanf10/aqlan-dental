@@ -95,6 +95,15 @@ public class MessagesController(MessagingService messagingService) : ControllerB
         }
     }
 
+    /// <summary>حذف رسالة (المرسل فقط)</summary>
+    [HttpDelete("conversations/{conversationId:guid}/messages/{messageId:guid}")]
+    public async Task<IActionResult> DeleteMessage(Guid conversationId, Guid messageId)
+    {
+        var result = await messagingService.DeleteMessageAsync(conversationId, messageId);
+        if (!result) return Forbid();
+        return NoContent();
+    }
+
     /// <summary>جلب رسائل جديدة منذ آخر رسالة (للـ polling)</summary>
     [HttpGet("conversations/{conversationId:guid}/poll")]
     public async Task<IActionResult> PollMessages(Guid conversationId, [FromQuery] string? since = null)

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, User as UserIcon, ArrowRight, Loader2, Phone, KeyRound } from "lucide-react";
+import { Eye, EyeOff, User as UserIcon, ArrowRight, Loader2, Phone, KeyRound, Globe } from "lucide-react";
 // Shield removed - no longer used after OTP removal
 import Image from "next/image";
 import { useAuthStore } from "@/stores/authStore";
@@ -106,6 +106,20 @@ export default function LoginPage() {
 
           {/* Panel 2: Patient Portal Login */}
           <PatientLoginPanel />
+        </div>
+
+        {/* Public website link */}
+        <div className="text-center mb-5">
+          <a
+            href="/home"
+            className="inline-flex items-center gap-2 text-[13px] font-medium transition-colors no-underline"
+            style={{ color: "rgba(255,255,255,0.45)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.75)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.45)")}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            زيارة الموقع الرسمي
+          </a>
         </div>
 
         {/* Doctors — matches ZIP */}

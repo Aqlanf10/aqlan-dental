@@ -22,10 +22,10 @@ export function PublicNavbar() {
   }, [menuOpen]);
 
   const navLinks = [
-    { href: "#services", label: "خدماتنا" },
-    { href: "#about", label: "عن المركز" },
-    { href: "#team", label: "الفريق الطبي" },
-    { href: "#contact", label: "تواصل معنا" },
+    { href: "/home#services", label: "خدماتنا" },
+    { href: "/home#about", label: "عن المركز" },
+    { href: "/home#team", label: "الفريق الطبي" },
+    { href: "/home#contact", label: "تواصل معنا" },
   ];
 
   return (

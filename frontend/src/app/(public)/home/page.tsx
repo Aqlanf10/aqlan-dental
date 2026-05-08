@@ -185,7 +185,7 @@ export default function PublicHomePage() {
     <div dir="rtl">
       {/* ======== SECTION 1 — Hero ======== */}
       <section className="relative bg-gradient-to-bl from-clinic-navy via-clinic-navy-700 to-clinic-blue-500 text-white overflow-hidden py-16 md:py-24">
-        {/* subtle dot pattern */}
+        {/* subtle dot pattern overlay */}
         <div
           className="absolute inset-0 opacity-10"
           style={{
@@ -280,8 +280,11 @@ export default function PublicHomePage() {
       <section id="services" className="py-20 bg-gray-50">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-extrabold text-clinic-navy mb-3">خدماتنا الطبية</h2>
-            <p className="text-gray-500 max-w-xl mx-auto">
+            <span className="inline-block bg-clinic-blue-100 text-clinic-blue px-4 py-1 rounded-full text-xs font-semibold mb-3 uppercase tracking-wide">
+              خدماتنا
+            </span>
+            <h2 className="text-3xl md:text-4xl font-extrabold text-clinic-navy mb-3">خدماتنا الطبية</h2>
+            <p className="text-gray-500 max-w-xl mx-auto leading-relaxed">
               نقدم طيفاً واسعاً من خدمات طب الأسنان تحت سقف واحد بأعلى معايير الجودة
             </p>
           </div>
@@ -291,7 +294,7 @@ export default function PublicHomePage() {
               return (
                 <div
                   key={service.title}
-                  className="bg-white rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-200 border border-gray-100 group"
+                  className="bg-white rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-200 border border-gray-100 group cursor-default"
                 >
                   <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110"
@@ -314,8 +317,11 @@ export default function PublicHomePage() {
       <section className="py-20 bg-white">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-extrabold text-clinic-navy mb-3">لماذا تختارنا؟</h2>
-            <p className="text-gray-500">نلتزم بتقديم تجربة علاجية متميزة في كل زيارة</p>
+            <span className="inline-block bg-clinic-orange-100 text-clinic-orange px-4 py-1 rounded-full text-xs font-semibold mb-3 uppercase tracking-wide">
+              لماذا نحن
+            </span>
+            <h2 className="text-3xl md:text-4xl font-extrabold text-clinic-navy mb-3">لماذا تختارنا؟</h2>
+            <p className="text-gray-500 leading-relaxed">نلتزم بتقديم تجربة علاجية متميزة في كل زيارة</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {WHY_US.map((item) => {
@@ -323,7 +329,7 @@ export default function PublicHomePage() {
               return (
                 <div
                   key={item.title}
-                  className="text-center p-6 rounded-2xl bg-gray-50 hover:bg-clinic-blue-50 transition-colors border border-transparent hover:border-clinic-blue-100"
+                  className="text-center p-6 rounded-2xl bg-gray-50 hover:bg-clinic-blue-50 transition-colors border border-transparent hover:border-clinic-blue-100 cursor-default"
                 >
                   <div
                     className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
@@ -344,15 +350,18 @@ export default function PublicHomePage() {
       <section id="team" className="py-20 bg-gradient-to-b from-gray-50 to-white">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-extrabold text-clinic-navy mb-3">فريق الأطباء</h2>
-            <p className="text-gray-500">نخبة من الأطباء المتخصصين في مختلف تخصصات طب الأسنان</p>
+            <span className="inline-block bg-clinic-blue-100 text-clinic-blue px-4 py-1 rounded-full text-xs font-semibold mb-3 uppercase tracking-wide">
+              الفريق الطبي
+            </span>
+            <h2 className="text-3xl md:text-4xl font-extrabold text-clinic-navy mb-3">فريق الأطباء</h2>
+            <p className="text-gray-500 leading-relaxed">نخبة من الأطباء المتخصصين في مختلف تخصصات طب الأسنان</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {TEAM.map((doctor) => (
               <div
                 key={doctor.name}
                 className="bg-white rounded-2xl shadow-card hover:shadow-card-hover transition-all duration-200 border border-gray-100 overflow-hidden"
-                style={{ borderTopColor: doctor.color, borderTopWidth: "2px" }}
+                style={{ borderTopColor: doctor.color, borderTopWidth: "3px" }}
               >
                 <div className="p-6 flex items-start gap-4">
                   <div
@@ -362,8 +371,8 @@ export default function PublicHomePage() {
                     {doctor.initials}
                   </div>
                   <div className="min-w-0">
-                    <div className="font-bold text-clinic-navy text-base">{doctor.name}</div>
-                    <div className="text-sm font-medium mb-2" style={{ color: doctor.color }}>
+                    <div className="font-bold text-clinic-navy text-base leading-snug">{doctor.name}</div>
+                    <div className="text-sm font-semibold mb-2 mt-0.5" style={{ color: doctor.color }}>
                       {doctor.specialty}
                     </div>
                     <div className="text-sm text-gray-500 leading-relaxed">{doctor.desc}</div>
@@ -379,8 +388,11 @@ export default function PublicHomePage() {
       <section className="py-20 bg-clinic-navy">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-extrabold text-white mb-3">مرافقنا الطبية</h2>
-            <p className="text-blue-200">بيئة علاجية متكاملة ومجهزة بأحدث التقنيات</p>
+            <span className="inline-block bg-white/10 text-blue-200 border border-white/20 px-4 py-1 rounded-full text-xs font-semibold mb-3 uppercase tracking-wide">
+              مرافقنا
+            </span>
+            <h2 className="text-3xl md:text-4xl font-extrabold text-white mb-3">مرافقنا الطبية</h2>
+            <p className="text-blue-200 leading-relaxed">بيئة علاجية متكاملة ومجهزة بأحدث التقنيات</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
             {GALLERY.map((card) => {
@@ -388,7 +400,7 @@ export default function PublicHomePage() {
               return (
                 <div
                   key={card.title}
-                  className={`aspect-[4/3] rounded-2xl overflow-hidden relative flex flex-col items-center justify-center text-white p-6 text-center bg-gradient-to-br ${card.gradientFrom} ${card.gradientTo}`}
+                  className={`aspect-[4/3] rounded-2xl overflow-hidden relative flex flex-col items-center justify-center text-white p-6 text-center bg-gradient-to-br ${card.gradientFrom} ${card.gradientTo} shadow-lg`}
                 >
                   <Icon className="w-12 h-12 mb-3 opacity-90" />
                   <div className="text-lg font-bold">{card.title}</div>
@@ -403,13 +415,13 @@ export default function PublicHomePage() {
       {/* ======== SECTION 6 — CTA ======== */}
       <section className="py-20 bg-gradient-to-br from-clinic-navy-700 to-clinic-navy text-white">
         <div className="max-w-2xl mx-auto px-4 text-center">
-          <div className="w-16 h-16 rounded-full bg-clinic-orange/20 flex items-center justify-center mx-auto mb-6">
+          <div className="w-16 h-16 rounded-full bg-clinic-orange/20 flex items-center justify-center mx-auto mb-6 ring-4 ring-clinic-orange/10">
             <Stethoscope className="w-8 h-8 text-clinic-orange" />
           </div>
-          <h2 className="text-3xl font-extrabold mb-4">
+          <h2 className="text-3xl md:text-4xl font-extrabold mb-4">
             جاهز تبدأ رحلتك نحو ابتسامة أجمل؟
           </h2>
-          <p className="text-blue-200 text-lg mb-4">
+          <p className="text-blue-200 text-lg mb-4 leading-relaxed">
             احجز استشارتك الأولى اليوم — فريقنا جاهز لمساعدتك
           </p>
           <p className="text-blue-300 text-sm mb-10 flex flex-col sm:flex-row items-center justify-center gap-3">

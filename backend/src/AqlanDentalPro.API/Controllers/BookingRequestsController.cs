@@ -50,6 +50,10 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
         {
             return Conflict(new { message = ex.Message });
         }
+        catch (DuplicateBookingRequestException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     // ── Staff endpoints ──────────────────────────────────────────────────

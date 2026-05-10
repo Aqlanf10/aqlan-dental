@@ -4,8 +4,9 @@ import {
   MessageCircle, Send, Plus, ArrowRight, Loader2,
   X, AlertTriangle, CheckCheck, User,
   Stethoscope, Building2, ShieldCheck, ChevronLeft,
-  Paperclip, Image as ImageIcon, FileText, Reply,
+  Paperclip, Image as ImageIcon, FileText, Reply, Mic,
 } from "lucide-react";
+import { VoiceRecorder } from "@/components/messages/VoiceRecorder";
 import { cn } from "@/lib/utils";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import {
@@ -95,8 +96,8 @@ function getRecipientBadgeLabel(type: string | null | undefined): string | null 
 
 // ─── Attachment constants ─────────────────────────────────────────────────────
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"];
-const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf", ".webm", ".ogg", ".mp4"];
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf", "audio/webm", "audio/ogg", "audio/mp4"];
 
 /** Convert a full upload URL to a relative /uploads/ path for the backend */
 function toRelativeUploadUrl(url: string): string {
@@ -532,6 +533,24 @@ function ChatArea({
     setUploadError(null);
   };
 
+  const handleVoiceRecorded = async (blob: Blob, mimeType: string) => {
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const ext = mimeType === "audio/ogg" ? ".ogg" : mimeType === "audio/mp4" ? ".mp4" : ".webm";
+      const formData = new FormData();
+      formData.append("file", blob, `voice${ext}`);
+      const { data } = await portalApi.post<{
+        url: string; fileName: string; originalName: string; contentType: string;
+      }>("/api/uploads", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      setAttachmentPreview({ url: data.url, name: data.originalName, type: data.contentType });
+    } catch {
+      setUploadError("فشل رفع الرسالة الصوتية");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmed = input.trim();
@@ -664,6 +683,8 @@ function ChatArea({
           <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 rounded-lg">
             {attachmentPreview.type.startsWith("image/") ? (
               <ImageIcon className="w-4 h-4 text-teal-600 flex-shrink-0" />
+            ) : attachmentPreview.type.startsWith("audio/") ? (
+              <Mic className="w-4 h-4 text-purple-500 flex-shrink-0" />
             ) : (
               <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
             )}
@@ -691,7 +712,7 @@ function ChatArea({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".jpg,.jpeg,.png,.pdf"
+            accept=".jpg,.jpeg,.png,.pdf,.webm,.ogg,.mp4"
             className="hidden"
             onChange={handleFileSelect}
           />
@@ -704,6 +725,10 @@ function ChatArea({
             maxLength={2000}
             disabled={sending || isUploading}
             className="flex-1 px-4 py-2.5 rounded-full border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-gray-50 disabled:opacity-50 transition"
+          />
+          <VoiceRecorder
+            onRecorded={handleVoiceRecorded}
+            disabled={sending || isUploading || !!attachmentPreview}
           />
           {/* Paperclip button */}
           <button
@@ -845,7 +870,14 @@ function MessageBubble({
 
           {/* Attachment rendering */}
           {message.attachmentUrl && (
-            message.attachmentType?.startsWith("image/") ? (
+            message.attachmentType?.startsWith("audio/") ? (
+              <audio
+                controls
+                src={toFullUploadUrl(message.attachmentUrl)}
+                className="mt-2 max-w-[220px] h-9 rounded"
+                style={{ filter: isMine ? "invert(1) brightness(0.9)" : "none" }}
+              />
+            ) : message.attachmentType?.startsWith("image/") ? (
               <a
                 href={toFullUploadUrl(message.attachmentUrl)}
                 target="_blank"

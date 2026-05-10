@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.DTOs.BookingRequests;
 using AqlanDentalPro.Application.Exceptions;
+using System.Globalization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -40,6 +41,34 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
 
     public async Task<BookingRequestDto> CreateAsync(CreateBookingRequestDto dto)
     {
+        // Same-day duplicate prevention: block if same phone or name already has an
+        // active (Pending/Reviewed/Confirmed) booking request for the same PreferredDate.
+        if (!string.IsNullOrWhiteSpace(dto.PreferredDate))
+        {
+            var normalizedPhone = NormalizePhone(dto.PhoneNumber);
+            var normalizedName = NormalizeName(dto.PatientName);
+            var targetDate = dto.PreferredDate.Trim();
+
+            // Fetch matching-date active requests to client-evaluate name normalization
+            // (NormalizeName cannot be translated to SQL).
+            var sameDateRequests = await db.BookingRequests
+                .Where(r => r.IsActive
+                         && r.PreferredDate == targetDate
+                         && BlockingStatuses.Contains(r.Status))
+                .Select(r => new { r.PhoneNumber, r.PatientName })
+                .ToListAsync();
+
+            var duplicateOnSameDate = sameDateRequests.Any(r =>
+                NormalizePhone(r.PhoneNumber) == normalizedPhone
+                || NormalizeName(r.PatientName) == normalizedName);
+
+            if (duplicateOnSameDate)
+            {
+                throw new DuplicateBookingRequestException(
+                    "لديك طلب حجز سابق لنفس اليوم قيد المراجعة، سيتم التواصل معك قريبًا. لا داعي لإرسال طلب جديد.");
+            }
+        }
+
         // Race condition protection: re-check slot availability if date+time provided
         if (!string.IsNullOrWhiteSpace(dto.PreferredDate) && !string.IsNullOrWhiteSpace(dto.PreferredTime))
         {
@@ -326,6 +355,27 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
     {
         var normalized = NormalizeTo24h(preferredTime);
         return normalized == slot24h;
+    }
+
+    /// <summary>
+    /// Normalizes a phone number by removing spaces, dashes, parentheses, and plus signs.
+    /// </summary>
+    private static string NormalizePhone(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return "";
+        return phone.Trim().Replace(" ", "").Replace("-", "").Replace("(", "").Replace(")", "").Replace("+", "");
+    }
+
+    /// <summary>
+    /// Normalizes a patient name by trimming, collapsing whitespace, and lowercasing
+    /// so that minor formatting differences don't bypass duplicate detection.
+    /// </summary>
+    private static string NormalizeName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        // Collapse multiple spaces/tabs into a single space, trim, and lowercase
+        return CultureInfo.CurrentCulture.TextInfo.ToLower(name.Trim())
+            .Replace("  ", " ").Replace("  ", " ").Trim();
     }
 
     private static BookingRequestDto ToDto(BookingRequest r) => new(

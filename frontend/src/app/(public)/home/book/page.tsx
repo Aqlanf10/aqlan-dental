@@ -191,11 +191,14 @@ export default function BookPage() {
       if (res.ok || res.status === 201) {
         setSuccess(true);
       } else if (res.status === 409) {
-        // Slot no longer available — refresh slots and show error
+        // 409 can mean either slot conflict or same-day duplicate booking request
         const data = await res.json().catch(() => ({}));
-        setServerError(data?.message || "هذا الموعد لم يعد متاحًا، يرجى اختيار وقت آخر.");
-        // Refresh availability
-        fetchAvailability(form.preferredDate, form.serviceType);
+        const msg = data?.message || "تعذّر إرسال الطلب. يرجى المحاولة مرة أخرى أو اختيار وقت آخر.";
+        setServerError(msg);
+        // Refresh availability in case it was a slot conflict
+        if (form.preferredDate) {
+          fetchAvailability(form.preferredDate, form.serviceType);
+        }
       } else {
         setServerError("حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مرة أخرى أو الاتصال بنا مباشرة.");
       }

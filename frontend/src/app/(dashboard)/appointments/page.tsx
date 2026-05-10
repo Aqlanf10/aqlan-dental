@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope } from "lucide-react";
+import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calendar, Stethoscope, Printer } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
@@ -71,8 +71,14 @@ export default function AppointmentsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Print header — only visible when printing */}
+      <div className="hidden print-only mb-4">
+        <h1 className="text-2xl font-bold">جدول مواعيد يوم {date}</h1>
+        <p className="text-sm text-gray-500 mt-1">مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
+      </div>
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="no-print flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-extrabold text-gray-900">المواعيد</h1>
           <p className="text-sm text-gray-500 mt-0.5">
@@ -130,9 +136,19 @@ export default function AppointmentsPage() {
               شهري
             </button>
           </div>
+          {view === "day" && (
+            <button
+              onClick={() => window.print()}
+              className="no-print flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition"
+              title="طباعة جدول اليوم"
+            >
+              <Printer className="w-4 h-4" />
+              طباعة
+            </button>
+          )}
           <Link
             href="/appointments/new"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+            className="no-print flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             <Plus className="w-4 h-4" />
             موعد جديد
@@ -141,7 +157,7 @@ export default function AppointmentsPage() {
       </div>
 
       {/* Date Navigator */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <div className="no-print bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-3">
           <button
             onClick={navigatePrev}

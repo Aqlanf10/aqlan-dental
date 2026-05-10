@@ -64,6 +64,24 @@
   }
 }
 
+/* ─── Print styles ──────────────────────────────────────────────────────────── */
+@media print {
+  aside, header { display: none !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  body { background: white !important; }
+  * { box-shadow: none !important; }
+  main {
+    overflow: visible !important;
+    padding: 1rem !important;
+    margin-right: 0 !important;
+  }
+  /* Reset the main content offset (no sidebar in print) */
+  .lg\:mr-64 { margin-right: 0 !important; }
+  /* Avoid page breaks inside appointment cards */
+  .appointment-card { break-inside: avoid; }
+}
+
 @layer utilities {
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(6px); }

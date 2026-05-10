@@ -13,6 +13,8 @@ public class Message : BaseEntity
     public string? AttachmentType { get; set; }
     public Guid? ReplyToId { get; set; }
     public bool IsSystemMessage { get; set; } = false;
+    public bool IsEdited { get; set; } = false;
+    public DateTime? EditedAt { get; set; }
 
     // Navigation
     public Conversation Conversation { get; set; } = null!;

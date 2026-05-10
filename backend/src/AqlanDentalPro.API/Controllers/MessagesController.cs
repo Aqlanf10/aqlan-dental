@@ -86,6 +86,18 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
                     END $$;
                 """);
 
+                // Also add editing columns if missing
+                await db.Database.ExecuteSqlRawAsync("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
+                            ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
+                            ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
+                        END IF;
+                    END $$;
+                """);
+
                 return Ok(new { message = "تم تحديث أعمدة المراسلة المفقودة بنجاح" });
             }
 
@@ -312,6 +324,26 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
                 )
             """);
 
+            // Add IsEdited/EditedAt columns for message editing feature
+            await db.Database.ExecuteSqlRawAsync("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
+                        ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
+                        ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
+                    END IF;
+                END $$;
+            """);
+
+            await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                SELECT '20260510000000_AddMessageEditing', '8.0.8'
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditing'
+                )
+            """);
+
             return Ok(new { message = "تم إنشاء جداول المراسلة بنجاح" });
         }
         catch (Exception ex)
@@ -461,6 +493,20 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
     }
 
+    /// <summary>تعديل رسالة (المرسل فقط، خلال 15 دقيقة)</summary>
+    [HttpPut("conversations/{conversationId:guid}/messages/{messageId:guid}")]
+    public async Task<ActionResult<MessageDto>> EditMessage(
+        Guid conversationId, Guid messageId, [FromBody] EditMessageRequest request)
+    {
+        var (success, error, message) = await messagingService.EditMessageAsync(conversationId, messageId, request);
+        if (!success)
+        {
+            if (message is null && error is null) return Forbid();
+            return BadRequest(new { message = error });
+        }
+        return Ok(message);
+    }
+
     /// <summary>حذف رسالة (المرسل فقط)</summary>
     [HttpDelete("conversations/{conversationId:guid}/messages/{messageId:guid}")]
     public async Task<IActionResult> DeleteMessage(Guid conversationId, Guid messageId)
@@ -468,6 +514,14 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         var result = await messagingService.DeleteMessageAsync(conversationId, messageId);
         if (!result) return Forbid();
         return NoContent();
+    }
+
+    /// <summary>إحصائيات المراسلة</summary>
+    [HttpGet("stats")]
+    public async Task<ActionResult<MessagingStatsDto>> GetStats()
+    {
+        var result = await messagingService.GetStatsAsync();
+        return Ok(result);
     }
 
     /// <summary>جلب محادثة مريض الداخلية الموجودة (GET) — لا تنشئ واحدة جديدة</summary>

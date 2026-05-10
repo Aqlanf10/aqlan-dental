@@ -134,26 +134,25 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
             {dates.map((date) => {
               const slotAppts = getSlotAppts(date, hour);
               const isToday = date === today;
+              const h24 = String(hour).padStart(2, "0");
+              const newUrl = `/appointments/new?date=${date}&startTime=${h24}:00${doctorId ? `&doctorId=${doctorId}` : ""}`;
               return (
-                <Link
+                <div
                   key={date}
-                  href={`/appointments/new?date=${date}&startTime=${String(hour).padStart(2,"0")}:00`}
                   className={cn(
-                    "min-h-[52px] rounded border border-dashed p-0.5 transition",
+                    "min-h-[52px] rounded border border-dashed p-0.5 transition group relative",
                     isToday
-                      ? "border-clinic-blue/30 bg-clinic-blue/5 hover:bg-clinic-blue/10"
-                      : "border-gray-100 bg-gray-50/50 hover:bg-gray-100"
+                      ? "border-clinic-blue/30 bg-clinic-blue/5"
+                      : "border-gray-100 bg-gray-50/50"
                   )}
-                  onClick={(e) => {
-                    if (slotAppts.length > 0) e.preventDefault();
-                  }}
                 >
                   <div className="space-y-0.5">
                     {slotAppts.map((a) => (
-                      <div
+                      <Link
                         key={a.id}
+                        href={`/appointments/${a.id}`}
                         className={cn(
-                          "rounded px-1.5 py-1 text-xs border truncate",
+                          "block rounded px-1.5 py-1 text-xs border truncate hover:brightness-95 transition",
                           STATUS_COLORS[a.status] ?? "bg-gray-100 border-gray-200"
                         )}
                         title={`${a.patientName} — ${a.appointmentType} — ${formatTime(a.startTime)}`}
@@ -168,10 +167,20 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
                         <div className="text-[10px] opacity-70 font-mono">
                           {formatTime(a.startTime)} · {a.appointmentType}
                         </div>
-                      </div>
+                      </Link>
                     ))}
                   </div>
-                </Link>
+                  {/* Click empty area to add appointment */}
+                  {slotAppts.length === 0 && (
+                    <Link
+                      href={newUrl}
+                      className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-clinic-blue"
+                      title="إضافة موعد"
+                    >
+                      <span className="text-lg font-light">+</span>
+                    </Link>
+                  )}
+                </div>
               );
             })}
           </div>

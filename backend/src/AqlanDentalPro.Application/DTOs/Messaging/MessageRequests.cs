@@ -32,6 +32,12 @@ public class UnreadCountDto
     public int UnreadConversations { get; set; }
 }
 
+/// <summary>تعديل رسالة (المرسل فقط، خلال 15 دقيقة)</summary>
+public class EditMessageRequest
+{
+    public string Content { get; set; } = string.Empty;
+}
+
 /// <summary>المريض يبدأ محادثة مع المركز</summary>
 public class StartConversationRequest
 {

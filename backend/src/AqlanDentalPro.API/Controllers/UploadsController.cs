@@ -10,12 +10,14 @@ public class UploadsController : ControllerBase
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "image/jpeg", "image/png", "application/pdf"
+        "image/jpeg", "image/png", "application/pdf",
+        "audio/webm", "audio/ogg", "audio/mp4"
     };
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".pdf"
+        ".jpg", ".jpeg", ".png", ".pdf",
+        ".webm", ".ogg", ".mp4"
     };
 
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB

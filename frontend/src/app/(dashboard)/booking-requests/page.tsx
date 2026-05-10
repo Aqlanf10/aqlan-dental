@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   Clock, CheckCircle2, XCircle, Eye, Loader2, RefreshCw,
-  Phone, Mail, Calendar, MessageSquare, Filter, Globe,
+  Phone, Mail, Calendar, MessageSquare, Filter, Globe, CalendarPlus,
 } from "lucide-react";
 
 type BookingStatus = "Pending" | "Reviewed" | "Confirmed" | "Rejected";
@@ -52,6 +53,26 @@ function formatDate(dateStr: string): string {
   });
 }
 
+function parseTimeToISO(t: string | null): string | undefined {
+  if (!t) return undefined;
+  // Already 24h format "HH:MM"
+  if (/^\d{1,2}:\d{2}$/.test(t.trim())) {
+    const [h, m] = t.trim().split(":");
+    return `${h.padStart(2, "0")}:${m}`;
+  }
+  // Arabic 12h like "9:00 ص" or "3:00 م"
+  const m12 = t.match(/(\d{1,2}):(\d{2})\s*(ص|م|AM|PM)/i);
+  if (m12) {
+    let h = parseInt(m12[1], 10);
+    const min = m12[2];
+    const isPm = m12[3] === "م" || m12[3].toUpperCase() === "PM";
+    if (isPm && h < 12) h += 12;
+    if (!isPm && h === 12) h = 0;
+    return `${h.toString().padStart(2, "0")}:${min}`;
+  }
+  return undefined;
+}
+
 function StatusBadge({ status }: { status: BookingStatus }) {
   const cfg = STATUS_CONFIG[status];
   return (
@@ -66,9 +87,10 @@ interface DetailModalProps {
   item: BookingRequest;
   onClose: () => void;
   onStatusChange: (id: string, status: BookingStatus, notes: string) => Promise<void>;
+  onCreateAppointment: (item: BookingRequest) => void;
 }
 
-function DetailModal({ item, onClose, onStatusChange }: DetailModalProps) {
+function DetailModal({ item, onClose, onStatusChange, onCreateAppointment }: DetailModalProps) {
   const [staffNotes, setStaffNotes] = useState(item.staffNotes ?? "");
   const [loading, setLoading] = useState(false);
   const nextStatuses = NEXT_STATUSES[item.status];
@@ -176,21 +198,29 @@ function DetailModal({ item, onClose, onStatusChange }: DetailModalProps) {
         </div>
 
         {/* Actions */}
-        {nextStatuses.length > 0 && (
-          <div className="p-6 pt-0 flex flex-wrap gap-2">
-            {nextStatuses.map((ns) => (
-              <button
-                key={ns.status}
-                disabled={loading}
-                onClick={() => handleStatusChange(ns.status)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold transition-colors disabled:opacity-50 ${ns.color}`}
-              >
-                {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {ns.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="p-6 pt-0 flex flex-wrap gap-2">
+          {/* Create Appointment — shown for confirmed requests */}
+          {item.status === "Confirmed" && (
+            <button
+              onClick={() => { onCreateAppointment(item); onClose(); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold bg-clinic-blue hover:bg-clinic-navy transition-colors"
+            >
+              <CalendarPlus className="w-3.5 h-3.5" />
+              إنشاء موعد
+            </button>
+          )}
+          {nextStatuses.map((ns) => (
+            <button
+              key={ns.status}
+              disabled={loading}
+              onClick={() => handleStatusChange(ns.status)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold transition-colors disabled:opacity-50 ${ns.color}`}
+            >
+              {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {ns.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -205,6 +235,7 @@ const FILTER_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export default function BookingRequestsPage() {
+  const router = useRouter();
   const [items, setItems] = useState<BookingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
@@ -230,6 +261,15 @@ export default function BookingRequestsPage() {
   async function handleStatusChange(id: string, status: BookingStatus, staffNotes: string) {
     await api.patch(`/api/booking-requests/${id}/status`, { status, staffNotes });
     await fetchItems();
+  }
+
+  function handleCreateAppointment(item: BookingRequest) {
+    const params = new URLSearchParams();
+    params.set("patientName", item.patientName);
+    if (item.preferredDate) params.set("date", item.preferredDate);
+    const t24 = parseTimeToISO(item.preferredTime);
+    if (t24) params.set("startTime", t24);
+    router.push(`/appointments/new?${params.toString()}`);
   }
 
   const pendingCount = items.filter((i) => i.status === "Pending").length;
@@ -332,8 +372,17 @@ export default function BookingRequestsPage() {
                     <p className="text-xs text-gray-400 mt-1 truncate max-w-md">{item.notes}</p>
                   )}
                 </div>
-                <div className="text-xs text-gray-400 flex-shrink-0 text-left" dir="ltr">
-                  {formatDate(item.createdAt)}
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                  <span className="text-xs text-gray-400" dir="ltr">{formatDate(item.createdAt)}</span>
+                  {item.status === "Confirmed" && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleCreateAppointment(item); }}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-clinic-blue/10 text-clinic-blue hover:bg-clinic-blue/20 transition-colors"
+                    >
+                      <CalendarPlus className="w-3 h-3" />
+                      إنشاء موعد
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -346,6 +395,7 @@ export default function BookingRequestsPage() {
           item={selected}
           onClose={() => setSelected(null)}
           onStatusChange={handleStatusChange}
+          onCreateAppointment={handleCreateAppointment}
         />
       )}
     </div>

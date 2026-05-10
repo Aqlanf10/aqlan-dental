@@ -86,6 +86,7 @@ export function Topbar() {
   const [searchOpen,   setSearchOpen]   = useState(false);
   const [searching,    setSearching]    = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* Notification state */
@@ -200,6 +201,23 @@ export function Topbar() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  /* ── Ctrl+K / Cmd+K shortcut to focus search ── */
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+        searchInputRef.current?.blur();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, []);
+
   const hasResults = searchResults && (
     searchResults.patients.length > 0 ||
     searchResults.appointments.length > 0 ||
@@ -247,11 +265,12 @@ export function Topbar() {
         {/* ── Search ── */}
         <div ref={searchRef} className="relative hidden md:block">
           <input
+            ref={searchInputRef}
             type="search"
             value={query}
             onChange={handleSearchInput}
             onFocus={() => hasResults && setSearchOpen(true)}
-            placeholder="بحث سريع..."
+            placeholder="بحث سريع... (Ctrl+K)"
             className="pe-9 ps-3 py-[7px] text-[13px] rounded-lg outline-none"
             style={{
               width: 220,
@@ -337,7 +356,7 @@ export function Topbar() {
                       {searchResults!.appointments.map(a => (
                         <button
                           key={a.id}
-                          onClick={() => { router.push(`/appointments`); setSearchOpen(false); setQuery(""); }}
+                          onClick={() => { router.push(`/appointments/${a.id}`); setSearchOpen(false); setQuery(""); }}
                           className="w-full flex items-center gap-3 px-3 py-2.5 transition text-start"
                           onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
                           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}

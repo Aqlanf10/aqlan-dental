@@ -83,7 +83,7 @@ export default function DashboardPage() {
           value={loading ? "—" : (stats ? `${Math.round(stats.totalRevenueMTD / 1000)}K ر.ي` : 0)}
           icon={Wallet}
           color="green"
-          description={loading ? "" : `متأخرات: ${Math.round((stats?.overdueContractsCount ?? 0) / 1000)}K`}
+          description={loading ? "" : `${stats?.overdueContractsCount ?? 0} عقد متأخر السداد`}
         />
       </div>
 

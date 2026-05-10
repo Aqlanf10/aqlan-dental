@@ -55,6 +55,12 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
       .finally(() => setLoading(false));
   }, [patientId]);
 
+  const filtered = appointments.filter((a) => {
+    if (fromDate && a.date < fromDate) return false;
+    if (toDate && a.date > toDate) return false;
+    return true;
+  });
+
   return (
     <div className="space-y-4" dir="rtl">
       {/* Filter */}
@@ -93,14 +99,14 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
             <div key={i} className="h-14 bg-[#f1f5f9] rounded-lg" />
           ))}
         </div>
-      ) : appointments.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-[#94a3b8]">
           <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
           <p className="text-sm">لا توجد مواعيد في الفترة المحددة</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {appointments.map((apt) => (
+          {filtered.map((apt) => (
             <Link key={apt.id} href={`/appointments/${apt.id}`}
               className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition"
             >

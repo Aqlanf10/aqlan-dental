@@ -11,6 +11,7 @@ function NewAppointmentContent() {
   const patientName = params.get("patientName")  ?? undefined;
   const date        = params.get("date")         ?? undefined;
   const startTime   = params.get("startTime")    ?? undefined;
+  const doctorId    = params.get("doctorId")     ?? "";
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -33,8 +34,8 @@ function NewAppointmentContent() {
       <AppointmentForm
         defaultPatientId={patientId}
         defaultPatientName={patientName}
-        editDefaults={date || startTime ? {
-          doctorId: "",
+        editDefaults={date || startTime || doctorId ? {
+          doctorId: doctorId,
           appointmentDate: date ?? new Date().toISOString().slice(0, 10),
           startTime: startTime ?? "",
           durationMinutes: 30,

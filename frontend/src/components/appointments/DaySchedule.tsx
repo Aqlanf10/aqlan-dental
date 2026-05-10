@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical, Pencil, Stethoscope, Send, Trash2 } from "lucide-react";
+import { MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
@@ -32,6 +32,13 @@ const STATUS_COLORS: Record<string, string> = {
 interface Props {
   date: string;
   doctorId?: string;
+}
+
+function newApptUrl(date: string, hour: number, doctorId?: string): string {
+  const h = String(hour).padStart(2, "0");
+  let url = `/appointments/new?date=${date}&startTime=${h}:00`;
+  if (doctorId) url += `&doctorId=${doctorId}`;
+  return url;
 }
 
 export function DaySchedule({ date, doctorId }: Props) {
@@ -102,7 +109,15 @@ export function DaySchedule({ date, doctorId }: Props) {
                 />
               ))}
               {!slotAppts.length && (
-                <div className="h-10 border-b border-dashed border-gray-100" />
+                <Link
+                  href={newApptUrl(date, h, doctorId)}
+                  className="flex items-center gap-1.5 h-10 px-2 border-b border-dashed border-gray-100 text-transparent hover:text-clinic-blue hover:border-clinic-blue/30 hover:bg-clinic-blue/5 rounded group transition-colors"
+                >
+                  <Plus className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                    موعد جديد
+                  </span>
+                </Link>
               )}
             </div>
           </div>

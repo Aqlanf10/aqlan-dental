@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.BookingRequests;
+using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -292,12 +293,4 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         r.CreatedAt,
         r.ReviewedAt
     );
-}
-
-/// <summary>
-/// Thrown when a booking request slot is no longer available (race condition).
-/// </summary>
-public class SlotNotAvailableException : Exception
-{
-    public SlotNotAvailableException(string message) : base(message) { }
 }

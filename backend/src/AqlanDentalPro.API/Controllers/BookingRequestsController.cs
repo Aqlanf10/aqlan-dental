@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.BookingRequests;
+using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

@@ -376,6 +376,51 @@ catch (Exception ex)
     msgEditLogger2.LogWarning(ex, "Message edit fields hotfix failed (non-fatal)");
 }
 
+// ── BookingRequests DoctorId Hotfix (unconditional, idempotent) ────────────
+try
+{
+    using var doctorIdScope = app.Services.CreateScope();
+    var doctorIdDb     = doctorIdScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var doctorIdLogger = doctorIdScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await doctorIdDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'BookingRequests' AND column_name = 'DoctorId') THEN
+                    ALTER TABLE "BookingRequests" ADD COLUMN "DoctorId" uuid NULL;
+                END IF;
+            END IF;
+        END $$;
+    """);
+    await doctorIdDb.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_DoctorId" ON "BookingRequests" ("DoctorId");
+    """);
+    await doctorIdDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_BookingRequests_Doctors_DoctorId'
+            ) THEN
+                ALTER TABLE "BookingRequests" ADD CONSTRAINT "FK_BookingRequests_Doctors_DoctorId"
+                    FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
+            END IF;
+        END $$;
+    """);
+    await doctorIdDb.Database.ExecuteSqlRawAsync("""
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT '20260511000000_AddDoctorIdToBookingRequest', '8.0.8'
+        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
+          AND NOT EXISTS (
+              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260511000000_AddDoctorIdToBookingRequest'
+          );
+    """);
+    doctorIdLogger.LogInformation("BookingRequests DoctorId hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var doctorIdLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    doctorIdLogger2.LogWarning(ex, "BookingRequests DoctorId hotfix failed (non-fatal)");
+}
+
 // ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");

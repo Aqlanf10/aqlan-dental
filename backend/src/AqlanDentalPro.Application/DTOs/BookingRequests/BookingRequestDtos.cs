@@ -32,3 +32,19 @@ public record UpdateBookingRequestStatusDto(
     [Required] string Status,
     string? StaffNotes
 );
+
+// ── Public booking availability ──────────────────────────────────────────
+
+public record BookingAvailabilitySlotDto(
+    string Time,
+    bool Available,
+    string? Reason = null
+);
+
+public record BookingAvailabilityResponseDto(
+    string Date,
+    string? ServiceType,
+    List<BookingAvailabilitySlotDto> Slots,
+    bool IsClosed = false,
+    string? Message = null
+);

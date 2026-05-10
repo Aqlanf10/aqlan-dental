@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.BookingRequests;
+using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +9,31 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 public class BookingRequestsController(IBookingRequestService service, ICurrentUserService currentUser) : ControllerBase
 {
-    // Public endpoint — no authentication required
+    // ── Public endpoints ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Get available time slots for a given date. Public, no auth required.
+    /// </summary>
+    [HttpGet("api/public/booking-availability")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAvailability([FromQuery] string date, [FromQuery] string? serviceType)
+    {
+        if (string.IsNullOrWhiteSpace(date))
+            return BadRequest(new { message = "التاريخ مطلوب" });
+
+        var result = await service.GetAvailabilityAsync(date, serviceType);
+
+        // If there's a message and no slots (past date / invalid), return 400
+        if (result.Message != null && result.Slots.Count == 0 && !result.IsClosed)
+            return BadRequest(new { message = result.Message });
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Submit a public booking request. No auth required.
+    /// Returns 409 Conflict if the selected time slot is no longer available.
+    /// </summary>
     [HttpPost("api/public/booking-requests")]
     [AllowAnonymous]
     public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto dto)
@@ -16,11 +41,19 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var result = await service.CreateAsync(dto);
-        return Created(string.Empty, result);
+        try
+        {
+            var result = await service.CreateAsync(dto);
+            return Created(string.Empty, result);
+        }
+        catch (SlotNotAvailableException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
-    // Staff endpoints
+    // ── Staff endpoints ──────────────────────────────────────────────────
+
     [HttpGet("api/booking-requests")]
     [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> GetAll([FromQuery] string? status)

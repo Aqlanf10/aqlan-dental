@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { CheckCircle2, Loader2, ChevronRight, CalendarDays, MessageCircle, Phone, MapPin, Clock } from "lucide-react";
+import { CheckCircle2, Loader2, ChevronRight, CalendarDays, MessageCircle, Phone, MapPin, Clock, AlertCircle } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -17,11 +17,19 @@ const SERVICES = [
   "استشارة",
 ];
 
-const TIMES = [
-  "8:00 ص", "9:00 ص", "10:00 ص", "11:00 ص",
-  "12:00 م", "1:00 م", "2:00 م", "3:00 م",
-  "4:00 م", "5:00 م", "6:00 م", "7:00 م",
-];
+interface TimeSlot {
+  time: string;
+  available: boolean;
+  reason?: string;
+}
+
+interface AvailabilityResponse {
+  date: string;
+  serviceType: string | null;
+  slots: TimeSlot[];
+  isClosed: boolean;
+  message?: string;
+}
 
 interface FormData {
   patientName: string;
@@ -37,6 +45,23 @@ interface FormErrors {
   patientName?: string;
   phoneNumber?: string;
   email?: string;
+  preferredDate?: string;
+}
+
+/** Convert "HH:mm" 24h → Arabic display like "9:00 ص" */
+function toArabicTime(time24: string): string {
+  const [hStr, mStr] = time24.split(":");
+  const h = parseInt(hStr, 10);
+  const m = mStr;
+  if (h === 0) return `12:${m} ص`;
+  if (h === 12) return `12:${m} م`;
+  if (h < 12) return `${h}:${m} ص`;
+  return `${h - 12}:${m} م`;
+}
+
+/** Get today's date in YYYY-MM-DD */
+function getTodayDate(): string {
+  return new Date().toISOString().split("T")[0];
 }
 
 export default function BookPage() {
@@ -54,6 +79,71 @@ export default function BookPage() {
   const [success, setSuccess] = useState(false);
   const [serverError, setServerError] = useState("");
 
+  // ── Availability state ──
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState("");
+  const [isClosed, setIsClosed] = useState(false);
+  const [closedMessage, setClosedMessage] = useState("");
+
+  // Fetch availability when date or service changes
+  const fetchAvailability = useCallback(async (date: string, serviceType: string) => {
+    if (!date) {
+      setSlots([]);
+      setSlotsError("");
+      setIsClosed(false);
+      setClosedMessage("");
+      return;
+    }
+
+    setSlotsLoading(true);
+    setSlotsError("");
+    setIsClosed(false);
+    setClosedMessage("");
+
+    try {
+      const params = new URLSearchParams({ date });
+      if (serviceType) params.set("serviceType", serviceType);
+
+      const res = await fetch(`${API_URL}/api/public/booking-availability?${params}`);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSlotsError(data?.message || "تعذّر تحميل الأوقات المتاحة");
+        setSlots([]);
+        setSlotsLoading(false);
+        return;
+      }
+
+      const data: AvailabilityResponse = await res.json();
+
+      if (data.isClosed) {
+        setIsClosed(true);
+        setClosedMessage(data.message || "");
+        setSlots([]);
+      } else {
+        setSlots(data.slots || []);
+      }
+    } catch {
+      setSlotsError("تعذّر الاتصال بالخادم لتحميل الأوقات");
+      setSlots([]);
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, []);
+
+  // Re-fetch when date or serviceType changes (debounced)
+  useEffect(() => {
+    // Clear selected time when date/service changes
+    setForm(prev => ({ ...prev, preferredTime: "" }));
+
+    const timer = setTimeout(() => {
+      fetchAvailability(form.preferredDate, form.serviceType);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [form.preferredDate, form.serviceType, fetchAvailability]);
+
   function validate(): boolean {
     const errs: FormErrors = {};
     if (!form.patientName.trim()) errs.patientName = "الاسم مطلوب";
@@ -63,6 +153,13 @@ export default function BookPage() {
     }
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       errs.email = "البريد الإلكتروني غير صحيح";
+    }
+    // Date validation for Friday
+    if (form.preferredDate) {
+      const day = new Date(form.preferredDate + "T00:00:00").getDay();
+      if (day === 5) {
+        errs.preferredDate = "المركز مغلق يوم الجمعة، يرجى اختيار يوم آخر";
+      }
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -85,6 +182,7 @@ export default function BookPage() {
           email: form.email.trim() || null,
           serviceType: form.serviceType || null,
           preferredDate: form.preferredDate || null,
+          // Send time in 24h format so backend can check availability accurately
           preferredTime: form.preferredTime || null,
           notes: form.notes.trim() || null,
         }),
@@ -92,6 +190,12 @@ export default function BookPage() {
 
       if (res.ok || res.status === 201) {
         setSuccess(true);
+      } else if (res.status === 409) {
+        // Slot no longer available — refresh slots and show error
+        const data = await res.json().catch(() => ({}));
+        setServerError(data?.message || "هذا الموعد لم يعد متاحًا، يرجى اختيار وقت آخر.");
+        // Refresh availability
+        fetchAvailability(form.preferredDate, form.serviceType);
       } else {
         setServerError("حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مرة أخرى أو الاتصال بنا مباشرة.");
       }
@@ -102,11 +206,11 @@ export default function BookPage() {
     }
   }
 
+  // ── Success screen ──
   if (success) {
     return (
       <div dir="rtl" className="min-h-[70vh] flex items-center justify-center px-4 py-20 bg-[#F8FAFC]">
         <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-10 text-center border border-slate-100">
-          {/* Badge */}
           <div
             className="inline-block text-xs font-semibold px-3 py-1 rounded-full mb-5 border"
             style={{ backgroundColor: "rgba(135,206,235,0.1)", borderColor: "rgba(135,206,235,0.3)", color: "#0284c7" }}
@@ -114,7 +218,6 @@ export default function BookPage() {
             تم بنجاح
           </div>
 
-          {/* Icon */}
           <div
             className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg"
             style={{ background: "linear-gradient(135deg, #87CEEB, #0284c7)" }}
@@ -150,7 +253,6 @@ export default function BookPage() {
             </a>
           </div>
 
-          {/* Address line */}
           <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 border-t border-slate-100 pt-5">
             <MapPin className="w-3.5 h-3.5" style={{ color: "#FF8C00" }} />
             تعز، اليمن — شارع التحرير الأعلى
@@ -163,11 +265,14 @@ export default function BookPage() {
     );
   }
 
+  // ── Booking form ──
+  const availableSlots = slots.filter(s => s.available);
+  const hasNoAvailableSlots = slots.length > 0 && availableSlots.length === 0;
+
   return (
     <div dir="rtl" className="min-h-screen bg-[#F8FAFC]">
       {/* Page Header */}
       <div className="relative text-white py-14 overflow-hidden" style={{ backgroundColor: "#0F172A" }}>
-        {/* Subtle dot pattern */}
         <div
           className="absolute inset-0 opacity-5"
           style={{
@@ -176,13 +281,11 @@ export default function BookPage() {
           }}
         />
         <div className="relative max-w-2xl mx-auto px-4 text-center">
-          {/* Logo */}
           <div className="flex justify-center mb-5">
             <div className="bg-white rounded-2xl p-2 shadow-sm inline-flex">
               <img src="/logo.png" alt="مركز الدكتور عقلان الكامل" className="h-10 w-auto object-contain" />
             </div>
           </div>
-          {/* Icon above title */}
           <div
             className="w-14 h-14 rounded-2xl border flex items-center justify-center mx-auto mb-5"
             style={{ backgroundColor: "rgba(135,206,235,0.12)", borderColor: "rgba(135,206,235,0.2)" }}
@@ -289,12 +392,12 @@ export default function BookPage() {
                 </div>
               </div>
 
-              {/* ── تفاصيل الموعد (اختياري) ── */}
+              {/* ── تفاصيل الموعد ── */}
               <div>
                 <div className="flex items-center gap-3 mb-5 pt-2">
                   <div className="flex-1 h-px bg-slate-100" />
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
-                    تفاصيل الموعد (اختياري)
+                    تفاصيل الموعد
                   </span>
                   <div className="flex-1 h-px bg-slate-100" />
                 </div>
@@ -303,8 +406,7 @@ export default function BookPage() {
                   {/* Service */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                      نوع الخدمة{" "}
-                      <span className="text-slate-400 font-normal">(اختياري)</span>
+                      نوع الخدمة
                     </label>
                     <select
                       value={form.serviceType}
@@ -318,38 +420,116 @@ export default function BookPage() {
                     </select>
                   </div>
 
-                  {/* Date & Time */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                        التاريخ المفضل{" "}
-                        <span className="text-slate-400 font-normal text-xs">(اختياري)</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={form.preferredDate}
-                        onChange={(e) => setForm({ ...form, preferredDate: e.target.value })}
-                        min={new Date().toISOString().split("T")[0]}
-                        className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                        الوقت المفضل{" "}
-                        <span className="text-slate-400 font-normal text-xs">(اختياري)</span>
-                      </label>
-                      <select
-                        value={form.preferredTime}
-                        onChange={(e) => setForm({ ...form, preferredTime: e.target.value })}
-                        className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 bg-white text-right"
-                      >
-                        <option value="">أي وقت</option>
-                        {TIMES.map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* Preferred Date */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                      التاريخ المفضل
+                    </label>
+                    <input
+                      type="date"
+                      value={form.preferredDate}
+                      onChange={(e) => setForm({ ...form, preferredDate: e.target.value, preferredTime: "" })}
+                      min={getTodayDate()}
+                      className={`w-full px-4 py-3.5 rounded-xl border transition-all duration-200 outline-none focus:ring-2 ${
+                        errors.preferredDate
+                          ? "border-red-400 bg-red-50 focus:ring-red-300"
+                          : "border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
+                      }`}
+                    />
+                    {errors.preferredDate && (
+                      <p className="text-red-500 text-xs mt-1.5">{errors.preferredDate}</p>
+                    )}
                   </div>
+
+                  {/* ── Dynamic Time Slot Selector ── */}
+                  {form.preferredDate && !errors.preferredDate && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-3">
+                        الوقت المفضل
+                      </label>
+
+                      {/* Loading state */}
+                      {slotsLoading && (
+                        <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span className="text-sm">جاري تحميل الأوقات المتاحة...</span>
+                        </div>
+                      )}
+
+                      {/* Error loading slots */}
+                      {slotsError && !slotsLoading && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-700 text-sm text-center flex items-center justify-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          {slotsError}
+                        </div>
+                      )}
+
+                      {/* Friday / Closed message */}
+                      {isClosed && !slotsLoading && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-700 text-sm text-center">
+                          {closedMessage || "المركز مغلق يوم الجمعة، يرجى اختيار يوم آخر."}
+                        </div>
+                      )}
+
+                      {/* No available slots */}
+                      {hasNoAvailableSlots && !slotsLoading && !isClosed && !slotsError && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-slate-500 text-sm text-center">
+                          لا توجد أوقات متاحة في هذا اليوم، يرجى اختيار يوم آخر.
+                        </div>
+                      )}
+
+                      {/* Time slot grid */}
+                      {slots.length > 0 && !slotsLoading && !isClosed && !slotsError && (
+                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                          {slots.map((slot) => {
+                            const isSelected = form.preferredTime === slot.time;
+                            const isUnavailable = !slot.available;
+
+                            return (
+                              <button
+                                key={slot.time}
+                                type="button"
+                                disabled={isUnavailable}
+                                onClick={() => setForm({ ...form, preferredTime: slot.time })}
+                                title={isUnavailable ? slot.reason || "محجوز" : toArabicTime(slot.time)}
+                                className={`
+                                  relative px-2 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border
+                                  ${isUnavailable
+                                    ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed line-through"
+                                    : isSelected
+                                      ? "bg-orange-500 border-orange-500 text-white shadow-md scale-[1.02]"
+                                      : "bg-white border-slate-200 text-slate-700 hover:border-[#87CEEB] hover:bg-sky-50 cursor-pointer"
+                                  }
+                                `}
+                              >
+                                <span className="block text-center" dir="ltr">
+                                  {toArabicTime(slot.time)}
+                                </span>
+                                {isUnavailable && (
+                                  <span className="absolute -top-1 -left-1 w-4 h-4 bg-red-400 rounded-full flex items-center justify-center">
+                                    <span className="text-white text-[8px] font-bold">✕</span>
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Selected time indicator */}
+                      {form.preferredTime && !slotsLoading && (
+                        <p className="mt-2 text-xs text-slate-400 text-center">
+                          الوقت المختار: <strong className="text-slate-700" dir="ltr">{toArabicTime(form.preferredTime)}</strong>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {/* Hint if no date selected yet */}
+                  {!form.preferredDate && (
+                    <p className="text-xs text-slate-400 text-center py-2">
+                      اختر التاريخ أولاً لعرض الأوقات المتاحة
+                    </p>
+                  )}
 
                   {/* Notes */}
                   <div>
@@ -370,7 +550,8 @@ export default function BookPage() {
               </div>
 
               {serverError && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm text-center">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm text-center flex items-center justify-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
                   {serverError}
                 </div>
               )}

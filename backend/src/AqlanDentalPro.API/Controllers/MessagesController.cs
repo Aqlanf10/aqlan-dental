@@ -461,6 +461,15 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
     }
 
+    /// <summary>حذف رسالة (المرسل فقط)</summary>
+    [HttpDelete("conversations/{conversationId:guid}/messages/{messageId:guid}")]
+    public async Task<IActionResult> DeleteMessage(Guid conversationId, Guid messageId)
+    {
+        var result = await messagingService.DeleteMessageAsync(conversationId, messageId);
+        if (!result) return Forbid();
+        return NoContent();
+    }
+
     /// <summary>جلب محادثة مريض الداخلية الموجودة (GET) — لا تنشئ واحدة جديدة</summary>
     [HttpGet("patient/{patientId:guid}")]
     public async Task<ActionResult<ConversationDetailDto>> GetInternalPatientConversation(Guid patientId)

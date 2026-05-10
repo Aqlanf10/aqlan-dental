@@ -610,6 +610,22 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         };
     }
 
+    // ─── حذف رسالة (المرسل فقط، soft delete عبر تغيير المحتوى) ──────────────────
+    public async Task<bool> DeleteMessageAsync(Guid conversationId, Guid messageId)
+    {
+        var message = await db.Messages
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId && m.SenderId == UserId);
+
+        if (message is null) return false;
+
+        message.Content = "تم حذف هذه الرسالة";
+        message.AttachmentUrl = null;
+        message.AttachmentName = null;
+        message.AttachmentType = null;
+        await db.SaveChangesAsync();
+        return true;
+    }
+
     // ─── حذف محادثة (مغادرة) ──────────────────────────────────────────────────
     public async Task LeaveConversationAsync(Guid conversationId)
     {

@@ -1,241 +1,247 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { QueueDisplay } from "@/types/appointment";
+import { useEffect, useState, useCallback } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+interface QueueItem {
+  id: string;
+  patientDisplayName: string;
+  appointmentType: string;
+  startTime: string;
+  endTime: string | null;
+  doctorName: string | null;
+  doctorColor: string | null;
+  status: string;
+}
 
-/* ─── TV Display Page — No sidebar, large text, auto-refresh ──────────────── */
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; rowClass: string; badgeClass: string; dot?: boolean }
+> = {
+  Scheduled: {
+    label: "في الانتظار",
+    rowClass: "opacity-70",
+    badgeClass: "text-gray-400 bg-white/5",
+  },
+  Confirmed: {
+    label: "في الانتظار",
+    rowClass: "opacity-70",
+    badgeClass: "text-gray-400 bg-white/5",
+  },
+  Arrived: {
+    label: "في الانتظار",
+    rowClass: "opacity-80",
+    badgeClass: "text-blue-300 bg-blue-900/30",
+  },
+  InProgress: {
+    label: "جارٍ الآن",
+    rowClass:
+      "border-l-4 border-teal-400 bg-teal-900/20 brightness-110",
+    badgeClass: "text-teal-300 bg-teal-900/40",
+    dot: true,
+  },
+  Completed: {
+    label: "مكتمل",
+    rowClass: "opacity-50",
+    badgeClass: "text-green-400 bg-green-900/30",
+  },
+  NoShow: {
+    label: "لم يحضر",
+    rowClass: "opacity-40",
+    badgeClass: "text-red-400 bg-red-900/30",
+  },
+};
+
+function getStatusConfig(status: string) {
+  return (
+    STATUS_CONFIG[status] ?? {
+      label: status,
+      rowClass: "opacity-60",
+      badgeClass: "text-gray-400 bg-white/5",
+    }
+  );
+}
+
+function formatClock(date: Date): string {
+  return date.toLocaleTimeString("ar-SA", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function QueueDisplayPage() {
-  const [data, setData] = useState<QueueDisplay | null>(null);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [now, setNow] = useState<Date>(new Date());
+  const [error, setError] = useState<string | null>(null);
 
-  /* ── Fetch display data ──────────────────────────────────────────────────── */
-  const fetchDisplay = useCallback(async () => {
+  const fetchQueue = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/clinic-queue/display`);
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch {
-      /* silent — TV display retries automatically */
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+      const res = await fetch(`${apiBase}/api/public/queue`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: QueueItem[] = await res.json();
+      setQueue(data);
+      setLastUpdated(new Date());
+      setError(null);
+    } catch (err) {
+      setError("تعذّر تحميل البيانات");
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // Initial fetch + auto-refresh every 30 s
   useEffect(() => {
-    fetchDisplay();
-    const interval = setInterval(fetchDisplay, 8000); // refresh every 8 seconds
-    return () => clearInterval(interval);
-  }, [fetchDisplay]);
+    fetchQueue();
+    const refreshInterval = setInterval(fetchQueue, 30_000);
+    return () => clearInterval(refreshInterval);
+  }, [fetchQueue]);
 
-  /* ── Update clock ────────────────────────────────────────────────────────── */
+  // Live clock every second
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    const clockInterval = setInterval(() => setNow(new Date()), 1_000);
+    return () => clearInterval(clockInterval);
   }, []);
 
-  const formatTime = (d: Date) =>
-    d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
-
-  const formatDate = (d: Date) =>
-    d.toLocaleDateString("ar-SA", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-
-  /* ── Render ──────────────────────────────────────────────────────────────── */
   return (
     <div
-      className="min-h-screen flex flex-col"
-      style={{
-        background: "linear-gradient(135deg, #0F1B2D 0%, #1a3a5c 50%, #0F1B2D 100%)",
-        direction: "rtl",
-        color: "#fff",
-      }}
+      dir="rtl"
+      className="min-h-screen bg-[#0F172A] text-white flex flex-col font-sans"
+      style={{ fontFamily: "'Segoe UI', Tahoma, Arial, sans-serif" }}
     >
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <header
-        className="flex items-center justify-between px-8 py-4"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center"
-            style={{ background: "#3d7ab5" }}
-          >
-            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-            </svg>
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <header className="flex items-center justify-between px-10 py-6 border-b border-white/10">
+        {/* Clinic icon + name */}
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-[#0E7490] flex items-center justify-center text-2xl font-bold">
+            ع
           </div>
-          <span className="text-xl font-bold">مركز د. عقلان</span>
+          <div>
+            <h1 className="text-3xl font-bold text-white leading-tight">
+              مركز الدكتور عقلان الكامل
+            </h1>
+            <p className="text-lg text-teal-300 mt-0.5">
+              قائمة المرضى اليوم
+            </p>
+          </div>
         </div>
-        <div className="text-left">
-          <div className="text-3xl font-bold">{formatTime(currentTime)}</div>
-          <div className="text-sm opacity-60">{formatDate(currentTime)}</div>
+
+        {/* Live clock */}
+        <div className="text-right">
+          <p className="text-5xl font-mono font-bold text-teal-300 tabular-nums">
+            {formatClock(now)}
+          </p>
+          <p className="text-sm text-gray-400 mt-1">
+            {now.toLocaleDateString("ar-SA", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </p>
         </div>
       </header>
 
-      {/* ── Main content ─────────────────────────────────────────────────── */}
-      <main className="flex-1 flex flex-col px-8 py-6 gap-6 overflow-hidden">
+      {/* ── Main content ───────────────────────────────────────── */}
+      <main className="flex-1 px-10 py-8 overflow-auto">
         {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-2xl opacity-60">جارٍ تحميل شاشة العرض...</div>
+          <div className="flex items-center justify-center h-64">
+            <div className="text-3xl text-gray-400 animate-pulse">
+              جاري التحميل…
+            </div>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-3xl text-red-400">{error}</div>
+          </div>
+        ) : queue.length === 0 ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="text-6xl mb-4">📅</div>
+              <p className="text-4xl text-gray-400">لا توجد مواعيد اليوم</p>
+            </div>
           </div>
         ) : (
-          <>
-            {/* ── Latest called — hero section ─────────────────────────────── */}
-            <section
-              className="rounded-3xl p-8 text-center"
-              style={{
-                background: data?.latestCalled
-                  ? "linear-gradient(135deg, #3d7ab5 0%, #2563eb 100%)"
-                  : "rgba(255,255,255,0.05)",
-                minHeight: "200px",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-              }}
-            >
-              {data?.latestCalled ? (
-                <>
-                  <div className="text-lg opacity-80 mb-2">يُرجى التوجه إلى</div>
-                  <div
-                    className="text-5xl font-black mb-3"
-                    style={{ color: "#f5922e" }}
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="text-teal-300 text-xl border-b-2 border-teal-800/50">
+                <th className="py-4 px-4 text-center w-16">#</th>
+                <th className="py-4 px-6 text-right">اسم المريض</th>
+                <th className="py-4 px-6 text-right">نوع الزيارة</th>
+                <th className="py-4 px-6 text-center">الوقت</th>
+                <th className="py-4 px-6 text-center">الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {queue.map((item, index) => {
+                const cfg = getStatusConfig(item.status);
+                return (
+                  <tr
+                    key={item.id}
+                    className={`border-b border-white/5 transition-all ${cfg.rowClass}`}
                   >
-                    {data.latestCalled.roomName}
-                  </div>
-                  <div className="text-3xl font-bold mb-1">
-                    المريض رقم {data.latestCalled.patientNumber}
-                  </div>
-                  <div className="text-2xl opacity-90">
-                    {data.latestCalled.patientName}
-                  </div>
-                  <div className="text-base opacity-70 mt-1">
-                    الدكتور: {data.latestCalled.doctorName}
-                  </div>
-                </>
-              ) : (
-                <div className="text-2xl opacity-50">لا يوجد نداء حالي</div>
-              )}
-            </section>
+                    {/* Row number */}
+                    <td className="py-5 px-4 text-center">
+                      <span className="text-2xl font-bold text-gray-500">
+                        {index + 1}
+                      </span>
+                    </td>
 
-            {/* ── Bottom row: Waiting + Recently Called ──────────────────────── */}
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 min-h-0">
-              {/* Waiting list */}
-              <section
-                className="rounded-2xl p-5 overflow-hidden flex flex-col"
-                style={{ background: "rgba(255,255,255,0.07)" }}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-lg font-bold">في الانتظار</h2>
-                  <span
-                    className="px-3 py-1 rounded-full text-sm font-bold"
-                    style={{ background: "#f5922e", color: "#fff" }}
-                  >
-                    {data?.waitingCount ?? 0}
-                  </span>
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  {data?.waitingList && data.waitingList.length > 0 ? (
-                    data.waitingList.map((w, i) => (
-                      <div
-                        key={w.patientId + i}
-                        className="flex items-center justify-between px-4 py-2.5 rounded-xl"
-                        style={{ background: "rgba(255,255,255,0.08)" }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span
-                            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-                            style={{ background: "#3d7ab5" }}
-                          >
-                            {i + 1}
-                          </span>
-                          <div>
-                            <div className="text-sm font-bold">{w.patientName}</div>
-                            <div className="text-xs opacity-60">
-                              رقم {w.patientNumber} • {w.appointmentTime}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-xs opacity-70">{w.doctorName}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center opacity-40 py-4 text-sm">
-                      لا يوجد مرضى في الانتظار
-                    </div>
-                  )}
-                </div>
-              </section>
+                    {/* Patient name */}
+                    <td className="py-5 px-6">
+                      <span className="text-3xl font-semibold">
+                        {item.patientDisplayName}
+                      </span>
+                    </td>
 
-              {/* Recently called */}
-              <section
-                className="rounded-2xl p-5 overflow-hidden flex flex-col"
-                style={{ background: "rgba(255,255,255,0.07)" }}
-              >
-                <h2 className="text-lg font-bold mb-3">تم النداء مؤخرًا</h2>
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  {data?.recentlyCalled && data.recentlyCalled.length > 0 ? (
-                    data.recentlyCalled.map((r, i) => (
-                      <div
-                        key={r.patientId + i}
-                        className="flex items-center justify-between px-4 py-2.5 rounded-xl"
-                        style={{ background: "rgba(255,255,255,0.08)" }}
+                    {/* Appointment type */}
+                    <td className="py-5 px-6">
+                      <span className="text-2xl text-gray-200">
+                        {item.appointmentType}
+                      </span>
+                    </td>
+
+                    {/* Time */}
+                    <td className="py-5 px-6 text-center">
+                      <span className="text-2xl font-mono tabular-nums text-gray-200">
+                        {item.startTime}
+                      </span>
+                    </td>
+
+                    {/* Status badge */}
+                    <td className="py-5 px-6 text-center">
+                      <span
+                        className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xl font-medium ${cfg.badgeClass}`}
                       >
-                        <div>
-                          <div className="text-sm font-bold">{r.patientName}</div>
-                          <div className="text-xs opacity-60">
-                            رقم {r.patientNumber}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="text-xs px-2 py-0.5 rounded-md font-bold"
-                            style={{ background: "#3d7ab5", color: "#fff" }}
-                          >
-                            {r.roomName}
-                          </span>
-                          <span
-                            className="text-xs px-2 py-0.5 rounded-md font-medium"
-                            style={{
-                              background:
-                                r.status === "InRoom"
-                                  ? "rgba(124,58,237,0.3)"
-                                  : "rgba(249,115,22,0.3)",
-                              color:
-                                r.status === "InRoom" ? "#c4b5fd" : "#fed7aa",
-                            }}
-                          >
-                            {r.status === "InRoom" ? "داخل الغرفة" : "تم النداء"}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center opacity-40 py-4 text-sm">
-                      لا يوجد نداءات سابقة
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-          </>
+                        {cfg.dot && (
+                          <span className="w-3 h-3 rounded-full bg-teal-400 animate-pulse inline-block" />
+                        )}
+                        {cfg.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </main>
 
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <footer
-        className="px-8 py-3 text-center text-xs opacity-40"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}
-      >
-        شاشة عرض الطابور — مركز د. عقلان لطب وتقويم الأسنان
+      {/* ── Footer ─────────────────────────────────────────────── */}
+      <footer className="border-t border-white/10 px-10 py-4 flex items-center justify-between text-gray-500 text-base">
+        <span>
+          {lastUpdated
+            ? `آخر تحديث: ${formatClock(lastUpdated)}`
+            : "جاري التحميل…"}
+        </span>
+        <span>
+          يتحدث تلقائياً كل 30 ثانية — مركز الدكتور عقلان الكامل
+        </span>
       </footer>
     </div>
   );

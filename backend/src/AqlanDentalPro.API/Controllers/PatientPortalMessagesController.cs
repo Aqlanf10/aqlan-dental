@@ -6,6 +6,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -526,20 +527,28 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         var (userId, _, error) = await VerifyPatientFacingAccessAsync(conversationId);
         if (error != null) return NoContent(); // Silently succeed on auth failure for read
 
-        var unread = await db.Messages
-            .Where(m => m.ConversationId == conversationId
-                     && m.SenderId != userId!.Value
-                     && !m.Reads.Any(r => r.UserId == userId.Value))
-            .ToListAsync();
+        try
+        {
+            var unread = await db.Messages
+                .Where(m => m.ConversationId == conversationId
+                         && m.SenderId != userId!.Value
+                         && !m.Reads.Any(r => r.UserId == userId.Value))
+                .ToListAsync();
 
-        foreach (var m in unread)
-            db.MessageReads.Add(new MessageRead { MessageId = m.Id, UserId = userId!.Value, ReadAt = DateTime.UtcNow });
+            foreach (var m in unread)
+                db.MessageReads.Add(new MessageRead { MessageId = m.Id, UserId = userId!.Value, ReadAt = DateTime.UtcNow });
 
-        var participant = await db.ConversationParticipants
-            .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == userId!.Value);
-        if (participant != null) participant.LastReadAt = DateTime.UtcNow;
+            var participant = await db.ConversationParticipants
+                .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == userId!.Value);
+            if (participant != null) participant.LastReadAt = DateTime.UtcNow;
 
-        await db.SaveChangesAsync();
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent mark-as-read already inserted these rows — idempotent success
+        }
+
         return NoContent();
     }
 
@@ -749,21 +758,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .OrderBy(m => m.CreatedAt)
             .ToListAsync();
 
-        // Mark all unread as read
-        var unread = await db.Messages
-            .Where(m => m.ConversationId == conversationId
-                     && m.SenderId != userId
-                     && !m.Reads.Any(r => r.UserId == userId))
-            .ToListAsync();
-
-        foreach (var m in unread)
-            db.MessageReads.Add(new MessageRead { MessageId = m.Id, UserId = userId, ReadAt = DateTime.UtcNow });
-
-        var participant = await db.ConversationParticipants
-            .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == userId);
-        if (participant != null) participant.LastReadAt = DateTime.UtcNow;
-
-        await db.SaveChangesAsync();
+        // NOTE: Mark-as-read is now handled exclusively by the explicit
+        // POST /conversations/{id}/read endpoint to avoid race conditions
+        // between concurrent GET and POST requests (fix/portal-message-read-500).
 
         return Ok(new ConversationDetailDto
         {
@@ -851,4 +848,14 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
 
     // Keep backward-compatible overload used by GetConversation
     private MessageDto MapMessage(Message m) => MapMessage(m, LinkedUserId ?? Guid.Empty);
+
+    /// <summary>
+    /// Checks whether a DbUpdateException is caused by a unique constraint violation
+    /// (PostgreSQL error code 23505). Used to make MarkAsRead idempotent under
+    /// concurrent requests.
+    /// </summary>
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is NpgsqlException pgEx && pgEx.SqlState == "23505";
+    }
 }

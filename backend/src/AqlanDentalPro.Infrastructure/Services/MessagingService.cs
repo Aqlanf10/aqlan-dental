@@ -5,6 +5,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
@@ -108,8 +109,9 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             .OrderBy(m => m.CreatedAt)
             .ToListAsync();
 
-        // Mark as read
-        await MarkAsReadAsync(conversationId);
+        // NOTE: Mark-as-read is now handled exclusively by the explicit
+        // POST /conversations/{id}/read endpoint to avoid race conditions
+        // between concurrent GET and POST requests (fix/portal-message-read-500).
 
         // Get patient info if this is a patient conversation
         string? patientName = null;
@@ -559,29 +561,36 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── تحديد كمقروء ──────────────────────────────────────────────────────────
     public async Task MarkAsReadAsync(Guid conversationId)
     {
-        var unreadMessages = await db.Messages
-            .Where(m => m.ConversationId == conversationId
-                     && m.SenderId != UserId
-                     && !m.Reads.Any(r => r.UserId == UserId))
-            .ToListAsync();
-
-        foreach (var msg in unreadMessages)
+        try
         {
-            await db.MessageReads.AddAsync(new MessageRead
+            var unreadMessages = await db.Messages
+                .Where(m => m.ConversationId == conversationId
+                         && m.SenderId != UserId
+                         && !m.Reads.Any(r => r.UserId == UserId))
+                .ToListAsync();
+
+            foreach (var msg in unreadMessages)
             {
-                MessageId = msg.Id,
-                UserId = UserId,
-                ReadAt = DateTime.UtcNow
-            });
+                await db.MessageReads.AddAsync(new MessageRead
+                {
+                    MessageId = msg.Id,
+                    UserId = UserId,
+                    ReadAt = DateTime.UtcNow
+                });
+            }
+
+            // Update participant's LastReadAt
+            var participant = await db.ConversationParticipants
+                .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId);
+            if (participant != null)
+                participant.LastReadAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
         }
-
-        // Update participant's LastReadAt
-        var participant = await db.ConversationParticipants
-            .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId);
-        if (participant != null)
-            participant.LastReadAt = DateTime.UtcNow;
-
-        await db.SaveChangesAsync();
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent mark-as-read already inserted these rows — idempotent success
+        }
     }
 
     // ─── عدد غير المقروء ──────────────────────────────────────────────────────
@@ -865,5 +874,15 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             ReadCount = msg.Reads.Count,
             CreatedAt = msg.CreatedAt
         };
+    }
+
+    /// <summary>
+    /// Checks whether a DbUpdateException is caused by a unique constraint violation
+    /// (PostgreSQL error code 23505). Used to make MarkAsReadAsync idempotent under
+    /// concurrent requests.
+    /// </summary>
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is NpgsqlException pgEx && pgEx.SqlState == "23505";
     }
 }

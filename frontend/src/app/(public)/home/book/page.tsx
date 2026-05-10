@@ -1,11 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import {
-  CheckCircle2, Loader2, ChevronRight, CalendarDays,
-  MessageCircle, Phone, MapPin, Clock, User, Stethoscope,
-} from "lucide-react";
+import { CheckCircle2, Loader2, ChevronRight, CalendarDays, MessageCircle, Phone, MapPin, Clock, AlertCircle } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -20,18 +17,18 @@ const SERVICES = [
   "استشارة",
 ];
 
-const FALLBACK_TIMES = [
-  "8:00 ص", "9:00 ص", "10:00 ص", "11:00 ص",
-  "12:00 م", "1:00 م", "2:00 م", "3:00 م",
-  "4:00 م", "5:00 م", "6:00 م", "7:00 م",
-];
+interface TimeSlot {
+  time: string;
+  available: boolean;
+  reason?: string;
+}
 
-interface PublicDoctor {
-  id: string;
-  name: string;
-  specialty: string;
-  color: string;
-  avatarInitials: string;
+interface AvailabilityResponse {
+  date: string;
+  serviceType: string | null;
+  slots: TimeSlot[];
+  isClosed: boolean;
+  message?: string;
 }
 
 interface FormData {
@@ -39,7 +36,6 @@ interface FormData {
   phoneNumber: string;
   email: string;
   serviceType: string;
-  doctorId: string;
   preferredDate: string;
   preferredTime: string;
   notes: string;
@@ -49,6 +45,23 @@ interface FormErrors {
   patientName?: string;
   phoneNumber?: string;
   email?: string;
+  preferredDate?: string;
+}
+
+/** Convert "HH:mm" 24h → Arabic display like "9:00 ص" */
+function toArabicTime(time24: string): string {
+  const [hStr, mStr] = time24.split(":");
+  const h = parseInt(hStr, 10);
+  const m = mStr;
+  if (h === 0) return `12:${m} ص`;
+  if (h === 12) return `12:${m} م`;
+  if (h < 12) return `${h}:${m} ص`;
+  return `${h - 12}:${m} م`;
+}
+
+/** Get today's date in YYYY-MM-DD */
+function getTodayDate(): string {
+  return new Date().toISOString().split("T")[0];
 }
 
 export default function BookPage() {
@@ -57,7 +70,6 @@ export default function BookPage() {
     phoneNumber: "",
     email: "",
     serviceType: "",
-    doctorId: "",
     preferredDate: "",
     preferredTime: "",
     notes: "",
@@ -67,53 +79,70 @@ export default function BookPage() {
   const [success, setSuccess] = useState(false);
   const [serverError, setServerError] = useState("");
 
-  // Doctor list
-  const [doctors, setDoctors] = useState<PublicDoctor[]>([]);
-  const [doctorsLoading, setDoctorsLoading] = useState(false);
-
-  // Available slots
-  const [slots, setSlots] = useState<string[]>([]);
-  const [slotDuration, setSlotDuration] = useState<number | null>(null);
+  // ── Availability state ──
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState("");
-  const [doctorAvailable, setDoctorAvailable] = useState<boolean | null>(null);
+  const [isClosed, setIsClosed] = useState(false);
+  const [closedMessage, setClosedMessage] = useState("");
 
-  // Fetch doctors on mount
-  useEffect(() => {
-    setDoctorsLoading(true);
-    fetch(`${API_URL}/api/public/doctors`)
-      .then((r) => r.ok ? r.json() : [])
-      .then((data) => setDoctors(Array.isArray(data) ? data : []))
-      .catch(() => setDoctors([]))
-      .finally(() => setDoctorsLoading(false));
-  }, []);
-
-  // Fetch slots whenever doctor + date change
-  useEffect(() => {
-    if (!form.doctorId || !form.preferredDate) {
+  // Fetch availability when date or service changes
+  const fetchAvailability = useCallback(async (date: string, serviceType: string) => {
+    if (!date) {
       setSlots([]);
-      setSlotDuration(null);
-      setDoctorAvailable(null);
       setSlotsError("");
+      setIsClosed(false);
+      setClosedMessage("");
       return;
     }
 
     setSlotsLoading(true);
     setSlotsError("");
-    setSlots([]);
-    setForm((prev) => ({ ...prev, preferredTime: "" }));
+    setIsClosed(false);
+    setClosedMessage("");
 
-    fetch(`${API_URL}/api/public/doctors/${form.doctorId}/slots?date=${form.preferredDate}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (!data) { setSlotsError("تعذّر جلب المواعيد المتاحة"); return; }
-        setDoctorAvailable(data.available);
-        setSlots(data.slots ?? []);
-        setSlotDuration(data.slotDuration ?? null);
-      })
-      .catch(() => setSlotsError("تعذّر جلب المواعيد المتاحة"))
-      .finally(() => setSlotsLoading(false));
-  }, [form.doctorId, form.preferredDate]);
+    try {
+      const params = new URLSearchParams({ date });
+      if (serviceType) params.set("serviceType", serviceType);
+
+      const res = await fetch(`${API_URL}/api/public/booking-availability?${params}`);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setSlotsError(data?.message || "تعذّر تحميل الأوقات المتاحة");
+        setSlots([]);
+        setSlotsLoading(false);
+        return;
+      }
+
+      const data: AvailabilityResponse = await res.json();
+
+      if (data.isClosed) {
+        setIsClosed(true);
+        setClosedMessage(data.message || "");
+        setSlots([]);
+      } else {
+        setSlots(data.slots || []);
+      }
+    } catch {
+      setSlotsError("تعذّر الاتصال بالخادم لتحميل الأوقات");
+      setSlots([]);
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, []);
+
+  // Re-fetch when date or serviceType changes (debounced)
+  useEffect(() => {
+    // Clear selected time when date/service changes
+    setForm(prev => ({ ...prev, preferredTime: "" }));
+
+    const timer = setTimeout(() => {
+      fetchAvailability(form.preferredDate, form.serviceType);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [form.preferredDate, form.serviceType, fetchAvailability]);
 
   function validate(): boolean {
     const errs: FormErrors = {};
@@ -125,18 +154,15 @@ export default function BookPage() {
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       errs.email = "البريد الإلكتروني غير صحيح";
     }
+    // Date validation for Friday
+    if (form.preferredDate) {
+      const day = new Date(form.preferredDate + "T00:00:00").getDay();
+      if (day === 5) {
+        errs.preferredDate = "المركز مغلق يوم الجمعة، يرجى اختيار يوم آخر";
+      }
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
-  }
-
-  function formatSlot24to12(time24: string): string {
-    const [hStr, mStr] = time24.split(":");
-    let h = parseInt(hStr, 10);
-    const m = mStr;
-    const suffix = h >= 12 ? "م" : "ص";
-    if (h > 12) h -= 12;
-    if (h === 0) h = 12;
-    return `${h}:${m} ${suffix}`;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -145,8 +171,6 @@ export default function BookPage() {
 
     setLoading(true);
     setServerError("");
-
-    const selectedDoctor = doctors.find((d) => d.id === form.doctorId);
 
     try {
       const res = await fetch(`${API_URL}/api/public/booking-requests`, {
@@ -158,16 +182,20 @@ export default function BookPage() {
           email: form.email.trim() || null,
           serviceType: form.serviceType || null,
           preferredDate: form.preferredDate || null,
+          // Send time in 24h format so backend can check availability accurately
           preferredTime: form.preferredTime || null,
-          notes: [
-            form.notes.trim(),
-            selectedDoctor ? `الطبيب المفضل: ${selectedDoctor.name}` : "",
-          ].filter(Boolean).join("\n") || null,
+          notes: form.notes.trim() || null,
         }),
       });
 
       if (res.ok || res.status === 201) {
         setSuccess(true);
+      } else if (res.status === 409) {
+        // Slot no longer available — refresh slots and show error
+        const data = await res.json().catch(() => ({}));
+        setServerError(data?.message || "هذا الموعد لم يعد متاحًا، يرجى اختيار وقت آخر.");
+        // Refresh availability
+        fetchAvailability(form.preferredDate, form.serviceType);
       } else {
         setServerError("حدث خطأ أثناء إرسال طلبك. يرجى المحاولة مرة أخرى أو الاتصال بنا مباشرة.");
       }
@@ -178,6 +206,7 @@ export default function BookPage() {
     }
   }
 
+  // ── Success screen ──
   if (success) {
     return (
       <div dir="rtl" className="min-h-[70vh] flex items-center justify-center px-4 py-20 bg-[#F8FAFC]">
@@ -236,11 +265,9 @@ export default function BookPage() {
     );
   }
 
-  const selectedDoctor = doctors.find((d) => d.id === form.doctorId);
-  const showDynamicSlots = !!form.doctorId && !!form.preferredDate;
-  const noSlotsAvailable = showDynamicSlots && !slotsLoading && doctorAvailable === false;
-  const hasSlots = showDynamicSlots && !slotsLoading && slots.length > 0;
-  const emptySlots = showDynamicSlots && !slotsLoading && doctorAvailable === true && slots.length === 0;
+  // ── Booking form ──
+  const availableSlots = slots.filter(s => s.available);
+  const hasNoAvailableSlots = slots.length > 0 && availableSlots.length === 0;
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#F8FAFC]">
@@ -281,13 +308,21 @@ export default function BookPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-10">
+        {/* Form card */}
         <div className="bg-white rounded-3xl shadow-xl border border-slate-100 border-t-4 border-t-[#87CEEB] overflow-hidden">
           <div className="p-8">
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
 
               {/* ── معلومات الاتصال ── */}
               <div>
-                <SectionDivider label="معلومات الاتصال" />
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                    معلومات الاتصال
+                  </span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+
                 <div className="space-y-5">
                   {/* Name */}
                   <div>
@@ -305,7 +340,9 @@ export default function BookPage() {
                           : "border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
                       }`}
                     />
-                    {errors.patientName && <p className="text-red-500 text-xs mt-1.5">{errors.patientName}</p>}
+                    {errors.patientName && (
+                      <p className="text-red-500 text-xs mt-1.5">{errors.patientName}</p>
+                    )}
                   </div>
 
                   {/* Phone */}
@@ -325,7 +362,9 @@ export default function BookPage() {
                           : "border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
                       }`}
                     />
-                    {errors.phoneNumber && <p className="text-red-500 text-xs mt-1.5">{errors.phoneNumber}</p>}
+                    {errors.phoneNumber && (
+                      <p className="text-red-500 text-xs mt-1.5">{errors.phoneNumber}</p>
+                    )}
                   </div>
 
                   {/* Email */}
@@ -346,21 +385,28 @@ export default function BookPage() {
                           : "border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
                       }`}
                     />
-                    {errors.email && <p className="text-red-500 text-xs mt-1.5">{errors.email}</p>}
+                    {errors.email && (
+                      <p className="text-red-500 text-xs mt-1.5">{errors.email}</p>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* ── تفاصيل الموعد ── */}
               <div>
-                <SectionDivider label="تفاصيل الموعد (اختياري)" />
-                <div className="space-y-5">
+                <div className="flex items-center gap-3 mb-5 pt-2">
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                    تفاصيل الموعد
+                  </span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
 
+                <div className="space-y-5">
                   {/* Service */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                      نوع الخدمة{" "}
-                      <span className="text-slate-400 font-normal">(اختياري)</span>
+                      نوع الخدمة
                     </label>
                     <select
                       value={form.serviceType}
@@ -368,175 +414,121 @@ export default function BookPage() {
                       className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 bg-white text-right"
                     >
                       <option value="">اختر الخدمة...</option>
-                      {SERVICES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      {SERVICES.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
                     </select>
                   </div>
 
-                  {/* Doctor picker */}
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      <Stethoscope className="inline w-3.5 h-3.5 ml-1 opacity-60" />
-                      الطبيب المفضل{" "}
-                      <span className="text-slate-400 font-normal">(اختياري)</span>
-                    </label>
-                    {doctorsLoading ? (
-                      <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        جاري تحميل قائمة الأطباء...
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                        {/* Any doctor option */}
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, doctorId: "", preferredTime: "" })}
-                          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                            !form.doctorId
-                              ? "border-[#87CEEB] bg-[#87CEEB]/10 text-sky-700"
-                              : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">
-                            <User className="w-3.5 h-3.5" />
-                          </div>
-                          <span>أي طبيب</span>
-                        </button>
-
-                        {doctors.map((doc) => (
-                          <button
-                            key={doc.id}
-                            type="button"
-                            onClick={() => setForm({ ...form, doctorId: doc.id, preferredTime: "" })}
-                            className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all text-right ${
-                              form.doctorId === doc.id
-                                ? "border-[#87CEEB] bg-[#87CEEB]/10 text-sky-700"
-                                : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                            }`}
-                          >
-                            <div
-                              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                              style={{ backgroundColor: doc.color || "#0d2137" }}
-                            >
-                              {doc.avatarInitials || doc.name.charAt(0)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="truncate text-xs font-bold leading-tight">{doc.name}</div>
-                              <div className="truncate text-[10px] text-slate-400 leading-tight">{doc.specialty}</div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Date */}
+                  {/* Preferred Date */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                      التاريخ المفضل{" "}
-                      <span className="text-slate-400 font-normal text-xs">(اختياري)</span>
+                      التاريخ المفضل
                     </label>
                     <input
                       type="date"
                       value={form.preferredDate}
                       onChange={(e) => setForm({ ...form, preferredDate: e.target.value, preferredTime: "" })}
-                      min={new Date().toISOString().split("T")[0]}
-                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200"
+                      min={getTodayDate()}
+                      className={`w-full px-4 py-3.5 rounded-xl border transition-all duration-200 outline-none focus:ring-2 ${
+                        errors.preferredDate
+                          ? "border-red-400 bg-red-50 focus:ring-red-300"
+                          : "border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] focus:ring-[#87CEEB]/20"
+                      }`}
                     />
+                    {errors.preferredDate && (
+                      <p className="text-red-500 text-xs mt-1.5">{errors.preferredDate}</p>
+                    )}
                   </div>
 
-                  {/* Time — dynamic or static */}
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                      الوقت المفضل{" "}
-                      <span className="text-slate-400 font-normal text-xs">(اختياري)</span>
-                      {slotDuration && (
-                        <span className="mr-2 text-[10px] font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-                          {slotDuration} دقيقة / موعد
-                        </span>
+                  {/* ── Dynamic Time Slot Selector ── */}
+                  {form.preferredDate && !errors.preferredDate && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-3">
+                        الوقت المفضل
+                      </label>
+
+                      {/* Loading state */}
+                      {slotsLoading && (
+                        <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span className="text-sm">جاري تحميل الأوقات المتاحة...</span>
+                        </div>
                       )}
-                    </label>
 
-                    {/* Loading slots */}
-                    {slotsLoading && (
-                      <div className="flex items-center gap-2 text-slate-400 text-sm py-3 px-1">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        جاري البحث عن المواعيد المتاحة...
-                      </div>
-                    )}
+                      {/* Error loading slots */}
+                      {slotsError && !slotsLoading && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-700 text-sm text-center flex items-center justify-center gap-2">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          {slotsError}
+                        </div>
+                      )}
 
-                    {/* Slot error */}
-                    {slotsError && !slotsLoading && (
-                      <div className="text-amber-600 text-xs bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                        {slotsError} — يمكنك اختيار وقت تقريبي أدناه.
-                      </div>
-                    )}
+                      {/* Friday / Closed message */}
+                      {isClosed && !slotsLoading && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-700 text-sm text-center">
+                          {closedMessage || "المركز مغلق يوم الجمعة، يرجى اختيار يوم آخر."}
+                        </div>
+                      )}
 
-                    {/* Doctor not working that day */}
-                    {noSlotsAvailable && !slotsError && (
-                      <div className="text-amber-600 text-xs bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                        الطبيب المختار لا يعمل في هذا اليوم. يمكنك اختيار يوم آخر أو طبيب مختلف.
-                      </div>
-                    )}
+                      {/* No available slots */}
+                      {hasNoAvailableSlots && !slotsLoading && !isClosed && !slotsError && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-slate-500 text-sm text-center">
+                          لا توجد أوقات متاحة في هذا اليوم، يرجى اختيار يوم آخر.
+                        </div>
+                      )}
 
-                    {/* All slots booked */}
-                    {emptySlots && !slotsError && (
-                      <div className="text-amber-600 text-xs bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                        جميع المواعيد محجوزة لهذا اليوم. يرجى اختيار يوم آخر.
-                      </div>
-                    )}
+                      {/* Time slot grid */}
+                      {slots.length > 0 && !slotsLoading && !isClosed && !slotsError && (
+                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                          {slots.map((slot) => {
+                            const isSelected = form.preferredTime === slot.time;
+                            const isUnavailable = !slot.available;
 
-                    {/* Dynamic slot buttons */}
-                    {hasSlots && (
-                      <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
-                        {slots.map((slot) => {
-                          const label = formatSlot24to12(slot);
-                          const isSelected = form.preferredTime === slot;
-                          return (
-                            <button
-                              key={slot}
-                              type="button"
-                              onClick={() => setForm({ ...form, preferredTime: isSelected ? "" : slot })}
-                              className={`py-2.5 px-1 rounded-xl border text-xs font-bold transition-all ${
-                                isSelected
-                                  ? "border-[#87CEEB] bg-[#87CEEB]/15 text-sky-700 shadow-sm"
-                                  : "border-slate-200 text-slate-600 hover:border-[#87CEEB]/60 hover:bg-sky-50"
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                            return (
+                              <button
+                                key={slot.time}
+                                type="button"
+                                disabled={isUnavailable}
+                                onClick={() => setForm({ ...form, preferredTime: slot.time })}
+                                title={isUnavailable ? slot.reason || "محجوز" : toArabicTime(slot.time)}
+                                className={`
+                                  relative px-2 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 border
+                                  ${isUnavailable
+                                    ? "bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed line-through"
+                                    : isSelected
+                                      ? "bg-orange-500 border-orange-500 text-white shadow-md scale-[1.02]"
+                                      : "bg-white border-slate-200 text-slate-700 hover:border-[#87CEEB] hover:bg-sky-50 cursor-pointer"
+                                  }
+                                `}
+                              >
+                                <span className="block text-center" dir="ltr">
+                                  {toArabicTime(slot.time)}
+                                </span>
+                                {isUnavailable && (
+                                  <span className="absolute -top-1 -left-1 w-4 h-4 bg-red-400 rounded-full flex items-center justify-center">
+                                    <span className="text-white text-[8px] font-bold">✕</span>
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
 
-                    {/* Fallback static dropdown — shown when no doctor selected or slot fetch errored */}
-                    {(!showDynamicSlots || slotsError) && !slotsLoading && (
-                      <select
-                        value={form.preferredTime}
-                        onChange={(e) => setForm({ ...form, preferredTime: e.target.value })}
-                        className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 bg-white text-right"
-                      >
-                        <option value="">أي وقت</option>
-                        {FALLBACK_TIMES.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Doctor preference note if chosen */}
-                  {selectedDoctor && (
-                    <div className="flex items-center gap-2.5 bg-sky-50 border border-sky-100 rounded-xl px-4 py-3">
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
-                        style={{ backgroundColor: selectedDoctor.color || "#0d2137" }}
-                      >
-                        {selectedDoctor.avatarInitials || selectedDoctor.name.charAt(0)}
-                      </div>
-                      <div className="text-xs text-sky-700">
-                        سيتم إرسال طلبك مع تفضيل{" "}
-                        <strong>{selectedDoctor.name}</strong>
-                        {" "}— الاستقبال سيؤكد التوفر.
-                      </div>
+                      {/* Selected time indicator */}
+                      {form.preferredTime && !slotsLoading && (
+                        <p className="mt-2 text-xs text-slate-400 text-center">
+                          الوقت المختار: <strong className="text-slate-700" dir="ltr">{toArabicTime(form.preferredTime)}</strong>
+                        </p>
+                      )}
                     </div>
+                  )}
+                  {/* Hint if no date selected yet */}
+                  {!form.preferredDate && (
+                    <p className="text-xs text-slate-400 text-center py-2">
+                      اختر التاريخ أولاً لعرض الأوقات المتاحة
+                    </p>
                   )}
 
                   {/* Notes */}
@@ -558,12 +550,13 @@ export default function BookPage() {
               </div>
 
               {serverError && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm text-center">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm text-center flex items-center justify-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
                   {serverError}
                 </div>
               )}
 
-              {/* Submit */}
+              {/* Submit button */}
               <button
                 type="submit"
                 disabled={loading}
@@ -617,18 +610,6 @@ export default function BookPage() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function SectionDivider({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-5 pt-2">
-      <div className="flex-1 h-px bg-slate-100" />
-      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap">
-        {label}
-      </span>
-      <div className="flex-1 h-px bg-slate-100" />
     </div>
   );
 }

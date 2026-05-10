@@ -58,6 +58,9 @@ public static class DbSeeder
             else
                 await MigrateUserPasswordsAsync(context);
 
+            // Always run: reset admin password if ADMIN_RESET_PASSWORD env var is set.
+            await EnsureAdminPasswordResetAsync(context, logger);
+
             if (!await context.RolePermissions.AnyAsync())
                 await SeedPermissionsAsync(context);
 
@@ -77,6 +80,45 @@ public static class DbSeeder
             logger.LogError(ex, "Database seeding failed, but app will continue running.");
             // Don't rethrow - let the app start even if seeding partially fails
         }
+    }
+
+    /// <summary>
+    /// If the ADMIN_RESET_PASSWORD environment variable is set and non-empty,
+    /// resets the admin user's password to that value using a fresh Argon2id hash
+    /// and ensures the account is active. The password value is never logged.
+    /// Remove or clear the variable after confirming admin login works.
+    /// </summary>
+    private static async Task EnsureAdminPasswordResetAsync(AppDbContext context, ILogger logger)
+    {
+        var resetPassword = Environment.GetEnvironmentVariable("ADMIN_RESET_PASSWORD");
+        if (string.IsNullOrWhiteSpace(resetPassword))
+            return;
+
+        var admin = await context.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Username == "admin");
+
+        if (admin is null)
+        {
+            logger.LogWarning("ADMIN_RESET_PASSWORD is set but no user with username 'admin' was found.");
+            return;
+        }
+
+        var salt = GenerateSalt();
+        var hash = HashPassword(resetPassword, salt);
+
+        admin.PasswordHash = hash;
+        admin.PasswordSalt = salt;
+        admin.IsActive = true;
+        admin.UpdatedAt = DateTime.UtcNow;
+
+        await context.SaveChangesAsync();
+
+        // Log action without exposing the password value
+        logger.LogWarning(
+            "Admin account '{Username}' (Id: {Id}) password was reset via ADMIN_RESET_PASSWORD. " +
+            "Remove this environment variable after verifying login succeeds.",
+            admin.Username, admin.Id);
     }
 
     private static async Task SeedBranchAsync(AppDbContext context)

@@ -101,5 +101,4 @@ public class PublicController : ControllerBase
 
         return Ok(new { available = true, slots, slotDuration = schedule.SlotDurationMinutes });
     }
-
 }

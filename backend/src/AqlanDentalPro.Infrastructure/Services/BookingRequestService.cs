@@ -14,7 +14,7 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
     // Clinic working hours: Saturday-Thursday 08:00-20:00, Friday closed
     private static readonly TimeOnly ClinicOpen = new(8, 0);
     private static readonly TimeOnly ClinicClose = new(20, 0);
-    private const int SlotDurationMinutes = 30;
+    private const int DefaultSlotDurationMinutes = 30;
     private const string ClinicIanaTimeZoneId = "Asia/Aden";
     private const string ClinicWindowsTimeZoneId = "Arab Standard Time";
 
@@ -41,43 +41,83 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
 
     public async Task<BookingRequestDto> CreateAsync(CreateBookingRequestDto dto)
     {
-        // Same-day duplicate prevention: block if same phone or name already has an
-        // active (Pending/Reviewed/Confirmed) booking request for the same PreferredDate.
-        if (!string.IsNullOrWhiteSpace(dto.PreferredDate))
+        // ── Strong validation ──────────────────────────────────────────────
+
+        // PreferredDate is required
+        if (string.IsNullOrWhiteSpace(dto.PreferredDate))
+            throw new ArgumentException("التاريخ المفضل مطلوب");
+
+        // PreferredTime is required
+        if (string.IsNullOrWhiteSpace(dto.PreferredTime))
+            throw new ArgumentException("الوقت المفضل مطلوب");
+
+        // Parse and validate date
+        if (!DateOnly.TryParse(dto.PreferredDate, out var parsedDate))
+            throw new ArgumentException("صيغة التاريخ غير صحيحة");
+
+        var clinicNow = GetClinicNow();
+        var today = DateOnly.FromDateTime(clinicNow);
+
+        // PreferredDate cannot be past
+        if (parsedDate < today)
+            throw new ArgumentException("لا يمكن اختيار تاريخ سابق");
+
+        // Friday blocked
+        if (parsedDate.DayOfWeek == DayOfWeek.Friday)
+            throw new ArgumentException("المركز مغلق يوم الجمعة");
+
+        // Validate email format if provided
+        if (!string.IsNullOrWhiteSpace(dto.Email))
         {
-            var normalizedPhone = NormalizePhone(dto.PhoneNumber);
-            var normalizedName = NormalizeName(dto.PatientName);
-            var targetDate = dto.PreferredDate.Trim();
-
-            // Fetch matching-date active requests to client-evaluate name normalization
-            // (NormalizeName cannot be translated to SQL).
-            var sameDateRequests = await db.BookingRequests
-                .Where(r => r.IsActive
-                         && r.PreferredDate == targetDate
-                         && BlockingStatuses.Contains(r.Status))
-                .Select(r => new { r.PhoneNumber, r.PatientName })
-                .ToListAsync();
-
-            var duplicateOnSameDate = sameDateRequests.Any(r =>
-                NormalizePhone(r.PhoneNumber) == normalizedPhone
-                || NormalizeName(r.PatientName) == normalizedName);
-
-            if (duplicateOnSameDate)
+            try
             {
-                throw new DuplicateBookingRequestException(
-                    "لديك طلب حجز سابق لنفس اليوم قيد المراجعة، سيتم التواصل معك قريبًا. لا داعي لإرسال طلب جديد.");
+                var addr = new System.Net.Mail.MailAddress(dto.Email);
+                if (addr.Address != dto.Email.Trim())
+                    throw new ArgumentException("صيغة البريد الإلكتروني غير صحيحة");
+            }
+            catch (FormatException)
+            {
+                throw new ArgumentException("صيغة البريد الإلكتروني غير صحيحة");
             }
         }
 
-        // Race condition protection: re-check slot availability if date+time provided
-        if (!string.IsNullOrWhiteSpace(dto.PreferredDate) && !string.IsNullOrWhiteSpace(dto.PreferredTime))
+        // DoctorId validation: if provided, verify the doctor exists and is active
+        if (dto.DoctorId.HasValue)
         {
-            if (!await IsSlotAvailableAsync(dto.PreferredDate, dto.PreferredTime))
-            {
-                throw new SlotNotAvailableException("هذا الوقت لم يعد متاحًا، يرجى اختيار وقت آخر.");
-            }
+            var doctorExists = await db.Doctors.AnyAsync(d => d.Id == dto.DoctorId.Value && d.IsActive);
+            if (!doctorExists)
+                throw new ArgumentException("الطبيب المحدد غير موجود أو غير نشط");
         }
 
+        // PreferredTime must be a valid available slot
+        if (!await IsSlotAvailableAsync(dto.PreferredDate, dto.PreferredTime, dto.DoctorId))
+            throw new SlotNotAvailableException("هذا الوقت لم يعد متاحًا، يرجى اختيار وقت آخر.");
+
+        // ── Same-day duplicate prevention ──────────────────────────────────
+        var normalizedPhone = NormalizePhone(dto.PhoneNumber);
+        var normalizedName = NormalizeName(dto.PatientName);
+        var targetDate = dto.PreferredDate.Trim();
+
+        // Fetch matching-date active requests to client-evaluate name normalization
+        var sameDateRequests = await db.BookingRequests
+            .Where(r => r.IsActive
+                     && r.PreferredDate == targetDate
+                     && BlockingStatuses.Contains(r.Status)
+                     && r.ConvertedToAppointmentId == null)
+            .Select(r => new { r.PhoneNumber, r.PatientName })
+            .ToListAsync();
+
+        var duplicateOnSameDate = sameDateRequests.Any(r =>
+            NormalizePhone(r.PhoneNumber) == normalizedPhone
+            || NormalizeName(r.PatientName) == normalizedName);
+
+        if (duplicateOnSameDate)
+        {
+            throw new DuplicateBookingRequestException(
+                "لديك طلب حجز سابق لنفس اليوم قيد المراجعة، سيتم التواصل معك قريبًا. لا داعي لإرسال طلب جديد.");
+        }
+
+        // ── Create entity ──────────────────────────────────────────────────
         var entity = new BookingRequest
         {
             PatientName = dto.PatientName.Trim(),
@@ -86,12 +126,24 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             ServiceType = dto.ServiceType?.Trim(),
             PreferredDate = dto.PreferredDate?.Trim(),
             PreferredTime = dto.PreferredTime?.Trim(),
-            Notes = dto.Notes?.Trim()
+            Notes = dto.Notes?.Trim(),
+            DoctorId = dto.DoctorId
         };
 
         db.BookingRequests.Add(entity);
         await db.SaveChangesAsync();
-        return ToDto(entity);
+
+        // Look up doctor name for the response DTO
+        string? doctorName = null;
+        if (dto.DoctorId.HasValue)
+        {
+            doctorName = await db.Doctors
+                .Where(d => d.Id == dto.DoctorId.Value)
+                .Select(d => d.Name)
+                .FirstOrDefaultAsync();
+        }
+
+        return ToDto(entity, doctorName);
     }
 
     public async Task<List<BookingRequestDto>> GetAllAsync(string? statusFilter)
@@ -105,21 +157,26 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         }
 
         var items = await query
+            .Include(r => r.Doctor)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
 
-        return items.Select(ToDto).ToList();
+        return items.Select(r => ToDto(r, r.Doctor?.Name)).ToList();
     }
 
     public async Task<BookingRequestDto?> GetByIdAsync(Guid id)
     {
-        var entity = await db.BookingRequests.FindAsync(id);
-        return entity == null ? null : ToDto(entity);
+        var entity = await db.BookingRequests
+            .Include(r => r.Doctor)
+            .FirstOrDefaultAsync(r => r.Id == id);
+        return entity == null ? null : ToDto(entity, entity.Doctor?.Name);
     }
 
     public async Task<BookingRequestDto?> UpdateStatusAsync(Guid id, UpdateBookingRequestStatusDto dto, Guid reviewedBy)
     {
-        var entity = await db.BookingRequests.FindAsync(id);
+        var entity = await db.BookingRequests
+            .Include(r => r.Doctor)
+            .FirstOrDefaultAsync(r => r.Id == id);
         if (entity == null) return null;
 
         if (!Enum.TryParse<BookingRequestStatus>(dto.Status, ignoreCase: true, out var status))
@@ -131,10 +188,10 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         entity.ReviewedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
-        return ToDto(entity);
+        return ToDto(entity, entity.Doctor?.Name);
     }
 
-    public async Task<BookingAvailabilityResponseDto> GetAvailabilityAsync(string date, string? serviceType)
+    public async Task<BookingAvailabilityResponseDto> GetAvailabilityAsync(string date, string? serviceType, Guid? doctorId = null)
     {
         // Parse and validate date
         if (!DateOnly.TryParse(date, out var parsedDate))
@@ -151,14 +208,20 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             return new BookingAvailabilityResponseDto(date, serviceType, [], false, "لا يمكن اختيار تاريخ سابق");
         }
 
-        // Check for Friday (DayOfWeek.Friday = 5 in .NET)
+        // Check for Friday
         if (parsedDate.DayOfWeek == DayOfWeek.Friday)
         {
             return new BookingAvailabilityResponseDto(date, serviceType, [], true, "المركز مغلق يوم الجمعة");
         }
 
-        // Generate all possible time slots
-        var slots = GenerateTimeSlots();
+        // If doctorId is provided, use doctor-specific logic
+        if (doctorId.HasValue)
+        {
+            return await GetDoctorAvailabilityAsync(date, serviceType, parsedDate, today, clinicNow, doctorId.Value);
+        }
+
+        // ── Clinic-wide availability (existing logic) ──────────────────────
+        var slots = GenerateTimeSlots(DefaultSlotDurationMinutes, ClinicOpen, ClinicClose);
 
         // Get existing appointments for this date that block slots
         var appointmentTimes = await db.Appointments
@@ -171,6 +234,7 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         var bookingRequestTimes = await db.BookingRequests
             .Where(r => r.PreferredDate == date
                      && BlockingStatuses.Contains(r.Status)
+                     && r.ConvertedToAppointmentId == null
                      && r.PreferredTime != null)
             .Select(r => r.PreferredTime!)
             .ToListAsync();
@@ -180,38 +244,26 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         foreach (var slot in slots)
         {
             var slotTime = TimeOnly.Parse(slot);
-            var slotEnd = slotTime.AddMinutes(SlotDurationMinutes);
+            var slotEnd = slotTime.AddMinutes(DefaultSlotDurationMinutes);
 
-            // For same-day booking, disable slots that already started or passed in clinic local time.
             var isPastSlotToday = parsedDate == today && slotTime <= TimeOnly.FromDateTime(clinicNow);
-
-            // Check if any appointment overlaps this slot
             var isBlockedByAppointment = appointmentTimes.Any(a =>
                 a.StartTime < slotEnd && a.EndTime > slotTime);
-
-            // Check if any booking request occupies this slot
-            // Booking requests store time as Arabic format (e.g., "09:00") or 24h format
             var isBlockedByBookingRequest = bookingRequestTimes.Any(brTime =>
                 IsSameSlotTime(brTime, slot));
 
             if (isPastSlotToday)
-            {
                 result.Add(new BookingAvailabilitySlotDto(slot, false, "انتهى الوقت"));
-            }
             else if (isBlockedByAppointment || isBlockedByBookingRequest)
-            {
                 result.Add(new BookingAvailabilitySlotDto(slot, false, "محجوز"));
-            }
             else
-            {
                 result.Add(new BookingAvailabilitySlotDto(slot, true));
-            }
         }
 
         return new BookingAvailabilityResponseDto(date, serviceType, result);
     }
 
-    public async Task<bool> IsSlotAvailableAsync(string date, string time)
+    public async Task<bool> IsSlotAvailableAsync(string date, string time, Guid? doctorId = null)
     {
         // Validate date
         if (!DateOnly.TryParse(date, out var parsedDate))
@@ -234,27 +286,48 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             return false;
 
         var slotTime = TimeOnly.Parse(slot24h);
-        var slotEnd = slotTime.AddMinutes(SlotDurationMinutes);
+
+        // If doctorId is provided, use doctor-specific slot duration
+        int slotDuration = DefaultSlotDurationMinutes;
+        if (doctorId.HasValue)
+        {
+            var dayOfWeek = (int)parsedDate.DayOfWeek; // 0=Sunday ... 6=Saturday
+            var schedule = await db.DoctorSchedules
+                .FirstOrDefaultAsync(s => s.DoctorId == doctorId.Value && s.DayOfWeek == dayOfWeek && s.IsWorking);
+            if (schedule == null)
+                return false; // Doctor not working this day
+            slotDuration = schedule.SlotDurationMinutes > 0 ? schedule.SlotDurationMinutes : DefaultSlotDurationMinutes;
+        }
+
+        var slotEnd = slotTime.AddMinutes(slotDuration);
 
         // Reject same-day slots that have already started or passed in clinic local time.
         if (parsedDate == today && slotTime <= TimeOnly.FromDateTime(clinicNow))
             return false;
 
-        // Check appointments
-        var hasAppointmentConflict = await db.Appointments
-            .AnyAsync(a => a.AppointmentDate == parsedDate
-                        && BlockingAppointmentStatuses.Contains(a.Status)
-                        && a.StartTime < slotEnd
-                        && a.EndTime > slotTime);
+        // Check appointments — filter by doctor if doctorId provided
+        var appointmentQuery = db.Appointments
+            .Where(a => a.AppointmentDate == parsedDate
+                     && BlockingAppointmentStatuses.Contains(a.Status)
+                     && a.StartTime < slotEnd
+                     && a.EndTime > slotTime);
+        if (doctorId.HasValue)
+            appointmentQuery = appointmentQuery.Where(a => a.DoctorId == doctorId.Value);
 
+        var hasAppointmentConflict = await appointmentQuery.AnyAsync();
         if (hasAppointmentConflict)
             return false;
 
         // Check booking requests (fetch to client first — IsSameSlotTime cannot be translated to SQL)
-        var conflictingBookingTimes = await db.BookingRequests
+        var bookingQuery = db.BookingRequests
             .Where(r => r.PreferredDate == date
                      && BlockingStatuses.Contains(r.Status)
-                     && r.PreferredTime != null)
+                     && r.ConvertedToAppointmentId == null
+                     && r.PreferredTime != null);
+        if (doctorId.HasValue)
+            bookingQuery = bookingQuery.Where(r => r.DoctorId == doctorId.Value);
+
+        var conflictingBookingTimes = await bookingQuery
             .Select(r => r.PreferredTime!)
             .ToListAsync();
 
@@ -263,17 +336,166 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         return !hasBookingConflict;
     }
 
+    public async Task<BookingRequestDto?> ConvertToAppointmentAsync(Guid bookingRequestId, ConvertBookingRequestToAppointmentDto dto, Guid convertedBy)
+    {
+        // 1. Find the booking request
+        var bookingRequest = await db.BookingRequests
+            .Include(r => r.Doctor)
+            .FirstOrDefaultAsync(r => r.Id == bookingRequestId);
+
+        if (bookingRequest == null)
+            return null;
+
+        // 2. Verify it's in Confirmed status
+        if (bookingRequest.Status != BookingRequestStatus.Confirmed)
+            throw new ArgumentException("يجب أن يكون الطلب في حالة مؤكد لتحويله إلى موعد");
+
+        // 3. Verify it hasn't been converted already
+        if (bookingRequest.ConvertedToAppointmentId.HasValue)
+            throw new ArgumentException("تم تحويل هذا الطلب بالفعل إلى موعد");
+
+        // 4. Check for appointment conflicts
+        var hasConflict = await db.Appointments
+            .AnyAsync(a => a.DoctorId == dto.DoctorId
+                        && a.AppointmentDate == dto.AppointmentDate
+                        && BlockingAppointmentStatuses.Contains(a.Status)
+                        && a.StartTime < dto.EndTime
+                        && a.EndTime > dto.StartTime);
+
+        if (hasConflict)
+            throw new ArgumentException("يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
+
+        // 5. Create the Appointment
+        var appointment = new Appointment
+        {
+            PatientId = dto.PatientId,
+            DoctorId = dto.DoctorId,
+            AppointmentDate = dto.AppointmentDate,
+            StartTime = dto.StartTime,
+            EndTime = dto.EndTime,
+            DurationMinutes = dto.DurationMinutes,
+            AppointmentType = dto.AppointmentType ?? bookingRequest.ServiceType ?? "عام",
+            Notes = bookingRequest.Notes,
+            CreatedBy = convertedBy
+        };
+
+        db.Appointments.Add(appointment);
+
+        // 6. Set BookingRequest.ConvertedToAppointmentId
+        bookingRequest.ConvertedToAppointmentId = appointment.Id;
+
+        // 7. Update StaffNotes
+        var existingNotes = string.IsNullOrWhiteSpace(bookingRequest.StaffNotes)
+            ? ""
+            : bookingRequest.StaffNotes + " | ";
+        bookingRequest.StaffNotes = existingNotes + "تم تحويل الطلب إلى موعد";
+
+        await db.SaveChangesAsync();
+
+        return ToDto(bookingRequest, bookingRequest.Doctor?.Name);
+    }
+
+    // ── Private helpers ────────────────────────────────────────────────────
+
     /// <summary>
-    /// Generates 30-minute time slots from 08:00 to 19:30 (last slot starts at 19:30, ends at 20:00).
+    /// Doctor-specific availability: checks DoctorSchedule, uses doctor's SlotDurationMinutes,
+    /// checks against doctor's existing appointments and booking requests, skips break times.
     /// </summary>
-    private static List<string> GenerateTimeSlots()
+    private async Task<BookingAvailabilityResponseDto> GetDoctorAvailabilityAsync(
+        string date, string? serviceType, DateOnly parsedDate, DateOnly today, DateTime clinicNow, Guid doctorId)
+    {
+        // Check if doctor exists and is active
+        var doctor = await db.Doctors
+            .Where(d => d.Id == doctorId && d.IsActive)
+            .Select(d => new { d.Name })
+            .FirstOrDefaultAsync();
+
+        if (doctor == null)
+        {
+            return new BookingAvailabilityResponseDto(date, serviceType, [], false,
+                "الطبيب المحدد غير موجود أو غير نشط", doctorId, null);
+        }
+
+        // Check if the doctor has a DoctorSchedule for that day of week
+        var dayOfWeek = (int)parsedDate.DayOfWeek; // 0=Sunday ... 6=Saturday
+        var schedule = await db.DoctorSchedules
+            .FirstOrDefaultAsync(s => s.DoctorId == doctorId && s.DayOfWeek == dayOfWeek && s.IsWorking);
+
+        if (schedule == null)
+        {
+            return new BookingAvailabilityResponseDto(date, serviceType, [], false,
+                "لا توجد أوقات متاحة لهذا الطبيب في هذا اليوم.", doctorId, doctor.Name);
+        }
+
+        var slotDuration = schedule.SlotDurationMinutes > 0 ? schedule.SlotDurationMinutes : DefaultSlotDurationMinutes;
+        var slots = GenerateTimeSlots(slotDuration, schedule.StartTime, schedule.EndTime);
+
+        // Get existing appointments for this doctor on this date that block slots
+        var appointmentTimes = await db.Appointments
+            .Where(a => a.AppointmentDate == parsedDate
+                     && a.DoctorId == doctorId
+                     && BlockingAppointmentStatuses.Contains(a.Status))
+            .Select(a => new { a.StartTime, a.EndTime })
+            .ToListAsync();
+
+        // Get existing booking requests for this doctor on this date that block slots
+        var bookingRequestTimes = await db.BookingRequests
+            .Where(r => r.PreferredDate == date
+                     && r.DoctorId == doctorId
+                     && BlockingStatuses.Contains(r.Status)
+                     && r.ConvertedToAppointmentId == null
+                     && r.PreferredTime != null)
+            .Select(r => r.PreferredTime!)
+            .ToListAsync();
+
+        // Mark unavailable slots
+        var result = new List<BookingAvailabilitySlotDto>();
+        foreach (var slot in slots)
+        {
+            var slotTime = TimeOnly.Parse(slot);
+            var slotEnd = slotTime.AddMinutes(slotDuration);
+
+            // Same-day past slots
+            var isPastSlotToday = parsedDate == today && slotTime <= TimeOnly.FromDateTime(clinicNow);
+
+            // Break time check
+            var isInBreak = schedule.BreakStart.HasValue && schedule.BreakEnd.HasValue
+                && slotTime < schedule.BreakEnd && slotEnd > schedule.BreakStart;
+
+            // Appointment conflict
+            var isBlockedByAppointment = appointmentTimes.Any(a =>
+                a.StartTime < slotEnd && a.EndTime > slotTime);
+
+            // Booking request conflict
+            var isBlockedByBookingRequest = bookingRequestTimes.Any(brTime =>
+                IsSameSlotTime(brTime, slot));
+
+            if (isPastSlotToday)
+                result.Add(new BookingAvailabilitySlotDto(slot, false, "انتهى الوقت"));
+            else if (isInBreak)
+                result.Add(new BookingAvailabilitySlotDto(slot, false, "استراحة"));
+            else if (isBlockedByAppointment || isBlockedByBookingRequest)
+                result.Add(new BookingAvailabilitySlotDto(slot, false, "محجوز"));
+            else
+                result.Add(new BookingAvailabilitySlotDto(slot, true));
+        }
+
+        return new BookingAvailabilityResponseDto(date, serviceType, result, doctorId: doctorId, doctorName: doctor.Name);
+    }
+
+    /// <summary>
+    /// Generates time slots with the given duration between start and end times.
+    /// </summary>
+    private static List<string> GenerateTimeSlots(int durationMinutes, TimeOnly start, TimeOnly end)
     {
         var slots = new List<string>();
-        var current = ClinicOpen;
-        while (current < ClinicClose)
+        var current = start;
+        while (current < end)
         {
+            var slotEnd = current.AddMinutes(durationMinutes);
+            if (slotEnd > end) break;
             slots.Add(current.ToString("HH:mm"));
-            current = current.AddMinutes(SlotDurationMinutes);
+            current = slotEnd;
         }
         return slots;
     }
@@ -378,7 +600,7 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             .Replace("  ", " ").Replace("  ", " ").Trim();
     }
 
-    private static BookingRequestDto ToDto(BookingRequest r) => new(
+    private static BookingRequestDto ToDto(BookingRequest r, string? doctorName = null) => new(
         r.Id,
         r.PatientName,
         r.PhoneNumber,
@@ -390,6 +612,9 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         r.Status.ToString(),
         r.StaffNotes,
         r.CreatedAt,
-        r.ReviewedAt
+        r.ReviewedAt,
+        r.DoctorId,
+        doctorName,
+        r.ConvertedToAppointmentId
     );
 }

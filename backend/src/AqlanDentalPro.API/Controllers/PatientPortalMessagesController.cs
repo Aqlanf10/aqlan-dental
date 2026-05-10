@@ -474,7 +474,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "image/jpeg", "image/png", "application/pdf",
-                "audio/webm", "audio/ogg", "audio/mp4"
+                "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
             };
             if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
                 return BadRequest(new { message = "نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF، رسائل صوتية" });

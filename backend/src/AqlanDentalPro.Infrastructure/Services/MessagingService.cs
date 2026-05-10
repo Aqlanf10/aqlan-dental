@@ -501,7 +501,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "image/jpeg", "image/png", "application/pdf",
-                "audio/webm", "audio/ogg", "audio/mp4"
+                "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
             };
             if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
                 throw new ArgumentException("نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF، رسائل صوتية");

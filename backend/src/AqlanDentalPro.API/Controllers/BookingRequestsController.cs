@@ -16,12 +16,12 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     /// </summary>
     [HttpGet("api/public/booking-availability")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetAvailability([FromQuery] string date, [FromQuery] string? serviceType)
+    public async Task<IActionResult> GetAvailability([FromQuery] string date, [FromQuery] string? serviceType, [FromQuery] Guid? doctorId)
     {
         if (string.IsNullOrWhiteSpace(date))
             return BadRequest(new { message = "التاريخ مطلوب" });
 
-        var result = await service.GetAvailabilityAsync(date, serviceType);
+        var result = await service.GetAvailabilityAsync(date, serviceType, doctorId);
 
         // If there's a message and no slots (past date / invalid), return 400
         if (result.Message != null && result.Slots.Count == 0 && !result.IsClosed)
@@ -54,6 +54,10 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
         {
             return Conflict(new { message = ex.Message });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // ── Staff endpoints ──────────────────────────────────────────────────
@@ -83,5 +87,32 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
 
         var result = await service.UpdateStatusAsync(id, dto, userId.Value);
         return result == null ? NotFound() : Ok(result);
+    }
+
+    /// <summary>
+    /// Convert a confirmed booking request to an appointment.
+    /// </summary>
+    [HttpPost("api/booking-requests/{id:guid}/convert-to-appointment")]
+    [Authorize(Policy = "AdminOrReception")]
+    public async Task<IActionResult> ConvertToAppointment(Guid id, [FromBody] ConvertBookingRequestToAppointmentDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var userId = currentUser.UserId;
+        if (userId == null) return Unauthorized();
+
+        try
+        {
+            var result = await service.ConvertToAppointmentAsync(id, dto, userId.Value);
+            if (result == null)
+                return NotFound(new { message = "طلب الحجز غير موجود" });
+
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 }

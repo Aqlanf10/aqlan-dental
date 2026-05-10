@@ -13,6 +13,8 @@ public class BookingRequest : BaseEntity
     public string? StaffNotes { get; set; }
     public Guid? ReviewedBy { get; set; }
     public DateTime? ReviewedAt { get; set; }
+    public Guid? DoctorId { get; set; }
+    public Doctor? Doctor { get; set; }
     public Guid? ConvertedToAppointmentId { get; set; }
 }
 

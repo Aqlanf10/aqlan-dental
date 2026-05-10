@@ -27,6 +27,10 @@ import {
   ShieldCheck,
   Image as ImageIcon,
   FileText,
+  Pencil,
+  Check,
+  Mic,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -38,7 +42,11 @@ import {
   useSendMessage,
   useMarkAsRead,
   useUnreadCount,
+  useDeleteMessage,
+  useEditMessage,
+  useMessagingStats,
 } from "@/hooks/useMessaging";
+import { VoiceRecorder } from "@/components/messages/VoiceRecorder";
 import type {
   ConversationListItem,
   ConversationDetail,
@@ -51,8 +59,8 @@ import api from "@/lib/api";
 
 // ─── Attachment constants ─────────────────────────────────────────────────────
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf"];
-const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf", ".webm", ".ogg", ".mp4"];
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf", "audio/webm", "audio/ogg", "audio/mp4"];
 
 /** Convert a full upload URL to a relative /uploads/ path for the backend */
 function toRelativeUploadUrl(url: string): string {
@@ -232,8 +240,10 @@ export default function MessagesPage() {
   const [showNewChat, setShowNewChat] = useState(false);
   const [isMobileDetail, setIsMobileDetail] = useState(false);
   const [patientConvError, setPatientConvError] = useState("");
+  const [showStats, setShowStats] = useState(false);
   const [convPage, setConvPage] = useState(1);
 
+  const { data: stats } = useMessagingStats();
   const { data: convData, isLoading: convLoading, error: convError } = useConversations(
     convPage,
     searchQuery || undefined,
@@ -350,14 +360,56 @@ export default function MessagesPage() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => setShowNewChat(true)}
-                className="w-9 h-9 rounded-lg bg-[#0d9488] text-white flex items-center justify-center hover:opacity-90 transition"
-                title="محادثة جديدة"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowStats((v) => !v)}
+                  className={cn(
+                    "w-9 h-9 rounded-lg flex items-center justify-center transition",
+                    showStats ? "bg-[#0d9488] text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                  )}
+                  title="إحصائيات المراسلة"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setShowNewChat(true)}
+                  className="w-9 h-9 rounded-lg bg-[#0d9488] text-white flex items-center justify-center hover:opacity-90 transition"
+                  title="محادثة جديدة"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
             </div>
+
+            {/* Stats panel */}
+            {showStats && stats && (
+              <div className="mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
+                <p className="text-xs font-semibold text-gray-600 mb-2">إحصائيات المراسلة</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-100">
+                    <p className="text-lg font-bold text-[#0d9488]">{stats.messagesToday}</p>
+                    <p className="text-[10px] text-gray-500">رسائل اليوم</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-100">
+                    <p className="text-lg font-bold text-blue-600">{stats.messagesThisWeek}</p>
+                    <p className="text-[10px] text-gray-500">رسائل هذا الأسبوع</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-100">
+                    <p className="text-lg font-bold text-gray-700">{stats.totalConversations}</p>
+                    <p className="text-[10px] text-gray-500">إجمالي المحادثات</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 text-center border border-gray-100">
+                    <p className="text-lg font-bold text-emerald-600">{stats.activeConversations}</p>
+                    <p className="text-[10px] text-gray-500">محادثات نشطة</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 text-[10px] text-gray-500 justify-between px-1">
+                  <span>طاقم ↔ طاقم: <b>{stats.staffToStaffConversations}</b></span>
+                  <span>طاقم ↔ مريض: <b>{stats.staffToPatientConversations}</b></span>
+                  <span>بوابة: <b>{stats.patientFacingConversations}</b></span>
+                </div>
+              </div>
+            )}
 
             {/* Search */}
             <div className="relative mb-3">
@@ -647,6 +699,8 @@ function ChatArea({
 }) {
   const [input, setInput] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [editContent, setEditContent] = useState("");
   const [attachmentPreview, setAttachmentPreview] = useState<{
     url: string; name: string; type: string;
   } | null>(null);
@@ -655,6 +709,8 @@ function ChatArea({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const deleteMessage = useDeleteMessage(conversation.id);
+  const editMessage = useEditMessage(conversation.id);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -712,6 +768,37 @@ function ChatArea({
   const removeAttachment = () => {
     setAttachmentPreview(null);
     setUploadError(null);
+  };
+
+  const handleVoiceRecorded = async (blob: Blob, mimeType: string) => {
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const ext = mimeType === "audio/ogg" ? ".ogg" : mimeType === "audio/mp4" ? ".mp4" : ".webm";
+      const formData = new FormData();
+      formData.append("file", blob, `voice${ext}`);
+      const { data } = await api.post<{
+        url: string; fileName: string; originalName: string; contentType: string;
+      }>("/api/uploads", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      setAttachmentPreview({ url: data.url, name: data.originalName, type: data.contentType });
+    } catch {
+      setUploadError("فشل رفع الرسالة الصوتية");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleEditSubmit = () => {
+    if (!editingMessage || !editContent.trim() || editMessage.isPending) return;
+    editMessage.mutate(
+      { messageId: editingMessage.id, content: editContent.trim() },
+      {
+        onSuccess: () => {
+          setEditingMessage(null);
+          setEditContent("");
+        },
+      }
+    );
   };
 
   const handleSend = () => {
@@ -878,7 +965,9 @@ function ChatArea({
             key={msg.id}
             message={msg}
             isMine={msg.senderId === currentUserId}
-            onReply={() => setReplyTo(msg)}
+            onReply={() => { setReplyTo(msg); setEditingMessage(null); inputRef.current?.focus(); }}
+            onEdit={() => { setEditingMessage(msg); setEditContent(msg.content); setReplyTo(null); }}
+            onDelete={() => deleteMessage.mutate(msg.id)}
             participantRoleMap={participantRoleMap}
           />
         ))}
@@ -893,8 +982,22 @@ function ChatArea({
         </div>
       )}
 
+      {/* Edit mode banner */}
+      {editingMessage && (
+        <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 flex items-center gap-2">
+          <Pencil className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-amber-700">تعديل الرسالة</p>
+            <p className="text-xs text-amber-600 truncate">{editingMessage.content}</p>
+          </div>
+          <button onClick={() => { setEditingMessage(null); setEditContent(""); }} className="text-amber-500 hover:text-amber-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Reply preview */}
-      {replyTo && (
+      {replyTo && !editingMessage && (
         <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
           <Reply className="w-4 h-4 text-[#0d9488] flex-shrink-0" />
           <div className="flex-1 min-w-0">
@@ -930,6 +1033,8 @@ function ChatArea({
           <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 rounded-lg">
             {attachmentPreview.type.startsWith("image/") ? (
               <ImageIcon className="w-4 h-4 text-[#0d9488] flex-shrink-0" />
+            ) : attachmentPreview.type.startsWith("audio/") ? (
+              <Mic className="w-4 h-4 text-purple-500 flex-shrink-0" />
             ) : (
               <FileText className="w-4 h-4 text-red-500 flex-shrink-0" />
             )}
@@ -952,60 +1057,88 @@ function ChatArea({
           </div>
         )}
 
-        <div className="flex items-end gap-2">
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".jpg,.jpeg,.png,.pdf"
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="اكتب رسالتك..."
-            rows={1}
-            maxLength={2000}
-            disabled={sending || isUploading}
-            className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] max-h-32 disabled:opacity-50"
-            style={{ minHeight: "40px" }}
-          />
-          {/* Paperclip button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={sending || isUploading || !!attachmentPreview}
-            className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
-              sending || isUploading || attachmentPreview
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
-            )}
-            title="إرفاق ملف"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleSend}
-            disabled={(!input.trim() && !attachmentPreview) || sending || isUploading || input.length > 2000}
-            className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
-              (input.trim() || attachmentPreview) && !sending && !isUploading && input.length <= 2000
-                ? "bg-[#0d9488] text-white hover:opacity-90"
-                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-            )}
-          >
-            {sending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-        {input.length > 1800 && (
+        {editingMessage ? (
+          /* Edit mode input */
+          <div className="flex items-end gap-2">
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleEditSubmit(); } }}
+              rows={1}
+              maxLength={2000}
+              className="flex-1 resize-none border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 max-h-32 bg-amber-50/30"
+              style={{ minHeight: "40px" }}
+              autoFocus
+            />
+            <button
+              onClick={handleEditSubmit}
+              disabled={!editContent.trim() || editMessage.isPending}
+              className={cn(
+                "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
+                editContent.trim() && !editMessage.isPending
+                  ? "bg-amber-500 text-white hover:bg-amber-600"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              )}
+              title="حفظ التعديل"
+            >
+              {editMessage.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            </button>
+          </div>
+        ) : (
+          /* Normal send mode */
+          <div className="flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.pdf,.webm,.ogg,.mp4"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="اكتب رسالتك..."
+              rows={1}
+              maxLength={2000}
+              disabled={sending || isUploading}
+              className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] max-h-32 disabled:opacity-50"
+              style={{ minHeight: "40px" }}
+            />
+            <VoiceRecorder
+              onRecorded={handleVoiceRecorded}
+              disabled={sending || isUploading || !!attachmentPreview}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending || isUploading || !!attachmentPreview}
+              className={cn(
+                "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
+                sending || isUploading || attachmentPreview
+                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
+              )}
+              title="إرفاق ملف"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={(!input.trim() && !attachmentPreview) || sending || isUploading || input.length > 2000}
+              className={cn(
+                "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
+                (input.trim() || attachmentPreview) && !sending && !isUploading && input.length <= 2000
+                  ? "bg-[#0d9488] text-white hover:opacity-90"
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+              )}
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+          </div>
+        )}
+        {input.length > 1800 && !editingMessage && (
           <p className="text-xs text-amber-500 mt-1 text-left" dir="ltr">
             {input.length}/2000
           </p>
@@ -1020,11 +1153,15 @@ function MessageBubble({
   message,
   isMine,
   onReply,
+  onEdit,
+  onDelete,
   participantRoleMap,
 }: {
   message: Message;
   isMine: boolean;
   onReply: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
   participantRoleMap: Map<string, string>;
 }) {
   if (message.isSystemMessage) {
@@ -1096,10 +1233,25 @@ function MessageBubble({
           <p className="whitespace-pre-wrap break-words leading-relaxed">
             {message.content}
           </p>
+          {message.isEdited && (
+            <p className={cn("text-[9px] mt-0.5", isMine ? "text-white/60" : "text-gray-400")}>
+              (معدّل)
+            </p>
+          )}
 
           {/* Attachment */}
           {message.attachmentUrl && (
-            message.attachmentType?.startsWith("image/") ? (
+            message.attachmentType?.startsWith("audio/") ? (
+              <div className={cn("mt-2", isMine ? "text-white/90" : "")}>
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                <audio
+                  controls
+                  src={toFullUploadUrl(message.attachmentUrl)}
+                  className="max-w-[220px] h-9 rounded"
+                  style={{ filter: isMine ? "invert(1) brightness(0.9)" : "none" }}
+                />
+              </div>
+            ) : message.attachmentType?.startsWith("image/") ? (
               <a
                 href={toFullUploadUrl(message.attachmentUrl)}
                 target="_blank"
@@ -1171,14 +1323,37 @@ function MessageBubble({
           )}
         </div>
 
-        {/* Reply button (on hover) */}
-        <button
-          onClick={onReply}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-[#0d9488] text-xs mt-0.5 flex items-center gap-1"
-        >
-          <Reply className="w-3 h-3" />
-          رد
-        </button>
+        {/* Action buttons (on hover) */}
+        <div className={cn(
+          "opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 mt-0.5",
+          isMine ? "flex-row-reverse" : "flex-row"
+        )}>
+          <button
+            onClick={onReply}
+            className="text-gray-400 hover:text-[#0d9488] text-xs flex items-center gap-1"
+          >
+            <Reply className="w-3 h-3" />
+            رد
+          </button>
+          {isMine && !message.isSystemMessage && message.content !== "تم حذف هذه الرسالة" && (
+            <>
+              <button
+                onClick={onEdit}
+                className="text-gray-400 hover:text-amber-500 text-xs flex items-center gap-1"
+              >
+                <Pencil className="w-3 h-3" />
+                تعديل
+              </button>
+              <button
+                onClick={onDelete}
+                className="text-gray-400 hover:text-red-500 text-xs flex items-center gap-1"
+              >
+                <X className="w-3 h-3" />
+                حذف
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

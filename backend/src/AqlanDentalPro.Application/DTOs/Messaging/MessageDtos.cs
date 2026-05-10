@@ -52,9 +52,23 @@ public class MessageDto
     public string? ReplyToContent { get; set; }
     public string? ReplyToSenderName { get; set; }
     public bool IsSystemMessage { get; set; }
+    public bool IsEdited { get; set; }
+    public DateTime? EditedAt { get; set; }
     public bool IsReadByMe { get; set; }
     public int ReadCount { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>إحصائيات المراسلة</summary>
+public class MessagingStatsDto
+{
+    public int TotalConversations { get; set; }
+    public int ActiveConversations { get; set; }
+    public int MessagesToday { get; set; }
+    public int MessagesThisWeek { get; set; }
+    public int StaffToStaffConversations { get; set; }
+    public int StaffToPatientConversations { get; set; }
+    public int PatientFacingConversations { get; set; }
 }
 
 /// <summary>تفاصيل محادثة كاملة</summary>

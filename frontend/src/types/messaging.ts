@@ -46,9 +46,21 @@ export interface Message {
   replyToContent?: string;
   replyToSenderName?: string;
   isSystemMessage: boolean;
+  isEdited: boolean;
+  editedAt?: string;
   isReadByMe: boolean;
   readCount: number;
   createdAt: string;
+}
+
+export interface MessagingStats {
+  totalConversations: number;
+  activeConversations: number;
+  messagesToday: number;
+  messagesThisWeek: number;
+  staffToStaffConversations: number;
+  staffToPatientConversations: number;
+  patientFacingConversations: number;
 }
 
 export interface ConversationDetail {

@@ -498,10 +498,11 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
             var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "image/jpeg", "image/png", "application/pdf"
+                "image/jpeg", "image/png", "application/pdf",
+                "audio/webm", "audio/ogg", "audio/mp4"
             };
             if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
-                throw new ArgumentException("نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF");
+                throw new ArgumentException("نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF، رسائل صوتية");
         }
 
         var msg = new Message
@@ -607,6 +608,78 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         {
             TotalUnread = totalUnread,
             UnreadConversations = unreadConvs
+        };
+    }
+
+    // ─── تعديل رسالة (المرسل فقط، خلال 15 دقيقة) ────────────────────────────────
+    public async Task<(bool Success, string? Error, MessageDto? Message)> EditMessageAsync(
+        Guid conversationId, Guid messageId, EditMessageRequest request)
+    {
+        var content = request.Content?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(content))
+            return (false, "محتوى الرسالة لا يمكن أن يكون فارغاً", null);
+        if (content.Length > MaxMessageLength)
+            return (false, $"محتوى الرسالة طويل جداً. الحد الأقصى {MaxMessageLength} حرف", null);
+
+        var message = await db.Messages
+            .Include(m => m.Sender).ThenInclude(u => u.Doctor)
+            .Include(m => m.Reads)
+            .Include(m => m.ReplyTo).ThenInclude(r => r!.Sender).ThenInclude(u => u.Doctor)
+            .FirstOrDefaultAsync(m => m.Id == messageId
+                && m.ConversationId == conversationId
+                && m.SenderId == UserId
+                && !m.IsSystemMessage);
+
+        if (message is null) return (false, null, null);
+
+        if ((DateTime.UtcNow - message.CreatedAt).TotalMinutes > 15)
+            return (false, "لا يمكن تعديل الرسالة بعد مرور 15 دقيقة من الإرسال", null);
+
+        message.Content = content;
+        message.IsEdited = true;
+        message.EditedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return (true, null, MapMessageDto(message));
+    }
+
+    // ─── إحصائيات المراسلة ───────────────────────────────────────────────────────
+    public async Task<MessagingStatsDto> GetStatsAsync()
+    {
+        var myConversationIds = await db.ConversationParticipants
+            .Where(cp => cp.UserId == UserId)
+            .Select(cp => cp.ConversationId)
+            .ToListAsync();
+
+        var todayUtc = DateTime.UtcNow.Date;
+        var weekAgoUtc = DateTime.UtcNow.AddDays(-7);
+
+        var conversations = await db.Conversations
+            .Where(c => myConversationIds.Contains(c.Id))
+            .Select(c => new { c.ConversationType, c.LastMessageAt })
+            .ToListAsync();
+
+        var messagesToday = await db.Messages
+            .Where(m => myConversationIds.Contains(m.ConversationId)
+                     && m.CreatedAt >= todayUtc
+                     && !m.IsSystemMessage)
+            .CountAsync();
+
+        var messagesThisWeek = await db.Messages
+            .Where(m => myConversationIds.Contains(m.ConversationId)
+                     && m.CreatedAt >= weekAgoUtc
+                     && !m.IsSystemMessage)
+            .CountAsync();
+
+        return new MessagingStatsDto
+        {
+            TotalConversations = conversations.Count,
+            ActiveConversations = conversations.Count(c => c.LastMessageAt >= weekAgoUtc),
+            MessagesToday = messagesToday,
+            MessagesThisWeek = messagesThisWeek,
+            StaffToStaffConversations = conversations.Count(c => c.ConversationType == "StaffToStaff"),
+            StaffToPatientConversations = conversations.Count(c => c.ConversationType == "StaffToPatient"),
+            PatientFacingConversations = conversations.Count(c => c.ConversationType == "PatientFacing"),
         };
     }
 
@@ -786,6 +859,8 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 : msg.ReplyTo?.Content,
             ReplyToSenderName = msg.ReplyTo?.Sender?.Doctor?.Name ?? msg.ReplyTo?.Sender?.Username,
             IsSystemMessage = msg.IsSystemMessage,
+            IsEdited = msg.IsEdited,
+            EditedAt = msg.EditedAt,
             IsReadByMe = msg.Reads.Any(r => r.UserId == UserId),
             ReadCount = msg.Reads.Count,
             CreatedAt = msg.CreatedAt

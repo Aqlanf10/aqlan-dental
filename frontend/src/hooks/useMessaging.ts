@@ -8,6 +8,8 @@ import type {
   SendMessageRequest,
   UnreadCount,
   ConversationFilter,
+  Message,
+  MessagingStats,
 } from "@/types/messaging";
 
 // ─── جلب محادثاتي ────────────────────────────────────────────────────────────
@@ -150,6 +152,23 @@ export function useSendMessage(conversationId: string) {
   });
 }
 
+// ─── تعديل رسالة ─────────────────────────────────────────────────────────────
+export function useEditMessage(conversationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ messageId, content }: { messageId: string; content: string }) => {
+      const { data } = await api.put<Message>(
+        `/api/messages/conversations/${conversationId}/messages/${messageId}`,
+        { content }
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+    },
+  });
+}
+
 // ─── حذف رسالة ────────────────────────────────────────────────────────────────
 export function useDeleteMessage(conversationId: string) {
   const queryClient = useQueryClient();
@@ -160,6 +179,18 @@ export function useDeleteMessage(conversationId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
     },
+  });
+}
+
+// ─── إحصائيات المراسلة ───────────────────────────────────────────────────────
+export function useMessagingStats() {
+  return useQuery({
+    queryKey: ["messagingStats"],
+    queryFn: async () => {
+      const { data } = await api.get("/api/messages/stats");
+      return data as MessagingStats;
+    },
+    staleTime: 30_000,
   });
 }
 

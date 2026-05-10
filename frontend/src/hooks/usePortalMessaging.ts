@@ -25,6 +25,9 @@ export interface PortalMessage {
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentType?: string;
+  replyToId?: string;
+  replyToContent?: string;
+  replyToSenderName?: string;
   isSystemMessage: boolean;
   isReadByMe: boolean;
   createdAt: string;
@@ -130,6 +133,7 @@ export interface PortalSendMessageRequest {
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentType?: string;
+  replyToId?: string;
 }
 
 export function usePortalSendMessage(conversationId: string) {

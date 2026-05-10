@@ -221,12 +221,15 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         if (hasAppointmentConflict)
             return false;
 
-        // Check booking requests
-        var hasBookingConflict = await db.BookingRequests
-            .AnyAsync(r => r.PreferredDate == date
-                        && BlockingStatuses.Contains(r.Status)
-                        && r.PreferredTime != null
-                        && IsSameSlotTime(r.PreferredTime, slot24h));
+        // Check booking requests (fetch to client first — IsSameSlotTime cannot be translated to SQL)
+        var conflictingBookingTimes = await db.BookingRequests
+            .Where(r => r.PreferredDate == date
+                     && BlockingStatuses.Contains(r.Status)
+                     && r.PreferredTime != null)
+            .Select(r => r.PreferredTime!)
+            .ToListAsync();
+
+        var hasBookingConflict = conflictingBookingTimes.Any(t => IsSameSlotTime(t, slot24h));
 
         return !hasBookingConflict;
     }

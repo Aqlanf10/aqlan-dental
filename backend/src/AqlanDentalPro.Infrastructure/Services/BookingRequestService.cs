@@ -14,6 +14,8 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
     private static readonly TimeOnly ClinicOpen = new(8, 0);
     private static readonly TimeOnly ClinicClose = new(20, 0);
     private const int SlotDurationMinutes = 30;
+    private const string ClinicIanaTimeZoneId = "Asia/Aden";
+    private const string ClinicWindowsTimeZoneId = "Arab Standard Time";
 
     // Booking request statuses that block a time slot
     private static readonly HashSet<BookingRequestStatus> BlockingStatuses =
@@ -43,7 +45,7 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         {
             if (!await IsSlotAvailableAsync(dto.PreferredDate, dto.PreferredTime))
             {
-                throw new SlotNotAvailableException("هذا الموعد لم يعد متاحًا، يرجى اختيار وقت آخر.");
+                throw new SlotNotAvailableException("هذا الوقت لم يعد متاحًا، يرجى اختيار وقت آخر.");
             }
         }
 
@@ -111,8 +113,10 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             return new BookingAvailabilityResponseDto(date, serviceType, [], false, "صيغة التاريخ غير صحيحة");
         }
 
+        var clinicNow = GetClinicNow();
+        var today = DateOnly.FromDateTime(clinicNow);
+
         // Check for past date
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         if (parsedDate < today)
         {
             return new BookingAvailabilityResponseDto(date, serviceType, [], false, "لا يمكن اختيار تاريخ سابق");
@@ -149,6 +153,9 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             var slotTime = TimeOnly.Parse(slot);
             var slotEnd = slotTime.AddMinutes(SlotDurationMinutes);
 
+            // For same-day booking, disable slots that already started or passed in clinic local time.
+            var isPastSlotToday = parsedDate == today && slotTime <= TimeOnly.FromDateTime(clinicNow);
+
             // Check if any appointment overlaps this slot
             var isBlockedByAppointment = appointmentTimes.Any(a =>
                 a.StartTime < slotEnd && a.EndTime > slotTime);
@@ -158,7 +165,11 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             var isBlockedByBookingRequest = bookingRequestTimes.Any(brTime =>
                 IsSameSlotTime(brTime, slot));
 
-            if (isBlockedByAppointment || isBlockedByBookingRequest)
+            if (isPastSlotToday)
+            {
+                result.Add(new BookingAvailabilitySlotDto(slot, false, "انتهى الوقت"));
+            }
+            else if (isBlockedByAppointment || isBlockedByBookingRequest)
             {
                 result.Add(new BookingAvailabilitySlotDto(slot, false, "محجوز"));
             }
@@ -177,8 +188,11 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         if (!DateOnly.TryParse(date, out var parsedDate))
             return false;
 
+        var clinicNow = GetClinicNow();
+        var today = DateOnly.FromDateTime(clinicNow);
+
         // Past date
-        if (parsedDate < DateOnly.FromDateTime(DateTime.UtcNow))
+        if (parsedDate < today)
             return false;
 
         // Friday
@@ -188,10 +202,14 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         // Find the matching 24h slot format
         var slot24h = NormalizeTo24h(time);
         if (slot24h == null)
-            return true; // If we can't parse the time, don't block (backward compat)
+            return false;
 
         var slotTime = TimeOnly.Parse(slot24h);
         var slotEnd = slotTime.AddMinutes(SlotDurationMinutes);
+
+        // Reject same-day slots that have already started or passed in clinic local time.
+        if (parsedDate == today && slotTime <= TimeOnly.FromDateTime(clinicNow))
+            return false;
 
         // Check appointments
         var hasAppointmentConflict = await db.Appointments
@@ -226,6 +244,34 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             current = current.AddMinutes(SlotDurationMinutes);
         }
         return slots;
+    }
+
+    /// <summary>
+    /// Returns the current clinic-local time. Railway/Linux supports the IANA ID; the Windows ID is kept for local dev fallback.
+    /// </summary>
+    private static DateTime GetClinicNow()
+    {
+        try
+        {
+            var timeZone = TimeZoneInfo.FindSystemTimeZoneById(ClinicIanaTimeZoneId);
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            try
+            {
+                var timeZone = TimeZoneInfo.FindSystemTimeZoneById(ClinicWindowsTimeZoneId);
+                return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+                return DateTime.UtcNow.AddHours(3);
+            }
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return DateTime.UtcNow.AddHours(3);
+        }
     }
 
     /// <summary>

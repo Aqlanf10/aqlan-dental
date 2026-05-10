@@ -1360,7 +1360,13 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("EditedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsEdited")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsSystemMessage")

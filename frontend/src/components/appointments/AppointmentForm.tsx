@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, AlertTriangle, CalendarDays } from "lucide-react";
+import { Save, AlertTriangle, CalendarDays, Loader2, Clock } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,13 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const [isConflict, setIsConflict] = useState(false);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
 
+  // Available slots state
+  const [slots, setSlots] = useState<string[]>([]);
+  const [slotDuration, setSlotDuration] = useState<number | null>(null);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [doctorAvailable, setDoctorAvailable] = useState<boolean | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<string>("");
+
   const {
     register,
     handleSubmit,
@@ -83,6 +90,56 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   useEffect(() => {
     api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
   }, []);
+
+  // Fetch available slots when doctor + date change
+  useEffect(() => {
+    if (!watchedDoctor || !watchedDate) {
+      setSlots([]);
+      setSlotDuration(null);
+      setDoctorAvailable(null);
+      return;
+    }
+    setSlotsLoading(true);
+    setSlots([]);
+    setSlotDuration(null);
+    setDoctorAvailable(null);
+
+    api
+      .get<{ available: boolean; slots: string[]; slotDuration: number }>(
+        `/api/doctors/${watchedDoctor}/schedule/slots?date=${watchedDate}`
+      )
+      .then((r) => {
+        setDoctorAvailable(r.data.available);
+        setSlots(r.data.slots ?? []);
+        setSlotDuration(r.data.slotDuration ?? null);
+      })
+      .catch(() => {
+        setSlots([]);
+        setSlotDuration(null);
+        setDoctorAvailable(null);
+      })
+      .finally(() => setSlotsLoading(false));
+  }, [watchedDoctor, watchedDate]);
+
+  function handleSlotSelect(slot: string) {
+    setSelectedSlot(slot);
+    setValue("startTime", slot, { shouldValidate: true });
+    if (slotDuration) setValue("durationMinutes", slotDuration);
+  }
+
+  function formatSlot(t: string): string {
+    const [hStr, mStr] = t.split(":");
+    let h = parseInt(hStr, 10);
+    const suffix = h >= 12 ? "م" : "ص";
+    if (h > 12) h -= 12;
+    if (h === 0) h = 12;
+    return `${h}:${mStr} ${suffix}`;
+  }
+
+  const showSlots  = !!watchedDoctor && !!watchedDate && !slotsLoading && slots.length > 0;
+  const noWorkDay  = !!watchedDoctor && !!watchedDate && !slotsLoading && doctorAvailable === false;
+  const allBooked  = !!watchedDoctor && !!watchedDate && !slotsLoading && doctorAvailable === true && slots.length === 0;
+  const useTimePicker = !watchedDoctor || !watchedDate || (doctorAvailable === null && !slotsLoading);
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -210,21 +267,6 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
           )}
         </div>
 
-        {/* Start time */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            وقت البداية <span className="text-red-500">*</span>
-          </label>
-          <input
-            {...register("startTime")}
-            type="time"
-            className={inputCls(errors.startTime?.message)}
-          />
-          {errors.startTime && (
-            <p className="mt-1 text-xs text-red-600">{errors.startTime.message}</p>
-          )}
-        </div>
-
         {/* Duration */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">المدة (دقيقة)</label>
@@ -236,6 +278,91 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
               <option key={m} value={m}>{m} دقيقة</option>
             ))}
           </select>
+        </div>
+
+        {/* Start time — smart slot picker */}
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5 text-gray-400" />
+            وقت البداية <span className="text-red-500">*</span>
+            {slotDuration && (
+              <span className="text-[11px] font-normal text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                {slotDuration} دقيقة / موعد
+              </span>
+            )}
+          </label>
+
+          {/* Loading */}
+          {slotsLoading && (
+            <div className="flex items-center gap-2 text-gray-400 text-sm py-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              جارٍ تحميل الأوقات المتاحة...
+            </div>
+          )}
+
+          {/* Doctor not working this day */}
+          {noWorkDay && (
+            <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              الطبيب لا يعمل في هذا اليوم. اختر يوماً آخر أو أدخل الوقت يدوياً.
+            </div>
+          )}
+
+          {/* All slots booked */}
+          {allBooked && (
+            <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              جميع الأوقات محجوزة. اختر يوماً آخر أو أدخل الوقت يدوياً أدناه.
+            </div>
+          )}
+
+          {/* Slot grid */}
+          {showSlots && (
+            <div className="grid grid-cols-5 sm:grid-cols-7 gap-1.5 mb-2">
+              {slots.map((slot) => {
+                const isSelected = selectedSlot === slot;
+                return (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => handleSlotSelect(slot)}
+                    className={cn(
+                      "py-2 px-1 rounded-lg border text-xs font-semibold transition-all",
+                      isSelected
+                        ? "border-clinic-blue bg-clinic-blue text-white shadow-sm"
+                        : "border-gray-200 text-gray-600 hover:border-clinic-blue/60 hover:bg-clinic-blue/5"
+                    )}
+                  >
+                    {formatSlot(slot)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Always show manual time input as fallback / override */}
+          <div className={cn("flex items-center gap-2", showSlots ? "mt-2" : "")}>
+            {showSlots && (
+              <span className="text-xs text-gray-400 whitespace-nowrap">أو أدخل يدوياً:</span>
+            )}
+            <input
+              {...register("startTime")}
+              type="time"
+              className={cn(inputCls(errors.startTime?.message), showSlots ? "w-36" : "w-full")}
+              onChange={(e) => {
+                setSelectedSlot("");
+                register("startTime").onChange(e);
+              }}
+            />
+          </div>
+          {errors.startTime && (
+            <p className="mt-1 text-xs text-red-600">{errors.startTime.message}</p>
+          )}
+
+          {/* No doctor/date yet */}
+          {useTimePicker && !slotsLoading && (
+            <p className="text-[11px] text-gray-400 mt-1">اختر الطبيب والتاريخ لعرض الأوقات المتاحة تلقائياً</p>
+          )}
         </div>
 
         {/* Notes */}

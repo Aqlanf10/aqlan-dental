@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Clock, Calendar } from "lucide-react";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import type { Appointment } from "@/types/appointment";
 import { formatTime } from "@/lib/utils";
@@ -24,6 +25,7 @@ const STATUS_LABELS: Record<string, string> = {
 export function TodaySchedule() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -91,7 +93,7 @@ export function TodaySchedule() {
                   key={appt.id}
                   className="flex items-center gap-3.5 px-5 py-3 cursor-pointer transition"
                   style={{ borderBottom: i < appointments.length - 1 ? "1px solid #f8fafc" : "none" }}
-                  onClick={() => {}}
+                  onClick={() => router.push(`/appointments/${appt.id}`)}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >

@@ -77,7 +77,7 @@ const NEXT_STATUSES: Record<
 };
 
 const inputCls =
-  "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+  "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 
 type Tab = "info" | "preop" | "postop";
 
@@ -162,7 +162,7 @@ export default function SurgeryDetailPage() {
       <div className="flex flex-col items-center justify-center py-24 text-gray-400">
         <AlertCircle className="w-12 h-12 mb-3 opacity-40" />
         <p className="text-sm">لم يتم العثور على الحالة الجراحية</p>
-        <Link href="/surgery" className="mt-4 text-sm text-clinic-teal hover:underline">
+        <Link href="/surgery" className="mt-4 text-sm text-clinic-blue hover:underline">
           العودة إلى قائمة الجراحة
         </Link>
       </div>
@@ -175,7 +175,7 @@ export default function SurgeryDetailPage() {
     <div className="space-y-5 max-w-4xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/surgery" className="hover:text-clinic-teal transition">
+        <Link href="/surgery" className="hover:text-clinic-blue transition">
           الجراحة
         </Link>
         <span>/</span>
@@ -190,7 +190,7 @@ export default function SurgeryDetailPage() {
         >
           <ArrowRight className="w-4 h-4" />
         </Link>
-        <Scissors className="w-5 h-5 text-clinic-teal" />
+        <Scissors className="w-5 h-5 text-clinic-blue" />
         <h1 className="text-2xl font-extrabold text-gray-900">{surgeryCase.surgeryType}</h1>
       </div>
 
@@ -202,14 +202,14 @@ export default function SurgeryDetailPage() {
               <User className="w-4 h-4 text-gray-400" />
               <Link
                 href={`/patients/${surgeryCase.patientId}`}
-                className="text-base font-semibold text-gray-900 hover:text-clinic-teal transition"
+                className="text-base font-semibold text-gray-900 hover:text-clinic-blue transition"
               >
                 {surgeryCase.patientName}
               </Link>
               <span className="text-xs text-gray-400 font-mono">{surgeryCase.patientNumber}</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-xs font-semibold text-clinic-teal">{surgeryCase.caseNumber}</span>
+              <span className="font-mono text-xs font-semibold text-clinic-blue">{surgeryCase.caseNumber}</span>
               <span className="text-gray-300">·</span>
               <span className="text-sm text-gray-600">{surgeryCase.surgeryType}</span>
               {surgeryCase.teethInvolved && (
@@ -223,7 +223,7 @@ export default function SurgeryDetailPage() {
               <div className="flex items-center gap-1.5 text-sm text-gray-600">
                 <div
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: surgeryCase.doctorColor ?? "#0E7490" }}
+                  style={{ backgroundColor: surgeryCase.doctorColor ?? "#2563EB" }}
                 />
                 {surgeryCase.doctorName}
               </div>
@@ -278,7 +278,7 @@ export default function SurgeryDetailPage() {
             className={cn(
               "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition -mb-px",
               activeTab === tabId
-                ? "border-clinic-teal text-clinic-teal"
+                ? "border-clinic-blue text-clinic-blue"
                 : "border-transparent text-gray-500 hover:text-gray-700"
             )}
           >
@@ -295,7 +295,7 @@ export default function SurgeryDetailPage() {
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
             <div>
               <dt className="text-xs text-gray-400 mb-0.5">رقم الحالة</dt>
-              <dd className="font-mono font-semibold text-clinic-teal">{surgeryCase.caseNumber}</dd>
+              <dd className="font-mono font-semibold text-clinic-blue">{surgeryCase.caseNumber}</dd>
             </div>
             <div>
               <dt className="text-xs text-gray-400 mb-0.5">نوع الجراحة</dt>
@@ -312,7 +312,7 @@ export default function SurgeryDetailPage() {
                   <div className="flex items-center gap-1.5">
                     <div
                       className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: surgeryCase.doctorColor ?? "#0E7490" }}
+                      style={{ backgroundColor: surgeryCase.doctorColor ?? "#2563EB" }}
                     />
                     {surgeryCase.doctorName}
                   </div>
@@ -403,7 +403,7 @@ export default function SurgeryDetailPage() {
               type="checkbox"
               checked={preop.consentSigned ?? false}
               onChange={(e) => setPreop((p) => ({ ...p, consentSigned: e.target.checked }))}
-              className="w-4 h-4 rounded border-gray-300 text-clinic-teal focus:ring-clinic-teal"
+              className="w-4 h-4 rounded border-gray-300 text-clinic-blue focus:ring-clinic-blue"
             />
             <label htmlFor="consent" className="text-sm text-gray-700 cursor-pointer">
               تم توقيع نموذج الموافقة على الجراحة
@@ -420,7 +420,7 @@ export default function SurgeryDetailPage() {
             <button
               onClick={savePreop}
               disabled={savingPreop}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {savingPreop ? "جارٍ الحفظ..." : "حفظ"}
@@ -455,7 +455,7 @@ export default function SurgeryDetailPage() {
             <button
               onClick={savePostop}
               disabled={savingPostop}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
             >
               <Save className="w-4 h-4" />
               {savingPostop ? "جارٍ الحفظ..." : "حفظ"}

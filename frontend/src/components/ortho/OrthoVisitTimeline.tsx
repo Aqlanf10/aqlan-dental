@@ -30,7 +30,7 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal";
+const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 
 export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded }: Props) {
   const [visits, setVisits] = useState(initialVisits);
@@ -76,7 +76,7 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
       <div className="flex justify-end">
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           تسجيل زيارة
@@ -85,8 +85,8 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
 
       {/* New Visit Form */}
       {showForm && (
-        <form onSubmit={handleSubmit(onSubmit)} className="bg-teal-50 rounded-xl border border-teal-200 p-4 space-y-3">
-          <h3 className="font-semibold text-teal-900 text-sm">تسجيل زيارة جديدة</h3>
+        <form onSubmit={handleSubmit(onSubmit)} className="bg-clinic-blue-50 rounded-xl border border-clinic-blue-100 p-4 space-y-3">
+          <h3 className="font-semibold text-clinic-navy text-sm">تسجيل زيارة جديدة</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">التاريخ *</label>
@@ -136,7 +136,7 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
             <button type="button" onClick={() => setShowForm(false)} className="px-4 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition">
               إلغاء
             </button>
-            <button type="submit" disabled={saving} className="px-4 py-1.5 text-sm bg-clinic-teal text-white rounded-lg hover:opacity-90 disabled:opacity-60 transition">
+            <button type="submit" disabled={saving} className="px-4 py-1.5 text-sm bg-clinic-blue text-white rounded-lg hover:opacity-90 disabled:opacity-60 transition">
               {saving ? "جارٍ الحفظ..." : "حفظ الزيارة"}
             </button>
           </div>
@@ -156,7 +156,7 @@ export function OrthoVisitTimeline({ caseId, visits: initialVisits, onVisitAdded
                 className="w-full flex items-center justify-between px-4 py-3 text-start hover:bg-gray-50 transition"
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-7 h-7 rounded-full bg-clinic-teal/10 text-clinic-teal text-xs font-bold flex items-center justify-center flex-shrink-0">
+                  <span className="w-7 h-7 rounded-full bg-clinic-blue/10 text-clinic-blue text-xs font-bold flex items-center justify-center flex-shrink-0">
                     {v.visitNumber}
                   </span>
                   <div>

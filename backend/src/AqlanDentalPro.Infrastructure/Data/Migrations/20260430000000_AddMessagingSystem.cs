@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations
 {
+    [Microsoft.EntityFrameworkCore.Migrations.Migration("20260430000000_AddMessagingSystem")]
     public partial class AddMessagingSystem : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

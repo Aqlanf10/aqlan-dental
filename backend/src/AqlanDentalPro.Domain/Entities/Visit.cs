@@ -13,7 +13,9 @@ public class Visit : BaseEntity
     public string? ChiefComplaint { get; set; }
     public string? ClinicalNotes { get; set; }
     public string? TreatmentDone { get; set; }
+    public string? Diagnosis { get; set; }
     public string? Instructions { get; set; }
+    public string? NextVisitPlan { get; set; }
     public decimal? Cost { get; set; }
     public DateOnly? NextVisitDate { get; set; }
 

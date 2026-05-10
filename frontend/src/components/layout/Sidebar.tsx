@@ -5,8 +5,9 @@ import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   BarChart2, Package, FlaskConical, Settings, LogOut,
-  Pill, X, Menu, MessageCircle, MessageSquare, CalendarClock,
+  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe,
 } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
@@ -19,26 +20,34 @@ type NavItem = {
   label: string;
   icon: React.ElementType;
   roles: string[]; // empty = all roles
+  section?: string; // section header for grouping
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/",             label: "لوحة التحكم",       icon: LayoutDashboard, roles: [] },
+  // Section: رئيسي
+  { href: "/",             label: "لوحة التحكم",       icon: LayoutDashboard, roles: [], section: "رئيسي" },
   { href: "/patients",     label: "المرضى",             icon: Users,           roles: [] },
   { href: "/appointments", label: "المواعيد",           icon: Calendar,        roles: [] },
-  { href: "/booking-requests", label: "طلبات الحجز",   icon: CalendarClock,   roles: ["Admin", "Reception"] },
-  { href: "/ortho",        label: "التقويم",            icon: GitBranch,       roles: ["Admin", "Orthodontist"] },
+  { href: "/clinic-queue", label: "طابور العيادة",     icon: ClipboardList,   roles: [] },
+  // Section: تخصصات
+  { href: "/ortho",        label: "التقويم",            icon: GitBranch,       roles: ["Admin", "Orthodontist"], section: "تخصصات" },
   { href: "/ceph",         label: "السيفالومتري",       icon: Activity,        roles: ["Admin", "Orthodontist"] },
   { href: "/general",      label: "طب الأسنان العام",   icon: Stethoscope,     roles: ["Admin", "GeneralDentist"] },
   { href: "/surgery",      label: "الجراحة",            icon: Scissors,        roles: ["Admin", "OralSurgeon"] },
-  { href: "/referrals",    label: "الإحالات",           icon: ArrowLeftRight,  roles: [] },
+  // Section: التواصل
+  { href: "/referrals",    label: "الإحالات",           icon: ArrowLeftRight,  roles: [], section: "التواصل" },
+  { href: "/booking-requests", label: "طلبات الحجز",   icon: Globe,           roles: ["Admin", "Reception"] },
   { href: "/messages",     label: "الرسائل",            icon: MessageCircle,   roles: [] },
   { href: "/whatsapp",    label: "واتساب",             icon: MessageSquare,   roles: [] },
-  { href: "/finance",      label: "المالية",            icon: Wallet,          roles: ["Admin", "Reception", "Accountant"] },
+  // Section: عمليات
+  { href: "/finance",      label: "المالية",            icon: Wallet,          roles: ["Admin", "Reception", "Accountant"], section: "عمليات" },
   { href: "/prescriptions", label: "الوصفات الطبية",    icon: Pill,            roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
-  { href: "/reports",      label: "التقارير",           icon: BarChart2,       roles: ["Admin", "Accountant"] },
-  { href: "/inventory",    label: "المخزون",            icon: Package,         roles: ["Admin"] },
   { href: "/lab",          label: "المختبر",            icon: FlaskConical,    roles: ["Admin", "Orthodontist"] },
-  { href: "/settings",     label: "الإعدادات",          icon: Settings,        roles: ["Admin"] },
+  { href: "/inventory",    label: "المخزون",            icon: Package,         roles: ["Admin"] },
+  // Section: تقارير
+  { href: "/reports",      label: "التقارير",           icon: BarChart2,       roles: ["Admin", "Accountant"], section: "تقارير" },
+  // Section: النظام
+  { href: "/settings",     label: "الإعدادات",          icon: Settings,        roles: ["Admin"], section: "النظام" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -58,11 +67,11 @@ export function Sidebar() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  const userRole = user?.role ?? "";
   const { data: unreadData } = useUnreadCount();
 
-  // Filter nav items by role
+  const userRole = user?.role ?? "";
+
+  // Filter nav items by role, and track which sections to show
   const visibleItems = NAV_ITEMS.filter(
     (item) => item.roles.length === 0 || item.roles.includes(userRole)
   );
@@ -94,7 +103,8 @@ export function Sidebar() {
       {/* ── Mobile hamburger button ──────────────────────────────────── */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3.5 right-3 z-50 w-10 h-10 rounded-lg bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-600 hover:bg-gray-50"
+        className="lg:hidden fixed top-3.5 right-3 z-50 w-10 h-10 rounded-lg border flex items-center justify-center text-white hover:opacity-90"
+        style={{ backgroundColor: "#0d2137", borderColor: "#1a3a5c" }}
         aria-label="فتح القائمة"
       >
         <Menu className="w-5 h-5" />
@@ -103,99 +113,141 @@ export function Sidebar() {
       {/* ── Mobile overlay ───────────────────────────────────────────── */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/40 z-40"
+          className="lg:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* ── Sidebar ──────────────────────────────────────────────────── */}
+      {/* ── Sidebar (Dark Navy — matches ZIP) ─────────────────────────── */}
       <aside
         className={cn(
-          "w-64 bg-white border-l border-gray-200 flex flex-col h-full fixed top-0 right-0 z-40 shadow-sm transition-transform duration-300",
-          // On mobile: translate off-screen when closed, on-screen when open
+          "w-64 flex flex-col h-full fixed top-0 right-0 z-40 transition-transform duration-300",
           "lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"
         )}
+        style={{ backgroundColor: "#0d2137" }}
       >
-        {/* Logo */}
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 clinic-gradient rounded-xl flex items-center justify-center flex-shrink-0">
-                <Stethoscope className="w-5 h-5 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-bold text-gray-900 text-sm leading-tight truncate">
-                  مركز د. عقلان الكامل
-                </p>
-                <p className="text-xs text-gray-400 truncate">Aqlan Dental Pro</p>
-              </div>
+        {/* Logo — matches ZIP exactly */}
+        <div className="border-b min-h-[72px] flex items-center px-4 py-4" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div className="flex items-center gap-2.5 flex-1">
+            <div className="w-[38px] h-[38px] rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ background: "#fff", padding: 2 }}>
+              <Image
+                src="/logo.png"
+                alt="Aqlan Dental Pro"
+                width={34}
+                height={34}
+                className="w-[34px] h-[34px] object-contain"
+              />
             </div>
-            {/* Close button for mobile */}
-            <button
-              onClick={() => setMobileOpen(false)}
-              className="lg:hidden w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400"
-              aria-label="إغلاق القائمة"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="min-w-0">
+              <p className="font-extrabold text-white text-sm leading-tight">
+                Aqlan Dental Pro
+              </p>
+              <p className="text-[11px] mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.45)" }}>
+                مركز د. عقلان الكامل
+              </p>
+            </div>
           </div>
+          {/* Close button for mobile */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ color: "rgba(255,255,255,0.5)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            aria-label="إغلاق القائمة"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-          {visibleItems.map(({ href, label, icon: Icon }) => {
+        {/* Navigation with section groups */}
+        <nav className="flex-1 overflow-y-auto py-2">
+          {visibleItems.map(({ href, label, icon: Icon, section }) => {
             const isCurrent = href === "/"
               ? pathname === "/"
               : pathname.startsWith(href);
 
+            // Show unread badge on messages link
+            const unreadCount = href === "/messages" ? unreadData?.totalUnread : undefined;
+
             return (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                  isCurrent
-                    ? "bg-clinic-teal text-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+              <div key={href}>
+                {/* Section header */}
+                {section && (
+                  <div
+                    className="px-[18px] pt-3.5 pb-1 text-[10px] font-bold uppercase tracking-wider"
+                    style={{ color: "rgba(255,255,255,0.3)" }}
+                  >
+                    {section}
+                  </div>
                 )}
-              >
-                <Icon className="w-4 h-4 flex-shrink-0" />
-                <span className="flex-1">{label}</span>
-                {href === "/messages" && unreadData && unreadData.totalUnread > 0 && (
-                  <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                    {unreadData.totalUnread > 9 ? "9+" : unreadData.totalUnread}
-                  </span>
-                )}
-              </Link>
+                <Link
+                  href={href}
+                  className={cn(
+                    "flex items-center gap-2.5 px-[18px] py-2.5 text-sm font-medium transition-all relative",
+                    isCurrent
+                      ? "text-white font-bold"
+                      : "hover:text-white"
+                  )}
+                  style={isCurrent ? {
+                    background: "rgba(61,122,181,0.35)",
+                    borderRight: "3px solid #3d7ab5",
+                  } : {
+                    color: "rgba(255,255,255,0.6)",
+                    borderRight: "3px solid transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isCurrent) e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isCurrent) e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <Icon
+                    className="w-[18px] h-[18px] flex-shrink-0"
+                    style={{ color: isCurrent ? "#3d7ab5" : "rgba(255,255,255,0.6)" }}
+                  />
+                  <span className="flex-1">{label}</span>
+                  {unreadCount && unreadCount > 0 && (
+                    <span
+                      className="text-[10px] font-extrabold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5"
+                      style={{ background: "#ef4444", color: "#fff" }}
+                    >
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </Link>
+              </div>
             );
           })}
         </nav>
 
-        {/* User footer */}
-        <div className="p-3 border-t border-gray-100">
-          <div className="flex items-center gap-3 mb-2">
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-              style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
-            >
-              {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-gray-900 truncate">
-                {user?.doctorName ?? user?.username}
-              </p>
-              <p className="text-xs text-gray-400 truncate">
-                {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
-              </p>
-            </div>
+        {/* User footer — matches ZIP */}
+        <div className="px-4 py-3 border-t flex items-center gap-2.5" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div
+            className="w-[34px] h-[34px] rounded-full flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0"
+            style={{ backgroundColor: "#3d7ab5" }}
+          >
+            {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-bold text-white truncate">
+              {user?.doctorName ?? user?.username}
+            </p>
+            <p className="text-[11px] truncate" style={{ color: "rgba(255,255,255,0.4)" }}>
+              {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
+            </p>
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            style={{ color: "rgba(255,255,255,0.4)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.1)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            title="تسجيل الخروج"
           >
             <LogOut className="w-4 h-4" />
-            <span>تسجيل الخروج</span>
           </button>
         </div>
       </aside>

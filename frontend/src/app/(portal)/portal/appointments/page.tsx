@@ -1,21 +1,33 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Calendar, Plus, Clock, User, X, ChevronLeft } from "lucide-react";
+import { Calendar, Plus, Clock, User, X, AlertTriangle } from "lucide-react";
 import portalApi from "@/lib/portalApi";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
-import type { PatientAppointment, PortalDoctor } from "@/types/patientPortal";
+import type { PatientAppointment, PatientDoctor } from "@/types/patientPortal";
 import { cn } from "@/lib/utils";
-import Link from "next/link";
 
 const APPOINTMENT_TYPES = ["فحص", "تنظيف", "حشو", "قلع", "معالجة جذر", "تقويم", "أخرى"];
+
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  Scheduled: { label: "مجدول", color: "bg-blue-100 text-blue-700" },
+  Confirmed: { label: "مؤكد", color: "bg-green-100 text-green-700" },
+  Waiting: { label: "في الانتظار", color: "bg-amber-100 text-amber-700" },
+  Called: { label: "تم النداء", color: "bg-purple-100 text-purple-700" },
+  InRoom: { label: "في الغرفة", color: "bg-indigo-100 text-indigo-700" },
+  InProgress: { label: "جارٍ التنفيذ", color: "bg-cyan-100 text-cyan-700" },
+  Completed: { label: "مكتمل", color: "bg-gray-100 text-gray-600" },
+  Cancelled: { label: "ملغي", color: "bg-red-100 text-red-600" },
+  NoShow: { label: "لم يحضر", color: "bg-orange-100 text-orange-700" },
+};
 
 export default function PortalAppointmentsPage() {
   usePatientAuthStore();
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [doctors, setDoctors] = useState<PortalDoctor[]>([]);
-  
+  const [doctors, setDoctors] = useState<PatientDoctor[]>([]);
+
   // Form state
   const [apptDate, setApptDate] = useState("");
   const [apptTime, setApptTime] = useState("");
@@ -24,17 +36,19 @@ export default function PortalAppointmentsPage() {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
-  const [filter, setFilter] = useState<"all" | "upcoming" | "past">("all");
+  const [formSuccess, setFormSuccess] = useState("");
+  const [filter, setFilter] = useState<"all" | "upcoming" | "past" | "cancelled">("all");
 
   useEffect(() => {
     portalApi.get<PatientAppointment[]>("/api/portal/appointments?limit=50")
       .then((r) => setAppointments(r.data))
-      .catch(() => {})
+      .catch((err) => setLoadError(err?.response?.data?.message || "حدث خطأ في تحميل المواعيد"))
       .finally(() => setLoading(false));
 
-    portalApi.get<PortalDoctor[]>("/api/doctors")
+    // Use portal-specific doctors endpoint
+    portalApi.get<PatientDoctor[]>("/api/portal/doctors")
       .then((r) => setDoctors(r.data))
-      .catch(() => {});
+      .catch(() => {}); // Non-critical: doctors list is optional for the form
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,6 +59,7 @@ export default function PortalAppointmentsPage() {
     }
     setSaving(true);
     setFormError("");
+    setFormSuccess("");
     try {
       const { data } = await portalApi.post<PatientAppointment>("/api/portal/appointments", {
         appointmentDate: apptDate,
@@ -56,45 +71,50 @@ export default function PortalAppointmentsPage() {
       setAppointments((prev) => [data, ...prev]);
       setShowForm(false);
       setApptDate(""); setApptTime(""); setApptType(""); setDoctorId(""); setNotes("");
+      setFormSuccess("تم حجز الموعد بنجاح");
+      setTimeout(() => setFormSuccess(""), 3000);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setFormError(msg || "حدث خطأ");
+      setFormError(msg || "حدث خطأ في حجز الموعد");
     } finally {
       setSaving(false);
     }
   };
 
   const handleCancel = async (id: string) => {
-    if (!confirm("هل تريد إلغاء هذا الموعد؟")) return;
+    if (!confirm("هل تريد إلغاء هذا الموعد؟ لا يمكن التراجع عن هذا الإجراء.")) return;
     try {
       await portalApi.delete(`/api/portal/appointments/${id}`);
-      setAppointments((prev) => prev.map((a) => a.id === id ? { ...a, status: "Cancelled" } : a));
-    } catch {}
+      setAppointments((prev) => prev.map((a) => a.id === id ? { ...a, status: "Cancelled", canCancel: false } : a));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      alert(msg || "لم يتم إلغاء الموعد");
+    }
   };
 
   const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
   const filteredAppts = appointments.filter((a) => {
-    if (filter === "upcoming") return new Date(a.appointmentDate) >= now && a.status === "Scheduled";
-    if (filter === "past") return new Date(a.appointmentDate) < now || a.status !== "Scheduled";
+    const isCancelled = a.status === "Cancelled";
+    const isUpcoming = !isCancelled && a.appointmentDate >= todayStr && (a.status === "Scheduled" || a.status === "Confirmed");
+    const isPast = !isCancelled && (a.appointmentDate < todayStr || (a.status !== "Scheduled" && a.status !== "Confirmed"));
+    if (filter === "upcoming") return isUpcoming;
+    if (filter === "past") return isPast;
+    if (filter === "cancelled") return isCancelled;
     return true;
   });
 
   return (
-    <div className="pb-20">
+    <div className="pb-24">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 px-5 pt-10 pb-4">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Link href="/portal" className="text-gray-400 hover:text-gray-600">
-              <ChevronLeft className="w-5 h-5" />
-            </Link>
-            <h1 className="text-xl font-extrabold text-gray-900">المواعيد</h1>
-          </div>
+          <h1 className="text-xl font-extrabold text-gray-900">المواعيد</h1>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => { setShowForm(!showForm); setFormError(""); setFormSuccess(""); }}
             className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition",
-              showForm ? "bg-gray-100 text-gray-600" : "bg-teal-600 text-white hover:bg-teal-700"
+              showForm ? "bg-gray-100 text-gray-600" : "bg-clinic-blue text-white hover:bg-clinic-navy-700"
             )}
           >
             {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -108,13 +128,14 @@ export default function PortalAppointmentsPage() {
             { key: "all" as const, label: "الكل" },
             { key: "upcoming" as const, label: "قادمة" },
             { key: "past" as const, label: "سابقة" },
+            { key: "cancelled" as const, label: "ملغاة" },
           ].map((f) => (
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
               className={cn(
                 "px-4 py-1.5 text-xs font-medium rounded-full transition",
-                filter === f.key ? "bg-teal-100 text-teal-700" : "bg-gray-100 text-gray-500"
+                filter === f.key ? "bg-clinic-blue-50 text-clinic-blue" : "bg-gray-100 text-gray-500"
               )}
             >
               {f.label}
@@ -124,6 +145,17 @@ export default function PortalAppointmentsPage() {
       </div>
 
       <div className="px-4 mt-4 space-y-3">
+        {/* Load Error */}
+        {loadError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl p-4 text-center">
+            {loadError}
+          </div>
+        )}
+        {/* Success Message */}
+        {formSuccess && (
+          <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl p-3">{formSuccess}</div>
+        )}
+
         {/* New Appointment Form */}
         {showForm && (
           <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
@@ -132,19 +164,19 @@ export default function PortalAppointmentsPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{formError}</div>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">التاريخ</label>
-              <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none" dir="ltr" />
+              <label className="block text-xs font-medium text-gray-600 mb-1">التاريخ *</label>
+              <input type="date" value={apptDate} onChange={(e) => setApptDate(e.target.value)} min={todayStr}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none" dir="ltr" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">الوقت</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">الوقت *</label>
               <input type="time" value={apptTime} onChange={(e) => setApptTime(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none" dir="ltr" />
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none" dir="ltr" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">نوع الموعد</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">نوع الموعد *</label>
               <select value={apptType} onChange={(e) => setApptType(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none">
                 <option value="">اختر...</option>
                 {APPOINTMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -153,20 +185,20 @@ export default function PortalAppointmentsPage() {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">الطبيب</label>
                 <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none">
-                  <option value="">تلقائي</option>
-                  {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none">
+                  <option value="">الطبيب الافتراضي</option>
+                  {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` — ${d.specialty}` : ""}</option>)}
                 </select>
               </div>
             )}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">ملاحظات</label>
               <input value={notes} onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
                 placeholder="ملاحظات إضافية..." />
             </div>
             <button type="submit" disabled={saving}
-              className="w-full py-2.5 text-sm font-semibold rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 transition">
+              className="w-full py-2.5 text-sm font-semibold rounded-lg bg-clinic-blue text-white hover:bg-clinic-navy-700 disabled:opacity-60 transition">
               {saving ? "جارٍ الحجز..." : "تأكيد الحجز"}
             </button>
           </form>
@@ -182,48 +214,56 @@ export default function PortalAppointmentsPage() {
         ) : filteredAppts.length === 0 ? (
           <div className="text-center py-16">
             <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">لا توجد مواعيد</p>
+            <p className="text-sm text-gray-500">
+              {filter === "upcoming" ? "لا توجد مواعيد قادمة" : filter === "past" ? "لا توجد مواعيد سابقة" : filter === "cancelled" ? "لا توجد مواعيد ملغاة" : "لا توجد مواعيد"}
+            </p>
+            {filter === "upcoming" && (
+              <button onClick={() => setShowForm(true)} className="text-xs text-clinic-blue hover:underline mt-2 inline-block">
+                احجز موعد جديد
+              </button>
+            )}
           </div>
         ) : (
-          filteredAppts.map((appt) => (
-            <div key={appt.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={cn(
-                      "text-xs px-2 py-0.5 rounded-full font-medium",
-                      appt.status === "Scheduled" ? "bg-blue-100 text-blue-700" :
-                      appt.status === "Completed" ? "bg-green-100 text-green-700" :
-                      "bg-red-100 text-red-700"
-                    )}>
-                      {appt.status === "Scheduled" ? "مؤكد" :
-                       appt.status === "Completed" ? "مكتمل" : "ملغي"}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900">{appt.appointmentType}</span>
+          filteredAppts.map((appt) => {
+            const statusInfo = STATUS_LABELS[appt.status] || { label: appt.status, color: "bg-gray-100 text-gray-600" };
+            return (
+              <div key={appt.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", statusInfo.color)}>
+                        {statusInfo.label}
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">{appt.appointmentType}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <Calendar className="w-3 h-3" /> {appt.appointmentDate}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <Clock className="w-3 h-3" /> {appt.startTime} - {appt.endTime}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <User className="w-3 h-3" /> {appt.doctorName}
+                      </div>
+                    </div>
+                    {appt.notes && (
+                      <p className="text-xs text-gray-400 mt-2 bg-gray-50 rounded-lg p-2">{appt.notes}</p>
+                    )}
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <Calendar className="w-3 h-3" /> {appt.appointmentDate}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <Clock className="w-3 h-3" /> {appt.startTime} - {appt.endTime}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <User className="w-3 h-3" /> {appt.doctorName}
-                    </div>
-                  </div>
+                  {appt.canCancel && (
+                    <button
+                      onClick={() => handleCancel(appt.id)}
+                      className="text-xs text-red-500 hover:text-red-700 bg-red-50 px-2 py-1 rounded-lg transition flex items-center gap-1"
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      إلغاء
+                    </button>
+                  )}
                 </div>
-                {appt.status === "Scheduled" && (
-                  <button
-                    onClick={() => handleCancel(appt.id)}
-                    className="text-xs text-red-500 hover:text-red-700 bg-red-50 px-2 py-1 rounded-lg transition"
-                  >
-                    إلغاء
-                  </button>
-                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

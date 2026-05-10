@@ -31,7 +31,7 @@ type FormData = z.infer<typeof schema>;
 
 const inputCls = (err?: string) =>
   cn(
-    "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+    "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
     err ? "border-red-400" : "border-gray-300"
   );
 
@@ -144,7 +144,7 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
           <button
             type="button"
             onClick={() => append({ name: "", dose: "", frequency: "", duration: "", notes: "" })}
-            className="flex items-center gap-1.5 text-xs text-clinic-teal hover:underline font-medium"
+            className="flex items-center gap-1.5 text-xs text-clinic-blue hover:underline font-medium"
           >
             <Plus className="w-3.5 h-3.5" /> إضافة دواء
           </button>
@@ -158,7 +158,7 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
               key={d.name}
               type="button"
               onClick={() => quickAdd(d)}
-              className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-600 hover:border-clinic-teal hover:text-clinic-teal transition"
+              className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-600 hover:border-clinic-blue hover:text-clinic-blue transition"
             >
               {d.name}
             </button>
@@ -174,7 +174,7 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
           {fields.map((field, i) => (
             <div key={field.id} className="bg-gray-50 rounded-lg p-4 relative">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-bold text-clinic-teal">دواء {i + 1}</span>
+                <span className="text-xs font-bold text-clinic-blue">دواء {i + 1}</span>
                 {fields.length > 1 && (
                   <button type="button" onClick={() => remove(i)} className="text-red-400 hover:text-red-600 transition">
                     <Trash2 className="w-4 h-4" />
@@ -227,7 +227,7 @@ export function PrescriptionForm({ defaultPatientId, defaultPatientName }: Props
           إلغاء
         </button>
         <button type="submit" disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ الحفظ..." : "حفظ الوصفة"}

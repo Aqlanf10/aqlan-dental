@@ -17,7 +17,8 @@ interface ChartsData {
   orthoByStatus:     OrthoStatus;
 }
 
-const ORTHO_COLORS = ["#0E7490", "#059669", "#6B7280"];
+/* ZIP-matched colors: clinic-blue #3d7ab5 for active bars, #dce8f5 for inactive */
+const ORTHO_COLORS = ["#3d7ab5", "#22c55e", "#94a3b8"];
 
 function formatYER(val: number) {
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}م`;
@@ -31,12 +32,21 @@ interface TooltipProps {
   label?: string;
 }
 
+/* ZIP-matched card style constant */
+const cardStyle: React.CSSProperties = {
+  background: "#fff",
+  borderRadius: 12,
+  padding: 20,
+  boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)",
+  border: "1px solid #e8f0f9",
+};
+
 const TooltipRevenue = ({ active, payload, label }: TooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-      <p className="text-gray-500 mb-1">{label}</p>
-      <p className="font-bold text-clinic-teal">{payload[0].value.toLocaleString()} ر.ي</p>
+    <div className="bg-white rounded-lg shadow-md px-3 py-2 text-xs" style={{ border: "1px solid #e8f0f9" }}>
+      <p style={{ color: "#94a3b8" }} className="mb-1">{label}</p>
+      <p className="font-bold" style={{ color: "#3d7ab5" }}>{payload[0].value.toLocaleString()} ر.ي</p>
     </div>
   );
 };
@@ -44,9 +54,9 @@ const TooltipRevenue = ({ active, payload, label }: TooltipProps) => {
 const TooltipAppt = ({ active, payload, label }: TooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-      <p className="text-gray-500 mb-1">{label}</p>
-      <p className="font-bold text-purple-600">{payload[0].value} موعد</p>
+    <div className="bg-white rounded-lg shadow-md px-3 py-2 text-xs" style={{ border: "1px solid #e8f0f9" }}>
+      <p style={{ color: "#94a3b8" }} className="mb-1">{label}</p>
+      <p className="font-bold" style={{ color: "#a855f7" }}>{payload[0].value} موعد</p>
     </div>
   );
 };
@@ -65,9 +75,9 @@ export function DashboardCharts() {
   if (loading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-pulse">
-        <div className="lg:col-span-2 h-56 bg-gray-100 rounded-xl" />
-        <div className="h-56 bg-gray-100 rounded-xl" />
-        <div className="lg:col-span-3 h-48 bg-gray-100 rounded-xl" />
+        <div className="lg:col-span-2 h-56 rounded-xl" style={{ background: "#f1f5f9" }} />
+        <div className="h-56 rounded-xl" style={{ background: "#f1f5f9" }} />
+        <div className="lg:col-span-3 h-48 rounded-xl" style={{ background: "#f1f5f9" }} />
       </div>
     );
   }
@@ -86,49 +96,49 @@ export function DashboardCharts() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* Revenue bar chart */}
-      <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      {/* Revenue bar chart — ZIP-matched styling */}
+      <div className="lg:col-span-2" style={cardStyle}>
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-clinic-teal" />
-              <h3 className="font-bold text-gray-900 text-sm">الإيرادات — آخر 30 يوماً</h3>
+              <TrendingUp className="w-4 h-4" style={{ color: "#3d7ab5" }} />
+              <h3 className="font-extrabold text-sm" style={{ color: "#0d2137" }}>الإيرادات — آخر 30 يوماً</h3>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">
-              الإجمالي: <span className="font-semibold text-gray-700">{totalRevenue.toLocaleString()} ر.ي</span>
+            <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
+              الإجمالي: <span className="font-semibold" style={{ color: "#0d2137" }}>{totalRevenue.toLocaleString()} ر.ي</span>
             </p>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={data.revenueByDay} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 9, fill: "#9CA3AF" }}
+              tick={{ fontSize: 9, fill: "#94a3b8" }}
               tickLine={false}
               axisLine={false}
               interval={4}
             />
             <YAxis
               tickFormatter={formatYER}
-              tick={{ fontSize: 9, fill: "#9CA3AF" }}
+              tick={{ fontSize: 9, fill: "#94a3b8" }}
               tickLine={false}
               axisLine={false}
             />
             <Tooltip content={<TooltipRevenue />} />
-            <Bar dataKey="amount" fill="#0E7490" radius={[3, 3, 0, 0]} maxBarSize={20} />
+            <Bar dataKey="amount" fill="#3d7ab5" radius={[3, 3, 0, 0]} maxBarSize={20} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Ortho donut */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      {/* Ortho donut — ZIP-matched styling */}
+      <div style={cardStyle}>
         <div className="flex items-center gap-2 mb-4">
-          <Activity className="w-4 h-4 text-purple-600" />
-          <h3 className="font-bold text-gray-900 text-sm">حالات التقويم</h3>
+          <Activity className="w-4 h-4" style={{ color: "#a855f7" }} />
+          <h3 className="font-extrabold text-sm" style={{ color: "#0d2137" }}>حالات التقويم</h3>
         </div>
         {orthoTotal === 0 ? (
-          <div className="flex items-center justify-center h-[180px] text-gray-300 text-xs">
+          <div className="flex items-center justify-center h-[180px] text-xs" style={{ color: "#94a3b8" }}>
             لا توجد حالات بعد
           </div>
         ) : (
@@ -156,9 +166,9 @@ export function DashboardCharts() {
                 <div key={d.name} className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ORTHO_COLORS[i] }} />
-                    <span className="text-gray-600">{d.name}</span>
+                    <span style={{ color: "#64748b" }}>{d.name}</span>
                   </div>
-                  <span className="font-semibold text-gray-900">{d.value}</span>
+                  <span className="font-semibold" style={{ color: "#0d2137" }}>{d.value}</span>
                 </div>
               ))}
             </div>
@@ -166,31 +176,31 @@ export function DashboardCharts() {
         )}
       </div>
 
-      {/* Appointments line chart */}
-      <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      {/* Appointments line chart — ZIP-matched styling */}
+      <div className="lg:col-span-3" style={cardStyle}>
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-purple-600" />
-              <h3 className="font-bold text-gray-900 text-sm">المواعيد — آخر 30 يوماً</h3>
+              <Calendar className="w-4 h-4" style={{ color: "#a855f7" }} />
+              <h3 className="font-extrabold text-sm" style={{ color: "#0d2137" }}>المواعيد — آخر 30 يوماً</h3>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">
-              الإجمالي: <span className="font-semibold text-gray-700">{totalAppts} موعد</span>
+            <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>
+              الإجمالي: <span className="font-semibold" style={{ color: "#0d2137" }}>{totalAppts} موعد</span>
             </p>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={140}>
           <LineChart data={data.appointmentsByDay} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 9, fill: "#9CA3AF" }}
+              tick={{ fontSize: 9, fill: "#94a3b8" }}
               tickLine={false}
               axisLine={false}
               interval={4}
             />
             <YAxis
-              tick={{ fontSize: 9, fill: "#9CA3AF" }}
+              tick={{ fontSize: 9, fill: "#94a3b8" }}
               tickLine={false}
               axisLine={false}
               allowDecimals={false}
@@ -199,10 +209,10 @@ export function DashboardCharts() {
             <Line
               type="monotone"
               dataKey="count"
-              stroke="#7C3AED"
+              stroke="#a855f7"
               strokeWidth={2}
               dot={false}
-              activeDot={{ r: 4, fill: "#7C3AED" }}
+              activeDot={{ r: 4, fill: "#a855f7" }}
             />
           </LineChart>
         </ResponsiveContainer>

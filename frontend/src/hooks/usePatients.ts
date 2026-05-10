@@ -1,14 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import type { PatientListItem, PatientProfile, CreatePatientRequest } from "@/types/patient";
-
-interface PaginatedResponse<T> {
-  items: T[];
-  totalCount: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-}
+import type { PatientPortalCredentials, CreatePortalAccountResponse, PatientPasswordResetResponse } from "@/types/patientPortal";
+import type { PaginatedResponse } from "@/types/api";
 
 interface PatientFilters {
   search?: string;
@@ -99,6 +93,20 @@ export function useDeletePatient() {
   });
 }
 
+/** Hook: Restore archived patient */
+export function useRestorePatient() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/api/patients/${id}/restore`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["patients"] });
+    },
+  });
+}
+
 /** Hook: Fetch patient timeline */
 export function usePatientTimeline(id: string | null) {
   return useQuery({
@@ -109,5 +117,87 @@ export function usePatientTimeline(id: string | null) {
     },
     enabled: !!id,
     staleTime: 30_000,
+  });
+}
+
+/** Hook: Check for duplicate patients by phone/whatsApp/name+DOB */
+export function useCheckDuplicate() {
+  return useMutation({
+    mutationFn: async (params: {
+      phone?: string;
+      whatsApp?: string;
+      firstName?: string;
+      lastName?: string;
+      dateOfBirth?: string;
+      excludeId?: string;
+    }) => {
+      const qs = new URLSearchParams();
+      if (params.phone) qs.set("phone", params.phone);
+      if (params.whatsApp) qs.set("whatsApp", params.whatsApp);
+      if (params.firstName) qs.set("firstName", params.firstName);
+      if (params.lastName) qs.set("lastName", params.lastName);
+      if (params.dateOfBirth) qs.set("dateOfBirth", params.dateOfBirth);
+      if (params.excludeId) qs.set("excludeId", params.excludeId);
+      const { data } = await api.get(`/api/patients/check-duplicate?${qs}`);
+      return data as { isDuplicate: boolean; matches: Array<{ id: string; patientNumber: string; fullName: string; phone?: string; matchType: string }> };
+    },
+  });
+}
+
+/** Hook: Fetch patient summary */
+export function usePatientSummary(id: string | null) {
+  return useQuery({
+    queryKey: ["patient-summary", id],
+    queryFn: async () => {
+      const { data } = await api.get(`/api/patients/${id}/summary`);
+      return data;
+    },
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+}
+
+// ── Portal Access Hooks ──────────────────────────────────────────────────
+
+/** Hook: Fetch patient portal credentials (staff only) */
+export function usePatientPortalCredentials(patientId: string | null) {
+  return useQuery({
+    queryKey: ["patient-portal-credentials", patientId],
+    queryFn: async () => {
+      const { data } = await api.get<PatientPortalCredentials>(`/api/portal/credentials/${patientId}`);
+      return data;
+    },
+    enabled: !!patientId,
+    staleTime: 30_000,
+  });
+}
+
+/** Hook: Create portal account for a patient */
+export function useCreatePortalAccount() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const { data } = await api.post<CreatePortalAccountResponse>(`/api/portal/credentials/${patientId}/create`);
+      return data;
+    },
+    onSuccess: (_data, patientId) => {
+      queryClient.invalidateQueries({ queryKey: ["patient-portal-credentials", patientId] });
+    },
+  });
+}
+
+/** Hook: Reset portal account password */
+export function useResetPortalPassword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const { data } = await api.post<PatientPasswordResetResponse>(`/api/portal/credentials/${patientId}/reset-password`);
+      return data;
+    },
+    onSuccess: (_data, patientId) => {
+      queryClient.invalidateQueries({ queryKey: ["patient-portal-credentials", patientId] });
+    },
   });
 }

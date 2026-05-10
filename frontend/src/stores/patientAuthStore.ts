@@ -14,10 +14,10 @@ interface PatientAuthState {
   profile: PatientPortalProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  phoneNumber: string;
-  setAuth: (profile: PatientPortalProfile, token: string) => void;
+  mustChangePassword: boolean;
+  setAuth: (profile: PatientPortalProfile, token: string, mustChangePassword?: boolean, refreshToken?: string) => void;
   logout: () => void;
-  setPhoneNumber: (phone: string) => void;
+  setMustChangePassword: (val: boolean) => void;
 }
 
 export const usePatientAuthStore = create<PatientAuthState>()(
@@ -26,25 +26,29 @@ export const usePatientAuthStore = create<PatientAuthState>()(
       profile: null,
       isAuthenticated: false,
       isLoading: false,
-      phoneNumber: "",
+      mustChangePassword: false,
 
-      setAuth: (profile, token) => {
+      setAuth: (profile, token, mustChangePassword = false, refreshToken) => {
         localStorage.setItem("portal_token", token);
+        if (refreshToken) {
+          localStorage.setItem("portal_refresh_token", refreshToken);
+        }
         setPortalCookie(true);
-        set({ profile, isAuthenticated: true });
+        set({ profile, isAuthenticated: true, mustChangePassword });
       },
 
       logout: () => {
         localStorage.removeItem("portal_token");
+        localStorage.removeItem("portal_refresh_token");
         setPortalCookie(false);
-        set({ profile: null, isAuthenticated: false });
+        set({ profile: null, isAuthenticated: false, mustChangePassword: false });
       },
 
-      setPhoneNumber: (phone) => set({ phoneNumber: phone }),
+      setMustChangePassword: (val) => set({ mustChangePassword: val }),
     }),
     {
       name: "aqlan-patient-auth",
-      partialize: (s) => ({ profile: s.profile, isAuthenticated: s.isAuthenticated }),
+      partialize: (s) => ({ profile: s.profile, isAuthenticated: s.isAuthenticated, mustChangePassword: s.mustChangePassword }),
       onRehydrateStorage: () => (state) => {
         if (state?.isAuthenticated) {
           setPortalCookie(true);

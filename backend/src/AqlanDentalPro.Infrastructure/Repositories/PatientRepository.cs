@@ -3,12 +3,15 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace AqlanDentalPro.Infrastructure.Repositories;
 
 public class PatientRepository(AppDbContext context)
     : GenericRepository<Patient>(context), IPatientRepository
 {
+    public async Task<Patient?> FirstOrDefaultAsync(Expression<Func<Patient, bool>> predicate) =>
+        await DbSet.FirstOrDefaultAsync(predicate);
     public async Task<PaginatedResponse<Patient>> SearchAsync(
         string? search, int page, int pageSize, Guid? branchId,
         string? gender = null, Guid? doctorId = null, string? status = "active")
@@ -25,18 +28,35 @@ public class PatientRepository(AppDbContext context)
             .Include(p => p.Branch)
             .AsQueryable();
 
+        // Status filtering
+        if (status == "archived")
+        {
+            query = query.IgnoreQueryFilters().Where(p => !p.IsActive);
+        }
+        else if (status == "all")
+        {
+            query = query.IgnoreQueryFilters();
+        }
+        // else status == null or "active": global filter already applies (IsActive = true)
+
         if (branchId.HasValue)
             query = query.Where(p => p.BranchId == branchId);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
+            // Normalize search term for phone matching
+            var normalizedTerm = AqlanDentalPro.Application.Services.PhoneNormalizer.Normalize(term);
             query = query.Where(p =>
                 p.FirstName.ToLower().Contains(term) ||
                 p.LastName.ToLower().Contains(term) ||
                 (p.MiddleName != null && p.MiddleName.ToLower().Contains(term)) ||
                 p.PatientNumber.ToLower().Contains(term) ||
-                (p.Phone != null && p.Phone.Contains(term)));
+                (p.Phone != null && p.Phone.Contains(term)) ||
+                (normalizedTerm != null && (
+                    (p.NormalizedPhone != null && p.NormalizedPhone.Contains(normalizedTerm)) ||
+                    (p.NormalizedWhatsApp != null && p.NormalizedWhatsApp.Contains(normalizedTerm))
+                )));
         }
 
         if (!string.IsNullOrWhiteSpace(gender) &&
@@ -70,6 +90,18 @@ public class PatientRepository(AppDbContext context)
             .Include(p => p.PrimaryDoctor)
             .Include(p => p.Branch)
             .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> GetWithHistoriesIgnoreFiltersAsync(Guid id) =>
+        await DbSet
+            .IgnoreQueryFilters()
+            .Include(p => p.MedicalHistory)
+            .Include(p => p.DentalHistory)
+            .Include(p => p.PrimaryDoctor)
+            .Include(p => p.Branch)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+    public async Task<Patient?> GetByIdIgnoreFiltersAsync(Guid id) =>
+        await DbSet.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == id);
 
     public async Task<Patient?> GetArchivedByIdAsync(Guid id) =>
         await DbSet

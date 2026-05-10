@@ -1,3 +1,9 @@
+export type ConversationType = "StaffToStaff" | "StaffToPatient" | "PatientFacing";
+
+export type ConversationFilter = "all" | "unread" | "StaffToStaff" | "StaffToPatient" | "PatientFacing";
+
+export type RecipientType = "TreatingDoctor" | "Reception" | "Admin";
+
 export interface ConversationParticipant {
   userId: string;
   username: string;
@@ -12,14 +18,17 @@ export interface ConversationListItem {
   id: string;
   title: string;
   isGroup: boolean;
-  conversationType: "StaffToStaff" | "StaffToPatient";
+  conversationType: ConversationType;
   patientId?: string;
   patientName?: string;
+  patientNumber?: string;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
   unreadCount: number;
   otherParticipant?: ConversationParticipant;
   participants: ConversationParticipant[];
+  recipientType?: string | null;
+  recipientUserId?: string | null;
 }
 
 export interface Message {
@@ -46,12 +55,16 @@ export interface ConversationDetail {
   id: string;
   title: string;
   isGroup: boolean;
-  conversationType: "StaffToStaff" | "StaffToPatient";
+  conversationType: ConversationType;
   patientId?: string;
   patientName?: string;
+  patientNumber?: string;
+  patientPhone?: string;
   participants: ConversationParticipant[];
   messages: Message[];
   createdAt: string;
+  recipientType?: string | null;
+  recipientUserId?: string | null;
 }
 
 export interface CreateConversationRequest {
@@ -59,6 +72,8 @@ export interface CreateConversationRequest {
   isGroup?: boolean;
   participantIds: string[];
   initialMessage?: string;
+  conversationType?: string;
+  patientId?: string;
 }
 
 export interface SendMessageRequest {

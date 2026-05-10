@@ -47,7 +47,7 @@ const SPECIALTY_LABELS: Record<string, string> = {
 const METHOD_LABELS: Record<string, string> = {
   cash: "نقد", bank_transfer: "تحويل", card: "بطاقة",
 };
-const SPECIALTY_COLORS = ["#0E7490", "#7C3AED", "#DC2626", "#D97706"];
+const SPECIALTY_COLORS = ["#2563EB", "#7C3AED", "#DC2626", "#F97316"];
 
 function formatYER(val: number) {
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}م`;
@@ -62,7 +62,7 @@ const TooltipRevenue = ({ active, payload, label }: TooltipProps) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
       <p className="text-gray-500 mb-1">{label}</p>
-      <p className="font-bold text-clinic-teal">{payload[0].value.toLocaleString()} ر.ي</p>
+      <p className="font-bold text-clinic-blue">{payload[0].value.toLocaleString()} ر.ي</p>
     </div>
   );
 };
@@ -97,7 +97,7 @@ export default function ReportsPage() {
   const handleExport = async (type: "patients" | "payments" | "appointments") => {
     setExporting(true);
     try {
-      const token = sessionStorage.getItem("accessToken") ?? "";
+      const token = localStorage.getItem("access_token") ?? "";
       const params = type === "patients" ? "" : `?from=${from}&to=${to}`;
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/reports/export/${type}${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -149,7 +149,7 @@ export default function ReportsPage() {
         ] as { key: ReportType; label: string; icon: typeof BarChart2 }[]).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setActiveReport(key)}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition ${
-              activeReport === key ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-100"
+              activeReport === key ? "bg-clinic-blue text-white" : "text-gray-600 hover:bg-gray-100"
             }`}
           >
             <Icon className="w-4 h-4" />
@@ -187,7 +187,7 @@ export default function ReportsPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <StatCard label="إجمالي المرضى"       value={summary.totalPatients.toString()}        icon={Users}       color="bg-blue-50 text-blue-600 border-blue-200" />
-            <StatCard label="مرضى جدد"             value={summary.newPatients.toString()}          icon={TrendingUp}  color="bg-teal-50 text-teal-600 border-teal-200" />
+            <StatCard label="مرضى جدد"             value={summary.newPatients.toString()}          icon={TrendingUp}  color="bg-clinic-blue-50 text-clinic-blue border-clinic-blue-100" />
             <StatCard label="إجمالي المواعيد"      value={summary.totalAppointments.toString()}    icon={Calendar}    color="bg-purple-50 text-purple-600 border-purple-200" />
             <StatCard label="مواعيد مكتملة"        value={summary.completedAppointments.toString()} icon={Calendar}   color="bg-green-50 text-green-600 border-green-200" />
             <StatCard label="حالات تقويم نشطة"    value={summary.activeOrthoCases.toString()}     icon={Stethoscope} color="bg-yellow-50 text-yellow-600 border-yellow-200" />
@@ -201,7 +201,7 @@ export default function ReportsPage() {
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-clinic-teal rounded-full transition-all"
+                    className="h-full bg-clinic-blue rounded-full transition-all"
                     style={{ width: `${Math.round((summary.completedAppointments / summary.totalAppointments) * 100)}%` }}
                   />
                 </div>
@@ -227,7 +227,7 @@ export default function ReportsPage() {
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
                 <YAxis tickFormatter={formatYER} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
                 <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} ر.ي`, "الإيرادات"]} />
-                <Bar dataKey="revenue" fill="#0E7490" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                <Bar dataKey="revenue" fill="#2563EB" radius={[4, 4, 0, 0]} maxBarSize={32} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -247,7 +247,7 @@ export default function ReportsPage() {
                     <tr key={p.doctorId} className="hover:bg-gray-50 transition">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color ?? "#0E7490" }} />
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color ?? "#2563EB" }} />
                           <span className="font-medium text-gray-900">{p.name}</span>
                         </div>
                         {p.specialty && <div className="text-xs text-gray-400 mr-4.5">{p.specialty}</div>}
@@ -284,7 +284,7 @@ export default function ReportsPage() {
           {financial.daily.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
               <h3 className="font-bold text-gray-900 text-sm mb-4 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-clinic-teal" />
+                <TrendingUp className="w-4 h-4 text-clinic-blue" />
                 الإيرادات اليومية
               </h3>
               <ResponsiveContainer width="100%" height={180}>
@@ -304,7 +304,7 @@ export default function ReportsPage() {
                     axisLine={false}
                   />
                   <Tooltip content={<TooltipRevenue />} />
-                  <Bar dataKey="total" fill="#0E7490" radius={[3, 3, 0, 0]} maxBarSize={20} />
+                  <Bar dataKey="total" fill="#2563EB" radius={[3, 3, 0, 0]} maxBarSize={20} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

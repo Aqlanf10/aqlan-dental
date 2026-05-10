@@ -33,7 +33,7 @@ export default function EditAppointmentPage() {
     return (
       <div className="text-center py-20 text-gray-500">
         <p>الموعد غير موجود</p>
-        <Link href="/appointments" className="text-clinic-teal text-sm underline mt-2 inline-block">
+        <Link href="/appointments" className="text-clinic-blue text-sm underline mt-2 inline-block">
           العودة إلى المواعيد
         </Link>
       </div>
@@ -46,7 +46,7 @@ export default function EditAppointmentPage() {
     <div className="space-y-5 max-w-3xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/appointments" className="hover:text-clinic-teal transition">المواعيد</Link>
+        <Link href="/appointments" className="hover:text-clinic-blue transition">المواعيد</Link>
         <ChevronRight className="w-4 h-4" />
         <span className="text-gray-900 font-medium">تعديل الموعد</span>
       </div>

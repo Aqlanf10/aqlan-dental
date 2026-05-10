@@ -33,7 +33,7 @@ export default function PrescriptionsPage() {
         </div>
         <Link
           href="/prescriptions/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           وصفة جديدة
@@ -51,7 +51,7 @@ export default function PrescriptionsPage() {
         <div className="text-center py-20 text-gray-400">
           <Pill className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">لا توجد وصفات بعد</p>
-          <Link href="/prescriptions/new" className="mt-2 inline-block text-xs text-clinic-teal hover:underline">
+          <Link href="/prescriptions/new" className="mt-2 inline-block text-xs text-clinic-blue hover:underline">
             + إنشاء أول وصفة
           </Link>
         </div>
@@ -72,7 +72,7 @@ export default function PrescriptionsPage() {
               {prescriptions.map((rx) => (
                 <tr key={rx.id} className="hover:bg-gray-50 transition">
                   <td className="px-4 py-3">
-                    <Link href={`/patients/${rx.patientId}`} className="font-semibold text-gray-900 hover:text-clinic-teal transition">
+                    <Link href={`/patients/${rx.patientId}`} className="font-semibold text-gray-900 hover:text-clinic-blue transition">
                       {rx.patientName}
                     </Link>
                     <div className="text-xs text-gray-400 font-mono">{rx.patientNumber}</div>
@@ -80,7 +80,7 @@ export default function PrescriptionsPage() {
                   <td className="px-4 py-3 text-gray-700">{rx.diagnosis ?? "—"}</td>
                   <td className="px-4 py-3 text-gray-600">{rx.doctorName ?? "—"}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1 text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full font-medium">
+                    <span className="inline-flex items-center gap-1 text-xs bg-clinic-blue-50 text-clinic-blue px-2 py-0.5 rounded-full font-medium">
                       <Pill className="w-3 h-3" />
                       {rx.drugCount} {rx.drugCount === 1 ? "دواء" : "أدوية"}
                     </span>
@@ -89,7 +89,7 @@ export default function PrescriptionsPage() {
                   <td className="px-4 py-3">
                     <Link
                       href={`/prescriptions/${rx.id}`}
-                      className="flex items-center gap-1 text-xs text-clinic-teal hover:underline"
+                      className="flex items-center gap-1 text-xs text-clinic-blue hover:underline"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       عرض / طباعة

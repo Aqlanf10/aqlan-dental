@@ -32,7 +32,7 @@ function formatShortDate(dateStr: string): string {
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled:  "bg-blue-100 border-blue-300 text-blue-800",
-  Confirmed:  "bg-teal-100 border-teal-300 text-teal-800",
+  Confirmed:  "bg-clinic-blue-50 border-clinic-blue-100 text-clinic-navy-700",
   Arrived:    "bg-yellow-100 border-yellow-300 text-yellow-800",
   InProgress: "bg-purple-100 border-purple-300 text-purple-800",
   Completed:  "bg-green-100 border-green-300 text-green-800",
@@ -108,14 +108,14 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
                 className={cn(
                   "text-center py-2 rounded-lg text-xs font-medium transition hover:bg-gray-50",
                   isToday
-                    ? "bg-clinic-teal/10 text-clinic-teal"
+                    ? "bg-clinic-blue/10 text-clinic-blue"
                     : "text-gray-600"
                 )}
               >
-                <div className={cn("font-bold", isToday && "text-clinic-teal")}>
+                <div className={cn("font-bold", isToday && "text-clinic-blue")}>
                   {DAY_NAMES[dayIdx]}
                 </div>
-                <div className={cn("text-xs mt-0.5 font-mono", isToday ? "text-clinic-teal" : "text-gray-400")}>
+                <div className={cn("text-xs mt-0.5 font-mono", isToday ? "text-clinic-blue" : "text-gray-400")}>
                   {formatShortDate(date)}
                 </div>
               </button>
@@ -141,7 +141,7 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
                   className={cn(
                     "min-h-[52px] rounded border border-dashed p-0.5 transition",
                     isToday
-                      ? "border-clinic-teal/30 bg-clinic-teal/5 hover:bg-clinic-teal/10"
+                      ? "border-clinic-blue/30 bg-clinic-blue/5 hover:bg-clinic-blue/10"
                       : "border-gray-100 bg-gray-50/50 hover:bg-gray-100"
                   )}
                   onClick={(e) => {
@@ -161,7 +161,7 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
                         <div className="flex items-center gap-1">
                           <span
                             className="w-1.5 h-1.5 rounded-full flex-shrink-0 inline-block"
-                            style={{ backgroundColor: a.doctorColor ?? "#0E7490" }}
+                            style={{ backgroundColor: a.doctorColor ?? "#2563EB" }}
                           />
                           <span className="font-medium truncate">{a.patientName}</span>
                         </div>

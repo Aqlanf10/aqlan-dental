@@ -20,6 +20,34 @@ public static class DbSeeder
             await context.Database.ExecuteSqlRawAsync(
                 @"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""PasswordSalt"" text NOT NULL DEFAULT ''");
 
+            // Deduplicate phone numbers before creating unique index
+            await context.Database.ExecuteSqlRawAsync(@"
+                UPDATE ""Patients"" SET ""Phone"" = '' 
+                WHERE ""Id""::text NOT IN (
+                    SELECT MIN(p.""Id""::text) FROM ""Patients"" p 
+                    WHERE p.""Phone"" IS NOT NULL AND p.""Phone"" != ''
+                    GROUP BY p.""Phone""
+                ) AND ""Phone"" IS NOT NULL AND ""Phone"" != '';
+            ");
+
+            // Add unique index on Phone if not exists
+            var addPhoneIndexSql = @"
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Patients_Phone') THEN
+                        CREATE UNIQUE INDEX ""IX_Patients_Phone"" ON ""Patients"" (""Phone"") WHERE ""Phone"" IS NOT NULL AND ""Phone"" != '';
+                    END IF;
+                END $$;";
+            await context.Database.ExecuteSqlRawAsync(addPhoneIndexSql);
+
+            // Add unique index on WhatsApp if not exists
+            var addWhatsAppIndexSql = @"
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Patients_WhatsApp') THEN
+                        CREATE UNIQUE INDEX ""IX_Patients_WhatsApp"" ON ""Patients"" (""WhatsApp"") WHERE ""WhatsApp"" IS NOT NULL AND ""WhatsApp"" != '';
+                    END IF;
+                END $$;";
+            await context.Database.ExecuteSqlRawAsync(addWhatsAppIndexSql);
+
             await context.Database.MigrateAsync();
 
             if (!await context.Branches.AnyAsync())
@@ -46,8 +74,8 @@ public static class DbSeeder
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Database seeding failed.");
-            throw;
+            logger.LogError(ex, "Database seeding failed, but app will continue running.");
+            // Don't rethrow - let the app start even if seeding partially fails
         }
     }
 

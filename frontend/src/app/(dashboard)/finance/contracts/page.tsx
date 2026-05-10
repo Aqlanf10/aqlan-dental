@@ -48,7 +48,7 @@ export default function ContractsPage() {
           <p className="text-sm text-gray-500 mt-0.5">عقود المرضى وجداول الأقساط</p>
         </div>
         <Link href="/finance/contracts/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           عقد جديد
@@ -64,7 +64,7 @@ export default function ContractsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث باسم المريض أو رقمه..."
-            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           />
         </div>
         {["", "active", "completed", "cancelled"].map((s) => (
@@ -74,7 +74,7 @@ export default function ContractsPage() {
             className={cn(
               "px-3 py-1.5 text-sm rounded-lg border transition font-medium whitespace-nowrap",
               statusFilter === s
-                ? "bg-clinic-teal text-white border-clinic-teal"
+                ? "bg-clinic-blue text-white border-clinic-blue"
                 : "border-gray-200 text-gray-600 hover:bg-gray-50"
             )}
           >
@@ -107,7 +107,7 @@ export default function ContractsPage() {
                 {filtered.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3">
-                      <Link href={`/finance/contracts/${c.id}`} className="font-medium text-gray-900 hover:text-clinic-teal transition">
+                      <Link href={`/finance/contracts/${c.id}`} className="font-medium text-gray-900 hover:text-clinic-blue transition">
                         {c.patientName}
                       </Link>
                       <div className="text-xs text-gray-400 font-mono">{c.patientNumber}</div>

@@ -8,7 +8,7 @@ const DAYS_AR = ["أحد", "اثنين", "ثلاثاء", "أربعاء", "خمي
 
 const STATUS_DOT: Record<string, string> = {
   Scheduled:  "bg-blue-400",
-  Confirmed:  "bg-teal-400",
+  Confirmed:  "bg-clinic-blue",
   Arrived:    "bg-yellow-400",
   InProgress: "bg-purple-400",
   Completed:  "bg-green-400",
@@ -94,8 +94,8 @@ export function MonthCalendar({ anchor, doctorId, onDateClick }: Props) {
               key={i}
               onClick={() => onDateClick(dateStr)}
               className={cn(
-                "bg-white min-h-[80px] p-1.5 text-start align-top transition hover:bg-teal-50 focus:outline-none",
-                isAnchor && "ring-2 ring-inset ring-clinic-teal"
+                "bg-white min-h-[80px] p-1.5 text-start align-top transition hover:bg-clinic-blue-50 focus:outline-none",
+                isAnchor && "ring-2 ring-inset ring-clinic-blue"
               )}
             >
               {/* Day number */}
@@ -103,7 +103,7 @@ export function MonthCalendar({ anchor, doctorId, onDateClick }: Props) {
                 className={cn(
                   "inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold mb-1",
                   isToday
-                    ? "bg-clinic-teal text-white"
+                    ? "bg-clinic-blue text-white"
                     : "text-gray-700"
                 )}
               >

@@ -16,7 +16,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  active: "bg-teal-50 text-teal-700",
+  active: "bg-clinic-blue-50 text-clinic-blue",
   completed: "bg-green-50 text-green-700",
   on_hold: "bg-yellow-50 text-yellow-700",
   cancelled: "bg-gray-100 text-gray-500",
@@ -67,7 +67,7 @@ export default function OrthoPage() {
         </div>
         <Link
           href="/ortho/new"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />
           حالة جديدة
@@ -83,7 +83,7 @@ export default function OrthoPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث بالاسم أو رقم الحالة..."
-            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           />
         </div>
         {["", "active", "completed", "on_hold"].map((s) => (
@@ -93,7 +93,7 @@ export default function OrthoPage() {
             className={cn(
               "px-3 py-1.5 text-sm rounded-lg border transition font-medium",
               statusFilter === s
-                ? "bg-clinic-teal text-white border-clinic-teal"
+                ? "bg-clinic-blue text-white border-clinic-blue"
                 : "border-gray-200 text-gray-600 hover:bg-gray-50"
             )}
           >
@@ -130,7 +130,7 @@ export default function OrthoPage() {
               <tbody className="divide-y divide-gray-100">
                 {cases.map((c) => (
                   <tr key={c.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-mono font-semibold text-clinic-teal text-xs">
+                    <td className="px-4 py-3 font-mono font-semibold text-clinic-blue text-xs">
                       {c.caseNumber}
                     </td>
                     <td className="px-4 py-3">
@@ -143,7 +143,7 @@ export default function OrthoPage() {
                         <div className="flex items-center gap-2">
                           <div
                             className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: c.doctorColor ?? "#0E7490" }}
+                            style={{ backgroundColor: c.doctorColor ?? "#2563EB" }}
                           />
                           <span className="text-gray-700">{c.doctorName}</span>
                         </div>
@@ -153,7 +153,7 @@ export default function OrthoPage() {
                       <div className="flex items-center gap-2 min-w-[100px]">
                         <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-clinic-teal rounded-full transition-all"
+                            className="h-full bg-clinic-blue rounded-full transition-all"
                             style={{ width: `${c.stagePercentage}%` }}
                           />
                         </div>
@@ -177,7 +177,7 @@ export default function OrthoPage() {
                     <td className="px-4 py-3">
                       <Link
                         href={`/ortho/${c.id}`}
-                        className="text-xs text-clinic-teal hover:underline font-medium"
+                        className="text-xs text-clinic-blue hover:underline font-medium"
                       >
                         عرض
                       </Link>
@@ -205,7 +205,7 @@ export default function OrthoPage() {
                 </div>
                 <Link
                   href={`/ortho/new?patientId=${p.id}&patientName=${encodeURIComponent(p.fullName)}`}
-                  className="flex items-center gap-1.5 text-xs font-medium text-clinic-teal hover:opacity-80 transition"
+                  className="flex items-center gap-1.5 text-xs font-medium text-clinic-blue hover:opacity-80 transition"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   إنشاء حالة تقويمية

@@ -1,12 +1,41 @@
 "use client";
-import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, ChevronDown, MessageCircle } from "lucide-react";
+import { Bell, Search, X, User, Calendar, GitBranch, CheckCheck, Trash2, LogOut, KeyRound, MessageCircle } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUnreadCount } from "@/hooks/useMessaging";
+
+/* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const days = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  const months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  const hh = now.getHours().toString().padStart(2, '0');
+  const mm = now.getMinutes().toString().padStart(2, '0');
+  const ss = now.getSeconds().toString().padStart(2, '0');
+  const dayName = days[now.getDay()];
+  const dateStr = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+
+  return (
+    <div
+      className="hidden md:flex flex-col items-center rounded-[10px] px-3 py-1"
+      style={{ background: "#f0f5fb", border: "1px solid #dce8f5", minWidth: 140 }}
+    >
+      <div className="text-lg font-extrabold leading-tight" style={{ color: "#0d2137", letterSpacing: 1, fontFamily: "monospace" }}>
+        {hh}<span style={{ opacity: now.getSeconds() % 2 === 0 ? 1 : 0.3, transition: "opacity 0.3s" }}>:</span>{mm}<span className="text-xs opacity-50">:{ss}</span>
+      </div>
+      <div className="text-[10px] font-semibold" style={{ color: "#94a3b8" }}>{dayName} · {dateStr}</div>
+    </div>
+  );
+}
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface SearchResult {
@@ -36,13 +65,6 @@ const ENTITY_URL: Record<string, (id: string) => string> = {
 };
 
 /* ─── Notification type icons ────────────────────────────────────────────── */
-const TYPE_ICON: Record<string, string> = {
-  appointment: "📅",
-  payment:     "💰",
-  lab:         "🧪",
-  system:      "🔔",
-};
-
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min  = Math.floor(diff / 60_000);
@@ -57,7 +79,6 @@ function timeAgo(iso: string): string {
 export function Topbar() {
   const { user } = useAuthStore();
   const router   = useRouter();
-  const { data: msgUnread } = useUnreadCount();
 
   /* Search state */
   const [query,        setQuery]        = useState("");
@@ -96,12 +117,26 @@ export function Topbar() {
     searchTimer.current = setTimeout(() => runSearch(val), 300);
   };
 
-  /* ── Fetch unread count on mount ── */
+  /* ── Notification unread count with polling ── */
+  const { data: notifData } = useQuery({
+    queryKey: ["notificationUnreadCount"],
+    queryFn: async () => {
+      const { data } = await api.get<{ count: number }>("/api/notifications/unread-count");
+      return data;
+    },
+    staleTime: 20_000,
+    refetchInterval: 25_000,
+    refetchOnWindowFocus: true,
+  });
+
+  // Keep local unreadCount in sync with the query
+  const queryClient = useQueryClient();
   useEffect(() => {
-    api.get<{ count: number }>("/api/notifications/unread-count")
-      .then(r => setUnreadCount(r.data.count))
-      .catch(() => {});
-  }, []);
+    if (notifData?.count !== undefined) setUnreadCount(notifData.count);
+  }, [notifData]);
+
+  /* ── Message unread count with polling ── */
+  const { data: msgUnreadData } = useUnreadCount();
 
   /* ── Open notifications dropdown ── */
   const openNotifications = async () => {
@@ -125,12 +160,14 @@ export function Topbar() {
     await api.put("/api/notifications/read-all").catch(() => {});
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     setUnreadCount(0);
+    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
   };
 
   const markRead = async (id: string) => {
     await api.put(`/api/notifications/${id}/read`).catch(() => {});
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
+    queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
   };
 
   const handleNotifClick = async (n: NotificationItem) => {
@@ -170,62 +207,101 @@ export function Topbar() {
   );
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6 flex-shrink-0">
-      {/* Branch name */}
-      <div className="flex items-center gap-2">
-        <div className="lg:hidden w-10" />
-        <div className="w-2 h-2 rounded-full bg-green-500" />
-        <span className="text-sm text-gray-600 font-medium">مركز د. عقلان الكامل — تعز</span>
+    <header
+      className="h-16 flex items-center justify-between px-6 flex-shrink-0"
+      style={{ background: "#fff", borderBottom: "1px solid #e8f0f9" }}
+    >
+      {/* Title */}
+      <div className="text-lg font-extrabold" style={{ color: "#0d2137" }}>
+        مركز د. عقلان الكامل — تعز
       </div>
 
       {/* Right controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3.5">
+        {/* Live Clock */}
+        <LiveClock />
+
+        {/* ── Message icon with unread badge ── */}
+        <button
+          onClick={() => router.push("/messages")}
+          className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
+          style={{ background: "#f0f5fb", color: "#64748b" }}
+          title="الرسائل"
+        >
+          <MessageCircle className="w-[18px] h-[18px]" />
+          {msgUnreadData && msgUnreadData.totalUnread > 0 && (
+            <span
+              className="absolute rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none"
+              style={{
+                top: 4, right: 4,
+                minWidth: 16, height: 16,
+                background: "#0d9488",
+                padding: "0 3px",
+              }}
+            >
+              {msgUnreadData.totalUnread > 99 ? "99+" : msgUnreadData.totalUnread}
+            </span>
+          )}
+        </button>
 
         {/* ── Search ── */}
         <div ref={searchRef} className="relative hidden md:block">
-          <Search className="w-4 h-4 absolute top-1/2 -translate-y-1/2 end-3 text-gray-400 pointer-events-none" />
-          {query && (
-            <button
-              onClick={() => { setQuery(""); setSearchResults(null); setSearchOpen(false); }}
-              className="absolute top-1/2 -translate-y-1/2 start-2 text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
           <input
             type="search"
             value={query}
             onChange={handleSearchInput}
             onFocus={() => hasResults && setSearchOpen(true)}
-            placeholder="بحث عن مريض، موعد..."
-            className="h-9 pe-9 ps-4 text-sm rounded-lg border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-clinic-teal w-60 transition"
+            placeholder="بحث سريع..."
+            className="pe-9 ps-3 py-[7px] text-[13px] rounded-lg outline-none"
+            style={{
+              width: 220,
+              border: "1.5px solid #dce8f5",
+              background: "#f7fafd",
+              color: "#0d2137",
+              direction: "rtl",
+              fontFamily: "Tajawal",
+            }}
           />
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: "#94a3b8" }}>
+            <Search className="w-[15px] h-[15px]" />
+          </span>
+          {query && (
+            <button
+              onClick={() => { setQuery(""); setSearchResults(null); setSearchOpen(false); }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2"
+              style={{ color: "#94a3b8" }}
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Search dropdown */}
           {searchOpen && (
-            <div className="absolute top-full mt-1 end-0 w-80 bg-white rounded-xl border border-gray-200 shadow-lg z-50 overflow-hidden">
+            <div className="absolute top-full mt-2 end-0 w-80 bg-white rounded-xl z-50 overflow-hidden" style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}>
               {searching ? (
-                <div className="p-4 text-center text-sm text-gray-400">جارٍ البحث...</div>
+                <div className="p-4 text-center text-sm" style={{ color: "#94a3b8" }}>جارٍ البحث...</div>
               ) : !hasResults ? (
-                <div className="p-4 text-center text-sm text-gray-400">لا توجد نتائج لـ &ldquo;{query}&rdquo;</div>
+                <div className="p-4 text-center text-sm" style={{ color: "#94a3b8" }}>لا توجد نتائج لـ &ldquo;{query}&rdquo;</div>
               ) : (
                 <div className="py-1">
                   {/* Patients */}
                   {searchResults!.patients.length > 0 && (
                     <div>
-                      <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 bg-gray-50">المرضى</div>
+                      <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>المرضى</div>
                       {searchResults!.patients.map(p => (
                         <button
                           key={p.id}
                           onClick={() => { router.push(`/patients/${p.id}`); setSearchOpen(false); setQuery(""); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 text-start transition"
+                          className="w-full flex items-center gap-3 px-3 py-2.5 transition text-start"
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
-                          <div className="w-7 h-7 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0">
-                            <User className="w-3.5 h-3.5 text-clinic-teal" />
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#3d7ab518" }}>
+                            <User className="w-3.5 h-3.5" style={{ color: "#3d7ab5" }} />
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{p.fullName}</p>
-                            <p className="text-xs text-gray-400">{p.patientNumber} {p.phoneNumber && `· ${p.phoneNumber}`}</p>
+                            <p className="text-sm font-medium" style={{ color: "#0d2137" }}>{p.fullName}</p>
+                            <p className="text-xs" style={{ color: "#94a3b8" }}>{p.patientNumber} {p.phoneNumber && `· ${p.phoneNumber}`}</p>
                           </div>
                         </button>
                       ))}
@@ -234,19 +310,21 @@ export function Topbar() {
                   {/* Ortho cases */}
                   {searchResults!.orthoCases.length > 0 && (
                     <div>
-                      <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 bg-gray-50">التقويم</div>
+                      <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>التقويم</div>
                       {searchResults!.orthoCases.map(c => (
                         <button
                           key={c.id}
                           onClick={() => { router.push(`/ortho/${c.id}`); setSearchOpen(false); setQuery(""); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 text-start transition"
+                          className="w-full flex items-center gap-3 px-3 py-2.5 transition text-start"
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
-                          <div className="w-7 h-7 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                            <GitBranch className="w-3.5 h-3.5 text-purple-600" />
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#a855f718" }}>
+                            <GitBranch className="w-3.5 h-3.5" style={{ color: "#a855f7" }} />
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{c.caseNumber} — {c.patientName}</p>
-                            <p className="text-xs text-gray-400">{c.status}</p>
+                            <p className="text-sm font-medium" style={{ color: "#0d2137" }}>{c.caseNumber} — {c.patientName}</p>
+                            <p className="text-xs" style={{ color: "#94a3b8" }}>{c.status}</p>
                           </div>
                         </button>
                       ))}
@@ -255,19 +333,21 @@ export function Topbar() {
                   {/* Appointments */}
                   {searchResults!.appointments.length > 0 && (
                     <div>
-                      <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 bg-gray-50">المواعيد</div>
+                      <div className="px-3 py-1.5 text-xs font-semibold" style={{ color: "#94a3b8", background: "#f7fafd" }}>المواعيد</div>
                       {searchResults!.appointments.map(a => (
                         <button
                           key={a.id}
                           onClick={() => { router.push(`/appointments`); setSearchOpen(false); setQuery(""); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 text-start transition"
+                          className="w-full flex items-center gap-3 px-3 py-2.5 transition text-start"
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
-                          <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                            <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#3d7ab518" }}>
+                            <Calendar className="w-3.5 h-3.5" style={{ color: "#3d7ab5" }} />
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{a.patientName}</p>
-                            <p className="text-xs text-gray-400">{a.appointmentDate} {a.doctorName && `· ${a.doctorName}`}</p>
+                            <p className="text-sm font-medium" style={{ color: "#0d2137" }}>{a.patientName}</p>
+                            <p className="text-xs" style={{ color: "#94a3b8" }}>{a.appointmentDate} {a.doctorName && `· ${a.doctorName}`}</p>
                           </div>
                         </button>
                       ))}
@@ -279,46 +359,40 @@ export function Topbar() {
           )}
         </div>
 
-        {/* ── Messages ── */}
-        <Link
-          href="/messages"
-          className="relative w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
-          title="الرسائل"
-        >
-          <MessageCircle className="w-5 h-5" />
-          {msgUnread && msgUnread.totalUnread > 0 && (
-            <span className="absolute -top-0.5 -end-0.5 min-w-[18px] h-[18px] bg-clinic-teal rounded-full flex items-center justify-center text-white text-[10px] font-bold px-1">
-              {msgUnread.totalUnread > 99 ? "99+" : msgUnread.totalUnread}
-            </span>
-          )}
-        </Link>
-
         {/* ── Notifications Bell ── */}
         <div ref={notifRef} className="relative">
           <button
             onClick={openNotifications}
-            className="relative w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+            className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
+            style={{ background: "#f0f5fb", color: "#64748b" }}
           >
-            <Bell className="w-5 h-5" />
+            <Bell className="w-[18px] h-[18px]" />
             {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -end-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full flex items-center justify-center text-white text-[10px] font-bold px-1">
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
+              <span
+                className="absolute rounded-full"
+                style={{
+                  top: 6, right: 6, width: 8, height: 8,
+                  background: "#ef4444",
+                  border: "2px solid #fff",
+                }}
+              />
             )}
           </button>
 
           {/* Notifications dropdown */}
           {notifOpen && (
-            <div className="absolute top-full mt-2 end-0 w-96 bg-white rounded-xl border border-gray-200 shadow-xl z-50 overflow-hidden">
+            <div
+              className="absolute top-full mt-2 end-0 w-[340px] bg-white rounded-xl z-50 overflow-hidden"
+              style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
+            >
               {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <h3 className="text-sm font-bold text-gray-900">
-                  الإشعارات {unreadCount > 0 && <span className="text-xs text-clinic-teal">({unreadCount} غير مقروء)</span>}
-                </h3>
+              <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid #e8f0f9" }}>
+                <span className="font-bold text-sm" style={{ color: "#0d2137" }}>الإشعارات</span>
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllRead}
-                    className="flex items-center gap-1 text-xs text-clinic-teal hover:opacity-80 transition"
+                    className="flex items-center gap-1 text-xs transition"
+                    style={{ color: "#3d7ab5" }}
                   >
                     <CheckCheck className="w-3.5 h-3.5" />
                     تحديد الكل كمقروء
@@ -327,13 +401,13 @@ export function Topbar() {
               </div>
 
               {/* List */}
-              <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
+              <div className="max-h-96 overflow-y-auto">
                 {notifLoading ? (
                   <div className="space-y-3 p-4">
-                    {[1,2,3].map(i => <div key={i} className="h-12 bg-gray-100 rounded-lg animate-pulse" />)}
+                    {[1,2,3].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "#f1f5f9" }} />)}
                   </div>
                 ) : notifications.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-gray-400">
+                  <div className="py-10 text-center text-sm" style={{ color: "#94a3b8" }}>
                     <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     لا توجد إشعارات
                   </div>
@@ -342,43 +416,36 @@ export function Topbar() {
                     <div
                       key={n.id}
                       onClick={() => handleNotifClick(n)}
-                      className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition cursor-pointer group ${!n.isRead ? "bg-blue-50/40" : ""}`}
+                      className="flex items-start gap-3 px-4 py-3 cursor-pointer group transition"
+                      style={{
+                        background: !n.isRead ? "#f0f5fb" : "transparent",
+                        borderBottom: "1px solid #f1f5f9",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = !n.isRead ? "#f0f5fb" : "transparent")}
                     >
-                      <span className="text-lg flex-shrink-0 mt-0.5">
-                        {TYPE_ICON[n.type ?? "system"] ?? "🔔"}
-                      </span>
+                      <div
+                        className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                        style={{ background: !n.isRead ? "#3d7ab5" : "#cbd5e1" }}
+                      />
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${!n.isRead ? "font-semibold text-gray-900" : "text-gray-700"}`}>
+                        <p className={`text-[13px] ${!n.isRead ? "font-semibold" : ""}`} style={{ color: "#0d2137" }}>
                           {n.title}
                         </p>
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>
-                        <p className="text-xs text-gray-400 mt-1">{timeAgo(n.createdAt)}</p>
+                        <p className="text-xs mt-0.5 line-clamp-2" style={{ color: "#94a3b8" }}>{n.body}</p>
+                        <p className="text-[11px] mt-1" style={{ color: "#94a3b8" }}>{timeAgo(n.createdAt)}</p>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {!n.isRead && <span className="w-2 h-2 rounded-full bg-clinic-teal" />}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-red-500 transition"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteNotif(n.id); }}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition"
+                        style={{ color: "#94a3b8" }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ))
                 )}
               </div>
-
-              {/* Footer */}
-              {notifications.length > 0 && (
-                <div className="px-4 py-2.5 border-t border-gray-100 text-center">
-                  <button
-                    onClick={() => setNotifOpen(false)}
-                    className="text-xs text-gray-400 hover:text-gray-600 transition"
-                  >
-                    إغلاق
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -432,78 +499,96 @@ function UserMenu({ user, router }: { user: UserDto | null; router: ReturnType<t
     <div ref={ref} className="relative">
       <button
         onClick={() => { setOpen(o => !o); setChangePw(false); }}
-        className="flex items-center gap-1.5 rounded-lg hover:bg-gray-100 transition px-1 py-0.5"
+        className="flex items-center gap-1.5 rounded-lg transition px-1 py-0.5"
+        onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       >
         <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-          style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
+          className="w-[38px] h-[38px] rounded-full flex items-center justify-center text-white text-[13px] font-bold"
+          style={{ backgroundColor: user?.doctorColor ?? "#3d7ab5", border: "2px solid #dce8f5" }}
         >
           {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
         </div>
-        <ChevronDown className="w-3 h-3 text-gray-400" />
       </button>
 
       {open && (
-        <div className="absolute top-full mt-2 end-0 w-72 bg-white rounded-xl border border-gray-200 shadow-xl z-50 overflow-hidden">
-          {/* User info */}
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-              style={{ backgroundColor: user?.doctorColor ?? "#0E7490" }}
-            >
-              {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-900 truncate">{user?.doctorName ?? user?.username}</p>
-              <p className="text-xs text-gray-400 truncate font-mono">{user?.username}</p>
-            </div>
+        <div
+          className="absolute top-full mt-2 end-0 w-56 bg-white rounded-xl z-50 overflow-hidden"
+          style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
+        >
+          {/* User info — matches ZIP */}
+          <div className="px-4 py-3" style={{ background: "#f7fafd", borderBottom: "1px solid #f1f5f9" }}>
+            <p className="font-bold text-sm" style={{ color: "#0d2137" }}>{user?.doctorName ?? user?.username}</p>
+            <p className="text-xs mt-0.5" style={{ color: "#94a3b8" }}>{user?.username}</p>
           </div>
 
           {!changePw ? (
             <div className="py-1">
               <button
                 onClick={() => setChangePw(true)}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition text-start"
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition text-start"
+                style={{ color: "#0d2137" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
-                <KeyRound className="w-4 h-4 text-gray-400" />
+                <KeyRound className="w-[15px] h-[15px]" style={{ color: "#64748b" }} />
                 تغيير كلمة المرور
               </button>
-              <div className="border-t border-gray-100 my-1" />
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition text-start"
-              >
-                <LogOut className="w-4 h-4" />
-                تسجيل الخروج
-              </button>
+              <div style={{ borderTop: "1px solid #f1f5f9" }}>
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition text-start"
+                  style={{ color: "#ef4444" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <LogOut className="w-[15px] h-[15px]" style={{ color: "#ef4444" }} />
+                  تسجيل الخروج
+                </button>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleChangePw} className="p-4 space-y-3">
-              <p className="text-sm font-semibold text-gray-800">تغيير كلمة المرور</p>
-              {pwError && <p className="text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">{pwError}</p>}
+              <p className="text-sm font-semibold" style={{ color: "#0d2137" }}>تغيير كلمة المرور</p>
+              {pwError && <p className="text-xs px-3 py-1.5 rounded-lg" style={{ color: "#ef4444", background: "#fef2f2" }}>{pwError}</p>}
               <input
                 type="password" placeholder="كلمة المرور الحالية"
                 value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+                className="w-full text-sm px-3 py-2 rounded-lg outline-none"
+                style={{ border: "1px solid #dce8f5" }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#3d7ab5")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#dce8f5")}
               />
               <input
                 type="password" placeholder="كلمة المرور الجديدة (8 أحرف+)"
                 value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+                className="w-full text-sm px-3 py-2 rounded-lg outline-none"
+                style={{ border: "1px solid #dce8f5" }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#3d7ab5")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#dce8f5")}
               />
               <input
                 type="password" placeholder="تأكيد كلمة المرور الجديدة"
                 value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+                className="w-full text-sm px-3 py-2 rounded-lg outline-none"
+                style={{ border: "1px solid #dce8f5" }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#3d7ab5")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#dce8f5")}
               />
               <div className="flex gap-2 pt-1">
                 <button type="submit" disabled={pwSaving}
-                  className="flex-1 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+                  className="flex-1 py-2 text-sm font-medium rounded-lg text-white transition"
+                  style={{ background: "#3d7ab5" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#2d5e8e")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "#3d7ab5")}
                 >
                   {pwSaving ? "جارٍ الحفظ..." : "حفظ"}
                 </button>
                 <button type="button" onClick={() => { setChangePw(false); setPwError(""); }}
-                  className="flex-1 py-2 text-sm font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
+                  className="flex-1 py-2 text-sm font-medium rounded-lg transition"
+                  style={{ border: "1px solid #dce8f5", color: "#64748b" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
                   إلغاء
                 </button>

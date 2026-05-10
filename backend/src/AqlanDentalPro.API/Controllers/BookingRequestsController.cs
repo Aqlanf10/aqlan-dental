@@ -1,43 +1,50 @@
-using Microsoft.AspNetCore.Mvc;
+using AqlanDentalPro.Application.DTOs.BookingRequests;
+using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
-using AqlanDentalPro.Infrastructure.Data;
-using AqlanDentalPro.Domain.Entities;
+using Microsoft.AspNetCore.Mvc;
 
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
-[Route("api/booking-requests")]
-[Authorize]
-public class BookingRequestsController : ControllerBase
+public class BookingRequestsController(IBookingRequestService service, ICurrentUserService currentUser) : ControllerBase
 {
-    private readonly AppDbContext _db;
-    public BookingRequestsController(AppDbContext db) => _db = db;
-
-    [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] string? status, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    // Public endpoint — no authentication required
+    [HttpPost("api/public/booking-requests")]
+    [AllowAnonymous]
+    public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto dto)
     {
-        var query = _db.BookingRequests.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrEmpty(status))
-            query = query.Where(r => r.Status == status);
-        query = query.OrderByDescending(r => r.CreatedAt);
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
 
-        var total = await query.CountAsync();
-        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
-        return Ok(new { data = items, total, page, pageSize });
+        var result = await service.CreateAsync(dto);
+        return Created(string.Empty, result);
     }
 
-    [HttpPut("{id}/status")]
-    public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateStatusDto dto)
+    // Staff endpoints
+    [HttpGet("api/booking-requests")]
+    [Authorize(Policy = "AdminOrReception")]
+    public async Task<IActionResult> GetAll([FromQuery] string? status)
     {
-        var req = await _db.BookingRequests.FindAsync(id);
-        if (req is null) return NotFound();
-        req.Status = dto.Status;
-        req.StaffNotes = dto.StaffNotes;
-        req.UpdatedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-        return Ok(req);
+        var items = await service.GetAllAsync(status);
+        return Ok(items);
+    }
+
+    [HttpGet("api/booking-requests/{id:guid}")]
+    [Authorize(Policy = "AdminOrReception")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var item = await service.GetByIdAsync(id);
+        return item == null ? NotFound() : Ok(item);
+    }
+
+    [HttpPatch("api/booking-requests/{id:guid}/status")]
+    [Authorize(Policy = "AdminOrReception")]
+    public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateBookingRequestStatusDto dto)
+    {
+        var userId = currentUser.UserId;
+        if (userId == null) return Unauthorized();
+
+        var result = await service.UpdateStatusAsync(id, dto, userId.Value);
+        return result == null ? NotFound() : Ok(result);
     }
 }
-
-public record UpdateStatusDto(string Status, string? StaffNotes);

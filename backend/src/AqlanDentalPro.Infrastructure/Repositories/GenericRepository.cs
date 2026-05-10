@@ -34,6 +34,23 @@ public class GenericRepository<T>(AppDbContext context) : IGenericRepository<T> 
     public void Detach(T entity) =>
         Context.Entry(entity).State = EntityState.Detached;
 
+    public void AddChild<TChild>(TChild entity) where TChild : class
+    {
+        // Add the child entity to the DbContext so EF Core tracks it as Added.
+        // This is used when creating new child entities (e.g., MedicalHistory, DentalHistory)
+        // for an existing parent, where DbSet.Update(parent) would incorrectly mark them as Modified.
+        Context.Set<TChild>().Add(entity);
+    }
+
+    public Task AddChildAsync<TChild>(TChild entity) where TChild : class
+    {
+        // Async signature for AddChild — DbSet.Add is purely in-memory tracking (no I/O),
+        // so we simply perform the synchronous Add and return Task.CompletedTask.
+        // This follows the same pattern as EF Core's own AddAsync for non-value-generation entities.
+        Context.Set<TChild>().Add(entity);
+        return Task.CompletedTask;
+    }
+
     public async Task<int> SaveChangesAsync() =>
         await Context.SaveChangesAsync();
 }

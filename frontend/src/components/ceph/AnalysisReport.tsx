@@ -113,8 +113,8 @@ export function AnalysisReport({
                 className={cn(
                   "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition",
                   activeGroup === t.key
-                    ? "bg-clinic-teal text-white border-clinic-teal shadow-sm"
-                    : "bg-white text-gray-500 border-gray-200 hover:border-clinic-teal hover:text-clinic-teal"
+                    ? "bg-clinic-blue text-white border-clinic-blue shadow-sm"
+                    : "bg-white text-gray-500 border-gray-200 hover:border-clinic-blue hover:text-clinic-blue"
                 )}
               >
                 {t.label}
@@ -265,7 +265,7 @@ export function AnalysisReport({
                   onChange={(e) => setFinalNotes(e.target.value)}
                   onBlur={() => onDiagnosisChange({ finalDiagnosis: finalNotes })}
                   rows={4}
-                  className="w-full text-[11px] px-2.5 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-teal resize-none"
+                  className="w-full text-[11px] px-2.5 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-blue resize-none"
                   placeholder="أكتب تشخيصك النهائي وخطة العلاج..."
                 />
                 <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -273,7 +273,7 @@ export function AnalysisReport({
                     type="checkbox"
                     checked={diagnosis.doctorApproved}
                     onChange={(e) => onDiagnosisChange({ doctorApproved: e.target.checked })}
-                    className="w-3.5 h-3.5 accent-clinic-teal"
+                    className="w-3.5 h-3.5 accent-clinic-blue"
                   />
                   <span className="text-[10px] text-gray-600">موافقة الطبيب على التشخيص</span>
                 </label>

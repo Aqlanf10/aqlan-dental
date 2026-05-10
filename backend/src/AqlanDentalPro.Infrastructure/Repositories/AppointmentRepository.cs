@@ -38,7 +38,7 @@ public class AppointmentRepository(AppDbContext context)
     }
 
     public async Task<IEnumerable<Appointment>> GetByDateRangeAsync(
-        DateOnly from, DateOnly to, Guid? branchId, Guid? doctorId)
+        DateOnly from, DateOnly to, Guid? branchId, Guid? doctorId, Guid? patientId = null)
     {
         var query = DbSet
             .Include(a => a.Patient)
@@ -47,6 +47,7 @@ public class AppointmentRepository(AppDbContext context)
 
         if (branchId.HasValue) query = query.Where(a => a.BranchId == branchId);
         if (doctorId.HasValue) query = query.Where(a => a.DoctorId == doctorId);
+        if (patientId.HasValue) query = query.Where(a => a.PatientId == patientId);
 
         return await query.OrderBy(a => a.AppointmentDate).ThenBy(a => a.StartTime).ToListAsync();
     }
@@ -56,4 +57,12 @@ public class AppointmentRepository(AppDbContext context)
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
             .FirstOrDefaultAsync(a => a.Id == id);
+
+    public async Task<IEnumerable<Appointment>> GetByPatientAsync(Guid patientId) =>
+        await DbSet
+            .Include(a => a.Doctor)
+            .Where(a => a.PatientId == patientId)
+            .OrderByDescending(a => a.AppointmentDate)
+            .ThenByDescending(a => a.StartTime)
+            .ToListAsync();
 }

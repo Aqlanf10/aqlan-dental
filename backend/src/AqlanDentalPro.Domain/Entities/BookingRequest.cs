@@ -1,17 +1,25 @@
 namespace AqlanDentalPro.Domain.Entities;
 
-public class BookingRequest
+public class BookingRequest : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
     public string PatientName { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? ServiceType { get; set; }
-    public DateOnly? PreferredDate { get; set; }
+    public string? PreferredDate { get; set; }
     public string? PreferredTime { get; set; }
     public string? Notes { get; set; }
-    public string Status { get; set; } = "pending"; // pending | confirmed | cancelled
+    public BookingRequestStatus Status { get; set; } = BookingRequestStatus.Pending;
     public string? StaffNotes { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? UpdatedAt { get; set; }
+    public Guid? ReviewedBy { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public Guid? ConvertedToAppointmentId { get; set; }
+}
+
+public enum BookingRequestStatus
+{
+    Pending = 0,
+    Reviewed = 1,
+    Confirmed = 2,
+    Rejected = 3
 }

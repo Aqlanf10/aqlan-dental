@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical, Pencil } from "lucide-react";
+import { MoreVertical, Pencil, Stethoscope, Send, Trash2 } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
@@ -20,7 +21,7 @@ const STATUS_TRANSITIONS: Record<string, { value: string; label: string }[]> = {
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled:  "bg-blue-50 border-blue-200 text-blue-800",
-  Confirmed:  "bg-teal-50 border-teal-200 text-teal-800",
+  Confirmed:  "bg-clinic-blue-50 border-clinic-blue-100 text-clinic-navy-700",
   Arrived:    "bg-yellow-50 border-yellow-200 text-yellow-800",
   InProgress: "bg-purple-50 border-purple-200 text-purple-800",
   Completed:  "bg-green-50 border-green-200 text-green-800",
@@ -72,7 +73,7 @@ export function DaySchedule({ date, doctorId }: Props) {
         <p className="text-sm">لا توجد مواعيد في هذا اليوم</p>
         <Link
           href="/appointments/new"
-          className="mt-3 inline-block text-xs text-clinic-teal hover:underline"
+          className="mt-3 inline-block text-xs text-clinic-blue hover:underline"
         >
           + إضافة موعد
         </Link>
@@ -119,8 +120,20 @@ function AppointmentCard({
   onStatusChange: (id: string, status: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [visitExists, setVisitExists] = useState(false);
+  const [startingVisit, setStartingVisit] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
+
+  // Check if a visit already exists for this appointment
+  useEffect(() => {
+    api.get<{ data: { appointmentId?: string }[] }>(`/api/visits?patientId=${a.patientId}`)
+      .then((r) => {
+        const hasVisit = (r.data.data ?? []).some((v: { appointmentId?: string }) => v.appointmentId === a.id);
+        setVisitExists(hasVisit);
+      })
+      .catch(() => {});
+  }, [a.patientId, a.id]);
 
   // Close menu on outside click
   useEffect(() => {
@@ -134,6 +147,51 @@ function AppointmentCard({
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
+  const handleStartVisit = async () => {
+    setStartingVisit(true);
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/start-visit`);
+      toast.success(data.message ?? "تم إنشاء الزيارة بنجاح");
+      setVisitExists(true);
+      // Update status locally to InProgress
+      onStatusChange(a.id, "InProgress");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل إنشاء الزيارة");
+    } finally {
+      setStartingVisit(false);
+    }
+  };
+
+  // Determine if "بدء الزيارة" should be shown
+  const canStartVisit = !visitExists && ["Scheduled", "Confirmed", "Arrived", "Waiting", "Called", "InRoom", "InProgress"].includes(a.status);
+  const canDelete = !["InProgress", "Completed"].includes(a.status);
+
+  const handleSendReminder = async () => {
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/send-reminder`);
+      toast.success(data.message ?? "تم إرسال التذكير");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل إرسال التذكير");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("هل أنت متأكد من حذف هذا الموعد؟")) return;
+    try {
+      await api.delete(`/api/appointments/${a.id}`);
+      toast.success("تم حذف الموعد");
+      onStatusChange(a.id, "Cancelled"); // remove from view
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل حذف الموعد");
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -144,7 +202,7 @@ function AppointmentCard({
       {/* Doctor color bar */}
       <div
         className="w-1 self-stretch rounded-full flex-shrink-0"
-        style={{ backgroundColor: a.doctorColor ?? "#0E7490" }}
+        style={{ backgroundColor: a.doctorColor ?? "#2563EB" }}
       />
 
       {/* Info */}
@@ -182,7 +240,7 @@ function AppointmentCard({
           <MoreVertical className="w-4 h-4" />
         </button>
         {menuOpen && (
-          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]">
+          <div className="absolute left-0 top-7 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[160px]">
             <Link
               href={`/appointments/${a.id}/edit`}
               onClick={() => setMenuOpen(false)}
@@ -191,6 +249,42 @@ function AppointmentCard({
               <Pencil className="w-3.5 h-3.5" />
               تعديل الموعد
             </Link>
+            {canStartVisit && (
+              <button
+                onClick={handleStartVisit}
+                disabled={startingVisit}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-green-700 font-medium disabled:opacity-50"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                {startingVisit ? "جاري الإنشاء..." : "بدء الزيارة"}
+              </button>
+            )}
+            <button
+              onClick={handleSendReminder}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#f5922e]"
+            >
+              <Send className="w-3.5 h-3.5" />
+              إرسال تذكير
+            </button>
+            {canDelete && (
+              <button
+                onClick={handleDelete}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-red-600"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                حذف الموعد
+              </button>
+            )}
+            {visitExists && (
+              <Link
+                href={`/patients/${a.patientId}`}
+                onClick={() => setMenuOpen(false)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#3d7ab5]"
+              >
+                <Stethoscope className="w-3.5 h-3.5" />
+                فتح ملف المريض
+              </Link>
+            )}
             {transitions.length > 0 && (
               <div className="border-t border-gray-100 mt-1 pt-1">
                 {transitions.map(({ value, label }) => (

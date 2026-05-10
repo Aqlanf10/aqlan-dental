@@ -84,11 +84,11 @@ export function TreatmentPlanPanel({ patientId, existingPlans, onUpdate }: Treat
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-teal-600" />
+            <ClipboardList className="w-4 h-4 text-clinic-blue" />
             خطة العلاج
           </h3>
           <button onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 text-white hover:bg-teal-700">
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:bg-clinic-navy-700">
             <Plus className="w-3 h-3" /> إضافة
           </button>
         </div>
@@ -116,7 +116,7 @@ export function TreatmentPlanPanel({ patientId, existingPlans, onUpdate }: Treat
               <div>
                 <label className="block text-[10px] font-medium text-gray-500 mb-0.5">العلاج</label>
                 <select value={treatment} onChange={(e) => setTreatment(e.target.value)}
-                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none">
                   <option value="">اختر...</option>
                   {TREATMENT_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -124,13 +124,13 @@ export function TreatmentPlanPanel({ patientId, existingPlans, onUpdate }: Treat
               <div>
                 <label className="block text-[10px] font-medium text-gray-500 mb-0.5">السن</label>
                 <input value={toothNumber} onChange={(e) => setToothNumber(e.target.value)}
-                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
                   placeholder="FDI" dir="ltr" />
               </div>
               <div>
                 <label className="block text-[10px] font-medium text-gray-500 mb-0.5">الأولوية</label>
                 <select value={priority} onChange={(e) => setPriority(e.target.value as "high" | "medium" | "low")}
-                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none">
                   <option value="high">عاجل</option>
                   <option value="medium">متوسط</option>
                   <option value="low">عادي</option>
@@ -139,21 +139,21 @@ export function TreatmentPlanPanel({ patientId, existingPlans, onUpdate }: Treat
               <div>
                 <label className="block text-[10px] font-medium text-gray-500 mb-0.5">التكلفة التقديرية</label>
                 <input type="number" value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)}
-                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                  className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
                   placeholder="0" dir="ltr" />
               </div>
             </div>
             <div>
               <label className="block text-[10px] font-medium text-gray-500 mb-0.5">ملاحظات</label>
               <input value={notes} onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                className="w-full px-2 py-1 text-xs rounded-lg border border-gray-300 focus:ring-2 focus:ring-clinic-blue focus:outline-none"
                 placeholder="ملاحظات..." />
             </div>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowForm(false)}
                 className="px-3 py-1 text-xs rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100">إلغاء</button>
               <button onClick={handleAdd} disabled={saving || !treatment}
-                className="px-3 py-1 text-xs rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60">
+                className="px-3 py-1 text-xs rounded-lg bg-clinic-blue text-white hover:bg-clinic-navy-700 disabled:opacity-60">
                 {saving ? "..." : "إضافة"}
               </button>
             </div>

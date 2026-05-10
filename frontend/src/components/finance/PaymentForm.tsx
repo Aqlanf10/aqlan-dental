@@ -24,7 +24,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const inputCls = (err?: string) => cn(
-  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-teal",
+  "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
   err ? "border-red-400" : "border-gray-300"
 );
 
@@ -107,7 +107,7 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
           </button>
           <button
             onClick={() => { setSavedPayment(null); router.push("/finance"); }}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             العودة إلى المالية
           </button>
@@ -185,7 +185,7 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
           className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
         >إلغاء</button>
         <button type="submit" disabled={saving}
-          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+          className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
         >
           <Save className="w-4 h-4" />
           {saving ? "جارٍ التسجيل..." : "تسجيل الدفعة"}

@@ -87,7 +87,7 @@ export default function AppointmentsPage() {
               <select
                 value={doctorId}
                 onChange={(e) => setDoctorId(e.target.value)}
-                className="pe-8 ps-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal appearance-none"
+                className="pe-8 ps-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue appearance-none"
               >
                 <option value="">كل الأطباء</option>
                 {doctors.map((d) => (
@@ -103,7 +103,7 @@ export default function AppointmentsPage() {
               onClick={() => setView("day")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition",
-                view === "day" ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-50"
+                view === "day" ? "bg-clinic-blue text-white" : "text-gray-600 hover:bg-gray-50"
               )}
             >
               <List className="w-3.5 h-3.5" />
@@ -113,7 +113,7 @@ export default function AppointmentsPage() {
               onClick={() => setView("week")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition border-r border-l border-gray-200",
-                view === "week" ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-50"
+                view === "week" ? "bg-clinic-blue text-white" : "text-gray-600 hover:bg-gray-50"
               )}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
@@ -123,7 +123,7 @@ export default function AppointmentsPage() {
               onClick={() => setView("month")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition",
-                view === "month" ? "bg-clinic-teal text-white" : "text-gray-600 hover:bg-gray-50"
+                view === "month" ? "bg-clinic-blue text-white" : "text-gray-600 hover:bg-gray-50"
               )}
             >
               <Calendar className="w-3.5 h-3.5" />
@@ -132,7 +132,7 @@ export default function AppointmentsPage() {
           </div>
           <Link
             href="/appointments/new"
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
           >
             <Plus className="w-4 h-4" />
             موعد جديد
@@ -152,13 +152,13 @@ export default function AppointmentsPage() {
           </button>
 
           <div className="flex-1 flex items-center gap-3">
-            <CalendarDays className="w-5 h-5 text-clinic-teal flex-shrink-0" />
+            <CalendarDays className="w-5 h-5 text-clinic-blue flex-shrink-0" />
             <div>
               <div className="font-bold text-gray-900">
                 {view === "month" ? monthLabel : formatArabicDate(date)}
               </div>
               {isToday && view !== "month" && (
-                <span className="text-xs text-clinic-teal font-medium">اليوم</span>
+                <span className="text-xs text-clinic-blue font-medium">اليوم</span>
               )}
             </div>
           </div>
@@ -168,7 +168,7 @@ export default function AppointmentsPage() {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             />
           )}
 
@@ -183,7 +183,7 @@ export default function AppointmentsPage() {
           {(!isToday || view === "month") && (
             <button
               onClick={() => setDate(toDateStr(new Date()))}
-              className="text-xs px-3 py-1.5 rounded-lg border border-clinic-teal text-clinic-teal hover:bg-teal-50 transition font-medium"
+              className="text-xs px-3 py-1.5 rounded-lg border border-clinic-blue text-clinic-blue hover:bg-clinic-blue-50 transition font-medium"
             >
               اليوم
             </button>

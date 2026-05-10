@@ -1,0 +1,96 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Pill } from "lucide-react";
+import api from "@/lib/api";
+import { cn, formatArabicDate } from "@/lib/utils";
+
+interface PrescriptionDto {
+  id: string;
+  date: string;
+  doctorName?: string;
+  status?: string;
+  notes?: string;
+  items?: { medicationName: string; dosage: string; frequency: string; duration: string }[];
+}
+
+const PRESCRIPTION_STATUS_LABELS: Record<string, string> = {
+  active: "نشطة",
+  completed: "مكتملة",
+  cancelled: "ملغاة",
+  draft: "مسودة",
+};
+
+interface PrescriptionsTabProps {
+  patientId: string;
+}
+
+export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
+  const [prescriptions, setPrescriptions] = useState<PrescriptionDto[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<PrescriptionDto[]>(`/api/prescriptions?patientId=${patientId}`)
+      .then((r) => setPrescriptions(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [patientId]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (prescriptions.length === 0) {
+    return (
+      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
+        <Pill className="w-10 h-10 mx-auto mb-2 opacity-30" />
+        <p className="text-sm">لا توجد وصفات طبية</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3" dir="rtl">
+      {prescriptions.map((rx) => (
+        <div key={rx.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+            <div className="flex items-center gap-2">
+              <Pill className="w-4 h-4 text-rose-500 flex-shrink-0" />
+              <span className="text-sm font-medium text-[#0d2137]">{formatArabicDate(rx.date)}</span>
+              {rx.doctorName && <span className="text-xs text-[#64748b]">{rx.doctorName}</span>}
+            </div>
+            {rx.status && (
+              <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
+                rx.status === "active" ? "bg-green-50 text-green-700" :
+                rx.status === "draft" ? "bg-yellow-50 text-yellow-700" :
+                "bg-[#f1f5f9] text-[#64748b]"
+              )}>
+                {PRESCRIPTION_STATUS_LABELS[rx.status] ?? rx.status}
+              </span>
+            )}
+          </div>
+          {rx.items && rx.items.length > 0 && (
+            <div className="space-y-1.5 mt-2">
+              {rx.items.map((item, idx) => (
+                <div key={idx} className="text-xs bg-[#f7fafd] rounded p-2">
+                  <span className="font-semibold text-[#0d2137]">{item.medicationName}</span>
+                  <span className="text-[#64748b] mx-1">—</span>
+                  <span className="text-[#64748b]">{item.dosage}</span>
+                  {item.frequency && <span className="text-[#94a3b8] mx-1">· {item.frequency}</span>}
+                  {item.duration && <span className="text-[#94a3b8] mx-1">· {item.duration}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {rx.notes && <p className="text-xs text-[#64748b] mt-2">{rx.notes}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}

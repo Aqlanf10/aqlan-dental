@@ -7,22 +7,42 @@ import type {
   CreateConversationRequest,
   SendMessageRequest,
   UnreadCount,
+  ConversationFilter,
 } from "@/types/messaging";
 
 // ─── جلب محادثاتي ────────────────────────────────────────────────────────────
-export function useConversations(page = 1, search?: string) {
+export function useConversations(
+  page = 1,
+  search?: string,
+  filter?: ConversationFilter
+) {
   return useQuery({
-    queryKey: ["conversations", page, search],
+    queryKey: ["conversations", page, search, filter],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: "20" });
       if (search) params.set("search", search);
+
+      // Map frontend filter to backend type parameter
+      if (filter === "StaffToStaff" || filter === "StaffToPatient" || filter === "PatientFacing") {
+        params.set("type", filter);
+      }
+
       const { data } = await api.get(`/api/messages/conversations?${params}`);
-      return data as {
-        data: ConversationListItem[];
-        totalCount: number;
-        page: number;
-        pageSize: number;
-        totalPages: number;
+
+      // Client-side filtering for "unread" (backend doesn't have unread filter yet)
+      let conversations = (data.data ?? []) as ConversationListItem[];
+      const totalCount = data.totalCount ?? 0;
+
+      if (filter === "unread") {
+        conversations = conversations.filter((c) => c.unreadCount > 0);
+      }
+
+      return {
+        data: conversations,
+        totalCount: filter === "unread" ? conversations.length : totalCount,
+        page: data.page ?? page,
+        pageSize: data.pageSize ?? 20,
+        totalPages: data.totalPages ?? 1,
       };
     },
     staleTime: 5_000,
@@ -57,6 +77,7 @@ export function useUnreadCount() {
     },
     staleTime: 10_000,
     refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -74,16 +95,36 @@ export function useCreateConversation() {
   });
 }
 
-// ─── إنشاء/جلب محادثة مريض (StaffToPatient) ─────────────────────────────────
+// ─── إنشاء/جلب محادثة PatientFacing (مرئية للمريض) ──────────────────────────
 export function usePatientConversation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (patientId: string) => {
-      const { data } = await api.post(`/api/messages/conversations/patient/${patientId}`);
+      const { data } = await api.post(
+        `/api/messages/conversations/patient/${patientId}`
+      );
       return data as ConversationDetail;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
+    },
+  });
+}
+
+// ─── إنشاء/جلب محادثة StaffToPatient (داخلية — لا تظهر للمريض) ──────────────
+export function useInternalPatientConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const { data } = await api.post(
+        `/api/messages/internal-patient/${patientId}`
+      );
+      return data as ConversationDetail;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
     },
   });
 }

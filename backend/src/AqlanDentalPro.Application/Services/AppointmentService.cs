@@ -16,10 +16,10 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
     }
 
     public async Task<IEnumerable<AppointmentDto>> GetByDateRangeAsync(
-        DateOnly from, DateOnly to, Guid? doctorId = null)
+        DateOnly from, DateOnly to, Guid? doctorId = null, Guid? patientId = null)
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
-        var list = await repo.GetByDateRangeAsync(from, to, branchId, doctorId);
+        var list = await repo.GetByDateRangeAsync(from, to, branchId, doctorId, patientId);
         return list.Select(ToDto);
     }
 
@@ -69,6 +69,12 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         });
 
         return (dto, null);
+    }
+
+    public async Task<IEnumerable<AppointmentDto>> GetByPatientAsync(Guid patientId)
+    {
+        var list = await repo.GetByPatientAsync(patientId);
+        return list.Select(ToDto);
     }
 
     public async Task<AppointmentDto?> GetByIdAsync(Guid id)
@@ -137,6 +143,10 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         AppointmentType = a.AppointmentType,
         Specialty = a.Specialty?.ToString(),
         Status = a.Status.ToString(),
-        Notes = a.Notes
+        Notes = a.Notes,
+        RoomName = a.RoomName,
+        ArrivedAt = a.ArrivedAt,
+        CalledAt = a.CalledAt,
+        InRoomAt = a.InRoomAt
     };
 }

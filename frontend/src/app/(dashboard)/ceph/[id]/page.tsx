@@ -143,7 +143,7 @@ export default function CephAnalysisPage() {
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
-      <Loader2 className="w-8 h-8 animate-spin text-clinic-teal" />
+      <Loader2 className="w-8 h-8 animate-spin text-clinic-blue" />
     </div>
   );
   if (!analysis) return <div className="text-center py-20 text-gray-400">التحليل غير موجود</div>;
@@ -178,7 +178,7 @@ export default function CephAnalysisPage() {
               "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition",
               saveStatus === 'saved' ? "bg-green-600 text-white" :
               saveStatus === 'error' ? "bg-red-100 text-red-700 border border-red-300" :
-              "bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60"
+              "bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60"
             )}>
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
              saveStatus === 'saved' ? <CheckCircle2 className="w-3.5 h-3.5" /> :
@@ -188,7 +188,7 @@ export default function CephAnalysisPage() {
 
           <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
             <button onClick={() => setShowPlanes(!showPlanes)}
-              className={cn("p-1.5 rounded-md transition", showPlanes ? "bg-white shadow-sm text-clinic-teal" : "text-gray-400")}
+              className={cn("p-1.5 rounded-md transition", showPlanes ? "bg-white shadow-sm text-clinic-blue" : "text-gray-400")}
               title="الخطوط التشريحية">
               {showPlanes ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
             </button>
@@ -255,7 +255,7 @@ export default function CephAnalysisPage() {
                 min={0} step={0.01}
                 onChange={e => setPixelsPerMm(e.target.value ? +e.target.value : null)}
                 placeholder="px/mm"
-                className="w-16 text-[10px] px-1.5 py-0.5 border border-gray-200 rounded text-gray-700 focus:outline-none focus:ring-1 focus:ring-clinic-teal"
+                className="w-16 text-[10px] px-1.5 py-0.5 border border-gray-200 rounded text-gray-700 focus:outline-none focus:ring-1 focus:ring-clinic-blue"
                 dir="ltr"
               />
               <span className="text-gray-300">px/mm</span>
@@ -263,7 +263,7 @@ export default function CephAnalysisPage() {
             {selectedKey && (
               <>
                 <span>·</span>
-                <span className="text-clinic-teal font-semibold">
+                <span className="text-clinic-blue font-semibold">
                   ▶ انقر لوضع: {LANDMARK_DEFS[selectedKey]?.nameAr ?? selectedKey}
                 </span>
               </>
@@ -284,7 +284,7 @@ export default function CephAnalysisPage() {
                 className={cn(
                   "flex-1 py-2.5 text-[11px] font-semibold border-b-2 transition",
                   rightTab === t.key
-                    ? "border-clinic-teal text-clinic-teal"
+                    ? "border-clinic-blue text-clinic-blue"
                     : "border-transparent text-gray-400 hover:text-gray-600"
                 )}>
                 {t.label}
@@ -310,7 +310,7 @@ export default function CephAnalysisPage() {
                           <button key={key} onClick={() => setSelectedKey(isSel ? null : key)}
                             className={cn(
                               "w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px] transition text-start",
-                              isSel   ? "bg-clinic-teal/10 border border-clinic-teal/30 text-clinic-teal" :
+                              isSel   ? "bg-clinic-blue/10 border border-clinic-blue/30 text-clinic-blue" :
                               placed  ? "hover:bg-gray-50 text-gray-700" :
                                         "hover:bg-gray-50 text-gray-400"
                             )}>

@@ -140,9 +140,9 @@ export default function ContractDetailPage() {
     <div className="space-y-5 max-w-3xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/finance" className="hover:text-clinic-teal transition">المالية</Link>
+        <Link href="/finance" className="hover:text-clinic-blue transition">المالية</Link>
         <span>/</span>
-        <Link href="/finance/contracts" className="hover:text-clinic-teal transition">العقود</Link>
+        <Link href="/finance/contracts" className="hover:text-clinic-blue transition">العقود</Link>
         <span>/</span>
         <span className="text-gray-900 font-medium">{contract.patientName}</span>
       </div>
@@ -158,7 +158,7 @@ export default function ContractDetailPage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <Link href={`/patients/${contract.patientId}`} className="text-lg font-bold text-gray-900 hover:text-clinic-teal transition">
+            <Link href={`/patients/${contract.patientId}`} className="text-lg font-bold text-gray-900 hover:text-clinic-blue transition">
               {contract.patientName}
             </Link>
             <p className="text-xs text-gray-400 font-mono mt-0.5">{contract.patientNumber}</p>
@@ -202,7 +202,7 @@ export default function ContractDetailPage() {
           </div>
           <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className={cn("h-full rounded-full transition-all", pctPaid >= 100 ? "bg-green-500" : "bg-clinic-teal")}
+              className={cn("h-full rounded-full transition-all", pctPaid >= 100 ? "bg-green-500" : "bg-clinic-blue")}
               style={{ width: `${pctPaid}%` }}
             />
           </div>
@@ -253,7 +253,7 @@ export default function ContractDetailPage() {
           {contract.status === "active" && (
             <Link
               href={`/finance/payments?contractId=${id}&patientId=${contract.patientId}&patientName=${encodeURIComponent(contract.patientName ?? "")}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
             >
               <Plus className="w-3.5 h-3.5" />
               دفعة جديدة
@@ -284,7 +284,7 @@ export default function ContractDetailPage() {
                     <td className="px-4 py-3">
                       <button
                         onClick={() => setPrintPayment(p)}
-                        className="text-xs text-gray-400 hover:text-clinic-teal transition"
+                        className="text-xs text-gray-400 hover:text-clinic-blue transition"
                         title="طباعة السند"
                       >
                         <Printer className="w-3.5 h-3.5" />

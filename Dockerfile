@@ -20,7 +20,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libicu-dev && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system --gid 1001 appgroup && adduser --system --uid 1001 --ingroup appgroup appuser
-RUN mkdir -p wwwroot/uploads ai-models && chown -R appuser:appgroup wwwroot ai-models
+RUN mkdir -p wwwroot/uploads /data/uploads ai-models && chown -R appuser:appgroup wwwroot /data/uploads ai-models
 
 COPY --from=build --chown=appuser:appgroup /app/publish .
 

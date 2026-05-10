@@ -54,6 +54,8 @@ export interface PatientProfile {
   isActive: boolean;
   medicalHistory?: MedicalHistory;
   dentalHistory?: DentalHistory;
+  portalUsername?: string;
+  portalTemporaryPassword?: string;  // Only set on creation, never persisted
 }
 
 export interface CreatePatientRequest {

@@ -9,5 +9,6 @@ public enum UserRole
     Reception,
     Accountant,
     Assistant,
-    BranchManager
+    BranchManager,
+    Patient
 }

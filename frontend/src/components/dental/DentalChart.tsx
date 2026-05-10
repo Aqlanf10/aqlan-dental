@@ -141,7 +141,7 @@ function ToothBtn({ toothNumber, tooth, onClick, isUpper }: {
       onClick={onClick}
       title={`${toothNumber}${tooth?.condition ? ` — ${CONDITION_CONFIG[tooth.condition]?.label ?? tooth.condition}` : ""}`}
       className={cn(
-        "aspect-[2/3] flex flex-col items-center justify-center rounded border-2 hover:ring-2 hover:ring-clinic-teal hover:ring-offset-1 transition text-xs",
+        "aspect-[2/3] flex flex-col items-center justify-center rounded border-2 hover:ring-2 hover:ring-clinic-blue hover:ring-offset-1 transition text-xs",
         bgClass,
         !isUpper && "rotate-180"
       )}
@@ -206,7 +206,7 @@ function ToothEditModal({ patientId, toothNumber, current, onClose, onSaved }: {
       >
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-gray-900">
-            السن <span className="font-mono text-clinic-teal">{toothNumber}</span>
+            السن <span className="font-mono text-clinic-blue">{toothNumber}</span>
           </h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded transition">
             <X className="w-4 h-4 text-gray-500" />
@@ -225,7 +225,7 @@ function ToothEditModal({ patientId, toothNumber, current, onClose, onSaved }: {
                 className={cn(
                   "px-3 py-2 text-sm rounded-lg border-2 transition text-start",
                   condition === key
-                    ? cfg.bgColor + " border-clinic-teal"
+                    ? cfg.bgColor + " border-clinic-blue"
                     : "bg-white border-gray-200 hover:border-gray-300"
                 )}
               >
@@ -250,7 +250,7 @@ function ToothEditModal({ patientId, toothNumber, current, onClose, onSaved }: {
                   className={cn(
                     "w-9 h-9 rounded-lg border-2 font-mono font-bold text-sm transition",
                     surfaces.includes(s)
-                      ? "bg-clinic-teal text-white border-clinic-teal"
+                      ? "bg-clinic-blue text-white border-clinic-blue"
                       : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
                   )}
                 >
@@ -270,7 +270,7 @@ function ToothEditModal({ patientId, toothNumber, current, onClose, onSaved }: {
           <input
             value={treatmentDone}
             onChange={(e) => setTreatmentDone(e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
             placeholder="حشو، قلع، علاج جذر..."
           />
         </div>
@@ -282,7 +282,7 @@ function ToothEditModal({ patientId, toothNumber, current, onClose, onSaved }: {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-teal"
+            className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           />
         </div>
 
@@ -297,7 +297,7 @@ function ToothEditModal({ patientId, toothNumber, current, onClose, onSaved }: {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-1.5 text-sm font-medium rounded-lg bg-clinic-teal text-white hover:opacity-90 disabled:opacity-60 transition"
+            className="px-4 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
           >
             {saving ? "جارٍ الحفظ..." : "حفظ"}
           </button>

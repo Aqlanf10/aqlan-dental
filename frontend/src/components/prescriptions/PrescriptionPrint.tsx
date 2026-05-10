@@ -67,7 +67,7 @@ export function PrescriptionPrint({
             <div key={i} className="border border-gray-200 rounded-lg p-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-2">
-                  <span className="text-clinic-teal font-bold text-sm mt-0.5">{i + 1}.</span>
+                  <span className="text-clinic-blue font-bold text-sm mt-0.5">{i + 1}.</span>
                   <div>
                     <p className="font-bold text-gray-900">{drug.name}</p>
                     <p className="text-sm text-gray-600 mt-0.5">

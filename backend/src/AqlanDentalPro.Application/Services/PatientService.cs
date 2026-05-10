@@ -12,7 +12,8 @@ namespace AqlanDentalPro.Application.Services;
 public class PatientService(
     IPatientRepository repo,
     ICurrentUserService currentUser,
-    IConfiguration config)
+    IConfiguration config,
+    IPatientPortalService portalService)
 {
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
@@ -34,6 +35,9 @@ public class PatientService(
     public async Task<PatientProfileDto?> GetByIdAsync(Guid id)
     {
         var patient = await repo.GetWithHistoriesAsync(id);
+        // If not found (may be archived and filtered by global filter), try ignoring filters
+        if (patient == null)
+            patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
         return patient == null ? null : ToProfileDto(patient);
     }
 
@@ -99,7 +103,33 @@ public class PatientService(
             {
                 await repo.AddAsync(patient);
                 await repo.SaveChangesAsync();
-                return await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+
+                // Auto-create patient portal account
+                try
+                {
+                    await portalService.EnsurePatientAccountAsync(patient.Id, patient.PatientNumber, patient.Phone);
+                }
+                catch (Exception ex)
+                {
+                    // Don't fail patient creation if portal account creation fails
+                    System.Diagnostics.Debug.WriteLine($"Failed to create portal account: {ex.Message}");
+                }
+
+                var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
+
+                // Attach portal credentials to the result (temp password shown only once)
+                try
+                {
+                    var (username, plainPassword) = await portalService.EnsurePatientAccountAsync(patient.Id, patient.PatientNumber, patient.Phone);
+                    result.PortalUsername = username;
+                    if (!string.IsNullOrEmpty(plainPassword))
+                    {
+                        result.PortalTemporaryPassword = plainPassword;
+                    }
+                }
+                catch { /* non-critical */ }
+
+                return result;
             }
             catch (Exception ex) when (IsPatientNumberConflict(ex))
             {
@@ -120,8 +150,29 @@ public class PatientService(
 
     public async Task<PatientProfileDto?> UpdateAsync(Guid id, UpdatePatientRequest req)
     {
-        var patient = await repo.GetWithHistoriesAsync(id);
-        if (patient == null) return null;
+        // Use ignore-filters variant to also find soft-deleted history rows
+        var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
+        if (patient == null || !patient.IsActive) return null;
+
+        // Normalize and check duplicates before updating
+        var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+        var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+
+        if (normalizedPhone != null)
+        {
+            var existingPhone = await repo.FirstOrDefaultAsync(p => 
+                p.Id != id && (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone) && p.IsActive);
+            if (existingPhone != null)
+                throw new InvalidOperationException($"رقم الهاتف أو الواتساب مستخدم مسبقاً لمريض آخر: {existingPhone.FirstName} {existingPhone.LastName} (ملف رقم {existingPhone.PatientNumber})");
+        }
+
+        if (normalizedWhatsApp != null)
+        {
+            var existingWA = await repo.FirstOrDefaultAsync(p => 
+                p.Id != id && (p.NormalizedWhatsApp == normalizedWhatsApp || p.NormalizedPhone == normalizedWhatsApp) && p.IsActive);
+            if (existingWA != null)
+                throw new InvalidOperationException($"رقم واتساب أو الهاتف مستخدم مسبقاً لمريض آخر: {existingWA.FirstName} {existingWA.LastName} (ملف رقم {existingWA.PatientNumber})");
+        }
 
         patient.FirstName = req.FirstName;
         patient.MiddleName = req.MiddleName;
@@ -139,30 +190,85 @@ public class PatientService(
 
         if (req.MedicalHistory != null)
         {
-            patient.MedicalHistory ??= new MedicalHistory { PatientId = patient.Id };
-            patient.MedicalHistory.ChronicDiseases    = req.MedicalHistory.ChronicDiseases;
-            patient.MedicalHistory.CurrentMedications = req.MedicalHistory.CurrentMedications;
-            patient.MedicalHistory.DrugAllergies      = req.MedicalHistory.DrugAllergies;
-            patient.MedicalHistory.BleedingDisorders  = req.MedicalHistory.BleedingDisorders;
-            patient.MedicalHistory.IsPregnant         = req.MedicalHistory.IsPregnant;
-            patient.MedicalHistory.TmjProblems        = req.MedicalHistory.TmjProblems;
-            patient.MedicalHistory.PreviousSurgeries  = req.MedicalHistory.PreviousSurgeries;
-            patient.MedicalHistory.Notes              = req.MedicalHistory.Notes;
+            if (patient.MedicalHistory == null)
+            {
+                // No existing row — create and ADD (not Update) to avoid DbUpdateConcurrencyException
+                patient.MedicalHistory = new MedicalHistory
+                {
+                    PatientId = patient.Id,
+                    ChronicDiseases = req.MedicalHistory.ChronicDiseases,
+                    CurrentMedications = req.MedicalHistory.CurrentMedications,
+                    DrugAllergies = req.MedicalHistory.DrugAllergies,
+                    BleedingDisorders = req.MedicalHistory.BleedingDisorders,
+                    IsPregnant = req.MedicalHistory.IsPregnant,
+                    TmjProblems = req.MedicalHistory.TmjProblems,
+                    PreviousSurgeries = req.MedicalHistory.PreviousSurgeries,
+                    Notes = req.MedicalHistory.Notes
+                };
+                await repo.AddChildAsync(patient.MedicalHistory);
+            }
+            else
+            {
+                patient.MedicalHistory.ChronicDiseases = req.MedicalHistory.ChronicDiseases;
+                patient.MedicalHistory.CurrentMedications = req.MedicalHistory.CurrentMedications;
+                patient.MedicalHistory.DrugAllergies = req.MedicalHistory.DrugAllergies;
+                patient.MedicalHistory.BleedingDisorders = req.MedicalHistory.BleedingDisorders;
+                patient.MedicalHistory.IsPregnant = req.MedicalHistory.IsPregnant;
+                patient.MedicalHistory.TmjProblems = req.MedicalHistory.TmjProblems;
+                patient.MedicalHistory.PreviousSurgeries = req.MedicalHistory.PreviousSurgeries;
+                patient.MedicalHistory.Notes = req.MedicalHistory.Notes;
+                // Restore if the row was soft-deleted
+                if (!patient.MedicalHistory.IsActive)
+                {
+                    patient.MedicalHistory.IsActive = true;
+                    patient.MedicalHistory.DeletedAt = null;
+                    patient.MedicalHistory.DeletedBy = null;
+                }
+            }
         }
 
         if (req.DentalHistory != null)
         {
-            patient.DentalHistory ??= new DentalHistory { PatientId = patient.Id };
-            patient.DentalHistory.ChiefComplaint     = req.DentalHistory.ChiefComplaint;
-            patient.DentalHistory.PreviousTreatments = req.DentalHistory.PreviousTreatments;
-            patient.DentalHistory.MouthBreathing     = req.DentalHistory.MouthBreathing;
-            patient.DentalHistory.Bruxism            = req.DentalHistory.Bruxism;
-            patient.DentalHistory.ThumbSucking       = req.DentalHistory.ThumbSucking;
-            patient.DentalHistory.TongueThrusing     = req.DentalHistory.TongueThrusing;
-            patient.DentalHistory.Notes              = req.DentalHistory.Notes;
+            if (patient.DentalHistory == null)
+            {
+                // No existing row — create and ADD (not Update) to avoid DbUpdateConcurrencyException
+                patient.DentalHistory = new DentalHistory
+                {
+                    PatientId = patient.Id,
+                    ChiefComplaint = req.DentalHistory.ChiefComplaint,
+                    PreviousTreatments = req.DentalHistory.PreviousTreatments,
+                    MouthBreathing = req.DentalHistory.MouthBreathing,
+                    Bruxism = req.DentalHistory.Bruxism,
+                    ThumbSucking = req.DentalHistory.ThumbSucking,
+                    TongueThrusing = req.DentalHistory.TongueThrusing,
+                    Notes = req.DentalHistory.Notes
+                };
+                await repo.AddChildAsync(patient.DentalHistory);
+            }
+            else
+            {
+                patient.DentalHistory.ChiefComplaint = req.DentalHistory.ChiefComplaint;
+                patient.DentalHistory.PreviousTreatments = req.DentalHistory.PreviousTreatments;
+                patient.DentalHistory.MouthBreathing = req.DentalHistory.MouthBreathing;
+                patient.DentalHistory.Bruxism = req.DentalHistory.Bruxism;
+                patient.DentalHistory.ThumbSucking = req.DentalHistory.ThumbSucking;
+                patient.DentalHistory.TongueThrusing = req.DentalHistory.TongueThrusing;
+                patient.DentalHistory.Notes = req.DentalHistory.Notes;
+                // Restore if the row was soft-deleted
+                if (!patient.DentalHistory.IsActive)
+                {
+                    patient.DentalHistory.IsActive = true;
+                    patient.DentalHistory.DeletedAt = null;
+                    patient.DentalHistory.DeletedBy = null;
+                }
+            }
         }
 
-        repo.Update(patient);
+        // Don't use repo.Update(patient) here — it would mark the entire entity graph as Modified,
+        // overriding the Added state of newly created child entities. Since the patient is already
+        // tracked by the change tracker (loaded via GetWithHistoriesAsync), property changes above
+        // are automatically detected. The new children were explicitly Added via AddChild.
+        patient.UpdatedAt = DateTime.UtcNow;
         await repo.SaveChangesAsync();
         return ToProfileDto(patient);
     }
@@ -198,6 +304,129 @@ public class PatientService(
         repo.Update(patient);
         await repo.SaveChangesAsync();
         return true;
+    }
+
+    /// <summary>
+    /// Upsert medical history: create if none exists, update if it does.
+    /// Also handles soft-deleted history rows by restoring them.
+    /// Fixes DbUpdateConcurrencyException when patient has no MedicalHistory row.
+    /// </summary>
+    public async Task<MedicalHistoryDto?> UpsertMedicalHistoryAsync(Guid id, MedicalHistoryDto dto)
+    {
+        // Use ignore-filters variant to also find soft-deleted history rows
+        var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
+        if (patient == null || !patient.IsActive) return null;
+
+        if (patient.MedicalHistory == null)
+        {
+            // No existing row at all — create a NEW entity and ADD it
+            patient.MedicalHistory = new MedicalHistory
+            {
+                PatientId = patient.Id,
+                ChronicDiseases = dto.ChronicDiseases,
+                CurrentMedications = dto.CurrentMedications,
+                DrugAllergies = dto.DrugAllergies,
+                BleedingDisorders = dto.BleedingDisorders,
+                IsPregnant = dto.IsPregnant,
+                TmjProblems = dto.TmjProblems,
+                PreviousSurgeries = dto.PreviousSurgeries,
+                Notes = dto.Notes
+            };
+            await repo.AddChildAsync(patient.MedicalHistory);
+        }
+        else
+        {
+            // Existing row (active or soft-deleted) — update and restore if needed
+            patient.MedicalHistory.ChronicDiseases = dto.ChronicDiseases;
+            patient.MedicalHistory.CurrentMedications = dto.CurrentMedications;
+            patient.MedicalHistory.DrugAllergies = dto.DrugAllergies;
+            patient.MedicalHistory.BleedingDisorders = dto.BleedingDisorders;
+            patient.MedicalHistory.IsPregnant = dto.IsPregnant;
+            patient.MedicalHistory.TmjProblems = dto.TmjProblems;
+            patient.MedicalHistory.PreviousSurgeries = dto.PreviousSurgeries;
+            patient.MedicalHistory.Notes = dto.Notes;
+            patient.MedicalHistory.UpdatedAt = DateTime.UtcNow;
+            // Restore if the row was soft-deleted
+            if (!patient.MedicalHistory.IsActive)
+            {
+                patient.MedicalHistory.IsActive = true;
+                patient.MedicalHistory.DeletedAt = null;
+                patient.MedicalHistory.DeletedBy = null;
+            }
+        }
+
+        await repo.SaveChangesAsync();
+        return new MedicalHistoryDto
+        {
+            ChronicDiseases = patient.MedicalHistory.ChronicDiseases,
+            CurrentMedications = patient.MedicalHistory.CurrentMedications,
+            DrugAllergies = patient.MedicalHistory.DrugAllergies,
+            BleedingDisorders = patient.MedicalHistory.BleedingDisorders,
+            IsPregnant = patient.MedicalHistory.IsPregnant,
+            TmjProblems = patient.MedicalHistory.TmjProblems,
+            PreviousSurgeries = patient.MedicalHistory.PreviousSurgeries,
+            Notes = patient.MedicalHistory.Notes
+        };
+    }
+
+    /// <summary>
+    /// Upsert dental history: create if none exists, update if it does.
+    /// Also handles soft-deleted history rows by restoring them.
+    /// Fixes DbUpdateConcurrencyException when patient has no DentalHistory row.
+    /// </summary>
+    public async Task<DentalHistoryDto?> UpsertDentalHistoryAsync(Guid id, DentalHistoryDto dto)
+    {
+        // Use ignore-filters variant to also find soft-deleted history rows
+        var patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
+        if (patient == null || !patient.IsActive) return null;
+
+        if (patient.DentalHistory == null)
+        {
+            // No existing row at all — create a NEW entity and ADD it
+            patient.DentalHistory = new DentalHistory
+            {
+                PatientId = patient.Id,
+                ChiefComplaint = dto.ChiefComplaint,
+                PreviousTreatments = dto.PreviousTreatments,
+                MouthBreathing = dto.MouthBreathing,
+                Bruxism = dto.Bruxism,
+                ThumbSucking = dto.ThumbSucking,
+                TongueThrusing = dto.TongueThrusing,
+                Notes = dto.Notes
+            };
+            await repo.AddChildAsync(patient.DentalHistory);
+        }
+        else
+        {
+            // Existing row (active or soft-deleted) — update and restore if needed
+            patient.DentalHistory.ChiefComplaint = dto.ChiefComplaint;
+            patient.DentalHistory.PreviousTreatments = dto.PreviousTreatments;
+            patient.DentalHistory.MouthBreathing = dto.MouthBreathing;
+            patient.DentalHistory.Bruxism = dto.Bruxism;
+            patient.DentalHistory.ThumbSucking = dto.ThumbSucking;
+            patient.DentalHistory.TongueThrusing = dto.TongueThrusing;
+            patient.DentalHistory.Notes = dto.Notes;
+            patient.DentalHistory.UpdatedAt = DateTime.UtcNow;
+            // Restore if the row was soft-deleted
+            if (!patient.DentalHistory.IsActive)
+            {
+                patient.DentalHistory.IsActive = true;
+                patient.DentalHistory.DeletedAt = null;
+                patient.DentalHistory.DeletedBy = null;
+            }
+        }
+
+        await repo.SaveChangesAsync();
+        return new DentalHistoryDto
+        {
+            ChiefComplaint = patient.DentalHistory.ChiefComplaint,
+            PreviousTreatments = patient.DentalHistory.PreviousTreatments,
+            MouthBreathing = patient.DentalHistory.MouthBreathing,
+            Bruxism = patient.DentalHistory.Bruxism,
+            ThumbSucking = patient.DentalHistory.ThumbSucking,
+            TongueThrusing = patient.DentalHistory.TongueThrusing,
+            Notes = patient.DentalHistory.Notes
+        };
     }
 
     public async Task<bool> SoftDeleteAsync(Guid id) => await ArchiveAsync(id);

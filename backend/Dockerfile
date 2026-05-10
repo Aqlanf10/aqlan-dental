@@ -28,8 +28,16 @@ RUN addgroup --system --gid 1001 appgroup && \
 
 COPY --from=build --chown=appuser:appgroup /app/publish .
 
+# Pre-create uploads directories with write permissions for non-root user
+# /app/wwwroot/uploads — default path (no UPLOADS_PATH env var)
+# /data/uploads — recommended path for Railway persistent volume mount
+RUN mkdir -p /app/wwwroot/uploads /data/uploads && \
+    chown appuser:appgroup /app/wwwroot/uploads /data/uploads
+
 USER appuser
 
 EXPOSE 8080
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV ASPNETCORE_URLS=http://+:8080
 
 ENTRYPOINT ["dotnet", "AqlanDentalPro.API.dll"]

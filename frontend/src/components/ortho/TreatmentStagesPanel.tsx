@@ -7,7 +7,7 @@ import { CheckCircle, Circle, PlayCircle } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Circle; color: string }> = {
   pending:   { label: "لم تبدأ", icon: Circle,      color: "text-gray-300" },
-  active:    { label: "جارية",   icon: PlayCircle,  color: "text-clinic-teal" },
+  active:    { label: "جارية",   icon: PlayCircle,  color: "text-clinic-blue" },
   completed: { label: "مكتملة",  icon: CheckCircle, color: "text-green-500" },
 };
 
@@ -56,14 +56,14 @@ export function TreatmentStagesPanel({ caseId, stages, onUpdate }: Props) {
             {/* Content */}
             <div className={cn(
               "flex-1 rounded-lg p-3 border text-sm transition",
-              stage.status === "active"    && "bg-teal-50 border-teal-200",
+              stage.status === "active"    && "bg-clinic-blue-50 border-clinic-blue-100",
               stage.status === "completed" && "bg-green-50 border-green-200",
               stage.status === "pending"   && "bg-white border-gray-200"
             )}>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className={cn(
                   "font-semibold",
-                  stage.status === "active"    && "text-teal-800",
+                  stage.status === "active"    && "text-clinic-navy-700",
                   stage.status === "completed" && "text-green-800",
                   stage.status === "pending"   && "text-gray-500"
                 )}>

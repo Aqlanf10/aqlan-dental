@@ -10,7 +10,8 @@ public record CreateBookingRequestDto(
     [MaxLength(100)] string? ServiceType,
     [MaxLength(50)] string? PreferredDate,
     [MaxLength(50)] string? PreferredTime,
-    [MaxLength(500)] string? Notes
+    [MaxLength(500)] string? Notes,
+    Guid? DoctorId
 );
 
 public record BookingRequestDto(
@@ -25,7 +26,10 @@ public record BookingRequestDto(
     string Status,
     string? StaffNotes,
     DateTime CreatedAt,
-    DateTime? ReviewedAt
+    DateTime? ReviewedAt,
+    Guid? DoctorId,
+    string? DoctorName,
+    Guid? ConvertedToAppointmentId
 );
 
 public record UpdateBookingRequestStatusDto(
@@ -46,5 +50,17 @@ public record BookingAvailabilityResponseDto(
     string? ServiceType,
     List<BookingAvailabilitySlotDto> Slots,
     bool IsClosed = false,
-    string? Message = null
+    string? Message = null,
+    Guid? DoctorId = null,
+    string? DoctorName = null
+);
+
+public record ConvertBookingRequestToAppointmentDto(
+    [Required] Guid PatientId,
+    [Required] Guid DoctorId,
+    [Required] DateOnly AppointmentDate,
+    [Required] TimeOnly StartTime,
+    [Required] TimeOnly EndTime,
+    string? AppointmentType,
+    int DurationMinutes = 30
 );

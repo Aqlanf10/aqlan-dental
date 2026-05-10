@@ -341,6 +341,41 @@ catch (Exception ex)
     brLogger2.LogWarning(ex, "BookingRequests table hotfix failed (non-fatal)");
 }
 
+// ── Message Edit Fields Hotfix (unconditional, idempotent) ───────────────────
+try
+{
+    using var msgEditScope = app.Services.CreateScope();
+    var msgEditDb     = msgEditScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var msgEditLogger = msgEditScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await msgEditDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Messages') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
+                END IF;
+            END IF;
+        END $$;
+    """);
+    await msgEditDb.Database.ExecuteSqlRawAsync("""
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT '20260510000000_AddMessageEditFields', '8.0.8'
+        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
+          AND NOT EXISTS (
+              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
+          );
+    """);
+    msgEditLogger.LogInformation("Message IsEdited/EditedAt hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var msgEditLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    msgEditLogger2.LogWarning(ex, "Message edit fields hotfix failed (non-fatal)");
+}
+
 // ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");

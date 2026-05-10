@@ -59,10 +59,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <StatsCard
           title="إجمالي المرضى"
-          value={loading ? "—" : (stats?.newPatientsToday ?? 0)}
+          value={loading ? "—" : (stats?.totalPatients ?? 0)}
           icon={Users}
           color="blue"
-          description={loading ? "" : `+${stats?.newPatientsToday ?? 0} مسجّلون اليوم`}
+          description={loading ? "" : `+${stats?.newPatientsToday ?? 0} جديد اليوم`}
         />
         <StatsCard
           title="مواعيد اليوم"
@@ -147,7 +147,7 @@ export default function DashboardPage() {
                 { label: "مريض جديد", icon: Plus, color: "#3d7ab5", href: "/patients/new" },
                 { label: "موعد جديد", icon: Calendar, color: "#f5922e", href: "/appointments/new" },
                 { label: "حالة تقويم", icon: Activity, color: "#a855f7", href: "/ortho/new" },
-                { label: "تسجيل دفعة", icon: Wallet, color: "#22c55e", href: "/finance/payments/new" },
+                { label: "تسجيل دفعة", icon: Wallet, color: "#22c55e", href: "/finance/payments" },
               ].map((a) => (
                 <Link
                   key={a.label}

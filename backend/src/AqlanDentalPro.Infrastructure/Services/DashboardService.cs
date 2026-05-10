@@ -7,6 +7,7 @@ namespace AqlanDentalPro.Application.Services;
 public record DashboardStats(
     int AppointmentsToday,
     int NewPatientsToday,
+    int TotalPatients,
     int ActiveOrthoCases,
     int PendingLabOrders,
     int OverdueContractsCount,
@@ -69,12 +70,15 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
 
         var appointmentsToday  = await apptQuery.CountAsync();
         var newPatientsToday   = await patientQuery.CountAsync();
+        var totalPatientsQuery = db.Patients.Where(p => p.IsActive);
+        if (branchId.HasValue) totalPatientsQuery = totalPatientsQuery.Where(p => p.BranchId == branchId);
+        var totalPatients      = await totalPatientsQuery.CountAsync();
         var activeOrthoCases   = await orthoQuery.CountAsync();
         var pendingLabOrders   = await labQuery.CountAsync();
         var totalRevenueMTD    = await revenueQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         return new DashboardStats(
-            appointmentsToday, newPatientsToday, activeOrthoCases, pendingLabOrders,
+            appointmentsToday, newPatientsToday, totalPatients, activeOrthoCases, pendingLabOrders,
             overdueCount, totalRevenueMTD);
     }
 

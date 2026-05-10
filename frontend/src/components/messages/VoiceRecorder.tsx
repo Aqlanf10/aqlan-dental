@@ -85,7 +85,7 @@ export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
 
   if (isRecording) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
         <span className="text-xs text-red-600 font-mono tabular-nums" dir="ltr">
           {formatTime(seconds)}

@@ -421,6 +421,68 @@ catch (Exception ex)
     doctorIdLogger2.LogWarning(ex, "BookingRequests DoctorId hotfix failed (non-fatal)");
 }
 
+// ── Website Settings Seed Hotfix (unconditional, idempotent) ─────────────────
+try
+{
+    using var wsScope = app.Services.CreateScope();
+    var wsDb     = wsScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var wsLogger = wsScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    var websiteDefaults = new Dictionary<string, string>
+    {
+        ["website.clinicName"]           = "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان",
+        ["website.heroTitle"]            = "ابتسامة تجمع بين دقة العلم ولمسة الفن",
+        ["website.heroSubtitle"]         = "مركز الدكتور عقلان الكامل يقدم رعاية متكاملة في تقويم وزراعة وتجميل الأسنان، مع تشخيص دقيق وخطط علاج واضحة ومتابعة مستمرة لكل حالة.",
+        ["website.marketingSlogan"]      = "قيادة طبية… وابتسامة بثقة",
+        ["website.aboutText"]            = "يقدم مركز الدكتور عقلان الكامل خدمات تخصصية شاملة في تقويم وزراعة وتجميل الأسنان، معتمدين على تشخيص دقيق، وخطط علاج واضحة، ومتابعة مستمرة للحالات للمساعدة في الوصول إلى نتائج علاجية دقيقة ومناسبة لكل حالة.",
+        ["website.phone"]                = "04-253028",
+        ["website.whatsapp"]             = "967770245745",
+        ["website.address"]              = "تعز، اليمن — شارع التحرير الأعلى",
+        ["website.workingHours"]         = "السبت – الخميس: 8 ص – 8 م",
+        ["website.facebook"]             = "",
+        ["website.instagram"]            = "",
+        ["website.logoUrl"]              = "",
+        ["website.heroImageUrl"]         = "",
+        ["website.servicesSectionTitle"] = "حلول طبية متكاملة لابتسامة صحية وواثقة",
+        ["website.bookingButtonText"]    = "احجز موعدك الآن",
+        ["website.whatsappButtonText"]   = "تواصل عبر الواتساب",
+    };
+
+    var existingKeys = await wsDb.Settings
+        .Where(s => s.Category == "website")
+        .Select(s => s.Key)
+        .ToListAsync();
+
+    foreach (var (key, value) in websiteDefaults)
+    {
+        if (!existingKeys.Contains(key))
+        {
+            wsDb.Settings.Add(new AqlanDentalPro.Domain.Entities.Setting
+            {
+                Key = key,
+                Value = value,
+                Category = "website",
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+    }
+
+    if (wsDb.ChangeTracker.HasChanges())
+    {
+        await wsDb.SaveChangesAsync();
+        wsLogger.LogInformation("Website settings seeded ({Count} new keys)", websiteDefaults.Count - existingKeys.Count);
+    }
+    else
+    {
+        wsLogger.LogInformation("Website settings already exist, no seeding needed");
+    }
+}
+catch (Exception ex)
+{
+    var wsLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
+}
+
 // ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");

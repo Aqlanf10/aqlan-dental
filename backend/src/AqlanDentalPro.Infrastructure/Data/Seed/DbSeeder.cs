@@ -50,6 +50,9 @@ public static class DbSeeder
 
             await context.Database.MigrateAsync();
 
+            if (!await context.Branches.AnyAsync())
+                await SeedBranchAsync(context);
+
             if (!await context.Users.AnyAsync())
                 await SeedUsersAndDoctorsAsync(context);
             else

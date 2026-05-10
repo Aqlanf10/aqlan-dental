@@ -51,19 +51,12 @@ interface FormErrors {
 /** Convert "HH:mm" 24h → Arabic display like "9:00 ص" */
 function toArabicTime(time24: string): string {
   const [hStr, mStr] = time24.split(":");
-  let h = parseInt(hStr, 10);
+  const h = parseInt(hStr, 10);
   const m = mStr;
   if (h === 0) return `12:${m} ص`;
   if (h === 12) return `12:${m} م`;
   if (h < 12) return `${h}:${m} ص`;
   return `${h - 12}:${m} م`;
-}
-
-/** Get tomorrow's date in YYYY-MM-DD (Asia/Aden = UTC+3) */
-function getTomorrowDate(): string {
-  const now = new Date();
-  now.setDate(now.getDate() + 1);
-  return now.toISOString().split("T")[0];
 }
 
 /** Get today's date in YYYY-MM-DD */

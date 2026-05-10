@@ -480,7 +480,7 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
                 result.Add(new BookingAvailabilitySlotDto(slot, true));
         }
 
-        return new BookingAvailabilityResponseDto(date, serviceType, result, doctorId: doctorId, doctorName: doctor.Name);
+        return new BookingAvailabilityResponseDto(date, serviceType, result, false, null, doctorId, doctor.Name);
     }
 
     /// <summary>

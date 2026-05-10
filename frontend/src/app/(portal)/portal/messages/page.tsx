@@ -96,8 +96,8 @@ function getRecipientBadgeLabel(type: string | null | undefined): string | null 
 
 // ─── Attachment constants ─────────────────────────────────────────────────────
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf", ".webm", ".ogg", ".mp4"];
-const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf", "audio/webm", "audio/ogg", "audio/mp4"];
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".pdf", ".webm", ".ogg", ".mp4", ".m4a", ".mp3", ".wav"];
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf", "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"];
 
 /** Convert a full upload URL to a relative /uploads/ path for the backend */
 function toRelativeUploadUrl(url: string): string {
@@ -490,13 +490,13 @@ function ChatArea({
     // Validate extension
     const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF");
+      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF، صوتيات");
       return;
     }
 
     // Validate MIME type
     if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF");
+      setUploadError("نوع الملف غير مدعوم. الأنواع المسموحة: JPG، PNG، PDF، صوتيات");
       return;
     }
 
@@ -712,7 +712,7 @@ function ChatArea({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".jpg,.jpeg,.png,.pdf,.webm,.ogg,.mp4"
+            accept=".jpg,.jpeg,.png,.pdf,.webm,.ogg,.mp4,.m4a,.mp3,.wav"
             className="hidden"
             onChange={handleFileSelect}
           />

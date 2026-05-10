@@ -116,8 +116,10 @@ export function VoiceRecorder({ onRecorded, disabled }: VoiceRecorderProps) {
       type="button"
       onClick={startRecording}
       disabled={disabled}
+      data-testid="voice-recorder-button"
+      aria-label="تسجيل رسالة صوتية"
       className={cn(
-        "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
+        "min-w-10 w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0 relative z-10",
         disabled
           ? "bg-gray-100 text-gray-300 cursor-not-allowed"
           : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"

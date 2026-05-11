@@ -1003,6 +1003,80 @@ if (enableStartupDbMaintenance)
         }
     }
 
+    // Ensure ClinicQueueItems table exists (Sprint 7)
+    // The migration should create this via MigrateAsync, but we add a safety net
+    // in case the migration fails to apply on Railway.
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "ClinicQueueItems" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "PatientId" uuid NOT NULL,
+                "AppointmentId" uuid NULL,
+                "VisitId" uuid NULL,
+                "DoctorId" uuid NULL,
+                "RoomName" character varying(50) NULL,
+                "Status" character varying(30) NOT NULL DEFAULT 'Waiting',
+                "CalledAt" timestamp with time zone NULL,
+                "CalledBy" uuid NULL,
+                "InRoomAt" timestamp with time zone NULL,
+                "StartedAt" timestamp with time zone NULL,
+                "CompletedAt" timestamp with time zone NULL,
+                "CancelledAt" timestamp with time zone NULL,
+                "QueueDate" date NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NOT NULL,
+                "IsActive" boolean NOT NULL DEFAULT true,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS "IX_ClinicQueueItems_QueueDate_Status"
+                ON "ClinicQueueItems" ("QueueDate", "Status");
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ClinicQueueItems_PatientId_QueueDate_Active"
+                ON "ClinicQueueItems" ("PatientId", "QueueDate")
+                WHERE "Status" NOT IN ('Completed', 'Cancelled');
+        """);
+
+        // Add foreign keys only if they don't exist
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Patients_PatientId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Appointments_AppointmentId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Appointments_AppointmentId"
+                        FOREIGN KEY ("AppointmentId") REFERENCES "Appointments"("Id") ON DELETE SET NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Visits_VisitId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Visits_VisitId"
+                        FOREIGN KEY ("VisitId") REFERENCES "Visits"("Id") ON DELETE SET NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Doctors_DoctorId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Record the migration in history if not already recorded
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260514000000_AddClinicQueueItem', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
+            );
+        """);
+
+        logger.LogInformation("ClinicQueueItems table ensured (created if not exists)");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems table");
+    }
+
     await DbSeeder.SeedAsync(db, logger);
 
     // Seed PatientAccounts for existing patients

@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import {
   CheckCircle2,
   Loader2,
@@ -22,9 +21,16 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-import { SERVICE_TITLES } from "@/lib/public-constants";
-
-const SERVICES = SERVICE_TITLES;
+const SERVICES = [
+  "تقويم الأسنان",
+  "طب الأسنان العام",
+  "جراحة الوجه والفكين",
+  "تنظيف الأسنان",
+  "تجميل الأسنان",
+  "علاج جذور",
+  "زراعة أسنان",
+  "استشارة",
+];
 
 interface Doctor {
   id: string;
@@ -122,22 +128,18 @@ const STEPS = [
   { label: "تأكيد الحجز", icon: ClipboardCheck },
 ] as const;
 
-function BookPageContent() {
-  const searchParams = useSearchParams();
-  const preselectedDoctorId = searchParams.get("doctorId") ?? "";
-  const preselectedServiceType = searchParams.get("serviceType") ?? "";
-
+export default function BookPage() {
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState<FormData>(() => ({
+  const [form, setForm] = useState<FormData>({
     patientName: "",
     phoneNumber: "",
     email: "",
-    serviceType: preselectedServiceType,
-    doctorId: preselectedDoctorId,
+    serviceType: "",
+    doctorId: "",
     preferredDate: "",
     preferredTime: "",
     notes: "",
-  }));
+  });
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -173,24 +175,6 @@ function BookPageContent() {
     }
     fetchDoctors();
   }, []);
-
-  // ── Validate preselected doctor exists ──
-  useEffect(() => {
-    if (!preselectedDoctorId || !doctorsLoaded) return;
-    const exists = doctors.some((d) => d.id === preselectedDoctorId);
-    if (!exists) {
-      setForm((prev) => ({ ...prev, doctorId: "" }));
-    }
-  }, [preselectedDoctorId, doctorsLoaded, doctors]);
-
-  // ── Validate preselected service exists ──
-  useEffect(() => {
-    if (!preselectedServiceType) return;
-    const exists = SERVICES.includes(preselectedServiceType);
-    if (!exists) {
-      setForm((prev) => ({ ...prev, serviceType: "" }));
-    }
-  }, [preselectedServiceType]);
 
   // ── Fetch availability when date or doctor changes ──
   const fetchAvailability = useCallback(
@@ -1231,20 +1215,5 @@ function BookPageContent() {
         </div>
       </div>
     </div>
-  );
-}
-
-// ── Suspense wrapper required for useSearchParams ──
-export default function BookPage() {
-  return (
-    <Suspense
-      fallback={
-        <div dir="rtl" className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
-          <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-        </div>
-      }
-    >
-      <BookPageContent />
-    </Suspense>
   );
 }

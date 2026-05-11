@@ -154,8 +154,7 @@ export function FooterWithSettings() {
             {(
               [
                 { href: "/home", label: "الرئيسية", isLink: true },
-                { href: "/home/services", label: "خدماتنا", isLink: true },
-                { href: "/home/doctors", label: "الفريق الطبي", isLink: true },
+                { href: "#services", label: "خدماتنا", isLink: false },
                 { href: "/home/book", label: "احجز موعد", isLink: true },
                 { href: "/portal/login", label: "بوابة المرضى", isLink: true },
                 { href: "/login", label: "دخول الكادر", isLink: true },

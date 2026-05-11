@@ -63,6 +63,7 @@ const FILTER_OPTIONS = [
   { value: "InRoom",     label: "داخل الغرفة" },
   { value: "InProgress", label: "قيد المعالجة" },
   { value: "Completed",  label: "مكتمل" },
+  { value: "Cancelled",  label: "ملغي" },
 ] as const;
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
@@ -97,22 +98,27 @@ export default function ClinicQueuePage() {
 
   /* ── Fetch today's queue ─────────────────────────────────────────────────── */
   const fetchQueue = useCallback(async () => {
+    // Skip auto-refresh when a modal is open to avoid disrupting user actions
+    if (callModalFor || changeRoomFor || cancelConfirmFor) return;
     try {
       const { data } = await api.get<ClinicQueueItem[]>("/api/clinic-queue/today");
       setItems(data);
       setError(null);
       setLastRefresh(new Date());
     } catch (err: unknown) {
-      if (err && typeof err === "object" && "response" in err) {
-        const axiosErr = err as { response?: { data?: { message?: string } } };
-        setError(axiosErr.response?.data?.message || "خطأ في تحميل الطابور");
-      } else {
-        setError("فشل الاتصال بالخادم");
+      // Don't overwrite user-visible errors during background refresh
+      if (!loading) {
+        if (err && typeof err === "object" && "response" in err) {
+          const axiosErr = err as { response?: { data?: { message?: string } } };
+          setError(axiosErr.response?.data?.message || "خطأ في تحميل الطابور");
+        } else {
+          setError("فشل الاتصال بالخادم");
+        }
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [callModalFor, changeRoomFor, cancelConfirmFor, loading]);
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -130,6 +136,14 @@ export default function ClinicQueuePage() {
     const interval = setInterval(fetchQueue, 15_000);
     return () => clearInterval(interval);
   }, [fetchQueue, fetchRooms]);
+
+  // Today's date in Arabic
+  const todayDateStr = new Date().toLocaleDateString("ar-SA", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   /* ── Queue action helper ─────────────────────────────────────────────────── */
   const queueAction = async (url: string, body?: object) => {
@@ -218,7 +232,7 @@ export default function ClinicQueuePage() {
             طابور العيادة
           </h1>
           <p className="text-sm mt-1" style={{ color: "#64748b" }}>
-            إدارة طابور المرضى اليوم — تحديث تلقائي كل ١٥ ثانية
+            {todayDateStr} — تحديث تلقائي كل ١٥ ثانية
             {lastRefresh && (
               <span className="text-xs opacity-70"> (آخر تحديث: {formatTime(lastRefresh.toISOString())})</span>
             )}
@@ -569,6 +583,7 @@ function QueueCard({
           {item.status === "Called" && (
             <>
               <ActionButton label="دخول الغرفة" onClick={onEnterRoom} loading={isLoading} color="#7c3aed" icon={<DoorOpen className="w-3 h-3" />} />
+              <ActionButton label="تغيير الغرفة" onClick={onChangeRoom} loading={isLoading} color="#64748b" icon={<ArrowRightLeft className="w-3 h-3" />} />
               <ActionButton label="إلغاء" onClick={onCancel} loading={isLoading} color="#ef4444" icon={<XCircle className="w-3 h-3" />} />
             </>
           )}

@@ -395,7 +395,13 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
     }
 
     // ─── GET /api/clinic-queue/display ───────────────────────────────────────
-    /// <summary>Returns data for the TV queue display screen. No sensitive info.</summary>
+    /// <summary>
+    /// Returns data for the TV queue display screen. Anonymous access (no auth).
+    /// Privacy-safe: only exposes patient display name, file number, room,
+    /// doctor name, queue status, and called time.
+    /// NEVER expose: phone, diagnosis, payment/balance, medical history,
+    /// private notes, or full sensitive patient profile.
+    /// </summary>
     [HttpGet("display")]
     [AllowAnonymous] // TV display should work without staff login
     public async Task<IActionResult> GetDisplay()

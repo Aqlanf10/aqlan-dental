@@ -13,7 +13,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/appointments")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp) : ControllerBase
 {
     [HttpGet("today")]

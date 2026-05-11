@@ -25,7 +25,7 @@ public sealed class UpdateBranchRequest
 
 [ApiController]
 [Route("api/branches")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class BranchesController(
     AppDbContext db,
     ICurrentUserService currentUser) : ControllerBase

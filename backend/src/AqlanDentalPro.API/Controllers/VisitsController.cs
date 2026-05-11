@@ -48,7 +48,7 @@ public sealed class UpdateVisitRequest
 
 [ApiController]
 [Route("api/visits")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class VisitsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     // ─── GET /api/visits?patientId={patientId} ────────────────────────────────

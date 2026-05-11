@@ -45,7 +45,7 @@ public sealed class CreatePrescriptionRequestValidator : AbstractValidator<Creat
 
 [ApiController]
 [Route("api/prescriptions")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class PrescriptionsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet]

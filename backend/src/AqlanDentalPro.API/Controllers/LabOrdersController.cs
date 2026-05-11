@@ -52,7 +52,7 @@ public sealed class UpdateLabOrderStatusRequest
 
 [ApiController]
 [Route("api/lab-orders")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class LabOrdersController(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications) : ControllerBase
 {
     [HttpGet]

@@ -33,7 +33,7 @@ public sealed class UpdateDocumentRequest
 
 [ApiController]
 [Route("api/documents")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class DocumentsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     // ─── GET /api/documents?patientId={patientId} ─────────────────────────────

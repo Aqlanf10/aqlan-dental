@@ -1100,7 +1100,7 @@ function StartConversationDialog({
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {isDisabled
-                            ? "لم يتم تحديد الطبيب المسؤول بعد، يمكنك التواصل مع الاستقبال."
+                            ? "لا يوجد طبيب معالج مرتبط بحسابك حالياً. تواصل مع الاستقبال."
                             : opt.description}
                         </p>
                       </div>

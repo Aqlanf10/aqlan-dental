@@ -44,7 +44,12 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 var jwtKey = builder.Configuration["Jwt:SecretKey"]
     ?? throw new InvalidOperationException("JWT SecretKey is required");
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultForbidScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
     .AddJwtBearer(opts =>
     {
         opts.TokenValidationParameters = new TokenValidationParameters
@@ -215,213 +220,7 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ── PatientAccounts Schema Hotfix (unconditional, idempotent) ────────────────
-// Adds missing columns for portal authentication. Uses IF NOT EXISTS so it is safe to run repeatedly.
-try
-{
-    using var hotfixScope = app.Services.CreateScope();
-    var hotfixDb = hotfixScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var hotfixLogger = hotfixScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await hotfixDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'Username') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "Username" text NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordHash" text NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordSalt') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordSalt" text NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'MustChangePassword') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "MustChangePassword" boolean NOT NULL DEFAULT true;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PortalAccountActive') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "PortalAccountActive" boolean NOT NULL DEFAULT true;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'LinkedUserId') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "LinkedUserId" uuid NULL;
-            END IF;
-        END $$;
-    """);
-    hotfixLogger.LogInformation("PatientAccounts schema hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var hotfixLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    hotfixLogger2.LogWarning(ex, "PatientAccounts schema hotfix failed (non-fatal)");
-}
-
-// ── Conversation RecipientType Hotfix (unconditional, idempotent) ────────────
-try
-{
-    using var recipientHotfixScope = app.Services.CreateScope();
-    var recipientHotfixDb = recipientHotfixScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var recipientHotfixLogger = recipientHotfixScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientType') THEN
-                ALTER TABLE "Conversations" ADD COLUMN "RecipientType" character varying(20) NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientUserId') THEN
-                ALTER TABLE "Conversations" ADD COLUMN "RecipientUserId" uuid NULL;
-            END IF;
-        END $$;
-    """);
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientType" ON "Conversations" ("RecipientType");
-    """);
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientUserId" ON "Conversations" ("RecipientUserId");
-    """);
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260503000000_AddConversationRecipientType', '8.0.8'
-        WHERE NOT EXISTS (
-            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType'
-        );
-    """);
-    recipientHotfixLogger.LogInformation("Conversation RecipientType/RecipientUserId hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var recipientHotfixLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    recipientHotfixLogger2.LogWarning(ex, "Conversation RecipientType hotfix failed (non-fatal)");
-}
-
-// ── BookingRequests Table Hotfix (unconditional, idempotent) ─────────────────
-try
-{
-    using var brScope = app.Services.CreateScope();
-    var brDb = brScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var brLogger = brScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE TABLE IF NOT EXISTS "BookingRequests" (
-            "Id" uuid NOT NULL PRIMARY KEY,
-            "PatientName" character varying(100) NOT NULL,
-            "PhoneNumber" character varying(20) NOT NULL,
-            "Email" character varying(150) NULL,
-            "ServiceType" character varying(100) NULL,
-            "PreferredDate" character varying(50) NULL,
-            "PreferredTime" character varying(50) NULL,
-            "Notes" character varying(500) NULL,
-            "Status" integer NOT NULL DEFAULT 0,
-            "StaffNotes" text NULL,
-            "ReviewedBy" uuid NULL,
-            "ReviewedAt" timestamp with time zone NULL,
-            "ConvertedToAppointmentId" uuid NULL,
-            "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-            "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-            "IsActive" boolean NOT NULL DEFAULT TRUE,
-            "DeletedAt" timestamp with time zone NULL,
-            "DeletedBy" uuid NULL
-        );
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_Status" ON "BookingRequests" ("Status");
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_CreatedAt" ON "BookingRequests" ("CreatedAt");
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260507000000_AddBookingRequests', '8.0.8'
-        WHERE NOT EXISTS (
-            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
-        );
-    """);
-    brLogger.LogInformation("BookingRequests table hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var brLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    brLogger2.LogWarning(ex, "BookingRequests table hotfix failed (non-fatal)");
-}
-
-// ── Message Edit Fields Hotfix (unconditional, idempotent) ───────────────────
-try
-{
-    using var msgEditScope = app.Services.CreateScope();
-    var msgEditDb     = msgEditScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var msgEditLogger = msgEditScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await msgEditDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Messages') THEN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
-                    ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
-                    ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
-                END IF;
-            END IF;
-        END $$;
-    """);
-    await msgEditDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260510000000_AddMessageEditFields', '8.0.8'
-        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
-          AND NOT EXISTS (
-              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
-          );
-    """);
-    msgEditLogger.LogInformation("Message IsEdited/EditedAt hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var msgEditLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    msgEditLogger2.LogWarning(ex, "Message edit fields hotfix failed (non-fatal)");
-}
-
-// ── BookingRequests DoctorId Hotfix (unconditional, idempotent) ────────────
-try
-{
-    using var doctorIdScope = app.Services.CreateScope();
-    var doctorIdDb     = doctorIdScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var doctorIdLogger = doctorIdScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await doctorIdDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests') THEN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'BookingRequests' AND column_name = 'DoctorId') THEN
-                    ALTER TABLE "BookingRequests" ADD COLUMN "DoctorId" uuid NULL;
-                END IF;
-            END IF;
-        END $$;
-    """);
-    await doctorIdDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_DoctorId" ON "BookingRequests" ("DoctorId");
-    """);
-    await doctorIdDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint WHERE conname = 'FK_BookingRequests_Doctors_DoctorId'
-            ) THEN
-                ALTER TABLE "BookingRequests" ADD CONSTRAINT "FK_BookingRequests_Doctors_DoctorId"
-                    FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
-            END IF;
-        END $$;
-    """);
-    await doctorIdDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260511000000_AddDoctorIdToBookingRequest', '8.0.8'
-        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
-          AND NOT EXISTS (
-              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260511000000_AddDoctorIdToBookingRequest'
-          );
-    """);
-    doctorIdLogger.LogInformation("BookingRequests DoctorId hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var doctorIdLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    doctorIdLogger2.LogWarning(ex, "BookingRequests DoctorId hotfix failed (non-fatal)");
-}
-
-// ── One-time Admin Password Reset Hotfix ─────────────────────────────────
+// ── One-time Admin Password Reset ─────────────────────────────────
 // Resets the admin password to "AqlanDental2026!" if the reset flag is not yet set.
 // This runs ONCE and then sets a flag so it never runs again.
 try
@@ -491,43 +290,7 @@ catch (Exception ex)
     resetLogger2.LogWarning(ex, "Admin password reset hotfix failed (non-fatal)");
 }
 
-// ── Sprint 6 Doctor Compensation Columns Hotfix (unconditional, idempotent) ──
-try
-{
-    using var sprint6Scope = app.Services.CreateScope();
-    var sprint6Db     = sprint6Scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var sprint6Logger = sprint6Scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await sprint6Db.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType') THEN
-                ALTER TABLE "Doctors" ADD COLUMN "CompensationType" character varying(20) NOT NULL DEFAULT 'None';
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DefaultCommissionPercentage') THEN
-                ALTER TABLE "Doctors" ADD COLUMN "DefaultCommissionPercentage" numeric(5,2) NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationNotes') THEN
-                ALTER TABLE "Doctors" ADD COLUMN "CompensationNotes" character varying(500) NULL;
-            END IF;
-        END $$;
-    """);
-    await sprint6Db.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260513000000_AddDoctorCompensationFields', '8.0.8'
-        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
-          AND NOT EXISTS (
-              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
-          );
-    """);
-    sprint6Logger.LogInformation("Sprint 6 Doctor compensation columns hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var sprint6Logger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    sprint6Logger2.LogWarning(ex, "Sprint 6 Doctor compensation columns hotfix failed (non-fatal)");
-}
-
-// ── Website Settings Seed Hotfix (unconditional, idempotent) ─────────────────
+// ── Website Settings Seed (unconditional, idempotent) ────────────────────────
 try
 {
     using var wsScope = app.Services.CreateScope();
@@ -589,7 +352,10 @@ catch (Exception ex)
     wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
 }
 
-// ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
+// ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
+// All schema hotfixes have been consolidated into this single block.
+// The advisory lock (pg_try_advisory_lock) prevents multiple Railway instances
+// from running maintenance concurrently, avoiding race conditions.
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");
 
@@ -599,6 +365,33 @@ if (enableStartupDbMaintenance)
     {
         var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    // ── Acquire advisory lock ───────────────────────────────────────────────
+    var lockKey = builder.Configuration.GetValue<int>("DB_MAINTENANCE_LOCK_KEY", 918273645);
+    var acquiredLock = false;
+    try
+    {
+        await db.Database.OpenConnectionAsync();
+        using (var lockCmd = db.Database.GetDbConnection().CreateCommand())
+        {
+            lockCmd.CommandText = $"SELECT pg_try_advisory_lock({lockKey})";
+            var lockResult = await lockCmd.ExecuteScalarAsync();
+            acquiredLock = lockResult is bool b && b;
+        }
+    }
+    catch (Exception lockEx)
+    {
+        logger.LogWarning(lockEx, "Failed to acquire advisory lock for DB maintenance, proceeding without lock");
+        acquiredLock = true; // Proceed without lock if advisory locks aren't supported
+    }
+
+    if (!acquiredLock)
+    {
+        logger.LogInformation("DB maintenance advisory lock not acquired — another instance is running maintenance. Skipping.");
+    }
+    else
+    {
+        logger.LogInformation("DB maintenance advisory lock acquired — proceeding with schema maintenance");
 
     // Pre-migration: Add new columns that EF Core expects but may not exist yet
     try
@@ -1039,42 +832,11 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to ensure Sprint 5 DoctorSchedules table");
     }
 
-    // NOTE: Conversation RecipientType/RecipientUserId columns are ensured by the
-    // unconditional hotfix block above (lines ~255-291). No duplicate needed here.
-
-    // ── Sprint 6 hotfix: Doctor compensation columns + Branches table ────────
-    try
-    {
-        // Add Sprint 6 Doctor compensation columns if they don't exist
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType') THEN
-                    ALTER TABLE "Doctors" ADD COLUMN "CompensationType" character varying(20) NOT NULL DEFAULT 'None';
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DefaultCommissionPercentage') THEN
-                    ALTER TABLE "Doctors" ADD COLUMN "DefaultCommissionPercentage" numeric(5,2) NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationNotes') THEN
-                    ALTER TABLE "Doctors" ADD COLUMN "CompensationNotes" character varying(500) NULL;
-                END IF;
-            END $$;
-        """);
-
-        // Record Sprint 6 migration in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260513000000_AddDoctorCompensationFields', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
-            );
-        """);
-
-        logger.LogInformation("Sprint 6 Doctor compensation columns ensured");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to ensure Sprint 6 Doctor compensation columns");
-    }
+    // NOTE: Conversation RecipientType/RecipientUserId columns, BookingRequests table,
+    // Message IsEdited/EditedAt fields, BookingRequests DoctorId, and Sprint 6 Doctor
+    // compensation columns were previously in unconditional hotfix blocks.
+    // They have been consolidated into this gated maintenance block with advisory lock.
+    // The remaining pre-migration blocks above already ensure all required columns.
 
     try
     {
@@ -1256,6 +1018,26 @@ if (enableStartupDbMaintenance)
     {
         logger.LogWarning(ex, "Failed to seed PatientAccounts for existing patients");
     }
+    } // end else (acquiredLock)
+
+    // ── Release advisory lock ───────────────────────────────────────────────
+    if (acquiredLock)
+    {
+        try
+        {
+            using var releaseCmd = db.Database.GetDbConnection().CreateCommand();
+            releaseCmd.CommandText = $"SELECT pg_advisory_unlock({lockKey})";
+            await releaseCmd.ExecuteNonQueryAsync();
+            logger.LogInformation("DB maintenance advisory lock released");
+        }
+        catch (Exception releaseEx)
+        {
+            logger.LogWarning(releaseEx, "Failed to release advisory lock (will auto-release on connection close)");
+        }
+    }
+
+    try { await db.Database.CloseConnectionAsync(); } catch { /* ignore */ }
+
     } // end using scope
 } // end if (enableStartupDbMaintenance)
 else

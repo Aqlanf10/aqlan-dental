@@ -144,17 +144,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 Color = doctor.Color ?? "#0d9488"
             });
         }
-        else
-        {
-            // No treating doctor assigned — still show the option but with null userId
-            recipients.Add(new PortalRecipientDto
-            {
-                Type = "TreatingDoctor",
-                UserId = null,
-                DisplayName = "لم يتم تحديد الطبيب المسؤول بعد",
-                Role = "Doctor"
-            });
-        }
+        // NOTE: When no PrimaryDoctorId is assigned, the TreatingDoctor option is omitted entirely.
+        // This prevents patients from attempting to message a non-existent treating doctor.
+        // The backend StartConversation endpoint also validates this as a defense-in-depth measure.
 
         // 2. Reception — find active reception staff
         var receptionUser = await db.Users

@@ -66,20 +66,68 @@
 
 /* ─── Print styles ──────────────────────────────────────────────────────────── */
 @media print {
-  aside, header { display: none !important; }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  aside, header, nav { display: none !important; }
   .no-print { display: none !important; }
   .print-only { display: block !important; }
-  body { background: white !important; }
+  body {
+    background: white !important;
+    font-size: 12px;
+  }
   * { box-shadow: none !important; }
+
   main {
     overflow: visible !important;
-    padding: 1rem !important;
+    padding: 0 !important;
     margin-right: 0 !important;
+    margin-left: 0 !important;
+    max-width: 100% !important;
   }
+
   /* Reset the main content offset (no sidebar in print) */
   .lg\:mr-64 { margin-right: 0 !important; }
-  /* Avoid page breaks inside appointment cards */
-  .appointment-card { break-inside: avoid; }
+
+  /* Print page layout */
+  .print-page {
+    min-height: 270mm;
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  .print-content {
+    flex: 1;
+  }
+
+  .print-footer {
+    margin-top: auto;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 8px;
+    font-size: 11px;
+    color: #475569;
+  }
+
+  /* Avoid breaking important cards across pages */
+  .appointment-card,
+  .avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Ensure tables don't break across pages inappropriately */
+  table { border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Hide dashboard UI elements in print */
+  button:not(.print-allow),
+  .print:hidden { display: none !important; }
+
+  /* Ensure colors print well */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
 @layer utilities {

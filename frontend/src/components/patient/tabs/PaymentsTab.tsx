@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   CreditCard, Plus, Pencil, Trash2, X, AlertCircle,
-  Search, FileText,
+  Search, FileText, Printer,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
@@ -281,14 +281,13 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {p.receiptNumber && (
-                  <Link href={`/finance/payments/${p.id}`}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
-                  >
-                    <FileText className="w-3 h-3" />
-                    إيصال
-                  </Link>
-                )}
+                <Link
+                  href={`/patients/${p.patientId ?? patientId}/payments/${p.id}/receipt`}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
+                >
+                  <Printer className="w-3 h-3" />
+                  سند قبض
+                </Link>
                 <button
                   onClick={() => openEditModal(p)}
                   className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"

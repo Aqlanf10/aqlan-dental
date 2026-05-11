@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Wallet, CreditCard, FileSignature, AlertTriangle,
   CheckCircle2, Clock, Plus, ChevronLeft, BadgeDollarSign,
+  Printer,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
@@ -110,6 +111,20 @@ export function FinanceTab({ patientId, totalPaid, totalOutstanding }: FinanceTa
 
   return (
     <div className="space-y-5" dir="rtl">
+
+      {/* ════════════════════ Print Button ════════════════════ */}
+      <div className="flex justify-end">
+        <Link
+          href={`/patients/${patientId}/print/financial`}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+        >
+          <Printer className="w-3.5 h-3.5" />
+          طباعة كشف مالي
+        </Link>
+      </div>
 
       {/* ════════════════════ Financial Status Badge ════════════════════ */}
       <div className={cn("rounded-xl p-4 border-2 flex items-center justify-between", statusInfo.bg)}>

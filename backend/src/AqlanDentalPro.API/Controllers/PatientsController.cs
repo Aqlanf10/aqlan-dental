@@ -240,17 +240,16 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         var totalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id);
         var completedAppointments = await db.Appointments.CountAsync(a => a.PatientId == id && a.Status == Domain.Enums.AppointmentStatus.Completed);
         var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == "active");
-        var totalPaid = await db.Payments.Where(p => p.PatientId == id).SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var totalPaid = await db.Payments.Where(p => p.PatientId == id && p.IsActive).SumAsync(p => (decimal?)p.Amount) ?? 0;
         var totalOutstanding = await db.Contracts
             .Where(c => c.PatientId == id && c.Status == "active")
-            .Include(c => c.Payments)
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
+            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
         var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
 
         // ── Extended summary fields ──
         var lastVisit = await db.Visits
-            .Where(v => v.PatientId == id)
+            .Where(v => v.PatientId == id && v.IsActive)
             .OrderByDescending(v => v.VisitDate)
             .Select(v => new { v.VisitDate, v.Diagnosis, v.TreatmentDone, v.Doctor.Name })
             .FirstOrDefaultAsync();
@@ -263,7 +262,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
 
         // Active treatment summary: latest visit with diagnosis + active ortho/surgery cases
         var latestDiagnosisVisit = await db.Visits
-            .Where(v => v.PatientId == id && v.Diagnosis != null)
+            .Where(v => v.PatientId == id && v.IsActive && v.Diagnosis != null)
             .OrderByDescending(v => v.VisitDate)
             .Select(v => new { v.Diagnosis, v.NextVisitPlan, v.VisitDate })
             .FirstOrDefaultAsync();
@@ -341,7 +340,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             .ToListAsync();
 
         var visitEvents = await db.Visits
-            .Where(v => v.PatientId == id)
+            .Where(v => v.PatientId == id && v.IsActive)
             .Include(v => v.Doctor)
             .OrderByDescending(v => v.VisitDate)
             .Select(v => new
@@ -359,7 +358,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             .ToListAsync();
 
         var paymentEvents = await db.Payments
-            .Where(p => p.PatientId == id)
+            .Where(p => p.PatientId == id && p.IsActive)
             .OrderByDescending(p => p.PaymentDate)
             .Select(p => new
             {

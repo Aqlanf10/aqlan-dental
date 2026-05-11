@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { FolderOpen, Plus, Pencil, Trash2, X, FileText, Upload, Eye, Filter, Download, CheckCircle } from "lucide-react";
+import Link from "next/link";
+import { FolderOpen, Plus, Pencil, Trash2, X, FileText, Upload, Eye, Filter, Download, CheckCircle, Printer } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -50,7 +51,7 @@ const EMPTY_FORM: DocForm = {
 const DOCUMENT_TYPES: Record<string, string> = {
   Consent: "موافقة",
   Report: "تقرير",
-  Prescription: "وصة",
+  Prescription: "وصفة",
   Contract: "عقد",
   Referral: "إحالة",
   Lab: "مختبر",
@@ -300,6 +301,14 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
               ))}
             </select>
           </div>
+          {/* Print media list */}
+          <Link
+            href={`/patients/${patientId}/print/media`}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
+          >
+            <Printer className="w-3 h-3" />
+            طباعة قائمة المرفقات
+          </Link>
           {/* Add button */}
           <button
             onClick={openAddModal}

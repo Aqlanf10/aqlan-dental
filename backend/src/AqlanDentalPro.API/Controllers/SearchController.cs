@@ -7,7 +7,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/search")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class SearchController(AppDbContext db) : ControllerBase
 {
     // GET /api/search?q=ahmed&limit=5

@@ -10,7 +10,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/patients")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService) : ControllerBase
 {
     [HttpGet]

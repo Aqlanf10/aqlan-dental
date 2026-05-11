@@ -41,7 +41,7 @@ public sealed class CreateReferralRequestValidator : AbstractValidator<CreateRef
 
 [ApiController]
 [Route("api/referrals")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class ReferralsController(AppDbContext db) : ControllerBase
 {
     [HttpGet]

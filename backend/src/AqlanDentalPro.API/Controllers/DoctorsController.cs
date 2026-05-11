@@ -37,7 +37,7 @@ public sealed class UpdateDoctorRequest
 
 [ApiController]
 [Route("api/doctors")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class DoctorsController(
     AppDbContext db,
     ICurrentUserService currentUser) : ControllerBase

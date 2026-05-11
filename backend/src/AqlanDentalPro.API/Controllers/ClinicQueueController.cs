@@ -14,7 +14,7 @@ namespace AqlanDentalPro.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/clinic-queue")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class ClinicQueueController(AppDbContext db) : ControllerBase
 {
     // ─── GET /api/clinic-queue/today ─────────────────────────────────────────

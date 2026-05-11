@@ -12,7 +12,7 @@ namespace AqlanDentalPro.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/doctors/{doctorId:guid}/schedule")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class DoctorSchedulesController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     /// <summary>Get schedule for a specific doctor.</summary>

@@ -123,6 +123,14 @@ builder.Services.AddAuthorization(opts =>
     // Patient portal access - for patient-facing mobile app
     opts.AddPolicy("PatientAccess", policy =>
         policy.RequireRole("Patient"));
+
+    // Staff-only policy: excludes Patient portal users from staff endpoints.
+    // Any authenticated user without the Patient role is considered staff.
+    // Applied to controllers that previously used bare [Authorize] which
+    // allowed Patient JWTs to access staff endpoints (TD-009 security fix).
+    opts.AddPolicy("StaffOnly", policy =>
+        policy.RequireAuthenticatedUser()
+              .RequireAssertion(ctx => !ctx.User.IsInRole(nameof(UserRole.Patient))));
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
     }
 
     [HttpPost("logout")]
-    [Authorize]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> Logout()
     {
         var refreshToken = Request.Cookies[RefreshTokenCookie];
@@ -63,7 +63,7 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
     }
 
     [HttpGet("me")]
-    [Authorize]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<UserDto>> GetMe()
     {
         if (!currentUser.UserId.HasValue) return Unauthorized();

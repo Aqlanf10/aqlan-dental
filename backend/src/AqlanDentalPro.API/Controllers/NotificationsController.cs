@@ -9,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/notifications")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class NotificationsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     // GET /api/notifications?unreadOnly=true&page=1&pageSize=20

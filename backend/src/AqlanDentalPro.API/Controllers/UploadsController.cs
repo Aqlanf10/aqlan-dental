@@ -5,7 +5,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/uploads")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class UploadsController : ControllerBase
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)

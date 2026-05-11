@@ -9,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/messages")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class MessagesController(MessagingService messagingService, AppDbContext db) : ControllerBase
 {
     /// <summary>تطبيق الـ migrations يدوياً (Admin فقط)</summary>

@@ -35,7 +35,7 @@ public sealed class AddRadiographRequest
 
 [ApiController]
 [Route("api/clinical-photos")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class ClinicalPhotosController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet("{patientId:guid}")]
@@ -103,7 +103,7 @@ public class ClinicalPhotosController(AppDbContext db, ICurrentUserService curre
 
 [ApiController]
 [Route("api/radiographs")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class RadiographsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet("{patientId:guid}")]

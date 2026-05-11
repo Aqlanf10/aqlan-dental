@@ -308,6 +308,23 @@ public static class DbSeeder
             new Setting { Key = "patient.number_prefix",          Value = "GM",  Category = "patients" },
             new Setting { Key = "appointment.default_duration",   Value = "30",  Category = "appointments" },
             new Setting { Key = "appointment.reminder_hours",     Value = "24,2", Category = "appointments" },
+            // Website / Homepage settings
+            new Setting { Key = "website.clinicName",           Value = "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان", Category = "website" },
+            new Setting { Key = "website.heroTitle",            Value = "ابتسامة تجمع بين دقة العلم ولمسة الفن", Category = "website" },
+            new Setting { Key = "website.heroSubtitle",         Value = "مركز الدكتور عقلان الكامل يقدم رعاية متكاملة في تقويم وزراعة وتجميل الأسنان، مع تشخيص دقيق وخطط علاج واضحة ومتابعة مستمرة لكل حالة.", Category = "website" },
+            new Setting { Key = "website.marketingSlogan",      Value = "قيادة طبية… وابتسامة بثقة", Category = "website" },
+            new Setting { Key = "website.aboutText",            Value = "يقدم مركز الدكتور عقلان الكامل خدمات تخصصية شاملة في تقويم وزراعة وتجميل الأسنان، معتمدين على تشخيص دقيق، وخطط علاج واضحة، ومتابعة مستمرة للحالات للمساعدة في الوصول إلى نتائج علاجية دقيقة ومناسبة لكل حالة.", Category = "website" },
+            new Setting { Key = "website.phone",                Value = "04-253028", Category = "website" },
+            new Setting { Key = "website.whatsapp",             Value = "967770245745", Category = "website" },
+            new Setting { Key = "website.address",              Value = "تعز، اليمن — شارع التحرير الأعلى", Category = "website" },
+            new Setting { Key = "website.workingHours",         Value = "السبت – الخميس: 8 ص – 8 م", Category = "website" },
+            new Setting { Key = "website.facebook",             Value = "", Category = "website" },
+            new Setting { Key = "website.instagram",            Value = "", Category = "website" },
+            new Setting { Key = "website.logoUrl",              Value = "", Category = "website" },
+            new Setting { Key = "website.heroImageUrl",         Value = "", Category = "website" },
+            new Setting { Key = "website.servicesSectionTitle", Value = "حلول طبية متكاملة لابتسامة صحية وواثقة", Category = "website" },
+            new Setting { Key = "website.bookingButtonText",    Value = "احجز موعدك الآن", Category = "website" },
+            new Setting { Key = "website.whatsappButtonText",   Value = "تواصل عبر الواتساب", Category = "website" },
         };
         await context.Settings.AddRangeAsync(settings);
     }

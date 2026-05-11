@@ -421,6 +421,42 @@ catch (Exception ex)
     doctorIdLogger2.LogWarning(ex, "BookingRequests DoctorId hotfix failed (non-fatal)");
 }
 
+// ── Sprint 6 Doctor Compensation Columns Hotfix (unconditional, idempotent) ──
+try
+{
+    using var sprint6Scope = app.Services.CreateScope();
+    var sprint6Db     = sprint6Scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var sprint6Logger = sprint6Scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await sprint6Db.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType') THEN
+                ALTER TABLE "Doctors" ADD COLUMN "CompensationType" character varying(20) NOT NULL DEFAULT 'None';
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DefaultCommissionPercentage') THEN
+                ALTER TABLE "Doctors" ADD COLUMN "DefaultCommissionPercentage" numeric(5,2) NULL;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationNotes') THEN
+                ALTER TABLE "Doctors" ADD COLUMN "CompensationNotes" character varying(500) NULL;
+            END IF;
+        END $$;
+    """);
+    await sprint6Db.Database.ExecuteSqlRawAsync("""
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT '20260513000000_AddDoctorCompensationFields', '8.0.8'
+        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
+          AND NOT EXISTS (
+              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
+          );
+    """);
+    sprint6Logger.LogInformation("Sprint 6 Doctor compensation columns hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var sprint6Logger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    sprint6Logger2.LogWarning(ex, "Sprint 6 Doctor compensation columns hotfix failed (non-fatal)");
+}
+
 // ── Website Settings Seed Hotfix (unconditional, idempotent) ─────────────────
 try
 {
@@ -935,6 +971,40 @@ if (enableStartupDbMaintenance)
 
     // NOTE: Conversation RecipientType/RecipientUserId columns are ensured by the
     // unconditional hotfix block above (lines ~255-291). No duplicate needed here.
+
+    // ── Sprint 6 hotfix: Doctor compensation columns + Branches table ────────
+    try
+    {
+        // Add Sprint 6 Doctor compensation columns if they don't exist
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "CompensationType" character varying(20) NOT NULL DEFAULT 'None';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DefaultCommissionPercentage') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "DefaultCommissionPercentage" numeric(5,2) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationNotes') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "CompensationNotes" character varying(500) NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Record Sprint 6 migration in history
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260513000000_AddDoctorCompensationFields', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
+            );
+        """);
+
+        logger.LogInformation("Sprint 6 Doctor compensation columns ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Sprint 6 Doctor compensation columns");
+    }
 
     try
     {

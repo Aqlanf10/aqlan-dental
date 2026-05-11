@@ -224,6 +224,111 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         return dto;
     }
 
+    public async Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req)
+    {
+        var payment = await db.Payments.FindAsync(id);
+        if (payment == null) return null;
+        if (!payment.IsActive) return null;
+
+        if (req.Amount.HasValue) payment.Amount = req.Amount.Value;
+        if (req.PaymentDate != null) payment.PaymentDate = DateOnly.Parse(req.PaymentDate);
+        if (req.PaymentMethod != null) payment.PaymentMethod = req.PaymentMethod;
+        if (req.ServiceDescription != null) payment.ServiceDescription = req.ServiceDescription;
+        if (req.Specialty != null) payment.Specialty = req.Specialty;
+        if (req.DoctorId.HasValue) payment.DoctorId = req.DoctorId;
+        if (req.Notes != null) payment.Notes = req.Notes;
+
+        payment.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
+        await db.Entry(payment).Reference(p => p.Doctor).LoadAsync();
+
+        return MapPayment(payment);
+    }
+
+    public async Task<bool> DeletePaymentAsync(Guid id)
+    {
+        var payment = await db.Payments.FindAsync(id);
+        if (payment == null) return false;
+        if (!payment.IsActive) return false;
+
+        payment.IsActive = false;
+        payment.DeletedAt = DateTime.UtcNow;
+        payment.DeletedBy = currentUser.UserId;
+        await db.SaveChangesAsync();
+
+        return true;
+    }
+
+    public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
+    {
+        var totalPaid = await db.Payments
+            .Where(p => p.PatientId == patientId && p.IsActive)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+        var totalTreatmentCost = await db.Contracts
+            .Where(c => c.PatientId == patientId && c.Status == "active")
+            .SumAsync(c => (decimal?)c.TotalAmount - c.DiscountAmount) ?? 0;
+
+        var outstandingBalance = totalTreatmentCost - totalPaid;
+
+        // Calculate overdue
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var overdueContracts = await db.Contracts
+            .Include(c => c.Payments)
+            .Where(c => c.PatientId == patientId && c.Status == "active" && c.InstallmentAmount > 0 && c.StartDate != null)
+            .ToListAsync();
+
+        var overdueAmount = 0m;
+        foreach (var c in overdueContracts)
+        {
+            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
+            if (monthsElapsed <= 0) continue;
+            var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
+            var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
+            var diff = expectedPaid - actualPaid;
+            if (diff > 0) overdueAmount += diff;
+        }
+
+        var latestPayment = await db.Payments
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Where(p => p.PatientId == patientId && p.IsActive)
+            .OrderByDescending(p => p.PaymentDate)
+            .ThenByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        var activeContractsCount = await db.Contracts
+            .CountAsync(c => c.PatientId == patientId && c.Status == "active");
+
+        var totalPaymentsCount = await db.Payments
+            .CountAsync(p => p.PatientId == patientId && p.IsActive);
+
+        // Determine financial status
+        string financialStatus;
+        if (activeContractsCount == 0 && totalPaymentsCount == 0)
+            financialStatus = "no_plan";
+        else if (outstandingBalance <= 0)
+            financialStatus = "paid_full";
+        else if (overdueAmount > 0)
+            financialStatus = "overdue";
+        else
+            financialStatus = "has_balance";
+
+        return new PatientFinanceSummaryDto
+        {
+            TotalTreatmentCost = totalTreatmentCost,
+            TotalPaid = totalPaid,
+            OutstandingBalance = outstandingBalance,
+            OverdueAmount = overdueAmount,
+            LatestPayment = latestPayment != null ? MapPayment(latestPayment) : null,
+            FinancialStatus = financialStatus,
+            ActiveContractsCount = activeContractsCount,
+            TotalPaymentsCount = totalPaymentsCount
+        };
+    }
+
     public async Task<FinanceSummaryDto> GetSummaryAsync()
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -291,8 +396,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         PaymentMethod = p.PaymentMethod,
         ServiceDescription = p.ServiceDescription,
         Specialty = p.Specialty,
+        DoctorId = p.DoctorId,
         DoctorName = p.Doctor?.Name,
         ReceiptNumber = p.ReceiptNumber,
-        Notes = p.Notes
+        Notes = p.Notes,
+        IsActive = p.IsActive,
+        CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd"),
+        UpdatedAt = p.UpdatedAt.ToString("yyyy-MM-dd")
     };
 }

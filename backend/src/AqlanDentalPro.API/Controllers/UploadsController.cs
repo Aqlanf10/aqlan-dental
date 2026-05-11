@@ -10,13 +10,13 @@ public class UploadsController : ControllerBase
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "image/jpeg", "image/png", "application/pdf",
+        "image/jpeg", "image/png", "image/webp", "application/pdf",
         "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
     };
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".pdf",
+        ".jpg", ".jpeg", ".png", ".webp", ".pdf",
         ".webm", ".ogg", ".mp4", ".m4a", ".mp3", ".wav"
     };
 
@@ -74,7 +74,7 @@ public class UploadsController : ControllerBase
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (!AllowedExtensions.Contains(ext))
-            return BadRequest(new { message = "نوع الملف غير مدعوم. المسموح به: JPG، PNG، PDF" });
+            return BadRequest(new { message = "نوع الملف غير مدعوم. المسموح به: JPG، PNG، WEBP، PDF" });
 
         if (!AllowedMimeTypes.Contains(file.ContentType))
             return BadRequest(new { message = "نوع MIME غير مدعوم" });

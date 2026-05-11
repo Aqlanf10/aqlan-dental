@@ -3,9 +3,31 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Menu, X, ChevronDown, User } from "lucide-react";
 
+// ─── Helper: resolve image URL ────────────────────────────────────────────────
+function resolveImageUrl(url: string | null | undefined): string | null {
+  if (!url || url.trim() === "") return null;
+  if (url.startsWith("http")) return url;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+  return `${apiBase}${url}`;
+}
+
 export function PublicNavbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  // Fetch website settings to get custom logo
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+    fetch(`${apiBase}/api/public/website-settings`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.logoUrl) setLogoUrl(data.logoUrl);
+      })
+      .catch(() => {
+        // Fallback to default logo — no action needed
+      });
+  }, []);
 
   useEffect(() => {
     if (!loginOpen) return;
@@ -28,16 +50,30 @@ export function PublicNavbar() {
     { href: "/home#contact", label: "تواصل معنا" },
   ];
 
+  const resolvedLogo = resolveImageUrl(logoUrl);
+
   return (
     <header className="fixed w-full z-50 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between" dir="rtl">
         {/* Logo */}
         <Link href="/home" className="flex items-center gap-3 flex-shrink-0">
-          <img
-            src="/logo.png"
-            alt="مركز الدكتور عقلان الكامل"
-            className="h-11 w-auto object-contain"
-          />
+          {resolvedLogo ? (
+            <img
+              src={resolvedLogo}
+              alt="مركز الدكتور عقلان الكامل"
+              className="h-11 w-auto object-contain"
+              onError={(e) => {
+                // Fallback to default logo on error
+                (e.target as HTMLImageElement).src = "/logo.png";
+              }}
+            />
+          ) : (
+            <img
+              src="/logo.png"
+              alt="مركز الدكتور عقلان الكامل"
+              className="h-11 w-auto object-contain"
+            />
+          )}
           <div className="hidden sm:block">
             <div className="font-extrabold text-[15px] text-slate-900 leading-tight">
               مركز الدكتور عقلان الكامل

@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Save, Globe, Phone, MapPin, Clock, MessageCircle, Image, Type, FileText, ExternalLink, ArrowRight } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  Save, Globe, Phone, MapPin, Clock, MessageCircle, Image, Type,
+  FileText, ExternalLink, ArrowRight, Upload, X, Loader2, ImageIcon,
+} from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 
@@ -55,21 +58,19 @@ type FieldDef = {
 
 const SECTIONS: { title: string; fields: FieldDef[] }[] = [
   {
-    title: "الهوية والعنوان",
-    fields: [
-      { key: "clinicName", label: "اسم المركز", icon: Globe, placeholder: "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان" },
-      { key: "marketingSlogan", label: "الشعار التسويقي", icon: Type, placeholder: "قيادة طبية… وابتسامة بثقة" },
-      { key: "logoUrl", label: "رابط الشعار (Logo URL)", icon: Image, dir: "ltr", placeholder: "https://..." },
-      { key: "heroImageUrl", label: "رابط صورة البانر (Hero Image URL)", icon: Image, dir: "ltr", placeholder: "https://..." },
-    ],
-  },
-  {
     title: "محتوى الصفحة الرئيسية",
     fields: [
       { key: "heroTitle", label: "عنوان البانر الرئيسي", icon: Type, placeholder: "ابتسامة تجمع بين دقة العلم ولمسة الفن" },
       { key: "heroSubtitle", label: "نص البانر الفرعي", icon: FileText, type: "textarea", placeholder: "وصف مختصر عن المركز..." },
       { key: "aboutText", label: "نص قسم عن المركز", icon: FileText, type: "textarea", placeholder: "وصف تفصيلي عن المركز..." },
       { key: "servicesSectionTitle", label: "عنوان قسم الخدمات", icon: Type, placeholder: "حلول طبية متكاملة لابتسامة صحية وواثقة" },
+    ],
+  },
+  {
+    title: "الهوية والعنوان",
+    fields: [
+      { key: "clinicName", label: "اسم المركز", icon: Globe, placeholder: "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان" },
+      { key: "marketingSlogan", label: "الشعار التسويقي", icon: Type, placeholder: "قيادة طبية… وابتسامة بثقة" },
     ],
   },
   {
@@ -97,8 +98,213 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
   },
 ];
 
+// ─── Allowed image types ──────────────────────────────────────────────────────
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+
 const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 const textareaCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue resize-y min-h-[80px]";
+
+// ─── Helper: resolve image URL ────────────────────────────────────────────────
+function resolveImageUrl(url: string | null | undefined): string | null {
+  if (!url || url.trim() === "") return null;
+  if (url.startsWith("http")) return url;
+  // Relative URL from backend (e.g. /uploads/xxx.webp)
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+  return `${apiBase}${url}`;
+}
+
+// ─── Image Upload Card Component ──────────────────────────────────────────────
+function ImageUploadCard({
+  title,
+  uploadLabel,
+  fieldKey,
+  value,
+  onChange,
+  previewHeight = "h-36",
+}: {
+  title: string;
+  uploadLabel: string;
+  fieldKey: keyof WebsiteSettings;
+  value: string;
+  onChange: (key: keyof WebsiteSettings, val: string) => void;
+  previewHeight?: string;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [imgError, setImgError] = useState(false);
+
+  const resolvedUrl = resolveImageUrl(value);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset
+    setUploadError("");
+    setImgError(false);
+
+    // Validate type
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setUploadError("نوع الملف غير مدعوم. المسموح: JPG، PNG، WEBP");
+      e.target.value = "";
+      return;
+    }
+
+    // Validate extension
+    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
+      setUploadError("امتداد الملف غير مدعوم. المسموح: .jpg, .jpeg, .png, .webp");
+      e.target.value = "";
+      return;
+    }
+
+    // Validate size
+    if (file.size > MAX_IMAGE_SIZE) {
+      setUploadError("حجم الصورة يتجاوز 5 ميجابايت");
+      e.target.value = "";
+      return;
+    }
+
+    // Upload
+    setUploading(true);
+    try {
+      const token = localStorage.getItem("access_token") ?? "";
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/uploads`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ message: "تعذّر رفع الصورة" }));
+        throw new Error(errData.message || "تعذّر رفع الصورة");
+      }
+
+      const data = await res.json();
+      onChange(fieldKey, data.url);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "تعذّر رفع الصورة";
+      setUploadError(message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleRemove = () => {
+    onChange(fieldKey, "");
+    setImgError(false);
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      {/* Card header */}
+      <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
+        <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+          <ImageIcon className="w-4 h-4 text-gray-400" />
+          {title}
+        </h2>
+        {value && (
+          <button
+            type="button"
+            onClick={handleRemove}
+            className="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1 transition"
+          >
+            <X className="w-3.5 h-3.5" />
+            حذف الصورة
+          </button>
+        )}
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Preview */}
+        {resolvedUrl && !imgError ? (
+          <div className={`relative ${previewHeight} rounded-lg overflow-hidden bg-gray-50 border border-gray-200`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={resolvedUrl}
+              alt={title}
+              className="w-full h-full object-contain"
+              onError={() => setImgError(true)}
+            />
+          </div>
+        ) : value && imgError ? (
+          <div className={`${previewHeight} rounded-lg bg-red-50 border border-red-200 flex items-center justify-center`}>
+            <span className="text-sm text-red-500 font-medium">تعذّر عرض الصورة</span>
+          </div>
+        ) : (
+          <div className={`${previewHeight} rounded-lg bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2`}>
+            <Image className="w-8 h-8 text-gray-300" />
+            <span className="text-xs text-gray-400">لا توجد صورة</span>
+          </div>
+        )}
+
+        {/* Help text */}
+        <p className="text-xs text-gray-400">
+          يمكنك رفع صورة من جهازك أو إدخال رابط صورة مباشر.
+        </p>
+
+        {/* Upload button */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 transition"
+          >
+            {uploading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                جاري رفع الصورة...
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4" />
+                {uploadLabel}
+              </>
+            )}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+        </div>
+
+        {/* Upload error */}
+        {uploadError && (
+          <p className="text-xs text-red-500 font-medium">{uploadError}</p>
+        )}
+
+        {/* URL input */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">
+            رابط الصورة
+          </label>
+          <input
+            type="text"
+            value={value ?? ""}
+            onChange={(e) => {
+              onChange(fieldKey, e.target.value);
+              setImgError(false);
+            }}
+            className={inputCls}
+            placeholder="https://..."
+            dir="ltr"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function WebsiteSettingsPage() {
@@ -187,7 +393,26 @@ export default function WebsiteSettingsPage() {
         </Link>
       </div>
 
-      {/* Sections */}
+      {/* ─── Image Cards (Logo + Hero) ──────────────────────────────── */}
+      <ImageUploadCard
+        title="الشعار"
+        uploadLabel="رفع شعار من الجهاز"
+        fieldKey="logoUrl"
+        value={settings.logoUrl}
+        onChange={handleChange}
+        previewHeight="h-28"
+      />
+
+      <ImageUploadCard
+        title="صورة الواجهة الرئيسية"
+        uploadLabel="رفع صورة الواجهة"
+        fieldKey="heroImageUrl"
+        value={settings.heroImageUrl}
+        onChange={handleChange}
+        previewHeight="h-44"
+      />
+
+      {/* ─── Text Sections ──────────────────────────────────────────── */}
       {SECTIONS.map((section) => (
         <div key={section.title} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3.5 border-b border-gray-100 bg-gray-50/60">

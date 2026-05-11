@@ -70,7 +70,7 @@ function getStatusDisplay(status: string) {
 }
 
 /* ─── Main Page ────────────────────────────────────────────────────────────── */
-export default function QueueDisplayPage() {
+export default function ClinicDisplayPage() {
   const [data, setData] = useState<DisplayData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +89,7 @@ export default function QueueDisplayPage() {
       setData(json);
       setLastUpdated(new Date());
       setError(null);
+      // Trigger pulse animation when latest called changes
       setPulseKey((k) => k + 1);
     } catch (err) {
       setError("تعذّر تحميل البيانات");

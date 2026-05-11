@@ -1,3 +1,5 @@
+using AqlanDentalPro.Domain.Enums;
+
 namespace AqlanDentalPro.Domain.Entities;
 
 public class Doctor : BaseEntity
@@ -9,6 +11,11 @@ public class Doctor : BaseEntity
     public Guid? BranchId { get; set; }
     public string? Color { get; set; }
     public string? AvatarInitials { get; set; }
+
+    // Future compensation compatibility (Sprint 6)
+    public CompensationType CompensationType { get; set; } = CompensationType.None;
+    public decimal? DefaultCommissionPercentage { get; set; }
+    public string? CompensationNotes { get; set; }
 
     public User User { get; set; } = null!;
     public Branch? Branch { get; set; }

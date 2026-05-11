@@ -55,7 +55,11 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
     [HttpGet]
     public async Task<IActionResult> GetVisits([FromQuery] Guid? patientId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
-        var query = db.Visits.Include(v => v.Doctor).AsQueryable();
+        var query = db.Visits
+            .Include(v => v.Doctor)
+            .Include(v => v.Appointment)
+                .ThenInclude(a => a!.Doctor)
+            .AsQueryable();
 
         if (patientId.HasValue)
             query = query.Where(v => v.PatientId == patientId.Value);
@@ -88,6 +92,15 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
                 v.IsActive,
                 CreatedAt = v.CreatedAt.ToString("yyyy-MM-dd"),
                 UpdatedAt = v.UpdatedAt.ToString("yyyy-MM-dd"),
+                // Linked appointment details
+                Appointment = v.Appointment != null ? new
+                {
+                    AppointmentDate = v.Appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+                    AppointmentTime = v.Appointment.StartTime.ToString("HH\\:mm"),
+                    AppointmentType = v.Appointment.AppointmentType,
+                    AppointmentStatus = v.Appointment.Status.ToString(),
+                    DoctorName = v.Appointment.Doctor != null ? v.Appointment.Doctor.Name : null,
+                } : null,
             })
             .ToListAsync();
 
@@ -100,6 +113,8 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
     {
         var visit = await db.Visits
             .Include(v => v.Doctor)
+            .Include(v => v.Appointment)
+                .ThenInclude(a => a!.Doctor)
             .Where(v => v.Id == id)
             .Select(v => new
             {
@@ -122,6 +137,15 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
                 v.IsActive,
                 CreatedAt = v.CreatedAt.ToString("yyyy-MM-dd"),
                 UpdatedAt = v.UpdatedAt.ToString("yyyy-MM-dd"),
+                // Linked appointment details
+                Appointment = v.Appointment != null ? new
+                {
+                    AppointmentDate = v.Appointment.AppointmentDate.ToString("yyyy-MM-dd"),
+                    AppointmentTime = v.Appointment.StartTime.ToString("HH\\:mm"),
+                    AppointmentType = v.Appointment.AppointmentType,
+                    AppointmentStatus = v.Appointment.Status.ToString(),
+                    DoctorName = v.Appointment.Doctor != null ? v.Appointment.Doctor.Name : null,
+                } : null,
             })
             .FirstOrDefaultAsync();
 

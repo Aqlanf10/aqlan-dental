@@ -100,11 +100,12 @@ interface OverviewTabProps {
   patientId: string;
   summary: PatientSummary | null;
   patient: PatientProfile;
+  onAddVisit?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function OverviewTab({ patientId, summary, patient }: OverviewTabProps) {
+export function OverviewTab({ patientId, summary, patient, onAddVisit }: OverviewTabProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [orthoCases, setOrthoCases] = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
@@ -166,17 +167,16 @@ export function OverviewTab({ patientId, summary, patient }: OverviewTabProps) {
 
       {/* ════════════════════ Quick Actions ════════════════════ */}
       <div className="flex flex-wrap gap-2">
-        <Link
-          href={`/patients/${patientId}/visits?action=new`}
-          onClick={() => { /* handled by VisitsTab */ }}
+        <button
+          onClick={onAddVisit}
           className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl text-white transition shadow-sm"
-          style={{ background: "#3d7ab5" }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#2d5e8e")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#3d7ab5")}
+          style={{ background: "#22c55e" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#16a34a")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#22c55e")}
         >
           <Plus className="w-3.5 h-3.5" />
           إضافة زيارة
-        </Link>
+        </button>
         <Link
           href={`/appointments/new?patientId=${patientId}&patientName=${encodeURIComponent(patientName)}`}
           className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"

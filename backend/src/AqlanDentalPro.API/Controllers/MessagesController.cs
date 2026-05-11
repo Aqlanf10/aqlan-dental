@@ -501,7 +501,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         var (success, error, message) = await messagingService.EditMessageAsync(conversationId, messageId, request);
         if (!success)
         {
-            if (message is null && error is null) return Forbid();
+            if (message is null && error is null) return StatusCode(StatusCodes.Status403Forbidden, new { message = "ليس لديك صلاحية الوصول." });
             return BadRequest(new { message = error });
         }
         return Ok(message);
@@ -512,7 +512,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
     public async Task<IActionResult> DeleteMessage(Guid conversationId, Guid messageId)
     {
         var result = await messagingService.DeleteMessageAsync(conversationId, messageId);
-        if (!result) return Forbid();
+        if (!result) return StatusCode(StatusCodes.Status403Forbidden, new { message = "ليس لديك صلاحية الوصول." });
         return NoContent();
     }
 

@@ -12,7 +12,7 @@ namespace AqlanDentalPro.API.Controllers;
 /// <summary>
 /// Clinic queue management — today's waiting list, patient calling, and TV display.
 /// Sprint 7: Full clinic queue with dedicated ClinicQueueItem entity,
-/// room assignment, patient calling, and visit integration.
+/// room assignment, patient calling, visit integration, and voice calling.
 /// </summary>
 [ApiController]
 [Route("api/clinic-queue")]
@@ -72,6 +72,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             q.InRoomAt,
             q.StartedAt,
             q.CompletedAt,
+            q.Notes,
             q.CreatedAt
         });
 
@@ -96,10 +97,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         var existingActive = await db.ClinicQueueItems
             .AnyAsync(q => q.PatientId == req.PatientId
                         && q.QueueDate == today
-                        && (q.Status == ClinicQueueStatus.Waiting
-                            || q.Status == ClinicQueueStatus.Called
-                            || q.Status == ClinicQueueStatus.InRoom
-                            || q.Status == ClinicQueueStatus.InProgress)
+                        && ActiveStatuses.Contains(q.Status)
                         && q.IsActive);
 
         if (existingActive)
@@ -144,7 +142,9 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             DoctorId = req.DoctorId,
             RoomName = req.RoomName,
             Status = ClinicQueueStatus.Waiting,
-            QueueDate = today
+            QueueDate = today,
+            AddedByUserId = GetCurrentUserId(),
+            Notes = req.Notes
         };
 
         db.ClinicQueueItems.Add(item);
@@ -161,6 +161,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             Status = item.Status.ToString(),
             StatusArabic = StatusArabic[item.Status],
             item.QueueDate,
+            item.Notes,
             message = "تمت إضافة المريض إلى الطابور بنجاح"
         });
     }
@@ -187,7 +188,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
 
         item.Status = ClinicQueueStatus.Called;
         item.CalledAt = DateTime.UtcNow;
-        item.CalledBy = GetCurrentUserId();
+        item.CalledByUserId = GetCurrentUserId();
         item.RoomName = roomName;
         item.UpdatedAt = DateTime.UtcNow;
 
@@ -216,8 +217,8 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (item is null)
             return NotFound(new { message = "عنصر الطابور غير موجود" });
 
-        // Must be Called to enter room
-        if (item.Status != ClinicQueueStatus.Called)
+        // Must be Called or Waiting to enter room
+        if (item.Status != ClinicQueueStatus.Called && item.Status != ClinicQueueStatus.Waiting)
             return BadRequest(new { message = "يجب نداء المريض أولاً قبل دخول الغرفة" });
 
         item.Status = ClinicQueueStatus.InRoom;
@@ -364,10 +365,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             return BadRequest(new { message = "اسم الغرفة غير صالح. يجب أن يكون: غرفة 1 أو غرفة 2 أو غرفة 3" });
 
         // Can only change room for active items
-        if (item.Status != ClinicQueueStatus.Waiting
-            && item.Status != ClinicQueueStatus.Called
-            && item.Status != ClinicQueueStatus.InRoom
-            && item.Status != ClinicQueueStatus.InProgress)
+        if (!ActiveStatuses.Contains(item.Status))
             return BadRequest(new { message = "لا يمكن تغيير الغرفة لعنصر غير نشط" });
 
         item.RoomName = req.RoomName;
@@ -419,12 +417,13 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             .OrderByDescending(q => q.CalledAt ?? q.CreatedAt)
             .ToListAsync();
 
-        // Latest called patient
+        // Latest called patient (only Called status — for voice announcement trigger)
         var latestCalled = items
             .Where(q => q.Status == ClinicQueueStatus.Called && q.CalledAt != null)
             .OrderByDescending(q => q.CalledAt)
             .Select(q => new
             {
+                QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
                 PatientName = q.Patient != null
                     ? (q.Patient.FirstName + " " + q.Patient.LastName).Trim()
@@ -441,6 +440,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             .OrderBy(q => q.CreatedAt)
             .Select(q => new
             {
+                QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
                 PatientName = q.Patient != null
                     ? (q.Patient.FirstName + " " + q.Patient.LastName).Trim()
@@ -457,6 +457,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             .Take(5)
             .Select(q => new
             {
+                QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
                 PatientName = q.Patient != null
                     ? (q.Patient.FirstName + " " + q.Patient.LastName).Trim()
@@ -464,6 +465,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
                 DoctorName = q.Doctor != null ? q.Doctor.Name : "",
                 q.RoomName,
                 StatusArabic = StatusArabic.GetValueOrDefault(q.Status, q.Status.ToString()),
+                Status = q.Status.ToString(),
                 q.CalledAt
             })
             .ToList();
@@ -509,10 +511,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         // Also add to clinic queue if not already there
         var existingQueueItem = await db.ClinicQueueItems
             .AnyAsync(q => q.AppointmentId == id && q.QueueDate == today
-                && (q.Status == ClinicQueueStatus.Waiting
-                    || q.Status == ClinicQueueStatus.Called
-                    || q.Status == ClinicQueueStatus.InRoom
-                    || q.Status == ClinicQueueStatus.InProgress)
+                && ActiveStatuses.Contains(q.Status)
                 && q.IsActive);
 
         appointment.Status = AppointmentStatus.Waiting;
@@ -528,7 +527,8 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
                 DoctorId = appointment.DoctorId,
                 RoomName = appointment.RoomName,
                 Status = ClinicQueueStatus.Waiting,
-                QueueDate = today
+                QueueDate = today,
+                AddedByUserId = GetCurrentUserId()
             };
             db.ClinicQueueItems.Add(queueItem);
         }
@@ -579,6 +579,7 @@ public class AddToQueueRequest
     public Guid? VisitId { get; set; }
     public Guid? DoctorId { get; set; }
     public string? RoomName { get; set; }
+    public string? Notes { get; set; }
 }
 
 public class CallQueuePatientRequest

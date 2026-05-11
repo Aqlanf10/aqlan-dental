@@ -1086,6 +1086,67 @@ if (enableStartupDbMaintenance)
         logger.LogWarning(ex, "Failed to ensure ClinicQueueItems table");
     }
 
+    // TEMPORARY SAFETY NET — Sprint 7 tracking fields migration
+    // Ensures new columns (AddedByUserId, CalledByUserId, Notes) exist
+    // and migrates data from old CalledBy column.
+    // TD-011: Remove this block after migration 20260520000000 stability confirmed.
+    try
+    {
+        // Add new columns if they don't exist
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'AddedByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "AddedByUserId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "CalledByUserId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'Notes') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "Notes" character varying(500) NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Migrate old CalledBy data to CalledByUserId if old column still exists
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledBy') THEN
+                    UPDATE "ClinicQueueItems" SET "CalledByUserId" = "CalledBy" WHERE "CalledBy" IS NOT NULL AND "CalledByUserId" IS NULL;
+                    ALTER TABLE "ClinicQueueItems" DROP COLUMN "CalledBy";
+                END IF;
+            END $$;
+        """);
+
+        // Add FKs for new columns if they don't exist
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_AddedByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_AddedByUserId"
+                        FOREIGN KEY ("AddedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_CalledByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_CalledByUserId"
+                        FOREIGN KEY ("CalledByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Record the migration in history if not already recorded
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260520000000_AddClinicQueueItemTrackingFields', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields'
+            );
+        """);
+
+        logger.LogInformation("ClinicQueueItems tracking fields ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems tracking fields");
+    }
+
     await DbSeeder.SeedAsync(db, logger);
 
     // Seed PatientAccounts for existing patients

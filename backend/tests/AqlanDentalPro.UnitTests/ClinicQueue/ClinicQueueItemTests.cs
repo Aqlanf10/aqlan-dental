@@ -199,4 +199,114 @@ public class ClinicQueueItemTests
     {
         ActiveStatuses.Contains(status).Should().Be(expected);
     }
+
+    // ─── Tracking Fields Tests (Sprint 7) ──────────────────────────────────
+
+    [Fact]
+    public void ClinicQueueItem_AddedByUserId_CanBeSet()
+    {
+        var userId = Guid.NewGuid();
+        var item = new ClinicQueueItem { AddedByUserId = userId };
+        item.AddedByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public void ClinicQueueItem_CalledByUserId_CanBeSet()
+    {
+        var userId = Guid.NewGuid();
+        var item = new ClinicQueueItem { CalledByUserId = userId };
+        item.CalledByUserId.Should().Be(userId);
+    }
+
+    [Fact]
+    public void ClinicQueueItem_Notes_CanBeSet()
+    {
+        var item = new ClinicQueueItem { Notes = "مريض يحتاج اهتمام خاص" };
+        item.Notes.Should().Be("مريض يحتاج اهتمام خاص");
+    }
+
+    [Fact]
+    public void ClinicQueueItem_TrackingFields_DefaultToNull()
+    {
+        var item = new ClinicQueueItem();
+        item.AddedByUserId.Should().BeNull();
+        item.CalledByUserId.Should().BeNull();
+        item.Notes.Should().BeNull();
+        item.CalledAt.Should().BeNull();
+        item.InRoomAt.Should().BeNull();
+        item.StartedAt.Should().BeNull();
+        item.CompletedAt.Should().BeNull();
+        item.CancelledAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void ClinicQueueItem_CallAction_SetsCalledByAndTimestamp()
+    {
+        var userId = Guid.NewGuid();
+        var item = new ClinicQueueItem
+        {
+            Status = ClinicQueueStatus.Waiting
+        };
+
+        // Simulate call action
+        item.Status = ClinicQueueStatus.Called;
+        item.CalledAt = DateTime.UtcNow;
+        item.CalledByUserId = userId;
+        item.RoomName = "غرفة 1";
+
+        item.Status.Should().Be(ClinicQueueStatus.Called);
+        item.CalledAt.Should().NotBeNull();
+        item.CalledByUserId.Should().Be(userId);
+        item.RoomName.Should().Be("غرفة 1");
+    }
+
+    [Fact]
+    public void ClinicQueueItem_CompletedAndCancelled_CanBeReAdded()
+    {
+        // Simulate a completed item
+        var item1 = new ClinicQueueItem
+        {
+            Status = ClinicQueueStatus.Completed,
+            CompletedAt = DateTime.UtcNow
+        };
+        item1.Status.Should().Be(ClinicQueueStatus.Completed);
+
+        // The same patient can have a NEW queue item (different instance)
+        var item2 = new ClinicQueueItem
+        {
+            Status = ClinicQueueStatus.Waiting
+        };
+        item2.Status.Should().Be(ClinicQueueStatus.Waiting);
+
+        // Simulate a cancelled item
+        var item3 = new ClinicQueueItem
+        {
+            Status = ClinicQueueStatus.Cancelled,
+            CancelledAt = DateTime.UtcNow
+        };
+        item3.Status.Should().Be(ClinicQueueStatus.Cancelled);
+
+        // Another new queue item is valid
+        var item4 = new ClinicQueueItem
+        {
+            Status = ClinicQueueStatus.Waiting
+        };
+        item4.Status.Should().Be(ClinicQueueStatus.Waiting);
+    }
+
+    [Fact]
+    public void ClinicQueueItem_EnterRoomFromWaitingOrCalled()
+    {
+        // Enter room from Called
+        var item1 = new ClinicQueueItem { Status = ClinicQueueStatus.Called };
+        item1.Status = ClinicQueueStatus.InRoom;
+        item1.InRoomAt = DateTime.UtcNow;
+        item1.Status.Should().Be(ClinicQueueStatus.InRoom);
+
+        // Enter room from Waiting (direct walk-in)
+        var item2 = new ClinicQueueItem { Status = ClinicQueueStatus.Waiting };
+        item2.Status = ClinicQueueStatus.InRoom;
+        item2.InRoomAt = DateTime.UtcNow;
+        item2.Status.Should().Be(ClinicQueueStatus.InRoom);
+    }
 }

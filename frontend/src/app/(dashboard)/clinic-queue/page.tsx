@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import {
   RefreshCw,
@@ -19,6 +20,7 @@ import {
   Square,
   ArrowRightLeft,
   AlertTriangle,
+  ExternalLink,
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
@@ -41,6 +43,7 @@ interface ClinicQueueItem {
   inRoomAt?: string;
   startedAt?: string;
   completedAt?: string;
+  notes?: string;
   createdAt: string;
 }
 
@@ -53,7 +56,7 @@ const STATUS_CONFIG: Record<QueueStatus, { label: string; color: string; bg: str
   InRoom:     { label: "داخل الغرفة",  color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: <DoorOpen className="w-3.5 h-3.5" /> },
   InProgress: { label: "قيد المعالجة", color: "text-green-700",  bg: "bg-green-50 border-green-200",  icon: <Play className="w-3.5 h-3.5" /> },
   Completed:  { label: "مكتمل",        color: "text-gray-500",   bg: "bg-gray-100 border-gray-200",   icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
-  Cancelled:  { label: "ملغى",         color: "text-red-600",    bg: "bg-red-50 border-red-200",      icon: <XCircle className="w-3.5 h-3.5" /> },
+  Cancelled:  { label: "ملغي",         color: "text-red-600",    bg: "bg-red-50 border-red-200",      icon: <XCircle className="w-3.5 h-3.5" /> },
 };
 
 const FILTER_OPTIONS = [
@@ -74,6 +77,7 @@ function formatTime(dateStr?: string): string {
 
 /* ─── Main Page ────────────────────────────────────────────────────────────── */
 export default function ClinicQueuePage() {
+  const router = useRouter();
   const [items, setItems] = useState<ClinicQueueItem[]>([]);
   const [rooms, setRooms] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -352,6 +356,7 @@ export default function ClinicQueuePage() {
                     onCall={() => setCallModalFor(item.id)}
                     onEnterRoom={() => queueAction(`/api/clinic-queue/${item.id}/enter-room`)}
                     onStart={() => queueAction(`/api/clinic-queue/${item.id}/start`)}
+                    onOpenVisit={() => { if (item.visitId) router.push(`/visits/${item.visitId}`); }}
                     onComplete={() => queueAction(`/api/clinic-queue/${item.id}/complete`)}
                     onCancel={() => setCancelConfirmFor(item.id)}
                     onChangeRoom={() => setChangeRoomFor(item.id)}
@@ -376,6 +381,7 @@ export default function ClinicQueuePage() {
                     onCall={() => {}}
                     onEnterRoom={() => {}}
                     onStart={() => {}}
+                    onOpenVisit={() => { if (item.visitId) router.push(`/visits/${item.visitId}`); }}
                     onComplete={() => {}}
                     onCancel={() => {}}
                     onChangeRoom={() => {}}
@@ -495,6 +501,7 @@ function QueueCard({
   onCall,
   onEnterRoom,
   onStart,
+  onOpenVisit,
   onComplete,
   onCancel,
   onChangeRoom,
@@ -504,6 +511,7 @@ function QueueCard({
   onCall: () => void;
   onEnterRoom: () => void;
   onStart: () => void;
+  onOpenVisit: () => void;
   onComplete: () => void;
   onCancel: () => void;
   onChangeRoom: () => void;
@@ -535,7 +543,7 @@ function QueueCard({
           <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: "#64748b" }}>
             <span className="flex items-center gap-1">
               <Stethoscope className="w-3 h-3" />
-              {item.doctorName}
+              {item.doctorName || "—"}
             </span>
             {item.appointmentTime && (
               <span className="flex items-center gap-1">
@@ -547,6 +555,15 @@ function QueueCard({
               <span className="flex items-center gap-1">
                 النداء: {formatTime(item.calledAt)}
               </span>
+            )}
+            {item.visitId && (item.status === "InProgress" || item.status === "Completed") && (
+              <button
+                onClick={onOpenVisit}
+                className="flex items-center gap-1 text-[#3d7ab5] hover:underline font-medium"
+              >
+                <ExternalLink className="w-3 h-3" />
+                فتح الزيارة
+              </button>
             )}
           </div>
         </div>
@@ -571,31 +588,49 @@ function QueueCard({
         </div>
       </div>
 
-      {/* Action buttons */}
+      {/* Action buttons — only shown for non-terminal statuses */}
       {!isTerminal && (
         <div className="flex gap-2 mt-3 flex-wrap">
           {item.status === "Waiting" && (
             <>
               <ActionButton label="نداء" onClick={onCall} loading={isLoading} color="#3d7ab5" icon={<PhoneCall className="w-3 h-3" />} />
+              <ActionButton label="تغيير الغرفة" onClick={onChangeRoom} loading={isLoading} color="#64748b" icon={<ArrowRightLeft className="w-3 h-3" />} />
               <ActionButton label="إلغاء" onClick={onCancel} loading={isLoading} color="#ef4444" icon={<XCircle className="w-3 h-3" />} />
             </>
           )}
           {item.status === "Called" && (
             <>
-              <ActionButton label="دخول الغرفة" onClick={onEnterRoom} loading={isLoading} color="#7c3aed" icon={<DoorOpen className="w-3 h-3" />} />
+              <ActionButton label="إدخال الغرفة" onClick={onEnterRoom} loading={isLoading} color="#7c3aed" icon={<DoorOpen className="w-3 h-3" />} />
               <ActionButton label="تغيير الغرفة" onClick={onChangeRoom} loading={isLoading} color="#64748b" icon={<ArrowRightLeft className="w-3 h-3" />} />
               <ActionButton label="إلغاء" onClick={onCancel} loading={isLoading} color="#ef4444" icon={<XCircle className="w-3 h-3" />} />
             </>
           )}
           {item.status === "InRoom" && (
             <>
-              <ActionButton label="بدء المعالجة" onClick={onStart} loading={isLoading} color="#059669" icon={<Play className="w-3 h-3" />} />
+              <ActionButton label="بدء الزيارة" onClick={onStart} loading={isLoading} color="#059669" icon={<Play className="w-3 h-3" />} />
               <ActionButton label="تغيير الغرفة" onClick={onChangeRoom} loading={isLoading} color="#64748b" icon={<ArrowRightLeft className="w-3 h-3" />} />
+              <ActionButton label="إلغاء" onClick={onCancel} loading={isLoading} color="#ef4444" icon={<XCircle className="w-3 h-3" />} />
             </>
           )}
           {item.status === "InProgress" && (
-            <ActionButton label="إكمال" onClick={onComplete} loading={isLoading} color="#0F1B2D" icon={<Square className="w-3 h-3" />} />
+            <>
+              <ActionButton label="فتح الزيارة" onClick={onOpenVisit} loading={isLoading} color="#3d7ab5" icon={<ExternalLink className="w-3 h-3" />} />
+              <ActionButton label="إنهاء" onClick={onComplete} loading={isLoading} color="#0F1B2D" icon={<Square className="w-3 h-3" />} />
+            </>
           )}
+        </div>
+      )}
+
+      {/* Terminal items: show open visit if available */}
+      {isTerminal && item.visitId && (
+        <div className="mt-2">
+          <button
+            onClick={onOpenVisit}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[#3d7ab5] hover:underline"
+          >
+            <ExternalLink className="w-3 h-3" />
+            فتح الزيارة
+          </button>
         </div>
       )}
     </div>

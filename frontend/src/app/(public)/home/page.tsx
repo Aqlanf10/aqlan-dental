@@ -90,10 +90,27 @@ export default function PublicHomePage() {
   // Safe accessor with fallback
   const get = (key: string): string => s[key] ?? FALLBACK[key] ?? "";
 
+  // Resolve image URL: if relative (from backend /uploads), prepend API base
+  const resolveImg = (url: string | null | undefined): string | null => {
+    if (!url || url.trim() === "") return null;
+    if (url.startsWith("http")) return url;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+    return `${apiBase}${url}`;
+  };
+
+  const heroImgUrl = resolveImg(get("heroImageUrl"));
+
   return (
     <div dir="rtl">
       {/* ═══════════════════════════════════════ HERO ══════════════════════════════════════ */}
       <section className="relative text-white overflow-hidden" style={{ backgroundColor: "#0F172A" }}>
+        {/* Hero image overlay (if uploaded) */}
+        {heroImgUrl && (
+          <div
+            className="absolute inset-0 bg-cover bg-center opacity-20"
+            style={{ backgroundImage: `url(${heroImgUrl})` }}
+          />
+        )}
         {/* Subtle dot pattern */}
         <div
           className="absolute inset-0 opacity-5"

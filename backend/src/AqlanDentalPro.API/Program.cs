@@ -421,6 +421,76 @@ catch (Exception ex)
     doctorIdLogger2.LogWarning(ex, "BookingRequests DoctorId hotfix failed (non-fatal)");
 }
 
+// ── One-time Admin Password Reset Hotfix ─────────────────────────────────
+// Resets the admin password to "AqlanDental2026!" if the reset flag is not yet set.
+// This runs ONCE and then sets a flag so it never runs again.
+try
+{
+    using var resetScope = app.Services.CreateScope();
+    var resetDb     = resetScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var resetLogger = resetScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    // Check if reset has already been done
+    var alreadyReset = await resetDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Settings') THEN
+                CREATE TABLE "Settings" (
+                    "Id" uuid NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+                    "Key" character varying(200) NOT NULL,
+                    "Value" text NULL,
+                    "Category" character varying(50) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "IsActive" boolean NOT NULL DEFAULT true
+                );
+            END IF;
+        END $$;
+    """);
+
+    // Check if the reset flag exists
+    var flagExists = false;
+    using (var cmd = resetDb.Database.GetDbConnection().CreateCommand())
+    {
+        cmd.CommandText = """
+            SELECT COUNT(*) FROM "Settings" WHERE "Key" = 'admin.password.reset.2026'
+        """;
+        await resetDb.Database.OpenConnectionAsync();
+        var result = await cmd.ExecuteScalarAsync();
+        await resetDb.Database.CloseConnectionAsync();
+        flagExists = result != null && Convert.ToInt64(result) > 0;
+    }
+
+    if (!flagExists)
+    {
+        // Use AuthService to generate proper Argon2id hash
+        var newPassword = "AqlanDental2026!";
+        var salt = AqlanDentalPro.Application.Services.AuthService.GenerateSalt();
+        var hash = AqlanDentalPro.Application.Services.AuthService.HashPassword(newPassword, salt);
+
+        await resetDb.Database.ExecuteSqlRawAsync("""
+            UPDATE "Users" SET "PasswordHash" = {0}, "PasswordSalt" = {1}, "IsActive" = true, "UpdatedAt" = NOW()
+            WHERE "Username" = 'admin'
+        """, hash, salt);
+
+        // Set the flag so this never runs again
+        await resetDb.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "Settings" ("Id", "Key", "Value", "Category", "CreatedAt", "UpdatedAt", "IsActive")
+            VALUES (gen_random_uuid(), 'admin.password.reset.2026', 'done', 'system', NOW(), NOW(), true)
+        """);
+
+        resetLogger.LogWarning("Admin password has been reset to default value. Username: admin");
+    }
+    else
+    {
+        resetLogger.LogInformation("Admin password reset already applied, skipping");
+    }
+}
+catch (Exception ex)
+{
+    var resetLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    resetLogger2.LogWarning(ex, "Admin password reset hotfix failed (non-fatal)");
+}
+
 // ── Sprint 6 Doctor Compensation Columns Hotfix (unconditional, idempotent) ──
 try
 {

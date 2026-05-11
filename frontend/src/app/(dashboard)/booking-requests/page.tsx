@@ -38,16 +38,21 @@ const STATUS_CONFIG: Record<BookingStatus, { label: string; color: string; bg: s
 
 const NEXT_STATUSES: Record<BookingStatus, { status: BookingStatus; label: string; color: string }[]> = {
   Pending:   [
-    { status: "Reviewed",  label: "وضع علامة مراجعة", color: "bg-blue-500 hover:bg-blue-600" },
-    { status: "Confirmed", label: "تأكيد",             color: "bg-green-500 hover:bg-green-600" },
-    { status: "Rejected",  label: "رفض",               color: "bg-red-500 hover:bg-red-600" },
+    { status: "Reviewed",  label: "تمت المراجعة",    color: "bg-blue-500 hover:bg-blue-600" },
+    { status: "Confirmed", label: "تأكيد",            color: "bg-green-500 hover:bg-green-600" },
+    { status: "Rejected",  label: "رفض الطلب",       color: "bg-red-500 hover:bg-red-600" },
   ],
   Reviewed:  [
-    { status: "Confirmed", label: "تأكيد",             color: "bg-green-500 hover:bg-green-600" },
-    { status: "Rejected",  label: "رفض",               color: "bg-red-500 hover:bg-red-600" },
+    { status: "Confirmed", label: "تأكيد",            color: "bg-green-500 hover:bg-green-600" },
+    { status: "Rejected",  label: "رفض الطلب",       color: "bg-red-500 hover:bg-red-600" },
   ],
-  Confirmed: [],
-  Rejected:  [],
+  Confirmed: [
+    { status: "Rejected",  label: "رفض / إلغاء التأكيد", color: "bg-red-500 hover:bg-red-600" },
+  ],
+  Rejected:  [
+    { status: "Pending",   label: "إعادة فتح الطلب", color: "bg-amber-500 hover:bg-amber-600" },
+    { status: "Confirmed", label: "تأكيد الطلب",      color: "bg-green-500 hover:bg-green-600" },
+  ],
 };
 
 type FilterKey = "all" | "today" | "week" | "Pending" | "Reviewed" | "Confirmed" | "Rejected" | "notConverted";
@@ -161,6 +166,8 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
   const nextStatuses = NEXT_STATUSES[item.status];
   const isConverted = item.convertedToAppointmentId !== null;
   const canCreateAppointment = item.status === "Confirmed" && !isConverted;
+  // Always show staff notes for statuses that have actions or can be transitioned
+  const showStaffNotes = nextStatuses.length > 0 || canCreateAppointment;
 
   async function handleStatusChange(status: BookingStatus) {
     setLoading(true);
@@ -283,7 +290,7 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
           </div>
 
           {/* Staff notes */}
-          {nextStatuses.length > 0 && (
+          {showStaffNotes && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 ملاحظات الموظف <span className="font-normal text-gray-400">(اختياري)</span>

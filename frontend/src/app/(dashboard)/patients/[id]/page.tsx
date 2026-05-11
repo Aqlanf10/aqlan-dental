@@ -186,7 +186,7 @@ export default function PatientProfilePage() {
   const renderTabContent = () => {
     switch (activeTab) {
       case "overview":
-        return <OverviewTab patientId={id} summary={summary} />;
+        return <OverviewTab patientId={id} summary={summary} patient={patient} />;
       case "info":
         return <BasicInfoTab patient={patient} orthoCases={orthoCases} surgeryCases={surgeryCases} />;
       case "medical":

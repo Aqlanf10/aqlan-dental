@@ -110,6 +110,7 @@ export default function PatientProfilePage() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const { user } = useAuthStore();
   const [confirmAction, setConfirmAction] = useState<{ type: "archive" | "restore"; id: string; name: string } | null>(null);
+  const [openAddVisitModal, setOpenAddVisitModal] = useState(false);
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -186,7 +187,7 @@ export default function PatientProfilePage() {
   const renderTabContent = () => {
     switch (activeTab) {
       case "overview":
-        return <OverviewTab patientId={id} summary={summary} patient={patient} />;
+        return <OverviewTab patientId={id} summary={summary} patient={patient} onAddVisit={() => { setActiveTab("visits"); setOpenAddVisitModal(true); }} />;
       case "info":
         return <BasicInfoTab patient={patient} orthoCases={orthoCases} surgeryCases={surgeryCases} />;
       case "medical":
@@ -196,7 +197,7 @@ export default function PatientProfilePage() {
       case "appointments":
         return <AppointmentsTab patientId={id} patientName={patientName} />;
       case "visits":
-        return <VisitsTab patientId={id} />;
+        return <VisitsTab patientId={id} openAddModal={openAddVisitModal} onModalOpened={() => setOpenAddVisitModal(false)} onVisitChanged={() => { /* could refresh summary here */ }} />;
       case "finance":
         return <FinanceTab patientId={id} totalPaid={summary?.totalPaid ?? 0} totalOutstanding={summary?.totalOutstanding ?? 0} />;
       case "contracts":
@@ -379,6 +380,16 @@ export default function PatientProfilePage() {
 
         {/* Action buttons */}
         <div className="flex flex-wrap gap-2 pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
+          <button
+            onClick={() => { setActiveTab("visits"); setOpenAddVisitModal(true); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"
+            style={{ background: "#22c55e" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#16a34a")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#22c55e")}
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            إضافة زيارة
+          </button>
           <Link
             href={`/appointments/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"

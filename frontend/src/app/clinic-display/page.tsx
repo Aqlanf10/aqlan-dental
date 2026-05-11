@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   PhoneCall,
   Clock,
-  RefreshCw,
 } from "lucide-react";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -55,6 +54,7 @@ const STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string;
 
 const REFRESH_INTERVAL = 20_000; // 20 seconds
 const VOICE_STORAGE_KEY = "aqlan-voice-enabled";
+const RECEPTION_FALLBACK = "الاستقبال";
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 function formatClock(date: Date): string {
@@ -78,7 +78,26 @@ function getStatusDisplay(status: string) {
   return STATUS_DISPLAY[status] ?? { label: status, color: "text-gray-400", bg: "bg-gray-800/30", dotColor: "bg-gray-500" };
 }
 
+/**
+ * Build the privacy-safe Arabic announcement text for a patient.
+ *
+ * Allowed spoken fields: patient name, file number (if name unavailable), room name.
+ * Forbidden spoken fields: phone, diagnosis, payment, balance, treatment notes,
+ *   medical history, private notes.
+ *
+ * Fallbacks:
+ *   - If patient name is missing → "صاحب الملف رقم [fileNumber]"
+ *   - If room is missing → "الاستقبال"
+ */
+function buildAnnouncementText(patientName: string, patientNumber: string, roomName: string): string {
+  const displayName = patientName?.trim() || `صاحب الملف رقم ${patientNumber}`;
+  const displayRoom = roomName?.trim() || RECEPTION_FALLBACK;
+  return `المريض ${displayName}، يرجى التوجه إلى ${displayRoom}`;
+}
+
 /* ─── Arabic Speech Utility ────────────────────────────────────────────────── */
+
+const VOICE_ERROR_MSG = "تعذر تشغيل النداء الصوتي. تأكد من صوت الجهاز والمتصفح.";
 
 /**
  * Speak an Arabic text using the browser SpeechSynthesis API.
@@ -184,7 +203,7 @@ function useArabicVoiceAnnouncement() {
     setVoiceError(null);
     const ok = speakArabic("تم تفعيل النداء الصوتي بنجاح", voices);
     if (!ok) {
-      setVoiceError("تعذر تشغيل النداء الصوتي. تأكد من صوت الجهاز والمتصفح.");
+      setVoiceError(VOICE_ERROR_MSG);
     }
   }, [voices]);
 
@@ -197,7 +216,7 @@ function useArabicVoiceAnnouncement() {
     // because it is triggered by a user gesture (button click)
     const ok = speakArabic("تم تفعيل النداء الصوتي", voices);
     if (!ok) {
-      setVoiceError("تعذر تشغيل النداء الصوتي. تأكد من صوت الجهاز والمتصفح.");
+      setVoiceError(VOICE_ERROR_MSG);
       return;
     }
 
@@ -215,6 +234,9 @@ function useArabicVoiceAnnouncement() {
   }, []);
 
   // ─── Announce a called patient (auto-trigger on new call) ───────────────
+  // This is the automatic announcement that respects repeat prevention.
+  // It should only fire when the newest Called queue item changes or
+  // calledAt changes for the same item because staff called again.
   const announce = useCallback(
     (patientName: string, patientNumber: string, roomName: string, queueItemId: string, calledAt: string) => {
       if (!voiceEnabled || !voiceSupported) return false;
@@ -226,23 +248,31 @@ function useArabicVoiceAnnouncement() {
       }
       lastAnnouncedRef.current = { queueItemId, calledAt };
 
-      const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
-      const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
-
-      return speakArabic(text, voices);
+      const text = buildAnnouncementText(patientName, patientNumber, roomName);
+      const ok = speakArabic(text, voices);
+      if (!ok) {
+        setVoiceError(VOICE_ERROR_MSG);
+      }
+      return ok;
     },
     [voiceEnabled, voiceSupported, voices]
   );
 
   // ─── Manual repeat announcement (bypasses dedup check) ──────────────────
+  // This is triggered by the "إعادة النداء" button and always speaks
+  // the current patient announcement, even if they were already announced.
+  // It does NOT change backend state, does NOT update CalledAt,
+  // and does NOT create a new queue item.
   const repeatAnnounce = useCallback(
     (patientName: string, patientNumber: string, roomName: string) => {
       if (!voiceEnabled || !voiceSupported) return false;
 
-      const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
-      const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
-
-      return speakArabic(text, voices);
+      const text = buildAnnouncementText(patientName, patientNumber, roomName);
+      const ok = speakArabic(text, voices);
+      if (!ok) {
+        setVoiceError(VOICE_ERROR_MSG);
+      }
+      return ok;
     },
     [voiceEnabled, voiceSupported, voices]
   );
@@ -255,10 +285,12 @@ function useArabicVoiceAnnouncement() {
       // Always announce on enable, even if same patient — but update dedup ref
       lastAnnouncedRef.current = { queueItemId, calledAt };
 
-      const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
-      const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
-
-      return speakArabic(text, voices);
+      const text = buildAnnouncementText(patientName, patientNumber, roomName);
+      const ok = speakArabic(text, voices);
+      if (!ok) {
+        setVoiceError(VOICE_ERROR_MSG);
+      }
+      return ok;
     },
     [voiceEnabled, voiceSupported, voices]
   );
@@ -268,6 +300,7 @@ function useArabicVoiceAnnouncement() {
     voiceSupported,
     voiceStatus,
     voiceError,
+    setVoiceError,
     arabicVoiceAvailable,
     testVoice,
     enableVoice,
@@ -293,6 +326,7 @@ export default function ClinicDisplayPage() {
     voiceSupported,
     voiceStatus,
     voiceError,
+    setVoiceError,
     arabicVoiceAvailable,
     testVoice,
     enableVoice,
@@ -321,7 +355,8 @@ export default function ClinicDisplayPage() {
         setPulseKey((k) => k + 1);
 
         // Trigger voice announcement for new Called patient
-        if (json.latestCalled && json.latestCalled.roomName) {
+        // Note: roomName may be empty — buildAnnouncementText handles fallback to "الاستقبال"
+        if (json.latestCalled) {
           announce(
             json.latestCalled.patientName,
             json.latestCalled.patientNumber,
@@ -344,7 +379,7 @@ export default function ClinicDisplayPage() {
 
   // After enabling voice, if there's a current Called patient, announce it once
   useEffect(() => {
-    if (voiceEnabled && data?.latestCalled && data.latestCalled.roomName && !announcedAfterEnableRef.current) {
+    if (voiceEnabled && data?.latestCalled && !announcedAfterEnableRef.current) {
       announcedAfterEnableRef.current = true;
       // Small delay to ensure the speech engine is ready after enable
       const timer = setTimeout(() => {
@@ -389,15 +424,23 @@ export default function ClinicDisplayPage() {
       ? "النداء الصوتي غير مدعوم في هذا المتصفح"
       : "النداء الصوتي متوقف";
 
-  /* Repeat announcement handler */
+  /* Repeat announcement handler — always works for current patient, even without room */
   const handleRepeatAnnounce = useCallback(() => {
-    if (!data?.latestCalled || !data.latestCalled.roomName) return;
+    if (!data?.latestCalled) return;
+
+    if (!voiceEnabled) {
+      // Prompt user to enable voice first
+      setVoiceError("يرجى تفعيل النداء الصوتي أولاً لإعادة النداء.");
+      return;
+    }
+
+    setVoiceError(null);
     repeatAnnounce(
       data.latestCalled.patientName,
       data.latestCalled.patientNumber,
       data.latestCalled.roomName
     );
-  }, [data?.latestCalled, repeatAnnounce]);
+  }, [data?.latestCalled, repeatAnnounce, voiceEnabled, setVoiceError]);
 
   return (
     <div
@@ -553,7 +596,9 @@ export default function ClinicDisplayPage() {
                     <div className="flex items-center justify-center gap-5 mt-6">
                       <div className="flex items-center gap-3 bg-teal-800/60 px-6 py-3 rounded-2xl">
                         <MapPin className="w-6 h-6 text-teal-300" />
-                        <span className="text-2xl font-bold text-teal-200">{data.latestCalled.roomName}</span>
+                        <span className="text-2xl font-bold text-teal-200">
+                          {data.latestCalled.roomName || RECEPTION_FALLBACK}
+                        </span>
                       </div>
                       {data.latestCalled.doctorName && (
                         <div className="flex items-center gap-3 bg-teal-800/60 px-6 py-3 rounded-2xl">
@@ -566,16 +611,21 @@ export default function ClinicDisplayPage() {
                       <Clock className="w-4 h-4" />
                       {formatTimeAgo(data.latestCalled.calledAt)}
                     </div>
-                    {/* Manual repeat announcement button */}
-                    {voiceEnabled && (
-                      <button
-                        onClick={handleRepeatAnnounce}
-                        className="mt-4 px-6 py-2.5 rounded-xl bg-teal-700 text-white font-bold hover:bg-teal-600 transition flex items-center gap-2 mx-auto"
-                      >
-                        <RefreshCw className="w-5 h-5" />
-                        إعادة النداء
-                      </button>
-                    )}
+
+                    {/* Replay announcement button — always visible when there is a called patient */}
+                    <button
+                      onClick={handleRepeatAnnounce}
+                      disabled={!voiceEnabled}
+                      className={`mt-5 px-8 py-3 rounded-xl font-bold text-lg transition flex items-center gap-3 mx-auto ${
+                        voiceEnabled
+                          ? "bg-teal-600 text-white hover:bg-teal-500 shadow-lg shadow-teal-900/30 active:scale-95"
+                          : "bg-white/10 text-gray-400 cursor-not-allowed"
+                      }`}
+                      title={voiceEnabled ? "إعادة النداء الصوتي للمريض الحالي" : "فعّل النداء الصوتي أولاً"}
+                    >
+                      <Volume2 className="w-6 h-6" />
+                      إعادة النداء
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -643,7 +693,7 @@ export default function ClinicDisplayPage() {
                         >
                           {/* Room */}
                           <div className="flex items-center justify-center w-20 h-14 rounded-xl bg-cyan-900/50 border border-cyan-700/30">
-                            <span className="text-xl font-bold text-cyan-300">{item.roomName}</span>
+                            <span className="text-xl font-bold text-cyan-300">{item.roomName || RECEPTION_FALLBACK}</span>
                           </div>
 
                           {/* Patient info */}

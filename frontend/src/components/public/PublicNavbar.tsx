@@ -44,9 +44,9 @@ export function PublicNavbar() {
   }, [menuOpen]);
 
   const navLinks = [
-    { href: "/home#services", label: "خدماتنا" },
+    { href: "/home/services", label: "خدماتنا" },
     { href: "/home#about", label: "عن المركز" },
-    { href: "/home#team", label: "الفريق الطبي" },
+    { href: "/home/doctors", label: "الفريق الطبي" },
     { href: "/home#contact", label: "تواصل معنا" },
   ];
 
@@ -87,13 +87,13 @@ export function PublicNavbar() {
         {/* Desktop nav */}
         <nav className="hidden lg:flex items-center gap-5 text-sm font-semibold text-slate-600">
           {navLinks.map((link) => (
-            <a
+            <Link
               key={link.href}
               href={link.href}
               className="hover:text-slate-900 transition-colors py-1"
             >
               {link.label}
-            </a>
+            </Link>
           ))}
 
           {/* Login dropdown */}
@@ -163,14 +163,14 @@ export function PublicNavbar() {
           >
             <nav className="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-1">
               {navLinks.map((link) => (
-                <a
+                <Link
                   key={link.href}
                   href={link.href}
                   onClick={() => setMenuOpen(false)}
                   className="py-3 px-4 text-slate-700 font-semibold hover:bg-slate-50 rounded-xl transition-colors text-base"
                 >
                   {link.label}
-                </a>
+                </Link>
               ))}
               <div className="border-t border-slate-100 my-2" />
               <div className="px-4 py-1 text-[11px] text-slate-400 font-bold uppercase tracking-wider">

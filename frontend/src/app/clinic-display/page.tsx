@@ -352,6 +352,25 @@ function useArabicVoiceAnnouncement() {
   };
 }
 
+/* ─── Custom Context Menu for Right-Click Replay ───────────────────────────── */
+interface ContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+  patientName: string;
+  patientNumber: string;
+  roomName: string;
+}
+
+const INITIAL_CONTEXT_MENU: ContextMenuState = {
+  visible: false,
+  x: 0,
+  y: 0,
+  patientName: "",
+  patientNumber: "",
+  roomName: "",
+};
+
 /* ─── Main Page ────────────────────────────────────────────────────────────── */
 export default function ClinicDisplayPage() {
   const [data, setData] = useState<DisplayData | null>(null);
@@ -360,6 +379,7 @@ export default function ClinicDisplayPage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [now, setNow] = useState<Date>(new Date());
   const [pulseKey, setPulseKey] = useState(0);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(INITIAL_CONTEXT_MENU);
   const prevLatestCalledRef = useRef<string | null>(null);
 
   const {
@@ -482,6 +502,44 @@ export default function ClinicDisplayPage() {
       data.latestCalled.roomName
     );
   }, [data?.latestCalled, repeatAnnounce, voiceEnabled, setVoiceError]);
+
+  /* Repeat announcement for any patient (used by right-click context menu) */
+  const handleReplayPatient = useCallback((patientName: string, patientNumber: string, roomName: string) => {
+    if (!voiceEnabled) {
+      setVoiceError("يرجى تفعيل النداء الصوتي أولاً لإعادة النداء.");
+      setContextMenu(INITIAL_CONTEXT_MENU);
+      return;
+    }
+
+    setVoiceError(null);
+    setContextMenu(INITIAL_CONTEXT_MENU);
+    repeatAnnounce(patientName, patientNumber, roomName);
+  }, [voiceEnabled, setVoiceError, repeatAnnounce]);
+
+  /* Right-click context menu handler for patient cards */
+  const handlePatientContextMenu = useCallback((e: React.MouseEvent, patientName: string, patientNumber: string, roomName: string) => {
+    e.preventDefault();
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      patientName,
+      patientNumber,
+      roomName,
+    });
+  }, []);
+
+  /* Close context menu on any click outside */
+  useEffect(() => {
+    if (!contextMenu.visible) return;
+    const close = () => setContextMenu(INITIAL_CONTEXT_MENU);
+    document.addEventListener("click", close);
+    document.addEventListener("contextmenu", close);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("contextmenu", close);
+    };
+  }, [contextMenu.visible]);
 
   return (
     <div
@@ -620,6 +678,12 @@ export default function ClinicDisplayPage() {
                 <div
                   key={pulseKey}
                   className="rounded-3xl bg-gradient-to-br from-teal-900/70 to-cyan-900/50 border border-teal-600/40 p-8 md:p-10 shadow-xl shadow-teal-900/20 animate-[fadeIn_0.6s_ease]"
+                  onContextMenu={(e) => handlePatientContextMenu(
+                    e,
+                    data.latestCalled!.patientName,
+                    data.latestCalled!.patientNumber,
+                    data.latestCalled!.roomName
+                  )}
                 >
                   <div className="flex items-center gap-3 mb-6">
                     <Volume2 className="w-8 h-8 text-teal-300 animate-pulse" />
@@ -730,7 +794,13 @@ export default function ClinicDisplayPage() {
                       return (
                         <div
                           key={item.queueItemId || i}
-                          className="flex items-center gap-5 px-6 py-5 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
+                          className="flex items-center gap-5 px-6 py-5 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                          onContextMenu={(e) => handlePatientContextMenu(
+                            e,
+                            item.patientName,
+                            item.patientNumber,
+                            item.roomName
+                          )}
                         >
                           {/* Room */}
                           <div className="flex items-center justify-center w-20 h-14 rounded-xl bg-cyan-900/50 border border-cyan-700/30">
@@ -784,6 +854,59 @@ export default function ClinicDisplayPage() {
           يتحدث تلقائياً كل ٢٠ ثانية — مركز الدكتور عقلان الكامل
         </span>
       </footer>
+
+      {/* ── Right-Click Context Menu ────────────────────────────── */}
+      {contextMenu.visible && (
+        <div
+          className="fixed z-[100] min-w-[280px] rounded-xl bg-[#1a2744] border border-white/15 shadow-2xl shadow-black/40 py-2 animate-[fadeIn_0.15s_ease]"
+          style={{
+            top: contextMenu.y,
+            left: contextMenu.x,
+          }}
+        >
+          {/* Patient info header */}
+          <div className="px-4 py-2.5 border-b border-white/10">
+            <p className="text-sm font-bold text-white truncate">
+              {contextMenu.patientName || `ملف رقم ${contextMenu.patientNumber}`}
+            </p>
+            {contextMenu.patientName && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                رقم الملف: {contextMenu.patientNumber}
+              </p>
+            )}
+          </div>
+
+          {/* Replay action */}
+          <button
+            onClick={() => handleReplayPatient(
+              contextMenu.patientName,
+              contextMenu.patientNumber,
+              contextMenu.roomName
+            )}
+            className={`w-full text-right px-4 py-2.5 flex items-center gap-3 transition-colors ${
+              voiceEnabled
+                ? "text-teal-300 hover:bg-teal-900/40"
+                : "text-gray-500 cursor-not-allowed"
+            }`}
+            disabled={!voiceEnabled}
+          >
+            <Volume2 className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1">إعادة النداء</span>
+            {!voiceEnabled && (
+              <span className="text-[10px] text-amber-500">يفضّل تفعيل الصوت</span>
+            )}
+          </button>
+
+          {/* Show what will be spoken */}
+          {voiceEnabled && (
+            <div className="px-4 py-2 border-t border-white/5">
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                {buildAnnouncementText(contextMenu.patientName, contextMenu.patientNumber, contextMenu.roomName)}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Global CSS for fadeIn animation */}
       <style jsx global>{`

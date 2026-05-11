@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { FolderOpen, Plus, Pencil, Trash2, X, FileText, Upload, Eye, Filter } from "lucide-react";
+import { FolderOpen, Plus, Pencil, Trash2, X, FileText, Upload, Eye, Filter, Download, CheckCircle } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
+import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -47,19 +48,33 @@ const EMPTY_FORM: DocForm = {
 };
 
 const DOCUMENT_TYPES: Record<string, string> = {
-  MedicalReport: "تقرير طبي",
-  TreatmentConsent: "موافقة علاج",
-  Identity: "هوية/بيانات",
-  RadiographExternal: "أشعة/ملف خارجي",
+  Consent: "موافقة",
+  Report: "تقرير",
+  Prescription: "وصة",
+  Contract: "عقد",
+  Referral: "إحالة",
+  Lab: "مختبر",
   Other: "أخرى",
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  MedicalReport: "bg-blue-100 text-blue-700",
-  TreatmentConsent: "bg-green-100 text-green-700",
-  Identity: "bg-purple-100 text-purple-700",
-  RadiographExternal: "bg-orange-100 text-orange-700",
+  Consent: "bg-green-100 text-green-700",
+  Report: "bg-blue-100 text-blue-700",
+  Prescription: "bg-red-100 text-red-700",
+  Contract: "bg-purple-100 text-purple-700",
+  Referral: "bg-yellow-100 text-yellow-700",
+  Lab: "bg-cyan-100 text-cyan-700",
   Other: "bg-gray-100 text-gray-700",
+};
+
+const TYPE_ICONS: Record<string, string> = {
+  Consent: "✍️",
+  Report: "📋",
+  Prescription: "💊",
+  Contract: "📄",
+  Referral: "↗️",
+  Lab: "🔬",
+  Other: "📎",
 };
 
 function formatFileSize(bytes?: number | null): string {
@@ -69,11 +84,9 @@ function formatFileSize(bytes?: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getFileIcon(mimeType?: string | null) {
-  if (!mimeType) return FileText;
-  if (mimeType.startsWith("image/")) return Eye;
-  return FileText;
-}
+// Allowed file types for documents
+const ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // ─── Component ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +106,12 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
   const [filterType, setFilterType] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewFileName, setPreviewFileName] = useState<string | undefined>();
+  const [previewMimeType, setPreviewMimeType] = useState<string | undefined>();
 
   const fetchDocuments = useCallback(() => {
     setLoading(true);
@@ -129,11 +148,26 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
     setShowModal(true);
   };
 
+  const openPreview = (doc: DocumentDto) => {
+    if (!doc.fileUrl) return;
+    setPreviewUrl(doc.fileUrl);
+    setPreviewFileName(doc.fileName);
+    setPreviewMimeType(doc.mimeType);
+    setPreviewOpen(true);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
+    // Validate file type
+    const ext = "." + file.name.split(".").pop()?.toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      toast.error("نوع الملف غير مدعوم. المسموح: JPG, PNG, WebP, PDF");
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
       toast.error("حجم الملف يتجاوز 10 ميجابايت");
       return;
     }
@@ -165,10 +199,13 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
       toast.error("عنوان المستند مطلوب");
       return;
     }
+    if (!editingDoc && !form.fileUrl) {
+      toast.error("يجب رفع ملف أولاً");
+      return;
+    }
     setSaving(true);
     try {
       if (editingDoc) {
-        // Update only metadata (title, type, notes)
         await api.put(`/api/documents/${editingDoc.id}`, {
           title: form.title,
           documentType: form.documentType || null,
@@ -176,7 +213,6 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
         });
         toast.success("تم تحديث المستند بنجاح");
       } else {
-        // Create new document
         await api.post("/api/documents", {
           patientId,
           title: form.title,
@@ -210,10 +246,42 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
     }
   };
 
+  const isImageFile = (mimeType?: string | null) => mimeType?.startsWith("image/") ?? false;
+
+  // ─── Stats ──────────────────────────────────────────────────────────────────
+
+  const activeDocs = documents.filter(d => d.isActive);
+  const signedCount = activeDocs.filter(d => d.signed).length;
+
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-4" dir="rtl">
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#3d7ab518" }}>
+          <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: "#3d7ab5" }} />
+          <div className="min-w-0">
+            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>المستندات</p>
+            <p className="text-sm font-bold" style={{ color: "#3d7ab5" }}>{activeDocs.length}</p>
+          </div>
+        </div>
+        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#22c55e18" }}>
+          <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#22c55e" }} />
+          <div className="min-w-0">
+            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>موقّعة</p>
+            <p className="text-sm font-bold" style={{ color: "#22c55e" }}>{signedCount}</p>
+          </div>
+        </div>
+        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#a855f718" }}>
+          <FileText className="w-4 h-4 flex-shrink-0" style={{ color: "#a855f7" }} />
+          <div className="min-w-0">
+            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>الأنواع</p>
+            <p className="text-sm font-bold" style={{ color: "#a855f7" }}>{new Set(activeDocs.map(d => d.documentType).filter(Boolean)).size}</p>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-bold text-[#0d2137]">المستندات</h3>
@@ -252,23 +320,34 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
         </div>
       ) : error ? (
         <div className="text-center py-8 text-red-500 text-sm">{error}</div>
-      ) : documents.length === 0 ? (
+      ) : activeDocs.length === 0 ? (
         <div className="text-center py-12 text-[#94a3b8]">
           <FolderOpen className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">لا توجد مستندات</p>
+          <p className="text-sm">لا توجد مستندات بعد</p>
+          <p className="text-xs mt-1">اضغط &quot;إضافة مستند&quot; لرفع مستند جديد</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {documents.map((doc) => {
-            const Icon = getFileIcon(doc.mimeType);
+          {activeDocs.map((doc) => {
+            const isImage = isImageFile(doc.mimeType);
+            const typeIcon = TYPE_ICONS[doc.documentType ?? ""] ?? "📎";
             return (
               <div
                 key={doc.id}
                 className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#dce8f5] transition"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-[#3d7ab518] flex items-center justify-center flex-shrink-0">
-                    <Icon className="w-5 h-5 text-[#3d7ab5]" />
+                  {/* Thumbnail or icon */}
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
+                    style={{ background: isImage ? "transparent" : "#3d7ab518" }}
+                    onClick={() => isImage && openPreview(doc)}
+                  >
+                    {isImage && doc.fileUrl ? (
+                      <img src={doc.fileUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-lg">{typeIcon}</span>
+                    )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -281,7 +360,8 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                         </span>
                       )}
                       {doc.signed && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3" />
                           موقّع
                         </span>
                       )}
@@ -302,15 +382,25 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {doc.fileUrl && (
-                    <a
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
-                    >
-                      <Eye className="w-3 h-3" />
-                      عرض
-                    </a>
+                    isImage ? (
+                      <button
+                        onClick={() => openPreview(doc)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
+                      >
+                        <Eye className="w-3 h-3" />
+                        عرض
+                      </button>
+                    ) : (
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
+                      >
+                        <Download className="w-3 h-3" />
+                        فتح
+                      </a>
+                    )
                   )}
                   <button
                     onClick={() => openEditModal(doc)}
@@ -348,6 +438,15 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
         </div>
       )}
 
+      {/* ─── Image Preview Modal ────────────────────────────────────────────── */}
+      <ImagePreviewModal
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        url={previewUrl}
+        fileName={previewFileName}
+        mimeType={previewMimeType}
+      />
+
       {/* ─── Add/Edit Modal ──────────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
@@ -375,7 +474,7 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                     type="text"
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
-                    placeholder="مثل: تقرير أشعة بانوراما"
+                    placeholder="مثل: موافقة علاج تقويم"
                     className="w-full text-sm border border-[#e8f0f9] rounded-lg px-3 py-2 focus:outline-none focus:border-[#3d7ab5]"
                   />
                 </div>
@@ -398,11 +497,11 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                 {/* File Upload (only for new documents) */}
                 {!editingDoc && (
                   <div>
-                    <label className="text-xs text-[#64748b] block mb-1">الملف</label>
+                    <label className="text-xs text-[#64748b] block mb-1">الملف *</label>
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".jpg,.jpeg,.png,.webp,.gif,.pdf"
+                      accept=".jpg,.jpeg,.png,.webp,.pdf"
                       onChange={handleFileUpload}
                       className="hidden"
                     />
@@ -428,7 +527,7 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                         )}
                       >
                         <Upload className="w-4 h-4 text-[#94a3b8]" />
-                        {uploading ? "جاري الرفع..." : "اختر ملف (JPG, PNG, WebP, GIF, PDF — حتى 10 ميجابايت)"}
+                        {uploading ? "جاري الرفع..." : "اختر ملف (JPG, PNG, WebP, PDF — حتى 10 ميجابايت)"}
                       </button>
                     )}
                   </div>

@@ -6,7 +6,7 @@ import {
   Calendar, Activity, Wallet, Pill, Clock, Scissors,
   Phone, Stethoscope, AlertTriangle, FileText,
   CreditCard, Camera, FolderOpen, Plus, MessageCircle,
-  ClipboardList, ChevronLeft,
+  ClipboardList, ChevronLeft, ScanLine,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
@@ -86,6 +86,7 @@ const EVENT_ICONS: Record<string, { icon: LucideIcon; color: string; bg: string 
   payment: { icon: CreditCard, color: "text-purple-600", bg: "bg-purple-600" },
   document: { icon: FolderOpen, color: "text-amber-600", bg: "bg-amber-600" },
   photo: { icon: Camera, color: "text-pink-600", bg: "bg-pink-600" },
+  radiograph: { icon: ScanLine, color: "text-purple-600", bg: "bg-purple-600" },
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -94,6 +95,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   payment: "دفعة",
   document: "مستند",
   photo: "صورة",
+  radiograph: "أشعة",
 };
 
 interface OverviewTabProps {

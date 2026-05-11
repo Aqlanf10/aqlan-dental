@@ -34,6 +34,20 @@ public class PaymentsController(FinanceService service) : ControllerBase
         return Ok(result);
     }
 
+    [HttpPut("payments/{id:guid}")]
+    public async Task<IActionResult> UpdatePayment(Guid id, [FromBody] UpdatePaymentRequest req)
+    {
+        var result = await service.UpdatePaymentAsync(id, req);
+        return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+    }
+
+    [HttpDelete("payments/{id:guid}")]
+    public async Task<IActionResult> DeletePayment(Guid id)
+    {
+        var deleted = await service.DeletePaymentAsync(id);
+        return deleted ? Ok(new { message = "تم حذف الدفعة بنجاح" }) : NotFound(new { message = "الدفعة غير موجودة" });
+    }
+
     [HttpGet("finance/summary")]
     public async Task<IActionResult> GetSummary()
     {
@@ -45,6 +59,13 @@ public class PaymentsController(FinanceService service) : ControllerBase
     public async Task<IActionResult> GetOverdue()
     {
         var result = await service.GetOverdueContractsAsync();
+        return Ok(result);
+    }
+
+    [HttpGet("patients/{patientId:guid}/finance-summary")]
+    public async Task<IActionResult> GetPatientFinanceSummary(Guid patientId)
+    {
+        var result = await service.GetPatientFinanceSummaryAsync(patientId);
         return Ok(result);
     }
 }

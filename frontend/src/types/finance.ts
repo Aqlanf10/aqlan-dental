@@ -28,9 +28,13 @@ export interface Payment {
   paymentMethod?: string;
   serviceDescription?: string;
   specialty?: string;
+  doctorId?: string;
   doctorName?: string;
   receiptNumber?: string;
   notes?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface FinanceSummary {
@@ -39,6 +43,17 @@ export interface FinanceSummary {
   totalOutstanding: number;
   activeContracts: number;
   recentPayments: Payment[];
+}
+
+export interface PatientFinanceSummary {
+  totalTreatmentCost: number;
+  totalPaid: number;
+  outstandingBalance: number;
+  overdueAmount: number;
+  latestPayment: Payment | null;
+  financialStatus: "no_plan" | "paid_full" | "has_balance" | "overdue";
+  activeContractsCount: number;
+  totalPaymentsCount: number;
 }
 
 export interface CreateContractRequest {
@@ -59,6 +74,16 @@ export interface CreatePaymentRequest {
   patientId: string;
   contractId?: string;
   amount: number;
+  paymentMethod?: string;
+  serviceDescription?: string;
+  specialty?: string;
+  doctorId?: string;
+  notes?: string;
+}
+
+export interface UpdatePaymentRequest {
+  amount?: number;
+  paymentDate?: string;
   paymentMethod?: string;
   serviceDescription?: string;
   specialty?: string;

@@ -18,6 +18,9 @@ public class ClinicQueueItemConfiguration : IEntityTypeConfiguration<ClinicQueue
         builder.Property(q => q.RoomName)
             .HasMaxLength(50);
 
+        builder.Property(q => q.Notes)
+            .HasMaxLength(500);
+
         builder.Property(q => q.QueueDate)
             .IsRequired();
 
@@ -47,6 +50,16 @@ public class ClinicQueueItemConfiguration : IEntityTypeConfiguration<ClinicQueue
         builder.HasOne(q => q.Doctor)
             .WithMany()
             .HasForeignKey(q => q.DoctorId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(q => q.AddedByUser)
+            .WithMany()
+            .HasForeignKey(q => q.AddedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(q => q.CalledByUser)
+            .WithMany()
+            .HasForeignKey(q => q.CalledByUserId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

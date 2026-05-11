@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Users,
   Volume2,
+  VolumeX,
   MapPin,
   Stethoscope,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface DisplayData {
   latestCalled: {
+    queueItemId: string;
     patientNumber: string;
     patientName: string;
     doctorName: string;
@@ -22,12 +24,14 @@ interface DisplayData {
   } | null;
   waitingCount: number;
   waitingList: {
+    queueItemId: string;
     patientNumber: string;
     patientName: string;
     doctorName: string;
     status: string;
   }[];
   recentlyCalled: {
+    queueItemId: string;
     patientNumber: string;
     patientName: string;
     doctorName: string;
@@ -49,6 +53,7 @@ const STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string;
 };
 
 const REFRESH_INTERVAL = 20_000; // 20 seconds
+const VOICE_STORAGE_KEY = "aqlan-voice-enabled";
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 function formatClock(date: Date): string {
@@ -72,6 +77,93 @@ function getStatusDisplay(status: string) {
   return STATUS_DISPLAY[status] ?? { label: status, color: "text-gray-400", bg: "bg-gray-800/30", dotColor: "bg-gray-500" };
 }
 
+/* ─── Voice Announcement Module ────────────────────────────────────────────── */
+function useArabicVoiceAnnouncement() {
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(true);
+  const [voiceStatus, setVoiceStatus] = useState<"active" | "inactive" | "unsupported">("inactive");
+  const lastAnnouncedRef = useRef<{ queueItemId: string; calledAt: string } | null>(null);
+
+  // Check browser support on mount
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      setVoiceSupported(false);
+      setVoiceStatus("unsupported");
+      return;
+    }
+    // Restore from localStorage
+    const stored = localStorage.getItem(VOICE_STORAGE_KEY);
+    if (stored === "true") {
+      setVoiceEnabled(true);
+      setVoiceStatus("active");
+    }
+  }, []);
+
+  const enableVoice = useCallback(() => {
+    if (!voiceSupported) return;
+    // Try a small test utterance to satisfy browser autoplay policy
+    try {
+      const utterance = new SpeechSynthesisUtterance("");
+      utterance.volume = 0;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Ignore — some browsers reject silent utterances
+    }
+    setVoiceEnabled(true);
+    setVoiceStatus("active");
+    localStorage.setItem(VOICE_STORAGE_KEY, "true");
+  }, [voiceSupported]);
+
+  const disableVoice = useCallback(() => {
+    setVoiceEnabled(false);
+    setVoiceStatus("inactive");
+    localStorage.setItem(VOICE_STORAGE_KEY, "false");
+    window.speechSynthesis?.cancel();
+  }, []);
+
+  const announce = useCallback(
+    (patientName: string, patientNumber: string, roomName: string, queueItemId: string, calledAt: string) => {
+      if (!voiceEnabled || !voiceSupported) return;
+
+      // Prevent repeat announcement for the same patient call
+      const last = lastAnnouncedRef.current;
+      if (last && last.queueItemId === queueItemId && last.calledAt === calledAt) {
+        return;
+      }
+      lastAnnouncedRef.current = { queueItemId, calledAt };
+
+      try {
+        window.speechSynthesis.cancel();
+
+        // Build announcement text
+        const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
+        const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "ar";
+        utterance.rate = 0.9;
+        utterance.volume = 1;
+        utterance.pitch = 1;
+
+        // Try to find an Arabic voice
+        const voices = window.speechSynthesis.getVoices();
+        const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
+        if (arabicVoice) {
+          utterance.voice = arabicVoice;
+        }
+
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // Do not crash — log only
+        console.warn("Voice announcement failed");
+      }
+    },
+    [voiceEnabled, voiceSupported]
+  );
+
+  return { voiceEnabled, voiceSupported, voiceStatus, enableVoice, disableVoice, announce };
+}
+
 /* ─── Main Page ────────────────────────────────────────────────────────────── */
 export default function ClinicDisplayPage() {
   const [data, setData] = useState<DisplayData | null>(null);
@@ -81,6 +173,8 @@ export default function ClinicDisplayPage() {
   const [now, setNow] = useState<Date>(new Date());
   const [pulseKey, setPulseKey] = useState(0);
   const prevLatestCalledRef = useRef<string | null>(null);
+
+  const { voiceEnabled, voiceSupported, voiceStatus, enableVoice, disableVoice, announce } = useArabicVoiceAnnouncement();
 
   const fetchDisplay = useCallback(async () => {
     try {
@@ -92,10 +186,21 @@ export default function ClinicDisplayPage() {
       const json: DisplayData = await res.json();
 
       // Only trigger pulse animation when the latest called patient actually changes
-      const newKey = json.latestCalled?.patientNumber ?? null;
+      const newKey = json.latestCalled?.queueItemId ?? null;
       if (newKey !== prevLatestCalledRef.current) {
         prevLatestCalledRef.current = newKey;
         setPulseKey((k) => k + 1);
+
+        // Trigger voice announcement for new Called patient
+        if (json.latestCalled && json.latestCalled.roomName) {
+          announce(
+            json.latestCalled.patientName,
+            json.latestCalled.patientNumber,
+            json.latestCalled.roomName,
+            json.latestCalled.queueItemId,
+            json.latestCalled.calledAt
+          );
+        }
       }
 
       setData(json);
@@ -106,7 +211,7 @@ export default function ClinicDisplayPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [announce]);
 
   // Initial fetch + auto-refresh
   useEffect(() => {
@@ -121,7 +226,24 @@ export default function ClinicDisplayPage() {
     return () => clearInterval(clockInterval);
   }, []);
 
+  // Load voices on mount (some browsers load them async)
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+  }, []);
+
   const isFullyEmpty = data && data.waitingCount === 0 && !data.latestCalled && data.recentlyCalled.length === 0;
+
+  /* Voice status text */
+  const voiceStatusText = voiceStatus === "active"
+    ? "النداء الصوتي مفعل"
+    : voiceStatus === "unsupported"
+      ? "النداء الصوتي غير مدعوم في هذا المتصفح"
+      : "النداء الصوتي متوقف";
 
   return (
     <div
@@ -136,8 +258,8 @@ export default function ClinicDisplayPage() {
             ع
           </div>
           <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-white leading-tight">
-              مركز الدكتور عقلان الكامل
+            <h1 className="text-2xl md:text-4xl font-bold text-white leading-tight">
+              مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان
             </h1>
             <p className="text-lg md:text-xl text-teal-300 mt-1">
               شاشة الطابور
@@ -160,6 +282,38 @@ export default function ClinicDisplayPage() {
           </p>
         </div>
       </header>
+
+      {/* ── Voice Control Bar ────────────────────────────────────── */}
+      <div className="px-8 md:px-16 py-2 bg-[#0c1322] border-b border-white/5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {voiceEnabled ? (
+            <Volume2 className="w-5 h-5 text-teal-400" />
+          ) : (
+            <VolumeX className="w-5 h-5 text-gray-500" />
+          )}
+          <span className={`text-sm font-medium ${voiceStatus === "active" ? "text-teal-400" : voiceStatus === "unsupported" ? "text-gray-500" : "text-gray-400"}`}>
+            {voiceStatusText}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {voiceSupported && !voiceEnabled && (
+            <button
+              onClick={enableVoice}
+              className="px-4 py-1.5 rounded-lg text-sm font-bold bg-teal-700 text-white hover:bg-teal-600 transition"
+            >
+              تفعيل النداء الصوتي
+            </button>
+          )}
+          {voiceSupported && voiceEnabled && (
+            <button
+              onClick={disableVoice}
+              className="px-4 py-1.5 rounded-lg text-sm font-medium bg-white/10 text-gray-300 hover:bg-white/20 transition"
+            >
+              إيقاف النداء الصوتي
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* ── Main content ───────────────────────────────────────── */}
       <main className="flex-1 px-8 md:px-16 py-8 overflow-auto">
@@ -185,7 +339,7 @@ export default function ClinicDisplayPage() {
             <div className="w-24 h-24 rounded-full bg-white/5 flex items-center justify-center mb-4">
               <CheckCircle2 className="w-14 h-14 text-teal-500/60" />
             </div>
-            <p className="text-3xl font-bold text-gray-300">لا يوجد مرضى في الطابور حالياً</p>
+            <p className="text-3xl font-bold text-gray-300">لا يوجد مرضى منادون حالياً</p>
             <p className="text-lg text-gray-500 mt-2">سيتم تحديث الشاشة تلقائياً عند إضافة مرضى</p>
           </div>
         ) : data ? (
@@ -204,11 +358,13 @@ export default function ClinicDisplayPage() {
                   </div>
                   <div className="text-center space-y-4">
                     <div className="text-5xl md:text-7xl font-extrabold text-white leading-tight">
-                      {data.latestCalled.patientName}
+                      {data.latestCalled.patientName || `ملف رقم ${data.latestCalled.patientNumber}`}
                     </div>
-                    <div className="text-2xl md:text-3xl text-teal-200 font-mono">
-                      رقم الملف: {data.latestCalled.patientNumber}
-                    </div>
+                    {data.latestCalled.patientName && (
+                      <div className="text-2xl md:text-3xl text-teal-200 font-mono">
+                        رقم الملف: {data.latestCalled.patientNumber}
+                      </div>
+                    )}
                     <div className="flex items-center justify-center gap-5 mt-6">
                       <div className="flex items-center gap-3 bg-teal-800/60 px-6 py-3 rounded-2xl">
                         <MapPin className="w-6 h-6 text-teal-300" />
@@ -248,7 +404,7 @@ export default function ClinicDisplayPage() {
                   <div className="mt-5 space-y-3 max-h-60 overflow-y-auto">
                     {data.waitingList.map((w, i) => (
                       <div
-                        key={i}
+                        key={w.queueItemId || i}
                         className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5"
                       >
                         <div className="flex items-center gap-3">
@@ -287,7 +443,7 @@ export default function ClinicDisplayPage() {
                       const cfg = getStatusDisplay(item.status);
                       return (
                         <div
-                          key={i}
+                          key={item.queueItemId || i}
                           className="flex items-center gap-5 px-6 py-5 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
                         >
                           {/* Room */}

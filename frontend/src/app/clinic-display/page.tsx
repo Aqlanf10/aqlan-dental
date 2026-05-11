@@ -79,20 +79,61 @@ function getStatusDisplay(status: string) {
 }
 
 /**
+ * Format a room name for speech synthesis.
+ *
+ * If the roomName contains a number (Arabic or Western digits),
+ * extract it and return "الغرفة رقم [number]" for clearer speech.
+ * If the roomName contains no number, return it as-is.
+ * If roomName is empty/missing, return "الاستقبال" (reception).
+ *
+ * Examples:
+ *   "غرفة 1"  → "الغرفة رقم 1"
+ *   "غرفة 2"  → "الغرفة رقم 2"
+ *   "3"       → "الغرفة رقم 3"
+ *   "الاستقبال" → "الاستقبال"
+ *   ""         → "الاستقبال"
+ */
+function formatRoomForSpeech(roomName?: string | null): string {
+  const trimmed = roomName?.trim();
+  if (!trimmed) return RECEPTION_FALLBACK;
+
+  // Match Western digits (0-9) or Arabic-Indic digits (٠-٩)
+  const numberMatch = trimmed.match(/\d+|[٠-٩]+/);
+  if (numberMatch) {
+    return `الغرفة رقم ${numberMatch[0]}`;
+  }
+
+  return trimmed;
+}
+
+/**
  * Build the privacy-safe Arabic announcement text for a patient.
  *
- * Allowed spoken fields: patient name, file number (if name unavailable), room name.
+ * Allowed spoken fields: patient name, file number (if name unavailable), room number.
  * Forbidden spoken fields: phone, diagnosis, payment, balance, treatment notes,
  *   medical history, private notes.
  *
  * Fallbacks:
  *   - If patient name is missing → "صاحب الملف رقم [fileNumber]"
  *   - If room is missing → "الاستقبال"
+ *   - If roomName contains a number → "الغرفة رقم [number]"
+ *
+ * Examples:
+ *   patientName="علي أحمد", roomName="غرفة 1"
+ *     → "المريض علي أحمد، يرجى التوجه إلى الغرفة رقم 1"
+ *   patientName="", patientNumber="8501", roomName="غرفة 2"
+ *     → "صاحب الملف رقم 8501، يرجى التوجه إلى الغرفة رقم 2"
+ *   patientName="علي أحمد", roomName=""
+ *     → "المريض علي أحمد، يرجى التوجه إلى الاستقبال"
  */
 function buildAnnouncementText(patientName: string, patientNumber: string, roomName: string): string {
-  const displayName = patientName?.trim() || `صاحب الملف رقم ${patientNumber}`;
-  const displayRoom = roomName?.trim() || RECEPTION_FALLBACK;
-  return `المريض ${displayName}، يرجى التوجه إلى ${displayRoom}`;
+  const hasName = patientName?.trim().length > 0;
+  const destination = formatRoomForSpeech(roomName);
+
+  if (hasName) {
+    return `المريض ${patientName.trim()}، يرجى التوجه إلى ${destination}`;
+  }
+  return `صاحب الملف رقم ${patientNumber}، يرجى التوجه إلى ${destination}`;
 }
 
 /* ─── Arabic Speech Utility ────────────────────────────────────────────────── */

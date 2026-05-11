@@ -6,6 +6,9 @@ public class Radiograph : BaseEntity
     public DateOnly XrayDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
     public string? XrayType { get; set; } // OPG, lateral_ceph, PA_ceph, bitewing, periapical, CBCT
     public string FileUrl { get; set; } = string.Empty;
+    public string? FileName { get; set; }
+    public long? FileSize { get; set; }
+    public string? MimeType { get; set; }
     public string? ToothRelated { get; set; }
     public string? Notes { get; set; }
     public Guid? DoctorId { get; set; }

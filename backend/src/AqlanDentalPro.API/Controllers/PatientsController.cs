@@ -374,7 +374,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             .ToListAsync();
 
         var documentEvents = await db.Documents
-            .Where(d => d.PatientId == id)
+            .Where(d => d.PatientId == id && d.IsActive)
             .OrderByDescending(d => d.CreatedAt)
             .Select(d => new
             {
@@ -389,7 +389,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             .ToListAsync();
 
         var photoEvents = await db.ClinicalPhotos
-            .Where(p => p.PatientId == id)
+            .Where(p => p.PatientId == id && p.IsActive)
             .OrderByDescending(p => p.PhotoDate)
             .Select(p => new
             {
@@ -403,12 +403,28 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             .Take(10)
             .ToListAsync();
 
+        var radiographEvents = await db.Radiographs
+            .Where(r => r.PatientId == id && r.IsActive)
+            .OrderByDescending(r => r.XrayDate)
+            .Select(r => new
+            {
+                type = "radiograph",
+                id = r.Id,
+                date = r.XrayDate.ToString("yyyy-MM-dd"),
+                title = "أشعة سنية",
+                description = (r.XrayType ?? "") + (r.ToothRelated != null ? $" · سن: {r.ToothRelated}" : ""),
+                status = (string?)null
+            })
+            .Take(10)
+            .ToListAsync();
+
         // Merge all events and sort by date descending
         var allEvents = appointmentEvents.Cast<object>()
             .Concat(visitEvents)
             .Concat(paymentEvents)
             .Concat(documentEvents)
             .Concat(photoEvents)
+            .Concat(radiographEvents)
             .OrderByDescending(e => ((dynamic)e).date)
             .Take(50)
             .ToList();

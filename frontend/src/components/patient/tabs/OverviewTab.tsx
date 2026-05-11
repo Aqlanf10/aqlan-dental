@@ -6,7 +6,7 @@ import {
   Calendar, Activity, Wallet, Pill, Clock, Scissors,
   Phone, Stethoscope, AlertTriangle, FileText,
   CreditCard, Camera, FolderOpen, Plus, MessageCircle,
-  ClipboardList, ChevronLeft, ScanLine,
+  ClipboardList, ChevronLeft, ScanLine, Printer,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
@@ -218,6 +218,16 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         >
           <MessageCircle className="w-3.5 h-3.5" />
           إرسال رسالة
+        </Link>
+        <Link
+          href={`/patients/${patientId}/print/summary`}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+        >
+          <Printer className="w-3.5 h-3.5" />
+          طباعة ملخص المريض
         </Link>
         {whatsappNumber && (
           <a

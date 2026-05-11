@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import {
   ClipboardList, Plus, Pencil, Trash2, X, Stethoscope,
   ChevronDown, ChevronUp, Calendar, Search,
   FileText, Activity, HeartPulse, Scissors, Syringe,
-  AlertCircle, CheckCircle2, Link2, User,
+  AlertCircle, CheckCircle2, Link2, User, Printer,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
@@ -617,6 +618,14 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 pt-1">
+                      <Link
+                        href={`/patients/${visit.patientId}/visits/${visit.id}/print`}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Printer className="w-3 h-3" />
+                        طباعة
+                      </Link>
                       <button
                         onClick={(e) => { e.stopPropagation(); openEditModal(visit); }}
                         className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"

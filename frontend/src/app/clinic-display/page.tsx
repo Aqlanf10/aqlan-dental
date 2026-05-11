@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   PhoneCall,
   Clock,
+  RefreshCw,
 } from "lucide-react";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -77,43 +78,135 @@ function getStatusDisplay(status: string) {
   return STATUS_DISPLAY[status] ?? { label: status, color: "text-gray-400", bg: "bg-gray-800/30", dotColor: "bg-gray-500" };
 }
 
+/* ─── Arabic Speech Utility ────────────────────────────────────────────────── */
+
+/**
+ * Speak an Arabic text using the browser SpeechSynthesis API.
+ * - Cancels any ongoing speech first
+ * - Prefers an Arabic voice (lang starts with "ar")
+ * - Falls back to default voice with utterance.lang = "ar-SA"
+ * - Returns true if speech was started, false on failure
+ */
+function speakArabic(text: string, voices: SpeechSynthesisVoice[]): boolean {
+  if (typeof window === "undefined" || !window.speechSynthesis) {
+    return false;
+  }
+
+  try {
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "ar-SA";
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    // Prefer Arabic voice
+    const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
+    if (arabicVoice) {
+      utterance.voice = arabicVoice;
+    }
+
+    utterance.onstart = () => {
+      console.log("[Voice] Speaking:", text);
+    };
+    utterance.onend = () => {
+      console.log("[Voice] Speech ended");
+    };
+    utterance.onerror = (e) => {
+      console.warn("[Voice] Speech error:", e.error);
+    };
+
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch (err) {
+    console.warn("[Voice] speakArabic failed:", err);
+    return false;
+  }
+}
+
 /* ─── Voice Announcement Module ────────────────────────────────────────────── */
 function useArabicVoiceAnnouncement() {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [voiceStatus, setVoiceStatus] = useState<"active" | "inactive" | "unsupported">("inactive");
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [arabicVoiceAvailable, setArabicVoiceAvailable] = useState<boolean | null>(null);
   const lastAnnouncedRef = useRef<{ queueItemId: string; calledAt: string } | null>(null);
 
-  // Check browser support on mount
+  // ─── Load voices reliably ───────────────────────────────────────────────
+  // speechSynthesis.getVoices() may return [] initially on Chrome.
+  // We must also listen to the onvoiceschanged event.
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) {
       setVoiceSupported(false);
       setVoiceStatus("unsupported");
       return;
     }
-    // Restore from localStorage
+
+    const loadVoices = () => {
+      const available = window.speechSynthesis.getVoices();
+      if (available.length > 0) {
+        setVoices(available);
+        const hasArabic = available.some((v) => v.lang.startsWith("ar"));
+        setArabicVoiceAvailable(hasArabic);
+      }
+    };
+
+    // Try immediately
+    loadVoices();
+
+    // Listen for async voice loading (Chrome loads voices async)
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  // ─── Restore localStorage on mount ──────────────────────────────────────
+  useEffect(() => {
+    if (!voiceSupported) return;
     const stored = localStorage.getItem(VOICE_STORAGE_KEY);
     if (stored === "true") {
       setVoiceEnabled(true);
       setVoiceStatus("active");
     }
-  }, []);
+  }, [voiceSupported]);
 
+  // ─── Test voice (speaks a confirmation phrase) ──────────────────────────
+  const testVoice = useCallback(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      setVoiceError("النداء الصوتي غير مدعوم في هذا المتصفح");
+      return;
+    }
+    setVoiceError(null);
+    const ok = speakArabic("تم تفعيل النداء الصوتي بنجاح", voices);
+    if (!ok) {
+      setVoiceError("تعذر تشغيل النداء الصوتي. تأكد من صوت الجهاز والمتصفح.");
+    }
+  }, [voices]);
+
+  // ─── Enable voice (audible, not silent) ─────────────────────────────────
   const enableVoice = useCallback(() => {
     if (!voiceSupported) return;
-    // Try a small test utterance to satisfy browser autoplay policy
-    try {
-      const utterance = new SpeechSynthesisUtterance("");
-      utterance.volume = 0;
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      // Ignore — some browsers reject silent utterances
+
+    setVoiceError(null);
+    // Speak an audible phrase — this satisfies browser autoplay policy
+    // because it is triggered by a user gesture (button click)
+    const ok = speakArabic("تم تفعيل النداء الصوتي", voices);
+    if (!ok) {
+      setVoiceError("تعذر تشغيل النداء الصوتي. تأكد من صوت الجهاز والمتصفح.");
+      return;
     }
+
     setVoiceEnabled(true);
     setVoiceStatus("active");
     localStorage.setItem(VOICE_STORAGE_KEY, "true");
-  }, [voiceSupported]);
+  }, [voiceSupported, voices]);
 
+  // ─── Disable voice ──────────────────────────────────────────────────────
   const disableVoice = useCallback(() => {
     setVoiceEnabled(false);
     setVoiceStatus("inactive");
@@ -121,47 +214,68 @@ function useArabicVoiceAnnouncement() {
     window.speechSynthesis?.cancel();
   }, []);
 
+  // ─── Announce a called patient (auto-trigger on new call) ───────────────
   const announce = useCallback(
     (patientName: string, patientNumber: string, roomName: string, queueItemId: string, calledAt: string) => {
-      if (!voiceEnabled || !voiceSupported) return;
+      if (!voiceEnabled || !voiceSupported) return false;
 
       // Prevent repeat announcement for the same patient call
       const last = lastAnnouncedRef.current;
       if (last && last.queueItemId === queueItemId && last.calledAt === calledAt) {
-        return;
+        return false;
       }
       lastAnnouncedRef.current = { queueItemId, calledAt };
 
-      try {
-        window.speechSynthesis.cancel();
+      const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
+      const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
 
-        // Build announcement text
-        const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
-        const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = "ar";
-        utterance.rate = 0.9;
-        utterance.volume = 1;
-        utterance.pitch = 1;
-
-        // Try to find an Arabic voice
-        const voices = window.speechSynthesis.getVoices();
-        const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
-        if (arabicVoice) {
-          utterance.voice = arabicVoice;
-        }
-
-        window.speechSynthesis.speak(utterance);
-      } catch {
-        // Do not crash — log only
-        console.warn("Voice announcement failed");
-      }
+      return speakArabic(text, voices);
     },
-    [voiceEnabled, voiceSupported]
+    [voiceEnabled, voiceSupported, voices]
   );
 
-  return { voiceEnabled, voiceSupported, voiceStatus, enableVoice, disableVoice, announce };
+  // ─── Manual repeat announcement (bypasses dedup check) ──────────────────
+  const repeatAnnounce = useCallback(
+    (patientName: string, patientNumber: string, roomName: string) => {
+      if (!voiceEnabled || !voiceSupported) return false;
+
+      const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
+      const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
+
+      return speakArabic(text, voices);
+    },
+    [voiceEnabled, voiceSupported, voices]
+  );
+
+  // ─── Announce current patient after enabling (for already-called patients) ──
+  const announceCurrent = useCallback(
+    (patientName: string, patientNumber: string, roomName: string, queueItemId: string, calledAt: string) => {
+      if (!voiceEnabled || !voiceSupported) return false;
+
+      // Always announce on enable, even if same patient — but update dedup ref
+      lastAnnouncedRef.current = { queueItemId, calledAt };
+
+      const displayName = patientName || `صاحب الملف رقم ${patientNumber}`;
+      const text = `المريض ${displayName}، يرجى التوجه إلى ${roomName}`;
+
+      return speakArabic(text, voices);
+    },
+    [voiceEnabled, voiceSupported, voices]
+  );
+
+  return {
+    voiceEnabled,
+    voiceSupported,
+    voiceStatus,
+    voiceError,
+    arabicVoiceAvailable,
+    testVoice,
+    enableVoice,
+    disableVoice,
+    announce,
+    repeatAnnounce,
+    announceCurrent,
+  };
 }
 
 /* ─── Main Page ────────────────────────────────────────────────────────────── */
@@ -174,7 +288,22 @@ export default function ClinicDisplayPage() {
   const [pulseKey, setPulseKey] = useState(0);
   const prevLatestCalledRef = useRef<string | null>(null);
 
-  const { voiceEnabled, voiceSupported, voiceStatus, enableVoice, disableVoice, announce } = useArabicVoiceAnnouncement();
+  const {
+    voiceEnabled,
+    voiceSupported,
+    voiceStatus,
+    voiceError,
+    arabicVoiceAvailable,
+    testVoice,
+    enableVoice,
+    disableVoice,
+    announce,
+    repeatAnnounce,
+    announceCurrent,
+  } = useArabicVoiceAnnouncement();
+
+  // Track whether we already announced the current patient after enabling
+  const announcedAfterEnableRef = useRef(false);
 
   const fetchDisplay = useCallback(async () => {
     try {
@@ -213,6 +342,31 @@ export default function ClinicDisplayPage() {
     }
   }, [announce]);
 
+  // After enabling voice, if there's a current Called patient, announce it once
+  useEffect(() => {
+    if (voiceEnabled && data?.latestCalled && data.latestCalled.roomName && !announcedAfterEnableRef.current) {
+      announcedAfterEnableRef.current = true;
+      // Small delay to ensure the speech engine is ready after enable
+      const timer = setTimeout(() => {
+        announceCurrent(
+          data.latestCalled!.patientName,
+          data.latestCalled!.patientNumber,
+          data.latestCalled!.roomName,
+          data.latestCalled!.queueItemId,
+          data.latestCalled!.calledAt
+        );
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [voiceEnabled, data?.latestCalled, announceCurrent]);
+
+  // Reset the after-enable flag when voice is disabled
+  useEffect(() => {
+    if (!voiceEnabled) {
+      announcedAfterEnableRef.current = false;
+    }
+  }, [voiceEnabled]);
+
   // Initial fetch + auto-refresh
   useEffect(() => {
     fetchDisplay();
@@ -226,16 +380,6 @@ export default function ClinicDisplayPage() {
     return () => clearInterval(clockInterval);
   }, []);
 
-  // Load voices on mount (some browsers load them async)
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.getVoices();
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
-    }
-  }, []);
-
   const isFullyEmpty = data && data.waitingCount === 0 && !data.latestCalled && data.recentlyCalled.length === 0;
 
   /* Voice status text */
@@ -244,6 +388,16 @@ export default function ClinicDisplayPage() {
     : voiceStatus === "unsupported"
       ? "النداء الصوتي غير مدعوم في هذا المتصفح"
       : "النداء الصوتي متوقف";
+
+  /* Repeat announcement handler */
+  const handleRepeatAnnounce = useCallback(() => {
+    if (!data?.latestCalled || !data.latestCalled.roomName) return;
+    repeatAnnounce(
+      data.latestCalled.patientName,
+      data.latestCalled.patientNumber,
+      data.latestCalled.roomName
+    );
+  }, [data?.latestCalled, repeatAnnounce]);
 
   return (
     <div
@@ -284,7 +438,7 @@ export default function ClinicDisplayPage() {
       </header>
 
       {/* ── Voice Control Bar ────────────────────────────────────── */}
-      <div className="px-8 md:px-16 py-2 bg-[#0c1322] border-b border-white/5 flex items-center justify-between">
+      <div className="px-8 md:px-16 py-2 bg-[#0c1322] border-b border-white/5 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           {voiceEnabled ? (
             <Volume2 className="w-5 h-5 text-teal-400" />
@@ -294,8 +448,25 @@ export default function ClinicDisplayPage() {
           <span className={`text-sm font-medium ${voiceStatus === "active" ? "text-teal-400" : voiceStatus === "unsupported" ? "text-gray-500" : "text-gray-400"}`}>
             {voiceStatusText}
           </span>
+          {/* Arabic voice availability indicator */}
+          {voiceStatus === "active" && arabicVoiceAvailable === true && (
+            <span className="text-xs text-teal-500">— الصوت العربي متاح</span>
+          )}
+          {voiceStatus === "active" && arabicVoiceAvailable === false && (
+            <span className="text-xs text-amber-500">— سيتم استخدام الصوت الافتراضي</span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Test voice button — always visible when speech is supported */}
+          {voiceSupported && (
+            <button
+              onClick={testVoice}
+              className="px-4 py-1.5 rounded-lg text-sm font-medium bg-white/10 text-gray-300 hover:bg-white/20 transition flex items-center gap-1.5"
+            >
+              <Volume2 className="w-4 h-4" />
+              اختبار الصوت
+            </button>
+          )}
           {voiceSupported && !voiceEnabled && (
             <button
               onClick={enableVoice}
@@ -313,6 +484,20 @@ export default function ClinicDisplayPage() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Voice error message */}
+      {voiceError && (
+        <div className="px-8 md:px-16 py-2 bg-red-900/30 border-b border-red-800/30">
+          <p className="text-sm text-red-300">{voiceError}</p>
+        </div>
+      )}
+
+      {/* Browser/device helper note */}
+      <div className="px-8 md:px-16 py-1.5 bg-[#0c1322] border-b border-white/5">
+        <p className="text-xs text-gray-500">
+          إذا لم يعمل الصوت، اضغط اختبار الصوت وتأكد من رفع صوت الجهاز والسماح بالصوت في المتصفح.
+        </p>
       </div>
 
       {/* ── Main content ───────────────────────────────────────── */}
@@ -381,6 +566,16 @@ export default function ClinicDisplayPage() {
                       <Clock className="w-4 h-4" />
                       {formatTimeAgo(data.latestCalled.calledAt)}
                     </div>
+                    {/* Manual repeat announcement button */}
+                    {voiceEnabled && (
+                      <button
+                        onClick={handleRepeatAnnounce}
+                        className="mt-4 px-6 py-2.5 rounded-xl bg-teal-700 text-white font-bold hover:bg-teal-600 transition flex items-center gap-2 mx-auto"
+                      >
+                        <RefreshCw className="w-5 h-5" />
+                        إعادة النداء
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (

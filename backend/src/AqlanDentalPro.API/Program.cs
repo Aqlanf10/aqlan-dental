@@ -1003,9 +1003,18 @@ if (enableStartupDbMaintenance)
         }
     }
 
-    // Ensure ClinicQueueItems table exists (Sprint 7)
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEMPORARY PRODUCTION SAFETY NET — DO NOT EXTEND
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Ensure ClinicQueueItems table exists (Sprint 7).
     // The migration should create this via MigrateAsync, but we add a safety net
     // in case the migration fails to apply on Railway.
+    //
+    // TD-010: Remove this entire safety net block after migration stability is
+    // confirmed on Railway (at least 2 weeks of clean deployments with no
+    // "Failed to ensure ClinicQueueItems table" warnings in logs).
+    // After removal, the EF migration alone will be responsible for schema.
+    // ─────────────────────────────────────────────────────────────────────────────
     try
     {
         await db.Database.ExecuteSqlRawAsync("""

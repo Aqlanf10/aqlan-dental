@@ -52,7 +52,16 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
-    if (error.response?.status === 401 && !original._retry) {
+    const url = original?.url ?? "";
+
+    // Skip refresh logic for auth endpoints — they handle 401 themselves
+    if (
+      error.response?.status === 401 &&
+      !original._retry &&
+      !url.includes("/api/auth/login") &&
+      !url.includes("/api/auth/refresh-token") &&
+      !url.includes("/api/portal/auth/")
+    ) {
       original._retry = true;
 
       if (isRefreshing) {

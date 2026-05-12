@@ -171,8 +171,10 @@ function StaffLoginPanel() {
     try {
       await login(data);
       router.push("/");
-    } catch {
-      setError("اسم المستخدم أو كلمة المرور غير صحيحة");
+    } catch (err) {
+      // Show API error message if available, otherwise show generic message
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");
     }
   };
 
@@ -202,7 +204,14 @@ function StaffLoginPanel() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 flex-1">
         {/* Error message */}
         {error && (
-          <div className="text-[13px] mb-1" style={{ color: "#fca5a5" }}>
+          <div
+            className="text-[13px] px-3 py-2 rounded-lg"
+            style={{
+              color: "#fca5a5",
+              background: "rgba(252,165,165,0.1)",
+              border: "1px solid rgba(252,165,165,0.2)",
+            }}
+          >
             {error}
           </div>
         )}
@@ -261,9 +270,9 @@ function StaffLoginPanel() {
           )}
         </div>
 
-        {/* F3 FIX: Staff forgot password - changed from dead link to informative message */}
-        <div className="text-left">
-          <span className="text-[12px]" style={{ color: "#9ca3af" }}>
+        {/* Staff forgot password info */}
+        <div className="text-center pt-1">
+          <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.65)" }}>
             لإعادة تعيين كلمة المرور، تواصل مع مدير النظام
           </span>
         </div>

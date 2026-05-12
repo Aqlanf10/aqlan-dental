@@ -109,7 +109,7 @@ function formatRoomForSpeech(roomName?: string | null): string {
 /**
  * Build the privacy-safe Arabic announcement text for a patient.
  *
- * Allowed spoken fields: patient name, file number (if name unavailable), room number.
+ * Allowed spoken fields: patient name, file number, room number.
  * Forbidden spoken fields: phone, diagnosis, payment, balance, treatment notes,
  *   medical history, private notes.
  *
@@ -119,21 +119,23 @@ function formatRoomForSpeech(roomName?: string | null): string {
  *   - If roomName contains a number → "الغرفة رقم [number]"
  *
  * Examples:
- *   patientName="علي أحمد", roomName="غرفة 1"
- *     → "المريض علي أحمد، يرجى التوجه إلى الغرفة رقم 1"
+ *   patientName="علي أحمد", patientNumber="8501", roomName="غرفة 1"
+ *     → "المريض علي أحمد، رقم الملف 8501، يرجى التوجه إلى الغرفة رقم 1"
  *   patientName="", patientNumber="8501", roomName="غرفة 2"
  *     → "صاحب الملف رقم 8501، يرجى التوجه إلى الغرفة رقم 2"
  *   patientName="علي أحمد", roomName=""
- *     → "المريض علي أحمد، يرجى التوجه إلى الاستقبال"
+ *     → "المريض علي أحمد، رقم الملف 8501، يرجى التوجه إلى الاستقبال"
  */
 function buildAnnouncementText(patientName: string, patientNumber: string, roomName: string): string {
   const hasName = patientName?.trim().length > 0;
+  const fileNumber = patientNumber?.trim();
   const destination = formatRoomForSpeech(roomName);
 
   if (hasName) {
-    return `المريض ${patientName.trim()}، يرجى التوجه إلى ${destination}`;
+    const filePart = fileNumber ? `، رقم الملف ${fileNumber}` : "";
+    return `المريض ${patientName.trim()}${filePart}، يرجى التوجه إلى ${destination}`;
   }
-  return `صاحب الملف رقم ${patientNumber}، يرجى التوجه إلى ${destination}`;
+  return `صاحب الملف رقم ${fileNumber || patientNumber}، يرجى التوجه إلى ${destination}`;
 }
 
 /* ─── Arabic Speech Utility ────────────────────────────────────────────────── */

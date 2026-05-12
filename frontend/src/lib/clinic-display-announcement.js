@@ -1,21 +1,43 @@
 export const RECEPTION_FALLBACK = "الاستقبال";
 
-/**
- * Format a room name for Arabic speech synthesis.
- *
- * If the roomName contains a number (Arabic or Western digits),
- * extract it and return "الغرفة رقم [number]" for clearer speech.
- * If the roomName contains no number, return it as-is.
- * If roomName is empty/missing, return "الاستقبال".
- *
- * @param {string | null | undefined} roomName
- * @returns {string}
- */
+const LETTER_NAMES = {
+  A: "إيه",
+  B: "بي",
+  C: "سي",
+  D: "دي",
+  E: "إي",
+  F: "إف",
+  G: "جي",
+  H: "إتش",
+  I: "آي",
+  J: "جاي",
+  K: "كي",
+  L: "إل",
+  M: "إم",
+  N: "إن",
+  O: "أو",
+  P: "بي",
+  Q: "كيو",
+  R: "آر",
+  S: "إس",
+  T: "تي",
+  U: "يو",
+  V: "في",
+  W: "دبليو",
+  X: "إكس",
+  Y: "واي",
+  Z: "زد"
+};
+
+const ZERO_NAMES = {
+  "0": "صفر",
+  "٠": "صفر"
+};
+
 export function formatRoomForSpeech(roomName) {
   const trimmed = roomName?.trim();
   if (!trimmed) return RECEPTION_FALLBACK;
 
-  // Match Western digits (0-9) or Arabic-Indic digits (٠-٩)
   const numberMatch = trimmed.match(/\d+|[٠-٩]+/);
   if (numberMatch) {
     return `الغرفة رقم ${numberMatch[0]}`;
@@ -24,27 +46,59 @@ export function formatRoomForSpeech(roomName) {
   return trimmed;
 }
 
-/**
- * Build the privacy-safe Arabic announcement text for a patient.
- *
- * Allowed spoken fields: patient name, file number, room number.
- * Forbidden spoken fields: phone, diagnosis, payment, balance, treatment notes,
- * medical history, private notes.
- *
- * @param {string} patientName
- * @param {string} patientNumber
- * @param {string} roomName
- * @returns {string}
- */
-export function buildAnnouncementText(patientName, patientNumber, roomName) {
-  const hasName = patientName?.trim().length > 0;
-  const fileNumber = patientNumber?.trim();
-  const destination = formatRoomForSpeech(roomName);
+function pronounceLeadingZeros(numberPart) {
+  if (!numberPart || numberPart.length <= 1) return numberPart;
 
-  if (hasName) {
-    const filePart = fileNumber ? `، رقم الملف ${fileNumber}` : "";
-    return `المريض ${patientName.trim()}${filePart}، يرجى التوجه إلى ${destination}`;
+  let index = 0;
+  const parts = [];
+  while (index < numberPart.length - 1 && (numberPart[index] === "0" || numberPart[index] === "٠")) {
+    parts.push(ZERO_NAMES[numberPart[index]] ?? "صفر");
+    index += 1;
   }
 
-  return `صاحب الملف رقم ${fileNumber || patientNumber}، يرجى التوجه إلى ${destination}`;
+  const rest = numberPart.slice(index);
+  if (rest) parts.push(rest);
+  return parts.join(" ");
+}
+
+export function formatFileNumberForSpeech(patientNumber) {
+  const trimmed = patientNumber?.trim();
+  if (!trimmed) return "";
+
+  const tokens = [];
+  let currentNumber = "";
+
+  const flushNumber = () => {
+    if (currentNumber) {
+      tokens.push(pronounceLeadingZeros(currentNumber));
+      currentNumber = "";
+    }
+  };
+
+  for (const char of trimmed) {
+    const upper = char.toUpperCase();
+    if (LETTER_NAMES[upper]) {
+      flushNumber();
+      tokens.push(LETTER_NAMES[upper]);
+    } else if (/\d|[٠-٩]/.test(char)) {
+      currentNumber += char;
+    } else if (char === "-" || char === "_" || char === "/" || char === " ") {
+      flushNumber();
+    } else {
+      flushNumber();
+      tokens.push(char);
+    }
+  }
+
+  flushNumber();
+  return tokens.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+export function buildAnnouncementText(patientName, patientNumber, roomName) {
+  const reviewerName = patientName?.trim();
+  const fileNumber = formatFileNumberForSpeech(patientNumber) || patientNumber?.trim() || "غير محدد";
+  const destination = formatRoomForSpeech(roomName);
+  const reviewerPart = reviewerName ? `المراجع ${reviewerName}` : "المراجع";
+
+  return `${reviewerPart}، صاحب الملف رقم ${fileNumber}، يرجى التوجه إلى ${destination}`;
 }

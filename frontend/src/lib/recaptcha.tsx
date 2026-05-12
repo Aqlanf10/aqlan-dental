@@ -1,4 +1,11 @@
-import { GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
+"use client";
+
+import dynamic from "next/dynamic";
+
+const GoogleReCaptchaProvider = dynamic(
+  () => import("react-google-recaptcha-v3").then((mod) => ({ default: mod.GoogleReCaptchaProvider })),
+  { ssr: false }
+);
 
 const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || '';
 

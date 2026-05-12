@@ -89,18 +89,20 @@ function getStatusDisplay(status: string) {
 
 const VOICE_ERROR_MSG = "تعذر تشغيل النداء الصوتي. تأكد من صوت الجهاز والمتصفح.";
 const ARABIC_VOICE_MISSING_MSG =
-  "الصوت العربي غير متوفر في هذا الجهاز أو المتصفح. يرجى تثبيت/تفعيل صوت عربي.";
+  "الصوت العربي غير متوفر في هذا الجهاز أو المتصفح. يرجى تثبيت/تفعيل صوت عربي للحصول على أفضل نتيجة.";
 
 /**
  * Speak an Arabic text using the browser SpeechSynthesis API.
  *
  * Rules:
  * - Cancels any ongoing speech first.
- * - REQUIRES a real Arabic voice (lang starts with "ar").
- *   If no Arabic voice is found, does NOT silently fall back to English.
- *   Instead, sets voiceError with a clear Arabic warning message.
+ * - Prefers an Arabic voice (lang starts with "ar") when available.
+ * - If no Arabic voice exists: shows a one-time warning but STILL speaks
+ *   using the default voice with utterance.lang = "ar-SA". Since the text
+ *   is already digit-converted to Arabic words (e.g. "اثنين صفر اثنين"),
+ *   even a non-Arabic voice will produce better results than raw numbers.
  * - Returns { ok: true } if speech was started successfully.
- *   Returns { ok: false, reason: string } on failure with explanation.
+ *   Returns { ok: false, reason: string } only on hard failure.
  */
 function speakArabic(
   text: string,
@@ -111,30 +113,31 @@ function speakArabic(
     return { ok: false, reason: "SpeechSynthesis not available" };
   }
 
-  // Find a real Arabic voice
-  const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
-  if (!arabicVoice) {
-    setVoiceError(ARABIC_VOICE_MISSING_MSG);
-    console.warn(
-      "[Voice] No Arabic voice found. Available voices:",
-      voices.map((v) => `${v.name} (${v.lang})`).join(", ")
-    );
-    return { ok: false, reason: "No Arabic voice available" };
-  }
-
   try {
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ar-SA";
-    utterance.voice = arabicVoice; // Force Arabic voice
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
 
+    // Prefer Arabic voice, but do NOT block if unavailable
+    const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
+    if (arabicVoice) {
+      utterance.voice = arabicVoice;
+      console.log("[Voice] Using Arabic voice:", arabicVoice.name);
+    } else {
+      // Show warning but still speak — text is already Arabic words
+      setVoiceError(ARABIC_VOICE_MISSING_MSG);
+      console.warn(
+        "[Voice] No Arabic voice found, using default. Available voices:",
+        voices.map((v) => `${v.name} (${v.lang})`).join(", ")
+      );
+    }
+
     utterance.onstart = () => {
-      console.log("[Voice] Speaking with Arabic voice:", arabicVoice.name);
-      console.log("[Voice] Text:", text);
+      console.log("[Voice] Speaking:", text);
     };
     utterance.onend = () => {
       console.log("[Voice] Speech ended");

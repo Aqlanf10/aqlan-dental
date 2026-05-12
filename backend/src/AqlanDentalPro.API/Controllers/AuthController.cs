@@ -8,7 +8,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(IAuthService authService, ICurrentUserService currentUser, ITokenService tokenService) : ControllerBase
+public class AuthController(IAuthService authService, ICurrentUserService currentUser, ITokenService tokenService, ILoginAttemptService loginAttempts) : ControllerBase
 {
     private const string RefreshTokenCookie = "refresh_token";
 
@@ -17,9 +17,34 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
     [EnableRateLimiting("AuthPolicy")]
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
+        // Check if account is locked out
+        var (isLocked, remainingMinutes) = await loginAttempts.IsLockedOutAsync(request.Username);
+        if (isLocked)
+        {
+            return StatusCode(429, new { 
+                message = $"تم قفل الحساب بسبب {5} محاولات فاشلة. حاول مرة أخرى بعد {remainingMinutes} دقيقة.",
+                lockedUntil = remainingMinutes
+            });
+        }
+
         var result = await authService.LoginAsync(request);
         if (result == null)
+        {
+            var failCount = await loginAttempts.RecordFailedAttemptAsync(request.Username);
+            
+            if (failCount >= 5)
+            {
+                return StatusCode(429, new { 
+                    message = "تم قفل الحساب بسبب 5 محاولات فاشلة متتالية. حاول مرة أخرى بعد 15 دقيقة.",
+                    lockedUntil = 15
+                });
+            }
+            
             return Unauthorized(new { message = "اسم المستخدم أو كلمة المرور غير صحيحة" });
+        }
+
+        // Reset failed attempts on successful login
+        await loginAttempts.ResetFailedAttemptsAsync(request.Username);
 
         SetRefreshTokenCookie(result.RefreshToken);
         return Ok(new { result.AccessToken, result.User });

@@ -233,6 +233,7 @@ builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();
 builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
 builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
+builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
 builder.Services.AddHttpClient("WhatsApp");
 
 builder.Services.AddHttpContextAccessor();

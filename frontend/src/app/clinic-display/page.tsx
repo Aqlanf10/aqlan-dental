@@ -11,6 +11,10 @@ import {
   PhoneCall,
   Clock,
 } from "lucide-react";
+import {
+  RECEPTION_FALLBACK,
+  buildAnnouncementText,
+} from "@/lib/clinic-display-announcement";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface DisplayData {
@@ -54,7 +58,6 @@ const STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string;
 
 const REFRESH_INTERVAL = 20_000; // 20 seconds
 const VOICE_STORAGE_KEY = "aqlan-voice-enabled";
-const RECEPTION_FALLBACK = "الاستقبال";
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
 function formatClock(date: Date): string {
@@ -78,80 +81,45 @@ function getStatusDisplay(status: string) {
   return STATUS_DISPLAY[status] ?? { label: status, color: "text-gray-400", bg: "bg-gray-800/30", dotColor: "bg-gray-500" };
 }
 
-/**
- * Format a room name for speech synthesis.
- *
- * If the roomName contains a number (Arabic or Western digits),
- * extract it and return "الغرفة رقم [number]" for clearer speech.
- * If the roomName contains no number, return it as-is.
- * If roomName is empty/missing, return "الاستقبال" (reception).
- *
- * Examples:
- *   "غرفة 1"  → "الغرفة رقم 1"
- *   "غرفة 2"  → "الغرفة رقم 2"
- *   "3"       → "الغرفة رقم 3"
- *   "الاستقبال" → "الاستقبال"
- *   ""         → "الاستقبال"
- */
-function formatRoomForSpeech(roomName?: string | null): string {
-  const trimmed = roomName?.trim();
-  if (!trimmed) return RECEPTION_FALLBACK;
-
-  // Match Western digits (0-9) or Arabic-Indic digits (٠-٩)
-  const numberMatch = trimmed.match(/\d+|[٠-٩]+/);
-  if (numberMatch) {
-    return `الغرفة رقم ${numberMatch[0]}`;
-  }
-
-  return trimmed;
-}
-
-/**
- * Build the privacy-safe Arabic announcement text for a patient.
- *
- * Allowed spoken fields: patient name, file number, room number.
- * Forbidden spoken fields: phone, diagnosis, payment, balance, treatment notes,
- *   medical history, private notes.
- *
- * Fallbacks:
- *   - If patient name is missing → "صاحب الملف رقم [fileNumber]"
- *   - If room is missing → "الاستقبال"
- *   - If roomName contains a number → "الغرفة رقم [number]"
- *
- * Examples:
- *   patientName="علي أحمد", patientNumber="8501", roomName="غرفة 1"
- *     → "المريض علي أحمد، رقم الملف 8501، يرجى التوجه إلى الغرفة رقم 1"
- *   patientName="", patientNumber="8501", roomName="غرفة 2"
- *     → "صاحب الملف رقم 8501، يرجى التوجه إلى الغرفة رقم 2"
- *   patientName="علي أحمد", roomName=""
- *     → "المريض علي أحمد، رقم الملف 8501، يرجى التوجه إلى الاستقبال"
- */
-function buildAnnouncementText(patientName: string, patientNumber: string, roomName: string): string {
-  const hasName = patientName?.trim().length > 0;
-  const fileNumber = patientNumber?.trim();
-  const destination = formatRoomForSpeech(roomName);
-
-  if (hasName) {
-    const filePart = fileNumber ? `، رقم الملف ${fileNumber}` : "";
-    return `المريض ${patientName.trim()}${filePart}، يرجى التوجه إلى ${destination}`;
-  }
-  return `صاحب الملف رقم ${fileNumber || patientNumber}، يرجى التوجه إلى ${destination}`;
-}
+/* NOTE: buildAnnouncementText and formatRoomForSpeech are imported from
+   @/lib/clinic-display-announcement.ts — the single source of truth.
+   Do NOT create inline duplicates here. */
 
 /* ─── Arabic Speech Utility ────────────────────────────────────────────────── */
 
 const VOICE_ERROR_MSG = "تعذر تشغيل النداء الصوتي. تأكد من صوت الجهاز والمتصفح.";
+const ARABIC_VOICE_MISSING_MSG =
+  "الصوت العربي غير متوفر في هذا الجهاز أو المتصفح. يرجى تثبيت/تفعيل صوت عربي.";
 
 /**
  * Speak an Arabic text using the browser SpeechSynthesis API.
- * - Cancels any ongoing speech first
- * - Prefers an Arabic voice (lang starts with "ar")
- * - Falls back to default voice with utterance.lang = "ar-SA"
- * - Returns true if speech was started, false on failure
+ *
+ * Rules:
+ * - Cancels any ongoing speech first.
+ * - REQUIRES a real Arabic voice (lang starts with "ar").
+ *   If no Arabic voice is found, does NOT silently fall back to English.
+ *   Instead, sets voiceError with a clear Arabic warning message.
+ * - Returns { ok: true } if speech was started successfully.
+ *   Returns { ok: false, reason: string } on failure with explanation.
  */
-function speakArabic(text: string, voices: SpeechSynthesisVoice[]): boolean {
+function speakArabic(
+  text: string,
+  voices: SpeechSynthesisVoice[],
+  setVoiceError: (msg: string | null) => void
+): { ok: boolean; reason?: string } {
   if (typeof window === "undefined" || !window.speechSynthesis) {
-    return false;
+    return { ok: false, reason: "SpeechSynthesis not available" };
+  }
+
+  // Find a real Arabic voice
+  const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
+  if (!arabicVoice) {
+    setVoiceError(ARABIC_VOICE_MISSING_MSG);
+    console.warn(
+      "[Voice] No Arabic voice found. Available voices:",
+      voices.map((v) => `${v.name} (${v.lang})`).join(", ")
+    );
+    return { ok: false, reason: "No Arabic voice available" };
   }
 
   try {
@@ -159,18 +127,14 @@ function speakArabic(text: string, voices: SpeechSynthesisVoice[]): boolean {
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ar-SA";
+    utterance.voice = arabicVoice; // Force Arabic voice
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
 
-    // Prefer Arabic voice
-    const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
-    if (arabicVoice) {
-      utterance.voice = arabicVoice;
-    }
-
     utterance.onstart = () => {
-      console.log("[Voice] Speaking:", text);
+      console.log("[Voice] Speaking with Arabic voice:", arabicVoice.name);
+      console.log("[Voice] Text:", text);
     };
     utterance.onend = () => {
       console.log("[Voice] Speech ended");
@@ -180,10 +144,10 @@ function speakArabic(text: string, voices: SpeechSynthesisVoice[]): boolean {
     };
 
     window.speechSynthesis.speak(utterance);
-    return true;
+    return { ok: true };
   } catch (err) {
     console.warn("[Voice] speakArabic failed:", err);
-    return false;
+    return { ok: false, reason: String(err) };
   }
 }
 
@@ -244,11 +208,12 @@ function useArabicVoiceAnnouncement() {
       return;
     }
     setVoiceError(null);
-    const ok = speakArabic("تم تفعيل النداء الصوتي بنجاح", voices);
-    if (!ok) {
-      setVoiceError(VOICE_ERROR_MSG);
+    const result = speakArabic("تم تفعيل النداء الصوتي بنجاح", voices, setVoiceError);
+    if (!result.ok) {
+      // Error message already set by speakArabic (Arabic voice missing or other)
+      if (!voiceError) setVoiceError(VOICE_ERROR_MSG);
     }
-  }, [voices]);
+  }, [voices, setVoiceError]);
 
   // ─── Enable voice (audible, not silent) ─────────────────────────────────
   const enableVoice = useCallback(() => {
@@ -257,16 +222,17 @@ function useArabicVoiceAnnouncement() {
     setVoiceError(null);
     // Speak an audible phrase — this satisfies browser autoplay policy
     // because it is triggered by a user gesture (button click)
-    const ok = speakArabic("تم تفعيل النداء الصوتي", voices);
-    if (!ok) {
-      setVoiceError(VOICE_ERROR_MSG);
+    const result = speakArabic("تم تفعيل النداء الصوتي", voices, setVoiceError);
+    if (!result.ok) {
+      // Error message already set by speakArabic (Arabic voice missing or other)
+      if (!voiceError) setVoiceError(VOICE_ERROR_MSG);
       return;
     }
 
     setVoiceEnabled(true);
     setVoiceStatus("active");
     localStorage.setItem(VOICE_STORAGE_KEY, "true");
-  }, [voiceSupported, voices]);
+  }, [voiceSupported, voices, setVoiceError]);
 
   // ─── Disable voice ──────────────────────────────────────────────────────
   const disableVoice = useCallback(() => {
@@ -292,13 +258,14 @@ function useArabicVoiceAnnouncement() {
       lastAnnouncedRef.current = { queueItemId, calledAt };
 
       const text = buildAnnouncementText(patientName, patientNumber, roomName);
-      const ok = speakArabic(text, voices);
-      if (!ok) {
-        setVoiceError(VOICE_ERROR_MSG);
+      const result = speakArabic(text, voices, setVoiceError);
+      if (!result.ok) {
+        // Error message already set by speakArabic
+        if (!voiceError) setVoiceError(VOICE_ERROR_MSG);
       }
-      return ok;
+      return result.ok;
     },
-    [voiceEnabled, voiceSupported, voices]
+    [voiceEnabled, voiceSupported, voices, setVoiceError]
   );
 
   // ─── Manual repeat announcement (bypasses dedup check) ──────────────────
@@ -311,13 +278,13 @@ function useArabicVoiceAnnouncement() {
       if (!voiceEnabled || !voiceSupported) return false;
 
       const text = buildAnnouncementText(patientName, patientNumber, roomName);
-      const ok = speakArabic(text, voices);
-      if (!ok) {
-        setVoiceError(VOICE_ERROR_MSG);
+      const result = speakArabic(text, voices, setVoiceError);
+      if (!result.ok) {
+        if (!voiceError) setVoiceError(VOICE_ERROR_MSG);
       }
-      return ok;
+      return result.ok;
     },
-    [voiceEnabled, voiceSupported, voices]
+    [voiceEnabled, voiceSupported, voices, setVoiceError]
   );
 
   // ─── Announce current patient after enabling (for already-called patients) ──
@@ -329,13 +296,13 @@ function useArabicVoiceAnnouncement() {
       lastAnnouncedRef.current = { queueItemId, calledAt };
 
       const text = buildAnnouncementText(patientName, patientNumber, roomName);
-      const ok = speakArabic(text, voices);
-      if (!ok) {
-        setVoiceError(VOICE_ERROR_MSG);
+      const result = speakArabic(text, voices, setVoiceError);
+      if (!result.ok) {
+        if (!voiceError) setVoiceError(VOICE_ERROR_MSG);
       }
-      return ok;
+      return result.ok;
     },
-    [voiceEnabled, voiceSupported, voices]
+    [voiceEnabled, voiceSupported, voices, setVoiceError]
   );
 
   return {

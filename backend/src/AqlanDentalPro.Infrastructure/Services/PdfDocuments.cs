@@ -46,7 +46,7 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
 
     void ComposeContent(IContainer container)
     {
-        container.PaddingVertical(0.5, Unit.Centimetre).Column(column =>
+        container.PaddingVertical(0.5f, Unit.Centimetre).Column(column =>
         {
             // Patient info
             column.Spacing(4);
@@ -56,7 +56,7 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             column.Item().Text($"Doctor: {Payment.Doctor?.Name ?? "N/A"}");
 
             column.Spacing(8);
-            column.LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
             column.Spacing(8);
 
             // Service description
@@ -126,14 +126,14 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
 
     void ComposeContent(IContainer container)
     {
-        container.PaddingVertical(0.5, Unit.Centimetre).Column(column =>
+        container.PaddingVertical(0.5f, Unit.Centimetre).Column(column =>
         {
             column.Spacing(6);
             
             // Patient info section
             column.Item().Element(c => ComposePatientInfo(c));
             column.Spacing(10);
-            column.LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
             column.Spacing(10);
 
             // Summary

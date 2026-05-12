@@ -27,7 +27,8 @@ public class LoginAttemptService : ILoginAttemptService
         var key = $"login:fail:{username}";
         var lockKey = $"login:lock:{username}";
 
-        var currentCount = (int)(_redis.StringGet(key) ?? 0);
+        var raw = _redis.StringGet(key);
+        var currentCount = raw.IsNull ? 0 : (int)raw;
         currentCount++;
 
         _logger.LogWarning("Failed login attempt {Count}/{Max} for user '{Username}'", 

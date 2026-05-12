@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/patch-clinic-display-announcement.mjs",
+    "prebuild": "echo 'No prebuild patches needed'",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:clinic-announcement": "node scripts/test-clinic-announcement.mjs"
+    "test:clinic-announcement": "npx tsx scripts/test-clinic-announcement.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

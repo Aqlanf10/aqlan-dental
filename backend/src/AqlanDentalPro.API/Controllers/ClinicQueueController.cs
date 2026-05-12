@@ -56,9 +56,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         {
             q.Id,
             q.PatientId,
-            PatientName = q.Patient != null
-                ? (q.Patient.FirstName + " " + q.Patient.LastName).Trim()
-                : "",
+            PatientName = BuildPatientDisplayName(q.Patient),
             PatientNumber = q.Patient != null ? q.Patient.PatientNumber : "",
             q.AppointmentId,
             AppointmentTime = q.Appointment != null ? q.Appointment.StartTime.ToString("HH:mm") : (string?)null,
@@ -425,9 +423,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             {
                 QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
-                PatientName = q.Patient != null
-                    ? (q.Patient.FirstName + " " + q.Patient.LastName).Trim()
-                    : "",
+                PatientName = BuildPatientDisplayName(q.Patient),
                 DoctorName = q.Doctor != null ? q.Doctor.Name : "",
                 q.RoomName,
                 q.CalledAt
@@ -442,9 +438,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             {
                 QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
-                PatientName = q.Patient != null
-                    ? (q.Patient.FirstName + " " + q.Patient.LastName).Trim()
-                    : "",
+                PatientName = BuildPatientDisplayName(q.Patient),
                 DoctorName = q.Doctor != null ? q.Doctor.Name : "",
                 Status = "في الانتظار"
             })
@@ -459,9 +453,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             {
                 QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
-                PatientName = q.Patient != null
-                    ? (q.Patient.FirstName + " " + q.Patient.LastName).Trim()
-                    : "",
+                PatientName = BuildPatientDisplayName(q.Patient),
                 DoctorName = q.Doctor != null ? q.Doctor.Name : "",
                 q.RoomName,
                 StatusArabic = StatusArabic.GetValueOrDefault(q.Status, q.Status.ToString()),
@@ -567,6 +559,25 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
                     appointment.RoomName = item.RoomName;
             }
         }
+    }
+
+    /// <summary>
+    /// Build a display-safe patient name: FirstName + MiddleName (if present) + LastName.
+    /// Trims extra whitespace. Returns empty string if patient is null.
+    /// </summary>
+    private static string BuildPatientDisplayName(Patient? patient)
+    {
+        if (patient == null) return "";
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(patient.FirstName))
+            parts.Add(patient.FirstName.Trim());
+        if (!string.IsNullOrWhiteSpace(patient.MiddleName))
+            parts.Add(patient.MiddleName.Trim());
+        if (!string.IsNullOrWhiteSpace(patient.LastName))
+            parts.Add(patient.LastName.Trim());
+
+        return string.Join(" ", parts);
     }
 }
 

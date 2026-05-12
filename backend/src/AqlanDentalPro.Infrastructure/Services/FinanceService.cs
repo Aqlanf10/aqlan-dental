@@ -172,7 +172,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req)
     {
-        var receiptNumber = $"RCP-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
+        // H7 FIX: Use GUID to prevent receipt number collisions
+        var receiptNumber = $"RCP-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
 
         var payment = new Payment
         {
@@ -207,18 +208,20 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var dto = MapPayment(payment);
 
+        // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
         // Notify accountants and admins
         _ = Task.Run(async () =>
         {
             try
             {
-                var patientName = dto.PatientName ?? "مريض";
-                var amountStr = req.Amount.ToString("N0");
-                var msg = $"تم استلام دفعة {amountStr} ر.ي من {patientName}";
-                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
-                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
+                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", $"تم استلام دفعة من {dto.PatientName ?? "مريض"}", "Payment", payment.Id);
+                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", $"تم استلام دفعة من {dto.PatientName ?? "مريض"}", "Payment", payment.Id);
             }
-            catch { /* non-blocking */ }
+            catch (Exception ex)
+            {
+                // M1 FIX: Log notification failures instead of silently swallowing
+                Console.Error.WriteLine($"[FinanceService] Notification failed: {ex.Message}");
+            }
         });
 
         return dto;

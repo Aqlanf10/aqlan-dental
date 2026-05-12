@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using System.Net;
 using System.Text.Json;
@@ -29,11 +30,21 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             _                          => (HttpStatusCode.InternalServerError, "خطأ في الخادم")
         };
 
+        // H3 FIX: Don't expose raw exception messages to clients in production
+        var detail = ex switch
+        {
+            UnauthorizedAccessException => ex.Message, // Safe to expose auth errors
+            KeyNotFoundException => ex.Message,         // Safe to expose not-found errors
+            _ => context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true
+                ? "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً."
+                : ex.Message // Only expose details in development
+        };
+
         var problem = new ProblemDetails
         {
             Status = (int)statusCode,
             Title = title,
-            Detail = ex.Message,
+            Detail = detail,
             Instance = context.Request.Path
         };
 

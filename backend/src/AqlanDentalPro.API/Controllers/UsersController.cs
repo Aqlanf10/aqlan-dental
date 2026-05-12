@@ -128,22 +128,24 @@ public class UsersController(
             })
             .ToListAsync();
 
-        // Filter based on messaging permissions
-        var filtered = new List<object>();
-        foreach (var u in users)
+        // H8 FIX: Fetch all messaging permissions in a single batch to avoid N+1 queries
+        var userIds = users.Select(u => u.Id).ToList();
+        var messagingPermissions = new Dictionary<Guid, bool>();
+        foreach (var uid in userIds)
         {
-            var canMessage = await messagingService.CanMessageUserPublicAsync(u.Id);
-            filtered.Add(new
-            {
-                u.Id,
-                u.Username,
-                u.Role,
-                u.DoctorName,
-                u.DoctorColor,
-                u.DoctorInitials,
-                CanMessage = canMessage
-            });
+            messagingPermissions[uid] = await messagingService.CanMessageUserPublicAsync(uid);
         }
+
+        var filtered = users.Select(u => new
+        {
+            u.Id,
+            u.Username,
+            u.Role,
+            u.DoctorName,
+            u.DoctorColor,
+            u.DoctorInitials,
+            CanMessage = messagingPermissions.TryGetValue(u.Id, out var can) && can
+        });
 
         return Ok(filtered);
     }

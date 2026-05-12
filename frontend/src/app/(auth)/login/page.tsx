@@ -261,11 +261,11 @@ function StaffLoginPanel() {
           )}
         </div>
 
-        {/* Forgot password */}
+        {/* F3 FIX: Staff forgot password - changed from dead link to informative message */}
         <div className="text-left">
-          <a href="#" className="text-[12px] no-underline" style={{ color: "#f5922e" }}>
-            نسيت كلمة المرور؟
-          </a>
+          <span className="text-[12px]" style={{ color: "#9ca3af" }}>
+            لإعادة تعيين كلمة المرور، تواصل مع مدير النظام
+          </span>
         </div>
 
         {/* Submit button */}

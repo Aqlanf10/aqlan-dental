@@ -32,9 +32,11 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (string.IsNullOrEmpty(account.PasswordHash) || string.IsNullOrEmpty(account.PasswordSalt))
             return (null, "حسابك غير مفعّل بعد. تواصل مع العيادة للحصول على بيانات الدخول.");
 
-        // Verify password with Argon2id
+        // C-04 FIX: Verify password with Argon2id using constant-time comparison
         var hash = AuthService.HashPassword(password, account.PasswordSalt);
-        if (hash != account.PasswordHash)
+        if (!CryptographicOperations.FixedTimeEquals(
+            Convert.FromBase64String(hash),
+            Convert.FromBase64String(account.PasswordHash)))
             return (null, "اسم المستخدم أو كلمة المرور غير صحيحة");
 
         // Patient navigation may be null if the patient is archived (soft-delete query filter)
@@ -112,7 +114,10 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (account.Patient == null)
             return (null, "تم تعطيل هذا الحساب");
 
-        if (account.VerificationCode != code)
+        // C-04 FIX: Constant-time OTP comparison
+        if (!CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(account.VerificationCode ?? ""),
+            Encoding.UTF8.GetBytes(code ?? "")))
             return (null, "رمز التحقق غير صحيح");
 
         if (account.VerificationCodeExpiry < DateTime.UtcNow)
@@ -245,13 +250,16 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (string.IsNullOrEmpty(account.PasswordHash) || string.IsNullOrEmpty(account.PasswordSalt))
             return (null, "حسابك غير مفعّل بعد");
 
-        // Verify current password
+        // C-04 FIX: Verify current password with constant-time comparison
         var hash = AuthService.HashPassword(currentPassword, account.PasswordSalt);
-        if (hash != account.PasswordHash)
+        if (!CryptographicOperations.FixedTimeEquals(
+            Convert.FromBase64String(hash),
+            Convert.FromBase64String(account.PasswordHash)))
             return (null, "كلمة المرور الحالية غير صحيحة");
 
-        if (newPassword.Length < 4)
-            return (null, "كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل");
+        // C-05 FIX: Enforce minimum password length of 8 characters
+        if (newPassword.Length < 8)
+            return (null, "كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
 
         // Update password
         var salt = AuthService.GenerateSalt();
@@ -288,7 +296,10 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (account.Patient == null)
             return (null, "تم تعطيل هذا الحساب");
 
-        if (account.RefreshToken != refreshToken)
+        // C-04 FIX: Constant-time refresh token comparison
+        if (!CryptographicOperations.FixedTimeEquals(
+            Convert.FromBase64String(account.RefreshToken ?? ""),
+            Convert.FromBase64String(refreshToken)))
             return (null, "رمز التحديث غير صالح");
 
         if (account.RefreshTokenExpiry < DateTime.UtcNow)
@@ -852,7 +863,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             issuer: config["Jwt:Issuer"],
             audience: config["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.AddDays(7),
+            // C-05 FIX: Reduced patient token expiry from 7 days to 1 day
+            expires: DateTime.UtcNow.AddDays(1),
             signingCredentials: creds
         );
 

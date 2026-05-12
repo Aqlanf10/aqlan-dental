@@ -62,7 +62,8 @@ public class PublicController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetQueue()
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        // H6 FIX: Use UTC for consistent timezone handling
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var items = await _db.Appointments
             .AsNoTracking()
             .Include(a => a.Patient)
@@ -72,7 +73,8 @@ public class PublicController : ControllerBase
             .Select(a => new
             {
                 a.Id,
-                PatientDisplayName = a.Patient.FirstName + " " + a.Patient.LastName.Substring(0, 1) + ".",
+                // H6 FIX: Safe substring — prevents crash if LastName is null or empty
+                PatientDisplayName = a.Patient.FirstName + " " + (string.IsNullOrEmpty(a.Patient.LastName) ? "" : a.Patient.LastName.Substring(0, 1)) + ".",
                 AppointmentType = a.AppointmentType ?? "—",
                 StartTime = a.StartTime.ToString(@"hh\:mm"),
                 EndTime = (string?)a.EndTime.ToString(@"hh\:mm"),
@@ -106,7 +108,7 @@ public class PublicController : ControllerBase
         if (!DateOnly.TryParse(date, out var dateOnly))
             return BadRequest(new { message = "تنسيق التاريخ غير صحيح" });
 
-        if (dateOnly < DateOnly.FromDateTime(DateTime.Today))
+        if (dateOnly < DateOnly.FromDateTime(DateTime.UtcNow))
             return BadRequest(new { message = "لا يمكن الحجز في تاريخ سابق" });
 
         var dotnetDow = (int)dateOnly.DayOfWeek;

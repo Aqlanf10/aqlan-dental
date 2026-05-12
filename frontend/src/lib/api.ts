@@ -20,8 +20,23 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401: try refresh once, then redirect to login
+// F1 FIX: Improved 401 handling with request queuing during refresh
 let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}> = [];
+
+const processQueue = (error: unknown, token: string | null = null) => {
+  failedQueue.forEach((promise) => {
+    if (error) {
+      promise.reject(error);
+    } else {
+      promise.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
 
 api.interceptors.response.use(
   (res) => res,
@@ -31,13 +46,13 @@ api.interceptors.response.use(
       original._retry = true;
 
       if (isRefreshing) {
-        // Another refresh is in progress, just redirect
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("access_token");
-          document.cookie = "aqlan_auth_status=; path=/; max-age=0";
-          window.location.href = "/login";
-        }
-        return Promise.reject(error);
+        // F1 FIX: Queue the request instead of immediately redirecting
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((token) => {
+          original.headers.Authorization = `Bearer ${token}`;
+          return api(original);
+        });
       }
 
       isRefreshing = true;
@@ -46,9 +61,11 @@ api.interceptors.response.use(
           "/api/auth/refresh-token"
         );
         localStorage.setItem("access_token", data.accessToken);
+        processQueue(null, data.accessToken);
         original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch {
+        processQueue(error, null);
         if (typeof window !== "undefined") {
           localStorage.removeItem("access_token");
           document.cookie = "aqlan_auth_status=; path=/; max-age=0";

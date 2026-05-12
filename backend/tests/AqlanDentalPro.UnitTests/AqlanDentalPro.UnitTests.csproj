@@ -6,6 +6,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\AqlanDentalPro.API\AqlanDentalPro.API.csproj" />
     <ProjectReference Include="..\..\src\AqlanDentalPro.Application\AqlanDentalPro.Application.csproj" />
     <ProjectReference Include="..\..\src\AqlanDentalPro.Domain\AqlanDentalPro.Domain.csproj" />
     <ProjectReference Include="..\..\src\AqlanDentalPro.Infrastructure\AqlanDentalPro.Infrastructure.csproj" />

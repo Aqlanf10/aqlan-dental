@@ -435,6 +435,32 @@ catch (Exception ex)
 // All schema hotfixes have been consolidated into this single block.
 // The advisory lock (pg_try_advisory_lock) prevents multiple Railway instances
 // from running maintenance concurrently, avoiding race conditions.
+//
+// TD-020: MIGRATION CLEANUP PLAN
+// ─────────────────────────────────────────────────────────────────
+// This block contains ~49 ExecuteSqlRawAsync calls that serve as a
+// safety net for EF Core migrations. They should be converted to
+// proper EF migrations over time.
+//
+// Inventory:
+//   Program.cs       : 49 calls (schema creation, column additions, indexes)
+//   DbSeeder.cs      :  4 calls (pre-migration column/index, initial data)
+//   ClinicQueue.cs   :  2 calls (pg_advisory_xact_lock — KEEP as-is)
+//   MessagesCtrl.cs  : 30 calls (admin-only ensure-schema endpoint)
+//
+// Priority for conversion to EF migrations:
+//   Phase A: Column additions (ALTER TABLE ... ADD COLUMN) → migrationBuilder.AddColumn
+//   Phase B: Index creation (CREATE INDEX) → migrationBuilder.CreateIndex
+//   Phase C: Constraint additions (FK, UNIQUE) → migrationBuilder.AddForeignKey/CreateIndex
+//   Phase D: Table creation (CREATE TABLE) → migrationBuilder.CreateTable
+//   Phase E: Data backfills (UPDATE) → migration DataSeeder
+//
+// Blocks that must STAY as raw SQL:
+//   - pg_advisory_lock / pg_advisory_xact_lock (concurrency, not schema)
+//   - Programmatic backfills with complex CASE expressions
+//
+// Do NOT add new ExecuteSqlRaw blocks here. Use `dotnet ef migrations add` instead.
+// ─────────────────────────────────────────────────────────────────
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");
 

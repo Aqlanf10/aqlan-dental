@@ -11,10 +11,14 @@ namespace AqlanDentalPro.Infrastructure.Data.Seed;
 
 public static class DbSeeder
 {
+    // TD-022: These 4 pre-MigrateAsync ExecuteSqlRaw calls ensure columns/indexes
+    // exist before EF Core runs its own migrations. They should be converted to
+    // proper EF migrations (AddColumn/CreateIndex) as part of the TD-020 cleanup plan.
     public static async Task SeedAsync(AppDbContext context, ILogger logger)
     {
         try
         {
+            // TD-022: Convert to migrationBuilder.AddColumn in EF migration
             // Ensure PasswordSalt column exists BEFORE MigrateAsync()
             // because the EF model expects this column and queries will fail without it.
             await context.Database.ExecuteSqlRawAsync(

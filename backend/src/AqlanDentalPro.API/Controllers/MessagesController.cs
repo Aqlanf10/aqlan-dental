@@ -13,6 +13,11 @@ namespace AqlanDentalPro.API.Controllers;
 public class MessagesController(MessagingService messagingService, AppDbContext db) : ControllerBase
 {
     /// <summary>تطبيق الـ migrations يدوياً (Admin فقط)</summary>
+    /// <remarks>
+    /// TD-021: This endpoint is a temporary migration safety net.
+    /// All schema changes here should be converted to proper EF Core migrations.
+    /// See TD-020 in Program.cs for the full migration cleanup plan.
+    /// </remarks>
     [HttpPost("ensure-schema")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult> EnsureSchema()

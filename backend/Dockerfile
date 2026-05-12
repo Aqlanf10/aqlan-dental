@@ -8,6 +8,7 @@ COPY src/AqlanDentalPro.Domain/AqlanDentalPro.Domain.csproj src/AqlanDentalPro.D
 COPY src/AqlanDentalPro.Application/AqlanDentalPro.Application.csproj src/AqlanDentalPro.Application/
 COPY src/AqlanDentalPro.Infrastructure/AqlanDentalPro.Infrastructure.csproj src/AqlanDentalPro.Infrastructure/
 COPY src/AqlanDentalPro.API/AqlanDentalPro.API.csproj src/AqlanDentalPro.API/
+COPY tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj tests/AqlanDentalPro.UnitTests/
 
 RUN dotnet restore AqlanDentalPro.sln
 

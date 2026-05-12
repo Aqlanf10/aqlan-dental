@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import { buildAnnouncementText, formatFileNumberForSpeech, formatRoomForSpeech } from "../src/lib/clinic-display-announcement.js";
 
 assert.equal(
+  formatFileNumberForSpeech("2020-622"),
+  "اثنين صفر اثنين صفر ستة اثنين اثنين"
+);
+
+assert.equal(
   formatFileNumberForSpeech("GM2026-0022"),
-  "جي إم 2026 صفر صفر 22"
+  "جي إم اثنين صفر اثنين ستة صفر صفر اثنين اثنين"
 );
 
 assert.equal(
@@ -12,23 +17,28 @@ assert.equal(
 );
 
 assert.equal(
+  buildAnnouncementText("علي أحمد", "2020-622", "غرفة 1"),
+  "المراجع علي أحمد، صاحب الملف رقم اثنين صفر اثنين صفر ستة اثنين اثنين، يرجى التوجه إلى الغرفة رقم 1"
+);
+
+assert.equal(
   buildAnnouncementText("علي أحمد", "GM2026-0022", "غرفة 1"),
-  "المراجع علي أحمد، صاحب الملف رقم جي إم 2026 صفر صفر 22، يرجى التوجه إلى الغرفة رقم 1"
+  "المراجع علي أحمد، صاحب الملف رقم جي إم اثنين صفر اثنين ستة صفر صفر اثنين اثنين، يرجى التوجه إلى الغرفة رقم 1"
 );
 
 assert.equal(
-  buildAnnouncementText("", "GM2026-0022", "غرفة 2"),
-  "المراجع، صاحب الملف رقم جي إم 2026 صفر صفر 22، يرجى التوجه إلى الغرفة رقم 2"
+  buildAnnouncementText("", "2020-622", "غرفة 2"),
+  "المراجع، صاحب الملف رقم اثنين صفر اثنين صفر ستة اثنين اثنين، يرجى التوجه إلى الغرفة رقم 2"
 );
 
 assert.equal(
-  buildAnnouncementText("علي أحمد", "GM2026-0022", ""),
-  "المراجع علي أحمد، صاحب الملف رقم جي إم 2026 صفر صفر 22، يرجى التوجه إلى الاستقبال"
+  buildAnnouncementText("علي أحمد", "2020-622", ""),
+  "المراجع علي أحمد، صاحب الملف رقم اثنين صفر اثنين صفر ستة اثنين اثنين، يرجى التوجه إلى الاستقبال"
 );
 
 assert.equal(
-  buildAnnouncementText("علي أحمد", "GM2026-0022", "غرفة ١"),
-  "المراجع علي أحمد، صاحب الملف رقم جي إم 2026 صفر صفر 22، يرجى التوجه إلى الغرفة رقم ١"
+  buildAnnouncementText("علي أحمد", "2020-622", "غرفة ١"),
+  "المراجع علي أحمد، صاحب الملف رقم اثنين صفر اثنين صفر ستة اثنين اثنين، يرجى التوجه إلى الغرفة رقم ١"
 );
 
-console.log("Clinic display reviewer announcement text verified successfully.");
+console.log("Clinic display digit-by-digit announcement with reviewer name verified successfully.");

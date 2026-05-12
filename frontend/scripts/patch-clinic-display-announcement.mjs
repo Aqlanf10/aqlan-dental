@@ -47,24 +47,34 @@ const replacement = `const FILE_LETTER_NAMES: Record<string, string> = {
   Z: "زد",
 };
 
-const FILE_ZERO_NAMES: Record<string, string> = {
+const FILE_DIGIT_NAMES: Record<string, string> = {
   "0": "صفر",
+  "1": "واحد",
+  "2": "اثنين",
+  "3": "ثلاثة",
+  "4": "أربعة",
+  "5": "خمسة",
+  "6": "ستة",
+  "7": "سبعة",
+  "8": "ثمانية",
+  "9": "تسعة",
   "٠": "صفر",
+  "١": "واحد",
+  "٢": "اثنين",
+  "٣": "ثلاثة",
+  "٤": "أربعة",
+  "٥": "خمسة",
+  "٦": "ستة",
+  "٧": "سبعة",
+  "٨": "ثمانية",
+  "٩": "تسعة",
 };
 
-function pronounceLeadingZeros(numberPart: string): string {
-  if (!numberPart || numberPart.length <= 1) return numberPart;
-
-  let index = 0;
-  const parts: string[] = [];
-  while (index < numberPart.length - 1 && (numberPart[index] === "0" || numberPart[index] === "٠")) {
-    parts.push(FILE_ZERO_NAMES[numberPart[index]] ?? "صفر");
-    index += 1;
-  }
-
-  const rest = numberPart.slice(index);
-  if (rest) parts.push(rest);
-  return parts.join(" ");
+function pronounceDigits(numberPart: string): string {
+  return numberPart
+    .split("")
+    .map((digit) => FILE_DIGIT_NAMES[digit] ?? digit)
+    .join(" ");
 }
 
 function formatFileNumberForSpeech(patientNumber?: string | null): string {
@@ -76,7 +86,7 @@ function formatFileNumberForSpeech(patientNumber?: string | null): string {
 
   const flushNumber = () => {
     if (currentNumber) {
-      tokens.push(pronounceLeadingZeros(currentNumber));
+      tokens.push(pronounceDigits(currentNumber));
       currentNumber = "";
     }
   };
@@ -88,7 +98,7 @@ function formatFileNumberForSpeech(patientNumber?: string | null): string {
       tokens.push(FILE_LETTER_NAMES[upper]);
     } else if (/\\d|[٠-٩]/.test(char)) {
       currentNumber += char;
-    } else if (char === "-" || char === "_" || char === "/" || char === " ") {
+    } else if (char === "-" || char === "_" || char === "/" || char === " " || char === ".") {
       flushNumber();
     } else {
       flushNumber();
@@ -112,4 +122,4 @@ function buildAnnouncementText(patientName: string, patientNumber: string, roomN
 const nextSource = source.slice(0, start) + replacement + source.slice(end);
 writeFileSync(pagePath, nextSource, "utf8");
 
-console.log("Clinic display announcement patch applied.");
+console.log("Clinic display announcement patch applied with digit-by-digit file-number speech.");

@@ -29,9 +29,27 @@ const LETTER_NAMES = {
   Z: "زد"
 };
 
-const ZERO_NAMES = {
+const DIGIT_NAMES = {
   "0": "صفر",
-  "٠": "صفر"
+  "1": "واحد",
+  "2": "اثنين",
+  "3": "ثلاثة",
+  "4": "أربعة",
+  "5": "خمسة",
+  "6": "ستة",
+  "7": "سبعة",
+  "8": "ثمانية",
+  "9": "تسعة",
+  "٠": "صفر",
+  "١": "واحد",
+  "٢": "اثنين",
+  "٣": "ثلاثة",
+  "٤": "أربعة",
+  "٥": "خمسة",
+  "٦": "ستة",
+  "٧": "سبعة",
+  "٨": "ثمانية",
+  "٩": "تسعة"
 };
 
 export function formatRoomForSpeech(roomName) {
@@ -46,19 +64,11 @@ export function formatRoomForSpeech(roomName) {
   return trimmed;
 }
 
-function pronounceLeadingZeros(numberPart) {
-  if (!numberPart || numberPart.length <= 1) return numberPart;
-
-  let index = 0;
-  const parts = [];
-  while (index < numberPart.length - 1 && (numberPart[index] === "0" || numberPart[index] === "٠")) {
-    parts.push(ZERO_NAMES[numberPart[index]] ?? "صفر");
-    index += 1;
-  }
-
-  const rest = numberPart.slice(index);
-  if (rest) parts.push(rest);
-  return parts.join(" ");
+function pronounceDigits(numberPart) {
+  return numberPart
+    .split("")
+    .map((digit) => DIGIT_NAMES[digit] ?? digit)
+    .join(" ");
 }
 
 export function formatFileNumberForSpeech(patientNumber) {
@@ -70,7 +80,7 @@ export function formatFileNumberForSpeech(patientNumber) {
 
   const flushNumber = () => {
     if (currentNumber) {
-      tokens.push(pronounceLeadingZeros(currentNumber));
+      tokens.push(pronounceDigits(currentNumber));
       currentNumber = "";
     }
   };
@@ -82,7 +92,7 @@ export function formatFileNumberForSpeech(patientNumber) {
       tokens.push(LETTER_NAMES[upper]);
     } else if (/\d|[٠-٩]/.test(char)) {
       currentNumber += char;
-    } else if (char === "-" || char === "_" || char === "/" || char === " ") {
+    } else if (char === "-" || char === "_" || char === "/" || char === " " || char === ".") {
       flushNumber();
     } else {
       flushNumber();

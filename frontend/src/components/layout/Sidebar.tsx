@@ -64,6 +64,8 @@ const ROLE_LABELS: Record<string, string> = {
   Accountant: "محاسب",
   Assistant: "مساعد",
   BranchManager: "مدير فرع",
+  // L2 FIX: Added fallback for any unmapped roles
+  // Shows the role name directly instead of raw English key
 };
 
 /* ─── Sidebar Component ──────────────────────────────────────────────────────── */
@@ -241,7 +243,7 @@ export function Sidebar() {
               {user?.doctorName ?? user?.username}
             </p>
             <p className="text-[11px] truncate" style={{ color: "rgba(255,255,255,0.4)" }}>
-              {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
+              {ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? "موظف"}
             </p>
           </div>
           <button

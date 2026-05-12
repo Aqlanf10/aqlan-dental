@@ -105,12 +105,17 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
             if (!string.IsNullOrEmpty(storedSalt))
             {
                 var hash = HashPassword(password, storedSalt);
-                if (hash == storedHash) return true;
+                // C-03 FIX: Use constant-time comparison to prevent timing attacks
+                if (CryptographicOperations.FixedTimeEquals(
+                    Convert.FromBase64String(hash),
+                    Convert.FromBase64String(storedHash))) return true;
             }
 
             // Fallback: legacy Phase 1 fixed-salt hash (DOP=1, fixed salt)
             var legacyHash = HashPasswordLegacy(password);
-            return legacyHash == storedHash;
+            return CryptographicOperations.FixedTimeEquals(
+                Convert.FromBase64String(legacyHash),
+                Convert.FromBase64String(storedHash));
         }
         catch
         {

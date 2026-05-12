@@ -146,8 +146,7 @@ builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
         {
             // Allow configured origins
             if (allowedOrigins.Contains(origin)) return true;
-            // Allow any Vercel preview deployment URL (*.vercel.app)
-            if (origin.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
+            // C-01 FIX: Removed wildcard *.vercel.app — only explicitly listed origins are allowed
             return false;
         })
         .AllowAnyHeader()
@@ -269,8 +268,8 @@ try
 
     if (!flagExists)
     {
-        // Use AuthService to generate proper Argon2id hash
-        var newPassword = "AqlanDental2026!";
+        // C-02 FIX: Use environment variable instead of hardcoded password
+        var newPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") ?? "ChangeMeImmediately2026!";
         var salt = AqlanDentalPro.Application.Services.AuthService.GenerateSalt();
         var hash = AqlanDentalPro.Application.Services.AuthService.HashPassword(newPassword, salt);
 
@@ -285,7 +284,7 @@ try
             VALUES (gen_random_uuid(), 'admin.password.reset.2026', 'done', 'system', NOW(), NOW(), true)
         """);
 
-        resetLogger.LogWarning("Admin password has been reset to default value. Username: admin");
+        resetLogger.LogWarning("Admin password has been reset to default value. Username: admin. CHANGE PASSWORD IMMEDIATELY!");
     }
     else
     {
@@ -1233,8 +1232,12 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/uploads"
 });
 
-app.UseSwagger();
-app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Dental Pro v1"));
+// C-01 FIX: Swagger only enabled in non-production environments
+if (!app.Environment.IsProduction())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Dental Pro v1"));
+}
 
 app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontend");

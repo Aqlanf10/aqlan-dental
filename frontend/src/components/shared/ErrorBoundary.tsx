@@ -21,7 +21,13 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("[ErrorBoundary]", error, info.componentStack);
+    // F2 FIX: Improved error logging with structured info
+    console.error("[ErrorBoundary] Unhandled error:", {
+      message: error.message,
+      stack: error.stack,
+      componentStack: info.componentStack,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   reset = () => this.setState({ hasError: false, error: null });
@@ -35,8 +41,9 @@ export class ErrorBoundary extends Component<Props, State> {
           <AlertTriangle className="w-12 h-12 text-amber-500" />
           <div>
             <p className="font-semibold text-gray-800 text-lg">حدث خطأ غير متوقع</p>
+            {/* F2 FIX: Don't expose raw error details to end users */}
             <p className="text-sm text-gray-500 mt-1">
-              {this.state.error?.message ?? "يرجى المحاولة مرة أخرى"}
+              يرجى المحاولة مرة أخرى. إذا استمرت المشكلة، تواصل مع الدعم الفني.
             </p>
           </div>
           <button

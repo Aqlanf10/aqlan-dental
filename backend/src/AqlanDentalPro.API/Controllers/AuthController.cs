@@ -99,6 +99,20 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
         return user == null ? Unauthorized() : Ok(user);
     }
 
+    [HttpPost("change-password")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var userId = currentUser.UserId;
+        if (!userId.HasValue) return Unauthorized();
+
+        var success = await authService.ChangePasswordAsync(userId.Value, request.CurrentPassword, request.NewPassword);
+        if (!success)
+            return BadRequest(new { message = "كلمة المرور الحالية غير صحيحة" });
+
+        return Ok(new { message = "تم تغيير كلمة المرور بنجاح" });
+    }
+
     private void SetRefreshTokenCookie(string token)
     {
         var opts = new CookieOptions

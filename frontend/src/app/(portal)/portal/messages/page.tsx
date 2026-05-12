@@ -181,6 +181,8 @@ export default function PortalMessagesPage() {
       setShowMobileChat(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally excluded: markAsRead is a mutation function that changes identity on every
+    // render due to react-query. We only want to mark as read when selectedConvId changes.
   }, [selectedConvId]);
 
   const handleSelectConv = useCallback((id: string) => {

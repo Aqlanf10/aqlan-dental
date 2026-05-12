@@ -58,6 +58,25 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
         return user == null ? null : MapToDto(user);
     }
 
+    public async Task<bool> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
+    {
+        var user = await userRepo.GetByIdAsync(userId);
+        if (user == null || !user.IsActive) return false;
+
+        if (!VerifyPassword(currentPassword, user.PasswordHash, user.PasswordSalt))
+            return false;
+
+        var newSalt = GenerateSalt();
+        var newHash = HashPassword(newPassword, newSalt);
+
+        user.PasswordHash = newHash;
+        user.PasswordSalt = newSalt;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await userRepo.SaveChangesAsync();
+        return true;
+    }
+
     private static UserDto MapToDto(Domain.Entities.User user) => new()
     {
         Id = user.Id,

@@ -190,6 +190,8 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
       onModalOpened?.();
     }
   }, [openAddModal]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Intentionally excluded: openAddModalFn is not stable (captures state setters).
+    // This effect only needs to react to the external openAddModal trigger.
 
   // ─── Filtered Visits ───────────────────────────────────────────────────────
 

@@ -15,8 +15,33 @@
 | TD-011 | Tracking fields safety net SQL in Program.cs — remove after migration 20260520000000 stability confirmed | Medium | Sprint 7 | Open |
 | TD-012 | Voice calling depends on browser SpeechSynthesis and user activation gesture | Low | Sprint 7 | Open |
 | TD-013 | Display full patient name may be a privacy consideration; file-number-only mode can be added later | Low | Sprint 7B | Open |
+| TD-014 | Startup admin password reset hotfix remains in Program.cs | High | Sprint 8A | Open |
+| TD-015 | Large remote branch backlog creates agent confusion and stale-work risk | Medium | Sprint 8A | Open |
+| TD-016 | Need a production stability audit document before next feature sprint | Low | Sprint 8A | **Fixed** (Sprint 8A — `docs/sprint-8a-production-stability-audit.md`) |
+| TD-017 | Vercel/Railway deployment status should be recorded after each production merge | Low | Sprint 8A | Open |
 
 ## Details
+
+### TD-017: Production Deployment Status Recording
+- **Description**: After each production merge, the latest GitHub commit status should be checked for both Vercel and Railway and recorded in the relevant sprint report or PR body.
+- **Current Sprint 8A status**: After PR #81, both Railway and Vercel reported success for the latest main commit.
+- **Recommendation**: Include deployment status in every final PR report before moving to the next sprint.
+
+### TD-016: Sprint 8A Production Stability Audit (RESOLVED)
+- **Description**: Before starting a new feature sprint, the project needed a dedicated production stability audit summarizing current deployment status, risks, no-go items, and the next safe work order.
+- **Fix**: Added `docs/sprint-8a-production-stability-audit.md`.
+- **Status**: Fixed in Sprint 8A documentation PR.
+
+### TD-015: Remote Branch Backlog
+- **Description**: The repository contains many remote branches from prior feature, fix, polish, recovery, and agent-generated workflows. A large branch backlog increases the risk of stale PRs being reopened or agents working from obsolete branches.
+- **Recommendation**: Prepare a reviewed branch deletion list in a separate cleanup step. Do not delete `main`, `stable-*`, `release-*`, or recovery branches without explicit review.
+- **Risk**: Medium — organizational risk, not direct runtime risk.
+
+### TD-014: Startup Admin Password Reset Hotfix
+- **Location**: `backend/src/AqlanDentalPro.API/Program.cs`
+- **Description**: A one-time admin password reset block remains in startup logic. It appears guarded by a Settings flag, but it is sensitive legacy production recovery logic.
+- **Recommendation**: Do not modify during feature work. Before removal, verify production admin access and confirm the reset flag state in production.
+- **Risk**: High if changed carelessly; low if left untouched and documented.
 
 ### TD-011: Tracking Fields Safety Net SQL
 - **Location**: `backend/src/AqlanDentalPro.API/Program.cs` (after existing ClinicQueueItems safety net)

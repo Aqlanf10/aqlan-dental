@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import {
   CheckCircle2,
   Loader2,
@@ -157,6 +158,7 @@ export default function BookPage() {
   const [isClosed, setIsClosed] = useState(false);
   const [closedMessage, setClosedMessage] = useState("");
   const [availabilityDoctorName, setAvailabilityDoctorName] = useState("");
+  const { executeRecaptcha } = useGoogleReCaptcha();
 
   // ── Fetch doctors on page load ──
   useEffect(() => {
@@ -315,6 +317,12 @@ export default function BookPage() {
     setIsConflict(false);
 
     try {
+      // Generate reCAPTCHA token if available
+      let recaptchaToken: string | undefined;
+      if (executeRecaptcha) {
+        recaptchaToken = await executeRecaptcha('booking_submit');
+      }
+
       const res = await fetch(`${API_URL}/api/public/booking-requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -327,6 +335,8 @@ export default function BookPage() {
           preferredTime: form.preferredTime || null,
           notes: form.notes.trim() || null,
           doctorId: form.doctorId || null,
+          recaptchaToken,
+          website_url: "", // honeypot field — bots will fill this
         }),
       });
 

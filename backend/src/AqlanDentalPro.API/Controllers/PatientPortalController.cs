@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.PatientPortal;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
@@ -18,6 +19,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/login")]
     [AllowAnonymous]
+    [EnableRateLimiting("PortalAuthPolicy")]
     public async Task<IActionResult> Login([FromBody] PatientLoginRequest req)
     {
         try
@@ -35,6 +37,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/forgot-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("PortalAuthPolicy")]
     public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
     {
         // reCAPTCHA validation

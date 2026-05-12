@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Finance;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(FinanceService service) : ControllerBase
+public class PaymentsController(FinanceService service, IPdfService pdfService) : ControllerBase
 {
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(
@@ -74,5 +75,19 @@ public class PaymentsController(FinanceService service) : ControllerBase
     {
         var result = await service.GetPatientFinanceSummaryAsync(patientId);
         return Ok(result);
+    }
+
+    [HttpGet("payments/{id:guid}/pdf")]
+    public async Task<IActionResult> GetPaymentPdf(Guid id)
+    {
+        try
+        {
+            var pdfBytes = await pdfService.GeneratePaymentReceiptAsync(id);
+            return File(pdfBytes, "application/pdf", $"receipt-{id}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
     }
 }

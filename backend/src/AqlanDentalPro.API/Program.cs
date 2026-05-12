@@ -184,6 +184,19 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 1
             }));
 
+    // P7 FIX: Portal auth rate limiting (prevents abuse of forgot-password WhatsApp messages)
+    options.AddPolicy("PortalAuthPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 1
+            }));
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, IPAddress>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress ?? IPAddress.Loopback,
@@ -235,6 +248,7 @@ builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.Overdue
 builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
 builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
+builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddHttpClient("WhatsApp");
 
 builder.Services.AddHttpContextAccessor();

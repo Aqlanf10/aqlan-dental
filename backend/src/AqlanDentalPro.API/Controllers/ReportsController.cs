@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = "ReportsAccess")]
-public class ReportsController(AppDbContext db) : ControllerBase
+public class ReportsController(AppDbContext db, IPdfService pdfService) : ControllerBase
 {
     [HttpGet("center-summary")]
     public async Task<IActionResult> GetCenterSummary([FromQuery] string? from, [FromQuery] string? to)
@@ -212,4 +213,18 @@ public class ReportsController(AppDbContext db) : ControllerBase
     private static string Esc(string value) =>
         value.Contains(',') || value.Contains('"') || value.Contains('\n')
             ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+
+    [HttpGet("pdf/financial-statement/{patientId:guid}")]
+    public async Task<IActionResult> GetFinancialStatementPdf(Guid patientId)
+    {
+        try
+        {
+            var pdfBytes = await pdfService.GenerateFinancialStatementAsync(patientId);
+            return File(pdfBytes, "application/pdf", $"financial-statement-{patientId}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
 }

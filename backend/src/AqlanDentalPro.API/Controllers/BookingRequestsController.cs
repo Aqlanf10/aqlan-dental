@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.DTOs.BookingRequests;
 using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -38,6 +39,7 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     [HttpPost("api/public/booking-requests")]
     [AllowAnonymous]
     [EnableRateLimiting("BookingPolicy")]
+    [Honeypot]
     public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto dto)
     {
         // reCAPTCHA validation

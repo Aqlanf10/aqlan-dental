@@ -104,3 +104,41 @@ Stage Summary:
 - Live tests: 9/11 pass cleanly, 2 minor issues documented
 - Test accounts: ✅ Secured (random password + must change)
 - Risks: Triple redundancy in Program.cs (safe but should be cleaned up), TreatingDoctor edge case
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix clinic display Arabic voice announcement — stabilize digit-by-digit speech
+
+Work Log:
+- Cloned repo and created branch fix/clinic-display-voice-announcement-root
+- Read all relevant files: page.tsx, clinic-display-announcement.js, patch script, test script, ClinicQueueController.cs
+- Identified 3 root causes for voice saying only "Two":
+  1. page.tsx had inline buildAnnouncementText() sending raw "2020-622" to SpeechSynthesis
+  2. speakArabic() silently fell back to English/default voice
+  3. Backend PatientName missing MiddleName
+- Created new TypeScript helper: frontend/src/lib/clinic-display-announcement.ts
+  - formatFileNumberForSpeech(): digit-by-digit conversion with Arabic word names
+  - English letter conversion (G→جي, M→إم, etc.)
+  - Arabic-Indic digit support (٠→صفر, ٢→اثنين)
+  - Separator skipping (-, _, /, space, .)
+  - buildAnnouncementText(): uses "المراجع" not "المريض"
+- Updated page.tsx: removed inline duplicates, imports from .ts module
+- Fixed speakArabic(): REQUIRES Arabic voice, shows Arabic warning if unavailable
+- Fixed backend ClinicQueueController.cs: added BuildPatientDisplayName() with MiddleName
+- Deleted old .js helper and fragile patch-clinic-display-announcement.mjs
+- Updated test file to TypeScript with 18 test cases
+- TypeScript check: passed with zero errors
+- Next.js build: succeeded
+- Committed as d6461a5ffc69da3decc5cb2ab55ef527d222a6e9
+- Push failed: no GitHub auth credentials available in environment
+
+Stage Summary:
+- 8 files changed, 497 insertions, 395 deletions
+- Root cause fully addressed: raw numbers no longer sent to SpeechSynthesis
+- Arabic voice is now required (no silent English fallback)
+- "المراجع" used consistently (not "المريض")
+- Backend includes MiddleName in patient display name
+- No DB/schema/migration/auth changes
+- Build verified: TypeScript + Next.js build pass
+- Branch ready to push: fix/clinic-display-voice-announcement-root

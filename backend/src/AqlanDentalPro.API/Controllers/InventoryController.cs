@@ -64,6 +64,7 @@ public class InventoryController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Inventory.AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(category)) query = query.Where(i => i.Category == category);

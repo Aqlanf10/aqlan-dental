@@ -16,6 +16,7 @@ public class PatientRepository(AppDbContext context)
         string? search, int page, int pageSize, Guid? branchId,
         string? gender = null, Guid? doctorId = null, string? status = "active")
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var baseQuery = status?.ToLower() switch
         {
             "archived" => DbSet.IgnoreQueryFilters().Where(p => !p.IsActive),

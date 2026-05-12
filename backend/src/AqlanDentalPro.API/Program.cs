@@ -19,6 +19,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using StackExchange.Redis;
+using System.Net;
+using System.Threading.RateLimiting;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -153,6 +155,47 @@ builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
         .AllowAnyMethod()
         .AllowCredentials();
 }));
+
+// ── Rate Limiting (H1 FIX: prevent brute-force on auth endpoints) ────────────
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("AuthPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 2
+            }));
+
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, IPAddress>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress ?? IPAddress.Loopback,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 10
+            }));
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = retryAfter.TotalSeconds.ToString();
+        }
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            error = "طلبات كثيرة جداً. حاول مرة أخرى بعد قليل.",
+            retryAfterSeconds = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var r) ? r.TotalSeconds : 60
+        }, cancellationToken);
+    };
+});
 
 // ── DI — Repositories ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -1241,6 +1284,7 @@ if (!app.Environment.IsProduction())
 
 app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontend");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<MustChangePasswordMiddleware>();

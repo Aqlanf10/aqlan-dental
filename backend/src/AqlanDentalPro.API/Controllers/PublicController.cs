@@ -77,7 +77,8 @@ public class PublicController : ControllerBase
                 PatientDisplayName = a.Patient.FirstName + " " + (string.IsNullOrEmpty(a.Patient.LastName) ? "" : a.Patient.LastName.Substring(0, 1)) + ".",
                 AppointmentType = a.AppointmentType ?? "—",
                 StartTime = a.StartTime.ToString(@"hh\:mm"),
-                EndTime = (string?)a.EndTime.ToString(@"hh\:mm"),
+                // H6 FIX: Safe EndTime — prevents crash if EndTime is null
+                EndTime = a.EndTime.HasValue ? a.EndTime.Value.ToString(@"hh\:mm") : (string?)null,
                 DoctorName = (string?)(a.Doctor != null ? a.Doctor.Name : null),
                 DoctorColor = (string?)(a.Doctor != null ? a.Doctor.Color : null),
                 Status = a.Status.ToString()

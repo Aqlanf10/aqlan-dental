@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.Auth;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading.RateLimiting;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -13,6 +14,7 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
         var result = await authService.LoginAsync(request);
@@ -37,6 +39,7 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
 
     [HttpPost("refresh-token")]
     [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
     public async Task<ActionResult<object>> RefreshToken()
     {
         var refreshToken = Request.Cookies[RefreshTokenCookie];

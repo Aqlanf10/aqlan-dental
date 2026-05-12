@@ -14,6 +14,7 @@ public class SearchController(AppDbContext db) : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Search([FromQuery] string q, [FromQuery] int limit = 5)
     {
+        limit = Math.Max(1, Math.Min(limit, 100));
         if (string.IsNullOrWhiteSpace(q) || q.Length < 2)
             return Ok(new { patients = Array.Empty<object>(), appointments = Array.Empty<object>(), orthoCases = Array.Empty<object>() });
 

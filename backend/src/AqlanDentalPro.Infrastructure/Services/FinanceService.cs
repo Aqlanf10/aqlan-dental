@@ -10,6 +10,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var branchId = currentUser.BranchId;
 
         var query = db.Contracts
@@ -155,6 +156,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)

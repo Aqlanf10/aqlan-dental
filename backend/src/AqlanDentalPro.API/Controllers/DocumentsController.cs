@@ -40,6 +40,7 @@ public class DocumentsController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet]
     public async Task<IActionResult> GetDocuments([FromQuery] Guid? patientId, [FromQuery] string? documentType, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Documents.AsQueryable();
 
         if (patientId.HasValue)

@@ -6,6 +6,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -79,6 +80,7 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
 
     // ─── POST /api/clinic-queue ──────────────────────────────────────────────
     /// <summary>Adds a patient to today's clinic queue.</summary>
+    /// <remarks>H2 FIX: Uses DB advisory lock to prevent duplicate queue entries under concurrent requests.</remarks>
     [HttpPost]
     public async Task<IActionResult> AddToQueue([FromBody] AddToQueueRequest req)
     {
@@ -91,77 +93,92 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (!patient.IsActive)
             return BadRequest(new { message = "المريض محذوف" });
 
-        // Check for duplicate active queue item today
-        var existingActive = await db.ClinicQueueItems
-            .AnyAsync(q => q.PatientId == req.PatientId
-                        && q.QueueDate == today
-                        && ActiveStatuses.Contains(q.Status)
-                        && q.IsActive);
-
-        if (existingActive)
-            return Conflict(new { message = "يوجد عنصر نشط لهذا المريض في طابور اليوم بالفعل" });
-
-        // Validate appointment if provided
-        if (req.AppointmentId.HasValue)
+        // H2 FIX: Use advisory lock to prevent race condition on duplicate check
+        // Lock key: patient ID hash — ensures only one request per patient at a time
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var appointment = await db.Appointments.FindAsync(req.AppointmentId.Value);
-            if (appointment is null)
-                return NotFound(new { message = "الموعد غير موجود" });
-            if (appointment.PatientId != req.PatientId)
-                return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
+            var lockKey = (int)(req.PatientId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // Check for duplicate active queue item today (now safe under lock)
+            var existingActive = await db.ClinicQueueItems
+                .AnyAsync(q => q.PatientId == req.PatientId
+                            && q.QueueDate == today
+                            && ActiveStatuses.Contains(q.Status)
+                            && q.IsActive);
+
+            if (existingActive)
+                return Conflict(new { message = "يوجد عنصر نشط لهذا المريض في طابور اليوم بالفعل" });
+
+            // Validate appointment if provided
+            if (req.AppointmentId.HasValue)
+            {
+                var appointment = await db.Appointments.FindAsync(req.AppointmentId.Value);
+                if (appointment is null)
+                    return NotFound(new { message = "الموعد غير موجود" });
+                if (appointment.PatientId != req.PatientId)
+                    return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
+            }
+
+            // Validate doctor if provided
+            if (req.DoctorId.HasValue)
+            {
+                var doctorExists = await db.Doctors.AnyAsync(d => d.Id == req.DoctorId.Value && d.IsActive);
+                if (!doctorExists)
+                    return NotFound(new { message = "الطبيب غير موجود" });
+            }
+
+            // Validate room name if provided
+            if (!string.IsNullOrWhiteSpace(req.RoomName) && !ClinicRoomNames.IsValid(req.RoomName))
+                return BadRequest(new { message = "اسم الغرفة غير صالح. يجب أن يكون: غرفة 1 أو غرفة 2 أو غرفة 3" });
+
+            // Look for existing visit to link
+            Guid? visitId = req.VisitId;
+            if (visitId == null && req.AppointmentId.HasValue)
+            {
+                var existingVisit = await db.Visits
+                    .FirstOrDefaultAsync(v => v.AppointmentId == req.AppointmentId.Value && v.IsActive);
+                visitId = existingVisit?.Id;
+            }
+
+            var item = new ClinicQueueItem
+            {
+                PatientId = req.PatientId,
+                AppointmentId = req.AppointmentId,
+                VisitId = visitId,
+                DoctorId = req.DoctorId,
+                RoomName = req.RoomName,
+                Status = ClinicQueueStatus.Waiting,
+                QueueDate = today,
+                AddedByUserId = GetCurrentUserId(),
+                Notes = req.Notes
+            };
+
+            db.ClinicQueueItems.Add(item);
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Created($"/api/clinic-queue/{item.Id}", new
+            {
+                item.Id,
+                item.PatientId,
+                item.AppointmentId,
+                item.VisitId,
+                item.DoctorId,
+                item.RoomName,
+                Status = item.Status.ToString(),
+                StatusArabic = StatusArabic[item.Status],
+                item.QueueDate,
+                item.Notes,
+                message = "تمت إضافة المريض إلى الطابور بنجاح"
+            });
         }
-
-        // Validate doctor if provided
-        if (req.DoctorId.HasValue)
+        catch
         {
-            var doctorExists = await db.Doctors.AnyAsync(d => d.Id == req.DoctorId.Value && d.IsActive);
-            if (!doctorExists)
-                return NotFound(new { message = "الطبيب غير موجود" });
+            await tx.RollbackAsync();
+            throw;
         }
-
-        // Validate room name if provided
-        if (!string.IsNullOrWhiteSpace(req.RoomName) && !ClinicRoomNames.IsValid(req.RoomName))
-            return BadRequest(new { message = "اسم الغرفة غير صالح. يجب أن يكون: غرفة 1 أو غرفة 2 أو غرفة 3" });
-
-        // Look for existing visit to link
-        Guid? visitId = req.VisitId;
-        if (visitId == null && req.AppointmentId.HasValue)
-        {
-            var existingVisit = await db.Visits
-                .FirstOrDefaultAsync(v => v.AppointmentId == req.AppointmentId.Value && v.IsActive);
-            visitId = existingVisit?.Id;
-        }
-
-        var item = new ClinicQueueItem
-        {
-            PatientId = req.PatientId,
-            AppointmentId = req.AppointmentId,
-            VisitId = visitId,
-            DoctorId = req.DoctorId,
-            RoomName = req.RoomName,
-            Status = ClinicQueueStatus.Waiting,
-            QueueDate = today,
-            AddedByUserId = GetCurrentUserId(),
-            Notes = req.Notes
-        };
-
-        db.ClinicQueueItems.Add(item);
-        await db.SaveChangesAsync();
-
-        return Created($"/api/clinic-queue/{item.Id}", new
-        {
-            item.Id,
-            item.PatientId,
-            item.AppointmentId,
-            item.VisitId,
-            item.DoctorId,
-            item.RoomName,
-            Status = item.Status.ToString(),
-            StatusArabic = StatusArabic[item.Status],
-            item.QueueDate,
-            item.Notes,
-            message = "تمت إضافة المريض إلى الطابور بنجاح"
-        });
     }
 
     // ─── POST /api/clinic-queue/{id}/call ────────────────────────────────────

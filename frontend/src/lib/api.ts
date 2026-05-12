@@ -11,6 +11,16 @@ export const api = axios.create({
   },
 });
 
+// Raw axios instance without interceptors — used for refresh-token to avoid deadlock (F1 FIX)
+const apiRaw = axios.create({
+  baseURL: API_URL,
+  withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+    "Accept-Language": "ar",
+  },
+});
+
 // Inject access token on every request
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
@@ -57,7 +67,9 @@ api.interceptors.response.use(
 
       isRefreshing = true;
       try {
-        const { data } = await api.post<{ accessToken: string }>(
+        // F1 FIX: Use raw axios (no interceptors) for refresh-token to prevent deadlock
+        // If the refresh call itself returns 401, using `api` would queue it and hang forever
+        const { data } = await apiRaw.post<{ accessToken: string }>(
           "/api/auth/refresh-token"
         );
         localStorage.setItem("access_token", data.accessToken);

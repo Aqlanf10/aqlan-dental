@@ -55,6 +55,7 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
     [HttpGet]
     public async Task<IActionResult> GetVisits([FromQuery] Guid? patientId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Visits
             .Include(v => v.Doctor)
             .Include(v => v.Appointment)

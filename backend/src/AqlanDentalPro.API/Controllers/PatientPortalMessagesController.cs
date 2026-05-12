@@ -182,6 +182,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var userId = await EnsureLinkedUserAsync();
         if (userId == null)
             return Ok(new { data = Array.Empty<object>(), totalCount = 0, page = 1, pageSize, totalPages = 0 });
@@ -434,6 +435,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var (userId, conv, error) = await VerifyPatientFacingAccessAsync(conversationId);
         if (error != null) return (ActionResult)error;
 
@@ -732,6 +734,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     private async Task<ActionResult<ConversationDetailDto>> GetConversationById(
         Guid conversationId, Guid userId, int page = 1, int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var conv = await db.Conversations
             .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
             .Include(c => c.Patient)

@@ -436,6 +436,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public async Task<List<PatientAppointmentDto>> GetAppointmentsAsync(Guid patientId, int limit = 20)
     {
+        limit = Math.Max(1, Math.Min(limit, 100));
         var now = DateOnly.FromDateTime(DateTime.Today);
         var appointments = await db.Appointments
             .Include(a => a.Doctor)
@@ -520,6 +521,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public async Task<List<PatientTreatmentDto>> GetTreatmentsAsync(Guid patientId, int limit = 20)
     {
+        limit = Math.Max(1, Math.Min(limit, 100));
         return await db.GeneralTreatments
             .Include(t => t.Doctor)
             .Include(t => t.Visit)
@@ -543,6 +545,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public async Task<List<PatientVisitDto>> GetVisitsAsync(Guid patientId, int limit = 20)
     {
+        limit = Math.Max(1, Math.Min(limit, 100));
         return await db.Visits
             .Include(v => v.Doctor)
             .Include(v => v.GeneralTreatments)
@@ -568,6 +571,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public async Task<List<PatientPrescriptionDto>> GetPrescriptionsAsync(Guid patientId, int limit = 20)
     {
+        limit = Math.Max(1, Math.Min(limit, 100));
         var prescriptions = await db.Prescriptions
             .Include(p => p.Doctor)
             .Where(p => p.PatientId == patientId)

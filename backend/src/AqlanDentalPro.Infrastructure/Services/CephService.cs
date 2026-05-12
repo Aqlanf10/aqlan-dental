@@ -4,10 +4,11 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class CephService(AppDbContext db, ICurrentUserService currentUser)
+public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogger<CephService> logger)
 {
     // ──────────────────────────────────────────────────────────────────────────
     //  LIST
@@ -140,9 +141,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
                 var nd = JsonSerializer.Deserialize<CephNotesData>(analysis.Notes);
                 if (nd is not null) pixelsPerMm = nd.PixelsPerMm;
             }
-            catch { }
-
-        bool cal = pixelsPerMm > 0;
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "[CephService] Failed to parse CephNotesData pixelsPerMm");
+            }
         bool Has(params string[] keys) => keys.All(lm.ContainsKey);
         (double x, double y) G(string k) => lm[k];
         double R1(double v) => Math.Round(v, 1);
@@ -567,7 +569,10 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser)
                     imageHeight = nd.ImageHeight;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "[CephService] Failed to parse CephNotesData for detail");
+            }
 
         return new CephAnalysisDetailDto
         {

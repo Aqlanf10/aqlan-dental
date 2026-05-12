@@ -2,10 +2,10 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
-using AqlanDentalPro.Application.Utilities;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
@@ -13,7 +13,8 @@ public class PatientService(
     IPatientRepository repo,
     ICurrentUserService currentUser,
     IConfiguration config,
-    IPatientPortalService portalService)
+    IPatientPortalService portalService,
+    ILogger<PatientService> logger)
 {
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
@@ -127,7 +128,10 @@ public class PatientService(
                         result.PortalTemporaryPassword = plainPassword;
                     }
                 }
-                catch { /* non-critical */ }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "[PatientService] Portal account creation skipped for patient");
+                }
 
                 return result;
             }

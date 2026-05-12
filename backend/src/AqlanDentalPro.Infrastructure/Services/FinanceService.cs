@@ -3,10 +3,12 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<FinanceService> logger)
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
@@ -212,17 +214,20 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
         // Notify accountants and admins
+        var patientName = dto.PatientName ?? "مريض";
+        var paymentId = payment.Id;
         _ = Task.Run(async () =>
         {
             try
             {
-                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", $"تم استلام دفعة من {dto.PatientName ?? "مريض"}", "Payment", payment.Id);
-                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", $"تم استلام دفعة من {dto.PatientName ?? "مريض"}", "Payment", payment.Id);
+                using var scope = scopeFactory.CreateScope();
+                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", $"تم استلام دفعة من {patientName}", "Payment", paymentId);
+                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", $"تم استلام دفعة من {patientName}", "Payment", paymentId);
             }
             catch (Exception ex)
             {
-                // M1 FIX: Log notification failures instead of silently swallowing
-                Console.Error.WriteLine($"[FinanceService] Notification failed: {ex.Message}");
+                logger.LogWarning(ex, "[FinanceService] Notification failed for payment {PaymentId}", paymentId);
             }
         });
 

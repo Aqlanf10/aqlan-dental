@@ -201,16 +201,27 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (!string.IsNullOrWhiteSpace(roomName) && !ClinicRoomNames.IsValid(roomName))
             return BadRequest(new { message = "اسم الغرفة غير صالح" });
 
-        item.Status = ClinicQueueStatus.Called;
-        item.CalledAt = DateTime.UtcNow;
-        item.CalledByUserId = GetCurrentUserId();
-        item.RoomName = roomName;
-        item.UpdatedAt = DateTime.UtcNow;
+        // M2 FIX: Wrap multi-entity updates in a transaction
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            item.Status = ClinicQueueStatus.Called;
+            item.CalledAt = DateTime.UtcNow;
+            item.CalledByUserId = GetCurrentUserId();
+            item.RoomName = roomName;
+            item.UpdatedAt = DateTime.UtcNow;
 
-        // Also update the linked appointment if present
-        await SyncAppointmentStatus(item, AppointmentStatus.Called);
+            // Also update the linked appointment if present
+            await SyncAppointmentStatus(item, AppointmentStatus.Called);
 
-        await db.SaveChangesAsync();
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return Ok(new
         {
@@ -271,30 +282,41 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (item.Status != ClinicQueueStatus.InRoom && item.Status != ClinicQueueStatus.Called)
             return BadRequest(new { message = "لا يمكن بدء المعالجة إلا بعد دخول الغرفة أو النداء" });
 
-        // Create a Visit if not already linked
-        if (item.VisitId == null)
+        // M2 FIX: Wrap Visit creation + QueueItem update in a transaction
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var visit = new Visit
+            // Create a Visit if not already linked
+            if (item.VisitId == null)
             {
-                PatientId = item.PatientId,
-                AppointmentId = item.AppointmentId,
-                VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
-                DoctorId = item.DoctorId ?? item.Appointment?.DoctorId,
-                Specialty = item.Appointment?.Specialty
-            };
+                var visit = new Visit
+                {
+                    PatientId = item.PatientId,
+                    AppointmentId = item.AppointmentId,
+                    VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    DoctorId = item.DoctorId ?? item.Appointment?.DoctorId,
+                    Specialty = item.Appointment?.Specialty
+                };
 
-            db.Visits.Add(visit);
-            await db.SaveChangesAsync(); // Save to get the ID
-            item.VisitId = visit.Id;
+                db.Visits.Add(visit);
+                await db.SaveChangesAsync(); // Save to get the ID
+                item.VisitId = visit.Id;
+            }
+
+            item.Status = ClinicQueueStatus.InProgress;
+            item.StartedAt = DateTime.UtcNow;
+            item.UpdatedAt = DateTime.UtcNow;
+
+            await SyncAppointmentStatus(item, AppointmentStatus.InProgress);
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
         }
-
-        item.Status = ClinicQueueStatus.InProgress;
-        item.StartedAt = DateTime.UtcNow;
-        item.UpdatedAt = DateTime.UtcNow;
-
-        await SyncAppointmentStatus(item, AppointmentStatus.InProgress);
-
-        await db.SaveChangesAsync();
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return Ok(new
         {
@@ -383,21 +405,32 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (!ActiveStatuses.Contains(item.Status))
             return BadRequest(new { message = "لا يمكن تغيير الغرفة لعنصر غير نشط" });
 
-        item.RoomName = req.RoomName;
-        item.UpdatedAt = DateTime.UtcNow;
-
-        // Also update linked appointment room
-        if (item.AppointmentId.HasValue)
+        // M2 FIX: Wrap multi-entity updates in a transaction
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var appointment = await db.Appointments.FindAsync(item.AppointmentId.Value);
-            if (appointment != null)
-            {
-                appointment.RoomName = req.RoomName;
-                appointment.UpdatedAt = DateTime.UtcNow;
-            }
-        }
+            item.RoomName = req.RoomName;
+            item.UpdatedAt = DateTime.UtcNow;
 
-        await db.SaveChangesAsync();
+            // Also update linked appointment room
+            if (item.AppointmentId.HasValue)
+            {
+                var appointment = await db.Appointments.FindAsync(item.AppointmentId.Value);
+                if (appointment != null)
+                {
+                    appointment.RoomName = req.RoomName;
+                    appointment.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return Ok(new
         {
@@ -517,32 +550,46 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (appointment.Status == AppointmentStatus.Cancelled || appointment.Status == AppointmentStatus.NoShow)
             return BadRequest(new { message = "لا يمكن تسجيل وصول موعد ملغى أو لم يحضر" });
 
-        // Also add to clinic queue if not already there
-        var existingQueueItem = await db.ClinicQueueItems
-            .AnyAsync(q => q.AppointmentId == id && q.QueueDate == today
-                && ActiveStatuses.Contains(q.Status)
-                && q.IsActive);
-
-        appointment.Status = AppointmentStatus.Waiting;
-        appointment.ArrivedAt = DateTime.UtcNow;
-        appointment.UpdatedAt = DateTime.UtcNow;
-
-        if (!existingQueueItem)
+        // M2 FIX: Wrap multi-entity updates in a transaction with advisory lock
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var queueItem = new ClinicQueueItem
-            {
-                PatientId = appointment.PatientId,
-                AppointmentId = appointment.Id,
-                DoctorId = appointment.DoctorId,
-                RoomName = appointment.RoomName,
-                Status = ClinicQueueStatus.Waiting,
-                QueueDate = today,
-                AddedByUserId = GetCurrentUserId()
-            };
-            db.ClinicQueueItems.Add(queueItem);
-        }
+            var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        await db.SaveChangesAsync();
+            // Also add to clinic queue if not already there (re-check under lock)
+            var existingQueueItem = await db.ClinicQueueItems
+                .AnyAsync(q => q.AppointmentId == id && q.QueueDate == today
+                    && ActiveStatuses.Contains(q.Status)
+                    && q.IsActive);
+
+            appointment.Status = AppointmentStatus.Waiting;
+            appointment.ArrivedAt = DateTime.UtcNow;
+            appointment.UpdatedAt = DateTime.UtcNow;
+
+            if (!existingQueueItem)
+            {
+                var queueItem = new ClinicQueueItem
+                {
+                    PatientId = appointment.PatientId,
+                    AppointmentId = appointment.Id,
+                    DoctorId = appointment.DoctorId,
+                    RoomName = appointment.RoomName,
+                    Status = ClinicQueueStatus.Waiting,
+                    QueueDate = today,
+                    AddedByUserId = GetCurrentUserId()
+                };
+                db.ClinicQueueItems.Add(queueItem);
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
 
         return Ok(new
         {

@@ -58,6 +58,7 @@ public class UploadsController : ControllerBase
             // 3. Fallback to /tmp for containerized environments where wwwroot is read-only
             var fallbackPath = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
             Directory.CreateDirectory(fallbackPath);
+            Console.Error.WriteLine($"[UploadsController] WARNING: Using temp directory for uploads: {fallbackPath}. Files will be LOST on redeploy. Set UPLOADS_PATH env var for persistent storage.");
             return fallbackPath;
         }
     }
@@ -86,7 +87,7 @@ public class UploadsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "فشل إنشاء مجلد المرفقات", detail = ex.Message });
+            return StatusCode(500, new { message = "فشل إنشاء مجلد المرفقات" });
         }
 
         var fileName = $"{Guid.NewGuid()}{ext}";

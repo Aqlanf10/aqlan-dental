@@ -3,10 +3,12 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class AppointmentService(IAppointmentRepository repo, ICurrentUserService currentUser, INotificationService notifications)
+public class AppointmentService(IAppointmentRepository repo, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<AppointmentService> logger)
 {
     public async Task<IEnumerable<AppointmentDto>> GetTodayAsync(Guid? doctorId = null)
     {
@@ -50,22 +52,31 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         await repo.AddAsync(appointment);
         await repo.SaveChangesAsync();
 
-        // Notify the doctor
+        // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
         var dto = ToDto(appointment);
+        var doctorId = req.DoctorId;
+        var patientLabel = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
+        var appointmentDate = dto.AppointmentDate;
+        var startTime = dto.StartTime;
+        var appointmentId = appointment.Id;
         _ = Task.Run(async () =>
         {
             try
             {
-                var patientName = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
+                using var scope = scopeFactory.CreateScope();
+                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
                 await notifications.NotifyDoctorAsync(
-                    req.DoctorId,
+                    doctorId,
                     "appointment",
                     "موعد جديد",
-                    $"تم حجز موعد جديد لـ {patientName} بتاريخ {dto.AppointmentDate} الساعة {dto.StartTime}",
+                    $"تم حجز موعد جديد لـ {patientLabel} بتاريخ {appointmentDate} الساعة {startTime}",
                     "Appointment",
-                    appointment.Id);
+                    appointmentId);
             }
-            catch { /* non-blocking */ }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[AppointmentService] Doctor notification failed for appointment {AppointmentId}", appointmentId);
+            }
         });
 
         return (dto, null);

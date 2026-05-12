@@ -88,6 +88,22 @@ function getStatusDisplay(status: string) {
    @/lib/clinic-display-announcement.ts — the single source of truth.
    Do NOT create inline duplicates here. */
 
+/* ─── Debug Logger ──────────────────────────────────────────────────────── */
+
+// Debug logger — only logs in development
+function debugVoiceLog(...args: unknown[]) {
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Voice]', ...args);
+  }
+}
+
+// Debug warn — only logs in development
+function debugVoiceWarn(...args: unknown[]) {
+  if (process.env.NODE_ENV === 'development') {
+    console.warn('[Voice]', ...args);
+  }
+}
+
 /* ─── Arabic Speech Utility ────────────────────────────────────────────────── */
 
 /**
@@ -125,20 +141,20 @@ function speakArabic(
     const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
     if (arabicVoice) {
       utterance.voice = arabicVoice;
-      console.log("[Voice] Using Arabic voice:", arabicVoice.name);
+      debugVoiceLog("Using Arabic voice:", arabicVoice.name);
     } else {
       // No Arabic voice locally — Edge will use cloud TTS with ar-SA lang
-      console.log("[Voice] No Arabic voice locally, using default with lang=ar-SA");
+      debugVoiceLog("No Arabic voice locally, using default with lang=ar-SA");
     }
 
-    utterance.onstart = () => console.log("[Voice] Speaking:", text);
-    utterance.onend = () => console.log("[Voice] Speech ended");
-    utterance.onerror = (e) => console.warn("[Voice] Speech error:", e.error);
+    utterance.onstart = () => debugVoiceLog("Speaking:", text);
+    utterance.onend = () => debugVoiceLog("Speech ended");
+    utterance.onerror = (e) => debugVoiceWarn("Speech error:", e.error);
 
     window.speechSynthesis.speak(utterance);
     return { ok: true };
   } catch (err) {
-    console.warn("[Voice] speakArabic failed:", err);
+    debugVoiceWarn("speakArabic failed:", err);
     return { ok: false, reason: String(err) };
   }
 }

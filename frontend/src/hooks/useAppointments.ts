@@ -80,7 +80,10 @@ export function useUpdateAppointmentStatus() {
   });
 }
 
-/** Hook: Check appointment conflict */
+/** Hook: Check appointment conflict
+ *  Verified to work with the POST /api/appointments/check-conflict endpoint (Phase 8, P8-3).
+ *  Previously unused (dead code); now active and available for form validation.
+ */
 export function useCheckConflict() {
   return useMutation({
     mutationFn: async ({

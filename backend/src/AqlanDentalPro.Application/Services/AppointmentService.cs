@@ -173,6 +173,18 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         return (ToDto(appointment), null);
     }
 
+    public async Task<bool> CheckConflictAsync(Guid doctorId, string date, string startTime, int durationMinutes, Guid? excludeId)
+    {
+        if (!DateOnly.TryParse(date, out var appointmentDate))
+            throw new ArgumentException("Invalid date format");
+
+        if (!TimeOnly.TryParse(startTime, out var start))
+            throw new ArgumentException("Invalid time format");
+
+        var endTime = start.AddMinutes(durationMinutes);
+        return await repo.HasConflictAsync(doctorId, appointmentDate, start, endTime, excludeId);
+    }
+
     private static AppointmentDto ToDto(Appointment a) => new()
     {
         Id = a.Id,

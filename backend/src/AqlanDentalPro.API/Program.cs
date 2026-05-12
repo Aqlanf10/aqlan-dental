@@ -280,8 +280,8 @@ try
 
         // Set the flag so this never runs again
         await resetDb.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "Settings" ("Id", "Key", "Value", "Category", "CreatedAt", "UpdatedAt", "IsActive")
-            VALUES (gen_random_uuid(), 'admin.password.reset.2026', 'done', 'system', NOW(), NOW(), true)
+            INSERT INTO "Settings" ("Id", "Key", "Value", "Category", "UpdatedAt")
+            VALUES (gen_random_uuid(), 'admin.password.reset.2026', 'done', 'system', NOW())
         """);
 
         resetLogger.LogWarning("Admin password has been reset to default value. Username: admin. CHANGE PASSWORD IMMEDIATELY!");

@@ -48,6 +48,13 @@ public class PaymentsController(FinanceService service) : ControllerBase
         return deleted ? Ok(new { message = "تم حذف الدفعة بنجاح" }) : NotFound(new { message = "الدفعة غير موجودة" });
     }
 
+    [HttpPost("payments/{id:guid}/refund")]
+    public async Task<IActionResult> RefundPayment(Guid id, [FromBody] RefundPaymentRequest? req)
+    {
+        var result = await service.RefundPaymentAsync(id, req?.Reason);
+        return result == null ? NotFound(new { message = "الدفعة غير موجودة أو ملغاة" }) : Ok(result);
+    }
+
     [HttpGet("finance/summary")]
     public async Task<IActionResult> GetSummary()
     {

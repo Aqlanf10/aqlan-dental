@@ -34,4 +34,11 @@ public class ContractsController(FinanceService service) : ControllerBase
         var result = await service.CreateContractAsync(req);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateContractRequest req)
+    {
+        var result = await service.UpdateContractAsync(id, req);
+        return result == null ? NotFound(new { message = "العقد غير موجود" }) : Ok(result);
+    }
 }

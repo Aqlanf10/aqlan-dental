@@ -78,7 +78,7 @@ public class PublicController : ControllerBase
                 AppointmentType = a.AppointmentType ?? "—",
                 StartTime = a.StartTime.ToString(@"hh\:mm"),
                 // H6 FIX: Safe EndTime — prevents crash if EndTime is null
-                EndTime = a.EndTime.HasValue ? a.EndTime.Value.ToString(@"hh\:mm") : (string?)null,
+                EndTime = a.EndTime.ToString(@"hh\:mm"),
                 DoctorName = (string?)(a.Doctor != null ? a.Doctor.Name : null),
                 DoctorColor = (string?)(a.Doctor != null ? a.Doctor.Color : null),
                 Status = a.Status.ToString()

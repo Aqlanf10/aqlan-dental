@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -36,6 +37,7 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     /// </summary>
     [HttpPost("api/public/booking-requests")]
     [AllowAnonymous]
+    [EnableRateLimiting("BookingPolicy")]
     public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto dto)
     {
         if (!ModelState.IsValid)

@@ -103,6 +103,27 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
         return (await GetContractByIdAsync(contract.Id))!;
     }
 
+    public async Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req)
+    {
+        var contract = await db.Contracts.FindAsync(id);
+        if (contract == null) return null;
+        if (!contract.IsActive) return null;
+
+        if (req.TotalAmount.HasValue) contract.TotalAmount = req.TotalAmount.Value;
+        if (req.DownPayment.HasValue) contract.DownPayment = req.DownPayment.Value;
+        if (req.InstallmentsCount.HasValue) contract.InstallmentsCount = req.InstallmentsCount.Value;
+        if (req.InstallmentAmount.HasValue) contract.InstallmentAmount = req.InstallmentAmount.Value;
+        if (req.DiscountAmount.HasValue) contract.DiscountAmount = req.DiscountAmount.Value;
+        if (req.DiscountReason != null) contract.DiscountReason = req.DiscountReason;
+        if (req.Status != null) contract.Status = req.Status;
+        if (req.Notes != null) contract.Notes = req.Notes;
+
+        contract.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return await GetContractByIdAsync(id);
+    }
+
     public async Task<PaymentDto?> GetPaymentByIdAsync(Guid id)
     {
         var p = await db.Payments
@@ -269,6 +290,52 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
         await db.SaveChangesAsync();
 
         return true;
+    }
+
+    public async Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason)
+    {
+        var payment = await db.Payments
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (payment == null) return null;
+        if (!payment.IsActive) return null;
+
+        // Create a refund payment record (negative amount)
+        var refundNumber = $"REF-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
+
+        var refund = new Payment
+        {
+            PatientId = payment.PatientId,
+            ContractId = payment.ContractId,
+            Amount = -payment.Amount,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = payment.PaymentMethod,
+            ServiceDescription = $"استرداد: {payment.ServiceDescription}",
+            Specialty = payment.Specialty,
+            DoctorId = payment.DoctorId,
+            BranchId = payment.BranchId,
+            ReceivedBy = currentUser.UserId,
+            ReceiptNumber = refundNumber,
+            Notes = reason ?? "استرداد مبلغ"
+        };
+
+        // Soft-delete the original payment
+        payment.IsActive = false;
+        payment.DeletedAt = DateTime.UtcNow;
+        payment.DeletedBy = currentUser.UserId;
+
+        db.Payments.Add(refund);
+        db.Receipts.Add(new Receipt
+        {
+            PaymentId = refund.Id,
+            ReceiptNumber = refundNumber,
+            PrintedBy = currentUser.UserId
+        });
+
+        await db.SaveChangesAsync();
+        return MapPayment(refund);
     }
 
     public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)

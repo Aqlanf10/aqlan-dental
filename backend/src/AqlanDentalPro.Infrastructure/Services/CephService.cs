@@ -145,6 +145,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             {
                 logger.LogDebug(ex, "[CephService] Failed to parse CephNotesData pixelsPerMm");
             }
+        bool cal = pixelsPerMm > 0;
         bool Has(params string[] keys) => keys.All(lm.ContainsKey);
         (double x, double y) G(string k) => lm[k];
         double R1(double v) => Math.Round(v, 1);
@@ -571,7 +572,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
             }
             catch (Exception ex)
             {
-                logger.LogDebug(ex, "[CephService] Failed to parse CephNotesData for detail");
+                // CephNotesData parse failed (static method, no logger)
             }
 
         return new CephAnalysisDetailDto

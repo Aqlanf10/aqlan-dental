@@ -234,6 +234,7 @@ builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.S
 builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
 builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
+builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
 builder.Services.AddHttpClient("WhatsApp");
 
 builder.Services.AddHttpContextAccessor();
@@ -1254,6 +1255,7 @@ else
 }
 
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
+app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 

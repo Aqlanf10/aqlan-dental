@@ -94,6 +94,32 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         return a == null ? null : ToDto(a);
     }
 
+    public async Task<DailyAppointmentStatsDto> GetDailyStatsAsync(DateOnly date)
+    {
+        var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
+        var appointments = await repo.GetByDateRangeAsync(date, date, branchId, null);
+
+        var list = appointments.ToList();
+        var total = list.Count;
+        var completed = list.Count(a => a.Status == AppointmentStatus.Completed);
+        var cancelled = list.Count(a => a.Status == AppointmentStatus.Cancelled);
+        var noShow = list.Count(a => a.Status == AppointmentStatus.NoShow);
+        var inProgress = list.Count(a => a.Status == AppointmentStatus.InProgress || a.Status == AppointmentStatus.Called || a.Status == AppointmentStatus.InRoom);
+        var waiting = list.Count(a => a.Status == AppointmentStatus.Waiting || a.Status == AppointmentStatus.Arrived || a.Status == AppointmentStatus.Scheduled || a.Status == AppointmentStatus.Confirmed);
+
+        return new DailyAppointmentStatsDto
+        {
+            Total = total,
+            Completed = completed,
+            Cancelled = cancelled,
+            NoShow = noShow,
+            InProgress = inProgress,
+            Waiting = waiting,
+            CompletionRate = total > 0 ? Math.Round((double)completed / total * 100, 1) : 0,
+            NoShowRate = total > 0 ? Math.Round((double)noShow / total * 100, 1) : 0
+        };
+    }
+
     public async Task<(AppointmentDto? result, string? error)> UpdateAsync(
         Guid id, CreateAppointmentRequest req)
     {

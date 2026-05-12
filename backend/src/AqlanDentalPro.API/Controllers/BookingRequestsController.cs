@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
-public class BookingRequestsController(IBookingRequestService service, ICurrentUserService currentUser) : ControllerBase
+public class BookingRequestsController(IBookingRequestService service, ICurrentUserService currentUser, IRecaptchaService recaptcha) : ControllerBase
 {
     // ── Public endpoints ─────────────────────────────────────────────────
 
@@ -40,6 +40,16 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     [EnableRateLimiting("BookingPolicy")]
     public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto dto)
     {
+        // reCAPTCHA validation
+        if (!string.IsNullOrWhiteSpace(dto.RecaptchaToken))
+        {
+            var (isValid, score, errorMessage) = await recaptcha.ValidateTokenAsync(dto.RecaptchaToken);
+            if (!isValid)
+            {
+                return BadRequest(new { message = errorMessage ?? "فشل التحقق الأمني" });
+            }
+        }
+
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 

@@ -10,7 +10,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/portal")]
-public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration, ILogger<PatientPortalController> logger) : ControllerBase
+public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration, ILogger<PatientPortalController> logger, IRecaptchaService recaptcha) : ControllerBase
 {
     private readonly IConfiguration Configuration = configuration;
     private readonly ILogger<PatientPortalController> Logger = logger;
@@ -37,6 +37,16 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
     [AllowAnonymous]
     public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
     {
+        // reCAPTCHA validation
+        if (!string.IsNullOrWhiteSpace(req.RecaptchaToken))
+        {
+            var (isValid, score, errorMessage) = await recaptcha.ValidateTokenAsync(req.RecaptchaToken);
+            if (!isValid)
+            {
+                return BadRequest(new { message = errorMessage ?? "فشل التحقق الأمني" });
+            }
+        }
+
         try
         {
             var (success, error) = await portalService.ForgotPasswordAsync(req.PhoneNumber);

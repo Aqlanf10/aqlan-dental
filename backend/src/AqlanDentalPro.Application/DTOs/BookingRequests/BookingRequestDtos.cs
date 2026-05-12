@@ -11,7 +11,9 @@ public record CreateBookingRequestDto(
     [MaxLength(50)] string? PreferredDate,
     [MaxLength(50)] string? PreferredTime,
     [MaxLength(500)] string? Notes,
-    Guid? DoctorId
+    Guid? DoctorId,
+    /// <summary>Google reCAPTCHA v3 token (optional — required when configured)</summary>
+    string? RecaptchaToken
 );
 
 public record BookingRequestDto(

@@ -507,73 +507,10 @@ if (enableStartupDbMaintenance)
         // B3/B8/B9 normalized phone schema removed in TD-020 Phase C1-b;
         // now handled by EF migration 20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes.
 
-        // Backfill NormalizedPhone/NormalizedWhatsApp
-        await db.Database.ExecuteSqlRawAsync("""
-            UPDATE "Patients" SET "NormalizedPhone" = 
-                CASE 
-                    WHEN "Phone" IS NULL OR "Phone" = '' THEN NULL
-                    ELSE LTRIM(RTRIM(
-                        CASE 
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
-                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
-                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
-                        END
-                    ))
-                END
-            WHERE "NormalizedPhone" IS NULL AND "Phone" IS NOT NULL AND "Phone" != '';
-        """);
+        // B4/B5/B6/B7 normalized phone backfill and dedup blocks removed in TD-020 Phase C1-c.
+        // Schema is handled by EF migration 20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes.
+        // Data cleanup was one-time legacy maintenance and remains documented in TD-020.
 
-        await db.Database.ExecuteSqlRawAsync("""
-            UPDATE "Patients" SET "NormalizedWhatsApp" = 
-                CASE 
-                    WHEN "WhatsApp" IS NULL OR "WhatsApp" = '' THEN NULL
-                    ELSE LTRIM(RTRIM(
-                        CASE 
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
-                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
-                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
-                        END
-                    ))
-                END
-            WHERE "NormalizedWhatsApp" IS NULL AND "WhatsApp" IS NOT NULL AND "WhatsApp" != '';
-        """);
-
-        // Create unique indexes for NormalizedPhone/NormalizedWhatsApp (with deduplication)
-        // First: NULL out duplicates, keeping only the first (oldest) record
-        await db.Database.ExecuteSqlRawAsync("""
-            WITH duplicates AS (
-                SELECT "Id", "NormalizedPhone", 
-                       ROW_NUMBER() OVER (PARTITION BY "NormalizedPhone" ORDER BY "CreatedAt" ASC) as rn
-                FROM "Patients" 
-                WHERE "NormalizedPhone" IS NOT NULL AND "NormalizedPhone" != ''
-            )
-            UPDATE "Patients" SET "NormalizedPhone" = NULL
-            FROM duplicates
-            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            WITH duplicates AS (
-                SELECT "Id", "NormalizedWhatsApp", 
-                       ROW_NUMBER() OVER (PARTITION BY "NormalizedWhatsApp" ORDER BY "CreatedAt" ASC) as rn
-                FROM "Patients" 
-                WHERE "NormalizedWhatsApp" IS NOT NULL AND "NormalizedWhatsApp" != ''
-            )
-            UPDATE "Patients" SET "NormalizedWhatsApp" = NULL
-            FROM duplicates
-            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
-        """);
         // Add ConversationType/PatientId/BranchId to Conversations
         await db.Database.ExecuteSqlRawAsync("""
             DO $$ BEGIN

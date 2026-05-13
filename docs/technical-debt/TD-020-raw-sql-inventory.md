@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-13
 **Production commit:** `e51d98e4b6e8` (after PR #99 merge)
-**Status:** Phase C1-b — B3/B8/B9 normalized phone schema converted to EF migration
+**Status:** Phase C1-c — B4/B5/B6/B7 obsolete phone backfill/dedup blocks removed
 
 ---
 
@@ -11,13 +11,13 @@
 | Metric | Count |
 |--------|-------|
 | Files containing raw SQL | 2 (Program.cs + ClinicQueueController.cs) |
-| Total `ExecuteSqlRawAsync` calls in Program.cs | 45 (was 48 — B3/B8/B9 removed) |
+| Total `ExecuteSqlRawAsync` calls in Program.cs | 41 (was 45 — B4/B5/B6/B7 removed) |
 | Total `CreateCommand()` / `CommandText` in Program.cs | 3 pairs (6 lines) |
-| Total raw SQL in Program.cs | **46** (was 49 — B3/B8/B9 removed) |
+| Total raw SQL in Program.cs | **42** (was 46 — B4/B5/B6/B7 removed) |
 | Total raw SQL in ClinicQueueController.cs | **2** (advisory locks — KEEP) |
-| Total backend raw SQL | **48** (was 51) |
+| Total backend raw SQL | **44** (was 48) |
 | Blocks active WITHOUT env gate (ungated) | 4 (A1-A4: admin password reset) |
-| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 43 (B1, B4-B7, B10-B47 — B2/B3/B8/B9 removed) |
+| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 39 (B1, B10-B47 — B2/B3/B4/B5/B6/B7/B8/B9 removed) |
 
 **SQL Injection verdict:** No exploitable vectors found. All interpolated values are either `int` from configuration or hardcoded `string[]` arrays — none derive from user input.
 
@@ -48,10 +48,10 @@
 | B1 | 482 | Advisory lock acquisition (`pg_try_advisory_lock`) | Low | C — Keep as advisory lock | Must keep. Uses interpolated `lockKey` from config (int type — no injection risk). |
 | B2 | ~~521-533~~ | ~~`ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 39 tables~~ | Medium | ~~A — Convert to EF migration~~ | **Removed in Phase C1-a.** Replaced by EF migration `20260522000000_AddSoftDeleteColumnsToLegacyTables`. |
 | B3 | ~~507-517~~ | ~~`ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
-| B4 | 553 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
-| B5 | 575 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
-| B6 | 598 | Deduplicate `NormalizedPhone` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
-| B7 | 609 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
+| B4 | ~~510-530~~ | ~~`UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization)~~ | Medium | ~~E — Keep temporarily, then D~~ | **Removed in Phase C1-c.** Gated block, never ran in production. New patients normalized via `PhoneNormalizer` in application code. |
+| B5 | ~~532-551~~ | ~~`UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization)~~ | Medium | ~~E — Keep temporarily, then D~~ | **Removed in Phase C1-c.** Same rationale as B4. |
+| B6 | ~~555-565~~ | ~~Deduplicate `NormalizedPhone` (complex CTE)~~ | Low | ~~D — Delete as obsolete after Phase C1~~ | **Removed in Phase C1-c.** Unique index exists; no duplicates possible on a healthy DB. |
+| B7 | ~~566-576~~ | ~~Deduplicate `NormalizedWhatsApp` (complex CTE)~~ | Low | ~~D — Delete as obsolete after Phase C1~~ | **Removed in Phase C1-c.** Same rationale as B6. |
 | B8 | ~~586-590~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedPhone"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B9 | ~~591-595~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedWhatsApp"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B10 | 631 | `ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"` | Low | A — Convert to EF migration |
@@ -706,3 +706,57 @@ A follow-up commit corrected the column type from `text NULL` to `character vary
 - **Legacy B3 block:** Original Program.cs used `character varying(20) NULL` exactly
 - **Fix:** Migration now uses `character varying(20) NULL` — identical type on all paths (EF model, original B3, new migration)
 - No change to indexes, guards, or `Down()` no-op
+
+---
+
+## Phase C1-c: Remove Obsolete Normalized Phone Backfill/Dedup Blocks (2026-05-23)
+
+**Branch:** `td-020-phase-c1c-phone-backfill-dedup-review`
+**Decision:** Path A — Safe deletion
+**Scope:** Remove B4/B5 (data backfill UPDATEs) and B6/B7 (deduplication CTEs) from Program.cs. No new migration needed — schema already covered by C1-b migration.
+
+### Rationale for Safe Deletion
+
+| Factor | Evidence |
+|--------|----------|
+| Gate | All 4 blocks inside `ENABLE_STARTUP_DB_MAINTENANCE=false` — **never ran in production** |
+| New data | `PatientService` calls `PhoneNormalizer.Normalize()` on every patient create/update → all new patients get normalized values automatically |
+| Schema | Columns + unique filtered indexes already handled by `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes` (C1-b) and earlier migrations |
+| Deduplication | `IX_Patients_NormalizedPhone` + `IX_Patients_NormalizedWhatsApp` unique indexes exist and are enforced — no duplicates possible on a healthy production DB |
+| Production impact | Zero — removing gated blocks that were never active changes nothing |
+
+### What Changed
+
+| Item | Before | After |
+|------|--------|-------|
+| Program.cs `ExecuteSqlRawAsync` calls | 45 | 41 |
+| Program.cs raw SQL blocks | 46 | 42 |
+| Total backend raw SQL | 48 | 44 |
+| Lines removed from Program.cs | — | ~52 |
+
+### Blocks Removed
+
+| Block | Original Lines | Purpose | Why Safe to Remove |
+|-------|---------------|---------|-------------------|
+| B4 | 510-530 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization backfill) | Never ran in production (`ENABLE_STARTUP_DB_MAINTENANCE=false`). New patients normalized via application code. |
+| B5 | 532-551 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization backfill) | Same as B4. |
+| B6 | 555-565 | Deduplicate `NormalizedPhone` (WITH duplicates CTE) | Unique index already exists; a healthy DB with unique index cannot have duplicates. |
+| B7 | 566-576 | Deduplicate `NormalizedWhatsApp` (WITH duplicates CTE) | Same as B6. |
+
+### Files Changed
+
+1. `backend/src/AqlanDentalPro.API/Program.cs` — Removed B4/B5/B6/B7 (52 lines); replaced with 3-line comment
+2. `docs/technical-debt/TD-020-raw-sql-inventory.md` — Updated with Phase C1-c results
+
+### Blocks NOT Touched
+
+| Block | Status | Reason |
+|-------|--------|--------|
+| A1-A4 (admin password reset) | Unchanged | Not in scope |
+| B1/B47 (advisory locks) | Unchanged | Infrastructure |
+| B10-B46 | Unchanged | Not in scope for this phase |
+| ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
+| DbSeeder.cs | Unchanged | Already at 0 raw SQL |
+| Frontend | Unchanged | Not in scope |
+| Auth/password behavior | Unchanged | Not in scope |
+| `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged | Not enabled |

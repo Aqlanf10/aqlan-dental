@@ -71,8 +71,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         var normalizedPhone = NormalizePhone(phoneNumber);
         var phoneVariants = GetPhoneVariants(phoneNumber);
         var patient = await db.Patients.FirstOrDefaultAsync(p =>
-            phoneVariants.Contains(p.Phone) || phoneVariants.Contains(p.WhatsApp) ||
-            phoneVariants.Contains(p.NormalizedPhone) || phoneVariants.Contains(p.NormalizedWhatsApp));
+            phoneVariants.Contains(p.Phone ?? "") || phoneVariants.Contains(p.WhatsApp ?? "") ||
+            phoneVariants.Contains(p.NormalizedPhone ?? "") || phoneVariants.Contains(p.NormalizedWhatsApp ?? ""));
         if (patient == null)
             return (false, "رقم الهاتف غير مسجل في النظام");
 
@@ -104,9 +104,9 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             .Include(a => a.Patient)
                 .ThenInclude(p => p!.PrimaryDoctor)
             .FirstOrDefaultAsync(a => a.PatientId != Guid.Empty && // ensure join
-                (phoneVariants.Contains(a.PhoneNumber) ||
-                 (a.Patient != null && phoneVariants.Contains(a.Patient.Phone)) ||
-                 (a.Patient != null && phoneVariants.Contains(a.Patient.WhatsApp))));
+                (phoneVariants.Contains(a.PhoneNumber ?? "") ||
+                 (a.Patient != null && phoneVariants.Contains(a.Patient.Phone ?? "")) ||
+                 (a.Patient != null && phoneVariants.Contains(a.Patient.WhatsApp ?? ""))));
 
         if (account == null)
             return (null, "الحساب غير موجود");

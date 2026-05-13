@@ -1,3 +1,4 @@
+using Xunit;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
@@ -43,7 +44,7 @@ public class AppointmentServiceTests
         // Arrange
         _repoMock
             .Setup(r => r.GetByDateRangeAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(Array.Empty<Appointment>());
 
         var service = CreateService();
@@ -81,7 +82,7 @@ public class AppointmentServiceTests
 
         _repoMock
             .Setup(r => r.GetByDateRangeAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(appointments);
 
         var service = CreateService();
@@ -115,7 +116,7 @@ public class AppointmentServiceTests
 
         _repoMock
             .Setup(r => r.GetByDateRangeAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(appointments);
 
         var service = CreateService();
@@ -141,7 +142,7 @@ public class AppointmentServiceTests
 
         _repoMock
             .Setup(r => r.GetByDateRangeAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(appointments);
 
         var service = CreateService();
@@ -165,7 +166,7 @@ public class AppointmentServiceTests
 
         _repoMock
             .Setup(r => r.GetByDateRangeAsync(
-                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
+                It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<Guid?>(), It.IsAny<Guid?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(appointments);
 
         var service = CreateService();

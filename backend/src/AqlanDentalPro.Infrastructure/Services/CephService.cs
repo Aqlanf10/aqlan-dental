@@ -570,7 +570,7 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
                     imageHeight = nd.ImageHeight;
                 }
             }
-            catch (Exception ex)
+            catch
             {
                 // CephNotesData parse failed (static method, no logger)
             }

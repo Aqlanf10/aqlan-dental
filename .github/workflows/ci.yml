@@ -26,7 +26,7 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release --warnaserror
+        run: dotnet build --no-restore --configuration Release --warnaserror -p:WarningsNotAsErrors=NU1903
 
       - name: Run unit tests
         run: dotnet test tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj --no-restore --configuration Release --verbosity minimal

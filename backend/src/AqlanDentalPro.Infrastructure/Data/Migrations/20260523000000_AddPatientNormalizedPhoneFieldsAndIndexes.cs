@@ -26,7 +26,7 @@ public partial class AddPatientNormalizedPhoneFieldsAndIndexes : Migration
                        SELECT 1 FROM information_schema.columns
                        WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone'
                    ) THEN
-                    ALTER TABLE "Patients" ADD COLUMN "NormalizedPhone" text NULL;
+                    ALTER TABLE "Patients" ADD COLUMN "NormalizedPhone" character varying(20) NULL;
                 END IF;
             END $$;
             """);
@@ -39,7 +39,7 @@ public partial class AddPatientNormalizedPhoneFieldsAndIndexes : Migration
                        SELECT 1 FROM information_schema.columns
                        WHERE table_name = 'Patients' AND column_name = 'NormalizedWhatsApp'
                    ) THEN
-                    ALTER TABLE "Patients" ADD COLUMN "NormalizedWhatsApp" text NULL;
+                    ALTER TABLE "Patients" ADD COLUMN "NormalizedWhatsApp" character varying(20) NULL;
                 END IF;
             END $$;
             """);

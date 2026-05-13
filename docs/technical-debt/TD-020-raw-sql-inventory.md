@@ -44,14 +44,14 @@
 **Currently active in production:** NO (env var defaults to `false`)
 
 | # | Line | Purpose | Risk | Action | Phase C0 Notes |
-|---|------|---------|------|--------|--------------|
+|---|------|---------|------|--------|---------------|
 | B1 | 482 | Advisory lock acquisition (`pg_try_advisory_lock`) | Low | C — Keep as advisory lock | Must keep. Uses interpolated `lockKey` from config (int type — no injection risk). |
 | B2 | ~~521-533~~ | ~~`ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 39 tables~~ | Medium | ~~A — Convert to EF migration~~ | **Removed in Phase C1-a.** Replaced by EF migration `20260522000000_AddSoftDeleteColumnsToLegacyTables`. |
 | B3 | ~~507-517~~ | ~~`ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
-| B4 | 553-573 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
-| B5 | 575-594 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
-| B6 | 598-608 | Deduplicate `NormalizedPhone` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
-| B7 | 609-619 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
+| B4 | 553 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
+| B5 | 575 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
+| B6 | 598 | Deduplicate `NormalizedPhone` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
+| B7 | 609 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
 | B8 | ~~586-590~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedPhone"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B9 | ~~591-595~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedWhatsApp"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B10 | 631 | `ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"` | Low | A — Convert to EF migration |
@@ -517,8 +517,8 @@ These 4 blocks run **unconditionally** on every startup:
 
 | Pattern | Count | Risk | Details |
 |---------|-------|------|---------|
-| `$\"...\"` interpolation | 1 (B1 lockKey) | None | `int` from config — not user input |
-| `$\"...\"` interpolation (table names in B2 loop) | 1 (B2 softDeleteSql) | None | Hardcoded `string[]` array — not user input |
+| `$"..."` interpolation | 1 (B1 lockKey) | None | `int` from config — not user input |
+| `$"..."` interpolation (table names in B2 loop) | 1 (B2 softDeleteSql) | None | Hardcoded `string[]` array — not user input |
 | `{0}`/`{1}` parameterized | 1 (A3 password) | None | EF Core `ExecuteSqlRawAsync` auto-parameterizes `{0}`/`{1}` |
 | Literal SQL | 46 | None | Pure string literals, no interpolation |
 | `CreateCommand().CommandText` | 3 | None | Advisory lock (int), flag check (hardcoded), unlock (int) |
@@ -668,7 +668,7 @@ All operations in this migration are safe for databases where the old Program.cs
 - **Column existence guards:** Each `ADD COLUMN` is wrapped in `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns ...) THEN ... END IF; END $$;` — no error if columns already exist
 - **Table existence guard:** Also checks `information_schema.tables` for `Patients` before attempting any DDL
 - **Index creation:** Uses `CREATE UNIQUE INDEX IF NOT EXISTS` (PostgreSQL 9.5+) — no error if indexes already exist
-- **Column type:** `text NULL` (wider than the old `character varying(20)`) — no conflict if column already exists as varchar
+- **Column type:** `character varying(20) NULL` — matches EF model (`HasMaxLength(20)` in `PatientConfiguration.cs`) and the original Program.cs B3 block exactly; no conflict if column already exists
 - **Down():** Intentionally no-op — NormalizedPhone/NormalizedWhatsApp may have existed before this migration due to legacy Program.cs B3/B8/B9 runtime maintenance. Dropping them could remove existing normalized phone data/schema.
 
 ### Production Behavior Impact
@@ -697,3 +697,12 @@ An earlier migration (`20260501000000_AddNormalizedPhoneFields`) also adds these
 | Frontend | Unchanged | Not in scope |
 | Auth/password behavior | Unchanged | Not in scope |
 | `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged | Not enabled |
+
+### Column Type Fix (Post-Initial-Commit)
+
+A follow-up commit corrected the column type from `text NULL` to `character varying(20) NULL`:
+
+- **EF model:** `PatientConfiguration.cs` defines `HasMaxLength(20)` → EF generates `character varying(20)`
+- **Legacy B3 block:** Original Program.cs used `character varying(20) NULL` exactly
+- **Fix:** Migration now uses `character varying(20) NULL` — identical type on all paths (EF model, original B3, new migration)
+- No change to indexes, guards, or `Down()` no-op

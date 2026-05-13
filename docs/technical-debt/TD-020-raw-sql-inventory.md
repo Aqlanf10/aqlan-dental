@@ -48,10 +48,10 @@
 | B1 | 482 | Advisory lock acquisition (`pg_try_advisory_lock`) | Low | C — Keep as advisory lock | Must keep. Uses interpolated `lockKey` from config (int type — no injection risk). |
 | B2 | ~~521-533~~ | ~~`ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 39 tables~~ | Medium | ~~A — Convert to EF migration~~ | **Removed in Phase C1-a.** Replaced by EF migration `20260522000000_AddSoftDeleteColumnsToLegacyTables`. |
 | B3 | ~~507-517~~ | ~~`ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
-| B4 | 553 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
-| B5 | 575 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
-| B6 | 598 | Deduplicate `NormalizedPhone` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
-| B7 | 609 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
+| B4 | 553 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep until Phase C1-e verified | **Legacy data backfill.** Backfills `NormalizedPhone` from `Phone` for existing patients where `Phone` is set but `NormalizedPhone` is NULL. Do NOT remove until production verification confirms zero rows needing backfill OR a replacement idempotent data migration is applied (see Phase C1-e). |
+| B5 | 575 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep until Phase C1-e verified | **Legacy data backfill.** Same as B4 but for `NormalizedWhatsApp`/`WhatsApp`. Do NOT remove until production verification or replacement migration (see Phase C1-e). |
+| B6 | 598 | Deduplicate `NormalizedPhone` (complex CTE) | Low | E — Keep until B4/B5 strategy complete | **Dedup safety guard.** NULLs duplicate `NormalizedPhone` values (oldest/first row kept) before unique index creation. Keep until B4/B5 backfill strategy is complete and production verification confirms no duplicates remain. |
+| B7 | 609 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | E — Keep until B4/B5 strategy complete | **Dedup safety guard.** Same as B6 but for `NormalizedWhatsApp`. Keep until B4/B5 strategy is complete. |
 | B8 | ~~586-590~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedPhone"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B9 | ~~591-595~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedWhatsApp"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B10 | ~~578-590~~ | ~~`ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-d.** Replaced by EF migration `20260524000000_AddConversationPatientBranchFieldsAndIndexes`. |
@@ -448,10 +448,10 @@ These 4 blocks run **unconditionally** on every startup:
 
 | Block | Line(s) | Purpose | Risk | Why Keep |
 |-------|---------|---------|------|----------|
-| B4 | 553-573 | UPDATE Patients NormalizedPhone (CASE normalization) | Medium | One-time backfill; already applied but may need re-run for new patients |
-| B5 | 575-594 | UPDATE Patients NormalizedWhatsApp (CASE normalization) | Medium | Same as B4 |
-| B6 | 598-608 | Deduplicate NormalizedPhone (CTE) | Low | One-time; safe to delete after C1-b |
-| B7 | 609-619 | Deduplicate NormalizedWhatsApp (CTE) | Low | One-time; safe to delete after C1-b |
+| B4 | 553-573 | UPDATE Patients NormalizedPhone (CASE normalization) | Medium | **Legacy data backfill** for existing rows where Phone set but NormalizedPhone NULL. Do NOT remove until production verification or replacement migration (Phase C1-e). |
+| B5 | 575-594 | UPDATE Patients NormalizedWhatsApp (CASE normalization) | Medium | Same as B4 for WhatsApp/NormalizedWhatsApp. Do NOT remove until Phase C1-e verified. |
+| B6 | 598-608 | Deduplicate NormalizedPhone (CTE) | Low | Dedup safety guard. Keep until B4/B5 backfill strategy is complete and no duplicates confirmed. |
+| B7 | 609-619 | Deduplicate NormalizedWhatsApp (CTE) | Low | Same as B6 for NormalizedWhatsApp. Keep until B4/B5 strategy complete. |
 | B44 | 1209-1216 | Data migration: CalledBy -> CalledByUserId, then DROP COLUMN | Medium | **Contains destructive DROP COLUMN.** Keep until migration 20260520000000 is confirmed stable |
 
 ##### B-VI: Fake Migration History (Delete as obsolete)
@@ -767,10 +767,207 @@ Program.cs B15 pre-inserts the history entry for `20260501010000` without runnin
 |-------|--------|--------|
 | A1-A4 (admin password reset) | Unchanged | Not in scope |
 | B1/B47 (advisory locks) | Unchanged | Infrastructure |
-| B4/B5/B6/B7 (phone backfill/dedup) | Unchanged | Remain in Program.cs — B4/B5 are legacy data backfill blocks (existing patients may have Phone/WhatsApp populated but NormalizedPhone/NormalizedWhatsApp NULL); B6/B7 are dedup safety guards; safe removal requires a replacement data migration or production DB verification (see Phase C1-c review) |
+| B4/B5/B6/B7 (phone backfill/dedup) | Unchanged | Remain in Program.cs — B4/B5 are legacy data backfill blocks (existing patients may have Phone/WhatsApp populated but NormalizedPhone/NormalizedWhatsApp NULL); B6/B7 are dedup safety guards; safe removal requires production verification or a replacement idempotent data migration (see Phase C1-e) |
 | B14-B46 | Unchanged | Not in scope for this phase |
 | ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
 | Frontend | Unchanged | Not in scope |
 | Messaging/conversation behavior | Unchanged | Migration adds schema only; no data changes |
+| Auth/password behavior | Unchanged | Not in scope |
+| `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged | Not enabled |
+
+---
+
+## Phase C1-e: Safe Legacy Patient Phone Normalization Backfill Plan (2026-05-13)
+
+**Branch:** `td-020-phase-c1e-phone-backfill-plan`
+**Scope:** Documentation and planning only. No code, migration, schema, or data changes.
+**Status:** Review pending — production verification required before any deletion.
+
+### Why PR #103 Was Closed Without Merging
+
+PR #103 (TD-020 Phase C1-c) attempted to delete B4/B5/B6/B7 from `Program.cs`. It was **closed without merging** because its approach is unsafe.
+
+**The core problem:** B4/B5 are not redundant schema helpers — they are legacy data backfill blocks.
+
+| Block | Nature | Risk of Deletion |
+|-------|--------|-----------------|
+| B4 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` | Removes the only automated path to populate `NormalizedPhone` for patients created before `PhoneNormalizer` was wired into `PatientService`. Any such rows remain `NULL` and are invisible to normalized-phone duplicate detection. |
+| B5 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` | Same as B4 but for `NormalizedWhatsApp`/`WhatsApp`. |
+| B6 | Deduplicate `NormalizedPhone` (CTE) | If B4 still needs to run, duplicate normalized values could violate the unique index. B6 must remain until B4's backfill is verified complete. |
+| B7 | Deduplicate `NormalizedWhatsApp` (CTE) | Same as B6 for `NormalizedWhatsApp`. |
+
+The C1-b migration (`20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`) only handles **schema** (ADD COLUMN + CREATE UNIQUE INDEX). It does **not** populate existing rows. Unique indexes protect against *future* duplicates but do not fix *existing* NULL normalized fields.
+
+### Current State (After PR #104 Merge)
+
+| Item | State |
+|------|-------|
+| `NormalizedPhone` / `NormalizedWhatsApp` columns | Present — added via C1-b migration |
+| `IX_Patients_NormalizedPhone` unique filtered index | Present — added via C1-b migration |
+| `IX_Patients_NormalizedWhatsApp` unique filtered index | Present — added via C1-b migration |
+| New patient creation | `PhoneNormalizer.Normalize()` called in `PatientService.CreateAsync()` — normalized fields set for all new rows |
+| Patient update | `PhoneNormalizer.Normalize()` called in `PatientService.UpdateAsync()` — normalized fields set on every save |
+| Legacy rows (created before normalization) | Unknown — may have `Phone`/`WhatsApp` set but `NormalizedPhone`/`NormalizedWhatsApp` NULL |
+| B4/B5/B6/B7 in Program.cs | Present and unchanged — gated by `ENABLE_STARTUP_DB_MAINTENANCE=false` |
+| Program.cs raw SQL blocks | **42** |
+| Total backend raw SQL | **44** |
+
+### Application Code Verification
+
+`PatientService.cs` (`Application/Services/PatientService.cs`) calls `PhoneNormalizer.Normalize()` on both create and update paths:
+
+```csharp
+// CreateAsync (lines 47-48, 64, 66)
+var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+// ...
+NormalizedPhone = normalizedPhone,
+NormalizedWhatsApp = normalizedWhatsApp,
+
+// UpdateAsync (lines 162-163, 187, 189)
+var normalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+var normalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+// ...
+patient.NormalizedPhone = PhoneNormalizer.Normalize(req.Phone);
+patient.NormalizedWhatsApp = PhoneNormalizer.Normalize(req.WhatsApp);
+```
+
+**Conclusion:** All patients created or updated *after* `PhoneNormalizer` was introduced have correct normalized values. Patients created *before* that change (legacy rows) may still have NULL normalized fields if they have never been updated via the application since.
+
+### EF Model Verification
+
+`PatientConfiguration.cs` defines:
+
+```csharp
+builder.Property(p => p.NormalizedPhone).HasMaxLength(20);        // character varying(20) NULL
+builder.Property(p => p.NormalizedWhatsApp).HasMaxLength(20);     // character varying(20) NULL
+builder.HasIndex(p => p.NormalizedPhone).IsUnique()
+    .HasFilter("\"NormalizedPhone\" IS NOT NULL AND \"NormalizedPhone\" != ''");
+builder.HasIndex(p => p.NormalizedWhatsApp).IsUnique()
+    .HasFilter("\"NormalizedWhatsApp\" IS NOT NULL AND \"NormalizedWhatsApp\" != ''");
+```
+
+Schema is correct. The gap is **data**, not schema.
+
+### Safe Future Implementation Options
+
+#### Option 1 — Production DB Verification First (Recommended first step)
+
+Run the **read-only** SQL checks below against production. If all counts return zero:
+- B4/B5 may be deleted (no backfill needed).
+- B6/B7 may be deleted (no duplicates to guard against).
+- A new PR can remove all four blocks cleanly.
+
+If counts are non-zero, proceed with Option 2.
+
+#### Option 2 — Safe Idempotent Data Migration
+
+Create a new EF migration that:
+1. **Deduplicates first** — NULLs duplicate `Phone`/`WhatsApp`-derived normalized values (keeping the oldest row per group) before attempting to set normalized fields. This prevents unique-index violations.
+2. **Backfills normalized fields** — Updates `NormalizedPhone`/`NormalizedWhatsApp` using the same normalization logic as B4/B5 for rows where `Phone`/`WhatsApp` is set but the normalized field is NULL.
+3. **Is idempotent** — Uses `WHERE "NormalizedPhone" IS NULL AND "Phone" IS NOT NULL AND "Phone" != ''` conditions so re-running never overwrites already-normalized values.
+4. **Does not overwrite non-NULL values** — Only fills rows where normalized field is NULL.
+
+Only after this migration is verified applied can B4/B5/B6/B7 be removed from `Program.cs`.
+
+### Recommended Read-Only Production SQL Checks
+
+> **Do NOT run these automatically.** Run them manually via Railway console or `psql` against production DB.
+
+**1. Count Phone rows needing NormalizedPhone backfill:**
+```sql
+SELECT COUNT(*)
+FROM "Patients"
+WHERE "Phone" IS NOT NULL
+  AND "Phone" != ''
+  AND ("NormalizedPhone" IS NULL OR "NormalizedPhone" = '');
+```
+
+**2. Count WhatsApp rows needing NormalizedWhatsApp backfill:**
+```sql
+SELECT COUNT(*)
+FROM "Patients"
+WHERE "WhatsApp" IS NOT NULL
+  AND "WhatsApp" != ''
+  AND ("NormalizedWhatsApp" IS NULL OR "NormalizedWhatsApp" = '');
+```
+
+**3. Check duplicate existing NormalizedPhone values:**
+```sql
+SELECT "NormalizedPhone", COUNT(*)
+FROM "Patients"
+WHERE "NormalizedPhone" IS NOT NULL
+  AND "NormalizedPhone" != ''
+GROUP BY "NormalizedPhone"
+HAVING COUNT(*) > 1;
+```
+
+**4. Check duplicate existing NormalizedWhatsApp values:**
+```sql
+SELECT "NormalizedWhatsApp", COUNT(*)
+FROM "Patients"
+WHERE "NormalizedWhatsApp" IS NOT NULL
+  AND "NormalizedWhatsApp" != ''
+GROUP BY "NormalizedWhatsApp"
+HAVING COUNT(*) > 1;
+```
+
+**5. Sample rows needing phone backfill (optional, limit 20):**
+```sql
+SELECT "Id", "PatientNumber", "Phone", "NormalizedPhone", "CreatedAt"
+FROM "Patients"
+WHERE "Phone" IS NOT NULL
+  AND "Phone" != ''
+  AND ("NormalizedPhone" IS NULL OR "NormalizedPhone" = '')
+ORDER BY "CreatedAt"
+LIMIT 20;
+```
+
+**6. Sample rows needing WhatsApp backfill (optional, limit 20):**
+```sql
+SELECT "Id", "PatientNumber", "WhatsApp", "NormalizedWhatsApp", "CreatedAt"
+FROM "Patients"
+WHERE "WhatsApp" IS NOT NULL
+  AND "WhatsApp" != ''
+  AND ("NormalizedWhatsApp" IS NULL OR "NormalizedWhatsApp" = '')
+ORDER BY "CreatedAt"
+LIMIT 20;
+```
+
+### Recommended Next PR (After Verification)
+
+#### Path A — If all backfill counts are zero (no rows need backfill)
+
+**PR title:** `refactor: remove obsolete patient phone backfill blocks (TD-020 Phase C1-f)`
+
+- Document production verification results (query outputs showing zero rows).
+- Remove B4/B5/B6/B7 from `Program.cs`.
+- Raw SQL: Program.cs 42 → 38, total backend 44 → 40.
+- No migration needed.
+
+#### Path B — If any backfill counts are non-zero
+
+**PR title:** `refactor: add safe patient phone normalization data backfill (TD-020 Phase C1-f)`
+
+- Create a new idempotent EF migration:
+  1. Deduplicate potential collisions before backfill.
+  2. Backfill `NormalizedPhone` / `NormalizedWhatsApp` for rows where `Phone`/`WhatsApp` exist but normalized fields are NULL.
+  3. `Down()` no-op.
+- Do NOT remove B4/B5/B6/B7 in this PR.
+- After the migration is confirmed applied in production with no violations:
+  - Open a follow-up PR to remove B4/B5/B6/B7.
+
+### Blocks NOT Touched
+
+| Block | Status | Reason |
+|-------|--------|--------|
+| A1-A4 (admin password reset) | Unchanged | Not in scope |
+| B1/B47 (advisory locks) | Unchanged | Infrastructure |
+| B4/B5 (phone normalization backfills) | **Unchanged — retained** | Legacy data backfill; removal requires production verification or replacement migration |
+| B6/B7 (deduplication) | **Unchanged — retained** | Dedup safety; removal requires B4/B5 strategy to be complete |
+| B14-B46 | Unchanged | Not in scope for this phase |
+| ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
+| Frontend | Unchanged | Not in scope |
+| Program.cs application behavior | Unchanged | Docs-only phase |
 | Auth/password behavior | Unchanged | Not in scope |
 | `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged | Not enabled |

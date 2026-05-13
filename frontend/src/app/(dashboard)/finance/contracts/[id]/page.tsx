@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowRight, Printer, Plus, FileText, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { ArrowRight, Printer, Plus, FileText, CheckCircle, Clock, AlertCircle, Pencil, XCircle, BadgeCheck } from "lucide-react";
 import type { Contract, Payment } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
@@ -26,10 +26,9 @@ function InstallmentSchedule({ contract }: { contract: Contract }) {
   const startDate    = contract.startDate ? new Date(contract.startDate) : null;
   if (!startDate || installAmt === 0) return null;
 
-  // Generate installment rows
   const installments = Array.from({ length: contract.installmentsCount }, (_, i) => {
     const due = new Date(startDate);
-    due.setMonth(due.getMonth() + i + 1); // first installment 1 month after start
+    due.setMonth(due.getMonth() + i + 1);
     const dueStr = due.toISOString().slice(0, 10);
     const cumulative = downPayment + (i + 1) * installAmt;
     const isPaid = totalPaid >= cumulative;
@@ -100,11 +99,160 @@ function InstallmentSchedule({ contract }: { contract: Contract }) {
   );
 }
 
+// ─── Edit Contract Modal ─────────────────────────────────────────────────────
+interface EditForm {
+  specialty: string;
+  totalAmount: number;
+  installmentsCount: number;
+  installmentAmount: number;
+  startDate: string;
+  discountAmount: number;
+  discountReason: string;
+  notes: string;
+}
+
+function EditModal({
+  contract, onClose, onSaved,
+}: { contract: Contract; onClose: () => void; onSaved: (c: Contract) => void }) {
+  const [form, setForm] = useState<EditForm>({
+    specialty: contract.specialty ?? "",
+    totalAmount: contract.totalAmount,
+    installmentsCount: contract.installmentsCount,
+    installmentAmount: contract.installmentAmount ?? 0,
+    startDate: contract.startDate ?? "",
+    discountAmount: contract.discountAmount ?? 0,
+    discountReason: contract.discountReason ?? "",
+    notes: contract.notes ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState<string | null>(null);
+
+  const set = (k: keyof EditForm, v: string | number) =>
+    setForm((prev) => ({ ...prev, [k]: v }));
+
+  const validate = (): string | null => {
+    if (form.totalAmount < 0) return "إجمالي العقد يجب أن يكون صفراً أو أكثر";
+    if (form.discountAmount < 0) return "قيمة الخصم يجب أن تكون صفراً أو أكثر";
+    if (form.discountAmount > form.totalAmount) return "قيمة الخصم لا يمكن أن تتجاوز إجمالي العقد";
+    if (form.installmentsCount < 0) return "عدد الأقساط يجب أن يكون صفراً أو أكثر";
+    if (form.installmentAmount < 0) return "قيمة القسط يجب أن تكون صفراً أو أكثر";
+    return null;
+  };
+
+  const save = async () => {
+    const validationError = validate();
+    if (validationError) { setError(validationError); return; }
+
+    setSaving(true); setError(null);
+    try {
+      const { data } = await api.put<Contract>(`/api/contracts/${contract.id}`, {
+        specialty:         form.specialty || null,
+        totalAmount:       form.totalAmount,
+        installmentsCount: form.installmentsCount,
+        installmentAmount: form.installmentAmount || null,
+        startDate:         form.startDate || null,
+        discountAmount:    form.discountAmount,
+        discountReason:    form.discountReason || null,
+        notes:             form.notes || null,
+      });
+      onSaved(data);
+      onClose();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg ?? "حدث خطأ أثناء الحفظ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-clinic-blue";
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold text-gray-900">تعديل العقد</h2>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="col-span-2 space-y-1">
+            <span className="text-xs text-gray-500">التخصص</span>
+            <select value={form.specialty} onChange={(e) => set("specialty", e.target.value)} className={inputCls}>
+              <option value="">-- اختر --</option>
+              <option value="orthodontics">تقويم</option>
+              <option value="general">أسنان عام</option>
+              <option value="surgery">جراحة</option>
+              <option value="other">أخرى</option>
+            </select>
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs text-gray-500">إجمالي العقد (ر.ي)</span>
+            <input type="number" min="0" value={form.totalAmount}
+              onChange={(e) => set("totalAmount", +e.target.value)} className={inputCls} dir="ltr" />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs text-gray-500">الخصم (ر.ي)</span>
+            <input type="number" min="0" value={form.discountAmount}
+              onChange={(e) => set("discountAmount", +e.target.value)} className={inputCls} dir="ltr" />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs text-gray-500">عدد الأقساط</span>
+            <input type="number" min="1" value={form.installmentsCount}
+              onChange={(e) => set("installmentsCount", +e.target.value)} className={inputCls} dir="ltr" />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs text-gray-500">قيمة القسط (ر.ي)</span>
+            <input type="number" min="0" value={form.installmentAmount}
+              onChange={(e) => set("installmentAmount", +e.target.value)} className={inputCls} dir="ltr" />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs text-gray-500">تاريخ البدء</span>
+            <input type="date" value={form.startDate}
+              onChange={(e) => set("startDate", e.target.value)} className={inputCls} dir="ltr" />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs text-gray-500">سبب الخصم</span>
+            <input type="text" value={form.discountReason}
+              onChange={(e) => set("discountReason", e.target.value)} className={inputCls} />
+          </label>
+
+          <label className="col-span-2 space-y-1">
+            <span className="text-xs text-gray-500">ملاحظات</span>
+            <textarea rows={2} value={form.notes}
+              onChange={(e) => set("notes", e.target.value)} className={cn(inputCls, "resize-none")} />
+          </label>
+        </div>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={save} disabled={saving}
+            className="flex-1 py-2 text-sm font-semibold rounded-xl bg-clinic-blue text-white hover:opacity-90 disabled:opacity-50 transition">
+            {saving ? "جارٍ الحفظ..." : "حفظ التعديلات"}
+          </button>
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2 text-sm rounded-xl border border-gray-200 hover:bg-gray-50 transition">
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
 export default function ContractDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [contract, setContract] = useState<Contract | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [contract, setContract]       = useState<Contract | null>(null);
+  const [loading, setLoading]         = useState(true);
   const [printPayment, setPrintPayment] = useState<Payment | null>(null);
+  const [showEdit, setShowEdit]       = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError]     = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Contract>(`/api/contracts/${id}`)
@@ -112,6 +260,21 @@ export default function ContractDetailPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  const changeStatus = async (status: "completed" | "cancelled") => {
+    if (!contract) return;
+    const label = status === "completed" ? "إتمام" : "إلغاء";
+    if (!confirm(`هل تريد ${label} هذا العقد؟`)) return;
+    setStatusLoading(true); setStatusError(null);
+    try {
+      const { data } = await api.patch<Contract>(`/api/contracts/${id}/status`, { status });
+      setContract(data);
+    } catch {
+      setStatusError("حدث خطأ أثناء تغيير الحالة");
+    } finally {
+      setStatusLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -138,6 +301,14 @@ export default function ContractDetailPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
+      {showEdit && (
+        <EditModal
+          contract={contract}
+          onClose={() => setShowEdit(false)}
+          onSaved={setContract}
+        />
+      )}
+
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link href="/finance" className="hover:text-clinic-blue transition">المالية</Link>
@@ -147,12 +318,47 @@ export default function ContractDetailPage() {
         <span className="text-gray-900 font-medium">{contract.patientName}</span>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Link href="/finance/contracts" className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
-          <ArrowRight className="w-4 h-4" />
-        </Link>
-        <h1 className="text-2xl font-extrabold text-gray-900">تفاصيل العقد</h1>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/finance/contracts" className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition text-gray-500">
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+          <h1 className="text-2xl font-extrabold text-gray-900">تفاصيل العقد</h1>
+        </div>
+
+        {/* Actions */}
+        {contract.status === "active" && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowEdit(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              تعديل
+            </button>
+            <button
+              onClick={() => changeStatus("completed")}
+              disabled={statusLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-green-300 text-green-700 hover:bg-green-50 disabled:opacity-50 transition"
+            >
+              <BadgeCheck className="w-3.5 h-3.5" />
+              إتمام
+            </button>
+            <button
+              onClick={() => changeStatus("cancelled")}
+              disabled={statusLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 transition"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              إلغاء
+            </button>
+          </div>
+        )}
       </div>
+
+      {statusError && (
+        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{statusError}</p>
+      )}
 
       {/* Contract summary card */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
@@ -165,8 +371,8 @@ export default function ContractDetailPage() {
           </div>
           <span className={cn(
             "text-xs px-3 py-1 rounded-full font-medium",
-            contract.status === "active" ? "bg-green-50 text-green-700" :
-            contract.status === "completed" ? "bg-blue-50 text-blue-700" :
+            contract.status === "active"    ? "bg-green-50 text-green-700"  :
+            contract.status === "completed" ? "bg-blue-50 text-blue-700"    :
             "bg-gray-100 text-gray-500"
           )}>
             {STATUS_LABELS[contract.status] ?? contract.status}
@@ -212,6 +418,7 @@ export default function ContractDetailPage() {
           {contract.specialty && <span>التخصص: <span className="font-medium text-gray-700">{SPECIALTY_LABELS[contract.specialty] ?? contract.specialty}</span></span>}
           {contract.startDate && <span>تاريخ البدء: <span className="font-medium text-gray-700">{formatArabicDate(contract.startDate)}</span></span>}
           <span>الأقساط: <span className="font-medium text-gray-700">{contract.installmentsCount} قسط × {formatYemeniRiyal(contract.installmentAmount ?? 0)}</span></span>
+          {contract.discountReason && <span>سبب الخصم: <span className="font-medium text-gray-700">{contract.discountReason}</span></span>}
         </div>
         {contract.notes && (
           <p className="mt-3 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{contract.notes}</p>

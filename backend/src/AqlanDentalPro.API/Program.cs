@@ -431,36 +431,93 @@ catch (Exception ex)
     wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
 }
 
+// ── BookingRequests Table Hotfix (unconditional, idempotent) ─────────────────
+try
+{
+    using var brScope = app.Services.CreateScope();
+    var brDb = brScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var brLogger = brScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await brDb.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "BookingRequests" (
+            "Id" uuid NOT NULL PRIMARY KEY,
+            "PatientName" character varying(100) NOT NULL,
+            "PhoneNumber" character varying(20) NOT NULL,
+            "Email" character varying(150) NULL,
+            "ServiceType" character varying(100) NULL,
+            "PreferredDate" character varying(50) NULL,
+            "PreferredTime" character varying(50) NULL,
+            "Notes" character varying(500) NULL,
+            "Status" integer NOT NULL DEFAULT 0,
+            "StaffNotes" text NULL,
+            "ReviewedBy" uuid NULL,
+            "ReviewedAt" timestamp with time zone NULL,
+            "ConvertedToAppointmentId" uuid NULL,
+            "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+            "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+            "IsActive" boolean NOT NULL DEFAULT TRUE,
+            "DeletedAt" timestamp with time zone NULL,
+            "DeletedBy" uuid NULL
+        );
+    """);
+    await brDb.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_Status" ON "BookingRequests" ("Status");
+    """);
+    await brDb.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_CreatedAt" ON "BookingRequests" ("CreatedAt");
+    """);
+    await brDb.Database.ExecuteSqlRawAsync("""
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT '20260507000000_AddBookingRequests', '8.0.8'
+        WHERE NOT EXISTS (
+            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
+        );
+    """);
+    brLogger.LogInformation("BookingRequests table hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var brLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    brLogger2.LogWarning(ex, "BookingRequests table hotfix failed (non-fatal)");
+}
+
+// ── Message Edit Fields Hotfix (unconditional, idempotent) ───────────────────
+try
+{
+    using var msgEditScope = app.Services.CreateScope();
+    var msgEditDb     = msgEditScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var msgEditLogger = msgEditScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await msgEditDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Messages') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
+                END IF;
+            END IF;
+        END $$;
+    """);
+    await msgEditDb.Database.ExecuteSqlRawAsync("""
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT '20260510000000_AddMessageEditFields', '8.0.8'
+        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
+          AND NOT EXISTS (
+              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
+          );
+    """);
+    msgEditLogger.LogInformation("Message IsEdited/EditedAt hotfix applied successfully");
+}
+catch (Exception ex)
+{
+    var msgEditLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    msgEditLogger2.LogWarning(ex, "Message edit fields hotfix failed (non-fatal)");
+}
+
 // ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
-// All schema hotfixes have been consolidated into this single block.
-// The advisory lock (pg_try_advisory_lock) prevents multiple Railway instances
-// from running maintenance concurrently, avoiding race conditions.
-//
-// TD-020: MIGRATION CLEANUP PLAN
-// ─────────────────────────────────────────────────────────────────
-// This block contains ~49 ExecuteSqlRawAsync calls that serve as a
-// safety net for EF Core migrations. They should be converted to
-// proper EF migrations over time.
-//
-// Inventory:
-//   Program.cs       : 49 calls (schema creation, column additions, indexes)
-//   DbSeeder.cs      :  4 calls (pre-migration column/index, initial data)
-//   ClinicQueue.cs   :  2 calls (pg_advisory_xact_lock — KEEP as-is)
-//   MessagesCtrl.cs  : 30 calls (admin-only ensure-schema endpoint)
-//
-// Priority for conversion to EF migrations:
-//   Phase A: Column additions (ALTER TABLE ... ADD COLUMN) → migrationBuilder.AddColumn
-//   Phase B: Index creation (CREATE INDEX) → migrationBuilder.CreateIndex
-//   Phase C: Constraint additions (FK, UNIQUE) → migrationBuilder.AddForeignKey/CreateIndex
-//   Phase D: Table creation (CREATE TABLE) → migrationBuilder.CreateTable
-//   Phase E: Data backfills (UPDATE) → migration DataSeeder
-//
-// Blocks that must STAY as raw SQL:
-//   - pg_advisory_lock / pg_advisory_xact_lock (concurrency, not schema)
-//   - Programmatic backfills with complex CASE expressions
-//
-// Do NOT add new ExecuteSqlRaw blocks here. Use `dotnet ef migrations add` instead.
-// ─────────────────────────────────────────────────────────────────
+// TD-020: remaining raw SQL blocks — see docs/technical-debt/TD-020-raw-sql-inventory.md
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");
 

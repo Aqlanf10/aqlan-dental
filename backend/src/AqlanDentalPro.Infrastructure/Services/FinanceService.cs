@@ -3,16 +3,13 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<FinanceService> logger)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications)
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
-        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var branchId = currentUser.BranchId;
 
         var query = db.Contracts
@@ -103,27 +100,6 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
         return (await GetContractByIdAsync(contract.Id))!;
     }
 
-    public async Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req)
-    {
-        var contract = await db.Contracts.FindAsync(id);
-        if (contract == null) return null;
-        if (!contract.IsActive) return null;
-
-        if (req.TotalAmount.HasValue) contract.TotalAmount = req.TotalAmount.Value;
-        if (req.DownPayment.HasValue) contract.DownPayment = req.DownPayment.Value;
-        if (req.InstallmentsCount.HasValue) contract.InstallmentsCount = req.InstallmentsCount.Value;
-        if (req.InstallmentAmount.HasValue) contract.InstallmentAmount = req.InstallmentAmount.Value;
-        if (req.DiscountAmount.HasValue) contract.DiscountAmount = req.DiscountAmount.Value;
-        if (req.DiscountReason != null) contract.DiscountReason = req.DiscountReason;
-        if (req.Status != null) contract.Status = req.Status;
-        if (req.Notes != null) contract.Notes = req.Notes;
-
-        contract.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-
-        return await GetContractByIdAsync(id);
-    }
-
     public async Task<PaymentDto?> GetPaymentByIdAsync(Guid id)
     {
         var p = await db.Payments
@@ -179,7 +155,6 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
 
     public async Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId)
     {
-        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
@@ -197,8 +172,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
 
     public async Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req)
     {
-        // H7 FIX: Use GUID to prevent receipt number collisions
-        var receiptNumber = $"RCP-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
+        var receiptNumber = $"RCP-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
 
         var payment = new Payment
         {
@@ -233,176 +207,104 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
 
         var dto = MapPayment(payment);
 
-        // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
         // Notify accountants and admins
-        var patientName = dto.PatientName ?? "مريض";
-        var paymentId = payment.Id;
         _ = Task.Run(async () =>
         {
             try
             {
-                using var scope = scopeFactory.CreateScope();
-                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
-                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", $"تم استلام دفعة من {patientName}", "Payment", paymentId);
-                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", $"تم استلام دفعة من {patientName}", "Payment", paymentId);
+                var patientName = dto.PatientName ?? "مريض";
+                var amountStr = req.Amount.ToString("N0");
+                var msg = $"تم استلام دفعة {amountStr} ر.ي من {patientName}";
+                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
+                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
             }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "[FinanceService] Notification failed for payment {PaymentId}", paymentId);
-            }
+            catch { /* non-blocking */ }
         });
 
         return dto;
     }
 
-    public async Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req)
+    public async Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req)
     {
-        var payment = await db.Payments.FindAsync(id);
-        if (payment == null) return null;
-        if (!payment.IsActive) return null;
+        var contract = await db.Contracts.FindAsync(id);
+        if (contract == null) return null;
 
-        if (req.Amount.HasValue) payment.Amount = req.Amount.Value;
-        if (req.PaymentDate != null) payment.PaymentDate = DateOnly.Parse(req.PaymentDate);
-        if (req.PaymentMethod != null) payment.PaymentMethod = req.PaymentMethod;
-        if (req.ServiceDescription != null) payment.ServiceDescription = req.ServiceDescription;
-        if (req.Specialty != null) payment.Specialty = req.Specialty;
-        if (req.DoctorId.HasValue) payment.DoctorId = req.DoctorId;
-        if (req.Notes != null) payment.Notes = req.Notes;
-
-        payment.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-
-        await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
-        await db.Entry(payment).Reference(p => p.Doctor).LoadAsync();
-
-        return MapPayment(payment);
-    }
-
-    public async Task<bool> DeletePaymentAsync(Guid id)
-    {
-        var payment = await db.Payments.FindAsync(id);
-        if (payment == null) return false;
-        if (!payment.IsActive) return false;
-
-        payment.IsActive = false;
-        payment.DeletedAt = DateTime.UtcNow;
-        payment.DeletedBy = currentUser.UserId;
-        await db.SaveChangesAsync();
-
-        return true;
-    }
-
-    public async Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason)
-    {
-        var payment = await db.Payments
-            .Include(p => p.Patient)
-            .Include(p => p.Doctor)
-            .FirstOrDefaultAsync(p => p.Id == id);
-
-        if (payment == null) return null;
-        if (!payment.IsActive) return null;
-
-        // Create a refund payment record (negative amount)
-        var refundNumber = $"REF-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant()}";
-
-        var refund = new Payment
-        {
-            PatientId = payment.PatientId,
-            ContractId = payment.ContractId,
-            Amount = -payment.Amount,
-            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
-            PaymentMethod = payment.PaymentMethod,
-            ServiceDescription = $"استرداد: {payment.ServiceDescription}",
-            Specialty = payment.Specialty,
-            DoctorId = payment.DoctorId,
-            BranchId = payment.BranchId,
-            ReceivedBy = currentUser.UserId,
-            ReceiptNumber = refundNumber,
-            Notes = reason ?? "استرداد مبلغ"
-        };
-
-        // Soft-delete the original payment
-        payment.IsActive = false;
-        payment.DeletedAt = DateTime.UtcNow;
-        payment.DeletedBy = currentUser.UserId;
-
-        db.Payments.Add(refund);
-        db.Receipts.Add(new Receipt
-        {
-            PaymentId = refund.Id,
-            ReceiptNumber = refundNumber,
-            PrintedBy = currentUser.UserId
-        });
+        contract.Specialty        = req.Specialty;
+        contract.TotalAmount      = req.TotalAmount;
+        contract.InstallmentsCount = req.InstallmentsCount;
+        contract.InstallmentAmount = req.InstallmentAmount;
+        contract.StartDate        = req.StartDate != null ? DateOnly.Parse(req.StartDate) : contract.StartDate;
+        contract.DiscountAmount   = req.DiscountAmount;
+        contract.DiscountReason   = req.DiscountReason;
+        contract.Notes            = req.Notes;
+        contract.UpdatedAt        = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
-        return MapPayment(refund);
+        return await GetContractByIdAsync(id);
     }
 
-    public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
+    public async Task<ContractDetailDto?> UpdateContractStatusAsync(Guid id, string status)
     {
-        var totalPaid = await db.Payments
-            .Where(p => p.PatientId == patientId && p.IsActive)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var allowed = new[] { "active", "completed", "cancelled" };
+        if (!allowed.Contains(status)) return null;
 
-        var totalTreatmentCost = await db.Contracts
-            .Where(c => c.PatientId == patientId && c.Status == "active")
-            .SumAsync(c => (decimal?)c.TotalAmount - c.DiscountAmount) ?? 0;
+        var contract = await db.Contracts.FindAsync(id);
+        if (contract == null) return null;
 
-        var outstandingBalance = totalTreatmentCost - totalPaid;
+        contract.Status    = status;
+        contract.UpdatedAt = DateTime.UtcNow;
 
-        // Calculate overdue
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var overdueContracts = await db.Contracts
+        await db.SaveChangesAsync();
+        return await GetContractByIdAsync(id);
+    }
+
+    public async Task<AccountStatementDto?> GetAccountStatementAsync(Guid patientId)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null) return null;
+
+        var contracts = await db.Contracts
             .Include(c => c.Payments)
-            .Where(c => c.PatientId == patientId && c.Status == "active" && c.InstallmentAmount > 0 && c.StartDate != null)
+            .Where(c => c.PatientId == patientId)
+            .OrderByDescending(c => c.CreatedAt)
             .ToListAsync();
 
-        var overdueAmount = 0m;
-        foreach (var c in overdueContracts)
-        {
-            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
-            if (monthsElapsed <= 0) continue;
-            var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
-            var diff = expectedPaid - actualPaid;
-            if (diff > 0) overdueAmount += diff;
-        }
-
-        var latestPayment = await db.Payments
-            .Include(p => p.Patient)
+        var recentPayments = await db.Payments
             .Include(p => p.Doctor)
-            .Where(p => p.PatientId == patientId && p.IsActive)
-            .OrderByDescending(p => p.PaymentDate)
-            .ThenByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync();
+            .Where(p => p.PatientId == patientId)
+            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
+            .Take(20)
+            .ToListAsync();
 
-        var activeContractsCount = await db.Contracts
-            .CountAsync(c => c.PatientId == patientId && c.Status == "active");
-
-        var totalPaymentsCount = await db.Payments
-            .CountAsync(p => p.PatientId == patientId && p.IsActive);
-
-        // Determine financial status
-        string financialStatus;
-        if (activeContractsCount == 0 && totalPaymentsCount == 0)
-            financialStatus = "no_plan";
-        else if (outstandingBalance <= 0)
-            financialStatus = "paid_full";
-        else if (overdueAmount > 0)
-            financialStatus = "overdue";
-        else
-            financialStatus = "has_balance";
-
-        return new PatientFinanceSummaryDto
+        return new AccountStatementDto
         {
-            TotalTreatmentCost = totalTreatmentCost,
-            TotalPaid = totalPaid,
-            OutstandingBalance = outstandingBalance,
-            OverdueAmount = overdueAmount,
-            LatestPayment = latestPayment != null ? MapPayment(latestPayment) : null,
-            FinancialStatus = financialStatus,
-            ActiveContractsCount = activeContractsCount,
-            TotalPaymentsCount = totalPaymentsCount
+            PatientId        = patientId,
+            PatientName      = patient.FirstName + " " + patient.LastName,
+            PatientNumber    = patient.PatientNumber,
+            TotalContracted  = contracts.Sum(c => c.TotalAmount),
+            TotalDiscounts   = contracts.Sum(c => c.DiscountAmount),
+            TotalPaid        = contracts.Sum(c => c.Payments.Sum(p => p.Amount)),
+            TotalRemaining   = contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)),
+            ActiveContracts  = contracts.Count(c => c.Status == "active"),
+            CompletedContracts = contracts.Count(c => c.Status == "completed"),
+            Contracts        = contracts.Select(c => new ContractStatementDto
+            {
+                Id              = c.Id,
+                Specialty       = c.Specialty,
+                TotalAmount     = c.TotalAmount,
+                DiscountAmount  = c.DiscountAmount,
+                PaidAmount      = c.Payments.Sum(p => p.Amount),
+                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount),
+                StartDate       = c.StartDate?.ToString("yyyy-MM-dd"),
+                Status          = c.Status,
+                InstallmentsCount  = c.InstallmentsCount,
+                InstallmentAmount  = c.InstallmentAmount
+            }).ToList(),
+            RecentPayments = recentPayments.Select(p =>
+            {
+                p.Patient = patient;
+                return MapPayment(p);
+            }).ToList()
         };
     }
 
@@ -445,6 +347,113 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
         };
     }
 
+    public async Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req)
+    {
+        var payment = await db.Payments.FindAsync(id);
+        if (payment == null) return null;
+
+        if (req.Amount.HasValue)       payment.Amount             = req.Amount.Value;
+        if (req.PaymentMethod != null) payment.PaymentMethod      = req.PaymentMethod;
+        if (req.ServiceDescription != null) payment.ServiceDescription = req.ServiceDescription;
+        if (req.Specialty != null)     payment.Specialty          = req.Specialty;
+        if (req.DoctorId.HasValue)     payment.DoctorId           = req.DoctorId;
+        if (req.Notes != null)         payment.Notes              = req.Notes;
+        if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var pd))
+            payment.PaymentDate = pd;
+
+        payment.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
+        await db.Entry(payment).Reference(p => p.Doctor).LoadAsync();
+        return MapPayment(payment);
+    }
+
+    public async Task<bool> DeletePaymentAsync(Guid id)
+    {
+        var payment = await db.Payments.FindAsync(id);
+        if (payment == null) return false;
+        payment.IsActive  = false;
+        payment.DeletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason)
+    {
+        var payment = await db.Payments.FindAsync(id);
+        if (payment == null || !payment.IsActive) return null;
+
+        var refund = new Payment
+        {
+            PatientId          = payment.PatientId,
+            ContractId         = payment.ContractId,
+            Amount             = -payment.Amount,
+            PaymentDate        = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod      = payment.PaymentMethod,
+            ServiceDescription = $"استرداد: {payment.ServiceDescription ?? payment.ReceiptNumber}",
+            Specialty          = payment.Specialty,
+            DoctorId           = payment.DoctorId,
+            BranchId           = payment.BranchId,
+            ReceivedBy         = currentUser.UserId,
+            ReceiptNumber      = $"REF-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}",
+            Notes              = reason
+        };
+
+        db.Payments.Add(refund);
+        await db.SaveChangesAsync();
+
+        await db.Entry(refund).Reference(p => p.Patient).LoadAsync();
+        await db.Entry(refund).Reference(p => p.Doctor).LoadAsync();
+        return MapPayment(refund);
+    }
+
+    public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
+    {
+        var contracts = await db.Contracts
+            .Include(c => c.Payments)
+            .Where(c => c.PatientId == patientId)
+            .ToListAsync();
+
+        var totalCost    = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
+        var totalPaid    = contracts.Sum(c => c.Payments.Sum(p => p.Amount));
+        var outstanding  = totalCost - totalPaid;
+
+        var today          = DateOnly.FromDateTime(DateTime.Today);
+        var overdueAmount  = 0m;
+        foreach (var c in contracts.Where(c => c.Status == "active" && c.InstallmentAmount > 0 && c.StartDate != null))
+        {
+            var months   = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
+            var expected = c.DownPayment + Math.Min(months, c.InstallmentsCount) * (c.InstallmentAmount ?? 0);
+            var paid     = c.Payments.Sum(p => p.Amount);
+            if (expected > paid) overdueAmount += expected - paid;
+        }
+
+        var latestPayment = await db.Payments
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Where(p => p.PatientId == patientId && p.IsActive)
+            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        var status = contracts.Count == 0 ? "no_plan"
+            : outstanding <= 0 ? "paid"
+            : overdueAmount > 0 ? "overdue"
+            : "on_track";
+
+        return new PatientFinanceSummaryDto
+        {
+            TotalTreatmentCost   = totalCost,
+            TotalPaid            = totalPaid,
+            OutstandingBalance   = outstanding,
+            OverdueAmount        = overdueAmount,
+            LatestPayment        = latestPayment == null ? null : MapPayment(latestPayment),
+            FinancialStatus      = status,
+            ActiveContractsCount = contracts.Count(c => c.Status == "active"),
+            TotalPaymentsCount   = contracts.Sum(c => c.Payments.Count)
+        };
+    }
+
     private static ContractListDto MapContractList(Contract c) => new()
     {
         Id = c.Id,
@@ -473,12 +482,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IS
         PaymentMethod = p.PaymentMethod,
         ServiceDescription = p.ServiceDescription,
         Specialty = p.Specialty,
-        DoctorId = p.DoctorId,
         DoctorName = p.Doctor?.Name,
         ReceiptNumber = p.ReceiptNumber,
-        Notes = p.Notes,
-        IsActive = p.IsActive,
-        CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd"),
-        UpdatedAt = p.UpdatedAt.ToString("yyyy-MM-dd")
+        Notes = p.Notes
     };
 }

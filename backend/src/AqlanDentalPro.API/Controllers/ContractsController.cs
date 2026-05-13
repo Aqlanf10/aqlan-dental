@@ -38,7 +38,27 @@ public class ContractsController(FinanceService service) : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateContractRequest req)
     {
+        if (req.DiscountAmount > req.TotalAmount)
+            return BadRequest(new { message = "قيمة الخصم لا يمكن أن تتجاوز إجمالي العقد" });
+
+        if (!string.IsNullOrWhiteSpace(req.StartDate) && !DateOnly.TryParse(req.StartDate, out _))
+            return BadRequest(new { message = "تاريخ البدء غير صالح" });
+
         var result = await service.UpdateContractAsync(id, req);
         return result == null ? NotFound(new { message = "العقد غير موجود" }) : Ok(result);
     }
+
+    [HttpPatch("{id:guid}/status")]
+    public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateContractStatusBody body)
+    {
+        var allowed = new[] { "active", "completed", "cancelled" };
+        if (!allowed.Contains(body.Status))
+            return BadRequest(new { message = "الحالة غير صالحة — القيم المسموحة: active، completed، cancelled" });
+
+        var result = await service.UpdateContractStatusAsync(id, body.Status);
+        if (result == null) return NotFound(new { message = "العقد غير موجود" });
+        return Ok(result);
+    }
 }
+
+public record UpdateContractStatusBody(string Status);

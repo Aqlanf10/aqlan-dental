@@ -199,7 +199,7 @@ export default function PatientProfilePage() {
       case "visits":
         return <VisitsTab patientId={id} openAddModal={openAddVisitModal} onModalOpened={() => setOpenAddVisitModal(false)} onVisitChanged={() => { /* could refresh summary here */ }} />;
       case "finance":
-        return <FinanceTab patientId={id} totalPaid={summary?.totalPaid ?? 0} totalOutstanding={summary?.totalOutstanding ?? 0} onPaymentChanged={() => { /* could refresh summary here */ }} />;
+        return <FinanceTab patientId={id} />;
       case "contracts":
         return <ContractsTab patientId={id} />;
       case "payments":

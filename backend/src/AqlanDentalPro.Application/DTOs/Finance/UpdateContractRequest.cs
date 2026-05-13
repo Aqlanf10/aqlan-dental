@@ -1,13 +1,25 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AqlanDentalPro.Application.DTOs.Finance;
 
 public class UpdateContractRequest
 {
-    public decimal? TotalAmount { get; init; }
-    public decimal? DownPayment { get; init; }
-    public int? InstallmentsCount { get; init; }
-    public decimal? InstallmentAmount { get; init; }
-    public decimal? DiscountAmount { get; init; }
-    public string? DiscountReason { get; init; }
-    public string? Status { get; init; }
-    public string? Notes { get; init; }
+    public string? Specialty { get; set; }
+
+    [Range(0, (double)decimal.MaxValue, ErrorMessage = "إجمالي العقد يجب أن يكون صفراً أو أكثر")]
+    public decimal TotalAmount { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "عدد الأقساط يجب أن يكون صفراً أو أكثر")]
+    public int InstallmentsCount { get; set; }
+
+    [Range(0, (double)decimal.MaxValue, ErrorMessage = "قيمة القسط يجب أن تكون صفراً أو أكثر")]
+    public decimal? InstallmentAmount { get; set; }
+
+    public string? StartDate { get; set; }
+
+    [Range(0, (double)decimal.MaxValue, ErrorMessage = "قيمة الخصم يجب أن تكون صفراً أو أكثر")]
+    public decimal DiscountAmount { get; set; }
+
+    public string? DiscountReason { get; set; }
+    public string? Notes { get; set; }
 }

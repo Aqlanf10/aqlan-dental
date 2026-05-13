@@ -10,8 +10,8 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/patients")]
-[Authorize(Policy = "StaffOnly")]
-public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService) : ControllerBase
+[Authorize]
+public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService, FinanceService financeService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -240,57 +240,13 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         var totalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id);
         var completedAppointments = await db.Appointments.CountAsync(a => a.PatientId == id && a.Status == Domain.Enums.AppointmentStatus.Completed);
         var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == "active");
-        var totalPaid = await db.Payments.Where(p => p.PatientId == id && p.IsActive).SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var totalPaid = await db.Payments.Where(p => p.PatientId == id).SumAsync(p => (decimal?)p.Amount) ?? 0;
         var totalOutstanding = await db.Contracts
             .Where(c => c.PatientId == id && c.Status == "active")
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
+            .Include(c => c.Payments)
+            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
         var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
-
-        // ── Extended summary fields ──
-        var lastVisit = await db.Visits
-            .Where(v => v.PatientId == id && v.IsActive)
-            .OrderByDescending(v => v.VisitDate)
-            .Select(v => new { v.VisitDate, v.Diagnosis, v.TreatmentDone, DoctorName = v.Doctor != null ? v.Doctor.Name : null })
-            .FirstOrDefaultAsync();
-
-        var nextAppointment = await db.Appointments
-            .Where(a => a.PatientId == id && a.AppointmentDate >= DateOnly.FromDateTime(DateTime.Today))
-            .OrderBy(a => a.AppointmentDate).ThenBy(a => a.StartTime)
-            .Select(a => new { a.AppointmentDate, a.StartTime, a.AppointmentType, DoctorName = a.Doctor.Name })
-            .FirstOrDefaultAsync();
-
-        // Active treatment summary: latest visit with diagnosis + active ortho/surgery cases
-        var latestDiagnosisVisit = await db.Visits
-            .Where(v => v.PatientId == id && v.IsActive && v.Diagnosis != null)
-            .OrderByDescending(v => v.VisitDate)
-            .Select(v => new { v.Diagnosis, v.NextVisitPlan, v.VisitDate })
-            .FirstOrDefaultAsync();
-
-        var activeOrthoSummary = await db.OrthoCases
-            .Where(o => o.PatientId == id && o.Status == "active")
-            .Select(o => new { o.CaseNumber, o.ApplianceType, o.StagePercentage })
-            .ToListAsync();
-
-        var activeSurgerySummary = await db.SurgeryCases
-            .Where(s => s.PatientId == id && (s.Status == "scheduled" || s.Status == "in_progress"))
-            .Select(s => new { s.CaseNumber, s.SurgeryType, s.Status })
-            .ToListAsync();
-
-        // Medical alerts from medical history
-        var medicalAlerts = new List<string>();
-        var medHistory = await db.MedicalHistories.FirstOrDefaultAsync(m => m.PatientId == id);
-        if (medHistory != null)
-        {
-            if (medHistory.BleedingDisorders) medicalAlerts.Add("اضطرابات نزيف");
-            if (medHistory.TmjProblems) medicalAlerts.Add("مشاكل المفصل الفكي");
-            if (medHistory.IsPregnant == "Yes" || medHistory.IsPregnant == "yes") medicalAlerts.Add("حامل");
-            if (!string.IsNullOrWhiteSpace(medHistory.DrugAllergies)) medicalAlerts.Add($"حساسية أدوية: {medHistory.DrugAllergies}");
-            if (!string.IsNullOrWhiteSpace(medHistory.ChronicDiseases)) medicalAlerts.Add($"أمراض مزمنة: {medHistory.ChronicDiseases}");
-        }
-
-        // Chief complaint from dental history
-        var dentalHistory = await db.DentalHistories.FirstOrDefaultAsync(d => d.PatientId == id);
 
         return Ok(new
         {
@@ -299,21 +255,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             activeOrthoCases,
             totalPaid,
             totalOutstanding,
-            prescriptionsCount,
-            // Extended fields
-            lastVisitDate = lastVisit?.VisitDate.ToString("yyyy-MM-dd"),
-            lastVisitDoctor = lastVisit?.DoctorName,
-            lastVisitDiagnosis = lastVisit?.Diagnosis,
-            nextAppointmentDate = nextAppointment?.AppointmentDate.ToString("yyyy-MM-dd"),
-            nextAppointmentTime = nextAppointment?.StartTime.ToString("HH:mm"),
-            nextAppointmentType = nextAppointment?.AppointmentType,
-            nextAppointmentDoctor = nextAppointment?.DoctorName,
-            chiefComplaint = dentalHistory?.ChiefComplaint,
-            currentDiagnosis = latestDiagnosisVisit?.Diagnosis,
-            nextPlannedStep = latestDiagnosisVisit?.NextVisitPlan,
-            activeOrthoSummary,
-            activeSurgerySummary,
-            medicalAlerts
+            prescriptionsCount
         });
     }
 
@@ -336,11 +278,11 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
                 description = $"{a.Doctor.Name} · {a.StartTime:HH\\:mm}",
                 status = a.Status.ToString()
             })
-            .Take(30)
+            .Take(50)
             .ToListAsync();
 
         var visitEvents = await db.Visits
-            .Where(v => v.PatientId == id && v.IsActive)
+            .Where(v => v.PatientId == id)
             .Include(v => v.Doctor)
             .OrderByDescending(v => v.VisitDate)
             .Select(v => new
@@ -354,76 +296,13 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
                     : (v.Diagnosis ?? v.VisitType ?? "زيارة"),
                 status = (string?)null
             })
-            .Take(30)
+            .Take(50)
             .ToListAsync();
 
-        var paymentEvents = await db.Payments
-            .Where(p => p.PatientId == id && p.IsActive)
-            .OrderByDescending(p => p.PaymentDate)
-            .Select(p => new
-            {
-                type = "payment",
-                id = p.Id,
-                date = p.PaymentDate.ToString("yyyy-MM-dd"),
-                title = "دفعة مالية",
-                description = $"{p.Amount} ر.ي · {p.PaymentMethod}" + (p.ServiceDescription != null ? $" · {p.ServiceDescription}" : ""),
-                status = (string?)null
-            })
-            .Take(20)
-            .ToListAsync();
-
-        var documentEvents = await db.Documents
-            .Where(d => d.PatientId == id && d.IsActive)
-            .OrderByDescending(d => d.CreatedAt)
-            .Select(d => new
-            {
-                type = "document",
-                id = d.Id,
-                date = d.CreatedAt.ToString("yyyy-MM-dd"),
-                title = d.Title ?? "مستند",
-                description = d.DocumentType ?? "مستند",
-                status = d.Signed ? "signed" : (string?)null
-            })
-            .Take(15)
-            .ToListAsync();
-
-        var photoEvents = await db.ClinicalPhotos
-            .Where(p => p.PatientId == id && p.IsActive)
-            .OrderByDescending(p => p.PhotoDate)
-            .Select(p => new
-            {
-                type = "photo",
-                id = p.Id,
-                date = p.PhotoDate.ToString("yyyy-MM-dd"),
-                title = "صورة سريرية",
-                description = (p.Category ?? "") + (p.PhotoType != null ? $" · {p.PhotoType}" : "") + (p.Stage != null ? $" · {p.Stage}" : ""),
-                status = (string?)null
-            })
-            .Take(10)
-            .ToListAsync();
-
-        var radiographEvents = await db.Radiographs
-            .Where(r => r.PatientId == id && r.IsActive)
-            .OrderByDescending(r => r.XrayDate)
-            .Select(r => new
-            {
-                type = "radiograph",
-                id = r.Id,
-                date = r.XrayDate.ToString("yyyy-MM-dd"),
-                title = "أشعة سنية",
-                description = (r.XrayType ?? "") + (r.ToothRelated != null ? $" · سن: {r.ToothRelated}" : ""),
-                status = (string?)null
-            })
-            .Take(10)
-            .ToListAsync();
-
-        // Merge all events and sort by date descending
-        var allEvents = appointmentEvents.Cast<object>()
+        // Merge and sort by date descending
+        var allEvents = appointmentEvents
+            .Cast<object>()
             .Concat(visitEvents)
-            .Concat(paymentEvents)
-            .Concat(documentEvents)
-            .Concat(photoEvents)
-            .Concat(radiographEvents)
             .OrderByDescending(e => ((dynamic)e).date)
             .Take(50)
             .ToList();
@@ -441,5 +320,13 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         var creds = await portalService.GetPatientCredentialsAsync(id);
         if (creds == null) return NotFound(new { message = "لا يوجد حساب بوابة لهذا المريض" });
         return Ok(creds);
+    }
+
+    [HttpGet("{id:guid}/account-statement")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<IActionResult> GetAccountStatement(Guid id)
+    {
+        var result = await financeService.GetAccountStatementAsync(id);
+        return result == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(result);
     }
 }

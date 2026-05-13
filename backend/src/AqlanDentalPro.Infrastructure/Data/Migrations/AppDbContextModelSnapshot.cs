@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
-#nullable disable
+#nullable enable
 
 namespace AqlanDentalPro.Infrastructure.Data.Migrations
 {
@@ -838,6 +838,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("CompensationNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("CompensationType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("None");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -859,6 +869,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("DefaultCommissionPercentage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -1908,7 +1922,15 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("PatientNumber")
                         .IsUnique();
 
+                    b.HasIndex("Phone")
+                        .IsUnique()
+                        .HasFilter("\"Phone\" IS NOT NULL AND \"Phone\" != ''");
+
                     b.HasIndex("PrimaryDoctorId");
+
+                    b.HasIndex("WhatsApp")
+                        .IsUnique()
+                        .HasFilter("\"WhatsApp\" IS NOT NULL AND \"WhatsApp\" != ''");
 
                     b.HasIndex("BranchId", "IsActive");
 

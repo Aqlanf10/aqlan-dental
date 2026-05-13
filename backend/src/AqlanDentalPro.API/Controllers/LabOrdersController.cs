@@ -5,6 +5,8 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -52,8 +54,8 @@ public sealed class UpdateLabOrderStatusRequest
 
 [ApiController]
 [Route("api/lab-orders")]
-[Authorize]
-public class LabOrdersController(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications) : ControllerBase
+[Authorize(Policy = "StaffOnly")]
+public class LabOrdersController(AppDbContext db, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<LabOrdersController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -62,6 +64,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.LabOrders
             .Include(l => l.Patient)
             .Include(l => l.OrthoCase)
@@ -169,16 +172,24 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         db.LabOrders.Add(order);
         await db.SaveChangesAsync();
 
-        // Notify admin and reception about the new lab order
+        // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
+        var orderNumber = order.OrderNumber;
+        var applianceType = req.ApplianceType;
+        var orderId = order.Id;
         _ = Task.Run(async () =>
         {
             try
             {
-                var msg = $"طلب مختبر جديد {order.OrderNumber} — {req.ApplianceType}";
-                await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جديد", msg, "LabOrder", order.Id);
-                await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جديد", msg, "LabOrder", order.Id);
+                using var scope = scopeFactory.CreateScope();
+                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                var msg = $"طلب مختبر جديد {orderNumber} — {applianceType}";
+                await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
+                await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
             }
-            catch { /* non-blocking */ }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[LabOrders] Create notification failed for order {OrderId}", orderId);
+            }
         });
 
         return CreatedAtAction(nameof(GetById), new { id = order.Id },
@@ -203,15 +214,24 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
 
         if (req.Status == "ready")
         {
+            // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
+            var readyOrderNumber = order.OrderNumber;
+            var readyApplianceType = order.ApplianceType;
+            var readyOrderId = order.Id;
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    var msg = $"طلب المختبر {order.OrderNumber} — {order.ApplianceType} جاهز للاستلام";
-                    await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جاهز", msg, "LabOrder", order.Id);
-                    await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جاهز", msg, "LabOrder", order.Id);
+                    using var scope = scopeFactory.CreateScope();
+                    var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                    var msg = $"طلب المختبر {readyOrderNumber} — {readyApplianceType} جاهز للاستلام";
+                    await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جاهز", msg, "LabOrder", readyOrderId);
+                    await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جاهز", msg, "LabOrder", readyOrderId);
                 }
-                catch { /* non-blocking */ }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "[LabOrders] Ready notification failed for order {OrderId}", readyOrderId);
+                }
             });
         }
 

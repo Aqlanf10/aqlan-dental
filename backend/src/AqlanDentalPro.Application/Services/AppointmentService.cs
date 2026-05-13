@@ -3,10 +3,12 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class AppointmentService(IAppointmentRepository repo, ICurrentUserService currentUser, INotificationService notifications)
+public class AppointmentService(IAppointmentRepository repo, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<AppointmentService> logger)
 {
     public async Task<IEnumerable<AppointmentDto>> GetTodayAsync(Guid? doctorId = null)
     {
@@ -50,22 +52,31 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         await repo.AddAsync(appointment);
         await repo.SaveChangesAsync();
 
-        // Notify the doctor
+        // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
         var dto = ToDto(appointment);
+        var doctorId = req.DoctorId;
+        var patientLabel = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
+        var appointmentDate = dto.AppointmentDate;
+        var startTime = dto.StartTime;
+        var appointmentId = appointment.Id;
         _ = Task.Run(async () =>
         {
             try
             {
-                var patientName = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
+                using var scope = scopeFactory.CreateScope();
+                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
                 await notifications.NotifyDoctorAsync(
-                    req.DoctorId,
+                    doctorId,
                     "appointment",
                     "موعد جديد",
-                    $"تم حجز موعد جديد لـ {patientName} بتاريخ {dto.AppointmentDate} الساعة {dto.StartTime}",
+                    $"تم حجز موعد جديد لـ {patientLabel} بتاريخ {appointmentDate} الساعة {startTime}",
                     "Appointment",
-                    appointment.Id);
+                    appointmentId);
             }
-            catch { /* non-blocking */ }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[AppointmentService] Doctor notification failed for appointment {AppointmentId}", appointmentId);
+            }
         });
 
         return (dto, null);
@@ -81,6 +92,32 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
     {
         var a = await repo.GetWithDetailAsync(id);
         return a == null ? null : ToDto(a);
+    }
+
+    public async Task<DailyAppointmentStatsDto> GetDailyStatsAsync(DateOnly date)
+    {
+        var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
+        var appointments = await repo.GetByDateRangeAsync(date, date, branchId, null);
+
+        var list = appointments.ToList();
+        var total = list.Count;
+        var completed = list.Count(a => a.Status == AppointmentStatus.Completed);
+        var cancelled = list.Count(a => a.Status == AppointmentStatus.Cancelled);
+        var noShow = list.Count(a => a.Status == AppointmentStatus.NoShow);
+        var inProgress = list.Count(a => a.Status == AppointmentStatus.InProgress || a.Status == AppointmentStatus.Called || a.Status == AppointmentStatus.InRoom);
+        var waiting = list.Count(a => a.Status == AppointmentStatus.Waiting || a.Status == AppointmentStatus.Arrived || a.Status == AppointmentStatus.Scheduled || a.Status == AppointmentStatus.Confirmed);
+
+        return new DailyAppointmentStatsDto
+        {
+            Total = total,
+            Completed = completed,
+            Cancelled = cancelled,
+            NoShow = noShow,
+            InProgress = inProgress,
+            Waiting = waiting,
+            CompletionRate = total > 0 ? Math.Round((double)completed / total * 100, 1) : 0,
+            NoShowRate = total > 0 ? Math.Round((double)noShow / total * 100, 1) : 0
+        };
     }
 
     public async Task<(AppointmentDto? result, string? error)> UpdateAsync(
@@ -119,10 +156,32 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         if (!Enum.TryParse<AppointmentStatus>(status, true, out var parsed))
             return (null, "حالة الموعد غير صالحة");
 
+        // Validate status transition (allow re-scheduling from terminal states NoShow/Cancelled)
+        if (appointment.Status != AppointmentStatus.NoShow &&
+            appointment.Status != AppointmentStatus.Cancelled)
+        {
+            if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, parsed))
+            {
+                return (null, $"لا يمكن تغيير حالة الموعد من {appointment.Status} إلى {parsed}");
+            }
+        }
+
         appointment.Status = parsed;
         repo.Update(appointment);
         await repo.SaveChangesAsync();
         return (ToDto(appointment), null);
+    }
+
+    public async Task<bool> CheckConflictAsync(Guid doctorId, string date, string startTime, int durationMinutes, Guid? excludeId)
+    {
+        if (!DateOnly.TryParse(date, out var appointmentDate))
+            throw new ArgumentException("Invalid date format");
+
+        if (!TimeOnly.TryParse(startTime, out var start))
+            throw new ArgumentException("Invalid time format");
+
+        var endTime = start.AddMinutes(durationMinutes);
+        return await repo.HasConflictAsync(doctorId, appointmentDate, start, endTime, excludeId);
     }
 
     private static AppointmentDto ToDto(Appointment a) => new()

@@ -144,17 +144,9 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 Color = doctor.Color ?? "#0d9488"
             });
         }
-        else
-        {
-            // No treating doctor assigned — still show the option but with null userId
-            recipients.Add(new PortalRecipientDto
-            {
-                Type = "TreatingDoctor",
-                UserId = null,
-                DisplayName = "لم يتم تحديد الطبيب المسؤول بعد",
-                Role = "Doctor"
-            });
-        }
+        // NOTE: When no PrimaryDoctorId is assigned, the TreatingDoctor option is omitted entirely.
+        // This prevents patients from attempting to message a non-existent treating doctor.
+        // The backend StartConversation endpoint also validates this as a defense-in-depth measure.
 
         // 2. Reception — find active reception staff
         var receptionUser = await db.Users
@@ -190,6 +182,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var userId = await EnsureLinkedUserAsync();
         if (userId == null)
             return Ok(new { data = Array.Empty<object>(), totalCount = 0, page = 1, pageSize, totalPages = 0 });
@@ -442,6 +435,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var (userId, conv, error) = await VerifyPatientFacingAccessAsync(conversationId);
         if (error != null) return (ActionResult)error;
 
@@ -474,7 +468,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "image/jpeg", "image/png", "application/pdf",
-                "audio/webm", "audio/ogg", "audio/mp4"
+                "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
             };
             if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
                 return BadRequest(new { message = "نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF، رسائل صوتية" });
@@ -740,6 +734,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
     private async Task<ActionResult<ConversationDetailDto>> GetConversationById(
         Guid conversationId, Guid userId, int page = 1, int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var conv = await db.Conversations
             .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
             .Include(c => c.Patient)

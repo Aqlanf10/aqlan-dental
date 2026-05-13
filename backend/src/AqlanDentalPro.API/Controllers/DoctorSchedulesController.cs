@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,8 +12,8 @@ namespace AqlanDentalPro.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/doctors/{doctorId:guid}/schedule")]
-[Authorize]
-public class DoctorSchedulesController(AppDbContext db) : ControllerBase
+[Authorize(Policy = "StaffOnly")]
+public class DoctorSchedulesController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     /// <summary>Get schedule for a specific doctor.</summary>
     [HttpGet]
@@ -40,11 +41,25 @@ public class DoctorSchedulesController(AppDbContext db) : ControllerBase
 
     /// <summary>Set or update schedule for a specific day.</summary>
     [HttpPut("{dayOfWeek:int}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> SetDaySchedule(
         Guid doctorId, int dayOfWeek, [FromBody] DoctorScheduleRequest req)
     {
         if (dayOfWeek is < 0 or > 6)
             return BadRequest(new { message = "يجب أن يكون رقم اليوم بين 0 و 6 (الأحد=0)" });
+
+        var validationError = ValidateScheduleRequest(req);
+        if (validationError != null)
+            return BadRequest(new { message = validationError });
+
+        var startTime = TimeOnly.Parse(req.StartTime);
+        var endTime = TimeOnly.Parse(req.EndTime);
+        TimeOnly? breakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null;
+        TimeOnly? breakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null;
+
+        var validationTimeError = ValidateScheduleTimes(startTime, endTime, breakStart, breakEnd, req.SlotDurationMinutes ?? 30);
+        if (validationTimeError != null)
+            return BadRequest(new { message = validationTimeError });
 
         var existing = await db.DoctorSchedules
             .FirstOrDefaultAsync(ds => ds.DoctorId == doctorId && ds.DayOfWeek == dayOfWeek && ds.IsActive);
@@ -55,22 +70,22 @@ public class DoctorSchedulesController(AppDbContext db) : ControllerBase
             {
                 DoctorId = doctorId,
                 DayOfWeek = dayOfWeek,
-                StartTime = TimeOnly.Parse(req.StartTime),
-                EndTime = TimeOnly.Parse(req.EndTime),
+                StartTime = startTime,
+                EndTime = endTime,
                 IsWorking = req.IsWorking,
-                BreakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null,
-                BreakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null,
+                BreakStart = breakStart,
+                BreakEnd = breakEnd,
                 SlotDurationMinutes = req.SlotDurationMinutes ?? 30
             };
             db.DoctorSchedules.Add(schedule);
         }
         else
         {
-            existing.StartTime = TimeOnly.Parse(req.StartTime);
-            existing.EndTime = TimeOnly.Parse(req.EndTime);
+            existing.StartTime = startTime;
+            existing.EndTime = endTime;
             existing.IsWorking = req.IsWorking;
-            existing.BreakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null;
-            existing.BreakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null;
+            existing.BreakStart = breakStart;
+            existing.BreakEnd = breakEnd;
             existing.SlotDurationMinutes = req.SlotDurationMinutes ?? 30;
             existing.UpdatedAt = DateTime.UtcNow;
         }
@@ -81,6 +96,7 @@ public class DoctorSchedulesController(AppDbContext db) : ControllerBase
 
     /// <summary>Batch-set schedule for all days at once.</summary>
     [HttpPut]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> SetFullSchedule(
         Guid doctorId, [FromBody] List<DoctorScheduleRequest> scheduleDays)
     {
@@ -88,6 +104,27 @@ public class DoctorSchedulesController(AppDbContext db) : ControllerBase
         {
             if (req.DayOfWeek is < 0 or > 6)
                 return BadRequest(new { message = $"يوم غير صالح: {req.DayOfWeek}" });
+
+            var validationError = ValidateScheduleRequest(req);
+            if (validationError != null)
+                return BadRequest(new { message = validationError });
+
+            var startTime = TimeOnly.Parse(req.StartTime);
+            var endTime = TimeOnly.Parse(req.EndTime);
+            TimeOnly? breakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null;
+            TimeOnly? breakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null;
+
+            var validationTimeError = ValidateScheduleTimes(startTime, endTime, breakStart, breakEnd, req.SlotDurationMinutes ?? 30);
+            if (validationTimeError != null)
+                return BadRequest(new { message = validationTimeError });
+        }
+
+        foreach (var req in scheduleDays)
+        {
+            var startTime = TimeOnly.Parse(req.StartTime);
+            var endTime = TimeOnly.Parse(req.EndTime);
+            TimeOnly? breakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null;
+            TimeOnly? breakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null;
 
             var existing = await db.DoctorSchedules
                 .FirstOrDefaultAsync(ds => ds.DoctorId == doctorId && ds.DayOfWeek == req.DayOfWeek && ds.IsActive);
@@ -98,21 +135,21 @@ public class DoctorSchedulesController(AppDbContext db) : ControllerBase
                 {
                     DoctorId = doctorId,
                     DayOfWeek = req.DayOfWeek,
-                    StartTime = TimeOnly.Parse(req.StartTime),
-                    EndTime = TimeOnly.Parse(req.EndTime),
+                    StartTime = startTime,
+                    EndTime = endTime,
                     IsWorking = req.IsWorking,
-                    BreakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null,
-                    BreakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null,
+                    BreakStart = breakStart,
+                    BreakEnd = breakEnd,
                     SlotDurationMinutes = req.SlotDurationMinutes ?? 30
                 });
             }
             else
             {
-                existing.StartTime = TimeOnly.Parse(req.StartTime);
-                existing.EndTime = TimeOnly.Parse(req.EndTime);
+                existing.StartTime = startTime;
+                existing.EndTime = endTime;
                 existing.IsWorking = req.IsWorking;
-                existing.BreakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null;
-                existing.BreakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null;
+                existing.BreakStart = breakStart;
+                existing.BreakEnd = breakEnd;
                 existing.SlotDurationMinutes = req.SlotDurationMinutes ?? 30;
                 existing.UpdatedAt = DateTime.UtcNow;
             }
@@ -173,6 +210,73 @@ public class DoctorSchedulesController(AppDbContext db) : ControllerBase
         }
 
         return Ok(new { available = true, slots, slotDuration = schedule.SlotDurationMinutes });
+    }
+
+    /// <summary>Delete a specific schedule entry (soft-delete).</summary>
+    [HttpDelete("api/doctor-schedules/{id:guid}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> DeleteSchedule(Guid id)
+    {
+        var schedule = await db.DoctorSchedules
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(ds => ds.Id == id);
+
+        if (schedule is null)
+            return NotFound(new { message = "جدول الدوام غير موجود" });
+
+        schedule.IsActive = false;
+        schedule.DeletedAt = DateTime.UtcNow;
+        schedule.DeletedBy = currentUser.UserId;
+
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم حذف جدول الدوام بنجاح" });
+    }
+
+    /// <summary>
+    /// Validate that break times are either both provided or both null.
+    /// </summary>
+    private static string? ValidateScheduleRequest(DoctorScheduleRequest req)
+    {
+        // If only one of BreakStart/BreakEnd is provided, return error
+        if ((req.BreakStart != null && req.BreakEnd == null) ||
+            (req.BreakStart == null && req.BreakEnd != null))
+        {
+            return "يجب تحديد وقتي بداية ونهاية الاستراحة معاً أو تركهما فارغين";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Validate schedule time constraints and slot duration.
+    /// </summary>
+    private static string? ValidateScheduleTimes(
+        TimeOnly startTime, TimeOnly endTime,
+        TimeOnly? breakStart, TimeOnly? breakEnd,
+        int slotDurationMinutes)
+    {
+        // EndTime must be greater than StartTime
+        if (endTime <= startTime)
+            return "وقت الانتهاء يجب أن يكون بعد وقت البدء";
+
+        // Break time validations (only if both are provided)
+        if (breakStart.HasValue && breakEnd.HasValue)
+        {
+            if (breakStart.Value < startTime)
+                return "وقت بداية الاستراحة يجب أن يكون ضمن ساعات العمل";
+
+            if (breakEnd.Value > endTime)
+                return "وقت نهاية الاستراحة يجب أن يكون ضمن ساعات العمل";
+
+            if (breakEnd.Value <= breakStart.Value)
+                return "وقت نهاية الاستراحة يجب أن يكون بعد وقت بدايتها";
+        }
+
+        // SlotDurationMinutes must be between 10 and 120
+        if (slotDurationMinutes is < 10 or > 120)
+            return "مدة الحجز يجب أن تكون بين 10 و 120 دقيقة";
+
+        return null;
     }
 }
 

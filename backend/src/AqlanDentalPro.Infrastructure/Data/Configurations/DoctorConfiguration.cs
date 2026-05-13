@@ -1,4 +1,5 @@
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,6 +15,11 @@ public class DoctorConfiguration : IEntityTypeConfiguration<Doctor>
         builder.Property(d => d.LicenseNumber).HasMaxLength(100);
         builder.Property(d => d.Color).HasMaxLength(20);
         builder.Property(d => d.AvatarInitials).HasMaxLength(5);
+
+        // Future compensation compatibility (Sprint 6)
+        builder.Property(d => d.CompensationType).HasConversion<string>().HasMaxLength(20).HasDefaultValue(CompensationType.None);
+        builder.Property(d => d.DefaultCommissionPercentage).HasPrecision(5, 2);
+        builder.Property(d => d.CompensationNotes).HasMaxLength(500);
 
         builder.HasOne(d => d.User)
             .WithOne(u => u.Doctor)

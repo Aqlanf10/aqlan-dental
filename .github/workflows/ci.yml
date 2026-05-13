@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master, "claude/**"]
+    branches: [main, master]
   pull_request:
     branches: [main, master]
 
@@ -25,15 +25,14 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
-      - name: Build (no warnings as errors)
-        run: dotnet build --no-restore --configuration Release
+      - name: Build
+        run: dotnet build --no-restore --configuration Release --warnaserror -p:WarningsNotAsErrors=NU1903
 
-      - name: Run tests
-        run: dotnet test --no-build --configuration Release --verbosity minimal
-        continue-on-error: true  # no test project yet — don't fail CI
+      - name: Run unit tests
+        run: dotnet test tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj --no-restore --configuration Release --verbosity minimal
 
   frontend:
-    name: Frontend — Lint & Build
+    name: Frontend — Lint, Type-check & Build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -57,6 +56,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Run frontend tests
+        run: npx vitest run --reporter=verbose
 
       - name: Build
         run: npm run build

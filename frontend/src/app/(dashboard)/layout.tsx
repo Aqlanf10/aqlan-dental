@@ -34,6 +34,9 @@ export default function DashboardLayout({
       setIsReady(true);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Intentionally excluded: this effect runs once on mount to validate the auth token.
+    // Adding fetchMe/user/isAuthenticated would cause an infinite re-fetch loop since
+    // fetchMe updates the user state, which would re-trigger this effect.
 
   if (!isReady) {
     return (

@@ -9,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/notifications")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class NotificationsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     // GET /api/notifications?unreadOnly=true&page=1&pageSize=20
@@ -19,6 +19,7 @@ public class NotificationsController(AppDbContext db, ICurrentUserService curren
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var userId = currentUser.UserId;
         if (userId is null || userId == Guid.Empty) return Unauthorized();
 

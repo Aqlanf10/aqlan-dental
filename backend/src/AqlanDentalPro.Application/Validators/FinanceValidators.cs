@@ -11,8 +11,8 @@ public sealed class CreateContractRequestValidator : AbstractValidator<CreateCon
             .NotEmpty().WithMessage("المريض مطلوب");
 
         RuleFor(x => x.Specialty)
-            .NotEmpty().WithMessage("التخصص مطلوب")
-            .MaximumLength(100).WithMessage("التخصص يجب ألا يتجاوز 100 حرف");
+            .MaximumLength(100).WithMessage("التخصص يجب ألا يتجاوز 100 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.Specialty));
 
         RuleFor(x => x.TotalAmount)
             .GreaterThan(0).WithMessage("المبلغ الإجمالي يجب أن يكون أكبر من صفر");

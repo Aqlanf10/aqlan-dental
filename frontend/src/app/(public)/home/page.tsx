@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Smile, Sparkles, Zap, Award, Heart, ShieldCheck, ClipboardList,
@@ -6,85 +9,41 @@ import {
   Plus, MapPin, ChevronLeft,
 } from "lucide-react";
 
+// ─── Fallback defaults (used if API fails) ───────────────────────────────────
+const FALLBACK: Record<string, string> = {
+  clinicName: "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان",
+  heroTitle: "ابتسامة تجمع بين دقة العلم ولمسة الفن",
+  heroSubtitle: "مركز الدكتور عقلان الكامل يقدم رعاية متكاملة في تقويم وزراعة وتجميل الأسنان، مع تشخيص دقيق وخطط علاج واضحة ومتابعة مستمرة لكل حالة.",
+  marketingSlogan: "قيادة طبية… وابتسامة بثقة",
+  aboutText: "يقدم مركز الدكتور عقلان الكامل خدمات تخصصية شاملة في تقويم وزراعة وتجميل الأسنان، معتمدين على تشخيص دقيق، وخطط علاج واضحة، ومتابعة مستمرة للحالات للمساعدة في الوصول إلى نتائج علاجية دقيقة ومناسبة لكل حالة.",
+  phone: "04-253028",
+  whatsapp: "967770245745",
+  address: "تعز، اليمن — شارع التحرير الأعلى",
+  workingHours: "السبت – الخميس: 8 ص – 8 م",
+  facebook: "",
+  instagram: "",
+  servicesSectionTitle: "حلول طبية متكاملة لابتسامة صحية وواثقة",
+  bookingButtonText: "احجز موعدك الآن",
+  whatsappButtonText: "تواصل عبر الواتساب",
+};
+
 const SERVICES = [
-  {
-    icon: Smile,
-    title: "تقويم الأسنان",
-    desc: "تقويم معدني وشفاف وخطط علاجية مخصصة للبالغين والأطفال.",
-  },
-  {
-    icon: Plus,
-    title: "زراعة الأسنان",
-    desc: "تعويض الأسنان المفقودة بزراعات تساعد على استعادة الوظيفة والمظهر.",
-  },
-  {
-    icon: Sparkles,
-    title: "تجميل الأسنان",
-    desc: "قشور تجميلية، تبييض، وتحسين شكل الابتسامة بخطة مناسبة لكل حالة.",
-  },
-  {
-    icon: Zap,
-    title: "علاج العصب",
-    desc: "علاج القنوات الجذرية بدقة للحفاظ على الأسنان وتقليل الألم.",
-  },
-  {
-    icon: Award,
-    title: "تركيبات الأسنان",
-    desc: "تيجان وجسور زيركون وبورسلان بتصميم وظيفي وجمالي.",
-  },
-  {
-    icon: Heart,
-    title: "طب أسنان الأطفال",
-    desc: "رعاية وقائية وعلاجية للأطفال في بيئة مريحة ولطيفة.",
-  },
-  {
-    icon: Scissors,
-    title: "جراحة الفم والأسنان",
-    desc: "خلع ضرس العقل وبعض إجراءات جراحة الفم واللثة حسب الحالة.",
-  },
-  {
-    icon: ClipboardList,
-    title: "الكشف والاستشارات",
-    desc: "فحص شامل، تشخيص واضح، وخطة علاجية مرتبة قبل بدء العلاج.",
-  },
+  { icon: Smile, title: "تقويم الأسنان", desc: "تقويم معدني وشفاف وخطط علاجية مخصصة للبالغين والأطفال." },
+  { icon: Plus, title: "زراعة الأسنان", desc: "تعويض الأسنان المفقودة بزراعات تساعد على استعادة الوظيفة والمظهر." },
+  { icon: Sparkles, title: "تجميل الأسنان", desc: "قشور تجميلية، تبييض، وتحسين شكل الابتسامة بخطة مناسبة لكل حالة." },
+  { icon: Zap, title: "علاج العصب", desc: "علاج القنوات الجذرية بدقة للحفاظ على الأسنان وتقليل الألم." },
+  { icon: Award, title: "تركيبات الأسنان", desc: "تيجان وجسور زيركون وبورسلان بتصميم وظيفي وجمالي." },
+  { icon: Heart, title: "طب أسنان الأطفال", desc: "رعاية وقائية وعلاجية للأطفال في بيئة مريحة ولطيفة." },
+  { icon: Scissors, title: "جراحة الفم والأسنان", desc: "خلع ضرس العقل وبعض إجراءات جراحة الفم واللثة حسب الحالة." },
+  { icon: ClipboardList, title: "الكشف والاستشارات", desc: "فحص شامل، تشخيص واضح، وخطة علاجية مرتبة قبل بدء العلاج." },
 ];
 
 const TEAM = [
-  {
-    name: "د. عقلان الكامل",
-    role: "أخصائي تقويم الأسنان",
-    desc: "متخصص في التقويم الثابت والشفاف وخطط العلاج المخصصة للبالغين والأطفال.",
-    initials: "عك",
-    color: "#0284c7",
-  },
-  {
-    name: "د. عائشة غازي",
-    role: "طب الأسنان العام والتجميلي",
-    desc: "خبرة واسعة في طب الأسنان العام، التجميل، والعلاجات الترميمية.",
-    initials: "عغ",
-    color: "#FF8C00",
-  },
-  {
-    name: "د. إيمان الكامل",
-    role: "طب الأسنان العام",
-    desc: "رعاية لطيفة ومتخصصة لجميع أفراد العائلة من الأطفال حتى كبار السن.",
-    initials: "إك",
-    color: "#059669",
-  },
-  {
-    name: "د. هشام القدسي",
-    role: "طب الأسنان العام",
-    desc: "متخصص في معالجة جذور الأسنان وترميمها وعلاج أمراض اللثة.",
-    initials: "هق",
-    color: "#7C3AED",
-  },
-  {
-    name: "د. خلدون البرهي",
-    role: "جراحة الفم والوجه والفكين",
-    desc: "خبير في جراحة الفك والوجه، زراعة الأسنان، وخلع الضروس المعقدة.",
-    initials: "خب",
-    color: "#DC2626",
-  },
+  { name: "د. عقلان الكامل", role: "أخصائي تقويم الأسنان", desc: "متخصص في التقويم الثابت والشفاف وخطط العلاج المخصصة للبالغين والأطفال.", initials: "عك", color: "#0284c7" },
+  { name: "د. عائشة غازي", role: "طب الأسنان العام والتجميلي", desc: "خبرة واسعة في طب الأسنان العام، التجميل، والعلاجات الترميمية.", initials: "عغ", color: "#FF8C00" },
+  { name: "د. إيمان الكامل", role: "طب الأسنان العام", desc: "رعاية لطيفة ومتخصصة لجميع أفراد العائلة من الأطفال حتى كبار السن.", initials: "إك", color: "#059669" },
+  { name: "د. هشام القدسي", role: "طب الأسنان العام", desc: "متخصص في معالجة جذور الأسنان وترميمها وعلاج أمراض اللثة.", initials: "هق", color: "#7C3AED" },
+  { name: "د. خلدون البرهي", role: "جراحة الفم والوجه والفكين", desc: "خبير في جراحة الفك والوجه، زراعة الأسنان، وخلع الضروس المعقدة.", initials: "خب", color: "#DC2626" },
 ];
 
 const TRUST_STRIP = [
@@ -101,17 +60,62 @@ const ABOUT_CARDS = [
   { icon: ClipboardList, title: "خطط علاج واضحة", subtitle: "متابعة مستمرة لكل حالة", color: "#FF8C00" },
 ];
 
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function PublicHomePage() {
+  const [s, setSettings] = useState<Record<string, string>>(FALLBACK);
+
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+    fetch(`${apiBase}/api/public/website-settings`, {
+      method: "GET",
+      headers: { "Accept-Language": "ar" },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed");
+        return res.json();
+      })
+      .then((data) => {
+        // Merge with fallback for null safety
+        const merged: Record<string, string> = { ...FALLBACK };
+        for (const key of Object.keys(FALLBACK)) {
+          merged[key] = data?.[key] ?? FALLBACK[key];
+        }
+        setSettings(merged);
+      })
+      .catch(() => {
+        // Fallback already set — homepage still works
+      });
+  }, []);
+
+  // Safe accessor with fallback
+  const get = (key: string): string => s[key] ?? FALLBACK[key] ?? "";
+
+  // Resolve image URL: if relative (from backend /uploads), prepend API base
+  const resolveImg = (url: string | null | undefined): string | null => {
+    if (!url || url.trim() === "") return null;
+    if (url.startsWith("http")) return url;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+    return `${apiBase}${url}`;
+  };
+
+  const heroImgUrl = resolveImg(get("heroImageUrl"));
+
   return (
     <div dir="rtl">
       {/* ═══════════════════════════════════════ HERO ══════════════════════════════════════ */}
       <section className="relative text-white overflow-hidden" style={{ backgroundColor: "#0F172A" }}>
+        {/* Hero image overlay (if uploaded) */}
+        {heroImgUrl && (
+          <div
+            className="absolute inset-0 bg-cover bg-center opacity-20"
+            style={{ backgroundImage: `url(${heroImgUrl})` }}
+          />
+        )}
         {/* Subtle dot pattern */}
         <div
           className="absolute inset-0 opacity-5"
           style={{
-            backgroundImage:
-              "radial-gradient(circle, #87CEEB 1px, transparent 1px)",
+            backgroundImage: "radial-gradient(circle, #87CEEB 1px, transparent 1px)",
             backgroundSize: "32px 32px",
           }}
         />
@@ -133,24 +137,20 @@ export default function PublicHomePage() {
               style={{ backgroundColor: "rgba(135,206,235,0.08)", borderColor: "rgba(135,206,235,0.25)", color: "#87CEEB" }}
             >
               <Activity className="w-4 h-4" />
-              <span className="font-semibold tracking-wide">خبرة أكاديمية وسريرية</span>
+              <span className="font-semibold tracking-wide">{get("marketingSlogan")}</span>
             </div>
           </div>
 
           {/* Headline */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-center md:text-right mb-6 max-w-3xl md:mx-0 mx-auto">
-            ابتسامة تجمع بين{" "}
-            <span style={{ color: "#87CEEB" }}>دقة العلم</span>
-            <br className="hidden sm:block" />
-            {" "}ولمسة{" "}
-            <span style={{ color: "#FF8C00" }}>الفن</span>
+            {get("heroTitle")}
           </h1>
 
           <p
             className="text-base sm:text-lg md:text-xl leading-relaxed text-center md:text-right mb-10 max-w-2xl md:mx-0 mx-auto"
             style={{ color: "#94a3b8" }}
           >
-            مركز الدكتور عقلان الكامل يقدم رعاية متكاملة في تقويم وزراعة وتجميل الأسنان، مع تشخيص دقيق وخطط علاج واضحة ومتابعة مستمرة لكل حالة.
+            {get("heroSubtitle")}
           </p>
 
           {/* CTA Buttons */}
@@ -160,26 +160,26 @@ export default function PublicHomePage() {
               className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-bold text-lg text-white shadow-xl transition-opacity hover:opacity-90"
               style={{ backgroundColor: "#FF8C00" }}
             >
-              احجز موعدك الآن
+              {get("bookingButtonText")}
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <a
-              href="https://wa.me/967770245745"
+              href={`https://wa.me/${get("whatsapp")}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-semibold text-white border transition-colors hover:bg-white/10"
               style={{ borderColor: "rgba(255,255,255,0.15)", backgroundColor: "rgba(255,255,255,0.05)" }}
             >
               <MessageCircle className="w-5 h-5 text-green-400" />
-              تواصل واتساب
+              {get("whatsappButtonText")}
             </a>
             <a
-              href="tel:04253028"
+              href={`tel:${get("phone").replace(/-/g, "")}`}
               className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl font-medium transition-colors hover:bg-white/5"
               style={{ color: "rgba(255,255,255,0.65)", borderColor: "rgba(255,255,255,0.1)" }}
             >
               <Phone className="w-4 h-4" />
-              04-253028
+              {get("phone")}
             </a>
           </div>
 
@@ -251,15 +251,10 @@ export default function PublicHomePage() {
               </h2>
               <div className="w-16 h-1.5 rounded-full" style={{ backgroundColor: "#87CEEB" }} />
               <p className="text-lg text-slate-500 leading-relaxed">
-                يقدم مركز الدكتور عقلان الكامل خدمات تخصصية شاملة في تقويم وزراعة وتجميل الأسنان، معتمدين على تشخيص دقيق، وخطط علاج واضحة، ومتابعة مستمرة للحالات للمساعدة في الوصول إلى نتائج علاجية دقيقة ومناسبة لكل حالة.
+                {get("aboutText")}
               </p>
               <div className="grid grid-cols-2 gap-3 pt-2">
-                {[
-                  "تشخيص دقيق",
-                  "متابعة دورية",
-                  "فريق متعدد التخصصات",
-                  "خطط علاج واضحة",
-                ].map((item) => (
+                {["تشخيص دقيق", "متابعة دورية", "فريق متعدد التخصصات", "خطط علاج واضحة"].map((item) => (
                   <div key={item} className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                     <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: "#87CEEB" }} />
                     {item}
@@ -268,7 +263,7 @@ export default function PublicHomePage() {
               </div>
             </div>
 
-            {/* Visual cards — no external images */}
+            {/* Visual cards */}
             <div className="grid grid-cols-2 gap-4">
               {ABOUT_CARDS.map(({ icon: Icon, title, subtitle, color }) => (
                 <div
@@ -301,7 +296,7 @@ export default function PublicHomePage() {
               خدماتنا التخصصية
             </div>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
-              حلول طبية متكاملة لابتسامة صحية وواثقة
+              {get("servicesSectionTitle")}
             </h2>
             <div className="w-16 h-1.5 rounded-full mx-auto" style={{ backgroundColor: "#87CEEB" }} />
           </div>
@@ -389,9 +384,9 @@ export default function PublicHomePage() {
           </p>
           <div className="flex items-center justify-center gap-2 text-sm mb-10" style={{ color: "#64748b" }}>
             <MapPin className="w-4 h-4" style={{ color: "#87CEEB" }} />
-            تعز، اليمن — شارع التحرير الأعلى
+            {get("address")}
             <span className="mx-2">·</span>
-            السبت – الخميس: 8 ص – 8 م
+            {get("workingHours")}
           </div>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
@@ -399,18 +394,18 @@ export default function PublicHomePage() {
               className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-bold text-lg text-white shadow-xl transition-opacity hover:opacity-90"
               style={{ backgroundColor: "#FF8C00" }}
             >
-              احجز موعدك الآن
+              {get("bookingButtonText")}
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <a
-              href="https://wa.me/967770245745"
+              href={`https://wa.me/${get("whatsapp")}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl font-semibold text-white border transition-colors hover:bg-white/10"
               style={{ borderColor: "rgba(255,255,255,0.15)", backgroundColor: "rgba(255,255,255,0.05)" }}
             >
               <MessageCircle className="w-5 h-5 text-green-400" />
-              تواصل عبر الواتساب
+              {get("whatsappButtonText")}
             </a>
           </div>
         </div>

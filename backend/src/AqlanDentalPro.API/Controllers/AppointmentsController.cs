@@ -13,9 +13,30 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/appointments")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp) : ControllerBase
 {
+    /// <summary>Check if a time slot conflicts with existing appointments</summary>
+    [HttpPost("check-conflict")]
+    public async Task<IActionResult> CheckConflict([FromBody] CheckConflictRequest req)
+    {
+        var hasConflict = await service.CheckConflictAsync(
+            req.DoctorId, req.Date, req.StartTime, req.DurationMinutes, req.ExcludeId);
+        return Ok(new { hasConflict });
+    }
+
+    /// <summary>Get daily appointment statistics for a specific date</summary>
+    [HttpGet("stats")]
+    public async Task<IActionResult> GetDailyStats([FromQuery] string? date)
+    {
+        var targetDate = string.IsNullOrWhiteSpace(date)
+            ? DateOnly.FromDateTime(DateTime.UtcNow)
+            : DateOnly.Parse(date);
+
+        var stats = await service.GetDailyStatsAsync(targetDate);
+        return Ok(stats);
+    }
+
     [HttpGet("today")]
     public async Task<IActionResult> GetToday([FromQuery] Guid? doctorId)
     {

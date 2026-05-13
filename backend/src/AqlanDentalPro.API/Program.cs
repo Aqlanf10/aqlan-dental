@@ -19,6 +19,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using StackExchange.Redis;
+using System.Net;
+using System.Threading.RateLimiting;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -44,7 +46,12 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 var jwtKey = builder.Configuration["Jwt:SecretKey"]
     ?? throw new InvalidOperationException("JWT SecretKey is required");
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultForbidScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
     .AddJwtBearer(opts =>
     {
         opts.TokenValidationParameters = new TokenValidationParameters
@@ -118,6 +125,14 @@ builder.Services.AddAuthorization(opts =>
     // Patient portal access - for patient-facing mobile app
     opts.AddPolicy("PatientAccess", policy =>
         policy.RequireRole("Patient"));
+
+    // Staff-only policy: excludes Patient portal users from staff endpoints.
+    // Any authenticated user without the Patient role is considered staff.
+    // Applied to controllers that previously used bare [Authorize] which
+    // allowed Patient JWTs to access staff endpoints (TD-009 security fix).
+    opts.AddPolicy("StaffOnly", policy =>
+        policy.RequireAuthenticatedUser()
+              .RequireAssertion(ctx => !ctx.User.IsInRole(nameof(UserRole.Patient))));
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
@@ -133,14 +148,80 @@ builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
         {
             // Allow configured origins
             if (allowedOrigins.Contains(origin)) return true;
-            // Allow any Vercel preview deployment URL (*.vercel.app)
-            if (origin.EndsWith(".vercel.app", StringComparison.OrdinalIgnoreCase)) return true;
+            // C-01 FIX: Removed wildcard *.vercel.app — only explicitly listed origins are allowed
             return false;
         })
         .AllowAnyHeader()
         .AllowAnyMethod()
         .AllowCredentials();
 }));
+
+// ── Rate Limiting (H1 FIX: prevent brute-force on auth endpoints) ────────────
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("AuthPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 2
+            }));
+
+    // P4 FIX: Strict rate limiting for public booking to prevent spam
+    options.AddPolicy("BookingPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 1
+            }));
+
+    // P7 FIX: Portal auth rate limiting (prevents abuse of forgot-password WhatsApp messages)
+    options.AddPolicy("PortalAuthPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 2,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 1
+            }));
+
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, IPAddress>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress ?? IPAddress.Loopback,
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 10
+            }));
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = retryAfter.TotalSeconds.ToString();
+        }
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            error = "طلبات كثيرة جداً. حاول مرة أخرى بعد قليل.",
+            retryAfterSeconds = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var r) ? r.TotalSeconds : 60
+        }, cancellationToken);
+    };
+});
 
 // ── DI — Repositories ────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -165,6 +246,9 @@ builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();
 builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
 builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
+builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
+builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
+builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddHttpClient("WhatsApp");
 
 builder.Services.AddHttpContextAccessor();
@@ -215,80 +299,136 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ── PatientAccounts Schema Hotfix (unconditional, idempotent) ────────────────
-// Adds missing columns for portal authentication. Uses IF NOT EXISTS so it is safe to run repeatedly.
+// ── One-time Admin Password Reset ─────────────────────────────────
+// Resets the admin password to "AqlanDental2026!" if the reset flag is not yet set.
+// This runs ONCE and then sets a flag so it never runs again.
 try
 {
-    using var hotfixScope = app.Services.CreateScope();
-    var hotfixDb = hotfixScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var hotfixLogger = hotfixScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    using var resetScope = app.Services.CreateScope();
+    var resetDb     = resetScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var resetLogger = resetScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-    await hotfixDb.Database.ExecuteSqlRawAsync("""
+    // Check if reset has already been done
+    var alreadyReset = await resetDb.Database.ExecuteSqlRawAsync("""
         DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'Username') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "Username" text NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordHash" text NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordSalt') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordSalt" text NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'MustChangePassword') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "MustChangePassword" boolean NOT NULL DEFAULT true;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PortalAccountActive') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "PortalAccountActive" boolean NOT NULL DEFAULT true;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'LinkedUserId') THEN
-                ALTER TABLE "PatientAccounts" ADD COLUMN "LinkedUserId" uuid NULL;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Settings') THEN
+                CREATE TABLE "Settings" (
+                    "Id" uuid NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+                    "Key" character varying(200) NOT NULL,
+                    "Value" text NULL,
+                    "Category" character varying(50) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "IsActive" boolean NOT NULL DEFAULT true
+                );
             END IF;
         END $$;
     """);
-    hotfixLogger.LogInformation("PatientAccounts schema hotfix applied successfully");
+
+    // Check if the reset flag exists
+    var flagExists = false;
+    using (var cmd = resetDb.Database.GetDbConnection().CreateCommand())
+    {
+        cmd.CommandText = """
+            SELECT COUNT(*) FROM "Settings" WHERE "Key" = 'admin.password.reset.2026'
+        """;
+        await resetDb.Database.OpenConnectionAsync();
+        var result = await cmd.ExecuteScalarAsync();
+        await resetDb.Database.CloseConnectionAsync();
+        flagExists = result != null && Convert.ToInt64(result) > 0;
+    }
+
+    if (!flagExists)
+    {
+        // C-02 FIX: Use environment variable instead of hardcoded password
+        var newPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") ?? "ChangeMeImmediately2026!";
+        var salt = AqlanDentalPro.Application.Services.AuthService.GenerateSalt();
+        var hash = AqlanDentalPro.Application.Services.AuthService.HashPassword(newPassword, salt);
+
+        await resetDb.Database.ExecuteSqlRawAsync("""
+            UPDATE "Users" SET "PasswordHash" = {0}, "PasswordSalt" = {1}, "IsActive" = true, "UpdatedAt" = NOW()
+            WHERE "Username" = 'admin'
+        """, hash, salt);
+
+        // Set the flag so this never runs again
+        await resetDb.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "Settings" ("Id", "Key", "Value", "Category", "UpdatedAt")
+            VALUES (gen_random_uuid(), 'admin.password.reset.2026', 'done', 'system', NOW())
+        """);
+
+        resetLogger.LogWarning("Admin password has been reset to default value. Username: admin. CHANGE PASSWORD IMMEDIATELY!");
+    }
+    else
+    {
+        resetLogger.LogInformation("Admin password reset already applied, skipping");
+    }
 }
 catch (Exception ex)
 {
-    var hotfixLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    hotfixLogger2.LogWarning(ex, "PatientAccounts schema hotfix failed (non-fatal)");
+    var resetLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    resetLogger2.LogWarning(ex, "Admin password reset hotfix failed (non-fatal)");
 }
 
-// ── Conversation RecipientType Hotfix (unconditional, idempotent) ────────────
+// ── Website Settings Seed (unconditional, idempotent) ────────────────────────
 try
 {
-    using var recipientHotfixScope = app.Services.CreateScope();
-    var recipientHotfixDb = recipientHotfixScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var recipientHotfixLogger = recipientHotfixScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    using var wsScope = app.Services.CreateScope();
+    var wsDb     = wsScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var wsLogger = wsScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientType') THEN
-                ALTER TABLE "Conversations" ADD COLUMN "RecipientType" character varying(20) NULL;
-            END IF;
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'RecipientUserId') THEN
-                ALTER TABLE "Conversations" ADD COLUMN "RecipientUserId" uuid NULL;
-            END IF;
-        END $$;
-    """);
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientType" ON "Conversations" ("RecipientType");
-    """);
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_Conversations_RecipientUserId" ON "Conversations" ("RecipientUserId");
-    """);
-    await recipientHotfixDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260503000000_AddConversationRecipientType', '8.0.8'
-        WHERE NOT EXISTS (
-            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType'
-        );
-    """);
-    recipientHotfixLogger.LogInformation("Conversation RecipientType/RecipientUserId hotfix applied successfully");
+    var websiteDefaults = new Dictionary<string, string>
+    {
+        ["website.clinicName"]           = "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان",
+        ["website.heroTitle"]            = "ابتسامة تجمع بين دقة العلم ولمسة الفن",
+        ["website.heroSubtitle"]         = "مركز الدكتور عقلان الكامل يقدم رعاية متكاملة في تقويم وزراعة وتجميل الأسنان، مع تشخيص دقيق وخطط علاج واضحة ومتابعة مستمرة لكل حالة.",
+        ["website.marketingSlogan"]      = "قيادة طبية… وابتسامة بثقة",
+        ["website.aboutText"]            = "يقدم مركز الدكتور عقلان الكامل خدمات تخصصية شاملة في تقويم وزراعة وتجميل الأسنان، معتمدين على تشخيص دقيق، وخطط علاج واضحة، ومتابعة مستمرة للحالات للمساعدة في الوصول إلى نتائج علاجية دقيقة ومناسبة لكل حالة.",
+        ["website.phone"]                = "04-253028",
+        ["website.whatsapp"]             = "967770245745",
+        ["website.address"]              = "تعز، اليمن — شارع التحرير الأعلى",
+        ["website.workingHours"]         = "السبت – الخميس: 8 ص – 8 م",
+        ["website.facebook"]             = "",
+        ["website.instagram"]            = "",
+        ["website.logoUrl"]              = "",
+        ["website.heroImageUrl"]         = "",
+        ["website.servicesSectionTitle"] = "حلول طبية متكاملة لابتسامة صحية وواثقة",
+        ["website.bookingButtonText"]    = "احجز موعدك الآن",
+        ["website.whatsappButtonText"]   = "تواصل عبر الواتساب",
+    };
+
+    var existingKeys = await wsDb.Settings
+        .Where(s => s.Category == "website")
+        .Select(s => s.Key)
+        .ToListAsync();
+
+    foreach (var (key, value) in websiteDefaults)
+    {
+        if (!existingKeys.Contains(key))
+        {
+            wsDb.Settings.Add(new AqlanDentalPro.Domain.Entities.Setting
+            {
+                Key = key,
+                Value = value,
+                Category = "website",
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+    }
+
+    if (wsDb.ChangeTracker.HasChanges())
+    {
+        await wsDb.SaveChangesAsync();
+        wsLogger.LogInformation("Website settings seeded ({Count} new keys)", websiteDefaults.Count - existingKeys.Count);
+    }
+    else
+    {
+        wsLogger.LogInformation("Website settings already exist, no seeding needed");
+    }
 }
 catch (Exception ex)
 {
-    var recipientHotfixLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    recipientHotfixLogger2.LogWarning(ex, "Conversation RecipientType hotfix failed (non-fatal)");
+    var wsLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
 }
 
 // ── BookingRequests Table Hotfix (unconditional, idempotent) ─────────────────
@@ -376,7 +516,8 @@ catch (Exception ex)
     msgEditLogger2.LogWarning(ex, "Message edit fields hotfix failed (non-fatal)");
 }
 
-// ── Migrate + Seed (gated by ENABLE_STARTUP_DB_MAINTENANCE) ──────────────────
+// ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
+// TD-020: remaining raw SQL blocks — see docs/technical-debt/TD-020-raw-sql-inventory.md
 var enableStartupDbMaintenance =
     builder.Configuration.GetValue<bool>("ENABLE_STARTUP_DB_MAINTENANCE");
 
@@ -387,56 +528,41 @@ if (enableStartupDbMaintenance)
         var db     = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
+    // ── Acquire advisory lock ───────────────────────────────────────────────
+    var lockKey = builder.Configuration.GetValue<int>("DB_MAINTENANCE_LOCK_KEY", 918273645);
+    var acquiredLock = false;
+    try
+    {
+        await db.Database.OpenConnectionAsync();
+        using (var lockCmd = db.Database.GetDbConnection().CreateCommand())
+        {
+            lockCmd.CommandText = $"SELECT pg_try_advisory_lock({lockKey})";
+            var lockResult = await lockCmd.ExecuteScalarAsync();
+            acquiredLock = lockResult is bool b && b;
+        }
+    }
+    catch (Exception lockEx)
+    {
+        logger.LogWarning(lockEx, "Failed to acquire advisory lock for DB maintenance, proceeding without lock");
+        acquiredLock = true; // Proceed without lock if advisory locks aren't supported
+    }
+
+    if (!acquiredLock)
+    {
+        logger.LogInformation("DB maintenance advisory lock not acquired — another instance is running maintenance. Skipping.");
+    }
+    else
+    {
+        logger.LogInformation("DB maintenance advisory lock acquired — proceeding with schema maintenance");
+
     // Pre-migration: Add new columns that EF Core expects but may not exist yet
     try
     {
-        // Add DeletedAt/DeletedBy to all tables that inherit BaseEntity
-        var baseEntityTables = new[] {
-            "Patients", "Users", "Doctors", "Branches", "Appointments",
-            "Conversations", "ConversationParticipants", "Messages", "MessageReads",
-            "Visits", "Payments", "Contracts", "OrthoCases", "OrthoVisits",
-            "TreatmentStages", "RetentionRecords", "SurgeryCases", "Prescriptions",
-            "Notifications", "AuditLogs", "Settings", "Inventory", "LabOrders",
-            "InternalReferrals", "ClinicalPhotos", "Radiographs", "Documents",
-            "DentalCharts", "ToothConditions", "GeneralTreatments",
-            "WhatsAppMessages", "WhatsAppTemplates", "PatientAccounts",
-            "CephAnalyses", "PerioRecords", "GeneralTreatmentPlanItems",
-            "MedicalHistories", "DentalHistories", "Receipts"
-        };
-        foreach (var table in baseEntityTables)
-        {
-            try
-            {
-                await db.Database.ExecuteSqlRawAsync($"""
-                    DO $$ BEGIN
-                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}') THEN
-                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedAt') THEN
-                                ALTER TABLE "{table}" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
-                            END IF;
-                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedBy') THEN
-                                ALTER TABLE "{table}" ADD COLUMN "DeletedBy" uuid NULL;
-                            END IF;
-                        END IF;
-                    END $$;
-                """);
-            }
-            catch (Exception tableEx)
-            {
-                logger.LogWarning(tableEx, "Skipping soft-delete columns for table {Table}", table);
-            }
-        }
+        // B2 (soft-delete columns) removed in TD-020 Phase C1-a --
+        // now handled by EF migration 20260522000000_AddSoftDeleteColumnsToLegacyTables
 
-        // Add NormalizedPhone/NormalizedWhatsApp to Patients
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone') THEN
-                    ALTER TABLE "Patients" ADD COLUMN "NormalizedPhone" character varying(20) NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedWhatsApp') THEN
-                    ALTER TABLE "Patients" ADD COLUMN "NormalizedWhatsApp" character varying(20) NULL;
-                END IF;
-            END $$;
-        """);
+        // B3/B8/B9 normalized phone schema removed in TD-020 Phase C1-b;
+        // now handled by EF migration 20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes.
 
         // Backfill NormalizedPhone/NormalizedWhatsApp
         await db.Database.ExecuteSqlRawAsync("""
@@ -505,48 +631,8 @@ if (enableStartupDbMaintenance)
             FROM duplicates
             WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
         """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedPhone" 
-                ON "Patients" ("NormalizedPhone") 
-                WHERE "NormalizedPhone" IS NOT NULL AND "NormalizedPhone" != '';
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedWhatsApp" 
-                ON "Patients" ("NormalizedWhatsApp") 
-                WHERE "NormalizedWhatsApp" IS NOT NULL AND "NormalizedWhatsApp" != '';
-        """);
-
-        // Add ConversationType/PatientId/BranchId to Conversations
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
-                    ALTER TABLE "Conversations" ADD COLUMN "ConversationType" character varying(20) NOT NULL DEFAULT 'StaffToStaff';
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'PatientId') THEN
-                    ALTER TABLE "Conversations" ADD COLUMN "PatientId" uuid NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId') THEN
-                    ALTER TABLE "Conversations" ADD COLUMN "BranchId" uuid NULL;
-                END IF;
-            END $$;
-        """);
-
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId" ON "Conversations" ("PatientId");
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType" ON "Conversations" ("ConversationType");
-        """);
-
-        // Add FK for Conversations.PatientId -> Patients.Id
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId') THEN
-                    ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Patients_PatientId" 
-                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE SET NULL;
-                END IF;
-            END $$;
-        """);
+        // B10-B13 conversation schema removed in TD-020 Phase C1-d;
+        // now handled by EF migration 20260524000000_AddConversationPatientBranchFieldsAndIndexes.
 
         // Record migrations in history
         await db.Database.ExecuteSqlRawAsync("""
@@ -826,8 +912,11 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to ensure Sprint 5 DoctorSchedules table");
     }
 
-    // NOTE: Conversation RecipientType/RecipientUserId columns are ensured by the
-    // unconditional hotfix block above (lines ~255-291). No duplicate needed here.
+    // NOTE: Conversation RecipientType/RecipientUserId columns, BookingRequests table,
+    // Message IsEdited/EditedAt fields, BookingRequests DoctorId, and Sprint 6 Doctor
+    // compensation columns were previously in unconditional hotfix blocks.
+    // They have been consolidated into this gated maintenance block with advisory lock.
+    // The remaining pre-migration blocks above already ensure all required columns.
 
     try
     {
@@ -986,6 +1075,150 @@ if (enableStartupDbMaintenance)
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEMPORARY PRODUCTION SAFETY NET — DO NOT EXTEND
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Ensure ClinicQueueItems table exists (Sprint 7).
+    // The migration should create this via MigrateAsync, but we add a safety net
+    // in case the migration fails to apply on Railway.
+    //
+    // TD-010: Remove this entire safety net block after migration stability is
+    // confirmed on Railway (at least 2 weeks of clean deployments with no
+    // "Failed to ensure ClinicQueueItems table" warnings in logs).
+    // After removal, the EF migration alone will be responsible for schema.
+    // ─────────────────────────────────────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "ClinicQueueItems" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "PatientId" uuid NOT NULL,
+                "AppointmentId" uuid NULL,
+                "VisitId" uuid NULL,
+                "DoctorId" uuid NULL,
+                "RoomName" character varying(50) NULL,
+                "Status" character varying(30) NOT NULL DEFAULT 'Waiting',
+                "CalledAt" timestamp with time zone NULL,
+                "CalledBy" uuid NULL,
+                "InRoomAt" timestamp with time zone NULL,
+                "StartedAt" timestamp with time zone NULL,
+                "CompletedAt" timestamp with time zone NULL,
+                "CancelledAt" timestamp with time zone NULL,
+                "QueueDate" date NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NOT NULL,
+                "IsActive" boolean NOT NULL DEFAULT true,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS "IX_ClinicQueueItems_QueueDate_Status"
+                ON "ClinicQueueItems" ("QueueDate", "Status");
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ClinicQueueItems_PatientId_QueueDate_Active"
+                ON "ClinicQueueItems" ("PatientId", "QueueDate")
+                WHERE "Status" NOT IN ('Completed', 'Cancelled');
+        """);
+
+        // Add foreign keys only if they don't exist
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Patients_PatientId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Appointments_AppointmentId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Appointments_AppointmentId"
+                        FOREIGN KEY ("AppointmentId") REFERENCES "Appointments"("Id") ON DELETE SET NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Visits_VisitId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Visits_VisitId"
+                        FOREIGN KEY ("VisitId") REFERENCES "Visits"("Id") ON DELETE SET NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Doctors_DoctorId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Record the migration in history if not already recorded
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260514000000_AddClinicQueueItem', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
+            );
+        """);
+
+        logger.LogInformation("ClinicQueueItems table ensured (created if not exists)");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems table");
+    }
+
+    // TEMPORARY SAFETY NET — Sprint 7 tracking fields migration
+    // Ensures new columns (AddedByUserId, CalledByUserId, Notes) exist
+    // and migrates data from old CalledBy column.
+    // TD-011: Remove this block after migration 20260520000000 stability confirmed.
+    try
+    {
+        // Add new columns if they don't exist
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'AddedByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "AddedByUserId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "CalledByUserId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'Notes') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "Notes" character varying(500) NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Migrate old CalledBy data to CalledByUserId if old column still exists
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledBy') THEN
+                    UPDATE "ClinicQueueItems" SET "CalledByUserId" = "CalledBy" WHERE "CalledBy" IS NOT NULL AND "CalledByUserId" IS NULL;
+                    ALTER TABLE "ClinicQueueItems" DROP COLUMN "CalledBy";
+                END IF;
+            END $$;
+        """);
+
+        // Add FKs for new columns if they don't exist
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_AddedByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_AddedByUserId"
+                        FOREIGN KEY ("AddedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_CalledByUserId') THEN
+                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_CalledByUserId"
+                        FOREIGN KEY ("CalledByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Record the migration in history if not already recorded
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+            SELECT '20260520000000_AddClinicQueueItemTrackingFields', '8.0.8'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields'
+            );
+        """);
+
+        logger.LogInformation("ClinicQueueItems tracking fields ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems tracking fields");
+    }
+
     await DbSeeder.SeedAsync(db, logger);
 
     // Seed PatientAccounts for existing patients
@@ -1009,6 +1242,26 @@ if (enableStartupDbMaintenance)
     {
         logger.LogWarning(ex, "Failed to seed PatientAccounts for existing patients");
     }
+    } // end else (acquiredLock)
+
+    // ── Release advisory lock ───────────────────────────────────────────────
+    if (acquiredLock)
+    {
+        try
+        {
+            using var releaseCmd = db.Database.GetDbConnection().CreateCommand();
+            releaseCmd.CommandText = $"SELECT pg_advisory_unlock({lockKey})";
+            await releaseCmd.ExecuteNonQueryAsync();
+            logger.LogInformation("DB maintenance advisory lock released");
+        }
+        catch (Exception releaseEx)
+        {
+            logger.LogWarning(releaseEx, "Failed to release advisory lock (will auto-release on connection close)");
+        }
+    }
+
+    try { await db.Database.CloseConnectionAsync(); } catch { /* ignore */ }
+
     } // end using scope
 } // end if (enableStartupDbMaintenance)
 else
@@ -1017,6 +1270,7 @@ else
 }
 
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
+app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
@@ -1052,11 +1306,16 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = "/uploads"
 });
 
-app.UseSwagger();
-app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Dental Pro v1"));
+// C-01 FIX: Swagger only enabled in non-production environments
+if (!app.Environment.IsProduction())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Aqlan Dental Pro v1"));
+}
 
 app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontend");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<MustChangePasswordMiddleware>();

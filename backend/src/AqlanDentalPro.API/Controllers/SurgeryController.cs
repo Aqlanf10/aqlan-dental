@@ -79,6 +79,7 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.SurgeryCases
             .Include(s => s.Patient)
             .Include(s => s.Doctor)

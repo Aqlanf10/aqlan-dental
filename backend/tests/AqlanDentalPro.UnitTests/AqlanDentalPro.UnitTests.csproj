@@ -6,6 +6,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\AqlanDentalPro.API\AqlanDentalPro.API.csproj" />
     <ProjectReference Include="..\..\src\AqlanDentalPro.Application\AqlanDentalPro.Application.csproj" />
     <ProjectReference Include="..\..\src\AqlanDentalPro.Domain\AqlanDentalPro.Domain.csproj" />
     <ProjectReference Include="..\..\src\AqlanDentalPro.Infrastructure\AqlanDentalPro.Infrastructure.csproj" />
@@ -19,6 +20,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Authorization" Version="8.0.11" />
     <PackageReference Include="Moq" Version="4.20.72" />
   </ItemGroup>
 </Project>

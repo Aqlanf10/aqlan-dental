@@ -6,6 +6,7 @@ import {
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   BarChart2, Package, FlaskConical, Settings, LogOut,
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock,
+  UserRound, Building2, Monitor,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,9 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/patients",     label: "المرضى",             icon: Users,           roles: [] },
   { href: "/appointments", label: "المواعيد",           icon: Calendar,        roles: [] },
   { href: "/clinic-queue", label: "طابور العيادة",     icon: ClipboardList,   roles: [] },
+  { href: "/clinic-display", label: "شاشة العرض",       icon: Monitor,         roles: [] },
+  { href: "/doctors",      label: "الأطباء",           icon: UserRound,       roles: ["Admin"] },
+  { href: "/branches",     label: "الفروع",            icon: Building2,       roles: ["Admin"] },
   { href: "/schedule",     label: "جداول الأطباء",     icon: Clock,           roles: ["Admin", "Reception"] },
   // Section: تخصصات
   { href: "/ortho",        label: "التقويم",            icon: GitBranch,       roles: ["Admin", "Orthodontist"], section: "تخصصات" },
@@ -60,6 +64,8 @@ const ROLE_LABELS: Record<string, string> = {
   Accountant: "محاسب",
   Assistant: "مساعد",
   BranchManager: "مدير فرع",
+  // L2 FIX: Added fallback for any unmapped roles
+  // Shows the role name directly instead of raw English key
 };
 
 /* ─── Sidebar Component ──────────────────────────────────────────────────────── */
@@ -237,7 +243,7 @@ export function Sidebar() {
               {user?.doctorName ?? user?.username}
             </p>
             <p className="text-[11px] truncate" style={{ color: "rgba(255,255,255,0.4)" }}>
-              {ROLE_LABELS[user?.role ?? ""] ?? user?.role}
+              {ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? "موظف"}
             </p>
           </div>
           <button

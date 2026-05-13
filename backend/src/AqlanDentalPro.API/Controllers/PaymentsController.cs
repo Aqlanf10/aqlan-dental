@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Finance;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(FinanceService service) : ControllerBase
+public class PaymentsController(FinanceService service, IPdfService pdfService) : ControllerBase
 {
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(
@@ -34,6 +35,27 @@ public class PaymentsController(FinanceService service) : ControllerBase
         return Ok(result);
     }
 
+    [HttpPut("payments/{id:guid}")]
+    public async Task<IActionResult> UpdatePayment(Guid id, [FromBody] UpdatePaymentRequest req)
+    {
+        var result = await service.UpdatePaymentAsync(id, req);
+        return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+    }
+
+    [HttpDelete("payments/{id:guid}")]
+    public async Task<IActionResult> DeletePayment(Guid id)
+    {
+        var deleted = await service.DeletePaymentAsync(id);
+        return deleted ? Ok(new { message = "تم حذف الدفعة بنجاح" }) : NotFound(new { message = "الدفعة غير موجودة" });
+    }
+
+    [HttpPost("payments/{id:guid}/refund")]
+    public async Task<IActionResult> RefundPayment(Guid id, [FromBody] RefundPaymentRequest? req)
+    {
+        var result = await service.RefundPaymentAsync(id, req?.Reason);
+        return result == null ? NotFound(new { message = "الدفعة غير موجودة أو ملغاة" }) : Ok(result);
+    }
+
     [HttpGet("finance/summary")]
     public async Task<IActionResult> GetSummary()
     {
@@ -46,5 +68,26 @@ public class PaymentsController(FinanceService service) : ControllerBase
     {
         var result = await service.GetOverdueContractsAsync();
         return Ok(result);
+    }
+
+    [HttpGet("patients/{patientId:guid}/finance-summary")]
+    public async Task<IActionResult> GetPatientFinanceSummary(Guid patientId)
+    {
+        var result = await service.GetPatientFinanceSummaryAsync(patientId);
+        return Ok(result);
+    }
+
+    [HttpGet("payments/{id:guid}/pdf")]
+    public async Task<IActionResult> GetPaymentPdf(Guid id)
+    {
+        try
+        {
+            var pdfBytes = await pdfService.GeneratePaymentReceiptAsync(id);
+            return File(pdfBytes, "application/pdf", $"receipt-{id}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
     }
 }

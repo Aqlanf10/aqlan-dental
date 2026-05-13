@@ -53,6 +53,9 @@ export function WeekCalendar({ anchor, doctorId, onDateClick }: Props) {
   const dates = getWeekDates(anchor);
   const today = toDateStr(new Date());
 
+  // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
+  // The useAppointments hook uses startDate/endDate query params, while the backend expects from/to for date-range queries.
+  // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
   const load = useCallback(() => {
     setLoading(true);
     const q = doctorId ? `&doctorId=${doctorId}` : "";

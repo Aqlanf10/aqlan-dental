@@ -5,19 +5,19 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/uploads")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class UploadsController : ControllerBase
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "image/jpeg", "image/png", "application/pdf",
-        "audio/webm", "audio/ogg", "audio/mp4"
+        "image/jpeg", "image/png", "image/webp", "application/pdf",
+        "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
     };
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".pdf",
-        ".webm", ".ogg", ".mp4"
+        ".jpg", ".jpeg", ".png", ".webp", ".pdf",
+        ".webm", ".ogg", ".mp4", ".m4a", ".mp3", ".wav"
     };
 
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
@@ -58,6 +58,7 @@ public class UploadsController : ControllerBase
             // 3. Fallback to /tmp for containerized environments where wwwroot is read-only
             var fallbackPath = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
             Directory.CreateDirectory(fallbackPath);
+            Console.Error.WriteLine($"[UploadsController] WARNING: Using temp directory for uploads: {fallbackPath}. Files will be LOST on redeploy. Set UPLOADS_PATH env var for persistent storage.");
             return fallbackPath;
         }
     }
@@ -74,7 +75,7 @@ public class UploadsController : ControllerBase
 
         var ext = Path.GetExtension(file.FileName).ToLower();
         if (!AllowedExtensions.Contains(ext))
-            return BadRequest(new { message = "نوع الملف غير مدعوم. المسموح به: JPG، PNG، PDF" });
+            return BadRequest(new { message = "نوع الملف غير مدعوم. المسموح به: JPG، PNG، WEBP، PDF" });
 
         if (!AllowedMimeTypes.Contains(file.ContentType))
             return BadRequest(new { message = "نوع MIME غير مدعوم" });
@@ -84,9 +85,9 @@ public class UploadsController : ControllerBase
         {
             uploadsPath = EnsureUploadsDirectory();
         }
-        catch (Exception ex)
+        catch
         {
-            return StatusCode(500, new { message = "فشل إنشاء مجلد المرفقات", detail = ex.Message });
+            return StatusCode(500, new { message = "فشل إنشاء مجلد المرفقات" });
         }
 
         var fileName = $"{Guid.NewGuid()}{ext}";

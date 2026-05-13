@@ -10,6 +10,7 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 {
     public async Task<List<OrthoCaseListDto>> GetListAsync(int page, int pageSize, Guid? doctorId, string? status, string? search = null, Guid? patientId = null)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var branchId = currentUser.BranchId;
 
         var query = db.OrthoCases

@@ -14,11 +14,56 @@ public class PublicController : ControllerBase
     private readonly AppDbContext _db;
     public PublicController(AppDbContext db) => _db = db;
 
+    /// <summary>إعدادات الموقع العامة (للصفحة الرئيسية)</summary>
+    [HttpGet("public/website-settings")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetWebsiteSettings()
+    {
+        var websiteKeys = new[]
+        {
+            "website.clinicName", "website.heroTitle", "website.heroSubtitle",
+            "website.marketingSlogan", "website.aboutText", "website.phone",
+            "website.whatsapp", "website.address", "website.workingHours",
+            "website.facebook", "website.instagram", "website.logoUrl",
+            "website.heroImageUrl", "website.servicesSectionTitle",
+            "website.bookingButtonText", "website.whatsappButtonText"
+        };
+
+        var settings = await _db.Settings
+            .AsNoTracking()
+            .Where(s => s.Category == "website")
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+
+        // Build response with fallback defaults
+        var result = new Dictionary<string, string?>
+        {
+            ["clinicName"]           = settings.GetValueOrDefault("website.clinicName")           ?? "مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان",
+            ["heroTitle"]            = settings.GetValueOrDefault("website.heroTitle")            ?? "ابتسامة تجمع بين دقة العلم ولمسة الفن",
+            ["heroSubtitle"]         = settings.GetValueOrDefault("website.heroSubtitle")         ?? "مركز الدكتور عقلان الكامل يقدم رعاية متكاملة في تقويم وزراعة وتجميل الأسنان، مع تشخيص دقيق وخطط علاج واضحة ومتابعة مستمرة لكل حالة.",
+            ["marketingSlogan"]      = settings.GetValueOrDefault("website.marketingSlogan")      ?? "قيادة طبية… وابتسامة بثقة",
+            ["aboutText"]            = settings.GetValueOrDefault("website.aboutText")            ?? "يقدم مركز الدكتور عقلان الكامل خدمات تخصصية شاملة في تقويم وزراعة وتجميل الأسنان، معتمدين على تشخيص دقيق، وخطط علاج واضحة، ومتابعة مستمرة للحالات للمساعدة في الوصول إلى نتائج علاجية دقيقة ومناسبة لكل حالة.",
+            ["phone"]                = settings.GetValueOrDefault("website.phone")                ?? "04-253028",
+            ["whatsapp"]             = settings.GetValueOrDefault("website.whatsapp")             ?? "967770245745",
+            ["address"]              = settings.GetValueOrDefault("website.address")              ?? "تعز، اليمن — شارع التحرير الأعلى",
+            ["workingHours"]         = settings.GetValueOrDefault("website.workingHours")         ?? "السبت – الخميس: 8 ص – 8 م",
+            ["facebook"]             = settings.GetValueOrDefault("website.facebook")             ?? "",
+            ["instagram"]            = settings.GetValueOrDefault("website.instagram")            ?? "",
+            ["logoUrl"]              = settings.GetValueOrDefault("website.logoUrl")              ?? "",
+            ["heroImageUrl"]         = settings.GetValueOrDefault("website.heroImageUrl")         ?? "",
+            ["servicesSectionTitle"] = settings.GetValueOrDefault("website.servicesSectionTitle") ?? "حلول طبية متكاملة لابتسامة صحية وواثقة",
+            ["bookingButtonText"]    = settings.GetValueOrDefault("website.bookingButtonText")    ?? "احجز موعدك الآن",
+            ["whatsappButtonText"]   = settings.GetValueOrDefault("website.whatsappButtonText")   ?? "تواصل عبر الواتساب",
+        };
+
+        return Ok(result);
+    }
+
     [HttpGet("public/queue")]
     [AllowAnonymous]
     public async Task<IActionResult> GetQueue()
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        // H6 FIX: Use UTC for consistent timezone handling
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var items = await _db.Appointments
             .AsNoTracking()
             .Include(a => a.Patient)
@@ -28,10 +73,12 @@ public class PublicController : ControllerBase
             .Select(a => new
             {
                 a.Id,
-                PatientDisplayName = a.Patient.FirstName + " " + a.Patient.LastName.Substring(0, 1) + ".",
+                // H6 FIX: Safe substring — prevents crash if LastName is null or empty
+                PatientDisplayName = a.Patient.FirstName + " " + (string.IsNullOrEmpty(a.Patient.LastName) ? "" : a.Patient.LastName.Substring(0, 1)) + ".",
                 AppointmentType = a.AppointmentType ?? "—",
                 StartTime = a.StartTime.ToString(@"hh\:mm"),
-                EndTime = (string?)a.EndTime.ToString(@"hh\:mm"),
+                // H6 FIX: Safe EndTime — prevents crash if EndTime is null
+                EndTime = a.EndTime.ToString(@"hh\:mm"),
                 DoctorName = (string?)(a.Doctor != null ? a.Doctor.Name : null),
                 DoctorColor = (string?)(a.Doctor != null ? a.Doctor.Color : null),
                 Status = a.Status.ToString()
@@ -62,7 +109,7 @@ public class PublicController : ControllerBase
         if (!DateOnly.TryParse(date, out var dateOnly))
             return BadRequest(new { message = "تنسيق التاريخ غير صحيح" });
 
-        if (dateOnly < DateOnly.FromDateTime(DateTime.Today))
+        if (dateOnly < DateOnly.FromDateTime(DateTime.UtcNow))
             return BadRequest(new { message = "لا يمكن الحجز في تاريخ سابق" });
 
         var dotnetDow = (int)dateOnly.DayOfWeek;

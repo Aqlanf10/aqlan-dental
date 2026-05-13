@@ -4,10 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Calendar, Activity, Wallet, Pill, Clock, Scissors,
+  Phone, Stethoscope, AlertTriangle, FileText,
+  CreditCard, Camera, FolderOpen, Plus, MessageCircle,
+  ClipboardList, ChevronLeft, ScanLine, Printer,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
+import type { PatientProfile } from "@/types/patient";
+
+// ─── Interfaces ──────────────────────────────────────────────────────────────
 
 interface PatientSummary {
   totalAppointments: number;
@@ -16,6 +22,20 @@ interface PatientSummary {
   totalPaid: number;
   totalOutstanding: number;
   prescriptionsCount: number;
+  // Extended fields
+  lastVisitDate?: string;
+  lastVisitDoctor?: string;
+  lastVisitDiagnosis?: string;
+  nextAppointmentDate?: string;
+  nextAppointmentTime?: string;
+  nextAppointmentType?: string;
+  nextAppointmentDoctor?: string;
+  chiefComplaint?: string;
+  currentDiagnosis?: string;
+  nextPlannedStep?: string;
+  activeOrthoSummary?: { caseNumber: string; applianceType?: string; stagePercentage: number }[];
+  activeSurgerySummary?: { caseNumber: string; surgeryType: string; status: string }[];
+  medicalAlerts?: string[];
 }
 
 interface TimelineEvent {
@@ -44,31 +64,59 @@ interface SurgeryCase {
   doctorName?: string;
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const ORTHO_STATUS_LABELS: Record<string, string> = { active: "نشطة", completed: "مكتملة", cancelled: "ملغاة" };
 const SURGERY_STATUS_LABELS: Record<string, string> = { scheduled: "مجدولة", in_progress: "جارية", completed: "مكتملة", cancelled: "ملغاة" };
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled: "bg-[#3d7ab518] text-[#3d7ab5]",
-  Confirmed: "bg-clinic-blue-50 text-clinic-blue",
+  Confirmed: "bg-[#3d7ab518] text-[#3d7ab5]",
   Arrived: "bg-yellow-100 text-yellow-700",
   InProgress: "bg-purple-100 text-purple-700",
   Completed: "bg-green-100 text-green-700",
   Cancelled: "bg-[#f1f5f9] text-[#64748b]",
   NoShow: "bg-red-100 text-red-700",
+  signed: "bg-green-100 text-green-700",
+};
+
+const EVENT_ICONS: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
+  appointment: { icon: Calendar, color: "text-[#3d7ab5]", bg: "bg-[#3d7ab5]" },
+  visit: { icon: ClipboardList, color: "text-green-600", bg: "bg-green-600" },
+  payment: { icon: CreditCard, color: "text-purple-600", bg: "bg-purple-600" },
+  document: { icon: FolderOpen, color: "text-amber-600", bg: "bg-amber-600" },
+  photo: { icon: Camera, color: "text-pink-600", bg: "bg-pink-600" },
+  radiograph: { icon: ScanLine, color: "text-purple-600", bg: "bg-purple-600" },
+};
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  appointment: "موعد",
+  visit: "زيارة",
+  payment: "دفعة",
+  document: "مستند",
+  photo: "صورة",
+  radiograph: "أشعة",
 };
 
 interface OverviewTabProps {
   patientId: string;
   summary: PatientSummary | null;
+  patient: PatientProfile;
+  onAddVisit?: () => void;
 }
 
-export function OverviewTab({ patientId, summary }: OverviewTabProps) {
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function OverviewTab({ patientId, summary, patient, onAddVisit }: OverviewTabProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [orthoCases, setOrthoCases] = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     Promise.all([
       api.get<TimelineEvent[]>(`/api/patients/${patientId}/timeline`).then((r) => r.data).catch(() => []),
       api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${patientId}&pageSize=5`).then((r) => r.data).catch(() => []),
@@ -77,33 +125,294 @@ export function OverviewTab({ patientId, summary }: OverviewTabProps) {
       setEvents(timeline);
       setOrthoCases(ortho);
       setSurgeryCases(surgery);
+    }).catch(() => {
+      setError("حدث خطأ أثناء تحميل البيانات");
+    }).finally(() => {
       setLoading(false);
     });
   }, [patientId]);
 
   if (loading) {
     return (
-      <div className="space-y-4 animate-pulse">
-        <div className="h-20 bg-[#f1f5f9] rounded-lg" />
-        <div className="h-32 bg-[#f1f5f9] rounded-lg" />
+      <div className="space-y-4 animate-pulse" dir="rtl">
+        <div className="h-20 bg-[#f1f5f9] rounded-xl" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-28 bg-[#f1f5f9] rounded-xl" />
+          <div className="h-28 bg-[#f1f5f9] rounded-xl" />
+        </div>
+        <div className="h-32 bg-[#f1f5f9] rounded-xl" />
+        <div className="h-48 bg-[#f1f5f9] rounded-xl" />
       </div>
     );
   }
 
-  const statCards: { icon: LucideIcon; label: string; value: string | number; color: string; bg: string }[] = [
-    { icon: Calendar, label: "المواعيد", value: summary?.totalAppointments ?? "—", color: "text-[#3d7ab5]", bg: "bg-[#3d7ab518]" },
-    { icon: Calendar, label: "مكتملة", value: summary?.completedAppointments ?? "—", color: "text-green-600", bg: "bg-green-50" },
-    { icon: Activity, label: "تقويم نشط", value: summary?.activeOrthoCases ?? "—", color: "text-purple-600", bg: "bg-purple-50" },
-    { icon: Wallet, label: "مدفوع", value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-clinic-blue", bg: "bg-clinic-blue-50" },
-    { icon: Wallet, label: "متبقي", value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-orange-600", bg: "bg-orange-50" },
-    { icon: Pill, label: "الوصفات", value: summary?.prescriptionsCount ?? "—", color: "text-rose-600", bg: "bg-rose-50" },
-  ];
+  if (error) {
+    return (
+      <div className="text-center py-12" dir="rtl">
+        <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+        <p className="text-sm text-red-500">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-3 text-xs font-semibold text-[#3d7ab5] hover:underline"
+        >
+          إعادة المحاولة
+        </button>
+      </div>
+    );
+  }
+
+  const whatsappNumber = patient.whatsApp || patient.phone;
+  const patientName = `${patient.firstName} ${patient.lastName}`;
 
   return (
-    <div className="space-y-6" dir="rtl">
-      {/* Summary Cards */}
+    <div className="space-y-5" dir="rtl">
+
+      {/* ════════════════════ Quick Actions ════════════════════ */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={onAddVisit}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl text-white transition shadow-sm"
+          style={{ background: "#22c55e" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#16a34a")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#22c55e")}
+        >
+          <Plus className="w-3.5 h-3.5" />
+          إضافة زيارة
+        </button>
+        <Link
+          href={`/appointments/new?patientId=${patientId}&patientName=${encodeURIComponent(patientName)}`}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+        >
+          <Calendar className="w-3.5 h-3.5" />
+          حجز موعد
+        </Link>
+        <Link
+          href={`/finance/payments?patientId=${patientId}`}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+        >
+          <Wallet className="w-3.5 h-3.5" />
+          إضافة دفعة
+        </Link>
+        <Link
+          href={`/patients/${patientId}?tab=documents`}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+        >
+          <Camera className="w-3.5 h-3.5" />
+          رفع صورة/مستند
+        </Link>
+        <Link
+          href={`/messages?patientId=${patientId}`}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+        >
+          <MessageCircle className="w-3.5 h-3.5" />
+          إرسال رسالة
+        </Link>
+        <Link
+          href={`/patients/${patientId}/print/summary`}
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+        >
+          <Printer className="w-3.5 h-3.5" />
+          طباعة ملخص المريض
+        </Link>
+        {whatsappNumber && (
+          <a
+            href={`https://wa.me/${whatsappNumber.startsWith("0") ? "967" + whatsappNumber.slice(1) : whatsappNumber}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+            style={{ border: "1.5px solid #25D366", color: "#25D366", background: "#fff" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#f0fdf4")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+          >
+            <Phone className="w-3.5 h-3.5" />
+            فتح واتساب
+          </a>
+        )}
+      </div>
+
+      {/* ════════════════════ Medical Alerts ════════════════════ */}
+      {summary?.medicalAlerts && summary.medicalAlerts.length > 0 && (
+        <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
+            <h3 className="text-sm font-bold text-red-700">تنبيهات طبية</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {summary.medicalAlerts.map((alert, idx) => (
+              <span key={idx} className="text-xs px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-semibold">
+                {alert}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════ Patient Clinical Overview ════════════════════ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Last Visit */}
+        <div className="rounded-xl p-3.5 border border-[#e8f0f9] bg-white">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-green-50">
+              <ClipboardList className="w-3.5 h-3.5 text-green-600" />
+            </div>
+            <span className="text-xs font-semibold text-[#94a3b8]">آخر زيارة</span>
+          </div>
+          {summary?.lastVisitDate ? (
+            <div>
+              <p className="text-sm font-bold text-[#0d2137]">{formatArabicDate(summary.lastVisitDate)}</p>
+              {summary.lastVisitDoctor && <p className="text-xs text-[#64748b] mt-0.5">د. {summary.lastVisitDoctor}</p>}
+              {summary.lastVisitDiagnosis && <p className="text-xs text-[#94a3b8] mt-0.5 truncate">{summary.lastVisitDiagnosis}</p>}
+            </div>
+          ) : (
+            <p className="text-xs text-[#94a3b8]">لا توجد زيارات سابقة</p>
+          )}
+        </div>
+
+        {/* Next Appointment */}
+        <div className="rounded-xl p-3.5 border border-[#e8f0f9] bg-white">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-[#3d7ab518]">
+              <Calendar className="w-3.5 h-3.5 text-[#3d7ab5]" />
+            </div>
+            <span className="text-xs font-semibold text-[#94a3b8]">الموعد القادم</span>
+          </div>
+          {summary?.nextAppointmentDate ? (
+            <div>
+              <p className="text-sm font-bold text-[#0d2137]">
+                {formatArabicDate(summary.nextAppointmentDate)}
+                {summary.nextAppointmentTime && (
+                  <span className="text-[#64748b] font-normal"> · {summary.nextAppointmentTime}</span>
+                )}
+              </p>
+              {summary.nextAppointmentType && <p className="text-xs text-[#64748b] mt-0.5">{summary.nextAppointmentType}</p>}
+              {summary.nextAppointmentDoctor && <p className="text-xs text-[#94a3b8] mt-0.5">د. {summary.nextAppointmentDoctor}</p>}
+            </div>
+          ) : (
+            <p className="text-xs text-[#94a3b8]">لا يوجد موعد قادم</p>
+          )}
+        </div>
+
+        {/* Outstanding Balance */}
+        <div className="rounded-xl p-3.5 border border-[#e8f0f9] bg-white">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-orange-50">
+              <Wallet className="w-3.5 h-3.5 text-orange-600" />
+            </div>
+            <span className="text-xs font-semibold text-[#94a3b8]">الرصيد المتبقي</span>
+          </div>
+          <p className="text-sm font-bold text-orange-600">
+            {summary ? `${summary.totalOutstanding.toLocaleString()} ر.ي` : "—"}
+          </p>
+          <p className="text-xs text-[#94a3b8] mt-0.5">
+            مدفوع: {summary ? `${summary.totalPaid.toLocaleString()} ر.ي` : "—"}
+          </p>
+        </div>
+
+        {/* Primary Doctor / Branch */}
+        <div className="rounded-xl p-3.5 border border-[#e8f0f9] bg-white">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-[#3d7ab518]">
+              <Stethoscope className="w-3.5 h-3.5 text-[#3d7ab5]" />
+            </div>
+            <span className="text-xs font-semibold text-[#94a3b8]">الطبيب / الفرع</span>
+          </div>
+          <p className="text-sm font-bold text-[#0d2137]">
+            {patient.primaryDoctorName || "غير محدد"}
+          </p>
+          <p className="text-xs text-[#94a3b8] mt-0.5">
+            {patient.branchName || "—"}
+          </p>
+        </div>
+      </div>
+
+      {/* ════════════════════ Clinical Summary Card ════════════════════ */}
+      <div className="rounded-xl border border-[#e8f0f9] bg-white overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#f7fafd", borderBottom: "1px solid #e8f0f9" }}>
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-[#3d7ab5]" />
+            <h3 className="text-sm font-bold text-[#0d2137]">الملخص السريري</h3>
+          </div>
+          <Link
+            href={`/patients/${patientId}?tab=dental`}
+            className="text-xs font-semibold text-[#3d7ab5] flex items-center gap-1 hover:underline"
+          >
+            التفاصيل
+            <ChevronLeft className="w-3 h-3" />
+          </Link>
+        </div>
+        <div className="p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Chief Complaint */}
+            <div>
+              <p className="text-xs font-semibold text-[#94a3b8] mb-1">الشكوى الرئيسية</p>
+              <p className="text-sm text-[#0d2137]">
+                {summary?.chiefComplaint || patient.dentalHistory?.chiefComplaint || "غير مسجلة"}
+              </p>
+            </div>
+            {/* Current Diagnosis */}
+            <div>
+              <p className="text-xs font-semibold text-[#94a3b8] mb-1">التشخيص الحالي</p>
+              <p className="text-sm text-[#0d2137]">
+                {summary?.currentDiagnosis || "غير مسجل"}
+              </p>
+            </div>
+            {/* Next Planned Step */}
+            <div>
+              <p className="text-xs font-semibold text-[#94a3b8] mb-1">الخطوة المخططة</p>
+              <p className="text-sm text-[#0d2137]">
+                {summary?.nextPlannedStep || "غير محددة"}
+              </p>
+            </div>
+            {/* Treatment Status */}
+            <div>
+              <p className="text-xs font-semibold text-[#94a3b8] mb-1">حالة العلاج</p>
+              {(summary?.activeOrthoSummary && summary.activeOrthoSummary.length > 0) ||
+               (summary?.activeSurgerySummary && summary.activeSurgerySummary.length > 0) ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {summary.activeOrthoSummary && summary.activeOrthoSummary.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-semibold">
+                      تقويم ({summary.activeOrthoSummary.length})
+                    </span>
+                  )}
+                  {summary.activeSurgerySummary && summary.activeSurgerySummary.length > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 font-semibold">
+                      جراحة ({summary.activeSurgerySummary.length})
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-[#64748b]">لا يوجد علاج نشط</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ════════════════════ Summary Stats ════════════════════ */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {statCards.map(({ icon: Icon, label, value, color, bg }) => (
+        {[
+          { icon: Calendar, label: "المواعيد", value: summary?.totalAppointments ?? "—", color: "text-[#3d7ab5]", bg: "bg-[#3d7ab518]" },
+          { icon: Calendar, label: "مكتملة", value: summary?.completedAppointments ?? "—", color: "text-green-600", bg: "bg-green-50" },
+          { icon: Activity, label: "تقويم نشط", value: summary?.activeOrthoCases ?? "—", color: "text-purple-600", bg: "bg-purple-50" },
+          { icon: Wallet, label: "مدفوع", value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-[#3d7ab5]", bg: "bg-[#3d7ab518]" },
+          { icon: Wallet, label: "متبقي", value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-orange-600", bg: "bg-orange-50" },
+          { icon: Pill, label: "الوصفات", value: summary?.prescriptionsCount ?? "—", color: "text-rose-600", bg: "bg-rose-50" },
+        ].map(({ icon: Icon, label, value, color, bg }) => (
           <div key={label} className={cn("rounded-lg px-3 py-2 flex items-center gap-2", bg)}>
             <Icon className={cn("w-4 h-4 flex-shrink-0", color)} />
             <div className="min-w-0">
@@ -114,7 +423,7 @@ export function OverviewTab({ patientId, summary }: OverviewTabProps) {
         ))}
       </div>
 
-      {/* Cases */}
+      {/* ════════════════════ Active Cases ════════════════════ */}
       {(orthoCases.length > 0 || surgeryCases.length > 0) && (
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-[#0d2137]">الحالات النشطة</h3>
@@ -123,22 +432,22 @@ export function OverviewTab({ patientId, summary }: OverviewTabProps) {
               <p className="text-xs font-semibold text-[#94a3b8] uppercase tracking-wide">الحالات التقويمية</p>
               {orthoCases.map((c) => (
                 <Link key={c.id} href={`/ortho/${c.id}`}
-                  className="flex items-center justify-between p-2.5 bg-[#f7fafd] rounded-lg hover:bg-clinic-blue-50 hover:border-clinic-blue-100 border border-transparent transition"
+                  className="flex items-center justify-between p-2.5 bg-[#f7fafd] rounded-lg hover:bg-[#eef3f9] border border-transparent transition"
                 >
                   <div className="flex items-center gap-2">
-                    <Activity className="w-3.5 h-3.5 text-clinic-blue flex-shrink-0" />
+                    <Activity className="w-3.5 h-3.5 text-[#3d7ab5] flex-shrink-0" />
                     <span className="text-sm font-medium text-[#0d2137]">{c.caseNumber}</span>
                     {c.applianceType && <span className="text-xs text-[#64748b]">{c.applianceType}</span>}
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1.5">
                       <div className="w-16 h-1.5 bg-[#dce8f5] rounded-full overflow-hidden">
-                        <div className="h-full bg-clinic-blue rounded-full" style={{ width: `${c.stagePercentage}%` }} />
+                        <div className="h-full bg-[#3d7ab5] rounded-full" style={{ width: `${c.stagePercentage}%` }} />
                       </div>
                       <span className="text-xs text-[#64748b]">{c.stagePercentage}%</span>
                     </div>
                     <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",
-                      c.status === "active" ? "bg-clinic-blue-50 text-clinic-blue" : "bg-[#f1f5f9] text-[#64748b]"
+                      c.status === "active" ? "bg-[#3d7ab518] text-[#3d7ab5]" : "bg-[#f1f5f9] text-[#64748b]"
                     )}>
                       {ORTHO_STATUS_LABELS[c.status] ?? c.status}
                     </span>
@@ -173,38 +482,66 @@ export function OverviewTab({ patientId, summary }: OverviewTabProps) {
         </div>
       )}
 
-      {/* Recent Activity */}
-      <div>
-        <h3 className="text-sm font-semibold text-[#0d2137] mb-3">النشاط الأخير</h3>
-        {events.length === 0 ? (
-          <p className="text-sm text-[#94a3b8]">لا يوجد نشاط بعد</p>
-        ) : (
-          <div className="relative">
-            <div className="absolute right-[19px] top-0 bottom-0 w-0.5 bg-[#f1f5f9]" />
-            <div className="space-y-3">
-              {events.slice(0, 5).map((ev) => (
-                <div key={ev.id} className="flex gap-3 relative">
-                  <div className="w-8 h-8 rounded-full bg-white border-2 border-clinic-blue flex items-center justify-center flex-shrink-0 z-10">
-                    <Clock className="w-3.5 h-3.5 text-clinic-blue" />
-                  </div>
-                  <div className="flex-1 bg-[#f7fafd] rounded-lg p-2.5 border border-[#e8f0f9]">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="font-semibold text-xs text-[#0d2137]">{ev.title}</span>
-                      {ev.status && (
-                        <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", STATUS_COLORS[ev.status] ?? "bg-[#f1f5f9] text-[#64748b]")}>
-                          {APPOINTMENT_STATUS_LABELS[ev.status] ?? ev.status}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-[#64748b] mt-0.5">{ev.description}</p>
-                    <p className="text-xs text-[#94a3b8] mt-1">{formatArabicDate(ev.date)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* ════════════════════ Patient Timeline ════════════════════ */}
+      <div className="rounded-xl border border-[#e8f0f9] bg-white overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#f7fafd", borderBottom: "1px solid #e8f0f9" }}>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-[#3d7ab5]" />
+            <h3 className="text-sm font-bold text-[#0d2137]">السجل الزمني</h3>
           </div>
-        )}
+          <Link
+            href={`/patients/${patientId}?tab=timeline`}
+            className="text-xs font-semibold text-[#3d7ab5] flex items-center gap-1 hover:underline"
+          >
+            عرض الكل
+            <ChevronLeft className="w-3 h-3" />
+          </Link>
+        </div>
+        <div className="p-4">
+          {events.length === 0 ? (
+            <div className="text-center py-8">
+              <Clock className="w-8 h-8 text-[#dce8f5] mx-auto mb-2" />
+              <p className="text-sm text-[#94a3b8]">لا يوجد نشاط بعد</p>
+              <p className="text-xs text-[#dce8f5] mt-1">ستظهر هنا المواعيد والزيارات والمدفوعات والمستندات</p>
+            </div>
+          ) : (
+            <div className="relative">
+              <div className="absolute right-[19px] top-0 bottom-0 w-0.5 bg-[#f1f5f9]" />
+              <div className="space-y-3">
+                {events.slice(0, 8).map((ev) => {
+                  const eventStyle = EVENT_ICONS[ev.type] ?? EVENT_ICONS.appointment;
+                  const EventIcon = eventStyle.icon;
+                  return (
+                    <div key={`${ev.type}-${ev.id}`} className="flex gap-3 relative">
+                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 z-10 bg-white border-2", eventStyle.bg.replace("bg-", "border-"))}>
+                        <EventIcon className={cn("w-3.5 h-3.5", eventStyle.color)} />
+                      </div>
+                      <div className="flex-1 bg-[#f7fafd] rounded-lg p-2.5 border border-[#e8f0f9]">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-[#f1f5f9] text-[#64748b]">
+                              {EVENT_TYPE_LABELS[ev.type] ?? ev.type}
+                            </span>
+                            <span className="font-semibold text-xs text-[#0d2137]">{ev.title}</span>
+                          </div>
+                          {ev.status && (
+                            <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", STATUS_COLORS[ev.status] ?? "bg-[#f1f5f9] text-[#64748b]")}>
+                              {APPOINTMENT_STATUS_LABELS[ev.status] ?? ev.status === "signed" ? "موقع" : ev.status}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[#64748b] mt-0.5">{ev.description}</p>
+                        <p className="text-xs text-[#94a3b8] mt-1">{formatArabicDate(ev.date)}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
     </div>
   );
 }

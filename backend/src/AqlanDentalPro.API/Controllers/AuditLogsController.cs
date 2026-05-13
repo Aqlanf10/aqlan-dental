@@ -21,6 +21,7 @@ public class AuditLogsController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.AuditLogs.Include(a => a.User).AsQueryable();
 
         if (userId.HasValue) query = query.Where(a => a.UserId == userId);

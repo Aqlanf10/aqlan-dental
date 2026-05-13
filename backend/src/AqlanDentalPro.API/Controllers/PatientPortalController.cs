@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.DTOs.PatientPortal;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
@@ -10,7 +11,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/portal")]
-public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration, ILogger<PatientPortalController> logger) : ControllerBase
+public class PatientPortalController(IPatientPortalService portalService, IConfiguration configuration, ILogger<PatientPortalController> logger, IRecaptchaService recaptcha) : ControllerBase
 {
     private readonly IConfiguration Configuration = configuration;
     private readonly ILogger<PatientPortalController> Logger = logger;
@@ -18,6 +19,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/login")]
     [AllowAnonymous]
+    [EnableRateLimiting("PortalAuthPolicy")]
     public async Task<IActionResult> Login([FromBody] PatientLoginRequest req)
     {
         try
@@ -35,8 +37,19 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/forgot-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("PortalAuthPolicy")]
     public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
     {
+        // reCAPTCHA validation
+        if (!string.IsNullOrWhiteSpace(req.RecaptchaToken))
+        {
+            var (isValid, score, errorMessage) = await recaptcha.ValidateTokenAsync(req.RecaptchaToken);
+            if (!isValid)
+            {
+                return BadRequest(new { message = errorMessage ?? "فشل التحقق الأمني" });
+            }
+        }
+
         try
         {
             var (success, error) = await portalService.ForgotPasswordAsync(req.PhoneNumber);

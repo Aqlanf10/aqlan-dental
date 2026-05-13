@@ -58,6 +58,25 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
         return user == null ? null : MapToDto(user);
     }
 
+    public async Task<bool> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
+    {
+        var user = await userRepo.GetByIdAsync(userId);
+        if (user == null || !user.IsActive) return false;
+
+        if (!VerifyPassword(currentPassword, user.PasswordHash, user.PasswordSalt))
+            return false;
+
+        var newSalt = GenerateSalt();
+        var newHash = HashPassword(newPassword, newSalt);
+
+        user.PasswordHash = newHash;
+        user.PasswordSalt = newSalt;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await userRepo.SaveChangesAsync();
+        return true;
+    }
+
     private static UserDto MapToDto(Domain.Entities.User user) => new()
     {
         Id = user.Id,
@@ -105,12 +124,17 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
             if (!string.IsNullOrEmpty(storedSalt))
             {
                 var hash = HashPassword(password, storedSalt);
-                if (hash == storedHash) return true;
+                // C-03 FIX: Use constant-time comparison to prevent timing attacks
+                if (CryptographicOperations.FixedTimeEquals(
+                    Convert.FromBase64String(hash),
+                    Convert.FromBase64String(storedHash))) return true;
             }
 
             // Fallback: legacy Phase 1 fixed-salt hash (DOP=1, fixed salt)
             var legacyHash = HashPasswordLegacy(password);
-            return legacyHash == storedHash;
+            return CryptographicOperations.FixedTimeEquals(
+                Convert.FromBase64String(legacyHash),
+                Convert.FromBase64String(storedHash));
         }
         catch
         {

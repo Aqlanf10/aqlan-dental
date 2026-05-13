@@ -6,7 +6,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/dashboard")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class DashboardController(DashboardService service) : ControllerBase
 {
     [HttpGet("stats")]

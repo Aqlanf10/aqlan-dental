@@ -41,7 +41,7 @@ public sealed class CreateReferralRequestValidator : AbstractValidator<CreateRef
 
 [ApiController]
 [Route("api/referrals")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class ReferralsController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
@@ -51,6 +51,7 @@ public class ReferralsController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.InternalReferrals
             .Include(r => r.Patient)
             .Include(r => r.FromDoctor)

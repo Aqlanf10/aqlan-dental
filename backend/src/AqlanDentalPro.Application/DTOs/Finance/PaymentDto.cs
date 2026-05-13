@@ -11,9 +11,13 @@ public class PaymentDto
     public string? PaymentMethod { get; set; }
     public string? ServiceDescription { get; set; }
     public string? Specialty { get; set; }
+    public Guid? DoctorId { get; set; }
     public string? DoctorName { get; set; }
     public string? ReceiptNumber { get; set; }
     public string? Notes { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string CreatedAt { get; set; } = string.Empty;
+    public string UpdatedAt { get; set; } = string.Empty;
 }
 
 public class CreatePaymentRequest
@@ -26,4 +30,27 @@ public class CreatePaymentRequest
     public string? Specialty { get; set; }
     public Guid? DoctorId { get; set; }
     public string? Notes { get; set; }
+}
+
+public class UpdatePaymentRequest
+{
+    public decimal? Amount { get; init; }
+    public string? PaymentDate { get; init; }
+    public string? PaymentMethod { get; init; }
+    public string? ServiceDescription { get; init; }
+    public string? Specialty { get; init; }
+    public Guid? DoctorId { get; init; }
+    public string? Notes { get; init; }
+}
+
+public class PatientFinanceSummaryDto
+{
+    public decimal TotalTreatmentCost { get; set; }
+    public decimal TotalPaid { get; set; }
+    public decimal OutstandingBalance { get; set; }
+    public decimal OverdueAmount { get; set; }
+    public PaymentDto? LatestPayment { get; set; }
+    public string FinancialStatus { get; set; } = "no_plan";
+    public int ActiveContractsCount { get; set; }
+    public int TotalPaymentsCount { get; set; }
 }

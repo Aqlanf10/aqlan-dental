@@ -45,7 +45,7 @@ public sealed class CreatePrescriptionRequestValidator : AbstractValidator<Creat
 
 [ApiController]
 [Route("api/prescriptions")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class PrescriptionsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet]
@@ -54,6 +54,7 @@ public class PrescriptionsController(AppDbContext db, ICurrentUserService curren
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Prescriptions
             .Include(p => p.Patient)
             .Include(p => p.Doctor)

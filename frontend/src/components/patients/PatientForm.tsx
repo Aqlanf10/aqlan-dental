@@ -16,8 +16,17 @@ const schema = z.object({
   lastName:    z.string().min(1, "الاسم الأخير مطلوب"),
   dateOfBirth: z.string().optional(),
   gender:      z.enum(["Male", "Female"]).optional(),
-  phone:       z.string().optional(),
-  whatsApp:    z.string().optional(),
+  // F4 FIX: Added phone/WhatsApp format validation with regex
+  phone:       z.string()
+    .optional()
+    .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
+      message: "رقم الهاتف غير صحيح",
+    }),
+  whatsApp:    z.string()
+    .optional()
+    .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
+      message: "رقم واتساب غير صحيح",
+    }),
   address:     z.string().optional(),
   occupation:  z.string().optional(),
   referralSource: z.string().optional(),
@@ -161,8 +170,10 @@ export function PatientForm({ defaultValues, patientId }: Props) {
     try {
       const payload: CreatePatientRequest = {
         firstName: data.firstName, middleName: data.middleName, lastName: data.lastName,
-        dateOfBirth: data.dateOfBirth, gender: data.gender, phone: data.phone,
-        whatsApp: data.whatsApp, address: data.address, occupation: data.occupation,
+        dateOfBirth: data.dateOfBirth, gender: data.gender,
+        phone: data.phone?.trim() || undefined,
+        whatsApp: data.whatsApp?.trim() || undefined,
+        address: data.address, occupation: data.occupation,
         referralSource: data.referralSource,
         medicalHistory: {
           chronicDiseases: data.chronicDiseases, currentMedications: data.currentMedications,

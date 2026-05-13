@@ -2,29 +2,56 @@ using AqlanDentalPro.Application.DTOs.Auth;
 using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(IAuthService authService, ICurrentUserService currentUser, ITokenService tokenService) : ControllerBase
+public class AuthController(IAuthService authService, ICurrentUserService currentUser, ITokenService tokenService, ILoginAttemptService loginAttempts) : ControllerBase
 {
     private const string RefreshTokenCookie = "refresh_token";
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
+        // Check if account is locked out
+        var (isLocked, remainingMinutes) = await loginAttempts.IsLockedOutAsync(request.Username);
+        if (isLocked)
+        {
+            return StatusCode(429, new { 
+                message = $"تم قفل الحساب بسبب {5} محاولات فاشلة. حاول مرة أخرى بعد {remainingMinutes} دقيقة.",
+                lockedUntil = remainingMinutes
+            });
+        }
+
         var result = await authService.LoginAsync(request);
         if (result == null)
+        {
+            var failCount = await loginAttempts.RecordFailedAttemptAsync(request.Username);
+            
+            if (failCount >= 5)
+            {
+                return StatusCode(429, new { 
+                    message = "تم قفل الحساب بسبب 5 محاولات فاشلة متتالية. حاول مرة أخرى بعد 15 دقيقة.",
+                    lockedUntil = 15
+                });
+            }
+            
             return Unauthorized(new { message = "اسم المستخدم أو كلمة المرور غير صحيحة" });
+        }
+
+        // Reset failed attempts on successful login
+        await loginAttempts.ResetFailedAttemptsAsync(request.Username);
 
         SetRefreshTokenCookie(result.RefreshToken);
         return Ok(new { result.AccessToken, result.User });
     }
 
     [HttpPost("logout")]
-    [Authorize]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> Logout()
     {
         var refreshToken = Request.Cookies[RefreshTokenCookie];
@@ -37,6 +64,7 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
 
     [HttpPost("refresh-token")]
     [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
     public async Task<ActionResult<object>> RefreshToken()
     {
         var refreshToken = Request.Cookies[RefreshTokenCookie];
@@ -63,12 +91,26 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
     }
 
     [HttpGet("me")]
-    [Authorize]
+    [Authorize(Policy = "StaffOnly")]
     public async Task<ActionResult<UserDto>> GetMe()
     {
         if (!currentUser.UserId.HasValue) return Unauthorized();
         var user = await authService.GetMeAsync(currentUser.UserId.Value);
         return user == null ? Unauthorized() : Ok(user);
+    }
+
+    [HttpPost("change-password")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        var userId = currentUser.UserId;
+        if (!userId.HasValue) return Unauthorized();
+
+        var success = await authService.ChangePasswordAsync(userId.Value, request.CurrentPassword, request.NewPassword);
+        if (!success)
+            return BadRequest(new { message = "كلمة المرور الحالية غير صحيحة" });
+
+        return Ok(new { message = "تم تغيير كلمة المرور بنجاح" });
     }
 
     private void SetRefreshTokenCookie(string token)

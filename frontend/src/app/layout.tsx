@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Providers } from "@/providers";
+import { RecaptchaProvider } from "@/lib/recaptcha";
 import "./globals.css";
 
 const tajawal = localFont({
@@ -30,7 +31,9 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" className={tajawal.variable}>
       <body className="font-sans antialiased">
-        <Providers>{children}</Providers>
+        <RecaptchaProvider>
+          <Providers>{children}</Providers>
+        </RecaptchaProvider>
       </body>
     </html>
   );

@@ -7,7 +7,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api/whatsapp")]
-[Authorize]
+[Authorize(Policy = "StaffOnly")]
 public class WhatsAppController(IWhatsAppService whatsappService) : ControllerBase
 {
     [HttpGet("dashboard")]

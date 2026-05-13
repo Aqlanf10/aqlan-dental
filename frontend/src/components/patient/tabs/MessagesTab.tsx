@@ -60,6 +60,8 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
   useEffect(() => {
     fetchConversation().finally(() => setLoading(false));
   }, [patientId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Intentionally excluded: fetchConversation is a useCallback that depends on patientId,
+    // which is already in the dependency array. Including it would be redundant.
 
   // Scroll to bottom when messages change
   useEffect(() => {

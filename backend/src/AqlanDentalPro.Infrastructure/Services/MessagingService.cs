@@ -19,6 +19,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     public async Task<PaginatedResponse<ConversationListDto>> GetMyConversationsAsync(
         int page = 1, int pageSize = 20, string? search = null, string? type = null)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         // Query conversations directly (not through participants) to allow Include
         var myConversationIds = await db.ConversationParticipants
             .Where(cp => cp.UserId == UserId)
@@ -87,6 +88,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── تفاصيل محادثة ──────────────────────────────────────────────────────────
     public async Task<ConversationDetailDto?> GetConversationAsync(Guid conversationId, int page = 1, int pageSize = 50)
     {
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var conv = await db.Conversations
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
@@ -501,7 +503,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "image/jpeg", "image/png", "application/pdf",
-                "audio/webm", "audio/ogg", "audio/mp4"
+                "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
             };
             if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
                 throw new ArgumentException("نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF، رسائل صوتية");

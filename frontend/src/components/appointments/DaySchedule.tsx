@@ -45,6 +45,9 @@ export function DaySchedule({ date, doctorId }: Props) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
+  // The useAppointments hook uses startDate/endDate query params, while the backend expects from/to for date-range queries.
+  // Until the hook is updated to support from/to params, direct API calls are the correct approach here.
   const reload = () => {
     setLoading(true);
     const q = doctorId ? `&doctorId=${doctorId}` : "";

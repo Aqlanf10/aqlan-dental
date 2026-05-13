@@ -10,6 +10,8 @@ public class PatientLoginRequest
 public class PatientForgotPasswordRequest
 {
     public string PhoneNumber { get; set; } = string.Empty;
+    /// <summary>Google reCAPTCHA v3 token (optional — required when configured)</summary>
+    public string? RecaptchaToken { get; set; }
 }
 
 public class PatientResetPasswordRequest

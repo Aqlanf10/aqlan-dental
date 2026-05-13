@@ -251,7 +251,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         var lastVisit = await db.Visits
             .Where(v => v.PatientId == id && v.IsActive)
             .OrderByDescending(v => v.VisitDate)
-            .Select(v => new { v.VisitDate, v.Diagnosis, v.TreatmentDone, v.Doctor.Name })
+            .Select(v => new { v.VisitDate, v.Diagnosis, v.TreatmentDone, DoctorName = v.Doctor != null ? v.Doctor.Name : null })
             .FirstOrDefaultAsync();
 
         var nextAppointment = await db.Appointments

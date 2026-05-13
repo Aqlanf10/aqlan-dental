@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class GeneralService(AppDbContext db, ICurrentUserService _)
+public class GeneralService(AppDbContext db)
 {
     public async Task<DentalChartDto> GetOrCreateChartAsync(Guid patientId)
     {

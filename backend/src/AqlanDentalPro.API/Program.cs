@@ -518,7 +518,7 @@ if (enableStartupDbMaintenance)
         {
             try
             {
-                await db.Database.ExecuteSqlRawAsync($"""
+                var softDeleteSql = $"""
                     DO $$ BEGIN
                         IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}') THEN
                             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedAt') THEN
@@ -529,7 +529,8 @@ if (enableStartupDbMaintenance)
                             END IF;
                         END IF;
                     END $$;
-                """);
+                    """;
+                await db.Database.ExecuteSqlRawAsync(softDeleteSql);
             }
             catch (Exception tableEx)
             {

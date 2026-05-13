@@ -85,7 +85,7 @@ public class UploadsController : ControllerBase
         {
             uploadsPath = EnsureUploadsDirectory();
         }
-        catch (Exception ex)
+        catch
         {
             return StatusCode(500, new { message = "فشل إنشاء مجلد المرفقات" });
         }

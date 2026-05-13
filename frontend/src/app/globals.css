@@ -2,27 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Aqlan Dental Pro — Global Styles
+ *
+ * Brand colors:
+ *   --clinic-primary:  #1a3a5c  (dark sky — sidebar, headers, primary text)
+ *   --clinic-blue:     #3d7ab5  (sky blue — links, accents)
+ *   --clinic-orange:   #f5922e  (orange — CTA, active states)
+ */
+
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 212 55% 14%;
+    --foreground: 213 56% 23%;        /* #1a3a5c */
     --card: 0 0% 100%;
-    --card-foreground: 212 55% 14%;
-    --primary: 209 48% 48%;
+    --card-foreground: 213 56% 23%;
+    --primary: 209 48% 48%;            /* #3d7ab5 */
     --primary-foreground: 210 40% 98%;
     --secondary: 212 33% 95%;
-    --secondary-foreground: 212 55% 14%;
+    --secondary-foreground: 213 56% 23%;
     --muted: 212 33% 95%;
     --muted-foreground: 215 16% 47%;
-    --accent: 27 91% 57%;
-    --accent-foreground: 212 55% 14%;
+    --accent: 27 91% 57%;              /* #f5922e */
+    --accent-foreground: 213 56% 23%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
     --border: 212 44% 90%;
     --input: 212 44% 90%;
-    --ring: 209 48% 48%;
+    --ring: 27 91% 57%;                /* orange focus ring */
     --radius: 0.5rem;
     --font-tajawal: 'Tajawal', sans-serif;
+
+    /* Brand color tokens (use these in inline styles) */
+    --clinic-primary: #1a3a5c;
+    --clinic-primary-700: #244b73;
+    --clinic-blue: #3d7ab5;
+    --clinic-blue-dark: #2d5e8e;
+    --clinic-orange: #f5922e;
+    --clinic-orange-dark: #c47022;
   }
 
   * {
@@ -34,8 +51,8 @@
   body {
     @apply text-foreground;
     font-family: var(--font-tajawal), sans-serif;
-    background: #eef3f9;
-    color: #0d2137;
+    background: #f0f5fb;
+    color: #1a3a5c;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -48,18 +65,18 @@
 }
 
 @layer utilities {
-  /* Login page background gradient — matches ZIP exactly */
-  .clinic-gradient { background: linear-gradient(145deg, #0a1c30 0%, #0d2137 55%, #1a3a5c 100%); }
-  .navy-gradient { background: linear-gradient(135deg, #0d2137 0%, #1a3a5c 100%); }
-  .gold-gradient { background: linear-gradient(135deg, #f5922e 0%, #f7a44f 100%); }
-  .blue-gradient { background: linear-gradient(135deg, #3d7ab5 0%, #5a94c9 100%); }
-  .text-balance { text-wrap: balance; }
+  /* Brand-aligned gradients */
+  .clinic-gradient { background: linear-gradient(135deg, #1a3a5c 0%, #244b73 55%, #2e4a6f 100%); }
+  .navy-gradient   { background: linear-gradient(135deg, #1a3a5c 0%, #2e4a6f 100%); }
+  .orange-gradient { background: linear-gradient(135deg, #f5922e 0%, #f7a44f 100%); }
+  .blue-gradient   { background: linear-gradient(135deg, #3d7ab5 0%, #5a94c9 100%); }
+  .text-balance    { text-wrap: balance; }
 
-  /* Page content fade-in — matches ZIP */
+  /* Page content fade-in */
   .page-content { animation: fadeIn 0.2s ease; }
   .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 24px rgba(13,33,55,0.1);
+    box-shadow: 0 6px 24px rgba(26,58,92,0.1);
     transition: all 0.2s;
   }
 }
@@ -88,10 +105,8 @@
     max-width: 100% !important;
   }
 
-  /* Reset the main content offset (no sidebar in print) */
   .lg\:mr-64 { margin-right: 0 !important; }
 
-  /* Print page layout */
   .print-page {
     min-height: 270mm;
     display: flex !important;
@@ -110,23 +125,19 @@
     color: #475569;
   }
 
-  /* Avoid breaking important cards across pages */
   .appointment-card,
   .avoid-break {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  /* Ensure tables don't break across pages inappropriately */
   table { border-collapse: collapse; }
   thead { display: table-header-group; }
   tr { break-inside: avoid; page-break-inside: avoid; }
 
-  /* Hide dashboard UI elements in print */
   button:not(.print-allow),
   .print:hidden { display: none !important; }
 
-  /* Ensure colors print well */
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 

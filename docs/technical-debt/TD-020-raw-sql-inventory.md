@@ -790,7 +790,7 @@ PR #103 (TD-020 Phase C1-c) attempted to delete B4/B5/B6/B7 from `Program.cs`. I
 **The core problem:** B4/B5 are not redundant schema helpers — they are legacy data backfill blocks.
 
 | Block | Nature | Risk of Deletion |
-|-------|--------|-----------------|
+|-------|--------|------------------|
 | B4 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` | Removes the only automated path to populate `NormalizedPhone` for patients created before `PhoneNormalizer` was wired into `PatientService`. Any such rows remain `NULL` and are invisible to normalized-phone duplicate detection. |
 | B5 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` | Same as B4 but for `NormalizedWhatsApp`/`WhatsApp`. |
 | B6 | Deduplicate `NormalizedPhone` (CTE) | If B4 still needs to run, duplicate normalized values could violate the unique index. B6 must remain until B4's backfill is verified complete. |
@@ -978,7 +978,7 @@ LIMIT 20;
 
 **PR:** #106 (pending review)
 **Branch:** `td-020-phase-c1f-safe-phone-normalization-repair`
-**Type:** `fix` — corrective EF migration (data repair + stuck migration unblock)
+**Type:** `fix` — make stuck EF migration idempotent
 **Raw SQL delta:** Program.cs unchanged (42); total backend unchanged (44)
 
 ### Production Finding Summary
@@ -1017,31 +1017,57 @@ The raw `WhatsApp` column has at least two patients with value `0711752823`. `CR
 1. Staff corrects the duplicate via the patient edit UI (change one patient's phone to the real number).
 2. A follow-up read-only check confirms zero raw WhatsApp duplicates.
 
-### What the Corrective Migration Does
+### Why the First Approach in This PR Was Wrong
 
-**Migration:** `20260525000000_RepairPatientPhoneNormalizationState`
+An initial attempt created a new migration `20260525000000_RepairPatientPhoneNormalizationState`
+with `__EFMigrationsHistory` inserts intended to unblock `20260430221054`.
 
-| Section | Action |
-|---------|--------|
-| A | Idempotent `ADD COLUMN NormalizedPhone` (DO $$ IF NOT EXISTS) |
-| B | Idempotent `ADD COLUMN NormalizedWhatsApp` (DO $$ IF NOT EXISTS) |
-| C | `CREATE TABLE IF NOT EXISTS` for all 9 tables from `20260430221054` (Conversations, GeneralTreatmentPlanItems, PatientAccounts, PerioRecords, WhatsAppTemplates, ConversationParticipants, Messages, WhatsAppMessages, MessageReads) |
-| D | Idempotent FK creation for all FKs from `20260430221054` (15 constraints, guarded by `pg_constraint` check) |
-| E | `CREATE INDEX IF NOT EXISTS` for all indexes from `20260430221054` (NormalizedPhone, NormalizedWhatsApp unique filtered indexes + messaging table indexes) |
-| F | Idempotent column/index/FK creation for `20260430221624` objects (ConversationType text, PatientId uuid, IX_Conversations_PatientId, FK_Conversations_Patients_PatientId) |
-| G | Conflict-safe NormalizedPhone backfill — skips rows where normalized value would conflict; does NOT overwrite existing non-null values |
-| H | Conflict-safe NormalizedWhatsApp backfill — skips conflicting rows (including the known `0711752823 → 967711752823` conflict); conflicting rows retain `NormalizedWhatsApp = NULL` |
-| I | Idempotent INSERT into `__EFMigrationsHistory` for both `20260430221054` and `20260430221624` (WHERE NOT EXISTS guards) |
+**This approach cannot work.** EF Core applies migrations in `MigrationId` order (timestamp
+ascending). If `20260430221054` fails before being recorded, EF stops immediately — it never
+reaches `20260525000000`. The history inserts inside the later migration are unreachable.
 
-### What the Migration Intentionally Does NOT Do
+The correct fix is to make `20260430221054_AddPhoneNormalizationAndArchive` itself idempotent,
+because EF IS reaching that migration — it just fails when it gets there.
+
+### Why Modifying the Old Migration Is Safe
+
+This migration has never been successfully applied (it is NOT in `__EFMigrationsHistory`). EF Core
+will execute the modified version as if it is being applied for the first time. Since the migration
+has never run, there is no risk of re-applying state that was already recorded.
+
+The `.Designer.cs` file is left unchanged — it contains the model snapshot at the time of the
+original migration generation and does not affect execution.
+
+### What Was Changed in `20260430221054_AddPhoneNormalizationAndArchive.cs`
+
+All non-idempotent EF method calls (`AddColumn`, `CreateTable`, `CreateIndex`, `AddForeignKey`)
+were replaced with raw idempotent SQL.
+
+| Operation type | Original (broken) | Fixed (idempotent) |
+|---------------|-------------------|-------------------|
+| `AddColumn NormalizedPhone` | `migrationBuilder.AddColumn<string>(...)` — throws 42701 if column exists | `DO $$ BEGIN IF NOT EXISTS column THEN ALTER TABLE ADD COLUMN END $$` |
+| `AddColumn NormalizedWhatsApp` | Same | Same pattern |
+| `CreateTable` × 9 tables | `migrationBuilder.CreateTable(...)` — throws if table exists | `CREATE TABLE IF NOT EXISTS` |
+| `CreateIndex` / `CreateUniqueIndex` × 18 | `migrationBuilder.CreateIndex(...)` — throws if index exists | `CREATE [UNIQUE] INDEX IF NOT EXISTS` |
+| `AddForeignKey` × 15 | Embedded in CreateTable constraints; ignored for existing tables | Separate `DO $$ BEGIN IF NOT EXISTS pg_constraint THEN ALTER TABLE ADD CONSTRAINT END $$` |
+| `Down()` | Drops all tables (catastrophic for production data) | **No-op** — comment explains why |
+
+The original migration did **not** include phone/WhatsApp data backfill. Backfill (B4/B5
+equivalents) remains in Program.cs B-blocks and is addressed in Phase C1-g.
+
+EF will record `20260430221054_AddPhoneNormalizationAndArchive` in `__EFMigrationsHistory`
+automatically after it completes successfully — no manual history insert is needed.
+
+### What the Fix Intentionally Does NOT Do
 
 | Not Done | Reason |
 |----------|--------|
 | Create `IX_Patients_WhatsApp` (raw unique) | Raw WhatsApp duplicates exist; index creation would fail |
-| Overwrite existing non-null NormalizedPhone/NormalizedWhatsApp | Would risk corrupting already-normalized data |
-| NULL out duplicate normalized values | B6/B7 already ran once and handled this; re-running dedup destructively would lose data |
+| Add NormalizedPhone/WhatsApp data backfill to old migration | Original migration had no backfill; backfill addressed separately |
+| Pre-emptively mark `20260430221624` as applied | It may not be stuck; wait for production verification after `20260430221054` is resolved |
+| Insert anything into `__EFMigrationsHistory` | EF records the migration automatically after successful completion |
 | Resolve the duplicate raw WhatsApp `0711752823` | Requires human judgment — which patient has the correct number |
-| Disable `ENABLE_STARTUP_DB_MAINTENANCE` | Not done in migration; done manually after production stability is confirmed |
+| Disable `ENABLE_STARTUP_DB_MAINTENANCE` | Done manually after production stability is confirmed |
 | Remove B4/B5/B6/B7 | Reserved for Phase C1-g after deployment verification |
 
 ### Production Verification Steps After Deployment
@@ -1060,11 +1086,12 @@ railway logs --service postgres | grep "IX_Patients_NormalizedWhatsApp"
 ```
 Expected: no output (backfill conflict no longer thrown).
 
-**Step 3 — Confirm `20260430221624` is also resolved:**
+**Step 3 — Check if `20260430221624_AddConversationPatientAndType` becomes the next stuck migration:**
 ```
 railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 ```
-Expected: no output.
+- If no output: it was already in `__EFMigrationsHistory` (likely applied correctly at some point). ✅
+- If it appears and fails: open a narrow follow-up PR making `20260430221624` idempotent.
 
 **Step 4 — Turn off `ENABLE_STARTUP_DB_MAINTENANCE` in Railway:**
 - Go to Railway dashboard → aqlan-dental service → Variables

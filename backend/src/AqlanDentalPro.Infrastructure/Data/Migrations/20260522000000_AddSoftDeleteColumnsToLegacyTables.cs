@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore.Migrations;
 
+using Microsoft.EntityFrameworkCore.Infrastructure;
+
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
 /// <summary>
@@ -21,6 +23,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// After this migration, the B2 raw SQL block in Program.cs is redundant and
 /// has been removed.
 /// </summary>
+[Migration("20260522000000_AddSoftDeleteColumnsToLegacyTables")]
 public partial class AddSoftDeleteColumnsToLegacyTables : Migration
 {
     /// <summary>
@@ -72,17 +75,9 @@ public partial class AddSoftDeleteColumnsToLegacyTables : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        // Drop the columns from all tables (idempotent via IF EXISTS)
-        foreach (var table in BaseEntityTables)
-        {
-            migrationBuilder.Sql($@"
-                DO $$ BEGIN
-                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}') THEN
-                        ALTER TABLE ""{table}"" DROP COLUMN IF EXISTS ""DeletedBy"";
-                        ALTER TABLE ""{table}"" DROP COLUMN IF EXISTS ""DeletedAt"";
-                    END IF;
-                END $$;
-            ");
-        }
+        // Intentionally no-op.
+        // DeletedAt/DeletedBy may have existed before this migration due to legacy
+        // runtime schema maintenance (old Program.cs block B2). Dropping them could
+        // remove existing soft-delete data/schema that predates this migration.
     }
 }

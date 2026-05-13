@@ -574,7 +574,7 @@ All operations in this migration are safe for databases where the old Program.cs
 - **Table existence guard:** Each operation first checks `information_schema.tables` for the target table — no error if the table does not exist (e.g., on fresh databases where not all tables have been created yet)
 - **Column existence guard:** Each operation checks `information_schema.columns` for the specific column — no error if DeletedAt or DeletedBy already exist
 - **Column types match exactly:** `DeletedAt` is `timestamp with time zone NULL`, `DeletedBy` is `uuid NULL` — identical to the original B2 raw SQL
-- **Down():** Uses `DROP COLUMN IF EXISTS` — safe to rollback
+- **Down():** Intentionally no-op — DeletedAt/DeletedBy may have existed before this migration due to legacy Program.cs B2 runtime maintenance. Dropping them could remove existing soft-delete data/schema.
 - **No AppDbContextModelSnapshot changes needed:** DeletedAt/DeletedBy are already defined on BaseEntity and present in the EF model
 
 ### Production Behavior Impact
@@ -598,3 +598,24 @@ All operations in this migration are safe for databases where the old Program.cs
 | DbSeeder.cs | Unchanged | Already at 0 raw SQL |
 | Frontend | Unchanged | Not in scope |
 | Auth/password behavior | Unchanged | Not in scope |
+
+### Post-Review Fixes (Codex Review)
+
+Two issues identified by Codex review were fixed in a follow-up commit:
+
+**P1 — Migration discovery metadata:**
+- Added `[Migration("20260522000000_AddSoftDeleteColumnsToLegacyTables")]` attribute
+- Added `using Microsoft.EntityFrameworkCore.Infrastructure;` for the attribute
+- Without this attribute, EF Core derives the migration ID from the class name (`AddSoftDeleteColumnsToLegacyTables` instead of `20260522000000_AddSoftDeleteColumnsToLegacyTables`), breaking timestamp-based ordering
+- Note: 8 other migrations in this project also lack the `[Migration]` attribute — those are out of scope for this PR
+
+**P2 — Down() safety:**
+- Replaced destructive `Down()` (which dropped DeletedAt/DeletedBy from 39 tables) with a no-op
+- Rationale: DeletedAt/DeletedBy may have existed before this migration due to legacy Program.cs B2 runtime schema maintenance. Rolling back this migration should not remove existing soft-delete schema/data.
+
+**Verification:**
+- Backend build: 0 errors
+- Backend tests: 287/287 passed
+- Frontend lint: pass
+- Frontend build: pass
+- Migration class compiles and is discoverable via `[Migration]` attribute

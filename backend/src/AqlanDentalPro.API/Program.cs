@@ -501,42 +501,8 @@ if (enableStartupDbMaintenance)
     // Pre-migration: Add new columns that EF Core expects but may not exist yet
     try
     {
-        // Add DeletedAt/DeletedBy to all tables that inherit BaseEntity
-        var baseEntityTables = new[] {
-            "Patients", "Users", "Doctors", "Branches", "Appointments",
-            "Conversations", "ConversationParticipants", "Messages", "MessageReads",
-            "Visits", "Payments", "Contracts", "OrthoCases", "OrthoVisits",
-            "TreatmentStages", "RetentionRecords", "SurgeryCases", "Prescriptions",
-            "Notifications", "AuditLogs", "Settings", "Inventory", "LabOrders",
-            "InternalReferrals", "ClinicalPhotos", "Radiographs", "Documents",
-            "DentalCharts", "ToothConditions", "GeneralTreatments",
-            "WhatsAppMessages", "WhatsAppTemplates", "PatientAccounts",
-            "CephAnalyses", "PerioRecords", "GeneralTreatmentPlanItems",
-            "MedicalHistories", "DentalHistories", "Receipts"
-        };
-        foreach (var table in baseEntityTables)
-        {
-            try
-            {
-                var softDeleteSql = $"""
-                    DO $$ BEGIN
-                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table}') THEN
-                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedAt') THEN
-                                ALTER TABLE "{table}" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
-                            END IF;
-                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table}' AND column_name = 'DeletedBy') THEN
-                                ALTER TABLE "{table}" ADD COLUMN "DeletedBy" uuid NULL;
-                            END IF;
-                        END IF;
-                    END $$;
-                    """;
-                await db.Database.ExecuteSqlRawAsync(softDeleteSql);
-            }
-            catch (Exception tableEx)
-            {
-                logger.LogWarning(tableEx, "Skipping soft-delete columns for table {Table}", table);
-            }
-        }
+        // B2 (soft-delete columns) removed in TD-020 Phase C1-a --
+        // now handled by EF migration 20260522000000_AddSoftDeleteColumnsToLegacyTables
 
         // Add NormalizedPhone/NormalizedWhatsApp to Patients
         await db.Database.ExecuteSqlRawAsync("""

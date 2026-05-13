@@ -1102,7 +1102,7 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 **Step 5 — Open Phase C1-g to remove B4/B5/B6/B7:**
 - Only after Steps 1–4 are all verified clean.
 - PR title: `refactor: remove obsolete phone normalization backfill blocks (TD-020 Phase C1-g)`
-- Raw SQL: Program.cs 42 → 38, total backend 44 → 40.
+- Raw SQL: Program.cs 44 → 40, total backend 45 → 41.
 
 **Step 6 — Manual clinic action (out of band):**
 - Staff must open both patients with raw WhatsApp `0711752823` in the patient edit UI.
@@ -1125,12 +1125,12 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 
 ---
 
-## Current State After Phase C1-f (2026-05-13)
+## Current State After PR #110 (2026-05-13)
 
-**Production commit:** `4b584df` (after PR #107 Finance Sprint Hardening merged)
+**Production commit:** `dea2cbc10c7ab0cdce70d8283ebb0b45f277e928` (PR #110 — TD-009 security hotfix)
 **Branch with this doc:** `td-020-final-inventory-review`
 
-### What Has Been Accomplished (Phases B2 → C1-f)
+### What Has Been Accomplished (Phases B2 → C1-f + security hotfix)
 
 | Phase | PR | Branch | Result |
 |-------|-----|--------|--------|
@@ -1140,17 +1140,19 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 | C1-d — Conversation schema EF migration | Merged | `td-020-phase-c1d-conversation-schema-migration` | B10/B11/B12/B13 removed from Program.cs |
 | C1-e — Phone backfill plan (docs only) | Merged | `td-020-phase-c1e-phone-backfill-plan` | Decision framework for B4/B5/B6/B7 |
 | C1-f — Migration idempotency fix | Merged (#106) | `td-020-phase-c1f-safe-phone-normalization-repair` | `20260430221054_AddPhoneNormalizationAndArchive` unblocked; `ENABLE_STARTUP_DB_MAINTENANCE` set to `false` |
+| Finance Sprint hardening | Merged (#107, `4b584df`) | `claude/aqlan-dental-pro-setup-vZwJo` | Contract editing, account statement, [Authorize] regression introduced inadvertently |
+| **TD-009 hotfix — restore StaffOnly** | **Merged (#110, `dea2cbc`)** | `fix/td-009-restore-staffonly-patients` | **PatientsController restored to `[Authorize(Policy = "StaffOnly")]`; Patient-role JWTs blocked from staff APIs** |
 
 ### Current Raw SQL Counts (as of 2026-05-13)
 
 | Location | Before TD-020 | Now | Change |
 |----------|--------------|-----|--------|
-| `Program.cs` — raw SQL blocks | 50 | **42** | −8 (B2, B3, B8/B9, B10/B11/B12/B13) |
-| `Program.cs` — `ExecuteSqlRawAsync` calls | 45 | **41** | −4 |
+| `Program.cs` — raw SQL blocks | 50 | **44** | −8 removed (B2, B3, B8/B9, B10/B11/B12/B13) +2 added (A5 BookingRequests, A6 MessageEdit — Finance Sprint) |
+| `Program.cs` — `ExecuteSqlRawAsync` calls | 45 | **46** | Net change includes 6 new ungated calls from Finance Sprint |
 | `DbSeeder.cs` | 4 | **0** | −4 (Phase B2) |
 | `MessagesController.cs` | 31 | **0** | −31 (Phase B1, earlier) |
 | `ClinicQueueController.cs` | 2 | **2** | 0 (advisory locks — KEEP permanently) |
-| **Total backend raw SQL** | **88** | **43** | **−45** |
+| **Total backend raw SQL** | **88** | **45** | **−45 removed, +2 added (Finance Sprint hotfixes)** |
 
 ### Production Guard Status
 
@@ -1158,13 +1160,14 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 |------|-------|-----------|
 | `ENABLE_STARTUP_DB_MAINTENANCE` | `false` | Yes — set after PR #106 deployment |
 | All B-blocks (B1–B47) | **Inactive** | Yes — gated and skipped on every startup |
-| A-blocks (A1–A4) | **Active** — run every startup | Yes — but idempotent via Settings flag |
+| A-blocks (A1–A6) | **Active** — run every startup | Yes — A1–A4 idempotent via Settings flag; A5–A6 added by Finance Sprint (idempotent IF NOT EXISTS) |
 | Advisory locks Q1/Q2 | **Active** — run per HTTP request | Yes — correct behavior |
-| Production health | 200 OK | Yes — confirmed after PR #106 merge |
+| Production health | 200 OK | Yes — confirmed after PR #110 merge (`dea2cbc`) |
+| TD-009 security fix | PatientsController `[Authorize(Policy = "StaffOnly")]` restored | Yes — PR #110 merged; Patient-role JWTs blocked from staff APIs |
 
-### Remaining Raw SQL Blocks in Program.cs (42 total)
+### Remaining Raw SQL Blocks in Program.cs (44 total)
 
-#### Ungated — Active Every Startup (4 blocks)
+#### Ungated — Active Every Startup (6 blocks)
 
 | Block | Line | Purpose | Must Touch? | Safe Action |
 |-------|------|---------|------------|-------------|
@@ -1172,6 +1175,8 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 | A2 | 330 | `SELECT COUNT(*)` flag check via `CreateCommand` | Not yet | Replace with EF LINQ (Phase C2) |
 | A3 | 348 | `UPDATE "Users" SET password for admin` | Not yet | Keep parameterized; move to DbSeeder in Phase C2 |
 | A4 | 354 | `INSERT INTO "Settings"` reset flag | Not yet | Replace with EF LINQ (Phase C2) |
+| A5 | 434–482 | BookingRequests table + indexes + migration history INSERT (4 `ExecuteSqlRawAsync`) — **added by Finance Sprint** | Not yet | Convert to proper EF migration; remove hotfix block (Phase C2) |
+| A6 | 484–517 | `Messages` table `IsEdited`/`EditedAt` column additions + migration history INSERT (2 `ExecuteSqlRawAsync`) — **added by Finance Sprint** | Not yet | Convert to proper EF migration; remove hotfix block (Phase C2) |
 
 #### Gated — Inactive While `ENABLE_STARTUP_DB_MAINTENANCE=false` (38 blocks)
 
@@ -1214,7 +1219,7 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 **If prerequisites pass:**
 - Open PR: `refactor: remove obsolete patient phone normalization backfill blocks (TD-020 Phase C1-g)`
 - Remove B4, B5, B6, B7 from Program.cs (lines ~553–633)
-- Raw SQL delta: Program.cs 42 → 38, total backend 43 → 39
+- Raw SQL delta: Program.cs 44 → 40, total backend 45 → 41
 - No migration needed
 
 **If prerequisites fail (rows still need backfill):**

@@ -224,6 +224,90 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         return dto;
     }
 
+    public async Task<ContractDetailDto?> UpdateContractAsync(Guid id, UpdateContractRequest req)
+    {
+        var contract = await db.Contracts.FindAsync(id);
+        if (contract == null) return null;
+
+        contract.Specialty        = req.Specialty;
+        contract.TotalAmount      = req.TotalAmount;
+        contract.InstallmentsCount = req.InstallmentsCount;
+        contract.InstallmentAmount = req.InstallmentAmount;
+        contract.StartDate        = req.StartDate != null ? DateOnly.Parse(req.StartDate) : contract.StartDate;
+        contract.DiscountAmount   = req.DiscountAmount;
+        contract.DiscountReason   = req.DiscountReason;
+        contract.Notes            = req.Notes;
+        contract.UpdatedAt        = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        return await GetContractByIdAsync(id);
+    }
+
+    public async Task<ContractDetailDto?> UpdateContractStatusAsync(Guid id, string status)
+    {
+        var allowed = new[] { "active", "completed", "cancelled" };
+        if (!allowed.Contains(status)) return null;
+
+        var contract = await db.Contracts.FindAsync(id);
+        if (contract == null) return null;
+
+        contract.Status    = status;
+        contract.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        return await GetContractByIdAsync(id);
+    }
+
+    public async Task<AccountStatementDto?> GetAccountStatementAsync(Guid patientId)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null) return null;
+
+        var contracts = await db.Contracts
+            .Include(c => c.Payments)
+            .Where(c => c.PatientId == patientId)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+
+        var recentPayments = await db.Payments
+            .Include(p => p.Doctor)
+            .Where(p => p.PatientId == patientId)
+            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
+            .Take(20)
+            .ToListAsync();
+
+        return new AccountStatementDto
+        {
+            PatientId        = patientId,
+            PatientName      = patient.FirstName + " " + patient.LastName,
+            PatientNumber    = patient.PatientNumber,
+            TotalContracted  = contracts.Sum(c => c.TotalAmount),
+            TotalDiscounts   = contracts.Sum(c => c.DiscountAmount),
+            TotalPaid        = contracts.Sum(c => c.Payments.Sum(p => p.Amount)),
+            TotalRemaining   = contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)),
+            ActiveContracts  = contracts.Count(c => c.Status == "active"),
+            CompletedContracts = contracts.Count(c => c.Status == "completed"),
+            Contracts        = contracts.Select(c => new ContractStatementDto
+            {
+                Id              = c.Id,
+                Specialty       = c.Specialty,
+                TotalAmount     = c.TotalAmount,
+                DiscountAmount  = c.DiscountAmount,
+                PaidAmount      = c.Payments.Sum(p => p.Amount),
+                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount),
+                StartDate       = c.StartDate?.ToString("yyyy-MM-dd"),
+                Status          = c.Status,
+                InstallmentsCount  = c.InstallmentsCount,
+                InstallmentAmount  = c.InstallmentAmount
+            }).ToList(),
+            RecentPayments = recentPayments.Select(p =>
+            {
+                p.Patient = patient;
+                return MapPayment(p);
+            }).ToList()
+        };
+    }
+
     public async Task<FinanceSummaryDto> GetSummaryAsync()
     {
         var today = DateOnly.FromDateTime(DateTime.Today);

@@ -25,6 +25,47 @@ public class ContractDetailDto : ContractListDto
     public List<PaymentDto> Payments { get; set; } = [];
 }
 
+public class UpdateContractRequest
+{
+    public string? Specialty { get; set; }
+    public decimal TotalAmount { get; set; }
+    public int InstallmentsCount { get; set; }
+    public decimal? InstallmentAmount { get; set; }
+    public string? StartDate { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public string? DiscountReason { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class AccountStatementDto
+{
+    public Guid PatientId { get; set; }
+    public string PatientName { get; set; } = string.Empty;
+    public string PatientNumber { get; set; } = string.Empty;
+    public decimal TotalContracted { get; set; }
+    public decimal TotalDiscounts { get; set; }
+    public decimal TotalPaid { get; set; }
+    public decimal TotalRemaining { get; set; }
+    public int ActiveContracts { get; set; }
+    public int CompletedContracts { get; set; }
+    public List<ContractStatementDto> Contracts { get; set; } = [];
+    public List<PaymentDto> RecentPayments { get; set; } = [];
+}
+
+public class ContractStatementDto
+{
+    public Guid Id { get; set; }
+    public string? Specialty { get; set; }
+    public decimal TotalAmount { get; set; }
+    public decimal DiscountAmount { get; set; }
+    public decimal PaidAmount { get; set; }
+    public decimal RemainingAmount { get; set; }
+    public string? StartDate { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int InstallmentsCount { get; set; }
+    public decimal? InstallmentAmount { get; set; }
+}
+
 public class OverdueContractDto
 {
     public Guid ContractId { get; set; }

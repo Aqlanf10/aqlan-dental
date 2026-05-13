@@ -1,128 +1,210 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Wallet, CreditCard, FileSignature } from "lucide-react";
+import Link from "next/link";
+import { Wallet, CreditCard, FileSignature, TrendingDown, ArrowLeft } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-interface ContractDto {
+interface ContractStatementDto {
   id: string;
+  specialty?: string;
   totalAmount: number;
+  discountAmount: number;
   paidAmount: number;
+  remainingAmount: number;
+  startDate?: string;
   status: string;
+  installmentsCount: number;
+  installmentAmount?: number;
 }
 
 interface PaymentDto {
   id: string;
   amount: number;
-  date: string;
-  method?: string;
+  paymentDate: string;
+  paymentMethod?: string;
+  serviceDescription?: string;
+  receiptNumber?: string;
+}
+
+interface AccountStatementDto {
+  patientId: string;
+  patientName: string;
+  patientNumber: string;
+  totalContracted: number;
+  totalDiscounts: number;
+  totalPaid: number;
+  totalRemaining: number;
+  activeContracts: number;
+  completedContracts: number;
+  contracts: ContractStatementDto[];
+  recentPayments: PaymentDto[];
 }
 
 interface FinanceTabProps {
   patientId: string;
-  totalPaid: number;
-  totalOutstanding: number;
 }
 
-export function FinanceTab({ patientId, totalPaid, totalOutstanding }: FinanceTabProps) {
-  const [contracts, setContracts] = useState<ContractDto[]>([]);
-  const [payments, setPayments] = useState<PaymentDto[]>([]);
+const statusLabel: Record<string, string> = {
+  active: "نشط",
+  completed: "مكتمل",
+  cancelled: "ملغى",
+};
+
+const statusClass: Record<string, string> = {
+  active: "bg-green-50 text-green-700",
+  completed: "bg-blue-50 text-blue-700",
+  cancelled: "bg-red-50 text-red-600",
+};
+
+const methodLabel: Record<string, string> = {
+  cash: "نقدي",
+  bank_transfer: "تحويل",
+  card: "بطاقة",
+};
+
+export function FinanceTab({ patientId }: FinanceTabProps) {
+  const [statement, setStatement] = useState<AccountStatementDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      api.get<ContractDto[]>(`/api/contracts?patientId=${patientId}`).then((r) => r.data).catch(() => []),
-      api.get<PaymentDto[]>(`/api/payments?patientId=${patientId}`).then((r) => r.data).catch(() => []),
-    ]).then(([c, p]) => {
-      setContracts(c);
-      setPayments(p);
-      setLoading(false);
-    });
+    api
+      .get<AccountStatementDto>(`/api/patients/${patientId}/account-statement`)
+      .then((r) => {
+        setStatement(r.data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError("تعذّر تحميل البيانات المالية");
+        setLoading(false);
+      });
   }, [patientId]);
 
   if (loading) {
     return (
       <div className="space-y-3 animate-pulse">
-        <div className="h-24 bg-[#f1f5f9] rounded-lg" />
+        <div className="h-20 bg-[#f1f5f9] rounded-lg" />
         <div className="h-14 bg-[#f1f5f9] rounded-lg" />
         <div className="h-14 bg-[#f1f5f9] rounded-lg" />
       </div>
     );
   }
 
-  const activeContracts = contracts.filter((c) => c.status === "active" || c.status === "Active").length;
-  const totalContractValue = contracts.reduce((sum, c) => sum + (c.totalAmount ?? 0), 0);
+  if (error || !statement) {
+    return <p className="text-sm text-red-500 text-center py-4">{error ?? "لا توجد بيانات مالية"}</p>;
+  }
+
+  const { totalContracted, totalDiscounts, totalPaid, totalRemaining, activeContracts, completedContracts, contracts, recentPayments } = statement;
 
   return (
     <div className="space-y-6" dir="rtl">
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-lg px-4 py-3 bg-clinic-blue-50">
+        <div className="rounded-lg px-4 py-3 bg-[#eef4fb]">
+          <p className="text-xs text-[#64748b]">إجمالي العقود</p>
+          <p className="text-lg font-bold text-[#1e5fa3]">{totalContracted.toLocaleString()}</p>
+        </div>
+        <div className="rounded-lg px-4 py-3 bg-green-50">
           <p className="text-xs text-[#64748b]">إجمالي المدفوع</p>
-          <p className="text-lg font-bold text-clinic-blue">{totalPaid.toLocaleString()}</p>
+          <p className="text-lg font-bold text-green-700">{totalPaid.toLocaleString()}</p>
         </div>
         <div className="rounded-lg px-4 py-3 bg-orange-50">
           <p className="text-xs text-[#64748b]">إجمالي المتبقي</p>
-          <p className="text-lg font-bold text-orange-600">{totalOutstanding.toLocaleString()}</p>
-        </div>
-        <div className="rounded-lg px-4 py-3 bg-[#3d7ab518]">
-          <p className="text-xs text-[#64748b]">العقود النشطة</p>
-          <p className="text-lg font-bold text-[#3d7ab5]">{activeContracts}</p>
+          <p className="text-lg font-bold text-orange-600">{totalRemaining.toLocaleString()}</p>
         </div>
         <div className="rounded-lg px-4 py-3 bg-purple-50">
-          <p className="text-xs text-[#64748b]">قيمة العقود</p>
-          <p className="text-lg font-bold text-purple-600">{totalContractValue.toLocaleString()}</p>
+          <p className="text-xs text-[#64748b]">الخصومات</p>
+          <p className="text-lg font-bold text-purple-600">{totalDiscounts.toLocaleString()}</p>
         </div>
       </div>
 
-      {/* Recent Payments */}
-      <div>
-        <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
-          <CreditCard className="w-4 h-4 text-clinic-blue" />
-          المدفوعات الأخيرة
-        </h3>
-        {payments.length === 0 ? (
-          <p className="text-sm text-[#94a3b8]">لا توجد مدفوعات مسجّلة</p>
-        ) : (
-          <div className="space-y-2">
-            {payments.slice(0, 10).map((p) => (
-              <div key={p.id} className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-lg border border-[#e8f0f9]">
-                <div className="flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-[#94a3b8]" />
-                  <span className="text-sm text-[#0d2137]">{p.date}</span>
-                  {p.method && <span className="text-xs text-[#94a3b8]">({p.method})</span>}
-                </div>
-                <span className="text-sm font-semibold text-clinic-blue">{p.amount.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Contract count badges */}
+      <div className="flex gap-3 text-sm">
+        <span className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-700 rounded-full font-medium">
+          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+          {activeContracts} عقد نشط
+        </span>
+        <span className="flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 rounded-full font-medium">
+          <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+          {completedContracts} عقد مكتمل
+        </span>
       </div>
 
-      {/* Contracts Summary */}
+      {/* Contracts */}
       <div>
         <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
-          <FileSignature className="w-4 h-4 text-clinic-blue" />
-          ملخص العقود
+          <FileSignature className="w-4 h-4 text-[#1e5fa3]" />
+          العقود
         </h3>
         {contracts.length === 0 ? (
           <p className="text-sm text-[#94a3b8]">لا توجد عقود مسجّلة</p>
         ) : (
           <div className="space-y-2">
-            {contracts.slice(0, 10).map((c) => (
-              <div key={c.id} className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-lg border border-[#e8f0f9]">
+            {contracts.map((c) => {
+              const effectiveTotal = c.totalAmount - c.discountAmount;
+              const progress = effectiveTotal > 0 ? Math.min(100, (c.paidAmount / effectiveTotal) * 100) : 0;
+              return (
+                <Link
+                  key={c.id}
+                  href={`/finance/contracts/${c.id}`}
+                  className="flex flex-col gap-2 p-3 bg-[#f7fafd] rounded-lg border border-[#e8f0f9] hover:border-[#1e5fa3]/30 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Wallet className="w-4 h-4 text-[#94a3b8]" />
+                      <span className="text-sm font-medium text-[#0d2137]">{c.specialty ?? "عقد علاج"}</span>
+                      {c.startDate && <span className="text-xs text-[#94a3b8]">{c.startDate}</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", statusClass[c.status] ?? "bg-[#f1f5f9] text-[#64748b]")}>
+                        {statusLabel[c.status] ?? c.status}
+                      </span>
+                      <ArrowLeft className="w-3.5 h-3.5 text-[#94a3b8]" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-[#64748b]">
+                    <span>مدفوع: {c.paidAmount.toLocaleString()}</span>
+                    <span>متبقي: {c.remainingAmount.toLocaleString()}</span>
+                    <span>الإجمالي: {effectiveTotal.toLocaleString()}</span>
+                  </div>
+                  {/* progress bar */}
+                  <div className="h-1.5 bg-[#e2e8f0] rounded-full overflow-hidden">
+                    <div
+                      className={cn("h-full rounded-full transition-all", c.status === "cancelled" ? "bg-red-400" : "bg-[#1e5fa3]")}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Recent Payments */}
+      <div>
+        <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
+          <CreditCard className="w-4 h-4 text-[#1e5fa3]" />
+          المدفوعات الأخيرة
+        </h3>
+        {recentPayments.length === 0 ? (
+          <p className="text-sm text-[#94a3b8]">لا توجد مدفوعات مسجّلة</p>
+        ) : (
+          <div className="space-y-2">
+            {recentPayments.map((p) => (
+              <div key={p.id} className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-lg border border-[#e8f0f9]">
                 <div className="flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-[#94a3b8]" />
-                  <span className={cn(
-                    "text-xs px-1.5 py-0.5 rounded-full font-medium",
-                    c.status === "active" || c.status === "Active" ? "bg-green-50 text-green-700" : "bg-[#f1f5f9] text-[#64748b]"
-                  )}>
-                    {c.status === "active" || c.status === "Active" ? "نشط" : c.status}
-                  </span>
+                  <TrendingDown className="w-4 h-4 text-green-500" />
+                  <div>
+                    <p className="text-sm text-[#0d2137]">{p.serviceDescription ?? "دفعة"}</p>
+                    <p className="text-xs text-[#94a3b8]">{p.paymentDate} {p.paymentMethod ? `· ${methodLabel[p.paymentMethod] ?? p.paymentMethod}` : ""}</p>
+                  </div>
                 </div>
                 <div className="text-left">
-                  <span className="text-xs text-[#64748b]">{c.paidAmount.toLocaleString()} / {c.totalAmount.toLocaleString()}</span>
+                  <p className="text-sm font-semibold text-[#1e5fa3]">{p.amount.toLocaleString()}</p>
+                  {p.receiptNumber && <p className="text-xs text-[#94a3b8]">{p.receiptNumber}</p>}
                 </div>
               </div>
             ))}

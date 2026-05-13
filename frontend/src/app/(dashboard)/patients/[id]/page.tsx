@@ -198,7 +198,7 @@ export default function PatientProfilePage() {
       case "visits":
         return <VisitsTab patientId={id} />;
       case "finance":
-        return <FinanceTab patientId={id} totalPaid={summary?.totalPaid ?? 0} totalOutstanding={summary?.totalOutstanding ?? 0} />;
+        return <FinanceTab patientId={id} />;
       case "contracts":
         return <ContractsTab patientId={id} />;
       case "payments":

@@ -11,7 +11,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patients")]
 [Authorize]
-public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService) : ControllerBase
+public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService, FinanceService financeService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -320,5 +320,13 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         var creds = await portalService.GetPatientCredentialsAsync(id);
         if (creds == null) return NotFound(new { message = "لا يوجد حساب بوابة لهذا المريض" });
         return Ok(creds);
+    }
+
+    [HttpGet("{id:guid}/account-statement")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<IActionResult> GetAccountStatement(Guid id)
+    {
+        var result = await financeService.GetAccountStatementAsync(id);
+        return result == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(result);
     }
 }

@@ -1922,7 +1922,15 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("PatientNumber")
                         .IsUnique();
 
+                    b.HasIndex("Phone")
+                        .IsUnique()
+                        .HasFilter("\"Phone\" IS NOT NULL AND \"Phone\" != ''");
+
                     b.HasIndex("PrimaryDoctorId");
+
+                    b.HasIndex("WhatsApp")
+                        .IsUnique()
+                        .HasFilter("\"WhatsApp\" IS NOT NULL AND \"WhatsApp\" != ''");
 
                     b.HasIndex("BranchId", "IsActive");
 

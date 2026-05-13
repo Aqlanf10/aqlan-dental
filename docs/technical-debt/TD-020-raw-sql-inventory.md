@@ -1,8 +1,8 @@
 # TD-020: Raw SQL Inventory & Classification
 
 **Created:** 2026-05-13
-**Production commit:** `2d18ec1`
-**Status:** Phase B2 — DbSeeder raw SQL eliminated (4 → 0)
+**Production commit:** `e51d98e4b6e8` (after PR #99 merge)
+**Status:** Phase C0 — Program.cs raw SQL risk review complete
 
 ---
 
@@ -10,14 +10,14 @@
 
 | Metric | Count |
 |--------|-------|
-| Files containing raw SQL | 2 (was 4; DbSeeder + MessagesController eliminated) |
-| Total `ExecuteSqlRawAsync` calls | 49 (was 84; −31 Phase B1 from MessagesController, −4 Phase B2 from DbSeeder) |
-| Total `ExecuteSqlRaw` (sync) calls | 0 |
-| Total `FromSqlRaw` / `FromSqlInterpolated` | 0 |
-| `CreateCommand()` / `CommandText` calls | 7 |
-| String-interpolated SQL (`$"..."`) | 5 |
-| Parameterized SQL (`{0}`, `{1}`) | 3 |
-| Pure literal SQL (no interpolation) | ~45 |
+| Files containing raw SQL | 2 (Program.cs + ClinicQueueController.cs) |
+| Total `ExecuteSqlRawAsync` calls in Program.cs | 48 |
+| Total `CreateCommand()` / `CommandText` in Program.cs | 3 pairs (6 lines) |
+| Total raw SQL in Program.cs | **50** (48 ExecuteSqlRawAsync + 3 raw CommandText + 1 interpolated lockKey) |
+| Total raw SQL in ClinicQueueController.cs | **2** (advisory locks — KEEP) |
+| Total backend raw SQL | **52** |
+| Blocks active WITHOUT env gate (ungated) | 4 (A1-A4: admin password reset) |
+| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 47 (B1-B47: schema maintenance) |
 
 **SQL Injection verdict:** No exploitable vectors found. All interpolated values are either `int` from configuration or hardcoded `string[]` arrays — none derive from user input.
 
@@ -27,7 +27,7 @@
 
 | # | File | Blocks | Guard | Category |
 |---|------|--------|-------|----------|
-| 1 | `src/AqlanDentalPro.API/Program.cs` | 51 | Ungated (A1-A4) + `ENABLE_STARTUP_DB_MAINTENANCE` (B1-B47) | Startup maintenance + Admin setup |
+| 1 | `src/AqlanDentalPro.API/Program.cs` | **50** | Ungated (A1-A4, 4 blocks) + `ENABLE_STARTUP_DB_MAINTENANCE` (B1-B47, 47 blocks) | Startup maintenance + Admin setup |
 | 2 | `src/AqlanDentalPro.Infrastructure/Data/Seed/DbSeeder.cs` | 0 (was 4) | `ENABLE_STARTUP_DB_MAINTENANCE` (via caller) | ~~Seeder / schema drift hotfix~~ **Eliminated in Phase B2** |
 | 3 | `src/AqlanDentalPro.API/Controllers/MessagesController.cs` | 0 (was 31) | `[Authorize(Policy = "AdminOnly")]` | ~~Messaging schema hotfix~~ **Eliminated in Phase B1** |
 | 4 | `src/AqlanDentalPro.API/Controllers/ClinicQueueController.cs` | 2 | `[Authorize(Policy = "StaffOnly")]` | Advisory locks |
@@ -43,15 +43,15 @@
 **Blocks:** B1-B47 (47 blocks)
 **Currently active in production:** NO (env var defaults to `false`)
 
-| # | Line | Purpose | Risk | Action |
-|---|------|---------|------|--------|
-| B1 | 482 | Advisory lock acquisition (`pg_try_advisory_lock`) | Low | C — Keep as advisory lock |
-| B2 | 521 | `ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 34 tables | Medium | A — Convert to EF migration |
+| # | Line | Purpose | Risk | Action | Phase C0 Notes |
+|---|------|---------|------|--------|--------------|
+| B1 | 482 | Advisory lock acquisition (`pg_try_advisory_lock`) | Low | C — Keep as advisory lock | Must keep. Uses interpolated `lockKey` from config (int type — no injection risk). |
+| B2 | 521-533 | `ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 34 tables | Medium | A — Convert to EF migration | **Do NOT remove yet.** Already applied in production. Must create idempotent migration first. |
 | B3 | 541 | `ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"` | Low | A — Convert to EF migration |
-| B4 | 553 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D |
-| B5 | 574 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D |
-| B6 | 597 | Deduplicate `NormalizedPhone` (complex CTE) | Low | D — Delete as obsolete |
-| B7 | 608 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete |
+| B4 | 553-573 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
+| B5 | 575-594 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
+| B6 | 598-608 | Deduplicate `NormalizedPhone` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
+| B7 | 609-619 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
 | B8 | 619 | `CREATE UNIQUE INDEX "IX_Patients_NormalizedPhone"` | Low | A — Convert to EF migration |
 | B9 | 624 | `CREATE UNIQUE INDEX "IX_Patients_NormalizedWhatsApp"` | Low | A — Convert to EF migration |
 | B10 | 631 | `ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"` | Low | A — Convert to EF migration |
@@ -84,11 +84,11 @@
 | B37 | 1027 | `CREATE TABLE "Messages" (...)` — fallback block | High | A — Convert to EF migration |
 | B38 | 1061 | `CREATE TABLE "MessageReads" (...)` — fallback block | High | A — Convert to EF migration |
 | B39 | 1087 | `INSERT INTO "__EFMigrationsHistory" '20260430000000_AddMessagingSystem'` | Medium | D — Delete as obsolete |
-| B40 | 1117 | `CREATE TABLE "ClinicQueueItems" (...)` | High | A — Convert to EF migration |
+| B40 | 1118-1147 | `CREATE TABLE "ClinicQueueItems" (...)` + 2 indexes | High | A — Convert to EF migration | **Do NOT remove yet.** Safety net for Railway. Requires stable EF migration replacement first (TD-010). |
 | B41 | 1149 | `ADD FKs for ClinicQueueItems` | Low | A — Convert to EF migration |
 | B42 | 1171 | `INSERT INTO "__EFMigrationsHistory" '20260514000000_AddClinicQueueItem'` | Medium | D — Delete as obsolete |
 | B43 | 1193 | `ADD COLUMN "AddedByUserId"/"CalledByUserId"/"Notes" TO "ClinicQueueItems"` | Medium | A — Convert to EF migration |
-| B44 | 1208 | Data migration: move "CalledBy" → "CalledByUserId" | Medium | E — Keep temporarily, then D |
+| B44 | 1209-1216 | Data migration: move "CalledBy" → "CalledByUserId", then DROP COLUMN | Medium | E — Keep temporarily, then D | **Contains DROP COLUMN** — destructive. Already applied in production. Do NOT remove until migration 20260520000000 is confirmed stable. |
 | B45 | 1218 | `ADD FKs "FK_ClinicQueueItems_Users_AddedByUserId"` etc. | Low | A — Convert to EF migration |
 | B46 | 1232 | `INSERT INTO "__EFMigrationsHistory" '20260520000000_AddClinicQueueItemTrackingFields'` | Medium | D — Delete as obsolete |
 | B47 | 1278 | Advisory lock release (`pg_advisory_unlock`) | Low | C — Keep as advisory lock |
@@ -233,24 +233,48 @@ The `EnsureSchema()` endpoint in `MessagesController.cs` (31 blocks) is **nearly
 
 ## Migration Roadmap
 
-### Phase B: Safe Parameterization
-Convert non-schema raw SQL to parameterized `ExecuteSqlAsync` / `FormattableString`:
-- Advisory locks: Q1, Q2, B1, B47 (4 blocks)
-- Admin password reset: A3 (1 block)
-- Data backfills: B4, B5, B44, S2 (4 blocks)
+### Phase C1: Convert Gated Schema Blocks to EF Migrations (Safe — env=false in prod)
+Create formal EF Core migrations for all schema changes in the gated block (B2-B46). These blocks are **not active in production** (`ENABLE_STARTUP_DB_MAINTENANCE=false`), making this the safest phase.
 
-### Phase C: Convert Schema Hotfixes to EF Migrations
-Create formal EF Core migrations for all schema changes currently done via raw SQL:
-- 9 table creations (PatientAccounts, DoctorSchedules, ClinicQueueItems, Conversations, ConversationParticipants, Messages, MessageReads, Settings)
-- ~20 column additions across multiple tables
-- ~10 index creations
-- ~8 foreign key additions
+**Recommended order (lowest risk first):**
+1. **C1-a:** Soft-delete columns (B2) — 34 tables, already applied in production, simple ADD COLUMN
+2. **C1-b:** NormalizedPhone/NormalizedWhatsApp columns + indexes (B3, B8, B9) — already applied
+3. **C1-c:** Conversation columns + indexes + FK (B10-B13) — already applied
+4. **C1-d:** PatientAccounts table + columns + indexes + FK (B17-B20, B24-B25) — high priority, no proper migration exists
+5. **C1-e:** PatientAccounts username/password columns (B24, B25) — auth-related, high priority
+6. **C1-f:** Visits/Documents columns + indexes (B26-B27) — already applied
+7. **C1-g:** Appointments queue columns (B29) — already applied
+8. **C1-h:** DoctorSchedules table + FK + index (B31-B33) — no proper migration exists
+9. **C1-i:** Messaging tables fallback (B35-B38) — already created by `MigrateAsync()`, fallback only
+10. **C1-j:** ClinicQueueItems table + tracking fields + FKs (B40-B45) — **do last** (TD-010 safety net)
+11. **C1-k:** Delete all fake migration history entries (B14-B16, B21-B23, B28, B30, B34, B39, B42, B46)
+
+**Blocks to keep in Program.cs during C1:**
+- B1/B47: Advisory lock/unlock (structural — needed as long as any gated block remains)
+- B4/B5: Data backfills (one-time — may still need to run on staging)
+- B6/B7: Deduplication (one-time — safe to delete after C1-b confirms indexes exist)
+- B44: Data migration with DROP COLUMN (destructive — keep until migration 20260520000000 stability confirmed)
+
+### Phase C2: Refactor Ungated Admin Password Reset (Higher risk — runs every startup)
+The admin password reset block (A1-A4) runs **unconditionally at every startup**. This is the most sensitive block:
+- A1: CREATE TABLE Settings IF NOT EXISTS → Convert to EF migration
+- A2: SELECT COUNT(*) via CreateCommand → Replace with EF LINQ
+- A3: UPDATE Users password via ExecuteSqlRawAsync → Keep but parameterize with FormattableString
+- A4: INSERT Settings flag → Replace with EF LINQ
+
+**Risk:** This block touches admin credentials. Must be carefully tested. Consider keeping the idempotent flag-check logic but moving it to DbSeeder (gated by `ENABLE_STARTUP_DB_MAINTENANCE`).
+
+### Phase C3: Clean Up Remaining Blocks
+- Delete all gated blocks that have been converted to migrations (B2-B46)
+- Remove advisory lock/unlock (B1/B47) if no gated blocks remain
+- Remove `ENABLE_STARTUP_DB_MAINTENANCE` config check if no gated blocks remain
+- Remove `DbSeeder.SeedAsync(db, logger)` call if it becomes empty
 
 ### Phase D: Remove Obsolete Blocks
 Delete all raw SQL that has been superseded by EF migrations:
-- All 31 blocks in `MessagesController.EnsureSchema()` endpoint
-- All `INSERT INTO "__EFMigrationsHistory"` fake entries (B14-B16, B21-B23, B28, B30, B34, B39, B42, B46)
-- Deduplication queries (B6, B7) — already applied
+- All 31 blocks in `MessagesController.EnsureSchema()` endpoint — **already done in Phase B1**
+- All fake migration history entries — done in Phase C1-k
+- Deduplication queries (B6, B7) — done in Phase C1-b
 
 ### Phase E: Final Production Verification
 - Enable `ENABLE_STARTUP_DB_MAINTENANCE=true` on staging
@@ -313,3 +337,198 @@ All operations in this migration are safe for databases where the old DbSeeder r
 - No changes to `ClinicQueueController.cs` advisory locks (Q1, Q2) per scope rules
 - No auth/password behavior changes
 - Raw SQL moved from DbSeeder.cs (runtime) into guarded EF migration (schema-only) — this is the correct architectural location
+
+---
+
+## Phase C0: Program.cs Raw SQL Risk Review (2026-05-13)
+
+**Purpose:** Full risk review of all remaining raw SQL in Program.cs before any code changes.
+**Branch:** `td-020-phase-c0-program-raw-sql-review` (docs-only — no code changes)
+**Scope:** Review-only. No code, schema, migration, auth, or environment variable changes.
+
+### Current State After Phase B2
+
+| Metric | Value |
+|--------|-------|
+| Production commit | `e51d98e4b6e8` |
+| CI status | All green (287/287 tests) |
+| Backend tests | 287/287 passing |
+| DbSeeder raw SQL | 0 |
+| MessagesController raw SQL | 0 |
+| ClinicQueueController raw SQL | 2 (advisory locks — KEEP) |
+| Program.cs raw SQL | **50** |
+| Total backend raw SQL | **52** |
+
+### Production Guard Verification
+
+| Guard | Value | Status |
+|-------|-------|--------|
+| `ENABLE_STARTUP_DB_MAINTENANCE` | `false` (default) | Confirmed — gated block (B1-B47) does NOT run |
+| Admin password reset (A1-A4) | No env gate — always runs | Confirmed — runs at every startup but is idempotent via Settings flag |
+
+### Blocks Active Even With ENABLE_STARTUP_DB_MAINTENANCE=false
+
+These 4 blocks run **unconditionally** on every startup:
+
+| Block | Line | Purpose | Risk Assessment |
+|-------|------|---------|----------------|
+| A1 | 312 | CREATE TABLE "Settings" IF NOT EXISTS | Low risk — idempotent, only creates table if missing |
+| A2 | 330-338 | SELECT COUNT(*) check for reset flag | Low risk — read-only query |
+| A3 | 348-351 | UPDATE "Users" SET password for admin | **High risk** — writes sensitive data, but guarded by flag (only runs once) and uses parameterized `{0}`/`{1}` |
+| A4 | 354-357 | INSERT reset flag into Settings | Low risk — idempotent via flag check |
+
+**Important:** Block A3 is the only block that **modifies credentials**. It is:
+- Idempotent (only runs if Settings flag does not exist)
+- Parameterized (uses `{0}` and `{1}` placeholders, not string interpolation)
+- Non-destructive (sets a new password, does not delete existing data)
+- Expected to have already fired in production (flag should already be set)
+
+### Full Block Classification
+
+#### Category A — Ungated Startup / Admin Setup (4 blocks, ACTIVE in production)
+
+| Block | Line | SQL Type | Purpose | Risk | Recommended Action | Why |
+|-------|------|----------|---------|------|-------------------|-----|
+| A1 | 312 | Literal (raw string) | CREATE TABLE "Settings" IF NOT EXISTS | Medium | Convert to EF migration | Table should be part of the EF model |
+| A2 | 330-338 | CreateCommand/CommandText | SELECT COUNT(*) flag check | Low | Replace with EF LINQ | Unnecessary raw SQL for a simple count query |
+| A3 | 348-351 | Parameterized (`{0}`, `{1}`) | UPDATE admin password | **High** | Keep temporarily, move to DbSeeder | Must remain until admin password is properly managed; move to gated DbSeeder in Phase C2 |
+| A4 | 354-357 | Literal (raw string) | INSERT reset flag | Medium | Replace with EF LINQ | Unnecessary raw SQL for a simple insert |
+
+#### Category B — ENABLE_STARTUP_DB_MAINTENANCE Gated (47 blocks, INACTIVE in production)
+
+##### B-I: Schema — Column Additions (Convert to EF migration)
+
+| Block | Line(s) | Tables Affected | Risk | Phase |
+|-------|---------|----------------|------|-------|
+| B2 | 521-533 | 34 tables (DeletedAt/DeletedBy) | Medium | C1-a |
+| B3 | 541-551 | Patients (NormalizedPhone/NormalizedWhatsApp) | Low | C1-b |
+| B10 | 631-644 | Conversations (ConversationType/PatientId/BranchId) | Low | C1-c |
+| B24 | 762-778 | PatientAccounts (Username/PasswordHash/PasswordSalt/InitialPassword) | **High** | C1-d |
+| B26 | 792-806 | Visits (Diagnosis/NextVisitPlan) + indexes | Medium | C1-f |
+| B27 | 808-831 | Documents (FileName/FileSize/MimeType/Notes/UploadedBy) + indexes | Medium | C1-f |
+| B29 | 851-870 | Appointments (RoomName/ArrivedAt/CalledAt/InRoomAt) + index | Medium | C1-g |
+| B43 | 1193-1206 | ClinicQueueItems (AddedByUserId/CalledByUserId/Notes) | Medium | C1-j |
+
+##### B-II: Schema — Table Creations (Convert to EF migration)
+
+| Block | Line(s) | Table | Risk | Phase |
+|-------|---------|-------|------|-------|
+| B17 | 696-715 | PatientAccounts | **High** | C1-d |
+| B31 | 890-908 | DoctorSchedules | **High** | C1-h |
+| B35 | 958-999 | Conversations (fallback) | High | C1-i |
+| B36 | 1000-1026 | ConversationParticipants (fallback) | High | C1-i |
+| B37 | 1028-1060 | Messages (fallback) | High | C1-i |
+| B38 | 1062-1085 | MessageReads (fallback) | High | C1-i |
+| B40 | 1118-1147 | ClinicQueueItems + 2 indexes | **High** | C1-j (do last) |
+
+##### B-III: Schema — Indexes (Convert to EF migration)
+
+| Block | Line(s) | Index | Risk | Phase |
+|-------|---------|-------|------|-------|
+| B8 | 620-624 | IX_Patients_NormalizedPhone (unique, filtered) | Low | C1-b |
+| B9 | 625-629 | IX_Patients_NormalizedWhatsApp (unique, filtered) | Low | C1-b |
+| B11 | 646-648 | IX_Conversations_PatientId | Low | C1-c |
+| B12 | 649-651 | IX_Conversations_ConversationType | Low | C1-c |
+| B19 | 724-727 | IX_PatientAccounts_PatientId (unique) | Low | C1-d |
+| B20 | 728-731 | IX_PatientAccounts_PhoneNumber (unique) | Low | C1-d |
+| B25 | 779-781 | IX_PatientAccounts_Username (unique, filtered) | Low | C1-d |
+| B33 | 919-923 | IX_DoctorSchedules_DoctorId_DayOfWeek (unique, filtered) | Low | C1-h |
+
+##### B-IV: Schema — Foreign Keys (Convert to EF migration)
+
+| Block | Line(s) | FK | Risk | Phase |
+|-------|---------|-----|------|-------|
+| B13 | 654-661 | FK_Conversations_Patients_PatientId | Low | C1-c |
+| B18 | 716-723 | FK_PatientAccounts_Patients_PatientId | Low | C1-d |
+| B32 | 910-917 | FK_DoctorSchedules_Doctors_DoctorId | Low | C1-h |
+| B41 | 1150-1169 | 4 FKs for ClinicQueueItems | Low | C1-j |
+| B45 | 1219-1230 | FK_ClinicQueueItems_Users_AddedByUserId/CalledByUserId | Low | C1-j |
+
+##### B-V: Data Backfills (Keep temporarily, do NOT remove yet)
+
+| Block | Line(s) | Purpose | Risk | Why Keep |
+|-------|---------|---------|------|----------|
+| B4 | 553-573 | UPDATE Patients NormalizedPhone (CASE normalization) | Medium | One-time backfill; already applied but may need re-run for new patients |
+| B5 | 575-594 | UPDATE Patients NormalizedWhatsApp (CASE normalization) | Medium | Same as B4 |
+| B6 | 598-608 | Deduplicate NormalizedPhone (CTE) | Low | One-time; safe to delete after C1-b |
+| B7 | 609-619 | Deduplicate NormalizedWhatsApp (CTE) | Low | One-time; safe to delete after C1-b |
+| B44 | 1209-1216 | Data migration: CalledBy -> CalledByUserId, then DROP COLUMN | Medium | **Contains destructive DROP COLUMN.** Keep until migration 20260520000000 is confirmed stable |
+
+##### B-VI: Fake Migration History (Delete as obsolete)
+
+| Block | Line(s) | MigrationId | Phase |
+|-------|---------|-------------|-------|
+| B14 | 664-670 | 20260501000000_AddNormalizedPhoneFields | C1-k |
+| B15 | 671-677 | 20260501010000_AddPatientConversationSupport | C1-k |
+| B16 | 678-684 | 20260501020000_AddSoftDeleteToMessagingTables | C1-k |
+| B21 | 732-738 | 20260430120000_AddPatientPortal | C1-k |
+| B22 | 739-745 | 20260430140000_AddWhatsAppIntegration | C1-k |
+| B23 | 746-752 | 20260430160000_AddGeneralDentistryEnhancements | C1-k |
+| B28 | 834-840 | 20260502000000_AddVisitsDocumentsFields | C1-k |
+| B30 | 873-879 | 20260502100000_AddQueueFieldsToAppointments | C1-k |
+| B34 | 926-932 | 20260502120000_AddDoctorSchedules | C1-k |
+| B39 | 1088-1094 | 20260430000000_AddMessagingSystem | C1-k |
+| B42 | 1172-1178 | 20260514000000_AddClinicQueueItem | C1-k |
+| B46 | 1233-1239 | 20260520000000_AddClinicQueueItemTrackingFields | C1-k |
+
+##### B-VII: Infrastructure — Advisory Locks (Keep permanently)
+
+| Block | Line(s) | Purpose | Risk | Action |
+|-------|---------|---------|------|--------|
+| B1 | 480-485 | pg_try_advisory_lock acquisition | Low | Keep — concurrency primitive |
+| B47 | 1278-1279 | pg_advisory_unlock release | Low | Keep — paired with B1 |
+
+### Risk Matrix Summary
+
+| Risk Level | Count (Program.cs) | Blocks |
+|-----------|-------------------|--------|
+| **High** | 8 | A3, B17, B24, B31, B35, B36, B37, B38, B40 |
+| **Medium** | 17 | A1, A4, B2, B4, B5, B14-B16, B21-B23, B26-B28, B29-B30, B34, B39, B42-B44, B46 |
+| **Low** | 25 | A2, B1, B3, B6-B13, B18-B20, B25, B32-B33, B41, B45, B47 |
+
+### Blocks Safe to Convert First (Phase C1)
+
+**Phase C1-a through C1-i are safe** because they are inside the `ENABLE_STARTUP_DB_MAINTENANCE=false` gate. Converting them to EF migrations carries zero production risk since the blocks do not execute in production.
+
+**Safest conversion order:**
+1. Soft-delete columns (B2) — pure ADD COLUMN, idempotent
+2. NormalizedPhone/WhatsApp columns + indexes (B3, B8, B9) — already applied
+3. Conversation columns + indexes + FK (B10-B13) — already applied
+4. PatientAccounts full setup (B17-B20, B24-B25) — no EF migration exists yet
+5. Visits/Documents columns + indexes (B26-B27) — already applied
+6. Appointments queue columns (B29) — already applied
+7. DoctorSchedules full setup (B31-B33) — no EF migration exists yet
+8. Messaging tables fallback (B35-B38) — redundant with MigrateAsync()
+9. ClinicQueueItems full setup (B40-B45) — **do last** per TD-010
+10. Delete fake migration history entries (B14-B16, B21-B23, B28, B30, B34, B39, B42, B46)
+
+### Blocks That Must NOT Be Touched Yet
+
+| Block | Reason |
+|-------|--------|
+| A3 (admin password reset) | Touches admin credentials; must remain until proper password management is implemented |
+| B4/B5 (phone normalization backfills) | One-time data migration; may need re-run for staging environments |
+| B44 (CalledBy DROP COLUMN) | Destructive operation; must keep until migration 20260520000000 is confirmed stable |
+| B40 (ClinicQueueItems safety net) | TD-010 safety net for Railway; must remain until 2+ weeks of clean deployments |
+| B1/B47 (advisory lock/unlock) | Infrastructure; keep as long as any gated block remains |
+| Q1/Q2 (ClinicQueueController advisory locks) | Runtime concurrency control; never convert to migration |
+
+### SQL Injection Analysis
+
+| Pattern | Count | Risk | Details |
+|---------|-------|------|---------|
+| `$\"...\"` interpolation | 1 (B1 lockKey) | None | `int` from config — not user input |
+| `$\"...\"` interpolation (table names in B2 loop) | 1 (B2 softDeleteSql) | None | Hardcoded `string[]` array — not user input |
+| `{0}`/`{1}` parameterized | 1 (A3 password) | None | EF Core `ExecuteSqlRawAsync` auto-parameterizes `{0}`/`{1}` |
+| Literal SQL | 46 | None | Pure string literals, no interpolation |
+| `CreateCommand().CommandText` | 3 | None | Advisory lock (int), flag check (hardcoded), unlock (int) |
+
+**Verdict:** No exploitable SQL injection vectors exist in Program.cs.
+
+### Production Safety Notes
+
+1. **ENABLE_STARTUP_DB_MAINTENANCE=false** is confirmed as the default. All 47 gated blocks (B1-B47) are inactive in production.
+2. The 4 ungated blocks (A1-A4) run at every startup but are idempotent — they check for a Settings flag and skip if already applied.
+3. No data-destructive operations exist outside the gated block, except B44 (DROP COLUMN) which is also gated.
+4. The admin password reset (A3) uses `ADMIN_DEFAULT_PASSWORD` env var with fallback to `"ChangeMeImmediately2026!"`.
+5. Railway logs should show "Admin password reset already applied, skipping" on every startup (confirming the flag is set).

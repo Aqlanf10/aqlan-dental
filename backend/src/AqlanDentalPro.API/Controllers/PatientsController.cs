@@ -302,7 +302,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             prescriptionsCount,
             // Extended fields
             lastVisitDate = lastVisit?.VisitDate.ToString("yyyy-MM-dd"),
-            lastVisitDoctor = lastVisit?.Name,
+            lastVisitDoctor = lastVisit?.DoctorName,
             lastVisitDiagnosis = lastVisit?.Diagnosis,
             nextAppointmentDate = nextAppointment?.AppointmentDate.ToString("yyyy-MM-dd"),
             nextAppointmentTime = nextAppointment?.StartTime.ToString("HH:mm"),

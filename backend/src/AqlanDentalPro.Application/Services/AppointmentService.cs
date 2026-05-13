@@ -156,9 +156,8 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         if (!Enum.TryParse<AppointmentStatus>(status, true, out var parsed))
             return (null, "حالة الموعد غير صالحة");
 
-        // Validate status transition (allow re-scheduling from terminal states)
-        if (appointment.Status != AppointmentStatus.Scheduled && 
-            appointment.Status != AppointmentStatus.NoShow &&
+        // Validate status transition (allow re-scheduling from terminal states NoShow/Cancelled)
+        if (appointment.Status != AppointmentStatus.NoShow &&
             appointment.Status != AppointmentStatus.Cancelled)
         {
             if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, parsed))

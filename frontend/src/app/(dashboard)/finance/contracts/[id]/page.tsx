@@ -130,23 +130,36 @@ function EditModal({
   const set = (k: keyof EditForm, v: string | number) =>
     setForm((prev) => ({ ...prev, [k]: v }));
 
+  const validate = (): string | null => {
+    if (form.totalAmount < 0) return "إجمالي العقد يجب أن يكون صفراً أو أكثر";
+    if (form.discountAmount < 0) return "قيمة الخصم يجب أن تكون صفراً أو أكثر";
+    if (form.discountAmount > form.totalAmount) return "قيمة الخصم لا يمكن أن تتجاوز إجمالي العقد";
+    if (form.installmentsCount < 0) return "عدد الأقساط يجب أن يكون صفراً أو أكثر";
+    if (form.installmentAmount < 0) return "قيمة القسط يجب أن تكون صفراً أو أكثر";
+    return null;
+  };
+
   const save = async () => {
+    const validationError = validate();
+    if (validationError) { setError(validationError); return; }
+
     setSaving(true); setError(null);
     try {
       const { data } = await api.put<Contract>(`/api/contracts/${contract.id}`, {
-        specialty:        form.specialty || null,
-        totalAmount:      form.totalAmount,
+        specialty:         form.specialty || null,
+        totalAmount:       form.totalAmount,
         installmentsCount: form.installmentsCount,
         installmentAmount: form.installmentAmount || null,
-        startDate:        form.startDate || null,
-        discountAmount:   form.discountAmount,
-        discountReason:   form.discountReason || null,
-        notes:            form.notes || null,
+        startDate:         form.startDate || null,
+        discountAmount:    form.discountAmount,
+        discountReason:    form.discountReason || null,
+        notes:             form.notes || null,
       });
       onSaved(data);
       onClose();
-    } catch {
-      setError("حدث خطأ أثناء الحفظ");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg ?? "حدث خطأ أثناء الحفظ");
     } finally {
       setSaving(false);
     }

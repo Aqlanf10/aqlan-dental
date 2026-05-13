@@ -504,17 +504,8 @@ if (enableStartupDbMaintenance)
         // B2 (soft-delete columns) removed in TD-020 Phase C1-a --
         // now handled by EF migration 20260522000000_AddSoftDeleteColumnsToLegacyTables
 
-        // Add NormalizedPhone/NormalizedWhatsApp to Patients
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone') THEN
-                    ALTER TABLE "Patients" ADD COLUMN "NormalizedPhone" character varying(20) NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedWhatsApp') THEN
-                    ALTER TABLE "Patients" ADD COLUMN "NormalizedWhatsApp" character varying(20) NULL;
-                END IF;
-            END $$;
-        """);
+        // B3/B8/B9 normalized phone schema removed in TD-020 Phase C1-b;
+        // now handled by EF migration 20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes.
 
         // Backfill NormalizedPhone/NormalizedWhatsApp
         await db.Database.ExecuteSqlRawAsync("""
@@ -583,17 +574,6 @@ if (enableStartupDbMaintenance)
             FROM duplicates
             WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
         """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedPhone" 
-                ON "Patients" ("NormalizedPhone") 
-                WHERE "NormalizedPhone" IS NOT NULL AND "NormalizedPhone" != '';
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedWhatsApp" 
-                ON "Patients" ("NormalizedWhatsApp") 
-                WHERE "NormalizedWhatsApp" IS NOT NULL AND "NormalizedWhatsApp" != '';
-        """);
-
         // Add ConversationType/PatientId/BranchId to Conversations
         await db.Database.ExecuteSqlRawAsync("""
             DO $$ BEGIN

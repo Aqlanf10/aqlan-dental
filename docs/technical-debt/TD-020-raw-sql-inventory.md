@@ -790,7 +790,7 @@ PR #103 (TD-020 Phase C1-c) attempted to delete B4/B5/B6/B7 from `Program.cs`. I
 **The core problem:** B4/B5 are not redundant schema helpers — they are legacy data backfill blocks.
 
 | Block | Nature | Risk of Deletion |
-|-------|--------|-----------------|
+|-------|--------|------------------|
 | B4 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` | Removes the only automated path to populate `NormalizedPhone` for patients created before `PhoneNormalizer` was wired into `PatientService`. Any such rows remain `NULL` and are invisible to normalized-phone duplicate detection. |
 | B5 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` | Same as B4 but for `NormalizedWhatsApp`/`WhatsApp`. |
 | B6 | Deduplicate `NormalizedPhone` (CTE) | If B4 still needs to run, duplicate normalized values could violate the unique index. B6 must remain until B4's backfill is verified complete. |
@@ -971,3 +971,153 @@ LIMIT 20;
 | Program.cs application behavior | Unchanged | Docs-only phase |
 | Auth/password behavior | Unchanged | Not in scope |
 | `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged | Not enabled |
+
+---
+
+## Phase C1-f — Safe Patient Phone Normalization Repair
+
+**PR:** #106 (pending review)
+**Branch:** `td-020-phase-c1f-safe-phone-normalization-repair`
+**Type:** `fix` — make stuck EF migration idempotent
+**Raw SQL delta:** Program.cs unchanged (42); total backend unchanged (44)
+
+### Production Finding Summary
+
+These findings were determined by reading Railway postgres and aqlan-dental service logs via `railway logs` (direct SQL access to the production DB was not possible from the sandbox — Railway postgres has no public TCP proxy/`DATABASE_PUBLIC_URL` configured).
+
+| Finding | Detail |
+|---------|--------|
+| `ENABLE_STARTUP_DB_MAINTENANCE` | **true** in production — all B-blocks run on every startup |
+| Stuck migration (Problem A) | `20260430221054_AddPhoneNormalizationAndArchive` NOT in `__EFMigrationsHistory`; retries and fails every startup |
+| Root cause of A | Migration's `AddColumn NormalizedPhone/NormalizedWhatsApp` calls are non-idempotent; columns already added by B-blocks before EF ran → 42701 `column already exists` → whole migration rolls back → never recorded |
+| Next-in-line stuck migration (Problem B) | `20260430221624_AddConversationPatientAndType` also NOT in B-block history inserts; would become the next stuck migration immediately after A is fixed |
+| B5 backfill failure (Problem C) | `duplicate key value violates unique constraint "IX_Patients_NormalizedWhatsApp"` — Key `(967711752823)` already exists — fires on **every** startup |
+| Known duplicate raw WhatsApp | `0711752823` → normalized `967711752823`; two patients share this raw WhatsApp number |
+| One patient stuck with `NormalizedWhatsApp = NULL` | B6/B7 previously nulled it out when creating `IX_Patients_NormalizedWhatsApp`; B5 keeps trying (and failing) to re-populate it |
+| `IX_Patients_NormalizedWhatsApp` exists | Confirmed by constraint violation error |
+| `IX_Patients_WhatsApp` (raw) does NOT exist | Fails every startup: `Key ("WhatsApp")=(0711752823) is duplicated` |
+| EF migration loop cascade | `20260430221054` failure prevents EF from recording any later migrations; app starts successfully despite errors (health 200) |
+| Q1 (NormalizedPhone NULL count) | Likely 0 — no NormalizedPhone UPDATE errors visible in logs; backfill appears complete |
+| Q2 (NormalizedWhatsApp NULL count) | ≥ 1 confirmed — at least the patient with WhatsApp `0711752823` |
+| Q3 (duplicate NormalizedPhone) | Likely 0 — `IX_Patients_NormalizedPhone` unique constraint active, no violations |
+| Q4 (duplicate NormalizedWhatsApp) | 0 active violations; 1 patient cannot be filled without conflict |
+
+### Why B4/B5/B6/B7 Cannot Simply Be Deleted
+
+| Block | Why NOT deletable yet |
+|-------|----------------------|
+| B4 (NormalizedPhone backfill) | Q1 is probably 0 but unconfirmed without a direct query; premature deletion risks leaving legacy rows un-normalized |
+| B5 (NormalizedWhatsApp backfill) | Q2 ≥ 1 confirmed; at least one patient still has `NormalizedWhatsApp = NULL`; B5 is the only automated fill path for that row (even though it currently fails) |
+| B6 (NormalizedPhone dedup CTE) | Dedup safety guard before `IX_Patients_NormalizedPhone`; removal safe only after normalized index is confirmed stable |
+| B7 (NormalizedWhatsApp dedup CTE) | Same as B6 but for WhatsApp; original dedup run created the unique constraint |
+
+### Why `IX_Patients_WhatsApp` Must Not Be Created
+
+The raw `WhatsApp` column has at least two patients with value `0711752823`. `CREATE UNIQUE INDEX` on the raw `WhatsApp` column will fail until the duplicate is corrected. The index must not be created in any migration until:
+1. Staff corrects the duplicate via the patient edit UI (change one patient's phone to the real number).
+2. A follow-up read-only check confirms zero raw WhatsApp duplicates.
+
+### Why the First Approach in This PR Was Wrong
+
+An initial attempt created a new migration `20260525000000_RepairPatientPhoneNormalizationState`
+with `__EFMigrationsHistory` inserts intended to unblock `20260430221054`.
+
+**This approach cannot work.** EF Core applies migrations in `MigrationId` order (timestamp
+ascending). If `20260430221054` fails before being recorded, EF stops immediately — it never
+reaches `20260525000000`. The history inserts inside the later migration are unreachable.
+
+The correct fix is to make `20260430221054_AddPhoneNormalizationAndArchive` itself idempotent,
+because EF IS reaching that migration — it just fails when it gets there.
+
+### Why Modifying the Old Migration Is Safe
+
+This migration has never been successfully applied (it is NOT in `__EFMigrationsHistory`). EF Core
+will execute the modified version as if it is being applied for the first time. Since the migration
+has never run, there is no risk of re-applying state that was already recorded.
+
+The `.Designer.cs` file is left unchanged — it contains the model snapshot at the time of the
+original migration generation and does not affect execution.
+
+### What Was Changed in `20260430221054_AddPhoneNormalizationAndArchive.cs`
+
+All non-idempotent EF method calls (`AddColumn`, `CreateTable`, `CreateIndex`, `AddForeignKey`)
+were replaced with raw idempotent SQL.
+
+| Operation type | Original (broken) | Fixed (idempotent) |
+|---------------|-------------------|-------------------|
+| `AddColumn NormalizedPhone` | `migrationBuilder.AddColumn<string>(...)` — throws 42701 if column exists | `DO $$ BEGIN IF NOT EXISTS column THEN ALTER TABLE ADD COLUMN END $$` |
+| `AddColumn NormalizedWhatsApp` | Same | Same pattern |
+| `CreateTable` × 9 tables | `migrationBuilder.CreateTable(...)` — throws if table exists | `CREATE TABLE IF NOT EXISTS` |
+| `CreateIndex` / `CreateUniqueIndex` × 18 | `migrationBuilder.CreateIndex(...)` — throws if index exists | `CREATE [UNIQUE] INDEX IF NOT EXISTS` |
+| `AddForeignKey` × 15 | Embedded in CreateTable constraints; ignored for existing tables | Separate `DO $$ BEGIN IF NOT EXISTS pg_constraint THEN ALTER TABLE ADD CONSTRAINT END $$` |
+| `Down()` | Drops all tables (catastrophic for production data) | **No-op** — comment explains why |
+
+The original migration did **not** include phone/WhatsApp data backfill. Backfill (B4/B5
+equivalents) remains in Program.cs B-blocks and is addressed in Phase C1-g.
+
+EF will record `20260430221054_AddPhoneNormalizationAndArchive` in `__EFMigrationsHistory`
+automatically after it completes successfully — no manual history insert is needed.
+
+### What the Fix Intentionally Does NOT Do
+
+| Not Done | Reason |
+|----------|--------|
+| Create `IX_Patients_WhatsApp` (raw unique) | Raw WhatsApp duplicates exist; index creation would fail |
+| Add NormalizedPhone/WhatsApp data backfill to old migration | Original migration had no backfill; backfill addressed separately |
+| Pre-emptively mark `20260430221624` as applied | It may not be stuck; wait for production verification after `20260430221054` is resolved |
+| Insert anything into `__EFMigrationsHistory` | EF records the migration automatically after successful completion |
+| Resolve the duplicate raw WhatsApp `0711752823` | Requires human judgment — which patient has the correct number |
+| Disable `ENABLE_STARTUP_DB_MAINTENANCE` | Done manually after production stability is confirmed |
+| Remove B4/B5/B6/B7 | Reserved for Phase C1-g after deployment verification |
+
+### Production Verification Steps After Deployment
+
+After this migration is deployed and the app restarts:
+
+**Step 1 — Confirm stuck migration loop is resolved:**
+```
+railway logs --service aqlan-dental | grep -E "Applying migration.*20260430221054"
+```
+Expected: no output (migration no longer retrying).
+
+**Step 2 — Confirm B5 NormalizedWhatsApp error is gone:**
+```
+railway logs --service postgres | grep "IX_Patients_NormalizedWhatsApp"
+```
+Expected: no output (backfill conflict no longer thrown).
+
+**Step 3 — Check if `20260430221624_AddConversationPatientAndType` becomes the next stuck migration:**
+```
+railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
+```
+- If no output: it was already in `__EFMigrationsHistory` (likely applied correctly at some point). ✅
+- If it appears and fails: open a narrow follow-up PR making `20260430221624` idempotent.
+
+**Step 4 — Turn off `ENABLE_STARTUP_DB_MAINTENANCE` in Railway:**
+- Go to Railway dashboard → aqlan-dental service → Variables
+- Set `ENABLE_STARTUP_DB_MAINTENANCE=false` (or delete the variable)
+- Redeploy to confirm clean startup with no B-block errors
+
+**Step 5 — Open Phase C1-g to remove B4/B5/B6/B7:**
+- Only after Steps 1–4 are all verified clean.
+- PR title: `refactor: remove obsolete phone normalization backfill blocks (TD-020 Phase C1-g)`
+- Raw SQL: Program.cs 42 → 38, total backend 44 → 40.
+
+**Step 6 — Manual clinic action (out of band):**
+- Staff must open both patients with raw WhatsApp `0711752823` in the patient edit UI.
+- Correct one patient's WhatsApp to their actual phone number.
+- After correction, one patient will have `NormalizedWhatsApp` auto-populated on next update.
+- After both patients have valid unique WhatsApp, `IX_Patients_WhatsApp` raw unique index can be created in Phase C1-h.
+
+### Blocks NOT Touched
+
+| Block | Status | Reason |
+|-------|--------|--------|
+| A1-A4 (admin password reset) | Unchanged | Not in scope |
+| B1/B47 (advisory locks) | Unchanged | Infrastructure |
+| B4/B5/B6/B7 (phone backfill/dedup) | **Unchanged — retained** | Removal reserved for Phase C1-g after production verification |
+| B14-B46 | Unchanged | Not in scope |
+| ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
+| Frontend | Unchanged | Not in scope |
+| Auth/password behavior | Unchanged | Not in scope |
+| `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged in code | Turn off manually in Railway after deployment verification |

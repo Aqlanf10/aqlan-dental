@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-13
 **Production commit:** `e51d98e4b6e8` (after PR #99 merge)
-**Status:** Phase C0 — Program.cs raw SQL risk review complete
+**Status:** Phase C1-a — B2 soft-delete columns converted to EF migration
 
 ---
 
@@ -11,13 +11,13 @@
 | Metric | Count |
 |--------|-------|
 | Files containing raw SQL | 2 (Program.cs + ClinicQueueController.cs) |
-| Total `ExecuteSqlRawAsync` calls in Program.cs | 48 |
+| Total `ExecuteSqlRawAsync` calls in Program.cs | 48 (was 49 — B2 removed) |
 | Total `CreateCommand()` / `CommandText` in Program.cs | 3 pairs (6 lines) |
-| Total raw SQL in Program.cs | **50** (48 ExecuteSqlRawAsync + 3 raw CommandText + 1 interpolated lockKey) |
+| Total raw SQL in Program.cs | **49** (was 50 — B2 removed) |
 | Total raw SQL in ClinicQueueController.cs | **2** (advisory locks — KEEP) |
-| Total backend raw SQL | **52** |
+| Total backend raw SQL | **51** (was 52) |
 | Blocks active WITHOUT env gate (ungated) | 4 (A1-A4: admin password reset) |
-| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 47 (B1-B47: schema maintenance) |
+| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 46 (B1, B3-B47 — B2 removed) |
 
 **SQL Injection verdict:** No exploitable vectors found. All interpolated values are either `int` from configuration or hardcoded `string[]` arrays — none derive from user input.
 
@@ -46,7 +46,7 @@
 | # | Line | Purpose | Risk | Action | Phase C0 Notes |
 |---|------|---------|------|--------|--------------|
 | B1 | 482 | Advisory lock acquisition (`pg_try_advisory_lock`) | Low | C — Keep as advisory lock | Must keep. Uses interpolated `lockKey` from config (int type — no injection risk). |
-| B2 | 521-533 | `ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 34 tables | Medium | A — Convert to EF migration | **Do NOT remove yet.** Already applied in production. Must create idempotent migration first. |
+| B2 | ~~521-533~~ | ~~`ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 39 tables~~ | Medium | ~~A — Convert to EF migration~~ | **Removed in Phase C1-a.** Replaced by EF migration `20260522000000_AddSoftDeleteColumnsToLegacyTables`. |
 | B3 | 541 | `ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"` | Low | A — Convert to EF migration |
 | B4 | 553-573 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
 | B5 | 575-594 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
@@ -527,8 +527,74 @@ These 4 blocks run **unconditionally** on every startup:
 
 ### Production Safety Notes
 
-1. **ENABLE_STARTUP_DB_MAINTENANCE=false** is confirmed as the default. All 47 gated blocks (B1-B47) are inactive in production.
+1. **ENABLE_STARTUP_DB_MAINTENANCE=false** is confirmed as the default. All 46 gated blocks (B1, B3-B47) are inactive in production. B2 was removed in Phase C1-a.
 2. The 4 ungated blocks (A1-A4) run at every startup but are idempotent — they check for a Settings flag and skip if already applied.
 3. No data-destructive operations exist outside the gated block, except B44 (DROP COLUMN) which is also gated.
 4. The admin password reset (A3) uses `ADMIN_DEFAULT_PASSWORD` env var with fallback to `"ChangeMeImmediately2026!"`.
 5. Railway logs should show "Admin password reset already applied, skipping" on every startup (confirming the flag is set).
+
+---
+
+## Phase C1-a: Convert B2 Soft-Delete Columns to EF Migration (2026-05-13)
+
+**Branch:** `td-020-phase-c1a-soft-delete-migration`
+**Migration:** `20260522000000_AddSoftDeleteColumnsToLegacyTables`
+**Scope:** Convert only B2 from Program.cs to an idempotent EF migration. No other blocks touched.
+
+### What Changed
+
+| Item | Before | After |
+|------|--------|-------|
+| Program.cs `ExecuteSqlRawAsync` calls | 49 | 48 |
+| Program.cs raw SQL blocks | 50 | 49 |
+| Total backend raw SQL | 52 | 51 |
+| EF migrations added | 0 | 1 |
+| Lines removed from Program.cs | — | 34 |
+
+### Block Removed
+
+| Block | Original Lines | Purpose | Replacement |
+|-------|---------------|---------|-------------|
+| B2 | 504-539 | Add DeletedAt/DeletedBy to 39 tables via foreach loop | `migrationBuilder.Sql(DO $$ ... IF NOT EXISTS ... ADD COLUMN)` for each table (idempotent) |
+
+### Exact Table List (39 tables)
+
+Patients, Users, Doctors, Branches, Appointments, Conversations, ConversationParticipants, Messages, MessageReads, Visits, Payments, Contracts, OrthoCases, OrthoVisits, TreatmentStages, RetentionRecords, SurgeryCases, Prescriptions, Notifications, AuditLogs, Settings, Inventory, LabOrders, InternalReferrals, ClinicalPhotos, Radiographs, Documents, DentalCharts, ToothConditions, GeneralTreatments, WhatsAppMessages, WhatsAppTemplates, PatientAccounts, CephAnalyses, PerioRecords, GeneralTreatmentPlanItems, MedicalHistories, DentalHistories, Receipts
+
+### Files Changed
+
+1. `backend/src/AqlanDentalPro.API/Program.cs` — Removed B2 foreach loop (lines 504-539), replaced with 2-line comment referencing migration
+2. `backend/src/AqlanDentalPro.Infrastructure/Data/Migrations/20260522000000_AddSoftDeleteColumnsToLegacyTables.cs` — New idempotent EF migration
+3. `docs/technical-debt/TD-020-raw-sql-inventory.md` — Updated with Phase C1-a results
+
+### Migration Idempotency
+
+All operations in this migration are safe for databases where the old Program.cs raw SQL already applied these changes:
+
+- **Table existence guard:** Each operation first checks `information_schema.tables` for the target table — no error if the table does not exist (e.g., on fresh databases where not all tables have been created yet)
+- **Column existence guard:** Each operation checks `information_schema.columns` for the specific column — no error if DeletedAt or DeletedBy already exist
+- **Column types match exactly:** `DeletedAt` is `timestamp with time zone NULL`, `DeletedBy` is `uuid NULL` — identical to the original B2 raw SQL
+- **Down():** Uses `DROP COLUMN IF EXISTS` — safe to rollback
+- **No AppDbContextModelSnapshot changes needed:** DeletedAt/DeletedBy are already defined on BaseEntity and present in the EF model
+
+### Production Behavior Impact
+
+**None.** The migration applies the exact same schema changes that the B2 raw SQL was doing:
+
+- DeletedAt/DeletedBy columns are added only if they don't already exist
+- The B2 block was inside the `ENABLE_STARTUP_DB_MAINTENANCE=false` gate, so it was NOT running in production anyway
+- When `dotnet ef database update` runs (or `MigrateAsync()` is called), this migration will apply the columns safely
+- On production databases where B2 was previously applied via maintenance mode, the migration will be a no-op (columns already exist)
+- On fresh databases, the columns will be added automatically by EF Core migrations
+
+### Blocks NOT Touched
+
+| Block | Status | Reason |
+|-------|--------|--------|
+| A1-A4 (admin password reset) | Unchanged | Not in scope |
+| B1/B47 (advisory locks) | Unchanged | Infrastructure — keep as long as gated blocks remain |
+| B3-B46 | Unchanged | Not in scope for this phase |
+| ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
+| DbSeeder.cs | Unchanged | Already at 0 raw SQL |
+| Frontend | Unchanged | Not in scope |
+| Auth/password behavior | Unchanged | Not in scope |

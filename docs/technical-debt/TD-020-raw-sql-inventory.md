@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-13
 **Production commit:** `e51d98e4b6e8` (after PR #99 merge)
-**Status:** Phase C1-b — B3/B8/B9 normalized phone schema converted to EF migration
+**Status:** Phase C1-d — B10/B11/B12/B13 conversation schema converted to EF migration
 
 ---
 
@@ -11,13 +11,13 @@
 | Metric | Count |
 |--------|-------|
 | Files containing raw SQL | 2 (Program.cs + ClinicQueueController.cs) |
-| Total `ExecuteSqlRawAsync` calls in Program.cs | 45 (was 48 — B3/B8/B9 removed) |
+| Total `ExecuteSqlRawAsync` calls in Program.cs | 41 (was 45 — B10/B11/B12/B13 removed) |
 | Total `CreateCommand()` / `CommandText` in Program.cs | 3 pairs (6 lines) |
-| Total raw SQL in Program.cs | **46** (was 49 — B3/B8/B9 removed) |
+| Total raw SQL in Program.cs | **42** (was 46 — B10/B11/B12/B13 removed) |
 | Total raw SQL in ClinicQueueController.cs | **2** (advisory locks — KEEP) |
-| Total backend raw SQL | **48** (was 51) |
+| Total backend raw SQL | **44** (was 48) |
 | Blocks active WITHOUT env gate (ungated) | 4 (A1-A4: admin password reset) |
-| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 43 (B1, B4-B7, B10-B47 — B2/B3/B8/B9 removed) |
+| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 39 (B1, B4-B7, B14-B47 — B2/B3/B8/B9/B10/B11/B12/B13 removed) |
 
 **SQL Injection verdict:** No exploitable vectors found. All interpolated values are either `int` from configuration or hardcoded `string[]` arrays — none derive from user input.
 
@@ -54,10 +54,10 @@
 | B7 | 609 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
 | B8 | ~~586-590~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedPhone"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B9 | ~~591-595~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedWhatsApp"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
-| B10 | 631 | `ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"` | Low | A — Convert to EF migration |
-| B11 | 645 | `CREATE INDEX "IX_Conversations_PatientId"` | Low | A — Convert to EF migration |
-| B12 | 648 | `CREATE INDEX "IX_Conversations_ConversationType"` | Low | A — Convert to EF migration |
-| B13 | 653 | `ADD FK "FK_Conversations_Patients_PatientId"` | Low | A — Convert to EF migration |
+| B10 | ~~578-590~~ | ~~`ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-d.** Replaced by EF migration `20260524000000_AddConversationPatientBranchFieldsAndIndexes`. |
+| B11 | ~~592-594~~ | ~~`CREATE INDEX "IX_Conversations_PatientId"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-d.** Replaced by EF migration `20260524000000_AddConversationPatientBranchFieldsAndIndexes`. |
+| B12 | ~~595-597~~ | ~~`CREATE INDEX "IX_Conversations_ConversationType"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-d.** Replaced by EF migration `20260524000000_AddConversationPatientBranchFieldsAndIndexes`. |
+| B13 | ~~599-607~~ | ~~`ADD FK "FK_Conversations_Patients_PatientId"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-d.** Replaced by EF migration `20260524000000_AddConversationPatientBranchFieldsAndIndexes`. |
 | B14 | 670 | `INSERT INTO "__EFMigrationsHistory" '20260501000000_AddNormalizedPhoneFields'` | Medium | D — Delete as obsolete |
 | B15 | 670 | `INSERT INTO "__EFMigrationsHistory" '20260501010000_AddPatientConversationSupport'` | Medium | D — Delete as obsolete |
 | B16 | 677 | `INSERT INTO "__EFMigrationsHistory" '20260501020000_AddSoftDeleteToMessagingTables'` | Medium | D — Delete as obsolete |
@@ -706,3 +706,71 @@ A follow-up commit corrected the column type from `text NULL` to `character vary
 - **Legacy B3 block:** Original Program.cs used `character varying(20) NULL` exactly
 - **Fix:** Migration now uses `character varying(20) NULL` — identical type on all paths (EF model, original B3, new migration)
 - No change to indexes, guards, or `Down()` no-op
+
+---
+
+## Phase C1-d: Convert Conversation Schema Blocks to EF Migration (2026-05-24)
+
+**Branch:** `td-020-phase-c1d-conversation-schema-migration`
+**Migration:** `20260524000000_AddConversationPatientBranchFieldsAndIndexes`
+**Scope:** Convert B10 (ADD COLUMN), B11/B12 (CREATE INDEX), B13 (ADD FK) from Program.cs to an idempotent EF migration. No data changes.
+
+### What Changed
+
+| Item | Before | After |
+|------|--------|-------|
+| Program.cs `ExecuteSqlRawAsync` calls | 45 | 41 |
+| Program.cs raw SQL blocks | 46 | 42 |
+| Total backend raw SQL | 48 | 44 |
+| EF migrations added | 0 | 1 |
+| Lines removed from Program.cs | — | ~31 |
+
+### Blocks Removed
+
+| Block | Original Lines | Purpose | Replacement |
+|-------|---------------|---------|-------------|
+| B10 | 578-590 | `DO $$ ... ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"` | `migrationBuilder.Sql(DO $$ ... IF NOT EXISTS ... ADD COLUMN)` per column (idempotent) |
+| B11 | 592-594 | `CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId"` | `migrationBuilder.Sql(CREATE INDEX IF NOT EXISTS ...)` in migration |
+| B12 | 595-597 | `CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType"` | `migrationBuilder.Sql(CREATE INDEX IF NOT EXISTS ...)` in migration |
+| B13 | 599-607 | `DO $$ ... ADD CONSTRAINT "FK_Conversations_Patients_PatientId"` | `migrationBuilder.Sql(DO $$ ... IF NOT EXISTS ... ADD CONSTRAINT)` in migration |
+
+### Migration Idempotency
+
+All operations are safe for databases where these columns/indexes/FK already exist (from `20260430221624_AddConversationPatientAndType`, `20260501010000_AddPatientConversationSupport`, or Program.cs B10-B13 runtime maintenance):
+
+- **ConversationType column:** `DO $$ IF NOT EXISTS (information_schema.columns) THEN ADD COLUMN character varying(20) NOT NULL DEFAULT 'StaffToStaff'` — no error if already exists
+- **PatientId column:** Same pattern — `uuid NULL` — no error if already exists
+- **BranchId column:** Same pattern — `uuid NULL` — no error if already exists
+- **Indexes:** `CREATE INDEX IF NOT EXISTS` inside `DO $$ IF EXISTS (Conversations table)` — no error if table or index does not exist
+- **FK:** `DO $$ IF EXISTS (Conversations table) AND EXISTS (Patients table) AND EXISTS (PatientId column) AND NOT EXISTS (constraint)` — fully guarded
+- **Down():** Intentionally no-op — dropping conversation columns/FK would break active messaging features
+
+### Column Types — EF Model Verification
+
+| Column | EF Config (`ConversationConfiguration.cs`) | Migration DDL |
+|--------|-------------------------------------------|---------------|
+| ConversationType | `character varying(20)` with default `StaffToStaff` | `character varying(20) NOT NULL DEFAULT 'StaffToStaff'` ✅ |
+| PatientId | `uuid NULL` (FK → Patients.Id, SetNull) | `uuid NULL` ✅ |
+| BranchId | `uuid NULL` (FK → Branches.Id, SetNull) | `uuid NULL` ✅ |
+
+### Relation to Existing Migrations
+
+Two earlier migrations partially cover this schema:
+- `20260430221624_AddConversationPatientAndType` — adds `ConversationType` (as `text`, not `character varying(20)`) + `PatientId` + index + FK (no `BranchId`)
+- `20260501010000_AddPatientConversationSupport` — adds all 3 columns + indexes + both FKs (non-idempotent)
+
+Program.cs B15 pre-inserts the history entry for `20260501010000` without running it. The new migration is the safe idempotent complement for databases in any intermediate state.
+
+### Blocks NOT Touched
+
+| Block | Status | Reason |
+|-------|--------|--------|
+| A1-A4 (admin password reset) | Unchanged | Not in scope |
+| B1/B47 (advisory locks) | Unchanged | Infrastructure |
+| B4/B5/B6/B7 (phone backfill/dedup) | Unchanged | Remain in Program.cs — B4/B5 are legacy data backfill blocks (existing patients may have Phone/WhatsApp populated but NormalizedPhone/NormalizedWhatsApp NULL); B6/B7 are dedup safety guards; safe removal requires a replacement data migration or production DB verification (see Phase C1-c review) |
+| B14-B46 | Unchanged | Not in scope for this phase |
+| ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
+| Frontend | Unchanged | Not in scope |
+| Messaging/conversation behavior | Unchanged | Migration adds schema only; no data changes |
+| Auth/password behavior | Unchanged | Not in scope |
+| `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged | Not enabled |

@@ -574,37 +574,8 @@ if (enableStartupDbMaintenance)
             FROM duplicates
             WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
         """);
-        // Add ConversationType/PatientId/BranchId to Conversations
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
-                    ALTER TABLE "Conversations" ADD COLUMN "ConversationType" character varying(20) NOT NULL DEFAULT 'StaffToStaff';
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'PatientId') THEN
-                    ALTER TABLE "Conversations" ADD COLUMN "PatientId" uuid NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId') THEN
-                    ALTER TABLE "Conversations" ADD COLUMN "BranchId" uuid NULL;
-                END IF;
-            END $$;
-        """);
-
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId" ON "Conversations" ("PatientId");
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType" ON "Conversations" ("ConversationType");
-        """);
-
-        // Add FK for Conversations.PatientId -> Patients.Id
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId') THEN
-                    ALTER TABLE "Conversations" ADD CONSTRAINT "FK_Conversations_Patients_PatientId" 
-                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE SET NULL;
-                END IF;
-            END $$;
-        """);
+        // B10-B13 conversation schema removed in TD-020 Phase C1-d;
+        // now handled by EF migration 20260524000000_AddConversationPatientBranchFieldsAndIndexes.
 
         // Record migrations in history
         await db.Database.ExecuteSqlRawAsync("""

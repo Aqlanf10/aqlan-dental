@@ -741,8 +741,8 @@ All operations are safe for databases where these columns/indexes/FK already exi
 - **ConversationType column:** `DO $$ IF NOT EXISTS (information_schema.columns) THEN ADD COLUMN character varying(20) NOT NULL DEFAULT 'StaffToStaff'` — no error if already exists
 - **PatientId column:** Same pattern — `uuid NULL` — no error if already exists
 - **BranchId column:** Same pattern — `uuid NULL` — no error if already exists
-- **Indexes:** `CREATE INDEX IF NOT EXISTS` (PostgreSQL 9.5+) — no error if already exists
-- **FK:** `DO $$ IF NOT EXISTS (pg_constraint WHERE conname = ...) THEN ADD CONSTRAINT` — no error if already exists
+- **Indexes:** `CREATE INDEX IF NOT EXISTS` inside `DO $$ IF EXISTS (Conversations table)` — no error if table or index does not exist
+- **FK:** `DO $$ IF EXISTS (Conversations table) AND EXISTS (Patients table) AND EXISTS (PatientId column) AND NOT EXISTS (constraint)` — fully guarded
 - **Down():** Intentionally no-op — dropping conversation columns/FK would break active messaging features
 
 ### Column Types — EF Model Verification
@@ -767,7 +767,7 @@ Program.cs B15 pre-inserts the history entry for `20260501010000` without runnin
 |-------|--------|--------|
 | A1-A4 (admin password reset) | Unchanged | Not in scope |
 | B1/B47 (advisory locks) | Unchanged | Infrastructure |
-| B4/B5/B6/B7 (phone backfill/dedup) | Unchanged | Removed in Phase C1-c (separate PR) |
+| B4/B5/B6/B7 (phone backfill/dedup) | Unchanged | Remain in Program.cs — B4/B5 are legacy data backfill blocks (existing patients may have Phone/WhatsApp populated but NormalizedPhone/NormalizedWhatsApp NULL); B6/B7 are dedup safety guards; safe removal requires a replacement data migration or production DB verification (see Phase C1-c review) |
 | B14-B46 | Unchanged | Not in scope for this phase |
 | ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
 | Frontend | Unchanged | Not in scope |

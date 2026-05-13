@@ -54,24 +54,39 @@ public partial class AddConversationPatientBranchFieldsAndIndexes : Migration
             END $$;
             """);
 
-        // D. Create index on PatientId — idempotent via IF NOT EXISTS.
-        migrationBuilder.Sql("""
-            CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId"
-                ON "Conversations" ("PatientId");
-            """);
-
-        // E. Create index on ConversationType — idempotent via IF NOT EXISTS.
-        migrationBuilder.Sql("""
-            CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType"
-                ON "Conversations" ("ConversationType");
-            """);
-
-        // F. Add FK from Conversations.PatientId to Patients.Id — idempotent via pg_constraint check.
+        // D. Create index on PatientId — idempotent: skipped if Conversations table does not exist.
         migrationBuilder.Sql("""
             DO $$ BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId'
-                ) THEN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Conversations') THEN
+                    CREATE INDEX IF NOT EXISTS "IX_Conversations_PatientId"
+                        ON "Conversations" ("PatientId");
+                END IF;
+            END $$;
+            """);
+
+        // E. Create index on ConversationType — idempotent: skipped if Conversations table does not exist.
+        migrationBuilder.Sql("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Conversations') THEN
+                    CREATE INDEX IF NOT EXISTS "IX_Conversations_ConversationType"
+                        ON "Conversations" ("ConversationType");
+                END IF;
+            END $$;
+            """);
+
+        // F. Add FK from Conversations.PatientId to Patients.Id — fully guarded:
+        //    requires Conversations table, Patients table, PatientId column, and absent constraint.
+        migrationBuilder.Sql("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Conversations')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Patients')
+                   AND EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'Conversations' AND column_name = 'PatientId'
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId'
+                   ) THEN
                     ALTER TABLE "Conversations"
                         ADD CONSTRAINT "FK_Conversations_Patients_PatientId"
                         FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE SET NULL;

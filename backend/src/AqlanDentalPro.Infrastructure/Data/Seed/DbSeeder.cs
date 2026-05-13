@@ -11,46 +11,17 @@ namespace AqlanDentalPro.Infrastructure.Data.Seed;
 
 public static class DbSeeder
 {
-    // TD-022: These 4 pre-MigrateAsync ExecuteSqlRaw calls ensure columns/indexes
-    // exist before EF Core runs its own migrations. They should be converted to
-    // proper EF migrations (AddColumn/CreateIndex) as part of the TD-020 cleanup plan.
     public static async Task SeedAsync(AppDbContext context, ILogger logger)
     {
         try
         {
-            // TD-022: Convert to migrationBuilder.AddColumn in EF migration
-            // Ensure PasswordSalt column exists BEFORE MigrateAsync()
-            // because the EF model expects this column and queries will fail without it.
-            await context.Database.ExecuteSqlRawAsync(
-                @"ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""PasswordSalt"" text NOT NULL DEFAULT ''");
-
-            // Deduplicate phone numbers before creating unique index
-            await context.Database.ExecuteSqlRawAsync(@"
-                UPDATE ""Patients"" SET ""Phone"" = '' 
-                WHERE ""Id""::text NOT IN (
-                    SELECT MIN(p.""Id""::text) FROM ""Patients"" p 
-                    WHERE p.""Phone"" IS NOT NULL AND p.""Phone"" != ''
-                    GROUP BY p.""Phone""
-                ) AND ""Phone"" IS NOT NULL AND ""Phone"" != '';
-            ");
-
-            // Add unique index on Phone if not exists
-            var addPhoneIndexSql = @"
-                DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Patients_Phone') THEN
-                        CREATE UNIQUE INDEX ""IX_Patients_Phone"" ON ""Patients"" (""Phone"") WHERE ""Phone"" IS NOT NULL AND ""Phone"" != '';
-                    END IF;
-                END $$;";
-            await context.Database.ExecuteSqlRawAsync(addPhoneIndexSql);
-
-            // Add unique index on WhatsApp if not exists
-            var addWhatsAppIndexSql = @"
-                DO $$ BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Patients_WhatsApp') THEN
-                        CREATE UNIQUE INDEX ""IX_Patients_WhatsApp"" ON ""Patients"" (""WhatsApp"") WHERE ""WhatsApp"" IS NOT NULL AND ""WhatsApp"" != '';
-                    END IF;
-                END $$;";
-            await context.Database.ExecuteSqlRawAsync(addWhatsAppIndexSql);
+            // TD-020 Phase B2: The following 4 pre-MigrateAsync ExecuteSqlRaw calls
+            // have been replaced by EF migration 20260521000000_AddPasswordSaltAndPatientPhoneIndexes:
+            //   S1: ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "PasswordSalt"
+            //   S2: Deduplicate Phone values before unique index
+            //   S3: CREATE UNIQUE INDEX "IX_Patients_Phone"
+            //   S4: CREATE UNIQUE INDEX "IX_Patients_WhatsApp"
+            // context.Database.MigrateAsync() below will apply the migration automatically.
 
             await context.Database.MigrateAsync();
 

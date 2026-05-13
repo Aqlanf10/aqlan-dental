@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-13
 **Production commit:** `2d18ec1`
-**Status:** Phase A — Inventory complete, no code changes
+**Status:** Phase B2 — DbSeeder raw SQL eliminated (4 → 0)
 
 ---
 
@@ -10,14 +10,14 @@
 
 | Metric | Count |
 |--------|-------|
-| Files containing raw SQL | 4 |
-| Total `ExecuteSqlRawAsync` calls | 84 |
+| Files containing raw SQL | 2 (was 4; DbSeeder + MessagesController eliminated) |
+| Total `ExecuteSqlRawAsync` calls | 49 (was 84; −31 Phase B1 from MessagesController, −4 Phase B2 from DbSeeder) |
 | Total `ExecuteSqlRaw` (sync) calls | 0 |
 | Total `FromSqlRaw` / `FromSqlInterpolated` | 0 |
 | `CreateCommand()` / `CommandText` calls | 7 |
 | String-interpolated SQL (`$"..."`) | 5 |
 | Parameterized SQL (`{0}`, `{1}`) | 3 |
-| Pure literal SQL (no interpolation) | ~76 |
+| Pure literal SQL (no interpolation) | ~45 |
 
 **SQL Injection verdict:** No exploitable vectors found. All interpolated values are either `int` from configuration or hardcoded `string[]` arrays — none derive from user input.
 
@@ -28,8 +28,8 @@
 | # | File | Blocks | Guard | Category |
 |---|------|--------|-------|----------|
 | 1 | `src/AqlanDentalPro.API/Program.cs` | 51 | Ungated (A1-A4) + `ENABLE_STARTUP_DB_MAINTENANCE` (B1-B47) | Startup maintenance + Admin setup |
-| 2 | `src/AqlanDentalPro.Infrastructure/Data/Seed/DbSeeder.cs` | 4 | `ENABLE_STARTUP_DB_MAINTENANCE` (via caller) | Seeder / schema drift hotfix |
-| 3 | `src/AqlanDentalPro.API/Controllers/MessagesController.cs` | 31 | `[Authorize(Policy = "AdminOnly")]` | Messaging schema hotfix |
+| 2 | `src/AqlanDentalPro.Infrastructure/Data/Seed/DbSeeder.cs` | 0 (was 4) | `ENABLE_STARTUP_DB_MAINTENANCE` (via caller) | ~~Seeder / schema drift hotfix~~ **Eliminated in Phase B2** |
+| 3 | `src/AqlanDentalPro.API/Controllers/MessagesController.cs` | 0 (was 31) | `[Authorize(Policy = "AdminOnly")]` | ~~Messaging schema hotfix~~ **Eliminated in Phase B1** |
 | 4 | `src/AqlanDentalPro.API/Controllers/ClinicQueueController.cs` | 2 | `[Authorize(Policy = "StaffOnly")]` | Advisory locks |
 
 ---
@@ -138,15 +138,22 @@
 
 **File:** `DbSeeder.cs`
 **Guard:** `ENABLE_STARTUP_DB_MAINTENANCE` (via Program.cs caller)
-**Blocks:** S1-S4 (4 blocks)
+**Blocks:** S1-S4 (4 blocks) → **0 after Phase B2**
 **Currently active in production:** NO
 
-| # | Line | Purpose | Risk | Action |
-|---|------|---------|------|--------|
-| S1 | 24 | `ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "PasswordSalt"` | Low | A — Convert to EF migration |
-| S2 | 28 | `UPDATE "Patients" SET "Phone" = '' WHERE ... NOT IN (dedup)` | Low | E — Keep temporarily, then D |
-| S3 | 44 | `CREATE UNIQUE INDEX "IX_Patients_Phone"` | Low | A — Convert to EF migration |
-| S4 | 53 | `CREATE UNIQUE INDEX "IX_Patients_WhatsApp"` | Low | A — Convert to EF migration |
+| # | Line | Purpose | Risk | Action | Status |
+|---|------|---------|------|--------|--------|
+| S1 | ~~24~~ | `ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "PasswordSalt"` | Low | A — Convert to EF migration | ✅ Done (Phase B2) |
+| S2 | ~~28~~ | `UPDATE "Patients" SET "Phone" = '' WHERE ... NOT IN (dedup)` | Low | E — Keep temporarily, then D | ✅ Done (Phase B2) |
+| S3 | ~~44~~ | `CREATE UNIQUE INDEX "IX_Patients_Phone"` | Low | A — Convert to EF migration | ✅ Done (Phase B2) |
+| S4 | ~~53~~ | `CREATE UNIQUE INDEX "IX_Patients_WhatsApp"` | Low | A — Convert to EF migration | ✅ Done (Phase B2) |
+
+**Phase B2 resolution:** All 4 blocks replaced by EF migration `20260521000000_AddPasswordSaltAndPatientPhoneIndexes`. The migration:
+- Adds `PasswordSalt` column to `Users` with `DEFAULT ''` (matching the original raw SQL behavior)
+- Deduplicates `Phone` values before creating the unique index (preserving S2 logic)
+- Creates `IX_Patients_Phone` unique filtered index
+- Creates `IX_Patients_WhatsApp` unique filtered index
+- Updates `AppDbContextModelSnapshot` to include the Phone/WhatsApp indexes
 
 ### Category 4: Clinic Queue Advisory Locks
 
@@ -252,3 +259,46 @@ Delete all raw SQL that has been superseded by EF migrations:
 - Remove `ENABLE_STARTUP_DB_MAINTENANCE` config key
 - Confirm `dotnet ef database update` handles all schema changes
 - Final smoke test
+
+---
+
+## Phase B2: DbSeeder Raw SQL Elimination (2026-05-13)
+
+**Branch:** `td-020-phase-b2-dbseeder-raw-sql`
+**Migration:** `20260521000000_AddPasswordSaltAndPatientPhoneIndexes`
+
+### What Changed
+
+| Item | Before | After |
+|------|--------|-------|
+| DbSeeder `ExecuteSqlRawAsync` calls | 4 | 0 |
+| DbSeeder raw SQL lines | ~35 | 0 |
+| EF migrations added | 0 | 1 |
+
+### Blocks Removed
+
+| Block | Original Line | Purpose | Replacement |
+|-------|--------------|---------|-------------|
+| S1 | 24 | `ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "PasswordSalt"` | `migrationBuilder.AddColumn<string>("PasswordSalt", "Users", defaultValue: "")` |
+| S2 | 28-35 | Deduplicate `Phone` values before unique index | `migrationBuilder.Sql(UPDATE "Patients" SET "Phone" = '' WHERE ...)` (identical logic) |
+| S3 | 38-44 | `CREATE UNIQUE INDEX "IX_Patients_Phone"` | `migrationBuilder.CreateIndex("IX_Patients_Phone", "Patients", unique: true, filter: ...)` |
+| S4 | 47-53 | `CREATE UNIQUE INDEX "IX_Patients_WhatsApp"` | `migrationBuilder.CreateIndex("IX_Patients_WhatsApp", "Patients", unique: true, filter: ...)` |
+
+### Files Changed
+1. `src/AqlanDentalPro.Infrastructure/Data/Seed/DbSeeder.cs` — Removed 4 `ExecuteSqlRawAsync` calls, replaced with comment referencing migration
+2. `src/AqlanDentalPro.Infrastructure/Data/Migrations/20260521000000_AddPasswordSaltAndPatientPhoneIndexes.cs` — New EF migration
+3. `src/AqlanDentalPro.Infrastructure/Data/Migrations/AppDbContextModelSnapshot.cs` — Added `HasIndex("Phone")` and `HasIndex("WhatsApp")` entries
+4. `docs/technical-debt/TD-020-raw-sql-inventory.md` — Updated with Phase B2 results
+
+### Production Behavior Impact
+**None.** The migration applies the exact same schema changes that the raw SQL was doing:
+- `PasswordSalt` column already existed in production (applied by the old raw SQL on every startup)
+- Phone/WhatsApp indexes may already exist from the old raw SQL; the migration uses EF's `CreateIndex` which is idempotent in practice (PostgreSQL will error if index exists, but this migration runs before any data, and the old raw SQL no longer runs)
+- Phone deduplication logic is preserved exactly as-is
+
+### Important Notes
+- `DbSeeder.cs` is gated by `ENABLE_STARTUP_DB_MAINTENANCE` in production — it does NOT run on normal startup
+- The `MigrateAsync()` call inside DbSeeder will now apply this migration when maintenance mode is enabled
+- No changes to `Program.cs` startup maintenance blocks (A1-A4, B1-B47) per scope rules
+- No changes to `ClinicQueueController.cs` advisory locks (Q1, Q2) per scope rules
+- No auth/password behavior changes

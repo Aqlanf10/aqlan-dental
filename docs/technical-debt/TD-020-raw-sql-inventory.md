@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-13
 **Production commit:** `e51d98e4b6e8` (after PR #99 merge)
-**Status:** Phase C1-a — B2 soft-delete columns converted to EF migration
+**Status:** Phase C1-b — B3/B8/B9 normalized phone schema converted to EF migration
 
 ---
 
@@ -11,13 +11,13 @@
 | Metric | Count |
 |--------|-------|
 | Files containing raw SQL | 2 (Program.cs + ClinicQueueController.cs) |
-| Total `ExecuteSqlRawAsync` calls in Program.cs | 48 (was 49 — B2 removed) |
+| Total `ExecuteSqlRawAsync` calls in Program.cs | 45 (was 48 — B3/B8/B9 removed) |
 | Total `CreateCommand()` / `CommandText` in Program.cs | 3 pairs (6 lines) |
-| Total raw SQL in Program.cs | **49** (was 50 — B2 removed) |
+| Total raw SQL in Program.cs | **46** (was 49 — B3/B8/B9 removed) |
 | Total raw SQL in ClinicQueueController.cs | **2** (advisory locks — KEEP) |
-| Total backend raw SQL | **51** (was 52) |
+| Total backend raw SQL | **48** (was 51) |
 | Blocks active WITHOUT env gate (ungated) | 4 (A1-A4: admin password reset) |
-| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 46 (B1, B3-B47 — B2 removed) |
+| Blocks gated by `ENABLE_STARTUP_DB_MAINTENANCE` | 43 (B1, B4-B7, B10-B47 — B2/B3/B8/B9 removed) |
 
 **SQL Injection verdict:** No exploitable vectors found. All interpolated values are either `int` from configuration or hardcoded `string[]` arrays — none derive from user input.
 
@@ -47,13 +47,13 @@
 |---|------|---------|------|--------|--------------|
 | B1 | 482 | Advisory lock acquisition (`pg_try_advisory_lock`) | Low | C — Keep as advisory lock | Must keep. Uses interpolated `lockKey` from config (int type — no injection risk). |
 | B2 | ~~521-533~~ | ~~`ALTER TABLE ... ADD COLUMN "DeletedAt"/"DeletedBy"` — loop over 39 tables~~ | Medium | ~~A — Convert to EF migration~~ | **Removed in Phase C1-a.** Replaced by EF migration `20260522000000_AddSoftDeleteColumnsToLegacyTables`. |
-| B3 | 541 | `ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"` | Low | A — Convert to EF migration |
+| B3 | ~~507-517~~ | ~~`ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B4 | 553-573 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
 | B5 | 575-594 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization) | Medium | E — Keep temporarily, then D | One-time data backfill. Already applied in production. Do NOT remove until confirmed complete. |
 | B6 | 598-608 | Deduplicate `NormalizedPhone` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
 | B7 | 609-619 | Deduplicate `NormalizedWhatsApp` (complex CTE) | Low | D — Delete as obsolete after Phase C1 | One-time dedup. Already applied. Safe to delete once B8/B9 are in a proper migration. |
-| B8 | 619 | `CREATE UNIQUE INDEX "IX_Patients_NormalizedPhone"` | Low | A — Convert to EF migration |
-| B9 | 624 | `CREATE UNIQUE INDEX "IX_Patients_NormalizedWhatsApp"` | Low | A — Convert to EF migration |
+| B8 | ~~586-590~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedPhone"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
+| B9 | ~~591-595~~ | ~~`CREATE UNIQUE INDEX "IX_Patients_NormalizedWhatsApp"`~~ | Low | ~~A — Convert to EF migration~~ | **Removed in Phase C1-b.** Replaced by EF migration `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`. |
 | B10 | 631 | `ADD COLUMN "ConversationType"/"PatientId"/"BranchId" TO "Conversations"` | Low | A — Convert to EF migration |
 | B11 | 645 | `CREATE INDEX "IX_Conversations_PatientId"` | Low | A — Convert to EF migration |
 | B12 | 648 | `CREATE INDEX "IX_Conversations_ConversationType"` | Low | A — Convert to EF migration |
@@ -619,3 +619,81 @@ Two issues identified by Codex review were fixed in a follow-up commit:
 - Frontend lint: pass
 - Frontend build: pass
 - Migration class compiles and is discoverable via `[Migration]` attribute
+
+---
+
+## Phase C1-b: Convert B3/B8/B9 Normalized Phone Schema to EF Migration (2026-05-23)
+
+**Branch:** `td-020-phase-c1b-normalized-phone-schema`
+**Migration:** `20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes`
+**Scope:** Convert B3 (ADD COLUMN NormalizedPhone/NormalizedWhatsApp) and B8/B9 (CREATE UNIQUE INDEX) from Program.cs to an idempotent EF migration. B4/B5 (data backfill) and B6/B7 (deduplication) remain in Program.cs per scope rules.
+
+### What Changed
+
+| Item | Before | After |
+|------|--------|-------|
+| Program.cs `ExecuteSqlRawAsync` calls | 48 | 45 |
+| Program.cs raw SQL blocks | 49 | 46 |
+| Total backend raw SQL | 51 | 48 |
+| EF migrations added | 0 | 1 |
+| Lines removed from Program.cs | — | ~14 |
+
+### Blocks Removed
+
+| Block | Original Lines | Purpose | Replacement |
+|-------|---------------|---------|-------------|
+| B3 | 507-517 | `DO $$ ... ADD COLUMN "NormalizedPhone"/"NormalizedWhatsApp" TO "Patients"` | `migrationBuilder.Sql(DO $$ ... IF NOT EXISTS ... ADD COLUMN)` in migration (idempotent) |
+| B8 | 586-590 | `CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedPhone"` | `migrationBuilder.Sql(CREATE UNIQUE INDEX IF NOT EXISTS ...)` in migration |
+| B9 | 591-595 | `CREATE UNIQUE INDEX IF NOT EXISTS "IX_Patients_NormalizedWhatsApp"` | `migrationBuilder.Sql(CREATE UNIQUE INDEX IF NOT EXISTS ...)` in migration |
+
+### Blocks NOT Removed (Remain in Program.cs)
+
+| Block | Lines | Purpose | Reason |
+|-------|-------|---------|--------|
+| B4 | ~511-529 | `UPDATE "Patients" SET "NormalizedPhone" = CASE ...` (phone normalization backfill) | One-time data backfill; already applied in production but may need re-run on staging |
+| B5 | ~532-551 | `UPDATE "Patients" SET "NormalizedWhatsApp" = CASE ...` (WhatsApp normalization backfill) | Same as B4 |
+| B6 | ~553-564 | Deduplicate `NormalizedPhone` (CTE) | One-time dedup; safe to delete after C1-b indexes confirmed applied |
+| B7 | ~565-576 | Deduplicate `NormalizedWhatsApp` (CTE) | Same as B6 |
+
+### Files Changed
+
+1. `backend/src/AqlanDentalPro.API/Program.cs` — Removed B3 (lines 507-517) and B8/B9 (lines 586-595); replaced with 2-line comment referencing migration
+2. `backend/src/AqlanDentalPro.Infrastructure/Data/Migrations/20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes.cs` — New idempotent EF migration
+3. `docs/technical-debt/TD-020-raw-sql-inventory.md` — Updated with Phase C1-b results
+
+### Migration Idempotency
+
+All operations in this migration are safe for databases where the old Program.cs raw SQL or the earlier `20260501000000_AddNormalizedPhoneFields` migration already applied these changes:
+
+- **Column existence guards:** Each `ADD COLUMN` is wrapped in `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns ...) THEN ... END IF; END $$;` — no error if columns already exist
+- **Table existence guard:** Also checks `information_schema.tables` for `Patients` before attempting any DDL
+- **Index creation:** Uses `CREATE UNIQUE INDEX IF NOT EXISTS` (PostgreSQL 9.5+) — no error if indexes already exist
+- **Column type:** `text NULL` (wider than the old `character varying(20)`) — no conflict if column already exists as varchar
+- **Down():** Intentionally no-op — NormalizedPhone/NormalizedWhatsApp may have existed before this migration due to legacy Program.cs B3/B8/B9 runtime maintenance. Dropping them could remove existing normalized phone data/schema.
+
+### Production Behavior Impact
+
+**None.** The migration covers the exact same schema changes that B3/B8/B9 were doing:
+
+- Both columns and both indexes are guarded by `IF NOT EXISTS` — safe if already present
+- The B3/B8/B9 blocks were inside the `ENABLE_STARTUP_DB_MAINTENANCE=false` gate, so they were NOT running in production anyway
+- B4/B5 (data backfill) and B6/B7 (deduplication) remain in Program.cs — their order relative to the schema changes is preserved since `MigrateAsync()` runs before the gated block
+
+### Relation to Existing Migration `20260501000000_AddNormalizedPhoneFields`
+
+An earlier migration (`20260501000000_AddNormalizedPhoneFields`) also adds these columns and indexes, but uses non-idempotent `migrationBuilder.AddColumn` and `migrationBuilder.CreateIndex`. Program.cs pre-inserts its history entry (B14) to prevent EF from re-running it. The new migration (`20260523000000_...`) is a safe idempotent complement that handles databases where B14 was never inserted and the columns/indexes may already exist from Program.cs runtime execution.
+
+### Blocks NOT Touched
+
+| Block | Status | Reason |
+|-------|--------|--------|
+| A1-A4 (admin password reset) | Unchanged | Not in scope |
+| B1/B47 (advisory locks) | Unchanged | Infrastructure — keep as long as gated blocks remain |
+| B4/B5 (phone normalization backfills) | Unchanged | One-time data backfill; out of scope per task rules |
+| B6/B7 (deduplication) | Unchanged | Out of scope per task rules |
+| B10-B46 | Unchanged | Not in scope for this phase |
+| ClinicQueueController.cs (Q1/Q2) | Unchanged | Not in scope |
+| DbSeeder.cs | Unchanged | Already at 0 raw SQL |
+| Frontend | Unchanged | Not in scope |
+| Auth/password behavior | Unchanged | Not in scope |
+| `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged | Not enabled |

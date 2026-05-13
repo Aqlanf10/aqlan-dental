@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-13
 **Production commit:** `e51d98e4b6e8` (after PR #99 merge)
-**Status:** Phase C1-d — B10/B11/B12/B13 conversation schema converted to EF migration
+**Status:** Phase C1-f merged — migration idempotency fixed; `ENABLE_STARTUP_DB_MAINTENANCE=false` confirmed in production
 
 ---
 
@@ -978,6 +978,7 @@ LIMIT 20;
 
 **PR:** #106 (pending review)
 **Branch:** `td-020-phase-c1f-safe-phone-normalization-repair`
+**PR:** #106 — **MERGED** (commit `40b255a` on main, 2026-05-13)
 **Type:** `fix` — make stuck EF migration idempotent
 **Raw SQL delta:** Program.cs unchanged (42); total backend unchanged (44)
 
@@ -1101,7 +1102,7 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 **Step 5 — Open Phase C1-g to remove B4/B5/B6/B7:**
 - Only after Steps 1–4 are all verified clean.
 - PR title: `refactor: remove obsolete phone normalization backfill blocks (TD-020 Phase C1-g)`
-- Raw SQL: Program.cs 42 → 38, total backend 44 → 40.
+- Raw SQL: Program.cs 44 → 40, total backend 45 → 41.
 
 **Step 6 — Manual clinic action (out of band):**
 - Staff must open both patients with raw WhatsApp `0711752823` in the patient edit UI.
@@ -1121,3 +1122,164 @@ railway logs --service aqlan-dental | grep "Applying migration.*20260430221624"
 | Frontend | Unchanged | Not in scope |
 | Auth/password behavior | Unchanged | Not in scope |
 | `ENABLE_STARTUP_DB_MAINTENANCE` | Unchanged in code | Turn off manually in Railway after deployment verification |
+
+---
+
+## Current State After PR #110 (2026-05-13)
+
+**Production commit:** `dea2cbc10c7ab0cdce70d8283ebb0b45f277e928` (PR #110 — TD-009 security hotfix)
+**Branch with this doc:** `td-020-final-inventory-review`
+
+### What Has Been Accomplished (Phases B2 → C1-f + security hotfix)
+
+| Phase | PR | Branch | Result |
+|-------|-----|--------|--------|
+| B2 — DbSeeder raw SQL elimination | Merged | `td-020-phase-b2-dbseeder-raw-sql` | DbSeeder: 4 → 0 raw SQL calls |
+| C1-a — Soft-delete columns EF migration | Merged | `td-020-phase-c1a-soft-delete-migration` | B2 removed from Program.cs |
+| C1-b — NormalizedPhone/WhatsApp schema EF migration | Merged | `td-020-phase-c1b-normalized-phone-schema` | B3/B8/B9 removed from Program.cs |
+| C1-d — Conversation schema EF migration | Merged | `td-020-phase-c1d-conversation-schema-migration` | B10/B11/B12/B13 removed from Program.cs |
+| C1-e — Phone backfill plan (docs only) | Merged | `td-020-phase-c1e-phone-backfill-plan` | Decision framework for B4/B5/B6/B7 |
+| C1-f — Migration idempotency fix | Merged (#106) | `td-020-phase-c1f-safe-phone-normalization-repair` | `20260430221054_AddPhoneNormalizationAndArchive` unblocked; `ENABLE_STARTUP_DB_MAINTENANCE` set to `false` |
+| Finance Sprint hardening | Merged (#107, `4b584df`) | `claude/aqlan-dental-pro-setup-vZwJo` | Contract editing, account statement, [Authorize] regression introduced inadvertently |
+| **TD-009 hotfix — restore StaffOnly** | **Merged (#110, `dea2cbc`)** | `fix/td-009-restore-staffonly-patients` | **PatientsController restored to `[Authorize(Policy = "StaffOnly")]`; Patient-role JWTs blocked from staff APIs** |
+
+### Current Raw SQL Counts (as of 2026-05-13)
+
+| Location | Before TD-020 | Now | Change |
+|----------|--------------|-----|--------|
+| `Program.cs` — raw SQL blocks | 50 | **44** | −8 removed (B2, B3, B8/B9, B10/B11/B12/B13) +2 added (A5 BookingRequests, A6 MessageEdit — Finance Sprint) |
+| `Program.cs` — `ExecuteSqlRawAsync` calls | 45 | **46** | Net change includes 6 new ungated calls from Finance Sprint |
+| `DbSeeder.cs` | 4 | **0** | −4 (Phase B2) |
+| `MessagesController.cs` | 31 | **0** | −31 (Phase B1, earlier) |
+| `ClinicQueueController.cs` | 2 | **2** | 0 (advisory locks — KEEP permanently) |
+| **Total backend raw SQL** | **88** | **45** | **−45 removed, +2 added (Finance Sprint hotfixes)** |
+
+### Production Guard Status
+
+| Item | Value | Confirmed |
+|------|-------|-----------|
+| `ENABLE_STARTUP_DB_MAINTENANCE` | `false` | Yes — set after PR #106 deployment |
+| All B-blocks (B1–B47) | **Inactive** | Yes — gated and skipped on every startup |
+| A-blocks (A1–A6) | **Active** — run every startup | Yes — A1–A4 idempotent via Settings flag; A5–A6 added by Finance Sprint (idempotent IF NOT EXISTS) |
+| Advisory locks Q1/Q2 | **Active** — run per HTTP request | Yes — correct behavior |
+| Production health | 200 OK | Yes — confirmed after PR #110 merge (`dea2cbc`) |
+| TD-009 security fix | PatientsController `[Authorize(Policy = "StaffOnly")]` restored | Yes — PR #110 merged; Patient-role JWTs blocked from staff APIs |
+
+### Remaining Raw SQL Blocks in Program.cs (44 total)
+
+#### Ungated — Active Every Startup (6 blocks)
+
+| Block | Line | Purpose | Must Touch? | Safe Action |
+|-------|------|---------|------------|-------------|
+| A1 | 312 | `CREATE TABLE "Settings" IF NOT EXISTS` | Not yet | Convert to EF migration (Phase C2) |
+| A2 | 330 | `SELECT COUNT(*)` flag check via `CreateCommand` | Not yet | Replace with EF LINQ (Phase C2) |
+| A3 | 348 | `UPDATE "Users" SET password for admin` | Not yet | Keep parameterized; move to DbSeeder in Phase C2 |
+| A4 | 354 | `INSERT INTO "Settings"` reset flag | Not yet | Replace with EF LINQ (Phase C2) |
+| A5 | 434–482 | BookingRequests table + indexes + migration history INSERT (4 `ExecuteSqlRawAsync`) — **added by Finance Sprint** | Not yet | Convert to proper EF migration; remove hotfix block (Phase C2) |
+| A6 | 484–517 | `Messages` table `IsEdited`/`EditedAt` column additions + migration history INSERT (2 `ExecuteSqlRawAsync`) — **added by Finance Sprint** | Not yet | Convert to proper EF migration; remove hotfix block (Phase C2) |
+
+#### Gated — Inactive While `ENABLE_STARTUP_DB_MAINTENANCE=false` (38 blocks)
+
+| Group | Blocks | Count | Safe Action |
+|-------|--------|-------|-------------|
+| Data backfills | B4, B5, B6, B7 | 4 | **Do NOT remove** — see Phase C1-e |
+| Fake migration history INSERTs | B14–B16, B21–B23, B28, B30, B34, B39, B42, B46 | 12 | Delete as obsolete (Phase C1-k) |
+| PatientAccounts table + columns + indexes + FK | B17, B18, B19, B20, B24, B25 | 6 | Convert to EF migration (Phase C1-d†) |
+| Visits/Documents columns + indexes | B26, B27 | 2 | Convert to EF migration (Phase C1-f†) |
+| Appointments queue columns | B29 | 1 | Convert to EF migration (Phase C1-g†) |
+| DoctorSchedules table + FK + index | B31, B32, B33 | 3 | Convert to EF migration (Phase C1-h) |
+| Messaging fallback tables | B35, B36, B37, B38 | 4 | Delete (Phase C1-i, already in `MigrateAsync`) |
+| ClinicQueueItems table + FKs + tracking | B40, B41, B43, B44, B45 | 5 | Convert to EF migration (Phase C1-j — do last) |
+| Advisory lock acquire/release | B1, B47 | 2 | **Keep permanently** |
+
+† These columns/tables were already applied in production via earlier raw SQL runtime execution; the EF migration must be idempotent (IF NOT EXISTS guards).
+
+---
+
+## Blocks That Must NOT Be Touched (Current Policy)
+
+| Block(s) | File | Reason | Required Before Removal |
+|----------|------|--------|------------------------|
+| B4, B5 | Program.cs | Legacy data backfill — NormalizedPhone/WhatsApp for patients created before PhoneNormalizer was wired in | Production SQL verification (Phase C1-e read-only checks) confirming zero rows need backfill |
+| B6, B7 | Program.cs | Dedup safety guard — prevents unique index violations during B4/B5 backfill | Must wait until B4/B5 strategy is verified complete |
+| B44 | Program.cs | Contains `DROP COLUMN "CalledBy"` — destructive; migration `20260520000000` already applied on prod | Wait until migration stability confirmed (2+ clean deployments with no `20260520000000` warnings) |
+| B40, B41 | Program.cs | TD-010 ClinicQueueItems safety net for Railway | 2+ weeks of clean deployments with no "Failed to ensure ClinicQueueItems table" warnings |
+| B1, B47 | Program.cs | `pg_try_advisory_lock` / `pg_advisory_unlock` — concurrency infrastructure | Never remove while gated block exists |
+| Q1, Q2 | ClinicQueueController.cs | `pg_advisory_xact_lock` — queue concurrency control | Never (these are correct runtime SQL, not schema hotfixes) |
+| A3 | Program.cs | Admin password UPDATE — touches credentials | Move to gated DbSeeder in Phase C2; never delete entirely |
+
+---
+
+## Next 3 Safe Implementation Phases
+
+### Phase C1-g — Remove B4/B5/B6/B7 (Phone Backfill Blocks)
+
+**Prerequisite:** Run the 6 read-only production SQL checks from the Phase C1-e section above (zero rows must need backfill; zero duplicates must exist in NormalizedPhone/NormalizedWhatsApp).
+
+**If prerequisites pass:**
+- Open PR: `refactor: remove obsolete patient phone normalization backfill blocks (TD-020 Phase C1-g)`
+- Remove B4, B5, B6, B7 from Program.cs (lines ~553–633)
+- Raw SQL delta: Program.cs 44 → 40, total backend 45 → 41
+- No migration needed
+
+**If prerequisites fail (rows still need backfill):**
+- Create idempotent EF migration: deduplicate first, then UPDATE `NormalizedPhone`/`NormalizedWhatsApp` for rows where Phone/WhatsApp set but normalized field is NULL
+- After migration applied in production with zero violations → follow-up PR to remove B4/B5/B6/B7
+
+**Risk:** Low (blocks are inside `ENABLE_STARTUP_DB_MAINTENANCE=false` gate — not active in production)
+
+---
+
+### Phase C1-h — Convert PatientAccounts + DoctorSchedules to EF Migrations
+
+**Scope:** B17–B20 (PatientAccounts table + FK + indexes), B24–B25 (PatientAccounts auth columns + index), B31–B33 (DoctorSchedules table + FK + index)
+
+**Approach:** Create two idempotent EF migrations:
+1. `20260526000000_AddPatientAccountsSchema` — `CREATE TABLE IF NOT EXISTS "PatientAccounts"` + FK + 3 indexes + auth columns (idempotent guards on all)
+2. `20260527000000_AddDoctorSchedulesSchema` — `CREATE TABLE IF NOT EXISTS "DoctorSchedules"` + FK + unique index (idempotent guards)
+
+**After migrations merged and confirmed by `MigrateAsync`:**
+- Delete B17, B18, B19, B20, B24, B25, B31, B32, B33 from Program.cs
+- Raw SQL delta: Program.cs −9, total backend −9
+
+**Risk:** Medium — PatientAccounts holds auth data. Migration must use `CREATE TABLE IF NOT EXISTS` and `DO $$ IF NOT EXISTS column ... ADD COLUMN` to be safe against production DBs where these tables already exist via earlier raw SQL runtime execution.
+
+---
+
+### Phase C1-i — Delete Messaging Fallback Tables + All Fake Migration History Entries
+
+**Scope:** B35–B38 (Conversations, ConversationParticipants, Messages, MessageReads fallback) + B14–B16, B21–B23, B28, B30, B34, B39, B42, B46 (12 fake history INSERTs)
+
+**Approach:**
+1. Confirm `MigrateAsync()` successfully applied `20260430000000_AddMessagingSystem` (check production `__EFMigrationsHistory`)
+2. If confirmed: delete B35/B36/B37/B38 (they are inside the MigrateAsync `catch` block — redundant)
+3. Delete all 12 fake `__EFMigrationsHistory` INSERT guards (B14–B16, B21–B23, B28, B30, B34, B39, B42, B46) — these were needed when migrations couldn't run; after C1-f fixed the migration loop they are dead code
+4. PR: `refactor: remove messaging fallback tables + fake migration history entries (TD-020 Phase C1-i)`
+5. Raw SQL delta: Program.cs −16, total backend −16
+
+**Risk:** Low — B35–B38 only run if `MigrateAsync()` throws; fake history entries have no effect once migrations run normally. Both groups are inside `ENABLE_STARTUP_DB_MAINTENANCE=false` gate.
+
+---
+
+## Remaining Roadmap (Phases C1-j → C3)
+
+| Phase | Scope | Risk | Prerequisite |
+|-------|-------|------|-------------|
+| C1-j | ClinicQueueItems table + tracking (B40-B43, B45) + B44 DROP COLUMN | High | 2+ weeks stable prod (TD-010); confirm `20260520000000` applied |
+| C1-k | Delete B44 DROP COLUMN guard | Medium | C1-j complete; `CalledBy` column confirmed gone in prod |
+| C2 | Refactor ungated A1–A4 admin password reset | High | Careful credential testing; move A3 to DbSeeder |
+| C3 | Remove all gated blocks from Program.cs entirely; remove `ENABLE_STARTUP_DB_MAINTENANCE` | Low | All C1 phases complete |
+
+**End goal:** Program.cs contains zero raw SQL. All schema is managed by `dotnet ef database update`. The `ENABLE_STARTUP_DB_MAINTENANCE` env var is removed from Railway.
+
+---
+
+## Verification Checklist Before Any Further Phase
+
+- [ ] Read-only SQL checks (Phase C1-e) run against production — confirm zero rows need NormalizedPhone/WhatsApp backfill
+- [ ] Confirm `20260430221624_AddConversationPatientAndType` is in production `__EFMigrationsHistory` (post-C1-f monitoring)
+- [ ] Confirm `20260430221054_AddPhoneNormalizationAndArchive` is in production `__EFMigrationsHistory`
+- [ ] Production `/health` = 200 on every restart with `ENABLE_STARTUP_DB_MAINTENANCE=false`
+- [ ] No `42701 column already exists` in Railway logs
+- [ ] No `duplicate key value violates unique constraint "IX_Patients_NormalizedWhatsApp"` in Railway logs
+- [ ] Staff has corrected the duplicate raw WhatsApp `0711752823` via patient edit UI

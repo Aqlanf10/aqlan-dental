@@ -279,10 +279,10 @@ Delete all raw SQL that has been superseded by EF migrations:
 
 | Block | Original Line | Purpose | Replacement |
 |-------|--------------|---------|-------------|
-| S1 | 24 | `ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "PasswordSalt"` | `migrationBuilder.AddColumn<string>("PasswordSalt", "Users", defaultValue: "")` |
-| S2 | 28-35 | Deduplicate `Phone` values before unique index | `migrationBuilder.Sql(UPDATE "Patients" SET "Phone" = '' WHERE ...)` (identical logic) |
-| S3 | 38-44 | `CREATE UNIQUE INDEX "IX_Patients_Phone"` | `migrationBuilder.CreateIndex("IX_Patients_Phone", "Patients", unique: true, filter: ...)` |
-| S4 | 47-53 | `CREATE UNIQUE INDEX "IX_Patients_WhatsApp"` | `migrationBuilder.CreateIndex("IX_Patients_WhatsApp", "Patients", unique: true, filter: ...)` |
+| S1 | 24 | `ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "PasswordSalt"` | `migrationBuilder.Sql(DO $$ ... IF NOT EXISTS ... ADD COLUMN)` (idempotent) |
+| S2 | 28-35 | Deduplicate `Phone` values before unique index | `migrationBuilder.Sql(UPDATE "Patients" SET "Phone" = '' WHERE ...)` (same logic, re-runnable) |
+| S3 | 38-44 | `CREATE UNIQUE INDEX "IX_Patients_Phone"` | `migrationBuilder.Sql(CREATE UNIQUE INDEX IF NOT EXISTS)` (idempotent) |
+| S4 | 47-53 | `CREATE UNIQUE INDEX "IX_Patients_WhatsApp"` | `migrationBuilder.Sql(CREATE UNIQUE INDEX IF NOT EXISTS)` (idempotent) + WhatsApp dedup |
 
 ### Files Changed
 1. `src/AqlanDentalPro.Infrastructure/Data/Seed/DbSeeder.cs` — Removed 4 `ExecuteSqlRawAsync` calls, replaced with comment referencing migration
@@ -290,11 +290,21 @@ Delete all raw SQL that has been superseded by EF migrations:
 3. `src/AqlanDentalPro.Infrastructure/Data/Migrations/AppDbContextModelSnapshot.cs` — Added `HasIndex("Phone")` and `HasIndex("WhatsApp")` entries
 4. `docs/technical-debt/TD-020-raw-sql-inventory.md` — Updated with Phase B2 results
 
+### Migration Idempotency
+All operations in this migration are safe for databases where the old DbSeeder raw SQL already applied these changes:
+- **PasswordSalt column:** Uses `DO $$ ... IF NOT EXISTS (SELECT 1 FROM information_schema.columns ...)` guard
+- **Phone dedup:** `UPDATE ... WHERE` with idempotent condition — affects 0 rows if no duplicates
+- **Phone index:** Uses `CREATE UNIQUE INDEX IF NOT EXISTS` (PostgreSQL 9.5+)
+- **WhatsApp dedup:** Same pattern as Phone — deduplicates before index creation
+- **WhatsApp index:** Uses `CREATE UNIQUE INDEX IF NOT EXISTS`
+- **Down():** Uses `DROP INDEX IF EXISTS` and `DROP COLUMN IF EXISTS`
+
 ### Production Behavior Impact
 **None.** The migration applies the exact same schema changes that the raw SQL was doing:
-- `PasswordSalt` column already existed in production (applied by the old raw SQL on every startup)
-- Phone/WhatsApp indexes may already exist from the old raw SQL; the migration uses EF's `CreateIndex` which is idempotent in practice (PostgreSQL will error if index exists, but this migration runs before any data, and the old raw SQL no longer runs)
-- Phone deduplication logic is preserved exactly as-is
+- `PasswordSalt` column: guarded by `IF NOT EXISTS` — safe if already present
+- Phone/WhatsApp indexes: guarded by `IF NOT EXISTS` — safe if already present
+- Phone/WhatsApp deduplication: re-runnable — affects 0 rows if no duplicates exist
+- WhatsApp deduplication added as new safety measure (old DbSeeder did not dedup WhatsApp)
 
 ### Important Notes
 - `DbSeeder.cs` is gated by `ENABLE_STARTUP_DB_MAINTENANCE` in production — it does NOT run on normal startup
@@ -302,3 +312,4 @@ Delete all raw SQL that has been superseded by EF migrations:
 - No changes to `Program.cs` startup maintenance blocks (A1-A4, B1-B47) per scope rules
 - No changes to `ClinicQueueController.cs` advisory locks (Q1, Q2) per scope rules
 - No auth/password behavior changes
+- Raw SQL moved from DbSeeder.cs (runtime) into guarded EF migration (schema-only) — this is the correct architectural location

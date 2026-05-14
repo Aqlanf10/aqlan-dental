@@ -53,20 +53,20 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
             .ToListAsync();
 
         var orthoStats = await db.OrthoCases
-            .Where(c => doctorIds.Contains(c.DoctorId) && c.Status == "active")
-            .GroupBy(c => c.DoctorId)
+            .Where(c => c.DoctorId != null && doctorIds.Contains(c.DoctorId.Value) && c.Status == "active")
+            .GroupBy(c => c.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var treatmentStats = await db.GeneralTreatments
-            .Where(t => doctorIds.Contains(t.DoctorId) && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate)
-            .GroupBy(t => t.DoctorId)
+            .Where(t => t.DoctorId != null && doctorIds.Contains(t.DoctorId.Value) && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate)
+            .GroupBy(t => t.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Count = g.Count() })
             .ToListAsync();
 
         var revenueStats = await db.Payments
-            .Where(p => doctorIds.Contains(p.DoctorId) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
-            .GroupBy(p => p.DoctorId)
+            .Where(p => p.DoctorId != null && doctorIds.Contains(p.DoctorId.Value) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .GroupBy(p => p.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Revenue = g.Sum(p => p.Amount) })
             .ToListAsync();
 

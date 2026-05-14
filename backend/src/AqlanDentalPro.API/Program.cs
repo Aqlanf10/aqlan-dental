@@ -475,13 +475,6 @@ try
     await brDb.Database.ExecuteSqlRawAsync("""
         CREATE INDEX IF NOT EXISTS "IX_BookingRequests_CreatedAt" ON "BookingRequests" ("CreatedAt");
     """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260507000000_AddBookingRequests', '8.0.8'
-        WHERE NOT EXISTS (
-            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
-        );
-    """);
     brLogger.LogInformation("BookingRequests table hotfix applied successfully");
 }
 catch (Exception ex)
@@ -508,14 +501,6 @@ try
                 END IF;
             END IF;
         END $$;
-    """);
-    await msgEditDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260510000000_AddMessageEditFields', '8.0.8'
-        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
-          AND NOT EXISTS (
-              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
-          );
     """);
     msgEditLogger.LogInformation("Message IsEdited/EditedAt hotfix applied successfully");
 }
@@ -643,29 +628,6 @@ if (enableStartupDbMaintenance)
         // B10-B13 conversation schema removed in TD-020 Phase C1-d;
         // now handled by EF migration 20260524000000_AddConversationPatientBranchFieldsAndIndexes.
 
-        // Record migrations in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260501000000_AddNormalizedPhoneFields', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501000000_AddNormalizedPhoneFields'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260501010000_AddPatientConversationSupport', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260501020000_AddSoftDeleteToMessagingTables', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501020000_AddSoftDeleteToMessagingTables'
-            );
-        """);
-
         logger.LogInformation("Pre-migration schema updates applied successfully");
     }
     catch (Exception ex)
@@ -712,28 +674,7 @@ if (enableStartupDbMaintenance)
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_PhoneNumber"
                 ON "PatientAccounts" ("PhoneNumber");
         """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260430120000_AddPatientPortal', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430120000_AddPatientPortal'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260430140000_AddWhatsAppIntegration', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430140000_AddWhatsAppIntegration'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260430160000_AddGeneralDentistryEnhancements', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430160000_AddGeneralDentistryEnhancements'
-            );
-        """);
-        logger.LogInformation("PatientAccounts table ensured and migration history updated");
+        logger.LogInformation("PatientAccounts table ensured");
     }
     catch (Exception ex)
     {
@@ -813,15 +754,6 @@ if (enableStartupDbMaintenance)
             END $$;
         """);
 
-        // Record Sprint 4 migration in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260502000000_AddVisitsDocumentsFields', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502000000_AddVisitsDocumentsFields'
-            );
-        """);
-
         logger.LogInformation("Sprint 4 Visits/Documents columns ensured successfully");
     }
     catch (Exception ex)
@@ -850,15 +782,6 @@ if (enableStartupDbMaintenance)
                     CREATE INDEX IF NOT EXISTS "IX_Appointments_AppointmentDate" ON "Appointments" ("AppointmentDate");
                 END IF;
             END $$;
-        """);
-
-        // Record Sprint 4.5 migration in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260502100000_AddQueueFieldsToAppointments', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502100000_AddQueueFieldsToAppointments'
-            );
         """);
 
         logger.LogInformation("Sprint 4.5 queue columns ensured on Appointments table");
@@ -903,15 +826,6 @@ if (enableStartupDbMaintenance)
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_DoctorSchedules_DoctorId_DayOfWeek"
                 ON "DoctorSchedules" ("DoctorId", "DayOfWeek")
                 WHERE "IsActive" = TRUE;
-        """);
-
-        // Record Sprint 5 migration in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260502120000_AddDoctorSchedules', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502120000_AddDoctorSchedules'
-            );
         """);
 
         logger.LogInformation("Sprint 5 DoctorSchedules table ensured");
@@ -1067,15 +981,6 @@ if (enableStartupDbMaintenance)
                 END $$;
             """);
 
-            // Record the migration in history if not already recorded
-            await db.Database.ExecuteSqlRawAsync("""
-                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-                SELECT '20260430000000_AddMessagingSystem', '8.0.8'
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430000000_AddMessagingSystem'
-                );
-            """);
-
             logger.LogInformation("Messaging tables created manually as fallback");
         }
         catch (Exception innerEx)
@@ -1151,15 +1056,6 @@ if (enableStartupDbMaintenance)
             END $$;
         """);
 
-        // Record the migration in history if not already recorded
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260514000000_AddClinicQueueItem', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
-            );
-        """);
-
         logger.LogInformation("ClinicQueueItems table ensured (created if not exists)");
     }
     catch (Exception ex)
@@ -1210,15 +1106,6 @@ if (enableStartupDbMaintenance)
                         FOREIGN KEY ("CalledByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
                 END IF;
             END $$;
-        """);
-
-        // Record the migration in history if not already recorded
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260520000000_AddClinicQueueItemTrackingFields', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields'
-            );
         """);
 
         logger.LogInformation("ClinicQueueItems tracking fields ensured");

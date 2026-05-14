@@ -5,11 +5,16 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, User as UserIcon, ArrowRight, Loader2, Phone, KeyRound, Globe } from "lucide-react";
-// Shield removed - no longer used after OTP removal
 import Image from "next/image";
 import { useAuthStore } from "@/stores/authStore";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import portalApi from "@/lib/portalApi";
+
+/* ─── Brand colors (Aqlan Dental Pro) ──────────────────────────────────────── */
+const BRAND_PRIMARY = "#1a3a5c";       // dark sky — background base
+const BRAND_BLUE = "#3d7ab5";          // sky blue accent
+const BRAND_ORANGE = "#f5922e";        // orange CTA
+const BRAND_ORANGE_DARK = "#c47022";   // orange hover
 
 // ─── Staff Login Schema ──────────────────────────────────────────────────────
 const staffSchema = z.object({
@@ -18,29 +23,29 @@ const staffSchema = z.object({
 });
 type StaffFormData = z.infer<typeof staffSchema>;
 
-// ─── Doctor Avatars ──────────────────────────────────────────────────────────
+// ─── Doctor Avatars (uses brand palette only) ────────────────────────────────
 const DOCTORS = [
-  { name: "د. عقلان الكامل", specialty: "أخصائي تقويم الأسنان", color: "#3d7ab5", initials: "عك" },
-  { name: "د. عائشة غازي", specialty: "طب أسنان عام", color: "#f5922e", initials: "عغ" },
-  { name: "د. إيمان الكامل", specialty: "طب أسنان عام", color: "#22c55e", initials: "إك" },
-  { name: "د. هشام القدسي", specialty: "طب أسنان عام", color: "#a855f7", initials: "هق" },
-  { name: "د. خلدون البريهي", specialty: "أخصائي جراحة وجه وفكين", color: "#ef4444", initials: "خب" },
+  { name: "د. عقلان الكامل", specialty: "أخصائي تقويم الأسنان", color: BRAND_ORANGE, initials: "عك" },
+  { name: "د. عائشة غازي", specialty: "طب أسنان عام", color: BRAND_BLUE, initials: "عغ" },
+  { name: "د. إيمان الكامل", specialty: "طب أسنان عام", color: BRAND_BLUE, initials: "إك" },
+  { name: "د. هشام القدسي", specialty: "طب أسنان عام", color: BRAND_BLUE, initials: "هق" },
+  { name: "د. خلدون البريهي", specialty: "أخصائي جراحة وجه وفكين", color: BRAND_BLUE, initials: "خب" },
 ];
 
 // ─── Shared Styles ───────────────────────────────────────────────────────────
 const glassCardStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.05)",
+  background: "rgba(255,255,255,0.06)",
   backdropFilter: "blur(12px)",
-  border: "1px solid rgba(255,255,255,0.1)",
+  border: "1px solid rgba(255,255,255,0.12)",
 };
 
 const inputStyle = (hasError: boolean): React.CSSProperties => ({
-  border: hasError ? "1.5px solid rgba(252,165,165,0.7)" : "1.5px solid rgba(255,255,255,0.15)",
+  border: hasError ? "1.5px solid rgba(252,165,165,0.7)" : "1.5px solid rgba(255,255,255,0.18)",
   background: "rgba(255,255,255,0.08)",
 });
 
 const inputFocusStyle = (hasError: boolean) => ({
-  borderColor: hasError ? "rgba(252,165,165,0.7)" : "rgba(61,122,181,0.7)",
+  borderColor: hasError ? "rgba(252,165,165,0.7)" : "rgba(245,146,46,0.7)",
 });
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -49,18 +54,18 @@ export default function LoginPage() {
     <div
       className="min-h-screen flex items-center justify-center relative overflow-hidden"
       style={{
-        background: "linear-gradient(145deg, #0a1c30 0%, #0d2137 55%, #1a3a5c 100%)",
+        background: `linear-gradient(135deg, ${BRAND_PRIMARY} 0%, #244b73 55%, #2e4a6f 100%)`,
         direction: "rtl",
         fontFamily: "Tajawal, sans-serif",
       }}
     >
-      {/* Decorative circles — matches ZIP */}
+      {/* Decorative circles — sky-blue + orange tints */}
       {[0, 1, 2].map((i) => (
         <div
           key={i}
           className="absolute rounded-full pointer-events-none"
           style={{
-            border: `1px solid rgba(61,122,181,${0.08 + i * 0.04})`,
+            border: `1px solid rgba(61,122,181,${0.1 + i * 0.05})`,
             width: 300 + i * 200,
             height: 300 + i * 200,
             top: "50%",
@@ -69,42 +74,51 @@ export default function LoginPage() {
           }}
         />
       ))}
+      {/* Orange accent ring */}
+      <div
+        className="absolute rounded-full pointer-events-none"
+        style={{
+          border: `1px solid rgba(245,146,46,0.15)`,
+          width: 580,
+          height: 580,
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+        }}
+      />
 
       <div className="w-full max-w-[900px] px-4 py-8 z-10">
-        {/* Logo & Header — matches ZIP */}
+        {/* Logo & Header */}
         <div className="text-center mb-8">
           <div
-            className="w-[90px] h-[90px] rounded-3xl flex items-center justify-center mx-auto mb-4"
+            className="w-[96px] h-[96px] rounded-3xl flex items-center justify-center mx-auto mb-4"
             style={{
-              background: "rgba(255,255,255,0.07)",
-              border: "1px solid rgba(255,255,255,0.12)",
+              background: "#fff",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.08)",
             }}
           >
             <Image
               src="/logo.png"
               alt="Aqlan Dental Pro"
-              width={70}
-              height={70}
-              className="w-[70px] h-[70px] object-contain"
+              width={76}
+              height={76}
+              className="w-[76px] h-[76px] object-contain"
             />
           </div>
           <div className="text-white text-[22px] font-extrabold mb-1">
             Aqlan Dental Pro
           </div>
-          <div className="text-[13px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+          <div className="text-[13px]" style={{ color: "rgba(255,255,255,0.65)" }}>
             مركز د. عقلان الكامل لطب وتقويم الأسنان
           </div>
-          <div className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+          <div className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
             تعز — شارع التحرير الأعلى
           </div>
         </div>
 
         {/* Two Panels */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-7">
-          {/* Panel 1: Staff Login */}
           <StaffLoginPanel />
-
-          {/* Panel 2: Patient Portal Login */}
           <PatientLoginPanel />
         </div>
 
@@ -113,18 +127,18 @@ export default function LoginPage() {
           <a
             href="/home"
             className="inline-flex items-center gap-2 text-[13px] font-medium transition-colors no-underline"
-            style={{ color: "rgba(255,255,255,0.45)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.75)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.45)")}
+            style={{ color: "rgba(255,255,255,0.55)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.85)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.55)")}
           >
             <Globe className="w-3.5 h-3.5" />
             زيارة الموقع الرسمي
           </a>
         </div>
 
-        {/* Doctors — matches ZIP */}
+        {/* Doctors */}
         <div className="w-full">
-          <div className="text-center mb-3 text-[12px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+          <div className="text-center mb-3 text-[12px]" style={{ color: "rgba(255,255,255,0.45)" }}>
             الفريق الطبي
           </div>
           <div className="flex gap-2 justify-center flex-wrap">
@@ -135,7 +149,7 @@ export default function LoginPage() {
                 className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold text-white cursor-default"
                 style={{
                   backgroundColor: doc.color,
-                  border: "2px solid rgba(255,255,255,0.15)",
+                  border: "2px solid rgba(255,255,255,0.2)",
                 }}
               >
                 {doc.initials}
@@ -144,8 +158,8 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Footer — matches ZIP */}
-        <div className="mt-8 text-[11px] text-center" style={{ color: "rgba(255,255,255,0.2)" }}>
+        {/* Footer */}
+        <div className="mt-8 text-[11px] text-center" style={{ color: "rgba(255,255,255,0.3)" }}>
           04-253028 · 770-245745 · 711-752823
         </div>
       </div>
@@ -172,37 +186,31 @@ function StaffLoginPanel() {
       await login(data);
       router.push("/");
     } catch (err) {
-      // Show API error message if available, otherwise show generic message
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");
     }
   };
 
   return (
-    <div
-      className="rounded-[20px] p-7 flex flex-col"
-      style={glassCardStyle}
-    >
-      {/* Panel header */}
+    <div className="rounded-[20px] p-7 flex flex-col" style={glassCardStyle}>
       <div className="mb-5">
         <div className="flex items-center gap-2 mb-1">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ background: "rgba(61,122,181,0.2)" }}
+            style={{ background: "rgba(61,122,181,0.25)" }}
           >
-            <svg className="w-4 h-4 text-[#3d7ab5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4" style={{ color: BRAND_BLUE }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
           <h2 className="text-lg font-bold text-white">دخول الطاقم</h2>
         </div>
-        <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+        <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>
           للأطباء، الاستقبال، الإدارة، والمحاسبة
         </p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 flex-1">
-        {/* Error message */}
         {error && (
           <div
             className="text-[13px] px-3 py-2 rounded-lg"
@@ -216,9 +224,8 @@ function StaffLoginPanel() {
           </div>
         )}
 
-        {/* Username */}
         <div>
-          <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+          <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>
             اسم المستخدم
           </label>
           <input
@@ -229,7 +236,7 @@ function StaffLoginPanel() {
             className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors"
             style={inputStyle(!!errors.username)}
             onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!errors.username))}
-            onBlur={(e) => (e.currentTarget.style.borderColor = errors.username ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = errors.username ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.18)")}
           />
           {errors.username && (
             <p className="mt-1 text-xs" style={{ color: "#fca5a5" }}>
@@ -238,9 +245,8 @@ function StaffLoginPanel() {
           )}
         </div>
 
-        {/* Password */}
         <div>
-          <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+          <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>
             كلمة المرور
           </label>
           <div className="relative">
@@ -252,13 +258,13 @@ function StaffLoginPanel() {
               className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors"
               style={inputStyle(!!errors.password)}
               onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!errors.password))}
-              onBlur={(e) => (e.currentTarget.style.borderColor = errors.password ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = errors.password ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.18)")}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute inset-y-0 start-3 flex items-center"
-              style={{ color: "rgba(255,255,255,0.4)" }}
+              style={{ color: "rgba(255,255,255,0.5)" }}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -270,23 +276,23 @@ function StaffLoginPanel() {
           )}
         </div>
 
-        {/* Staff forgot password info */}
         <div className="text-center pt-1">
-          <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.65)" }}>
+          <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.7)" }}>
             لإعادة تعيين كلمة المرور، تواصل مع مدير النظام
           </span>
         </div>
 
-        {/* Submit button */}
+        {/* Submit — Brand Orange CTA */}
         <button
           type="submit"
           disabled={isLoading}
           className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
           style={{
-            background: isLoading ? "#2d5e8e" : "#3d7ab5",
+            background: isLoading ? BRAND_ORANGE_DARK : BRAND_ORANGE,
+            boxShadow: "0 4px 12px rgba(245,146,46,0.3)",
           }}
-          onMouseEnter={(e) => !isLoading && (e.currentTarget.style.background = "#2d5e8e")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = isLoading ? "#2d5e8e" : "#3d7ab5")}
+          onMouseEnter={(e) => !isLoading && (e.currentTarget.style.background = BRAND_ORANGE_DARK)}
+          onMouseLeave={(e) => (e.currentTarget.style.background = isLoading ? BRAND_ORANGE_DARK : BRAND_ORANGE)}
         >
           {isLoading ? (
             <>
@@ -302,7 +308,7 @@ function StaffLoginPanel() {
   );
 }
 
-// ─── Patient Login Panel (Username/Password) ─────────────────────────────────
+// ─── Patient Login Panel ─────────────────────────────────────────────────────
 function PatientLoginPanel() {
   const router = useRouter();
   const { setAuth } = usePatientAuthStore();
@@ -385,43 +391,40 @@ function PatientLoginPanel() {
     }
   };
 
+  /* Patient panel uses a sky-blue tint to distinguish from staff panel */
+  const patientPanelStyle: React.CSSProperties = {
+    background: "rgba(61,122,181,0.08)",
+    backdropFilter: "blur(12px)",
+    border: "1px solid rgba(61,122,181,0.2)",
+  };
+
   return (
-    <div
-      className="rounded-[20px] p-7 flex flex-col"
-      style={{
-        background: "rgba(245,146,46,0.04)",
-        backdropFilter: "blur(12px)",
-        border: "1px solid rgba(245,146,46,0.12)",
-      }}
-    >
-      {/* Panel header */}
+    <div className="rounded-[20px] p-7 flex flex-col" style={patientPanelStyle}>
       <div className="mb-5">
         <div className="flex items-center gap-2 mb-1">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ background: "rgba(245,146,46,0.15)" }}
+            style={{ background: "rgba(61,122,181,0.25)" }}
           >
-            <UserIcon className="w-4 h-4 text-[#f5922e]" />
+            <UserIcon className="w-4 h-4" style={{ color: BRAND_BLUE }} />
           </div>
           <h2 className="text-lg font-bold text-white">دخول المرضى</h2>
         </div>
-        <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>
+        <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>
           لمتابعة المواعيد، العلاجات، الوصفات، والمدفوعات
         </p>
       </div>
 
       {step === "login" ? (
         <form onSubmit={handleLogin} className="space-y-4 flex-1">
-          {/* Error */}
           {error && (
             <div className="text-[13px]" style={{ color: "#fca5a5" }}>
               {error}
             </div>
           )}
 
-          {/* Username input */}
           <div>
-            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>
               اسم المستخدم
             </label>
             <input
@@ -430,19 +433,18 @@ function PatientLoginPanel() {
               onChange={(e) => { setUsername(e.target.value); setError(""); }}
               placeholder="GM0001"
               dir="ltr"
-              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/25"
+              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/30"
               style={inputStyle(!!error)}
               onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
-              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.18)")}
             />
-            <p className="mt-1 text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+            <p className="mt-1 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
               رقم الملف (مثل GM0001)
             </p>
           </div>
 
-          {/* Password input */}
           <div>
-            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>
               كلمة المرور
             </label>
             <div className="relative">
@@ -452,44 +454,44 @@ function PatientLoginPanel() {
                 onChange={(e) => { setPassword(e.target.value); setError(""); }}
                 placeholder="••••••"
                 dir="ltr"
-                className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/25"
+                className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/30"
                 style={inputStyle(!!error)}
                 onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
-                onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.18)")}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute inset-y-0 start-3 flex items-center"
-                style={{ color: "rgba(255,255,255,0.4)" }}
+                style={{ color: "rgba(255,255,255,0.5)" }}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
-          {/* Forgot password link */}
           <div className="text-left">
             <button
               type="button"
               onClick={() => { setStep("forgot"); setError(""); setSuccess(""); }}
               className="text-[12px] no-underline bg-transparent border-none cursor-pointer"
-              style={{ color: "#f5922e" }}
+              style={{ color: BRAND_BLUE }}
             >
               نسيت كلمة المرور؟
             </button>
           </div>
 
-          {/* Login button */}
+          {/* Login — Sky Blue (secondary brand) */}
           <button
             type="submit"
             disabled={loading}
             className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
             style={{
-              background: loading ? "#e07d1e" : "#f5922e",
+              background: loading ? "#2d5e8e" : BRAND_BLUE,
+              boxShadow: "0 4px 12px rgba(61,122,181,0.3)",
             }}
-            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#e07d1e")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#e07d1e" : "#f5922e")}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#2d5e8e")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#2d5e8e" : BRAND_BLUE)}
           >
             {loading ? (
               <>
@@ -503,29 +505,26 @@ function PatientLoginPanel() {
         </form>
       ) : step === "forgot" ? (
         <form onSubmit={handleForgotPassword} className="space-y-4 flex-1">
-          {/* Error */}
           {error && (
             <div className="text-[13px]" style={{ color: "#fca5a5" }}>
               {error}
             </div>
           )}
 
-          {/* Info */}
           <div className="text-center">
             <div
               className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2"
-              style={{ background: "rgba(245,146,46,0.15)" }}
+              style={{ background: "rgba(61,122,181,0.2)" }}
             >
-              <Phone className="w-5 h-5 text-[#f5922e]" />
+              <Phone className="w-5 h-5" style={{ color: BRAND_BLUE }} />
             </div>
-            <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+            <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.55)" }}>
               أدخل رقم هاتفك المسجل عندنا لإرسال رمز التحقق عبر واتساب
             </p>
           </div>
 
-          {/* Phone input */}
           <div>
-            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>
               رقم الهاتف
             </label>
             <input
@@ -534,26 +533,25 @@ function PatientLoginPanel() {
               onChange={(e) => { setPhoneNumber(e.target.value); setError(""); }}
               placeholder="770123456"
               dir="ltr"
-              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/25"
+              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/30"
               style={inputStyle(!!error)}
               onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
-              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.18)")}
             />
-            <p className="mt-1 text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+            <p className="mt-1 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
               أدخل الرقم بدون رمز الدولة (967+)
             </p>
           </div>
 
-          {/* Send code button */}
           <button
             type="submit"
             disabled={loading}
             className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
             style={{
-              background: loading ? "#e07d1e" : "#f5922e",
+              background: loading ? "#2d5e8e" : BRAND_BLUE,
             }}
-            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#e07d1e")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#e07d1e" : "#f5922e")}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#2d5e8e")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#2d5e8e" : BRAND_BLUE)}
           >
             {loading ? (
               <>
@@ -565,12 +563,11 @@ function PatientLoginPanel() {
             )}
           </button>
 
-          {/* Back to login */}
           <button
             type="button"
             onClick={() => { setStep("login"); setError(""); setSuccess(""); }}
             className="w-full py-2 text-[12px] transition flex items-center justify-center gap-1 bg-transparent border-none cursor-pointer"
-            style={{ color: "rgba(255,255,255,0.4)" }}
+            style={{ color: "rgba(255,255,255,0.5)" }}
           >
             <ArrowRight className="w-3 h-3" />
             العودة إلى تسجيل الدخول
@@ -578,36 +575,32 @@ function PatientLoginPanel() {
         </form>
       ) : (
         <form onSubmit={handleResetPassword} className="space-y-4 flex-1">
-          {/* Success message */}
           {success && (
             <div className="text-[13px]" style={{ color: "#86efac" }}>
               {success}
             </div>
           )}
 
-          {/* Error */}
           {error && (
             <div className="text-[13px]" style={{ color: "#fca5a5" }}>
               {error}
             </div>
           )}
 
-          {/* Info */}
           <div className="text-center">
             <div
               className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-2"
-              style={{ background: "rgba(245,146,46,0.15)" }}
+              style={{ background: "rgba(61,122,181,0.2)" }}
             >
-              <KeyRound className="w-5 h-5 text-[#f5922e]" />
+              <KeyRound className="w-5 h-5" style={{ color: BRAND_BLUE }} />
             </div>
-            <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+            <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.55)" }}>
               أدخل الرمز المرسل وكلمة المرور الجديدة
             </p>
           </div>
 
-          {/* Code input */}
           <div>
-            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>
               رمز التحقق
             </label>
             <input
@@ -620,14 +613,13 @@ function PatientLoginPanel() {
               className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-center tracking-[0.5em] font-mono placeholder:text-white/20"
               style={inputStyle(!!error)}
               onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
-              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.18)")}
               autoFocus
             />
           </div>
 
-          {/* New password input */}
           <div>
-            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+            <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "rgba(255,255,255,0.75)" }}>
               كلمة المرور الجديدة
             </label>
             <input
@@ -636,23 +628,22 @@ function PatientLoginPanel() {
               onChange={(e) => { setNewPassword(e.target.value); setError(""); }}
               placeholder="أدخل كلمة مرور جديدة"
               dir="ltr"
-              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/25"
+              className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left placeholder:text-white/30"
               style={inputStyle(!!error)}
               onFocus={(e) => Object.assign(e.currentTarget.style, inputFocusStyle(!!error))}
-              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.15)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = error ? "rgba(252,165,165,0.7)" : "rgba(255,255,255,0.18)")}
             />
           </div>
 
-          {/* Reset button */}
           <button
             type="submit"
             disabled={loading}
             className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
             style={{
-              background: loading ? "#e07d1e" : "#f5922e",
+              background: loading ? "#2d5e8e" : BRAND_BLUE,
             }}
-            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#e07d1e")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#e07d1e" : "#f5922e")}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#2d5e8e")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#2d5e8e" : BRAND_BLUE)}
           >
             {loading ? (
               <>
@@ -664,12 +655,11 @@ function PatientLoginPanel() {
             )}
           </button>
 
-          {/* Back to forgot */}
           <button
             type="button"
             onClick={() => { setStep("forgot"); setError(""); setSuccess(""); setCode(""); }}
             className="w-full py-2 text-[12px] transition flex items-center justify-center gap-1 bg-transparent border-none cursor-pointer"
-            style={{ color: "rgba(255,255,255,0.4)" }}
+            style={{ color: "rgba(255,255,255,0.5)" }}
           >
             <ArrowRight className="w-3 h-3" />
             إعادة إرسال الرمز

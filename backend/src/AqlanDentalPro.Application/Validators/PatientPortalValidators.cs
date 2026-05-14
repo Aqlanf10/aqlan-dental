@@ -132,3 +132,16 @@ public sealed class PatientAppointmentRequestDtoValidator : AbstractValidator<Pa
         return TimeOnly.TryParse(time, out _);
     }
 }
+
+/// <summary>
+/// Validates patient refresh token request — ensures token is not empty.
+/// </summary>
+public sealed class PatientRefreshTokenRequestValidator : AbstractValidator<PatientRefreshTokenRequest>
+{
+    public PatientRefreshTokenRequestValidator()
+    {
+        RuleFor(x => x.RefreshToken)
+            .NotEmpty().WithMessage("رمز التحديث مطلوب")
+            .MaximumLength(1000).WithMessage("رمز التحديث غير صالح");
+    }
+}

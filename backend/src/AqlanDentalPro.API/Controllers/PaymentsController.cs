@@ -9,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(FinanceService service, IPdfService pdfService) : ControllerBase
+public class PaymentsController(FinanceService service, IPdfService pdfService, ILogger<PaymentsController> logger) : ControllerBase
 {
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(
@@ -87,6 +87,7 @@ public class PaymentsController(FinanceService service, IPdfService pdfService) 
         }
         catch (ArgumentException ex)
         {
+            logger.LogWarning(ex, "Payment receipt PDF generation failed for payment {PaymentId}", id);
             return NotFound(new { message = ex.Message });
         }
     }

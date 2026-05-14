@@ -431,76 +431,6 @@ catch (Exception ex)
     wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
 }
 
-// ── BookingRequests Table Hotfix (unconditional, idempotent) ─────────────────
-try
-{
-    using var brScope = app.Services.CreateScope();
-    var brDb = brScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var brLogger = brScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE TABLE IF NOT EXISTS "BookingRequests" (
-            "Id" uuid NOT NULL PRIMARY KEY,
-            "PatientName" character varying(100) NOT NULL,
-            "PhoneNumber" character varying(20) NOT NULL,
-            "Email" character varying(150) NULL,
-            "ServiceType" character varying(100) NULL,
-            "PreferredDate" character varying(50) NULL,
-            "PreferredTime" character varying(50) NULL,
-            "Notes" character varying(500) NULL,
-            "Status" integer NOT NULL DEFAULT 0,
-            "StaffNotes" text NULL,
-            "ReviewedBy" uuid NULL,
-            "ReviewedAt" timestamp with time zone NULL,
-            "ConvertedToAppointmentId" uuid NULL,
-            "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-            "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-            "IsActive" boolean NOT NULL DEFAULT TRUE,
-            "DeletedAt" timestamp with time zone NULL,
-            "DeletedBy" uuid NULL
-        );
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_Status" ON "BookingRequests" ("Status");
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_CreatedAt" ON "BookingRequests" ("CreatedAt");
-    """);
-    brLogger.LogInformation("BookingRequests table hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var brLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    brLogger2.LogWarning(ex, "BookingRequests table hotfix failed (non-fatal)");
-}
-
-// ── Message Edit Fields Hotfix (unconditional, idempotent) ───────────────────
-try
-{
-    using var msgEditScope = app.Services.CreateScope();
-    var msgEditDb     = msgEditScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var msgEditLogger = msgEditScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await msgEditDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Messages') THEN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
-                    ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
-                    ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
-                END IF;
-            END IF;
-        END $$;
-    """);
-    msgEditLogger.LogInformation("Message IsEdited/EditedAt hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var msgEditLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    msgEditLogger2.LogWarning(ex, "Message edit fields hotfix failed (non-fatal)");
-}
-
 // ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
 // TD-020: remaining raw SQL blocks — see docs/technical-debt/TD-020-raw-sql-inventory.md
 var enableStartupDbMaintenance =
@@ -549,73 +479,9 @@ if (enableStartupDbMaintenance)
         // B3/B8/B9 normalized phone schema removed in TD-020 Phase C1-b;
         // now handled by EF migration 20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes.
 
-        // Backfill NormalizedPhone/NormalizedWhatsApp
-        await db.Database.ExecuteSqlRawAsync("""
-            UPDATE "Patients" SET "NormalizedPhone" = 
-                CASE 
-                    WHEN "Phone" IS NULL OR "Phone" = '' THEN NULL
-                    ELSE LTRIM(RTRIM(
-                        CASE 
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
-                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
-                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
-                        END
-                    ))
-                END
-            WHERE "NormalizedPhone" IS NULL AND "Phone" IS NOT NULL AND "Phone" != '';
-        """);
+        // NormalizedPhone/NormalizedWhatsApp backfill + dedup removed in TD-020 Phase C1-e;
+        // now handled by EF migrations 20260501000000 and 20260523000000.
 
-        await db.Database.ExecuteSqlRawAsync("""
-            UPDATE "Patients" SET "NormalizedWhatsApp" = 
-                CASE 
-                    WHEN "WhatsApp" IS NULL OR "WhatsApp" = '' THEN NULL
-                    ELSE LTRIM(RTRIM(
-                        CASE 
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
-                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
-                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
-                        END
-                    ))
-                END
-            WHERE "NormalizedWhatsApp" IS NULL AND "WhatsApp" IS NOT NULL AND "WhatsApp" != '';
-        """);
-
-        // Create unique indexes for NormalizedPhone/NormalizedWhatsApp (with deduplication)
-        // First: NULL out duplicates, keeping only the first (oldest) record
-        await db.Database.ExecuteSqlRawAsync("""
-            WITH duplicates AS (
-                SELECT "Id", "NormalizedPhone", 
-                       ROW_NUMBER() OVER (PARTITION BY "NormalizedPhone" ORDER BY "CreatedAt" ASC) as rn
-                FROM "Patients" 
-                WHERE "NormalizedPhone" IS NOT NULL AND "NormalizedPhone" != ''
-            )
-            UPDATE "Patients" SET "NormalizedPhone" = NULL
-            FROM duplicates
-            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            WITH duplicates AS (
-                SELECT "Id", "NormalizedWhatsApp", 
-                       ROW_NUMBER() OVER (PARTITION BY "NormalizedWhatsApp" ORDER BY "CreatedAt" ASC) as rn
-                FROM "Patients" 
-                WHERE "NormalizedWhatsApp" IS NOT NULL AND "NormalizedWhatsApp" != ''
-            )
-            UPDATE "Patients" SET "NormalizedWhatsApp" = NULL
-            FROM duplicates
-            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
-        """);
         // B10-B13 conversation schema removed in TD-020 Phase C1-d;
         // now handled by EF migration 20260524000000_AddConversationPatientBranchFieldsAndIndexes.
 
@@ -626,51 +492,8 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to apply pre-migration schema updates");
     }
 
-    // Ensure PatientAccounts table exists — separate try/catch so failures
-    // in the main pre-migration block don't prevent this from running.
-    try
-    {
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "PatientAccounts" (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "PatientId" uuid NOT NULL,
-                "PhoneNumber" character varying(20) NOT NULL,
-                "VerificationCode" character varying(10) NULL,
-                "VerificationCodeExpiry" timestamp with time zone NULL,
-                "IsVerified" boolean NOT NULL DEFAULT FALSE,
-                "LastLogin" timestamp with time zone NULL,
-                "DeviceToken" character varying(500) NULL,
-                "RefreshToken" character varying(256) NULL,
-                "RefreshTokenExpiry" timestamp with time zone NULL,
-                "IsActive" boolean NOT NULL DEFAULT TRUE,
-                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-                "DeletedAt" timestamp with time zone NULL,
-                "DeletedBy" uuid NULL
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_PatientAccounts_Patients_PatientId') THEN
-                    ALTER TABLE "PatientAccounts" ADD CONSTRAINT "FK_PatientAccounts_Patients_PatientId"
-                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE CASCADE;
-                END IF;
-            END $$;
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_PatientId"
-                ON "PatientAccounts" ("PatientId");
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_PhoneNumber"
-                ON "PatientAccounts" ("PhoneNumber");
-        """);
-        logger.LogInformation("PatientAccounts table ensured");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to ensure PatientAccounts table exists");
-    }
+    // PatientAccounts table creation — now handled by EF migration 20260430120000_AddPatientPortal
+    // (removed in TD-020 Phase C1-e)
 
     // Add Username/PasswordHash/PasswordSalt/InitialPassword columns to PatientAccounts
     try
@@ -701,56 +524,8 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to add username/password columns to PatientAccounts");
     }
 
-    // Ensure Visits/Documents new columns exist — separate try/catch for Sprint 4
-    try
-    {
-        // Add Diagnosis column to Visits
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Visits') THEN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'Diagnosis') THEN
-                        ALTER TABLE "Visits" ADD COLUMN "Diagnosis" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'NextVisitPlan') THEN
-                        ALTER TABLE "Visits" ADD COLUMN "NextVisitPlan" text NULL;
-                    END IF;
-                    CREATE INDEX IF NOT EXISTS "IX_Visits_PatientId" ON "Visits" ("PatientId");
-                    CREATE INDEX IF NOT EXISTS "IX_Visits_VisitDate" ON "Visits" ("VisitDate");
-                END IF;
-            END $$;
-        """);
-
-        // Add new columns to Documents
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Documents') THEN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'FileName') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "FileName" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'FileSize') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "FileSize" bigint NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'MimeType') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "MimeType" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'Notes') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "Notes" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'UploadedBy') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "UploadedBy" uuid NULL;
-                    END IF;
-                    CREATE INDEX IF NOT EXISTS "IX_Documents_PatientId" ON "Documents" ("PatientId");
-                    CREATE INDEX IF NOT EXISTS "IX_Documents_DocumentType" ON "Documents" ("DocumentType");
-                END IF;
-            END $$;
-        """);
-
-        logger.LogInformation("Sprint 4 Visits/Documents columns ensured successfully");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to ensure Sprint 4 Visits/Documents columns");
-    }
+    // Visits/Documents columns — now handled by EF migration 20260502000000_AddVisitsDocumentsFields
+    // (removed in TD-020 Phase C1-e)
 
     // Ensure Sprint 4.5 queue columns exist on Appointments table
     try
@@ -980,131 +755,9 @@ if (enableStartupDbMaintenance)
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEMPORARY PRODUCTION SAFETY NET — DO NOT EXTEND
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Ensure ClinicQueueItems table exists (Sprint 7).
-    // The migration should create this via MigrateAsync, but we add a safety net
-    // in case the migration fails to apply on Railway.
-    //
-    // TD-010: Remove this entire safety net block after migration stability is
-    // confirmed on Railway (at least 2 weeks of clean deployments with no
-    // "Failed to ensure ClinicQueueItems table" warnings in logs).
-    // After removal, the EF migration alone will be responsible for schema.
-    // ─────────────────────────────────────────────────────────────────────────────
-    try
-    {
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "ClinicQueueItems" (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "PatientId" uuid NOT NULL,
-                "AppointmentId" uuid NULL,
-                "VisitId" uuid NULL,
-                "DoctorId" uuid NULL,
-                "RoomName" character varying(50) NULL,
-                "Status" character varying(30) NOT NULL DEFAULT 'Waiting',
-                "CalledAt" timestamp with time zone NULL,
-                "CalledBy" uuid NULL,
-                "InRoomAt" timestamp with time zone NULL,
-                "StartedAt" timestamp with time zone NULL,
-                "CompletedAt" timestamp with time zone NULL,
-                "CancelledAt" timestamp with time zone NULL,
-                "QueueDate" date NOT NULL,
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "UpdatedAt" timestamp with time zone NOT NULL,
-                "IsActive" boolean NOT NULL DEFAULT true,
-                "DeletedAt" timestamp with time zone NULL,
-                "DeletedBy" uuid NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS "IX_ClinicQueueItems_QueueDate_Status"
-                ON "ClinicQueueItems" ("QueueDate", "Status");
-
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ClinicQueueItems_PatientId_QueueDate_Active"
-                ON "ClinicQueueItems" ("PatientId", "QueueDate")
-                WHERE "Status" NOT IN ('Completed', 'Cancelled');
-        """);
-
-        // Add foreign keys only if they don't exist
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Patients_PatientId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Patients_PatientId"
-                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Appointments_AppointmentId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Appointments_AppointmentId"
-                        FOREIGN KEY ("AppointmentId") REFERENCES "Appointments"("Id") ON DELETE SET NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Visits_VisitId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Visits_VisitId"
-                        FOREIGN KEY ("VisitId") REFERENCES "Visits"("Id") ON DELETE SET NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Doctors_DoctorId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Doctors_DoctorId"
-                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
-                END IF;
-            END $$;
-        """);
-
-        logger.LogInformation("ClinicQueueItems table ensured (created if not exists)");
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems table");
-    }
-
-    // TEMPORARY SAFETY NET — Sprint 7 tracking fields migration
-    // Ensures new columns (AddedByUserId, CalledByUserId, Notes) exist
-    // and migrates data from old CalledBy column.
-    // TD-011: Remove this block after migration 20260520000000 stability confirmed.
-    try
-    {
-        // Add new columns if they don't exist
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'AddedByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "AddedByUserId" uuid NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "CalledByUserId" uuid NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'Notes') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "Notes" character varying(500) NULL;
-                END IF;
-            END $$;
-        """);
-
-        // Migrate old CalledBy data to CalledByUserId if old column still exists
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledBy') THEN
-                    UPDATE "ClinicQueueItems" SET "CalledByUserId" = "CalledBy" WHERE "CalledBy" IS NOT NULL AND "CalledByUserId" IS NULL;
-                    ALTER TABLE "ClinicQueueItems" DROP COLUMN "CalledBy";
-                END IF;
-            END $$;
-        """);
-
-        // Add FKs for new columns if they don't exist
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_AddedByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_AddedByUserId"
-                        FOREIGN KEY ("AddedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_CalledByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_CalledByUserId"
-                        FOREIGN KEY ("CalledByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
-                END IF;
-            END $$;
-        """);
-
-        logger.LogInformation("ClinicQueueItems tracking fields ensured");
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems tracking fields");
-    }
+    // ClinicQueueItems table + tracking fields — now handled by EF migrations
+    // 20260514000000_AddClinicQueueItems and 20260520000000_AddClinicQueueTrackingFields
+    // (TD-010 / TD-010 safety nets removed in TD-020 Phase C1-e)
 
     await DbSeeder.SeedAsync(db, logger);
 

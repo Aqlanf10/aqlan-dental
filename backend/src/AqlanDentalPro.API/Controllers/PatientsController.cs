@@ -159,7 +159,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
     }
 
     [HttpPut("{id:guid}/archive")]
-    [Authorize(Roles = "Admin,admin")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Archive(Guid id)
     {
         var success = await service.ArchiveAsync(id);

@@ -3,10 +3,11 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger)
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
@@ -218,7 +219,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
                 await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
             }
-            catch { /* non-blocking */ }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[FinanceService] Non-blocking notification failed after payment {PaymentId}", payment.Id);
+            }
         });
 
         return dto;

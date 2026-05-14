@@ -113,7 +113,7 @@ public class PatientService(
                 catch (Exception ex)
                 {
                     // Don't fail patient creation if portal account creation fails
-                    System.Diagnostics.Debug.WriteLine($"Failed to create portal account: {ex.Message}");
+                    logger.LogWarning(ex, "[PatientService] Auto-create portal account failed for patient {PatientNumber}", patient.PatientNumber);
                 }
 
                 var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);

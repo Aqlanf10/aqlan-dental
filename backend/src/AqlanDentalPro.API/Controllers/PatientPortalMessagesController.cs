@@ -791,10 +791,11 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .ToListAsync();
 
         // Batch check: find which conversations already have this user as participant
-        var existingParticipantConvIds = await db.ConversationParticipants
+        var existingParticipantConvIds = (await db.ConversationParticipants
             .Where(cp => patientFacingConvIds.Contains(cp.ConversationId) && cp.UserId == userId)
             .Select(cp => cp.ConversationId)
-            .ToHashSetAsync();
+            .ToListAsync())
+            .ToHashSet();
 
         foreach (var convId in patientFacingConvIds)
         {

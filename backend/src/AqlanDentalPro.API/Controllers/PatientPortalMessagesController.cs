@@ -214,6 +214,18 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Take(pageSize)
             .ToListAsync();
 
+        // N+1 FIX: Batch unread counts — single DB query instead of per-conversation queries
+        var convIds = conversations.Select(c => c.Id).ToList();
+        var unreadCounts = convIds.Count > 0
+            ? await db.Messages
+                .Where(m => convIds.Contains(m.ConversationId)
+                         && m.SenderId != userId.Value
+                         && !m.Reads.Any(r => r.UserId == userId.Value))
+                .GroupBy(m => m.ConversationId)
+                .Select(g => new { ConversationId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.ConversationId, x => x.Count)
+            : new Dictionary<Guid, int>();
+
         var result = new List<ConversationListDto>();
         foreach (var conv in conversations)
         {
@@ -228,11 +240,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 PatientId = conv.PatientId,
                 LastMessageAt = conv.LastMessageAt,
                 LastMessagePreview = conv.LastMessagePreview,
-                UnreadCount = await db.Messages
-                    .Where(m => m.ConversationId == conv.Id
-                             && m.SenderId != userId.Value
-                             && !m.Reads.Any(r => r.UserId == userId.Value))
-                    .CountAsync(),
+                UnreadCount = unreadCounts.GetValueOrDefault(conv.Id),
                 OtherParticipant = otherParticipant != null ? MapParticipant(otherParticipant) : null,
                 Participants = conv.Participants.Select(MapParticipant).ToList(),
                 RecipientType = conv.RecipientType,

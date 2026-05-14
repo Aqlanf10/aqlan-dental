@@ -6,17 +6,17 @@
  * Aqlan Dental Pro — Global Styles
  *
  * Brand colors:
- *   --clinic-primary:  #0d2137  (primary navy — sidebar, headers, primary text)
- *   --clinic-blue:     #3d7ab5  (brand blue — links, accents)
+ *   --clinic-primary:  #1a3a5c  (dark sky — sidebar, headers, primary text)
+ *   --clinic-blue:     #3d7ab5  (sky blue — links, accents)
  *   --clinic-orange:   #f5922e  (orange — CTA, active states)
  */
 
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 213 55% 14%;        /* #0d2137 */
+    --foreground: 213 56% 23%;        /* #1a3a5c */
     --card: 0 0% 100%;
-    --card-foreground: 213 55% 14%;
+    --card-foreground: 213 56% 23%;
     --primary: 209 48% 48%;            /* #3d7ab5 */
     --primary-foreground: 210 40% 98%;
     --secondary: 212 33% 95%;
@@ -34,12 +34,12 @@
     --font-tajawal: 'Tajawal', sans-serif;
 
     /* Brand color tokens (use these in inline styles) */
-    --clinic-primary: #0d2137;
-    --clinic-primary-700: #0a1c30;
+    --clinic-primary: #1a3a5c;
+    --clinic-primary-700: #244b73;
     --clinic-blue: #3d7ab5;
     --clinic-blue-dark: #2d5e8e;
     --clinic-orange: #f5922e;
-    --clinic-orange-dark: #e07d1e;
+    --clinic-orange-dark: #c47022;
   }
 
   * {
@@ -51,8 +51,8 @@
   body {
     @apply text-foreground;
     font-family: var(--font-tajawal), sans-serif;
-    background: #eef3f9;
-    color: #0d2137;
+    background: #f0f5fb;
+    color: #1a3a5c;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -66,8 +66,8 @@
 
 @layer utilities {
   /* Brand-aligned gradients */
-  .clinic-gradient { background: linear-gradient(145deg, #0a1c30 0%, #0d2137 55%, #1a3a5c 100%); }
-  .navy-gradient   { background: linear-gradient(135deg, #0d2137 0%, #1a3a5c 100%); }
+  .clinic-gradient { background: linear-gradient(135deg, #1a3a5c 0%, #244b73 55%, #2e4a6f 100%); }
+  .navy-gradient   { background: linear-gradient(135deg, #1a3a5c 0%, #2e4a6f 100%); }
   .orange-gradient { background: linear-gradient(135deg, #f5922e 0%, #f7a44f 100%); }
   .blue-gradient   { background: linear-gradient(135deg, #3d7ab5 0%, #5a94c9 100%); }
   .text-balance    { text-wrap: balance; }
@@ -76,7 +76,7 @@
   .page-content { animation: fadeIn 0.2s ease; }
   .card-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 24px rgba(13,33,55,0.1);
+    box-shadow: 0 6px 24px rgba(26,58,92,0.1);
     transition: all 0.2s;
   }
 }

@@ -486,10 +486,10 @@ function PatientLoginPanel() {
             disabled={loading}
             className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
             style={{
-              background: loading ? "#c47022" : "#f5922e",
+              background: loading ? "#e07d1e" : "#f5922e",
             }}
-            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#c47022")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#c47022" : "#f5922e")}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#e07d1e")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#e07d1e" : "#f5922e")}
           >
             {loading ? (
               <>
@@ -550,10 +550,10 @@ function PatientLoginPanel() {
             disabled={loading}
             className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
             style={{
-              background: loading ? "#c47022" : "#f5922e",
+              background: loading ? "#e07d1e" : "#f5922e",
             }}
-            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#c47022")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#c47022" : "#f5922e")}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#e07d1e")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#e07d1e" : "#f5922e")}
           >
             {loading ? (
               <>
@@ -649,10 +649,10 @@ function PatientLoginPanel() {
             disabled={loading}
             className="w-full py-3 rounded-[10px] text-white text-[15px] font-bold border-none cursor-pointer transition-colors flex items-center justify-center gap-2"
             style={{
-              background: loading ? "#c47022" : "#f5922e",
+              background: loading ? "#e07d1e" : "#f5922e",
             }}
-            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#c47022")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#c47022" : "#f5922e")}
+            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = "#e07d1e")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = loading ? "#e07d1e" : "#f5922e")}
           >
             {loading ? (
               <>

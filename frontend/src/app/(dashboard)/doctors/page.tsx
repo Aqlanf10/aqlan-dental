@@ -81,10 +81,10 @@ const COMPENSATION_LABELS: Record<string, string> = {
 };
 
 const DOCTOR_COLORS = [
-  "#0E7490",
+  "#3d7ab5",
   "#7C3AED",
   "#059669",
-  "#D97706",
+  "#f5922e",
   "#DC2626",
   "#374151",
   "#2563EB",
@@ -452,13 +452,13 @@ export default function DoctorsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-            <Stethoscope className="w-5 h-5 text-[#0d9488]" />
+          <div className="w-10 h-10 rounded-xl bg-[#3d7ab5]/10 flex items-center justify-center">
+            <Stethoscope className="w-5 h-5 text-[#3d7ab5]" />
           </div>
           {isAdmin && (
             <button
               onClick={openAddModal}
-              className="flex items-center gap-2 bg-[#0d9488] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition shadow-sm"
+              className="flex items-center gap-2 bg-[#3d7ab5] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition shadow-sm"
             >
               <Plus className="w-4 h-4" />
               إضافة طبيب
@@ -478,7 +478,7 @@ export default function DoctorsPage() {
               className={cn(
                 "px-4 py-1.5 rounded-lg text-sm font-medium transition",
                 statusFilter === opt.value
-                  ? "bg-white text-[#0d9488] shadow-sm"
+                  ? "bg-white text-[#3d7ab5] shadow-sm"
                   : "text-gray-500 hover:text-gray-700"
               )}
             >
@@ -491,7 +491,7 @@ export default function DoctorsPage() {
         <select
           value={branchFilter}
           onChange={(e) => setBranchFilter(e.target.value)}
-          className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition min-w-[160px]"
+          className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition min-w-[160px]"
         >
           <option value="">جميع الفروع</option>
           {branches?.map((b) => (
@@ -508,7 +508,7 @@ export default function DoctorsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث بالاسم أو التخصص أو رقم الترخيص..."
-            className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition bg-white"
+            className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition bg-white"
           />
         </div>
       </div>
@@ -528,7 +528,7 @@ export default function DoctorsPage() {
             </p>
             <button
               onClick={() => refetch()}
-              className="text-sm text-[#0d9488] hover:underline font-medium"
+              className="text-sm text-[#3d7ab5] hover:underline font-medium"
             >
               إعادة المحاولة
             </button>
@@ -617,7 +617,7 @@ export default function DoctorsPage() {
                     value={form.name}
                     onChange={(e) => handleNameChange(e.target.value)}
                     placeholder="مثال: د. أحمد محمد"
-                    className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                    className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                     autoFocus
                   />
                 </div>
@@ -635,7 +635,7 @@ export default function DoctorsPage() {
                     onChange={(e) =>
                       setForm((f) => ({ ...f, specialty: e.target.value }))
                     }
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                   >
                     <option value="">اختر التخصص</option>
                     {SPECIALTY_OPTIONS.map((opt) => (
@@ -662,7 +662,7 @@ export default function DoctorsPage() {
                         }))
                       }
                       placeholder="رقم الترخيص المهني"
-                      className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                      className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                       dir="ltr"
                     />
                   </div>
@@ -681,7 +681,7 @@ export default function DoctorsPage() {
                     onChange={(e) =>
                       setForm((f) => ({ ...f, branchId: e.target.value }))
                     }
-                    className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition appearance-none"
+                    className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition appearance-none"
                   >
                     <option value="">اختر الفرع</option>
                     {branches?.map((b) => (
@@ -740,7 +740,7 @@ export default function DoctorsPage() {
                     }
                     placeholder="يتم إنشاؤه تلقائياً من الاسم"
                     maxLength={3}
-                    className="w-32 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                    className="w-32 border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                   />
                 </div>
               </div>
@@ -753,7 +753,7 @@ export default function DoctorsPage() {
                   className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition text-sm font-medium text-gray-700"
                 >
                   <span className="flex items-center gap-2">
-                    <Banknote className="w-4 h-4 text-[#0d9488]" />
+                    <Banknote className="w-4 h-4 text-[#3d7ab5]" />
                     التعويضات والمكافآت
                   </span>
                   {showCompensation ? (
@@ -778,7 +778,7 @@ export default function DoctorsPage() {
                             compensationType: e.target.value,
                           }))
                         }
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                       >
                         {Object.entries(COMPENSATION_LABELS).map(
                           ([value, label]) => (
@@ -810,7 +810,7 @@ export default function DoctorsPage() {
                             }))
                           }
                           placeholder="مثال: 25"
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                           dir="ltr"
                         />
                       </div>
@@ -832,7 +832,7 @@ export default function DoctorsPage() {
                         }
                         placeholder="ملاحظات إضافية حول التعويضات..."
                         rows={2}
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition resize-none"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition resize-none"
                       />
                     </div>
                   </div>
@@ -855,7 +855,7 @@ export default function DoctorsPage() {
                   "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition",
                   isSaving
                     ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-[#0d9488] text-white hover:opacity-90 shadow-sm"
+                    : "bg-[#3d7ab5] text-white hover:opacity-90 shadow-sm"
                 )}
               >
                 {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -1037,7 +1037,7 @@ function DoctorCard({
         {/* Compensation Badge */}
         {displayCompensation && (
           <div className="flex items-center gap-2 mt-2">
-            <span className="inline-flex items-center gap-1 bg-[#0d9488]/10 text-[#0d9488] text-[11px] font-semibold px-2 py-0.5 rounded-full">
+            <span className="inline-flex items-center gap-1 bg-[#3d7ab5]/10 text-[#3d7ab5] text-[11px] font-semibold px-2 py-0.5 rounded-full">
               <Banknote className="w-3 h-3" />
               {displayCompensation}
               {doctor.defaultCommissionPercentage != null &&
@@ -1054,7 +1054,7 @@ function DoctorCard({
       {doctor.scheduleCount != null && (
         <div className="px-5 pb-3">
           <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <CalendarClock className="w-3.5 h-3.5 text-[#0d9488]" />
+            <CalendarClock className="w-3.5 h-3.5 text-[#3d7ab5]" />
             <span>
               <span className="font-semibold text-gray-700">
                 {doctor.scheduleCount}
@@ -1071,7 +1071,7 @@ function DoctorCard({
           {/* Edit */}
           <button
             onClick={() => onEdit(doctor)}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#0d9488] font-medium px-2.5 py-1.5 rounded-lg hover:bg-[#0d9488]/5 transition"
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#3d7ab5] font-medium px-2.5 py-1.5 rounded-lg hover:bg-[#3d7ab5]/5 transition"
             title="تعديل"
           >
             <Pencil className="w-3.5 h-3.5" />
@@ -1081,7 +1081,7 @@ function DoctorCard({
           {/* Manage Schedule */}
           <button
             onClick={() => onManageSchedule(doctor)}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#0d9488] font-medium px-2.5 py-1.5 rounded-lg hover:bg-[#0d9488]/5 transition"
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#3d7ab5] font-medium px-2.5 py-1.5 rounded-lg hover:bg-[#3d7ab5]/5 transition"
             title="إدارة الجدول"
           >
             <CalendarClock className="w-3.5 h-3.5" />

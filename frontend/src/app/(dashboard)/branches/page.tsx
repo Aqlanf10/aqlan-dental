@@ -306,13 +306,13 @@ export default function BranchesPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-[#0d9488]" />
+          <div className="w-10 h-10 rounded-xl bg-[#3d7ab5]/10 flex items-center justify-center">
+            <Building2 className="w-5 h-5 text-[#3d7ab5]" />
           </div>
           {isAdmin && (
             <button
               onClick={openAddModal}
-              className="flex items-center gap-2 bg-[#0d9488] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition shadow-sm"
+              className="flex items-center gap-2 bg-[#3d7ab5] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition shadow-sm"
             >
               <Plus className="w-4 h-4" />
               إضافة فرع
@@ -332,7 +332,7 @@ export default function BranchesPage() {
               className={cn(
                 "px-4 py-1.5 rounded-lg text-sm font-medium transition",
                 statusFilter === opt.value
-                  ? "bg-white text-[#0d9488] shadow-sm"
+                  ? "bg-white text-[#3d7ab5] shadow-sm"
                   : "text-gray-500 hover:text-gray-700"
               )}
             >
@@ -348,7 +348,7 @@ export default function BranchesPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="بحث بالاسم أو العنوان أو الهاتف..."
-            className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition bg-white"
+            className="w-full border border-gray-200 rounded-xl pr-9 pl-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition bg-white"
           />
         </div>
       </div>
@@ -368,7 +368,7 @@ export default function BranchesPage() {
             </p>
             <button
               onClick={() => refetch()}
-              className="text-sm text-[#0d9488] hover:underline font-medium"
+              className="text-sm text-[#3d7ab5] hover:underline font-medium"
             >
               إعادة المحاولة
             </button>
@@ -456,7 +456,7 @@ export default function BranchesPage() {
                     setForm((f) => ({ ...f, name: e.target.value }))
                   }
                   placeholder="مثال: فرع المركز"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                   autoFocus
                 />
               </div>
@@ -472,7 +472,7 @@ export default function BranchesPage() {
                     setForm((f) => ({ ...f, address: e.target.value }))
                   }
                   placeholder="مثال: شارع الزبيري"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                 />
               </div>
 
@@ -487,7 +487,7 @@ export default function BranchesPage() {
                     setForm((f) => ({ ...f, phone: e.target.value }))
                   }
                   placeholder="مثال: 01-234567"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]/40 focus:border-[#0d9488] transition"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]/40 focus:border-[#3d7ab5] transition"
                   dir="ltr"
                 />
               </div>
@@ -539,7 +539,7 @@ export default function BranchesPage() {
                   "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition",
                   isSaving
                     ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-[#0d9488] text-white hover:opacity-90 shadow-sm"
+                    : "bg-[#3d7ab5] text-white hover:opacity-90 shadow-sm"
                 )}
               >
                 {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -651,14 +651,14 @@ function BranchCard({
               className={cn(
                 "w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0",
                 branch.isActive
-                  ? "bg-[#0d9488]/10"
+                  ? "bg-[#3d7ab5]/10"
                   : "bg-gray-100"
               )}
             >
               <Building2
                 className={cn(
                   "w-5 h-5",
-                  branch.isActive ? "text-[#0d9488]" : "text-gray-400"
+                  branch.isActive ? "text-[#3d7ab5]" : "text-gray-400"
                 )}
               />
             </div>
@@ -715,7 +715,7 @@ function BranchCard({
       <div className="px-5 pb-4">
         <div className="flex items-center gap-4 text-xs">
           <div className="flex items-center gap-1.5 text-gray-500">
-            <UserRound className="w-3.5 h-3.5 text-[#0d9488]" />
+            <UserRound className="w-3.5 h-3.5 text-[#3d7ab5]" />
             <span>
               <span className="font-semibold text-gray-700">
                 {branch.doctorsCount ?? 0}
@@ -724,7 +724,7 @@ function BranchCard({
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-gray-500">
-            <Users className="w-3.5 h-3.5 text-[#0d9488]" />
+            <Users className="w-3.5 h-3.5 text-[#3d7ab5]" />
             <span>
               <span className="font-semibold text-gray-700">
                 {branch.patientsCount ?? 0}
@@ -740,7 +740,7 @@ function BranchCard({
         <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center gap-1.5 justify-end">
           <button
             onClick={() => onEdit(branch)}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#0d9488] font-medium px-2.5 py-1.5 rounded-lg hover:bg-[#0d9488]/5 transition"
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#3d7ab5] font-medium px-2.5 py-1.5 rounded-lg hover:bg-[#3d7ab5]/5 transition"
             title="تعديل"
           >
             <Pencil className="w-3.5 h-3.5" />

@@ -232,7 +232,7 @@ export default function ClinicQueuePage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold" style={{ color: "#0F1B2D" }}>
+          <h1 className="text-2xl font-extrabold" style={{ color: "#0d2137" }}>
             طابور العيادة
           </h1>
           <p className="text-sm mt-1" style={{ color: "#64748b" }}>
@@ -530,7 +530,7 @@ function QueueCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <User className="w-4 h-4 flex-shrink-0" style={{ color: "#3d7ab5" }} />
-            <span className="font-bold text-sm" style={{ color: "#0F1B2D" }}>
+            <span className="font-bold text-sm" style={{ color: "#0d2137" }}>
               {item.patientName}
             </span>
             <span
@@ -615,7 +615,7 @@ function QueueCard({
           {item.status === "InProgress" && (
             <>
               <ActionButton label="فتح الزيارة" onClick={onOpenVisit} loading={isLoading} color="#3d7ab5" icon={<ExternalLink className="w-3 h-3" />} />
-              <ActionButton label="إنهاء" onClick={onComplete} loading={isLoading} color="#0F1B2D" icon={<Square className="w-3 h-3" />} />
+              <ActionButton label="إنهاء" onClick={onComplete} loading={isLoading} color="#0d2137" icon={<Square className="w-3 h-3" />} />
             </>
           )}
         </div>
@@ -686,7 +686,7 @@ function RoomSelectDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-bold mb-1" style={{ color: "#0F1B2D" }}>{title}</h3>
+        <h3 className="text-lg font-bold mb-1" style={{ color: "#0d2137" }}>{title}</h3>
         <p className="text-sm mb-4" style={{ color: "#64748b" }}>{description}</p>
         <div className="grid grid-cols-3 gap-3">
           {rooms.map((room) => (
@@ -802,7 +802,7 @@ function AddToQueuePanel({
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold" style={{ color: "#0F1B2D" }}>إضافة مريض للطابور</h2>
+        <h2 className="text-base font-bold" style={{ color: "#0d2137" }}>إضافة مريض للطابور</h2>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
       </div>
 
@@ -812,7 +812,7 @@ function AddToQueuePanel({
 
       {/* Patient Search */}
       <div ref={searchRef} className="relative">
-        <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0F1B2D" }}>المريض</label>
+        <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0d2137" }}>المريض</label>
         <div className="relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           {searching && (
@@ -861,7 +861,7 @@ function AddToQueuePanel({
 
       {/* Room Selector */}
       <div>
-        <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0F1B2D" }}>الغرفة <span className="font-normal text-gray-400">(اختياري)</span></label>
+        <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0d2137" }}>الغرفة <span className="font-normal text-gray-400">(اختياري)</span></label>
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setSelectedRoom("")}

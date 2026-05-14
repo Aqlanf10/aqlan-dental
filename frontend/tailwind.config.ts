@@ -4,12 +4,13 @@ import type { Config } from "tailwindcss";
  * Aqlan Dental Pro — Tailwind Theme
  *
  * Brand Identity (مركز د. عقلان الكامل):
- *   - Primary Dark Sky:  #1a3a5c  (used for sidebar, dark surfaces, primary text)
- *   - Sky Blue Accent:   #3d7ab5  (links, secondary accents)
- *   - Brand Orange:      #f5922e  (CTA, active states, important actions)
+ *   - Primary Navy:  #0d2137  (sidebar bg, primary text, headings, main brand color)
+ *   - Navy Darker:  #0a1c30  (login gradient start)
+ *   - Navy Mid:      #1a3a5c  (sidebar collapse, gradient mid, secondary dark surface)
+ *   - Brand Blue:    #3d7ab5  (primary action color, buttons, links, active nav, badges)
+ *   - Brand Orange:  #f5922e  (secondary accent, CTA)
  *
  * Removed (not from brand identity):
- *   ✗ navy #0d2137 (too dark, replaced by #1a3a5c)
  *   ✗ teal #0E7490 (off-brand)
  *   ✗ gold #D97706 (duplicates orange)
  */
@@ -58,7 +59,9 @@ const config: Config = {
         },
         clinic: {
           /* ── Brand primary (dark sky) ─────────────────────────── */
-          navy:         "#1a3a5c",
+          navy:         "#0d2137",
+          "navy-dark":   "#0a1c30",
+          "navy-mid":    "#1a3a5c",
           "navy-700":   "#244b73",
           "navy-600":   "#2e4a6f",
           "navy-500":   "#3d5e85",
@@ -73,7 +76,7 @@ const config: Config = {
 
           /* ── Brand orange (CTA) ───────────────────────────────── */
           orange:         "#f5922e",
-          "orange-600":   "#c47022",
+          "orange-600":   "#e07d1e",
           "orange-500":   "#f7a44f",
           "orange-100":   "#fde8d0",
           "orange-50":    "#fff7ed",
@@ -86,8 +89,8 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
-        card: "0 1px 3px rgba(26,58,92,0.06), 0 1px 10px rgba(26,58,92,0.04)",
-        "card-hover": "0 6px 24px rgba(26,58,92,0.1)",
+        card: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)",
+        "card-hover": "0 6px 24px rgba(13,33,55,0.1)",
         dropdown: "0 8px 30px rgba(0,0,0,0.12)",
       },
     },

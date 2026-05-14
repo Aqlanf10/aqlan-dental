@@ -6,9 +6,9 @@ namespace AqlanDentalPro.Application.Validators;
 /// <summary>
 /// Validates single WhatsApp message send request.
 /// </summary>
-public sealed class SendMessageRequestValidator : AbstractValidator<SendMessageRequest>
+public sealed class WhatsAppSendMessageRequestValidator : AbstractValidator<SendMessageRequest>
 {
-    public SendMessageRequestValidator()
+    public WhatsAppSendMessageRequestValidator()
     {
         RuleFor(x => x.PatientId)
             .NotEmpty().WithMessage("معرف المريض مطلوب");

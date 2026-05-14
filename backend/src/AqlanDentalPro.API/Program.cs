@@ -334,18 +334,8 @@ try
         END $$;
     """);
 
-    // Check if the reset flag exists
-    var flagExists = false;
-    using (var cmd = resetDb.Database.GetDbConnection().CreateCommand())
-    {
-        cmd.CommandText = """
-            SELECT COUNT(*) FROM "Settings" WHERE "Key" = 'admin.password.reset.2026'
-        """;
-        await resetDb.Database.OpenConnectionAsync();
-        var result = await cmd.ExecuteScalarAsync();
-        await resetDb.Database.CloseConnectionAsync();
-        flagExists = result != null && Convert.ToInt64(result) > 0;
-    }
+    // Check if the admin password reset flag exists using EF Core LINQ
+    var flagExists = await resetDb.Settings.AnyAsync(s => s.Key == "admin.password.reset.2026");
 
     if (!flagExists)
     {
@@ -354,16 +344,25 @@ try
         var salt = AqlanDentalPro.Application.Services.AuthService.GenerateSalt();
         var hash = AqlanDentalPro.Application.Services.AuthService.HashPassword(newPassword, salt);
 
-        await resetDb.Database.ExecuteSqlRawAsync("""
-            UPDATE "Users" SET "PasswordHash" = {0}, "PasswordSalt" = {1}, "IsActive" = true, "UpdatedAt" = NOW()
-            WHERE "Username" = 'admin'
-        """, hash, salt);
+        // Update admin password using EF Core LINQ
+        var adminUser = await resetDb.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        if (adminUser != null)
+        {
+            adminUser.PasswordHash = hash;
+            adminUser.PasswordSalt = salt;
+            adminUser.IsActive = true;
+        }
 
-        // Set the flag so this never runs again
-        await resetDb.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "Settings" ("Id", "Key", "Value", "Category", "UpdatedAt")
-            VALUES (gen_random_uuid(), 'admin.password.reset.2026', 'done', 'system', NOW())
-        """);
+        // Set the flag using EF Core so this never runs again
+        resetDb.Settings.Add(new AqlanDentalPro.Domain.Entities.Setting
+        {
+            Key = "admin.password.reset.2026",
+            Value = "done",
+            Category = "system",
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await resetDb.SaveChangesAsync();
 
         resetLogger.LogWarning("Admin password has been reset to default value. Username: admin. CHANGE PASSWORD IMMEDIATELY!");
     }

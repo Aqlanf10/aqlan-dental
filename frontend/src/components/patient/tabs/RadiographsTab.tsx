@@ -41,7 +41,7 @@ const XRAY_TYPE_COLORS: Record<string, string> = {
   lateral_ceph: "bg-purple-100 text-purple-700",
   PA_ceph: "bg-indigo-100 text-indigo-700",
   periapical: "bg-cyan-100 text-cyan-700",
-  bitewing: "bg-teal-100 text-teal-700",
+  bitewing: "bg-blue-100 text-blue-700",
   CBCT: "bg-orange-100 text-orange-700",
   other: "bg-gray-100 text-gray-700",
 };

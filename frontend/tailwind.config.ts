@@ -1,5 +1,20 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Aqlan Dental Pro — Tailwind Theme
+ *
+ * Brand Identity (مركز د. عقلان الكامل):
+ *   - Primary Navy:  #0d2137  (sidebar bg, primary text, headings, main brand color)
+ *   - Navy Darker:  #0a1c30  (login gradient start)
+ *   - Navy Mid:      #1a3a5c  (sidebar collapse, gradient mid, secondary dark surface)
+ *   - Brand Blue:    #3d7ab5  (primary action color, buttons, links, active nav, badges)
+ *   - Brand Orange:  #f5922e  (secondary accent, CTA)
+ *
+ * Removed (not from brand identity):
+ *   ✗ teal #0E7490 (off-brand)
+ *   ✗ gold #D97706 (duplicates orange)
+ */
+
 const config: Config = {
   darkMode: ["class"],
   content: [
@@ -43,24 +58,29 @@ const config: Config = {
           foreground: "hsl(var(--card-foreground))",
         },
         clinic: {
+          /* ── Brand primary (dark sky) ─────────────────────────── */
           navy:         "#0d2137",
-          "navy-700":   "#1a3a5c",
-          "navy-600":   "#243d5e",
-          "navy-500":   "#2e4a6f",
+          "navy-dark":   "#0a1c30",
+          "navy-mid":    "#1a3a5c",
+          "navy-700":   "#244b73",
+          "navy-600":   "#2e4a6f",
+          "navy-500":   "#3d5e85",
+
+          /* ── Sky blue accent ──────────────────────────────────── */
           blue:         "#3d7ab5",
+          "blue-600":   "#2d5e8e",
           "blue-500":   "#5a94c9",
           "blue-100":   "#dce8f5",
           "blue-50":    "#f0f5fb",
           "blue-light": "#dce8f5",
-          orange:       "#f5922e",
-          "orange-500": "#f7a44f",
-          "orange-100": "#fde8d0",
-          "orange-50":  "#fff7ed",
+
+          /* ── Brand orange (CTA) ───────────────────────────────── */
+          orange:         "#f5922e",
+          "orange-600":   "#e07d1e",
+          "orange-500":   "#f7a44f",
+          "orange-100":   "#fde8d0",
+          "orange-50":    "#fff7ed",
           "orange-light": "#fde8d0",
-          teal:         "#0E7490",
-          gold:         "#D97706",
-          "teal-light": "#ECFEFF",
-          "gold-light": "#FFFBEB",
         },
       },
       borderRadius: {

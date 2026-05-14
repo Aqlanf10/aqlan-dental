@@ -108,7 +108,7 @@ const SPECIALTY_COLORS: Record<string, { bg: string; text: string; icon: string 
   OralSurgery:   { bg: "bg-red-50",      text: "text-red-700",    icon: "text-red-600" },
   Periodontics:  { bg: "bg-pink-50",     text: "text-pink-700",   icon: "text-pink-600" },
   Endodontics:   { bg: "bg-amber-50",    text: "text-amber-700",  icon: "text-amber-600" },
-  Prosthodontics:{ bg: "bg-teal-50",     text: "text-teal-700",   icon: "text-teal-600" },
+  Prosthodontics:{ bg: "bg-blue-50",     text: "text-blue-700",   icon: "text-blue-600" },
 };
 
 const APPOINTMENT_STATUS_LABELS: Record<string, string> = {

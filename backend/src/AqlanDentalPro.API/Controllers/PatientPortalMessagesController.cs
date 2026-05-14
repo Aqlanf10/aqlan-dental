@@ -18,7 +18,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/portal/messages")]
 [Authorize(Policy = "PatientAccess")]
-public class PatientPortalMessagesController(AppDbContext db, INotificationService notifications) : ControllerBase
+public class PatientPortalMessagesController(AppDbContext db, INotificationService notifications, ILogger<PatientPortalMessagesController> logger) : ControllerBase
 {
     private static readonly HashSet<string> ValidRecipientTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -541,6 +541,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
             // Concurrent mark-as-read already inserted these rows — idempotent success
+            logger.LogDebug(ex, "Concurrent mark-as-read deduplication for conversation {ConversationId}", conversationId);
         }
 
         return NoContent();

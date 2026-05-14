@@ -11,7 +11,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patients")]
 [Authorize(Policy = "StaffOnly")]
-public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService, FinanceService financeService) : ControllerBase
+public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService, FinanceService financeService, ILogger<PatientsController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -43,6 +43,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         }
         catch (InvalidOperationException ex)
         {
+            logger.LogWarning(ex, "Patient creation conflict");
             return Conflict(new { message = ex.Message });
         }
         catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_NormalizedPhone") == true
@@ -51,6 +52,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
                                          || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
                                          || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
         {
+            logger.LogWarning(ex, "Duplicate patient data on create");
             return Conflict(new { message = "البيانات مكررة — رقم الهاتف أو الواتساب أو رقم الملف موجود مسبقاً" });
         }
     }
@@ -138,6 +140,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         }
         catch (InvalidOperationException ex)
         {
+            logger.LogWarning(ex, "Patient update conflict");
             return Conflict(new { message = ex.Message });
         }
         catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_NormalizedPhone") == true
@@ -146,6 +149,7 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
                                          || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
                                          || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
         {
+            logger.LogWarning(ex, "Duplicate patient data on update");
             return Conflict(new { message = "رقم الهاتف أو الواتساب مستخدم مسبقاً لمريض آخر." });
         }
     }
@@ -193,12 +197,14 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             if (result == null) return NotFound(new { message = "المريض غير موجود" });
             return Ok(result);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException ex)
         {
+            logger.LogWarning(ex, "Medical history concurrency conflict for patient {PatientId}", id);
             return Conflict(new { message = "تعارض في تحديث السجل الطبي — حاول مرة أخرى" });
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
+            logger.LogError(ex, "Failed to save medical history for patient {PatientId}", id);
             return StatusCode(500, new { message = "حدث خطأ أثناء حفظ التاريخ الطبي — حاول مرة أخرى لاحقاً" });
         }
     }
@@ -221,12 +227,14 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             if (result == null) return NotFound(new { message = "المريض غير موجود" });
             return Ok(result);
         }
-        catch (DbUpdateConcurrencyException)
+        catch (DbUpdateConcurrencyException ex)
         {
+            logger.LogWarning(ex, "Dental history concurrency conflict for patient {PatientId}", id);
             return Conflict(new { message = "تعارض في تحديث السجل السني — حاول مرة أخرى" });
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
+            logger.LogError(ex, "Failed to save dental history for patient {PatientId}", id);
             return StatusCode(500, new { message = "حدث خطأ أثناء حفظ التاريخ السني — حاول مرة أخرى لاحقاً" });
         }
     }

@@ -15,9 +15,6 @@ public sealed class UpdateAppointmentStatusRequestValidator : AbstractValidator<
             .NotEmpty().WithMessage("الحالة مطلوبة")
             .Must(BeAValidStatus).WithMessage("الحالة يجب أن تكون: scheduled, confirmed, completed, cancelled, no_show");
 
-        RuleFor(x => x.Notes)
-            .MaximumLength(500).WithMessage("الملاحظات يجب ألا تتجاوز 500 حرف")
-            .When(x => !string.IsNullOrWhiteSpace(x.Notes));
     }
 
     private static bool BeAValidStatus(string status) =>
@@ -84,7 +81,7 @@ public sealed class CreateConversationRequestValidator : AbstractValidator<Creat
             .When(x => !string.IsNullOrWhiteSpace(x.ConversationType));
     }
 
-    private static bool BeAValidType(string type) =>
+    private static bool BeAValidType(string? type) =>
         type is "StaffToStaff" or "StaffToPatient";
 }
 
@@ -138,6 +135,6 @@ public sealed class StartConversationRequestValidator : AbstractValidator<StartC
             .When(x => !string.IsNullOrWhiteSpace(x.RecipientType));
     }
 
-    private static bool BeAValidRecipientType(string type) =>
+    private static bool BeAValidRecipientType(string? type) =>
         type is "TreatingDoctor" or "Reception" or "Admin";
 }

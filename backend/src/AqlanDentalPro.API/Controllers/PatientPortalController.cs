@@ -192,8 +192,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
             return Ok(new { username, temporaryPassword = plainPassword, message = "تم إنشاء حساب البوابة بنجاح", alreadyExists = false });
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Failed to create portal account for patient {PatientId}", patientId);
             return StatusCode(500, new { message = "حدث خطأ أثناء إنشاء حساب البوابة. يرجى المحاولة لاحقاً" });
         }
     }

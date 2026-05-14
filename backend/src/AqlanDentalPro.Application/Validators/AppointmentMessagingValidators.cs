@@ -91,9 +91,9 @@ public sealed class CreateConversationRequestValidator : AbstractValidator<Creat
 /// <summary>
 /// Validates send message request.
 /// </summary>
-public sealed class SendMessageRequestValidator : AbstractValidator<SendMessageRequest>
+public sealed class MessagingSendMessageRequestValidator : AbstractValidator<SendMessageRequest>
 {
-    public SendMessageRequestValidator()
+    public MessagingSendMessageRequestValidator()
     {
         RuleFor(x => x.Content)
             .NotEmpty().WithMessage("محتوى الرسالة مطلوب")

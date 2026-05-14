@@ -27,7 +27,7 @@ function LiveClock() {
   return (
     <div
       className="hidden md:flex flex-col items-center rounded-[10px] px-3 py-1"
-      style={{ background: "#f0f5fb", border: "1px solid #dce8f5", minWidth: 140 }}
+      style={{ background: "#eef3f9", border: "1px solid #dce8f5", minWidth: 140 }}
     >
       <div className="text-lg font-extrabold leading-tight" style={{ color: "#0d2137", letterSpacing: 1, fontFamily: "monospace" }}>
         {hh}<span style={{ opacity: now.getSeconds() % 2 === 0 ? 1 : 0.3, transition: "opacity 0.3s" }}>:</span>{mm}<span className="text-xs opacity-50">:{ss}</span>
@@ -243,7 +243,7 @@ export function Topbar() {
         <button
           onClick={() => router.push("/messages")}
           className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
-          style={{ background: "#f0f5fb", color: "#64748b" }}
+          style={{ background: "#eef3f9", color: "#64748b" }}
           title="الرسائل"
         >
           <MessageCircle className="w-[18px] h-[18px]" />
@@ -253,7 +253,7 @@ export function Topbar() {
               style={{
                 top: 4, right: 4,
                 minWidth: 16, height: 16,
-                background: "#0d9488",
+                background: "#3d7ab5",
                 padding: "0 3px",
               }}
             >
@@ -383,7 +383,7 @@ export function Topbar() {
           <button
             onClick={openNotifications}
             className="relative w-[38px] h-[38px] rounded-lg flex items-center justify-center transition-colors"
-            style={{ background: "#f0f5fb", color: "#64748b" }}
+            style={{ background: "#eef3f9", color: "#64748b" }}
           >
             <Bell className="w-[18px] h-[18px]" />
             {unreadCount > 0 && (
@@ -437,11 +437,11 @@ export function Topbar() {
                       onClick={() => handleNotifClick(n)}
                       className="flex items-start gap-3 px-4 py-3 cursor-pointer group transition"
                       style={{
-                        background: !n.isRead ? "#f0f5fb" : "transparent",
+                        background: !n.isRead ? "#eef3f9" : "transparent",
                         borderBottom: "1px solid #f1f5f9",
                       }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = !n.isRead ? "#f0f5fb" : "transparent")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = !n.isRead ? "#eef3f9" : "transparent")}
                     >
                       <div
                         className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"

@@ -303,7 +303,7 @@ export default function MessagesPage() {
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col" dir="rtl">
       {/* Top accent gradient bar */}
-      <div className="h-1 bg-gradient-to-l from-[#3d7ab5] via-[#0d9488] to-[#0d2137] rounded-t-2xl flex-shrink-0" />
+      <div className="h-1 bg-gradient-to-l from-[#3d7ab5] via-[#3d7ab5] to-[#0d2137] rounded-t-2xl flex-shrink-0" />
 
       {/* Patient conversation error toast */}
       {patientConvError && (
@@ -335,7 +335,7 @@ export default function MessagesPage() {
               <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
                 <div
                   className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                  style={{ backgroundColor: user.doctorColor ?? "#0d9488" }}
+                  style={{ backgroundColor: user.doctorColor ?? "#3d7ab5" }}
                 >
                   {user.doctorInitials ?? user.username?.charAt(0).toUpperCase() ?? "U"}
                 </div>
@@ -352,7 +352,7 @@ export default function MessagesPage() {
 
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <MessageCircle className="w-5 h-5 text-[#0d9488]" />
+                <MessageCircle className="w-5 h-5 text-[#3d7ab5]" />
                 <h2 className="text-lg font-bold text-gray-900">الرسائل</h2>
                 {unreadData && unreadData.totalUnread > 0 && (
                   <span className="bg-red-500 text-white text-xs font-bold rounded-full px-2 py-0.5">
@@ -365,7 +365,7 @@ export default function MessagesPage() {
                   onClick={() => setShowStats((v) => !v)}
                   className={cn(
                     "w-9 h-9 rounded-lg flex items-center justify-center transition",
-                    showStats ? "bg-[#0d9488] text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    showStats ? "bg-[#3d7ab5] text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
                   )}
                   title="إحصائيات المراسلة"
                 >
@@ -373,7 +373,7 @@ export default function MessagesPage() {
                 </button>
                 <button
                   onClick={() => setShowNewChat(true)}
-                  className="w-9 h-9 rounded-lg bg-[#0d9488] text-white flex items-center justify-center hover:opacity-90 transition"
+                  className="w-9 h-9 rounded-lg bg-[#3d7ab5] text-white flex items-center justify-center hover:opacity-90 transition"
                   title="محادثة جديدة"
                 >
                   <Plus className="w-5 h-5" />
@@ -387,7 +387,7 @@ export default function MessagesPage() {
                 <p className="text-xs font-semibold text-gray-600 mb-2">إحصائيات المراسلة</p>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-white rounded-lg p-2 text-center border border-gray-100">
-                    <p className="text-lg font-bold text-[#0d9488]">{stats.messagesToday}</p>
+                    <p className="text-lg font-bold text-[#3d7ab5]">{stats.messagesToday}</p>
                     <p className="text-[10px] text-gray-500">رسائل اليوم</p>
                   </div>
                   <div className="bg-white rounded-lg p-2 text-center border border-gray-100">
@@ -419,7 +419,7 @@ export default function MessagesPage() {
                 placeholder="بحث بالاسم، رقم المريض، أو نص الرسالة..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] bg-gray-50"
+                className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] bg-gray-50"
               />
             </div>
 
@@ -432,7 +432,7 @@ export default function MessagesPage() {
                   className={cn(
                     "px-3 py-1 rounded-full text-xs font-medium transition-colors",
                     activeFilter === opt.value
-                      ? "bg-[#0d9488] text-white"
+                      ? "bg-[#3d7ab5] text-white"
                       : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                   )}
                 >
@@ -451,7 +451,7 @@ export default function MessagesPage() {
           <div className="flex-1 overflow-y-auto">
             {convLoading ? (
               <div className="flex flex-col items-center justify-center py-12 gap-3">
-                <Loader2 className="w-6 h-6 animate-spin text-[#0d9488]" />
+                <Loader2 className="w-6 h-6 animate-spin text-[#3d7ab5]" />
                 <p className="text-sm text-gray-400">جارٍ تحميل المحادثات...</p>
               </div>
             ) : convError && errorDetail ? (
@@ -595,7 +595,7 @@ function ConversationItem({
       className={cn(
         "w-full flex items-center gap-3 px-4 py-3 text-right transition-colors border-b border-gray-50",
         isSelected
-          ? "bg-[#0d9488]/5 border-r-4 border-r-[#0d9488]"
+          ? "bg-[#3d7ab5]/5 border-r-4 border-r-[#3d7ab5]"
           : "hover:bg-gray-50"
       )}
     >
@@ -652,7 +652,7 @@ function ConversationItem({
               </span>
             )}
             {hasUnread && (
-              <span className="bg-[#0d9488] text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0">
+              <span className="bg-[#3d7ab5] text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0">
                 {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
               </span>
             )}
@@ -999,9 +999,9 @@ function ChatArea({
       {/* Reply preview */}
       {replyTo && !editingMessage && (
         <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
-          <Reply className="w-4 h-4 text-[#0d9488] flex-shrink-0" />
+          <Reply className="w-4 h-4 text-[#3d7ab5] flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-[#0d9488]">
+            <p className="text-xs font-semibold text-[#3d7ab5]">
               {replyTo.senderName}
             </p>
             <p className="text-xs text-gray-500 truncate">{replyTo.content}</p>
@@ -1032,7 +1032,7 @@ function ChatArea({
         {attachmentPreview && (
           <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 rounded-lg">
             {attachmentPreview.type.startsWith("image/") ? (
-              <ImageIcon className="w-4 h-4 text-[#0d9488] flex-shrink-0" />
+              <ImageIcon className="w-4 h-4 text-[#3d7ab5] flex-shrink-0" />
             ) : attachmentPreview.type.startsWith("audio/") ? (
               <Mic className="w-4 h-4 text-purple-500 flex-shrink-0" />
             ) : (
@@ -1051,9 +1051,9 @@ function ChatArea({
 
         {/* Uploading indicator */}
         {isUploading && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-[#0d9488]/5 rounded-lg">
-            <Loader2 className="w-4 h-4 text-[#0d9488] animate-spin" />
-            <span className="text-xs text-[#0d9488]">جارٍ رفع الملف...</span>
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-[#3d7ab5]/5 rounded-lg">
+            <Loader2 className="w-4 h-4 text-[#3d7ab5] animate-spin" />
+            <span className="text-xs text-[#3d7ab5]">جارٍ رفع الملف...</span>
           </div>
         )}
 
@@ -1103,7 +1103,7 @@ function ChatArea({
               rows={1}
               maxLength={2000}
               disabled={sending || isUploading}
-              className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] max-h-32 disabled:opacity-50"
+              className="flex-1 resize-none border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] max-h-32 disabled:opacity-50"
               style={{ minHeight: "40px" }}
             />
             <VoiceRecorder
@@ -1130,7 +1130,7 @@ function ChatArea({
               className={cn(
                 "w-10 h-10 rounded-lg flex items-center justify-center transition flex-shrink-0",
                 (input.trim() || attachmentPreview) && !sending && !isUploading && input.length <= 2000
-                  ? "bg-[#0d9488] text-white hover:opacity-90"
+                  ? "bg-[#3d7ab5] text-white hover:opacity-90"
                   : "bg-gray-100 text-gray-400 cursor-not-allowed"
               )}
             >
@@ -1199,11 +1199,11 @@ function MessageBubble({
         {message.replyToContent && (
           <div
             className={cn(
-              "text-xs px-3 py-1.5 rounded-lg mb-1 border-r-2 border-[#0d9488] bg-gray-100",
+              "text-xs px-3 py-1.5 rounded-lg mb-1 border-r-2 border-[#3d7ab5] bg-gray-100",
               isMine ? "text-left" : "text-right"
             )}
           >
-            <span className="font-semibold text-[#0d9488]">
+            <span className="font-semibold text-[#3d7ab5]">
               {message.replyToSenderName}
             </span>
             <p className="text-gray-500 truncate">{message.replyToContent}</p>
@@ -1215,13 +1215,13 @@ function MessageBubble({
           className={cn(
             "px-3 py-2 rounded-2xl text-sm relative",
             isMine
-              ? "bg-[#0d9488] text-white rounded-br-md"
+              ? "bg-[#3d7ab5] text-white rounded-br-md"
               : "bg-white border border-gray-200 text-gray-800 rounded-bl-md"
           )}
         >
           {/* Show sender name + role in group conversations */}
           {!isMine && (
-            <p className="text-xs font-semibold text-[#0d9488] mb-0.5 flex items-center gap-1.5">
+            <p className="text-xs font-semibold text-[#3d7ab5] mb-0.5 flex items-center gap-1.5">
               {message.senderName}
               {senderRoleLabel && (
                 <span className="text-[9px] px-1 py-0.5 rounded font-medium bg-gray-100 text-gray-500">
@@ -1278,7 +1278,7 @@ function MessageBubble({
                   rel="noopener noreferrer"
                   className={cn(
                     "text-xs font-semibold underline",
-                    isMine ? "text-white/90 hover:text-white" : "text-[#0d9488] hover:text-[#0d9488]/80"
+                    isMine ? "text-white/90 hover:text-white" : "text-[#3d7ab5] hover:text-[#3d7ab5]/80"
                   )}
                 >
                   فتح
@@ -1317,7 +1317,7 @@ function MessageBubble({
             <CheckCheck
               className={cn(
                 "w-3.5 h-3.5",
-                message.isReadByMe ? "text-[#0d9488]" : "text-gray-300"
+                message.isReadByMe ? "text-[#3d7ab5]" : "text-gray-300"
               )}
             />
           )}
@@ -1330,7 +1330,7 @@ function MessageBubble({
         )}>
           <button
             onClick={onReply}
-            className="text-gray-400 hover:text-[#0d9488] text-xs flex items-center gap-1"
+            className="text-gray-400 hover:text-[#3d7ab5] text-xs flex items-center gap-1"
           >
             <Reply className="w-3 h-3" />
             رد
@@ -1440,7 +1440,7 @@ function NewChatDialog({
               placeholder="بحث عن مستخدم..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]"
+              className="w-full pr-10 pl-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]"
             />
           </div>
 
@@ -1451,14 +1451,14 @@ function NewChatDialog({
               placeholder="اسم المجموعة (اختياري)"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]"
             />
           )}
 
           {/* Users list */}
           {loading ? (
             <div className="flex flex-col items-center justify-center py-8 gap-2">
-              <Loader2 className="w-6 h-6 animate-spin text-[#0d9488]" />
+              <Loader2 className="w-6 h-6 animate-spin text-[#3d7ab5]" />
               <p className="text-sm text-gray-400">جارٍ تحميل المستخدمين...</p>
             </div>
           ) : filtered.length === 0 ? (
@@ -1475,7 +1475,7 @@ function NewChatDialog({
                   className={cn(
                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-right transition-colors",
                     selected.has(u.id)
-                      ? "bg-[#0d9488]/10 border border-[#0d9488]/30"
+                      ? "bg-[#3d7ab5]/10 border border-[#3d7ab5]/30"
                       : "hover:bg-gray-50 border border-transparent"
                   )}
                 >
@@ -1494,7 +1494,7 @@ function NewChatDialog({
                     </p>
                   </div>
                   {selected.has(u.id) && (
-                    <div className="w-5 h-5 bg-[#0d9488] rounded-full flex items-center justify-center">
+                    <div className="w-5 h-5 bg-[#3d7ab5] rounded-full flex items-center justify-center">
                       <svg
                         className="w-3 h-3 text-white"
                         fill="none"
@@ -1531,7 +1531,7 @@ function NewChatDialog({
             onChange={(e) => setInitialMsg(e.target.value)}
             rows={2}
             maxLength={2000}
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] resize-none"
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] resize-none"
           />
           <button
             onClick={handleCreate}
@@ -1539,7 +1539,7 @@ function NewChatDialog({
             className={cn(
               "w-full py-2.5 rounded-lg font-semibold text-sm transition",
               selected.size > 0 && !createConv.isPending
-                ? "bg-[#0d9488] text-white hover:opacity-90"
+                ? "bg-[#3d7ab5] text-white hover:opacity-90"
                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
             )}
           >

@@ -443,7 +443,7 @@ export default function ClinicDisplayPage() {
       {/* ── Header ─────────────────────────────────────────────── */}
       <header className="flex items-center justify-between px-8 md:px-16 py-6 border-b border-white/10 bg-[#0c1322]">
         <div className="flex items-center gap-5">
-          <div className="w-14 h-14 rounded-full bg-[#0E7490] flex items-center justify-center text-2xl font-bold shadow-lg shadow-cyan-900/40">ع</div>
+          <div className="w-14 h-14 rounded-full bg-[#3d7ab5] flex items-center justify-center text-2xl font-bold shadow-lg shadow-cyan-900/40">ع</div>
           <div>
             <h1 className="text-2xl md:text-4xl font-bold text-white leading-tight">مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان</h1>
             <p className="text-lg md:text-xl text-teal-300 mt-1">شاشة الطابور</p>

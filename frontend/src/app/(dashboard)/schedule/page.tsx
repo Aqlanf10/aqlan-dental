@@ -95,7 +95,7 @@ function DayRow({
       className={cn(
         "rounded-xl border px-4 py-3 transition-colors",
         schedule.isWorking
-          ? "border-[#0d9488]/30 bg-[#0d9488]/5"
+          ? "border-[#3d7ab5]/30 bg-[#3d7ab5]/5"
           : "border-gray-200 bg-gray-50/50"
       )}
     >
@@ -107,7 +107,7 @@ function DayRow({
           className={cn(
             "flex items-center gap-2 min-w-[110px] px-3 py-1.5 rounded-lg text-sm font-semibold transition",
             schedule.isWorking
-              ? "bg-[#0d9488] text-white"
+              ? "bg-[#3d7ab5] text-white"
               : "bg-gray-200 text-gray-500"
           )}
         >
@@ -129,7 +129,7 @@ function DayRow({
                 type="time"
                 value={schedule.startTime}
                 onChange={(e) => onChange({ startTime: e.target.value })}
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]"
               />
             </div>
 
@@ -140,7 +140,7 @@ function DayRow({
                 type="time"
                 value={schedule.endTime}
                 onChange={(e) => onChange({ endTime: e.target.value })}
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488]"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5]"
               />
             </div>
 
@@ -150,7 +150,7 @@ function DayRow({
               <select
                 value={schedule.slotDurationMinutes}
                 onChange={(e) => onChange({ slotDurationMinutes: Number(e.target.value) })}
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] bg-white"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] bg-white"
               >
                 {SLOT_DURATIONS.map((d) => (
                   <option key={d.value} value={d.value}>{d.label}</option>
@@ -170,7 +170,7 @@ function DayRow({
                   setShowBreak(true);
                 }
               }}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#0d9488] transition px-2 py-1 rounded-lg hover:bg-[#0d9488]/5"
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#3d7ab5] transition px-2 py-1 rounded-lg hover:bg-[#3d7ab5]/5"
             >
               {showBreak ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               {showBreak ? "إخفاء الاستراحة" : "إضافة استراحة"}
@@ -272,7 +272,7 @@ function DoctorScheduleCard({ doctor }: { doctor: Doctor }) {
       >
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-          style={{ backgroundColor: doctor.color ?? "#0d9488" }}
+          style={{ backgroundColor: doctor.color ?? "#3d7ab5" }}
         >
           {doctor.avatarInitials ?? doctor.name.charAt(0)}
         </div>
@@ -289,7 +289,7 @@ function DoctorScheduleCard({ doctor }: { doctor: Doctor }) {
               className={cn(
                 "text-[10px] px-1.5 py-0.5 rounded font-medium",
                 schedule[d.index]?.isWorking
-                  ? "bg-[#0d9488] text-white"
+                  ? "bg-[#3d7ab5] text-white"
                   : "bg-gray-100 text-gray-400"
               )}
             >
@@ -351,7 +351,7 @@ function DoctorScheduleCard({ doctor }: { doctor: Doctor }) {
                     "flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition",
                     saving
                       ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      : "bg-[#0d9488] text-white hover:opacity-90"
+                      : "bg-[#3d7ab5] text-white hover:opacity-90"
                   )}
                 >
                   {saving ? (
@@ -405,15 +405,15 @@ export default function SchedulePage() {
             حدّد أيام وساعات عمل كل طبيب لضبط الحجوزات
           </p>
         </div>
-        <div className="w-10 h-10 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-          <Clock className="w-5 h-5 text-[#0d9488]" />
+        <div className="w-10 h-10 rounded-xl bg-[#3d7ab5]/10 flex items-center justify-center">
+          <Clock className="w-5 h-5 text-[#3d7ab5]" />
         </div>
       </div>
 
       {/* Legend */}
       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-[#0d9488]" />
+          <span className="w-3 h-3 rounded-full bg-[#3d7ab5]" />
           يوم عمل نشط
         </div>
         <div className="flex items-center gap-1.5">

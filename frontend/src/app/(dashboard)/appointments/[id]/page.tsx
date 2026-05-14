@@ -155,12 +155,12 @@ export default function AppointmentDetailPage() {
           <Link
             href="/appointments"
             className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
-            style={{ background: "#eef3f9", color: "#0F1B2D" }}
+            style={{ background: "#eef3f9", color: "#0d2137" }}
           >
             <ArrowRight className="w-4 h-4" />
           </Link>
           <div>
-            <h1 className="text-xl font-bold" style={{ color: "#0F1B2D" }}>
+            <h1 className="text-xl font-bold" style={{ color: "#0d2137" }}>
               تفاصيل الموعد
             </h1>
             <p className="text-xs" style={{ color: "#64748b" }}>
@@ -209,7 +209,7 @@ export default function AppointmentDetailPage() {
         {apt.notes && (
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: "#64748b" }}>ملاحظات</label>
-            <p className="text-sm" style={{ color: "#0F1B2D" }}>{apt.notes}</p>
+            <p className="text-sm" style={{ color: "#0d2137" }}>{apt.notes}</p>
           </div>
         )}
       </div>
@@ -261,13 +261,13 @@ export default function AppointmentDetailPage() {
 
         {/* Quick Status Changes */}
         {apt.status === "Scheduled" && (
-          <button onClick={() => handleStatusChange("Confirmed")} className="px-4 py-2.5 rounded-xl text-sm font-medium transition-colors" style={{ background: "#eef3f9", color: "#0F1B2D" }}>تأكيد</button>
+          <button onClick={() => handleStatusChange("Confirmed")} className="px-4 py-2.5 rounded-xl text-sm font-medium transition-colors" style={{ background: "#eef3f9", color: "#0d2137" }}>تأكيد</button>
         )}
         {["Scheduled", "Confirmed"].includes(apt.status) && (
           <button onClick={() => handleStatusChange("Cancelled")} className="px-4 py-2.5 rounded-xl text-sm font-medium transition-colors" style={{ background: "#fef2f2", color: "#991b1b" }}>إلغاء</button>
         )}
         {apt.status === "Cancelled" && (
-          <button onClick={() => handleStatusChange("Scheduled")} className="px-4 py-2.5 rounded-xl text-sm font-medium transition-colors" style={{ background: "#eef3f9", color: "#0F1B2D" }}>إعادة جدولة</button>
+          <button onClick={() => handleStatusChange("Scheduled")} className="px-4 py-2.5 rounded-xl text-sm font-medium transition-colors" style={{ background: "#eef3f9", color: "#0d2137" }}>إعادة جدولة</button>
         )}
       </div>
     </div>
@@ -289,7 +289,7 @@ function InfoRow({ icon: Icon, label, value, subValue, linkHref, colorDot }: {
         {colorDot && (
           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: colorDot }} />
         )}
-        <span className="text-sm font-medium" style={{ color: "#0F1B2D" }}>{value}</span>
+        <span className="text-sm font-medium" style={{ color: "#0d2137" }}>{value}</span>
         {subValue && (
           <span className="text-xs" style={{ color: "#94a3b8" }}>{subValue}</span>
         )}

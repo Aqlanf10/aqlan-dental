@@ -172,7 +172,7 @@ export default function ChangePasswordPage() {
               disabled={loading}
               className={cn(
                 "w-full py-3 px-4 rounded-lg font-semibold text-white transition-all",
-                "bg-[#f5922e] hover:bg-[#c47022] active:scale-[0.98]",
+                "bg-[#f5922e] hover:bg-[#e07d1e] active:scale-[0.98]",
                 "disabled:opacity-60 disabled:cursor-not-allowed"
               )}
             >

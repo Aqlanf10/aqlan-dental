@@ -72,21 +72,27 @@ public class SettingsController(AppDbContext db) : ControllerBase
     {
         var allowedKeys = GetWebsiteDefaults().Keys.ToHashSet();
 
+        // Batch-load all existing website settings in one query instead of N queries
+        var validKeys = request.Keys.Where(k => allowedKeys.Contains(k)).Select(k => $"website.{k}").ToList();
+        var existingSettings = await db.Settings
+            .Where(s => validKeys.Contains(s.Key))
+            .ToDictionaryAsync(s => s.Key, s => s);
+
         foreach (var (key, value) in request)
         {
             if (!allowedKeys.Contains(key)) continue;
 
             var dbKey = $"website.{key}";
-            var setting = await db.Settings.FirstOrDefaultAsync(s => s.Key == dbKey);
-            if (setting == null)
+            if (!existingSettings.TryGetValue(dbKey, out var setting))
             {
-                db.Settings.Add(new Domain.Entities.Setting
+                setting = new Domain.Entities.Setting
                 {
                     Key = dbKey,
                     Value = value ?? "",
                     Category = "website",
                     UpdatedAt = DateTime.UtcNow
-                });
+                };
+                db.Settings.Add(setting);
             }
             else
             {

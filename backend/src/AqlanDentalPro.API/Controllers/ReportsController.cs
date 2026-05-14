@@ -43,30 +43,47 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
         var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
         var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
 
+        var doctorIds = await db.Doctors.Where(d => d.IsActive).Select(d => d.Id).ToListAsync();
+
+        // Batch all 5 metrics in single GROUP BY queries instead of N×5 round-trips
+        var appointmentStats = await db.Appointments
+            .Where(a => doctorIds.Contains(a.DoctorId) && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .GroupBy(a => a.DoctorId)
+            .Select(g => new { DoctorId = g.Key, Count = g.Count(), Completed = g.Count(a => a.Status == Domain.Enums.AppointmentStatus.Completed) })
+            .ToListAsync();
+
+        var orthoStats = await db.OrthoCases
+            .Where(c => doctorIds.Contains(c.DoctorId) && c.Status == "active")
+            .GroupBy(c => c.DoctorId)
+            .Select(g => new { DoctorId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var treatmentStats = await db.GeneralTreatments
+            .Where(t => doctorIds.Contains(t.DoctorId) && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate)
+            .GroupBy(t => t.DoctorId)
+            .Select(g => new { DoctorId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var revenueStats = await db.Payments
+            .Where(p => doctorIds.Contains(p.DoctorId) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .GroupBy(p => p.DoctorId)
+            .Select(g => new { DoctorId = g.Key, Revenue = g.Sum(p => p.Amount) })
+            .ToListAsync();
+
         var doctors = await db.Doctors.Where(d => d.IsActive).ToListAsync();
 
-        var performance = new List<object>();
-        foreach (var d in doctors)
+        var performance = doctors.Select(d => new
         {
-            var appointmentCount = await db.Appointments.CountAsync(a => a.DoctorId == d.Id && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate);
-            var completedCount = await db.Appointments.CountAsync(a => a.DoctorId == d.Id && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed);
-            var orthoCasesCount = await db.OrthoCases.CountAsync(c => c.DoctorId == d.Id && c.Status == "active");
-            var treatmentsCount = await db.GeneralTreatments.CountAsync(t => t.DoctorId == d.Id && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate);
-            var revenue = await db.Payments.Where(p => p.DoctorId == d.Id && p.PaymentDate >= fromDate && p.PaymentDate <= toDate).SumAsync(p => (decimal?)p.Amount) ?? 0;
-
-            performance.Add(new
-            {
-                doctorId = d.Id,
-                name = d.Name,
-                color = d.Color,
-                specialty = d.Specialty,
-                appointmentCount,
-                completedCount,
-                orthoCasesCount,
-                treatmentsCount,
-                revenue
-            });
-        }
+            doctorId = d.Id,
+            name = d.Name,
+            color = d.Color,
+            specialty = d.Specialty,
+            appointmentCount = appointmentStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Count ?? 0,
+            completedCount = appointmentStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Completed ?? 0,
+            orthoCasesCount = orthoStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Count ?? 0,
+            treatmentsCount = treatmentStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Count ?? 0,
+            revenue = revenueStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Revenue ?? 0
+        });
 
         return Ok(performance);
     }

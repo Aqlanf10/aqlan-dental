@@ -82,10 +82,12 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (UnauthorizedAccessException ex)
         {
+            logger.LogWarning(ex, "Unauthorized message send to conversation {ConversationId}", conversationId);
             return Forbid(ex.Message);
         }
         catch (ArgumentException ex)
         {
+            logger.LogWarning(ex, "Invalid argument sending message to conversation {ConversationId}", conversationId);
             return BadRequest(new { message = ex.Message });
         }
     }
@@ -128,6 +130,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (KeyNotFoundException ex)
         {
+            logger.LogWarning(ex, "Patient not found for patient-facing conversation, patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }
@@ -146,6 +149,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (KeyNotFoundException ex)
         {
+            logger.LogWarning(ex, "Patient not found for internal patient conversation, patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }
@@ -194,6 +198,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (KeyNotFoundException ex)
         {
+            logger.LogWarning(ex, "Patient not found for internal conversation lookup, patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }

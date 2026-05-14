@@ -8,7 +8,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/whatsapp")]
 [Authorize(Policy = "StaffOnly")]
-public class WhatsAppController(IWhatsAppService whatsappService) : ControllerBase
+public class WhatsAppController(IWhatsAppService whatsappService, ILogger<WhatsAppController> logger) : ControllerBase
 {
     [HttpGet("dashboard")]
     [Authorize(Policy = "AdminOnly")]
@@ -29,6 +29,7 @@ public class WhatsAppController(IWhatsAppService whatsappService) : ControllerBa
         }
         catch (InvalidOperationException ex)
         {
+            logger.LogWarning(ex, "WhatsApp send operation failed");
             return BadRequest(new { message = ex.Message });
         }
     }

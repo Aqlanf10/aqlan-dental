@@ -9,7 +9,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = "ReportsAccess")]
-public class ReportsController(AppDbContext db, IPdfService pdfService) : ControllerBase
+public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<ReportsController> logger) : ControllerBase
 {
     [HttpGet("center-summary")]
     public async Task<IActionResult> GetCenterSummary([FromQuery] string? from, [FromQuery] string? to)
@@ -241,6 +241,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
         }
         catch (ArgumentException ex)
         {
+            logger.LogWarning(ex, "Financial statement PDF generation failed for patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }

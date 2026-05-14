@@ -768,6 +768,53 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── التحقق من صلاحية المراسلة (عام) ────────────────────────────────────────
     public async Task<bool> CanMessageUserPublicAsync(Guid targetUserId) => await CanMessageUserAsync(targetUserId);
 
+    /// <summary>Batch check messaging permissions for multiple users — avoids N+1 queries.</summary>
+    public async Task<Dictionary<Guid, bool>> CanMessageUsersBatchAsync(IReadOnlyList<Guid> targetUserIds)
+    {
+        if (targetUserIds.Count == 0) return new Dictionary<Guid, bool>();
+
+        var currentUser = await db.Users.Include(u => u.Doctor).FirstOrDefaultAsync(u => u.Id == UserId);
+        if (currentUser == null) return targetUserIds.ToDictionary(id => id, _ => false);
+
+        // Admin and BranchManager can message everyone — single DB check
+        if (currentUser.Role is UserRole.Admin or UserRole.BranchManager)
+            return targetUserIds.ToDictionary(id => id, _ => true);
+
+        // All staff can message patients — load all target users in one query
+        var targetUsers = await db.Users
+            .Where(u => targetUserIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.Role })
+            .ToDictionaryAsync(u => u.Id, u => u.Role);
+
+        // All internal staff can message each other (same logic as CanMessageUserAsync)
+        static bool CanMessage(UserRole currentRole, UserRole targetRole) => targetRole switch
+        {
+            UserRole.Patient => true,
+            UserRole.Admin or UserRole.BranchManager => currentRole is not UserRole.Patient,
+            _ => currentRole switch
+            {
+                UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    => targetRole is UserRole.Reception or UserRole.Accountant or UserRole.Admin
+                        or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                        or UserRole.Assistant or UserRole.BranchManager,
+                UserRole.Reception
+                    => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                        or UserRole.Admin or UserRole.Accountant or UserRole.Assistant or UserRole.BranchManager,
+                UserRole.Accountant
+                    => targetRole is UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist
+                        or UserRole.OralSurgeon or UserRole.Reception or UserRole.Assistant or UserRole.BranchManager,
+                UserRole.Assistant
+                    => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                        or UserRole.Reception or UserRole.Admin or UserRole.Accountant or UserRole.BranchManager,
+                _ => false
+            }
+        };
+
+        return targetUserIds.ToDictionary(
+            id => id,
+            id => targetUsers.TryGetValue(id, out var role) && CanMessage(currentUser.Role, role));
+    }
+
     // ─── Private Helpers ─────────────────────────────────────────────────────
     private async Task<bool> IsParticipantAsync(Guid conversationId)
     {

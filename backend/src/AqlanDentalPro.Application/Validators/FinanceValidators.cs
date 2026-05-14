@@ -50,5 +50,39 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
         RuleFor(x => x.PaymentMethod)
             .NotEmpty().WithMessage("طريقة الدفع مطلوبة")
             .Must(m => m != null && ValidMethods.Contains(m)).WithMessage("طريقة الدفع غير صالحة");
+
+        RuleFor(x => x.ServiceDescription)
+            .MaximumLength(500).WithMessage("وصف الخدمة يجب ألا يتجاوز 500 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.ServiceDescription));
+    }
+}
+
+public sealed class UpdatePaymentRequestValidator : AbstractValidator<UpdatePaymentRequest>
+{
+    private static readonly HashSet<string> ValidMethods =
+        ["cash", "bank_transfer", "card", "check", "other"];
+
+    public UpdatePaymentRequestValidator()
+    {
+        RuleFor(x => x.Amount)
+            .GreaterThan(0).WithMessage("مبلغ الدفعة يجب أن يكون أكبر من صفر")
+            .When(x => x.Amount.HasValue);
+
+        RuleFor(x => x.PaymentMethod)
+            .Must(m => m == null || ValidMethods.Contains(m)).WithMessage("طريقة الدفع غير صالحة");
+
+        RuleFor(x => x.ServiceDescription)
+            .MaximumLength(500).WithMessage("وصف الخدمة يجب ألا يتجاوز 500 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.ServiceDescription));
+    }
+}
+
+public sealed class RefundPaymentRequestValidator : AbstractValidator<RefundPaymentRequest>
+{
+    public RefundPaymentRequestValidator()
+    {
+        RuleFor(x => x.Reason)
+            .NotEmpty().WithMessage("سبب الاسترداد مطلوب")
+            .MaximumLength(500).WithMessage("سبب الاسترداد يجب ألا يتجاوز 500 حرف");
     }
 }

@@ -128,13 +128,9 @@ public class UsersController(
             })
             .ToListAsync();
 
-        // H8 FIX: Fetch all messaging permissions in a single batch to avoid N+1 queries
+        // H8 FIX: Batch messaging permissions — single DB call instead of N+1
         var userIds = users.Select(u => u.Id).ToList();
-        var messagingPermissions = new Dictionary<Guid, bool>();
-        foreach (var uid in userIds)
-        {
-            messagingPermissions[uid] = await messagingService.CanMessageUserPublicAsync(uid);
-        }
+        var messagingPermissions = await messagingService.CanMessageUsersBatchAsync(userIds);
 
         var filtered = users.Select(u => new
         {

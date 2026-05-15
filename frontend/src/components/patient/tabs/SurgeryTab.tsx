@@ -5,9 +5,8 @@ import Link from "next/link";
 import { Scissors, Plus } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
-import { cn } from "@/lib/utils";
 import type { SurgeryCase } from "@/types/surgery";
-import { SURGERY_STATUS_LABELS, SURGERY_STATUS_COLORS } from "@/types/surgery";
+import { StatusBadge } from "@/components/surgery";
 
 interface SurgeryTabProps {
   patientId: string;
@@ -138,14 +137,7 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
               </div>
 
               {/* Right: status badge */}
-              <span
-                className={cn(
-                  "text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 mt-1",
-                  SURGERY_STATUS_COLORS[c.status] ?? "bg-[#f1f5f9] text-[#64748b]"
-                )}
-              >
-                {SURGERY_STATUS_LABELS[c.status] ?? c.status}
-              </span>
+              <StatusBadge status={c.status} />
             </div>
           </Link>
         ))}

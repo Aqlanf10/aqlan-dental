@@ -447,7 +447,7 @@ public class SurgeryController(AppDbContext db) : ControllerBase
                 r.Id,
                 r.HospitalName,
                 r.Reason,
-                ReferralDate = r.ReferralDate?.ToString("yyyy-MM-dd"),
+                ReferralDate = r.ReferralDate != null ? r.ReferralDate.Value.ToString("yyyy-MM-dd") : null,
                 r.Status,
                 r.Notes,
                 CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd"),

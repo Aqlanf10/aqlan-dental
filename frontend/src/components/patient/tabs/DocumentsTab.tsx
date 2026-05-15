@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { FolderOpen, Plus, Pencil, Trash2, X, FileText, Upload, Eye, Filter, Download, CheckCircle, Printer } from "lucide-react";
+import { FolderOpen, Plus, Pencil, Trash2, X, FileText, Upload, Eye, Filter, Download, CheckCircle, Printer, Pill, FileSignature, ArrowRightLeft, FlaskConical } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
@@ -68,14 +70,14 @@ const TYPE_COLORS: Record<string, string> = {
   Other: "bg-gray-100 text-gray-700",
 };
 
-const TYPE_ICONS: Record<string, string> = {
-  Consent: "✍️",
-  Report: "📋",
-  Prescription: "💊",
-  Contract: "📄",
-  Referral: "↗️",
-  Lab: "🔬",
-  Other: "📎",
+const DOC_TYPE_ICONS: Record<string, LucideIcon> = {
+  Consent: FileSignature,
+  Report: FileText,
+  Prescription: Pill,
+  Contract: FileSignature,
+  Referral: ArrowRightLeft,
+  Lab: FlaskConical,
+  Other: FolderOpen,
 };
 
 function formatFileSize(bytes?: number | null): string {
@@ -260,25 +262,25 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
     <div className="space-y-4" dir="rtl">
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#3d7ab518" }}>
-          <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: "#3d7ab5" }} />
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-[#3d7ab510]">
+          <FolderOpen className="w-4 h-4 flex-shrink-0 text-[#3d7ab5]" />
           <div className="min-w-0">
-            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>المستندات</p>
-            <p className="text-sm font-bold" style={{ color: "#3d7ab5" }}>{activeDocs.length}</p>
+            <p className="text-xs truncate text-[#94a3b8]">المستندات</p>
+            <p className="text-sm font-bold text-[#3d7ab5]">{activeDocs.length}</p>
           </div>
         </div>
-        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#22c55e18" }}>
-          <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#22c55e" }} />
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-green-50">
+          <CheckCircle className="w-4 h-4 flex-shrink-0 text-green-500" />
           <div className="min-w-0">
-            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>موقّعة</p>
-            <p className="text-sm font-bold" style={{ color: "#22c55e" }}>{signedCount}</p>
+            <p className="text-xs truncate text-[#94a3b8]">موقّعة</p>
+            <p className="text-sm font-bold text-green-500">{signedCount}</p>
           </div>
         </div>
-        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#a855f718" }}>
-          <FileText className="w-4 h-4 flex-shrink-0" style={{ color: "#a855f7" }} />
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-purple-50">
+          <FileText className="w-4 h-4 flex-shrink-0 text-purple-500" />
           <div className="min-w-0">
-            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>الأنواع</p>
-            <p className="text-sm font-bold" style={{ color: "#a855f7" }}>{new Set(activeDocs.map(d => d.documentType).filter(Boolean)).size}</p>
+            <p className="text-xs truncate text-[#94a3b8]">الأنواع</p>
+            <p className="text-sm font-bold text-purple-500">{new Set(activeDocs.map(d => d.documentType).filter(Boolean)).size}</p>
           </div>
         </div>
       </div>
@@ -324,38 +326,40 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
       {loading ? (
         <div className="space-y-2 animate-pulse">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
+            <div key={i} className="h-16 bg-[#f1f5f9] rounded-xl" />
           ))}
         </div>
       ) : error ? (
         <div className="text-center py-8 text-red-500 text-sm">{error}</div>
       ) : activeDocs.length === 0 ? (
-        <div className="text-center py-12 text-[#94a3b8]">
-          <FolderOpen className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">لا توجد مستندات بعد</p>
-          <p className="text-xs mt-1">اضغط &quot;إضافة مستند&quot; لرفع مستند جديد</p>
-        </div>
+        <EmptyState
+          icon={FolderOpen}
+          title="لا توجد مستندات"
+          description="لم يتم رفع أي مستندات لهذا المريض"
+          actionLabel="رفع مستند"
+          actionOnClick={openAddModal}
+          actionVariant="secondary"
+        />
       ) : (
         <div className="space-y-2">
           {activeDocs.map((doc) => {
             const isImage = isImageFile(doc.mimeType);
-            const typeIcon = TYPE_ICONS[doc.documentType ?? ""] ?? "📎";
+            const TypeIcon = DOC_TYPE_ICONS[doc.documentType ?? ""] ?? FolderOpen;
             return (
               <div
                 key={doc.id}
-                className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#dce8f5] transition"
+                className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-xl hover:border-[#dce8f5] transition"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   {/* Thumbnail or icon */}
                   <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer"
-                    style={{ background: isImage ? "transparent" : "#3d7ab518" }}
+                    className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden cursor-pointer", isImage ? "bg-transparent" : "bg-[#3d7ab510]")}
                     onClick={() => isImage && openPreview(doc)}
                   >
                     {isImage && doc.fileUrl ? (
                       <img src={doc.fileUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-lg">{typeIcon}</span>
+                      <TypeIcon className="w-5 h-5 text-[#3d7ab5]" />
                     )}
                   </div>
                   <div className="min-w-0">

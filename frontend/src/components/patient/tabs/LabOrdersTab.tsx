@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FlaskConical } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 
 interface LabOrderDto {
@@ -51,17 +52,18 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
 
   if (orders.length === 0) {
     return (
-      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
-        <FlaskConical className="w-10 h-10 mx-auto mb-2 opacity-30" />
-        <p className="text-sm">لا توجد طلبات مختبر</p>
-      </div>
+      <EmptyState
+        icon={FlaskConical}
+        title="لا توجد طلبات مختبر"
+        description="لم يتم تسجيل أي طلبات مختبر لهذا المريض"
+      />
     );
   }
 
   return (
     <div className="space-y-2" dir="rtl">
       {orders.map((order) => (
-        <div key={order.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition">
+        <div key={order.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#3d7ab5] hover:shadow-sm transition">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <FlaskConical className="w-4 h-4 text-amber-500 flex-shrink-0" />

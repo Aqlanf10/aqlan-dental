@@ -436,6 +436,17 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         return Ok(new { existing.Id, message = "تم الحفظ" });
     }
 
+    [HttpPut("{id:guid}/operative/approve")]
+    public async Task<IActionResult> ApproveOperativeReport(Guid id)
+    {
+        var report = await db.OperativeReports.FirstOrDefaultAsync(r => r.SurgeryCaseId == id);
+        if (report is null) return NotFound(new { message = "التقرير الجراحي غير موجود" });
+
+        report.ApprovedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return Ok(new { report.Id, ApprovedAt = report.ApprovedAt.ToString("yyyy-MM-ddTHH:mm"), message = "تم اعتماد التقرير" });
+    }
+
     [HttpGet("{id:guid}/referrals")]
     public async Task<IActionResult> GetReferrals(Guid id)
     {

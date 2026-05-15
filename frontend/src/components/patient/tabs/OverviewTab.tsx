@@ -13,6 +13,7 @@ import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import type { PatientProfile } from "@/types/patient";
+import { SURGERY_STATUS_LABELS } from "@/types/surgery";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -68,7 +69,6 @@ interface SurgeryCase {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ORTHO_STATUS_LABELS: Record<string, string> = { active: "نشطة", completed: "مكتملة", cancelled: "ملغاة" };
-const SURGERY_STATUS_LABELS: Record<string, string> = { scheduled: "مجدولة", in_progress: "جارية", completed: "مكتملة", cancelled: "ملغاة" };
 
 const STATUS_COLORS: Record<string, string> = {
   Scheduled: "bg-[#3d7ab518] text-[#3d7ab5]",

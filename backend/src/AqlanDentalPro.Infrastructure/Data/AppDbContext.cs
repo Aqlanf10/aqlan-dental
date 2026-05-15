@@ -66,6 +66,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();
     public DbSet<BookingRequest> BookingRequests => Set<BookingRequest>();
     public DbSet<ClinicQueueItem> ClinicQueueItems => Set<ClinicQueueItem>();
+    public DbSet<Employee> Employees => Set<Employee>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -4,32 +4,11 @@ import Link from "next/link";
 import { Scissors, Plus, Search, UserPlus } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
+import type { SurgeryCase } from "@/types/surgery";
+import { SURGERY_STATUS_LABELS, SURGERY_STATUS_COLORS } from "@/types/surgery";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
-
-interface SurgeryCase {
-  id: string;
-  caseNumber: string;
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  doctorName?: string;
-  doctorColor?: string;
-  surgeryType: string;
-  teethInvolved?: string;
-  status: string;
-  createdAt: string;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  scheduled: "مجدولة", in_progress: "جارية", completed: "مكتملة", cancelled: "ملغاة",
-};
-const STATUS_COLORS: Record<string, string> = {
-  scheduled:   "bg-blue-50 text-blue-700",
-  in_progress: "bg-yellow-50 text-yellow-700",
-  completed:   "bg-green-50 text-green-700",
-  cancelled:   "bg-gray-100 text-gray-500",
-};
+import { toast } from "@/stores/toastStore";
 
 export default function SurgeryPage() {
   const [cases, setCases] = useState<SurgeryCase[]>([]);
@@ -69,8 +48,11 @@ export default function SurgeryPage() {
   const handleStatus = async (id: string, status: string) => {
     try {
       await api.put(`/api/surgery-cases/${id}/status`, { status });
+      toast.success(`تم تحديث الحالة إلى: ${SURGERY_STATUS_LABELS[status]}`);
       load();
-    } catch {}
+    } catch {
+      toast.error("حدث خطأ أثناء تحديث الحالة");
+    }
   };
 
   return (
@@ -100,7 +82,7 @@ export default function SurgeryPage() {
             className="w-full h-9 pe-9 ps-3 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
           />
         </div>
-        {["", "scheduled", "in_progress", "completed"].map((s) => (
+        {["", "scheduled", "in_progress", "postponed", "completed"].map((s) => (
           <button key={s} onClick={() => setFilter(s)}
             className={cn(
               "px-3 py-1.5 text-sm rounded-lg border transition font-medium",
@@ -109,7 +91,7 @@ export default function SurgeryPage() {
                 : "border-gray-200 text-gray-600 hover:bg-gray-50"
             )}
           >
-            {s === "" ? "الكل" : STATUS_LABELS[s]}
+            {s === "" ? "الكل" : SURGERY_STATUS_LABELS[s]}
           </button>
         ))}
       </div>
@@ -119,9 +101,13 @@ export default function SurgeryPage() {
           {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl" />)}
         </div>
       ) : cases.length === 0 && !patientSuggestions.length ? (
-        <div className="text-center py-20 text-gray-400">
-          <Scissors className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">لا توجد حالات جراحية</p>
+        <div className="text-center py-20">
+          <Scissors className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p className="text-sm text-gray-400">لا توجد حالات جراحية</p>
+          <Link href="/surgery/new" className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#3d7ab5] hover:underline">
+            <Plus className="w-3.5 h-3.5" />
+            إنشاء حالة جراحية
+          </Link>
         </div>
       ) : cases.length > 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -159,17 +145,27 @@ export default function SurgeryPage() {
                     <td className="px-4 py-3 text-gray-500 text-xs">{formatArabicDate(c.createdAt)}</td>
                     <td className="px-4 py-3">
                       <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium",
-                        STATUS_COLORS[c.status] ?? "bg-gray-100 text-gray-600"
+                        SURGERY_STATUS_COLORS[c.status] ?? "bg-gray-100 text-gray-600"
                       )}>
-                        {STATUS_LABELS[c.status] ?? c.status}
+                        {SURGERY_STATUS_LABELS[c.status] ?? c.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 flex items-center gap-2">
                       <Link href={`/surgery/${c.id}`} className="text-xs text-clinic-blue hover:underline font-medium">عرض</Link>
                       {c.status === "scheduled" && (
-                        <button onClick={() => handleStatus(c.id, "in_progress")}
-                          className="text-xs text-yellow-700 hover:underline font-medium"
-                        >بدء</button>
+                        <>
+                          <button onClick={() => handleStatus(c.id, "in_progress")}
+                            className="text-xs text-yellow-700 hover:underline font-medium"
+                          >بدء</button>
+                          <button onClick={() => handleStatus(c.id, "postponed")}
+                            className="text-xs text-orange-700 hover:underline font-medium"
+                          >تأجيل</button>
+                        </>
+                      )}
+                      {c.status === "postponed" && (
+                        <button onClick={() => handleStatus(c.id, "scheduled")}
+                          className="text-xs text-blue-700 hover:underline font-medium"
+                        >إعادة جدولة</button>
                       )}
                       {c.status === "in_progress" && (
                         <button onClick={() => handleStatus(c.id, "completed")}

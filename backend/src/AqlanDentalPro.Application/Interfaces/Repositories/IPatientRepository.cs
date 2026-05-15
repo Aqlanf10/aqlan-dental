@@ -14,4 +14,5 @@ public interface IPatientRepository : IGenericRepository<Patient>
     Task<Patient?> FindByNormalizedPhoneAsync(string normalizedPhone, Guid? excludeId = null);
     Task<string> GeneratePatientNumberAsync(string prefix);
     Task<Patient?> FirstOrDefaultAsync(Expression<Func<Patient, bool>> predicate);
+    Task<Dictionary<Guid, DateTime?>> GetLastVisitDatesAsync(IEnumerable<Guid> patientIds);
 }

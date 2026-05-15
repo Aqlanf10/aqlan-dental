@@ -9,6 +9,7 @@ export interface PatientListItem {
   branchName?: string;
   createdAt: string;
   isActive: boolean;
+  lastVisitDate?: string;
 }
 
 export interface MedicalHistory {

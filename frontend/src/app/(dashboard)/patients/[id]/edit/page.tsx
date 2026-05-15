@@ -45,6 +45,7 @@ export default function PatientEditPage() {
     address:     patient.address,
     occupation:  patient.occupation,
     referralSource: patient.referralSource,
+    primaryDoctorId: patient.primaryDoctorId,
     // Medical history
     chronicDiseases:    patient.medicalHistory?.chronicDiseases,
     currentMedications: patient.medicalHistory?.currentMedications,

@@ -24,9 +24,20 @@ public class PatientService(
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
         var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId, status);
 
+        // Batch-load last visit/appointment dates for the current page
+        var patientIds = result.Data.Select(p => p.Id).ToList();
+        var lastVisitDates = patientIds.Count > 0
+            ? await repo.GetLastVisitDatesAsync(patientIds)
+            : new Dictionary<Guid, DateTime?>();
+
         return new PaginatedResponse<PatientListDto>
         {
-            Data = result.Data.Select(ToListDto),
+            Data = result.Data.Select(p =>
+            {
+                var dto = ToListDto(p);
+                dto.LastVisitDate = lastVisitDates.GetValueOrDefault(p.Id);
+                return dto;
+            }),
             TotalCount = result.TotalCount,
             Page = result.Page,
             PageSize = result.PageSize
@@ -435,6 +446,7 @@ public class PatientService(
 
     public async Task<bool> SoftDeleteAsync(Guid id) => await ArchiveAsync(id);
 
+    // LastVisitDate is populated separately by batch-loading appointment/visit dates
     private static PatientListDto ToListDto(Patient p) => new()
     {
         Id = p.Id,

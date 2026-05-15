@@ -7,12 +7,12 @@ import {
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image as ImageIcon,
   MessageCircle, Archive, RotateCcw, ClipboardList, CreditCard,
   FileSignature, ScanLine, ArrowRightLeft, FolderOpen, FlaskConical,
-  LayoutDashboard, KeyRound,
+  LayoutDashboard, KeyRound, Copy, Check,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
-import { cn, GENDER_LABELS, formatArabicDate } from "@/lib/utils";
+import { cn, GENDER_LABELS, formatArabicDate, normalizePhone, formatPhoneForWhatsApp } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -111,6 +111,8 @@ export default function PatientProfilePage() {
   const { user } = useAuthStore();
   const [confirmAction, setConfirmAction] = useState<{ type: "archive" | "restore"; id: string; name: string } | null>(null);
   const [openAddVisitModal, setOpenAddVisitModal] = useState(false);
+  const [phoneCopied, setPhoneCopied] = useState(false);
+  const [showAllActions, setShowAllActions] = useState(false);
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -281,6 +283,44 @@ export default function PatientProfilePage() {
                   <span className="flex items-center gap-1 font-mono" dir="ltr">
                     <Phone className="w-3.5 h-3.5" />
                     {patient.phone}
+                    {/* Quick contact buttons */}
+                    <a
+                      href={`https://wa.me/${formatPhoneForWhatsApp(patient.phone)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center w-6 h-6 rounded-md transition hover:bg-green-50"
+                      style={{ color: "#22c55e" }}
+                      title="واتساب"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                    </a>
+                    <a
+                      href={`tel:${normalizePhone(patient.phone)}`}
+                      className="inline-flex items-center justify-center w-6 h-6 rounded-md transition hover:bg-blue-50"
+                      style={{ color: "#3d7ab5" }}
+                      title="اتصال هاتفي"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          await navigator.clipboard.writeText(patient.phone ?? "");
+                          setPhoneCopied(true);
+                          toast.success("تم نسخ رقم الهاتف");
+                          setTimeout(() => setPhoneCopied(false), 2000);
+                        } catch { /* silent */ }
+                      }}
+                      className="inline-flex items-center justify-center w-6 h-6 rounded-md transition hover:bg-gray-100"
+                      style={{ color: "#64748b" }}
+                      title="نسخ الرقم"
+                    >
+                      {phoneCopied ? <Check className="w-3.5 h-3.5" style={{ color: "#22c55e" }} /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
                   </span>
                 )}
                 {patient.address && (
@@ -379,67 +419,88 @@ export default function PatientProfilePage() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-2 pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
-          <button
-            onClick={() => { setActiveTab("visits"); setOpenAddVisitModal(true); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"
-            style={{ background: "#22c55e" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#16a34a")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#22c55e")}
-          >
-            <ClipboardList className="w-3.5 h-3.5" />
-            إضافة زيارة
-          </button>
-          <Link
-            href={`/appointments/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"
-            style={{ background: "#3d7ab5" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#2d5e8e")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#3d7ab5")}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            موعد جديد
-          </Link>
-          <Link
-            href={`/prescriptions/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-            style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-          >
-            <Pill className="w-3.5 h-3.5" />
-            وصفة طبية
-          </Link>
-          <Link
-            href={`/finance/contracts/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-            style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-          >
-            <Wallet className="w-3.5 h-3.5" />
-            عقد جديد
-          </Link>
-          <Link
-            href={`/ortho/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-            style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            حالة تقويمية
-          </Link>
-          <Link
-            href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-            style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-          >
-            <Scissors className="w-3.5 h-3.5" />
-            حالة جراحية
-          </Link>
+        <div className="pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
+          <div className={`flex flex-wrap gap-2 ${!showAllActions ? "max-h-[calc(2.5rem+0.5rem)] overflow-hidden sm:max-h-none sm:overflow-visible" : ""}`}>
+            <button
+              onClick={() => { setActiveTab("visits"); setOpenAddVisitModal(true); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"
+              style={{ background: "#22c55e" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#16a34a")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#22c55e")}
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              إضافة زيارة
+            </button>
+            <Link
+              href={`/appointments/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"
+              style={{ background: "#3d7ab5" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#2d5e8e")}
+              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#3d7ab5")}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              موعد جديد
+            </Link>
+            <Link
+              href={`/prescriptions/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+              style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
+            >
+              <Pill className="w-3.5 h-3.5" />
+              وصفة طبية
+            </Link>
+            <Link
+              href={`/finance/contracts/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+              style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              عقد جديد
+            </Link>
+            <Link
+              href={`/ortho/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+              style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              حالة تقويمية
+            </Link>
+            <Link
+              href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+              style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
+            >
+              <Scissors className="w-3.5 h-3.5" />
+              حالة جراحية
+            </Link>
+          </div>
+          {/* Show more/less toggle — visible only on mobile when collapsed */}
+          {!showAllActions && (
+            <button
+              onClick={() => setShowAllActions(true)}
+              className="mt-1 text-xs font-medium px-2 py-1 rounded transition sm:hidden"
+              style={{ color: "#3d7ab5" }}
+            >
+              المزيد...
+            </button>
+          )}
+          {showAllActions && (
+            <button
+              onClick={() => setShowAllActions(false)}
+              className="mt-1 text-xs font-medium px-2 py-1 rounded transition sm:hidden"
+              style={{ color: "#94a3b8" }}
+            >
+              عرض أقل
+            </button>
+          )}
         </div>
       </div>
 

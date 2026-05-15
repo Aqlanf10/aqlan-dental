@@ -444,7 +444,7 @@ public class SurgeryController(AppDbContext db) : ControllerBase
 
         report.ApprovedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
-        return Ok(new { report.Id, ApprovedAt = report.ApprovedAt.ToString("yyyy-MM-ddTHH:mm"), message = "تم اعتماد التقرير" });
+        return Ok(new { report.Id, ApprovedAt = report.ApprovedAt.Value.ToString("yyyy-MM-ddTHH:mm"), message = "تم اعتماد التقرير" });
     }
 
     [HttpGet("{id:guid}/referrals")]

@@ -6,7 +6,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/uploads")]
 [Authorize(Policy = "StaffOnly")]
-public class UploadsController : ControllerBase
+public class UploadsController(ILogger<UploadsController> logger) : ControllerBase
 {
     private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -85,8 +85,9 @@ public class UploadsController : ControllerBase
         {
             uploadsPath = EnsureUploadsDirectory();
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Failed to resolve uploads directory");
             return StatusCode(500, new { message = "فشل إنشاء مجلد المرفقات" });
         }
 

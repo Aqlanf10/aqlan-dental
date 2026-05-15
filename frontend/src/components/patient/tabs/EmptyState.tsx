@@ -1,30 +1,62 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 interface EmptyStateProps {
   icon: LucideIcon;
   title: string;
-  description: string;
-  comingSoon?: boolean;
+  description?: string;
+  actionLabel?: string;
+  actionHref?: string;
+  actionOnClick?: () => void;
+  actionVariant?: "primary" | "secondary" | "outline";
 }
 
-export function EmptyState({ icon: Icon, title, description, comingSoon }: EmptyStateProps) {
+const variantClasses: Record<NonNullable<EmptyStateProps["actionVariant"]>, string> = {
+  primary:
+    "bg-[#3d7ab5] text-white hover:bg-[#2d5e8e]",
+  secondary:
+    "bg-[#22c55e] text-white hover:bg-[#16a34a]",
+  outline:
+    "border border-[#3d7ab5] text-[#3d7ab5] bg-white hover:bg-[#eef3f9]",
+};
+
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  actionLabel,
+  actionHref,
+  actionOnClick,
+  actionVariant = "primary",
+}: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center" dir="rtl">
-      <div className="w-16 h-16 rounded-full bg-[#f1f5f9] flex items-center justify-center mb-4">
-        <Icon className="w-8 h-8 text-[#cbd5e1]" />
-      </div>
-      <h3 className="text-base font-semibold text-[#0d2137] mb-1">{title}</h3>
-      <p className="text-sm text-[#94a3b8] max-w-xs">{description}</p>
-      {comingSoon && (
-        <button
-          disabled
-          className="mt-4 px-4 py-2 text-sm font-medium rounded-lg bg-[#f1f5f9] text-[#94a3b8] cursor-not-allowed"
-        >
-          هذه الميزة قيد التطوير
-        </button>
+    <div className="text-center py-12" dir="rtl">
+      <Icon className="w-12 h-12 text-[#dce8f5] mx-auto mb-3" />
+      <h3 className="text-sm font-medium text-[#94a3b8]">{title}</h3>
+      {description && (
+        <p className="text-xs text-[#dce8f5] mt-1">{description}</p>
       )}
+      {actionLabel &&
+        (actionHref ? (
+          <Link
+            href={actionHref}
+            className={`inline-flex items-center gap-2 mt-4 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${variantClasses[actionVariant]}`}
+          >
+            {actionLabel}
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </Link>
+        ) : actionOnClick ? (
+          <button
+            onClick={actionOnClick}
+            className={`inline-flex items-center gap-2 mt-4 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${variantClasses[actionVariant]}`}
+          >
+            {actionLabel}
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </button>
+        ) : null)}
     </div>
   );
 }

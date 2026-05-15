@@ -6,7 +6,7 @@ import {
   RotateCcw, ExternalLink, AlertTriangle, Loader2,
 } from "lucide-react";
 import api from "@/lib/api";
-import { formatArabicDate } from "@/lib/utils";
+import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { PatientPortalCredentials, CreatePortalAccountResponse, PatientPasswordResetResponse } from "@/types/patientPortal";
@@ -116,19 +116,13 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
     <div className="space-y-5" dir="rtl">
       {/* Account Status Card */}
       <div
-        className="rounded-xl overflow-hidden"
-        style={{
-          background: "#fff",
-          border: "1px solid #e8f0f9",
-          boxShadow: "0 1px 3px rgba(13,33,55,0.06)",
-        }}
+        className="rounded-xl overflow-hidden bg-white border border-[#e8f0f9] shadow-sm"
       >
         {/* Header */}
         <div
-          className="px-5 py-3 flex items-center gap-2"
-          style={{ background: "#0d2137", color: "#fff" }}
+          className="px-5 py-3 flex items-center gap-2 bg-[#0d2137] text-white"
         >
-          <KeyRound className="w-4 h-4" style={{ color: "#f5922e" }} />
+          <KeyRound className="w-4 h-4 text-orange-500" />
           <span className="font-bold text-sm">بوابة المريض</span>
         </div>
 
@@ -141,32 +135,32 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ background: creds.accountActive ? "#22c55e" : "#ef4444" }}
+                    className={cn("w-2.5 h-2.5 rounded-full", creds.accountActive ? "bg-green-500" : "bg-red-500")}
                   />
-                  <span className="text-sm font-semibold" style={{ color: "#0d2137" }}>
+                  <span className="text-sm font-semibold text-[#0d2137]">
                     {creds.accountActive ? "الحساب نشط" : "الحساب معطّل"}
                   </span>
                 </div>
                 <span
-                  className="text-xs px-2.5 py-1 rounded-full font-semibold"
-                  style={{
-                    background: creds.accountActive ? "#22c55e18" : "#ef444418",
-                    color: creds.accountActive ? "#22c55e" : "#ef4444",
-                  }}
+                  className={cn(
+                    "text-xs px-2.5 py-1 rounded-full font-semibold",
+                    creds.accountActive
+                      ? "bg-green-500/10 text-green-500"
+                      : "bg-red-500/10 text-red-500"
+                  )}
                 >
                   {creds.accountActive ? "نشط" : "معطّل"}
                 </span>
               </div>
 
               {/* Username */}
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#f8fafc" }}>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[#f8fafc]">
                 <div className="flex items-center gap-2">
-                  <UserCircle className="w-4 h-4" style={{ color: "#3d7ab5" }} />
-                  <span className="text-sm" style={{ color: "#64748b" }}>اسم المستخدم</span>
+                  <UserCircle className="w-4 h-4 text-[#3d7ab5]" />
+                  <span className="text-sm text-slate-500">اسم المستخدم</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm font-bold" style={{ color: "#0d2137" }}>
+                  <span className="font-mono text-sm font-bold text-[#0d2137]">
                     {creds.username}
                   </span>
                   <button
@@ -175,9 +169,9 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                     title="نسخ اسم المستخدم"
                   >
                     {copiedField === "username" ? (
-                      <Check className="w-3.5 h-3.5" style={{ color: "#22c55e" }} />
+                      <Check className="w-3.5 h-3.5 text-green-500" />
                     ) : (
-                      <Copy className="w-3.5 h-3.5" style={{ color: "#94a3b8" }} />
+                      <Copy className="w-3.5 h-3.5 text-[#94a3b8]" />
                     )}
                   </button>
                 </div>
@@ -189,46 +183,41 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                   className="flex items-center gap-2 p-3 rounded-lg"
                   style={{ background: "#f5922e10", border: "1px solid #f5922e30" }}
                 >
-                  <Shield className="w-4 h-4" style={{ color: "#f5922e" }} />
-                  <span className="text-xs font-medium" style={{ color: "#f5922e" }}>
+                  <Shield className="w-4 h-4 text-orange-500" />
+                  <span className="text-xs font-medium text-orange-500">
                     يجب تغيير كلمة المرور عند أول تسجيل دخول
                   </span>
                 </div>
               )}
 
               {/* Last login */}
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: "#f8fafc" }}>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[#f8fafc]">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4" style={{ color: "#94a3b8" }} />
-                  <span className="text-sm" style={{ color: "#64748b" }}>آخر تسجيل دخول</span>
+                  <Clock className="w-4 h-4 text-[#94a3b8]" />
+                  <span className="text-sm text-slate-500">آخر تسجيل دخول</span>
                 </div>
-                <span className="text-sm" style={{ color: creds.lastLogin ? "#0d2137" : "#94a3b8" }}>
+                <span className={cn("text-sm", creds.lastLogin ? "text-[#0d2137]" : "text-[#94a3b8]")}>
                   {creds.lastLogin ? formatArabicDate(creds.lastLogin) : "لم يسجل الدخول بعد"}
                 </span>
               </div>
 
               {/* Action buttons — Admin/Reception only */}
               {isAdminOrReception && (
-                <div className="flex flex-wrap gap-2 pt-2" style={{ borderTop: "1px solid #e8f0f9" }}>
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-[#e8f0f9]">
                   <button
                     onClick={handleResetPassword}
                     disabled={resetting}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition"
-                    style={{
-                      background: resetting ? "#94a3b8" : "#f5922e",
-                      color: "#fff",
-                    }}
+                    className={cn("flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition text-white", resetting ? "bg-slate-400" : "bg-orange-500")}
                   >
                     {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
                     إعادة تعيين كلمة المرور
                   </button>
                   <button
                     onClick={() => copyToClipboard(creds.username, "username-btn")}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition"
-                    style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition border-[1.5px] border-[#3d7ab5] text-[#3d7ab5] bg-white"
                   >
                     {copiedField === "username-btn" ? (
-                      <Check className="w-3.5 h-3.5" style={{ color: "#22c55e" }} />
+                      <Check className="w-3.5 h-3.5 text-green-500" />
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
                     )}
@@ -236,11 +225,10 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                   </button>
                   <button
                     onClick={() => copyToClipboard(PORTAL_URL, "portal-url")}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition"
-                    style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition border-[1.5px] border-[#dce8f5] text-slate-500 bg-white"
                   >
                     {copiedField === "portal-url" ? (
-                      <Check className="w-3.5 h-3.5" style={{ color: "#22c55e" }} />
+                      <Check className="w-3.5 h-3.5 text-green-500" />
                     ) : (
                       <ExternalLink className="w-3.5 h-3.5" />
                     )}
@@ -253,26 +241,22 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
             <>
               {/* No account */}
               <div className="text-center py-6">
-                <KeyRound className="w-12 h-12 mx-auto mb-3" style={{ color: "#dce8f5" }} />
-                <p className="text-sm font-medium" style={{ color: "#0d2137" }}>
+                <KeyRound className="w-12 h-12 mx-auto mb-3 text-[#dce8f5]" />
+                <p className="text-sm font-medium text-[#0d2137]">
                   لا يوجد حساب بوابة لهذا المريض
                 </p>
-                <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
+                <p className="text-xs mt-1 text-[#94a3b8]">
                   يمكن إنشاء حساب بوابة ليتمكن المريض من الدخول وعرض بياناته
                 </p>
               </div>
 
               {/* Create button — Admin/Reception only */}
               {isAdminOrReception && (
-                <div className="flex justify-center pt-2" style={{ borderTop: "1px solid #e8f0f9" }}>
+                <div className="flex justify-center pt-2 border-t border-[#e8f0f9]">
                   <button
                     onClick={handleCreateAccount}
                     disabled={creating}
-                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-lg transition"
-                    style={{
-                      background: creating ? "#94a3b8" : "#3d7ab5",
-                      color: "#fff",
-                    }}
+                    className={cn("flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-lg transition text-white", creating ? "bg-slate-400" : "bg-[#3d7ab5]")}
                   >
                     {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                     إنشاء حساب بوابة
@@ -286,15 +270,14 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
 
       {/* Quick info for all staff */}
       <div
-        className="rounded-xl p-4"
-        style={{ background: "#f8fafc", border: "1px solid #e8f0f9" }}
+        className="rounded-xl p-4 bg-[#f8fafc] border border-[#e8f0f9]"
       >
         <div className="flex items-center gap-2 mb-2">
-          <Shield className="w-4 h-4" style={{ color: "#3d7ab5" }} />
-          <span className="text-sm font-semibold" style={{ color: "#0d2137" }}>معلومات البوابة</span>
+          <Shield className="w-4 h-4 text-[#3d7ab5]" />
+          <span className="text-sm font-semibold text-[#0d2137]">معلومات البوابة</span>
         </div>
-        <div className="space-y-1.5 text-xs" style={{ color: "#64748b" }}>
-          <p>• رقم الملف <span className="font-mono font-bold" style={{ color: "#0d2137" }}>{patientNumber}</span> يُستخدم كاسم مستخدم افتراضي</p>
+        <div className="space-y-1.5 text-xs text-slate-500">
+          <p>• رقم الملف <span className="font-mono font-bold text-[#0d2137]">{patientNumber}</span> يُستخدم كاسم مستخدم افتراضي</p>
           <p>• المريض يجب تغيير كلمة المرور عند أول دخول</p>
           <p>• الأطباء يستطيعون عرض حالة الحساب فقط</p>
           <p>• المدير والاستقبال يستطيعون إنشاء/إعادة تعيين الحساب</p>
@@ -309,9 +292,9 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
             dir="rtl"
           >
             {/* Header */}
-            <div className="px-6 py-4" style={{ background: "#0d2137" }}>
+            <div className="px-6 py-4 bg-[#0d2137]">
               <div className="flex items-center gap-2">
-                <KeyRound className="w-5 h-5" style={{ color: "#f5922e" }} />
+                <KeyRound className="w-5 h-5 text-orange-500" />
                 <h3 className="text-white font-bold">بيانات الدخول للبوابة</h3>
               </div>
             </div>
@@ -322,22 +305,22 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                 className="flex items-start gap-2 p-3 rounded-lg"
                 style={{ background: "#ef444410", border: "1px solid #ef444430" }}
               >
-                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
                 <div>
-                  <p className="text-sm font-bold" style={{ color: "#ef4444" }}>
+                  <p className="text-sm font-bold text-red-500">
                     تحذير مهم
                   </p>
-                  <p className="text-xs mt-0.5" style={{ color: "#dc2626" }}>
+                  <p className="text-xs mt-0.5 text-red-600">
                     كلمة المرور المؤقتة ستظهر مرة واحدة فقط! احفظها الآن قبل الإغلاق.
                   </p>
                 </div>
               </div>
 
               {/* Username */}
-              <div className="p-3 rounded-lg" style={{ background: "#f8fafc" }}>
-                <p className="text-xs mb-1" style={{ color: "#64748b" }}>اسم المستخدم</p>
+              <div className="p-3 rounded-lg bg-[#f8fafc]">
+                <p className="text-xs mb-1 text-slate-500">اسم المستخدم</p>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-base font-bold" style={{ color: "#0d2137" }}>
+                  <span className="font-mono text-base font-bold text-[#0d2137]">
                     {tempUsername}
                   </span>
                   <button
@@ -346,9 +329,9 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                     title="نسخ"
                   >
                     {copiedField === "dialog-username" ? (
-                      <Check className="w-4 h-4" style={{ color: "#22c55e" }} />
+                      <Check className="w-4 h-4 text-green-500" />
                     ) : (
-                      <Copy className="w-4 h-4" style={{ color: "#3d7ab5" }} />
+                      <Copy className="w-4 h-4 text-[#3d7ab5]" />
                     )}
                   </button>
                 </div>
@@ -356,9 +339,9 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
 
               {/* Temporary Password */}
               <div className="p-3 rounded-lg" style={{ background: "#f5922e08", border: "1px solid #f5922e20" }}>
-                <p className="text-xs mb-1" style={{ color: "#f5922e" }}>كلمة المرور المؤقتة</p>
+                <p className="text-xs mb-1 text-orange-500">كلمة المرور المؤقتة</p>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-base font-bold" style={{ color: "#0d2137" }} dir="ltr">
+                  <span className="font-mono text-base font-bold text-[#0d2137]" dir="ltr">
                     {tempPassword}
                   </span>
                   <div className="flex items-center gap-1">
@@ -368,9 +351,9 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                       title="نسخ كلمة المرور"
                     >
                       {copiedField === "dialog-password" ? (
-                        <Check className="w-4 h-4" style={{ color: "#22c55e" }} />
+                        <Check className="w-4 h-4 text-green-500" />
                       ) : (
-                        <Copy className="w-4 h-4" style={{ color: "#f5922e" }} />
+                        <Copy className="w-4 h-4 text-orange-500" />
                       )}
                     </button>
                   </div>
@@ -378,10 +361,10 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
               </div>
 
               {/* Portal URL */}
-              <div className="p-3 rounded-lg" style={{ background: "#f8fafc" }}>
-                <p className="text-xs mb-1" style={{ color: "#64748b" }}>رابط بوابة المريض</p>
+              <div className="p-3 rounded-lg bg-[#f8fafc]">
+                <p className="text-xs mb-1 text-slate-500">رابط بوابة المريض</p>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono break-all" style={{ color: "#3d7ab5" }} dir="ltr">
+                  <span className="text-xs font-mono break-all text-[#3d7ab5]" dir="ltr">
                     {PORTAL_URL}
                   </span>
                   <button
@@ -390,9 +373,9 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                     title="نسخ الرابط"
                   >
                     {copiedField === "dialog-url" ? (
-                      <Check className="w-4 h-4" style={{ color: "#22c55e" }} />
+                      <Check className="w-4 h-4 text-green-500" />
                     ) : (
-                      <Copy className="w-4 h-4" style={{ color: "#94a3b8" }} />
+                      <Copy className="w-4 h-4 text-[#94a3b8]" />
                     )}
                   </button>
                 </div>
@@ -404,11 +387,7 @@ export function PortalAccessTab({ patientId, patientNumber }: PortalAccessTabPro
                   const info = `بيانات دخول بوابة المريض\nاسم المستخدم: ${tempUsername}\nكلمة المرور المؤقتة: ${tempPassword}\nرابط البوابة: ${PORTAL_URL}`;
                   copyToClipboard(info, "dialog-all");
                 }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition"
-                style={{
-                  background: copiedField === "dialog-all" ? "#22c55e" : "#3d7ab5",
-                  color: "#fff",
-                }}
+                className={cn("w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition text-white", copiedField === "dialog-all" ? "bg-green-500" : "bg-[#3d7ab5]")}
               >
                 {copiedField === "dialog-all" ? (
                   <>

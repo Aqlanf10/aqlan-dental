@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowRightLeft } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 
 interface ReferralDto {
@@ -48,17 +49,18 @@ export function ReferralsTab({ patientId }: ReferralsTabProps) {
 
   if (referrals.length === 0) {
     return (
-      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
-        <ArrowRightLeft className="w-10 h-10 mx-auto mb-2 opacity-30" />
-        <p className="text-sm">لا توجد إحالات</p>
-      </div>
+      <EmptyState
+        icon={ArrowRightLeft}
+        title="لا توجد إحالات"
+        description="لم يتم تسجيل أي إحالات لهذا المريض"
+      />
     );
   }
 
   return (
     <div className="space-y-2" dir="rtl">
       {referrals.map((ref) => (
-        <div key={ref.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition">
+        <div key={ref.id} className="p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#3d7ab5] hover:shadow-sm transition">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <ArrowRightLeft className="w-4 h-4 text-orange-500 flex-shrink-0" />

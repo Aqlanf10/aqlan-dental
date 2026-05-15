@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Grid3x3 } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
 import { DentalChart } from "@/components/dental/DentalChart";
 import { TreatmentHistory } from "@/components/dental/TreatmentHistory";
@@ -52,7 +53,7 @@ export function GeneralDentistryTab({ patientId }: GeneralDentistryTabProps) {
             ))}
           </div>
         ) : treatments.length === 0 ? (
-          <p className="text-sm text-[#94a3b8]">لا توجد علاجات عامة مسجّلة</p>
+          <EmptyState icon={Grid3x3} title="لا توجد علاجات عامة" description="لم يتم تسجيل أي علاجات أسنان عامة لهذا المريض" />
         ) : (
           <div className="space-y-2">
             {treatments.map((t) => (

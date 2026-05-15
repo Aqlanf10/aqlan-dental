@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock, Stethoscope, CreditCard, FolderOpen, Image as ImageIcon, ScanLine } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 
 interface TimelineEvent {
@@ -65,9 +66,20 @@ interface TimelineTabProps {
   patientId: string;
 }
 
+const FILTER_OPTIONS = [
+  { value: "all", label: "الكل" },
+  { value: "appointment", label: "مواعيد" },
+  { value: "visit", label: "زيارات" },
+  { value: "payment", label: "مدفوعات" },
+  { value: "document", label: "مستندات" },
+  { value: "photo", label: "صور" },
+  { value: "radiograph", label: "أشعة" },
+] as const;
+
 export function TimelineTab({ patientId }: TimelineTabProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterType, setFilterType] = useState("all");
 
   useEffect(() => {
     api.get<TimelineEvent[]>(`/api/patients/${patientId}/timeline`)
@@ -88,18 +100,50 @@ export function TimelineTab({ patientId }: TimelineTabProps) {
 
   if (!events.length) {
     return (
-      <div className="text-center py-12 text-[#94a3b8]">
-        <Clock className="w-10 h-10 mx-auto mb-2 opacity-30" />
-        <p className="text-sm">لا يوجد سجل زمني بعد</p>
-      </div>
+      <EmptyState
+        icon={Clock}
+        title="لا يوجد سجل زمني"
+        description="ستظهر هنا جميع الأنشطة المتعلقة بالمريض"
+      />
     );
   }
 
+  const filteredEvents = filterType === "all"
+    ? events
+    : events.filter((ev) => ev.type === filterType);
+
   return (
-    <div className="relative" dir="rtl">
-      <div className="absolute right-[19px] top-0 bottom-0 w-0.5 bg-[#f1f5f9]" />
-      <div className="space-y-4">
-        {events.map((ev) => {
+    <div dir="rtl">
+      {/* Filter Bar */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setFilterType(opt.value)}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-full transition",
+              filterType === opt.value
+                ? "bg-[#3d7ab5] text-white"
+                : "bg-[#f7fafd] text-[#64748b] border border-[#e8f0f9]"
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Timeline Content */}
+      {!filteredEvents.length ? (
+        <EmptyState
+          icon={Clock}
+          title="لا توجد نتائج"
+          description="لا توجد أحداث من النوع المحدد"
+        />
+      ) : (
+        <div className="relative">
+          <div className="absolute right-[19px] top-0 bottom-0 w-0.5 bg-[#f1f5f9]" />
+          <div className="space-y-4">
+            {filteredEvents.map((ev) => {
           const Icon = TYPE_ICONS[ev.type] ?? Clock;
           const borderColor = TYPE_COLORS[ev.type] ?? "border-[#3d7ab5] text-[#3d7ab5]";
           const badgeColor = TYPE_BADGE_COLORS[ev.type] ?? "bg-[#3d7ab518] text-[#3d7ab5]";
@@ -108,7 +152,7 @@ export function TimelineTab({ patientId }: TimelineTabProps) {
               <div className={cn("w-10 h-10 rounded-full bg-white border-2 flex items-center justify-center flex-shrink-0 z-10", borderColor)}>
                 <Icon className="w-4 h-4" />
               </div>
-              <div className="flex-1 bg-[#f7fafd] rounded-lg p-3 border border-[#e8f0f9]">
+              <div className="flex-1 bg-[#f7fafd] rounded-xl p-3 border border-[#e8f0f9] hover:bg-white hover:shadow-sm transition">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-sm text-[#0d2137]">{ev.title}</span>
@@ -128,7 +172,9 @@ export function TimelineTab({ patientId }: TimelineTabProps) {
             </div>
           );
         })}
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

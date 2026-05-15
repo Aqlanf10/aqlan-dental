@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import type { PatientProfile } from "@/types/patient";
 
@@ -168,10 +169,10 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
     <div className="space-y-5" dir="rtl">
 
       {/* ════════════════════ Quick Actions ════════════════════ */}
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
         <button
           onClick={onAddVisit}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl text-white transition shadow-sm"
+          className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl text-white transition shadow-sm"
           style={{ background: "#22c55e" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "#16a34a")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "#22c55e")}
@@ -181,7 +182,7 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         </button>
         <Link
           href={`/appointments/new?patientId=${patientId}&patientName=${encodeURIComponent(patientName)}`}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
           style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
@@ -191,7 +192,7 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         </Link>
         <Link
           href={`/finance/payments?patientId=${patientId}`}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
           style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
@@ -201,7 +202,7 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         </Link>
         <Link
           href={`/patients/${patientId}?tab=documents`}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
           style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
@@ -211,7 +212,7 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         </Link>
         <Link
           href={`/messages?patientId=${patientId}`}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
           style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
@@ -221,7 +222,7 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         </Link>
         <Link
           href={`/patients/${patientId}/print/summary`}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+          className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
           style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
@@ -234,7 +235,7 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
             href={`https://wa.me/${whatsappNumber.startsWith("0") ? "967" + whatsappNumber.slice(1) : whatsappNumber}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
             style={{ border: "1.5px solid #25D366", color: "#25D366", background: "#fff" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "#f0fdf4")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
@@ -403,26 +404,6 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         </div>
       </div>
 
-      {/* ════════════════════ Summary Stats ════════════════════ */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {[
-          { icon: Calendar, label: "المواعيد", value: summary?.totalAppointments ?? "—", color: "text-[#3d7ab5]", bg: "bg-[#3d7ab518]" },
-          { icon: Calendar, label: "مكتملة", value: summary?.completedAppointments ?? "—", color: "text-green-600", bg: "bg-green-50" },
-          { icon: Activity, label: "تقويم نشط", value: summary?.activeOrthoCases ?? "—", color: "text-purple-600", bg: "bg-purple-50" },
-          { icon: Wallet, label: "مدفوع", value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "text-[#3d7ab5]", bg: "bg-[#3d7ab518]" },
-          { icon: Wallet, label: "متبقي", value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "text-orange-600", bg: "bg-orange-50" },
-          { icon: Pill, label: "الوصفات", value: summary?.prescriptionsCount ?? "—", color: "text-rose-600", bg: "bg-rose-50" },
-        ].map(({ icon: Icon, label, value, color, bg }) => (
-          <div key={label} className={cn("rounded-lg px-3 py-2 flex items-center gap-2", bg)}>
-            <Icon className={cn("w-4 h-4 flex-shrink-0", color)} />
-            <div className="min-w-0">
-              <p className="text-xs text-[#64748b] truncate">{label}</p>
-              <p className={cn("text-sm font-bold truncate", color)}>{value}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* ════════════════════ Active Cases ════════════════════ */}
       {(orthoCases.length > 0 || surgeryCases.length > 0) && (
         <div className="space-y-3">
@@ -499,11 +480,11 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
         </div>
         <div className="p-4">
           {events.length === 0 ? (
-            <div className="text-center py-8">
-              <Clock className="w-8 h-8 text-[#dce8f5] mx-auto mb-2" />
-              <p className="text-sm text-[#94a3b8]">لا يوجد نشاط بعد</p>
-              <p className="text-xs text-[#dce8f5] mt-1">ستظهر هنا المواعيد والزيارات والمدفوعات والمستندات</p>
-            </div>
+            <EmptyState
+              icon={Clock}
+              title="لا يوجد نشاط بعد"
+              description="ستظهر هنا المواعيد والزيارات والمدفوعات والمستندات"
+            />
           ) : (
             <div className="relative">
               <div className="absolute right-[19px] top-0 bottom-0 w-0.5 bg-[#f1f5f9]" />

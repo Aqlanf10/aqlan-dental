@@ -6,7 +6,7 @@ import {
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   BarChart2, Package, FlaskConical, Settings, LogOut,
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock,
-  UserRound, Building2, Monitor,
+  UserRound, Building2, Monitor, UserCog,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/clinic-queue", label: "طابور العيادة",     icon: ClipboardList,   roles: [] },
   { href: "/clinic-display", label: "شاشة العرض",       icon: Monitor,         roles: [] },
   { href: "/doctors",      label: "الأطباء",           icon: UserRound,       roles: ["Admin"] },
+  { href: "/employees",    label: "الموظفين",          icon: UserCog,         roles: ["Admin"] },
   { href: "/branches",     label: "الفروع",            icon: Building2,       roles: ["Admin"] },
   { href: "/schedule",     label: "جداول الأطباء",     icon: Clock,           roles: ["Admin", "Reception"] },
   // Section: تخصصات

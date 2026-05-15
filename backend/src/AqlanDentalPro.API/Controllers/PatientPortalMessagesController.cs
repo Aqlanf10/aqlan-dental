@@ -25,7 +25,16 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         "TreatingDoctor", "Reception", "Admin"
     };
 
-    private Guid PatientId => Guid.Parse(User.FindFirst("patientId")!.Value);
+    private Guid PatientId
+    {
+        get
+        {
+            var claim = User.FindFirst("patientId");
+            if (claim == null || !Guid.TryParse(claim.Value, out var id))
+                throw new UnauthorizedAccessException("Missing or invalid patientId claim");
+            return id;
+        }
+    }
     private Guid? LinkedUserId => Guid.TryParse(User.FindFirst("userId")?.Value, out var id) ? id : null;
 
     /// <summary>
@@ -140,7 +149,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 UserId = doctor.UserId,
                 DisplayName = $"د. {doctor.Name}",
                 Role = doctorUser?.Role.ToString() ?? "Doctor",
-                AvatarInitials = doctor.AvatarInitials ?? doctor.Name?.Substring(0, 1),
+                AvatarInitials = doctor.AvatarInitials ?? (!string.IsNullOrEmpty(doctor.Name) ? doctor.Name.Substring(0, 1) : null),
                 Color = doctor.Color ?? "#0d9488"
             });
         }
@@ -515,9 +524,11 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Select(cp => cp.UserId)
             .ToListAsync();
 
-        foreach (var pid in otherParticipants)
-            await notifications.NotifyAsync(pid, "message", "رسالة جديدة من مريض",
-                $"رسالة من {senderName}", "Conversation", conversationId);
+        // N+1 FIX: Send notifications in parallel instead of sequential await per participant
+        var notificationTasks = otherParticipants.Select(pid =>
+            notifications.NotifyAsync(pid, "message", "رسالة جديدة من مريض",
+                $"رسالة من {senderName}", "Conversation", conversationId));
+        await Task.WhenAll(notificationTasks);
 
         return Ok(MapMessage(loaded));
     }

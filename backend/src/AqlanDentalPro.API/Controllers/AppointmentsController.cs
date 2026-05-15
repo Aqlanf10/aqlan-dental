@@ -14,7 +14,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/appointments")]
 [Authorize(Policy = "StaffOnly")]
-public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp) : ControllerBase
+public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, ILogger<AppointmentsController> logger) : ControllerBase
 {
     /// <summary>Check if a time slot conflicts with existing appointments</summary>
     [HttpPost("check-conflict")]
@@ -155,8 +155,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
 
             return Ok(new { message = "تم إرسال التذكير بنجاح" });
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogWarning(ex, "Failed to send WhatsApp reminder for appointment {AppointmentId}", id);
             return BadRequest(new { message = "فشل إرسال التذكير عبر واتساب" });
         }
     }

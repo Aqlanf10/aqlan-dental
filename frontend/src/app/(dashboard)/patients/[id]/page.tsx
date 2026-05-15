@@ -309,7 +309,7 @@ export default function PatientProfilePage() {
                       onClick={async (e) => {
                         e.stopPropagation();
                         try {
-                          await navigator.clipboard.writeText(patient.phone);
+                          await navigator.clipboard.writeText(patient.phone ?? "");
                           setPhoneCopied(true);
                           toast.success("تم نسخ رقم الهاتف");
                           setTimeout(() => setPhoneCopied(false), 2000);

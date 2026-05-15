@@ -12,6 +12,7 @@ public class PatientListDto
     public string? BranchName { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool IsActive { get; set; }
+    public DateTime? LastVisitDate { get; set; }
 }
 
 public class PatientProfileDto

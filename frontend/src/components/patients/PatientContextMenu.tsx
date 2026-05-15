@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import {
   Eye,
   Pencil,
@@ -10,6 +11,10 @@ import {
   Printer,
   Archive,
   RotateCcw,
+  ChevronLeft,
+  FileText,
+  Wallet,
+  ImageIcon,
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 
@@ -38,6 +43,7 @@ interface MenuItem {
   className?: string;
   divider?: boolean;
   show?: boolean;
+  isSubmenu?: boolean;
 }
 
 export function PatientContextMenu({
@@ -53,6 +59,8 @@ export function PatientContextMenu({
   onRestore,
 }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [printSubOpen, setPrintSubOpen] = useState(false);
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
@@ -125,10 +133,11 @@ export function PatientContextMenu({
     },
     {
       icon: <Printer className="w-4 h-4" />,
-      label: "طباعة ملف المريض",
-      action: () => { onOpen(patient.id); onClose(); },
+      label: "طباعة",
+      action: () => { setPrintSubOpen(!printSubOpen); },
       divider: true,
       show: !isArchived,
+      isSubmenu: true,
     },
     {
       icon: <Archive className="w-4 h-4" />,
@@ -162,13 +171,49 @@ export function PatientContextMenu({
       {items.map((item, i) => (
         <div key={i}>
           {item.divider && i > 0 && <div className="h-px bg-[#f1f5f9] my-1" />}
-          <button
-            onClick={item.action}
-            className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition text-gray-700 ${item.className ?? ""}`}
-          >
-            <span className="flex-shrink-0 text-gray-400">{item.icon}</span>
-            {item.label}
-          </button>
+          <div className="relative">
+            <button
+              onClick={item.action}
+              className={`w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-gray-50 transition text-gray-700 ${item.className ?? ""}`}
+            >
+              <span className="flex items-center gap-3">
+                <span className="flex-shrink-0 text-gray-400">{item.icon}</span>
+                {item.label}
+              </span>
+              {item.isSubmenu && (
+                <ChevronLeft className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              )}
+            </button>
+            {/* Print submenu */}
+            {item.isSubmenu && printSubOpen && (
+              <div
+                className="absolute right-full top-0 mr-0.5 bg-white rounded-xl shadow-2xl border border-[#e8f0f9] py-1 min-w-48 z-10"
+                dir="rtl"
+              >
+                <button
+                  onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/summary`); onClose(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+                >
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  طباعة ملف المريض
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/financial`); onClose(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+                >
+                  <Wallet className="w-4 h-4 text-gray-400" />
+                  طباعة التقرير المالي
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/media`); onClose(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+                >
+                  <ImageIcon className="w-4 h-4 text-gray-400" />
+                  طباعة وسائط المريض
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       ))}
     </div>

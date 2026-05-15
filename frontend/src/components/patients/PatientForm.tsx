@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -45,6 +45,7 @@ const schema = z.object({
   thumbSucking:       z.boolean(),
   tongueThrusing:     z.boolean(),
   dentalNotes:        z.string().optional(),
+  primaryDoctorId:    z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -55,6 +56,8 @@ interface DuplicateMatch {
   phone?: string;
   matchType: string;
 }
+
+interface DoctorOption { id: string; name: string; }
 
 interface Props {
   defaultValues?: Partial<FormData>;
@@ -103,7 +106,13 @@ export function PatientForm({ defaultValues, patientId }: Props) {
   const [forceSave, setForceSave] = useState(false);
   const [portalDialog, setPortalDialog] = useState<{ username: string; temporaryPassword: string; patientId: string } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load doctors list for primary doctor selection
+  useEffect(() => {
+    api.get<DoctorOption[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
+  }, []);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -175,6 +184,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         whatsApp: data.whatsApp?.trim() || undefined,
         address: data.address, occupation: data.occupation,
         referralSource: data.referralSource,
+        primaryDoctorId: data.primaryDoctorId || undefined,
         medicalHistory: {
           chronicDiseases: data.chronicDiseases, currentMedications: data.currentMedications,
           drugAllergies: data.drugAllergies, bleedingDisorders: data.bleedingDisorders,
@@ -337,6 +347,14 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         <Field label="مصدر الإحالة">
           <input {...register("referralSource")} className={inputCls()} placeholder="كيف سمع عن المركز؟" />
         </Field>
+        {doctors.length > 0 && (
+          <Field label="الطبيب المسؤول">
+            <select {...register("primaryDoctorId")} className={inputCls()}>
+              <option value="">اختر الطبيب...</option>
+              {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </Field>
+        )}
       </Section>
 
       {/* Medical History */}

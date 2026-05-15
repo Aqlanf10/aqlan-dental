@@ -7,6 +7,7 @@ import {
   Search, FileText, Printer,
 } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
@@ -203,7 +204,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
         <h3 className="text-sm font-bold text-[#0d2137]">المدفوعات</h3>
         <button
           onClick={openAddModal}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:opacity-90 transition"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-[#22c55e] text-white hover:opacity-90 transition"
         >
           <Plus className="w-3.5 h-3.5" />
           إضافة دفعة
@@ -212,14 +213,14 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg px-3 py-2 bg-green-50 flex items-center gap-2">
+        <div className="rounded-xl px-3 py-2 bg-green-50 flex items-center gap-2">
           <CreditCard className="w-4 h-4 text-green-600 flex-shrink-0" />
           <div className="min-w-0">
             <p className="text-xs text-[#94a3b8]">إجمالي المدفوعات</p>
             <p className="text-sm font-bold text-green-600">{totalPaid.toLocaleString()} ر.ي</p>
           </div>
         </div>
-        <div className="rounded-lg px-3 py-2 bg-[#3d7ab518] flex items-center gap-2">
+        <div className="rounded-xl px-3 py-2 bg-[#3d7ab518] flex items-center gap-2">
           <FileText className="w-4 h-4 text-[#3d7ab5] flex-shrink-0" />
           <div className="min-w-0">
             <p className="text-xs text-[#94a3b8]">عدد المدفوعات</p>
@@ -254,10 +255,11 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
           <button onClick={fetchPayments} className="mt-2 text-xs text-[#3d7ab5] hover:underline">إعادة المحاولة</button>
         </div>
       ) : filteredPayments.length === 0 ? (
-        <div className="text-center py-12 text-[#94a3b8]">
-          <CreditCard className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">{searchQuery ? "لا توجد مدفوعات تطابق البحث" : "لا توجد مدفوعات مسجّلة"}</p>
-        </div>
+        <EmptyState
+          icon={CreditCard}
+          title="لا توجد مدفوعات"
+          description={searchQuery ? "لا توجد مدفوعات تطابق البحث" : "لم يتم تسجيل أي مدفوعات لهذا المريض"}
+        />
       ) : (
         <div className="space-y-2">
           {filteredPayments.map((p) => (
@@ -456,7 +458,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                   disabled={saving}
                   className={cn(
                     "flex-1 py-2.5 text-sm font-medium rounded-lg text-white transition",
-                    saving ? "bg-green-600/60 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"
+                    saving ? "bg-[#22c55e]/60 cursor-not-allowed" : "bg-[#22c55e] hover:bg-[#16a34a]"
                   )}
                 >
                   {saving ? "جاري الحفظ..." : editingPayment ? "تحديث" : "إضافة"}

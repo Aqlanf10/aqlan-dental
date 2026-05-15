@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -7,7 +7,7 @@ import {
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image as ImageIcon,
   MessageCircle, Archive, RotateCcw, ClipboardList, CreditCard,
   FileSignature, ScanLine, ArrowRightLeft, FolderOpen, FlaskConical,
-  LayoutDashboard, KeyRound, Copy, Check,
+  LayoutDashboard, KeyRound, Copy, Check, ChevronDown,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
@@ -97,6 +97,14 @@ const TABS: TabDef[] = [
   { key: "portal-access", label: "بوابة المريض",        icon: KeyRound,         group: 5 },
 ];
 
+const GROUP_LABELS: Record<number, string> = {
+  1: "سريري",
+  2: "سجلات",
+  3: "مالي",
+  4: "تواصل",
+  5: "البوابة",
+};
+
 // ─── Page Component ─────────────────────────────────────────────────────────────
 
 export default function PatientProfilePage() {
@@ -113,6 +121,8 @@ export default function PatientProfilePage() {
   const [openAddVisitModal, setOpenAddVisitModal] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
   const [showAllActions, setShowAllActions] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
+  const moreActionsRef = useRef<HTMLDivElement>(null);
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -162,6 +172,17 @@ export default function PatientProfilePage() {
       .catch(() => {});
     // Portal credentials now fetched by PortalAccessTab
   }, [id]);
+
+  // Close more-actions dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreActionsRef.current && !moreActionsRef.current.contains(e.target as Node)) {
+        setShowMoreActions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ─── Loading & Not Found ────────────────────────────────────────────────────
 
@@ -247,16 +268,16 @@ export default function PatientProfilePage() {
       </div>
 
       {/* Banner — matches ZIP card style */}
-      <div className="p-5 space-y-4" style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)", border: "1px solid #e8f0f9" }}>
+      <div className="p-4 sm:p-5 space-y-3 sm:space-y-4" style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)", border: "1px solid #e8f0f9" }}>
         {/* Top row */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-extrabold flex-shrink-0" style={{ background: "#3d7ab518", color: "#3d7ab5" }}>
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+          <div className="flex items-start gap-4 order-2 sm:order-1">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center text-xl font-extrabold flex-shrink-0" style={{ background: "#3d7ab518", color: "#3d7ab5" }}>
               {patient.firstName.charAt(0)}
             </div>
             <div>
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-xl font-extrabold text-gray-900">
+                <h1 className="text-lg sm:text-xl font-extrabold text-gray-900">
                   {patient.firstName} {patient.middleName} {patient.lastName}
                 </h1>
                 <span className="font-mono text-xs px-2.5 py-1 rounded" style={{ background: "#3d7ab518", color: "#3d7ab5" }}>
@@ -351,6 +372,7 @@ export default function PatientProfilePage() {
               </button>
             </div>
           </div>
+          <div className="flex flex-row gap-2 flex-shrink-0 order-1 sm:order-2">
           {patient.isActive && (
             <Link
               href={`/patients/${id}/edit`}
@@ -384,22 +406,11 @@ export default function PatientProfilePage() {
               استعادة
             </button>
           )}
-          {/* Patient-facing conversation shortcut — visible to patient in portal */}
-          <Link
-            href={`/messages?patientId=${id}`}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg transition flex-shrink-0"
-            style={{ background: "#f5922e", color: "#fff" }}
-            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#e07d1e")}
-            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#f5922e")}
-            title="فتح المحادثة المرئية للمريض في بوابته"
-          >
-            <MessageCircle className="w-3.5 h-3.5" />
-            راسل المريض
-          </Link>
+          </div>
         </div>
 
         {/* Quick stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
           {[
             { icon: Calendar, label: "المواعيد",     value: summary?.totalAppointments   ?? "—", color: "#3d7ab5", bg: "#3d7ab518" },
             { icon: Calendar, label: "مكتملة",       value: summary?.completedAppointments ?? "—", color: "#22c55e",  bg: "#22c55e18" },
@@ -418,9 +429,11 @@ export default function PatientProfilePage() {
           ))}
         </div>
 
-        {/* Action buttons */}
+        {/* Quick Actions */}
         <div className="pt-1" style={{ borderTop: "1px solid #f1f5f9" }}>
-          <div className={`flex flex-wrap gap-2 ${!showAllActions ? "max-h-[calc(2.5rem+0.5rem)] overflow-hidden sm:max-h-none sm:overflow-visible" : ""}`}>
+          <p className="text-[11px] font-semibold mb-2" style={{ color: "#94a3b8" }}>إجراءات سريعة</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Primary actions */}
             <button
               onClick={() => { setActiveTab("visits"); setOpenAddVisitModal(true); }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition"
@@ -441,49 +454,90 @@ export default function PatientProfilePage() {
               <Plus className="w-3.5 h-3.5" />
               موعد جديد
             </Link>
-            <Link
-              href={`/prescriptions/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-              style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
-              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-            >
-              <Pill className="w-3.5 h-3.5" />
-              وصفة طبية
-            </Link>
-            <Link
-              href={`/finance/contracts/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-              style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
-              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-            >
-              <Wallet className="w-3.5 h-3.5" />
-              عقد جديد
-            </Link>
-            <Link
-              href={`/ortho/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-              style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
-              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              حالة تقويمية
-            </Link>
-            <Link
-              href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
-              style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
-              onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
-              onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
-            >
-              <Scissors className="w-3.5 h-3.5" />
-              حالة جراحية
-            </Link>
+
+            {/* Separator */}
+            <div className="w-px h-6 mx-1 hidden sm:block" style={{ background: "#e8f0f9" }} />
+
+            {/* Secondary actions — visible on desktop, collapsed on mobile */}
+            <div className={`flex items-center gap-2 ${showAllActions ? "" : "hidden sm:flex"}`}>
+              <Link
+                href={`/prescriptions/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+                style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+                onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+                onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
+              >
+                <Pill className="w-3.5 h-3.5" />
+                وصفة طبية
+              </Link>
+              <Link
+                href={`/finance/contracts/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+                style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+                onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+                onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                عقد جديد
+              </Link>
+              <Link
+                href={`/ortho/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+                style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+                onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#eef3f9")}
+                onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#fff")}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                حالة تقويمية
+              </Link>
+            </div>
+
+            {/* More actions dropdown */}
+            <div className="relative" ref={moreActionsRef}>
+              <button
+                type="button"
+                onClick={() => setShowMoreActions(!showMoreActions)}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition"
+                style={{ border: "1.5px solid #dce8f5", color: "#64748b", background: "#fff" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+              >
+                المزيد
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {showMoreActions && (
+                <div
+                  className="absolute top-full right-0 mt-1 z-20 py-1 min-w-[180px] rounded-lg"
+                  style={{ background: "#fff", border: "1px solid #e8f0f9", boxShadow: "0 4px 12px rgba(13,33,55,0.08)" }}
+                >
+                  <Link
+                    href={`/surgery/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+                    onClick={() => setShowMoreActions(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition"
+                    style={{ color: "#334155" }}
+                    onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#f8fafc")}
+                    onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <Scissors className="w-3.5 h-3.5" style={{ color: "#64748b" }} />
+                    حالة جراحية
+                  </Link>
+                  <Link
+                    href={`/messages?patientId=${id}`}
+                    onClick={() => setShowMoreActions(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition"
+                    style={{ color: "#334155" }}
+                    onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "#f8fafc")}
+                    onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" style={{ color: "#64748b" }} />
+                    راسل المريض
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
-          {/* Show more/less toggle — visible only on mobile when collapsed */}
-          {!showAllActions && (
+          {/* Show more/less toggle — visible only on mobile */}
+          {!showAllActions ? (
             <button
               onClick={() => setShowAllActions(true)}
               className="mt-1 text-xs font-medium px-2 py-1 rounded transition sm:hidden"
@@ -491,8 +545,7 @@ export default function PatientProfilePage() {
             >
               المزيد...
             </button>
-          )}
-          {showAllActions && (
+          ) : (
             <button
               onClick={() => setShowAllActions(false)}
               className="mt-1 text-xs font-medium px-2 py-1 rounded transition sm:hidden"
@@ -511,7 +564,13 @@ export default function PatientProfilePage() {
             <span key={tab.key} className="contents">
               {/* Group separator */}
               {idx > 0 && TABS[idx - 1].group !== tab.group && (
-                <div className="w-px self-stretch my-2 flex-shrink-0" style={{ background: "#e8f0f9" }} />
+                <div className="flex flex-col items-center self-stretch my-2 flex-shrink-0 px-1">
+                  <div className="flex-1 w-px" style={{ background: "#e8f0f9" }} />
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ color: "#94a3b8", background: "#f8fafc" }}>
+                    {GROUP_LABELS[tab.group]}
+                  </span>
+                  <div className="flex-1 w-px" style={{ background: "#e8f0f9" }} />
+                </div>
               )}
               <button
                 onClick={() => setActiveTab(tab.key)}
@@ -530,7 +589,7 @@ export default function PatientProfilePage() {
           ))}
         </div>
 
-        <div className="p-5">
+        <div className="p-3 sm:p-5">
           {renderTabContent()}
         </div>
       </div>

@@ -125,6 +125,10 @@ public static class DbSeeder
             (id: new Guid("20000000-0000-0000-0000-000000000008"), username: "accountant1", role: UserRole.Accountant,     name: "المحاسب",              specialty: (string?)null,             color: "#6B7280", initials: "مح"),
         };
 
+        // SEC-03 FIX: Seed password for initial user accounts only.
+        // This is used ONLY when the database is empty (first seed — SeedUsersAndDoctorsAsync).
+        // In production, users MUST change this password on first login.
+        // For existing deployments, use ADMIN_RESET_PASSWORD env var to force a reset.
         var defaultPassword = "AqlanDental2024!";
 
         foreach (var (id, username, role, name, specialty, color, initials) in usersData)
@@ -172,6 +176,9 @@ public static class DbSeeder
 
         if (users.Count == 0) return;
 
+        // SEC-03 NOTE: This re-hashes users who still have unsalted (Phase 1) passwords.
+        // Since we can't know their original passwords, we reset to the seed default.
+        // These users should use ADMIN_RESET_PASSWORD or the forgot-password flow.
         var defaultPassword = "AqlanDental2024!";
 
         foreach (var user in users)

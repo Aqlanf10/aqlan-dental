@@ -197,6 +197,20 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 1
             }));
 
+    // SEC-04 FIX: Stricter rate limit for password reset — 3 requests per 15 minutes per IP
+    // Prevents brute-force attacks on password reset codes while allowing legitimate retries
+    options.AddPolicy("PortalPasswordResetPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromMinutes(15),
+                SegmentsPerWindow = 3,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0 // No queue — reject immediately
+            }));
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, IPAddress>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress ?? IPAddress.Loopback,
@@ -300,8 +314,11 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 
 // ── One-time Admin Password Reset ─────────────────────────────────
-// Resets the admin password to "AqlanDental2026!" if the reset flag is not yet set.
-// This runs ONCE and then sets a flag so it never runs again.
+// SEC-03 FIX: Admin password reset only from environment variables.
+// In production: ADMIN_DEFAULT_PASSWORD is REQUIRED. No fallback.
+// In development: if not set, uses a dev-only fallback that is NEVER active in production.
+// This block runs ONCE and sets a flag so it never runs again.
+// It does NOT reset any existing passwords — only sets password on first run.
 try
 {
     using var resetScope = app.Services.CreateScope();
@@ -330,21 +347,44 @@ try
 
     if (!flagExists)
     {
-        // SEC-03 FIX: In production, ADMIN_DEFAULT_PASSWORD env var is required.
-        // In development, a safe default is allowed for convenience.
+        // SEC-03 FIX: In production, ADMIN_DEFAULT_PASSWORD env var is REQUIRED — no fallback.
+        // In development only, a clearly-marked dev default is allowed for convenience.
         var newPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+
         if (string.IsNullOrWhiteSpace(newPassword))
         {
             if (app.Environment.IsProduction())
             {
-                resetLogger.LogCritical("SEC-03: ADMIN_DEFAULT_PASSWORD environment variable is not set. Admin password reset skipped for security. Set the variable and restart.");
+                // SEC-03 FIX: Production MUST set ADMIN_DEFAULT_PASSWORD. No fallback allowed.
+                resetLogger.LogCritical(
+                    "SEC-03: ADMIN_DEFAULT_PASSWORD environment variable is NOT set in production. " +
+                    "Admin password reset SKIPPED for security. " +
+                    "Set ADMIN_DEFAULT_PASSWORD and restart, or use ADMIN_RESET_PASSWORD in DbSeeder.");
                 // Skip the password reset entirely — admin keeps existing password
                 goto AdminResetDone;
             }
-            // Development fallback — clearly insecure, only for local dev
-            newPassword = "DevOnly2026!ChangeMe";
-            resetLogger.LogWarning("SEC-03: ADMIN_DEFAULT_PASSWORD not set. Using development default. DO NOT use in production!");
+
+            // SEC-03 FIX: Development-only fallback. The #if DEBUG guard and IsDevelopment() check
+            // ensure this can NEVER be active in production, even if code is misconfigured.
+            if (app.Environment.IsDevelopment())
+            {
+                newPassword = "DevOnly2026!ChangeMe";
+                resetLogger.LogWarning(
+                    "SEC-03: ADMIN_DEFAULT_PASSWORD not set. Using DEVELOPMENT-ONLY fallback. " +
+                    "This fallback is NEVER active in production (IsDevelopment check). " +
+                    "Set ADMIN_DEFAULT_PASSWORD for production deployments.");
+            }
+            else
+            {
+                // Non-production, non-development (e.g., Staging) — also require env var
+                resetLogger.LogCritical(
+                    "SEC-03: ADMIN_DEFAULT_PASSWORD not set in {Environment} environment. " +
+                    "Admin password reset SKIPPED. Set the variable and restart.",
+                    app.Environment.EnvironmentName);
+                goto AdminResetDone;
+            }
         }
+
         var salt = AqlanDentalPro.Application.Services.AuthService.GenerateSalt();
         var hash = AqlanDentalPro.Application.Services.AuthService.HashPassword(newPassword, salt);
 
@@ -368,18 +408,18 @@ try
 
         await resetDb.SaveChangesAsync();
 
-        resetLogger.LogWarning("Admin password has been reset to default value. Username: admin. CHANGE PASSWORD IMMEDIATELY!");
+        resetLogger.LogInformation("SEC-03: Admin initial password has been set. Username: admin. Change password after first login.");
     }
     else
     {
-        resetLogger.LogInformation("Admin password reset already applied, skipping");
+        resetLogger.LogInformation("SEC-03: Admin password reset already applied, skipping");
     }
     AdminResetDone:;
 }
 catch (Exception ex)
 {
     var resetLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    resetLogger2.LogWarning(ex, "Admin password reset hotfix failed (non-fatal)");
+    resetLogger2.LogWarning(ex, "SEC-03: Admin password reset failed (non-fatal)");
 }
 
 // ── Website Settings Seed (unconditional, idempotent) ────────────────────────

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -19,7 +20,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/clinic-queue")]
 [Authorize(Policy = "StaffOnly")]
-public class ClinicQueueController(AppDbContext db) : ControllerBase
+public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueController> logger) : ControllerBase
 {
     private static readonly HashSet<ClinicQueueStatus> ActiveStatuses =
     [
@@ -645,7 +646,13 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
                 // SEC-01 FIX: Validate appointment status transition before applying
                 if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, appointmentStatus))
                 {
-                    // Log invalid transition but don't throw — queue and appointment can diverge
+                    // SEC-01 FIX: Log invalid transition for audit trail instead of silently returning
+                    logger.LogWarning(
+                        "SEC-01: Invalid appointment status transition blocked in SyncAppointmentStatus. " +
+                        "AppointmentId={AppointmentId}, CurrentStatus={CurrentStatus}, RequestedStatus={RequestedStatus}, " +
+                        "QueueItemId={QueueItemId}",
+                        appointment.Id, appointment.Status, appointmentStatus, item.Id);
+                    // Don't throw — queue and appointment can diverge
                     // The queue transition is already validated by ClinicQueueStatusTransitions
                     // This prevents corrupting appointment state while allowing queue to proceed
                     return;

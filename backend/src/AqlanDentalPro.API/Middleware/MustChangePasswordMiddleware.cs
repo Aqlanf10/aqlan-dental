@@ -24,9 +24,10 @@ public class MustChangePasswordMiddleware
         "/api/portal/auth/change-password",
         "/api/portal/auth/refresh-token",
         "/api/portal/clinic-info",
-        // Staff auth paths (SEC-02 FIX: allow staff to change their password)
+        // Staff auth paths (SEC-02 FIX: allow staff to authenticate and change their password)
         "/api/auth/login",
-        "/api/auth/refresh",
+        "/api/auth/logout",         // SEC-02 HOTFIX: Must allow logout or user gets stuck
+        "/api/auth/refresh-token",  // SEC-02 HOTFIX: Actual route is refresh-token not refresh
         "/api/auth/me",
     };
 
@@ -46,12 +47,18 @@ public class MustChangePasswordMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // Only check authenticated users — [AllowAnonymous] endpoints won't have claims
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            await _next(context);
+            return;
+        }
+
         var path = context.Request.Path.Value;
 
-        if (path != null && (path.StartsWith("/api/portal/", StringComparison.OrdinalIgnoreCase) ||
-                             path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)))
+        if (path != null && path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
         {
-            // Check if the user is authenticated and has the mustChangePassword claim
+            // Check if the user has the mustChangePassword claim
             var mustChangeClaim = context.User.FindFirst("mustChangePassword")?.Value;
 
             if (mustChangeClaim == "true")

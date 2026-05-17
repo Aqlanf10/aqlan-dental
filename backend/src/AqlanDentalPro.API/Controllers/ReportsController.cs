@@ -14,8 +14,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("center-summary")]
     public async Task<IActionResult> GetCenterSummary([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         var totalPatients = await db.Patients.CountAsync();
         var newPatients = await db.Patients.CountAsync(p => DateOnly.FromDateTime(p.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(p.CreatedAt.Date) <= toDate);
@@ -40,8 +43,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("doctor-performance")]
     public async Task<IActionResult> GetDoctorPerformance([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         var doctorIds = await db.Doctors.Where(d => d.IsActive).Select(d => d.Id).ToListAsync();
 
@@ -91,8 +97,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("financial")]
     public async Task<IActionResult> GetFinancialReport([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         // Fetch raw groups then format DateOnly in memory (EF can't translate DateOnly.ToString)
         var paymentsRaw = await db.Payments
@@ -155,8 +164,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("export/payments")]
     public async Task<IActionResult> ExportPayments([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate   = !string.IsNullOrWhiteSpace(to)   ? DateOnly.Parse(to)   : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         var payments = await db.Payments
             .Include(p => p.Patient)
@@ -193,8 +205,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     [HttpGet("export/appointments")]
     public async Task<IActionResult> ExportAppointments([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate   = !string.IsNullOrWhiteSpace(to)   ? DateOnly.Parse(to)   : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         var appts = await db.Appointments
             .Include(a => a.Patient)

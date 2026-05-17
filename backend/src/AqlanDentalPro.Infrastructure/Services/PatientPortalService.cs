@@ -123,6 +123,10 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (account.VerificationCodeExpiry < DateTime.UtcNow)
             return (null, "انتهت صلاحية رمز التحقق");
 
+        // SEC-05 FIX: Validate new password strength (minimum 8 characters)
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+            return (null, "كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
+
         // Update password
         var salt = AuthService.GenerateSalt();
         var hash = AuthService.HashPassword(newPassword, salt);

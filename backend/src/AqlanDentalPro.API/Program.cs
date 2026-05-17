@@ -330,8 +330,21 @@ try
 
     if (!flagExists)
     {
-        // C-02 FIX: Use environment variable instead of hardcoded password
-        var newPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") ?? "ChangeMeImmediately2026!";
+        // SEC-03 FIX: In production, ADMIN_DEFAULT_PASSWORD env var is required.
+        // In development, a safe default is allowed for convenience.
+        var newPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+        if (string.IsNullOrWhiteSpace(newPassword))
+        {
+            if (app.Environment.IsProduction())
+            {
+                resetLogger.LogCritical("SEC-03: ADMIN_DEFAULT_PASSWORD environment variable is not set. Admin password reset skipped for security. Set the variable and restart.");
+                // Skip the password reset entirely — admin keeps existing password
+                goto AdminResetDone;
+            }
+            // Development fallback — clearly insecure, only for local dev
+            newPassword = "DevOnly2026!ChangeMe";
+            resetLogger.LogWarning("SEC-03: ADMIN_DEFAULT_PASSWORD not set. Using development default. DO NOT use in production!");
+        }
         var salt = AqlanDentalPro.Application.Services.AuthService.GenerateSalt();
         var hash = AqlanDentalPro.Application.Services.AuthService.HashPassword(newPassword, salt);
 
@@ -361,6 +374,7 @@ try
     {
         resetLogger.LogInformation("Admin password reset already applied, skipping");
     }
+    AdminResetDone:;
 }
 catch (Exception ex)
 {

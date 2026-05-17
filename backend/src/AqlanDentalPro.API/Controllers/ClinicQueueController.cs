@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Constants;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -192,9 +193,9 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (!item.IsActive)
             return BadRequest(new { message = "عنصر الطابور محذوف" });
 
-        // Must be Waiting to call
-        if (item.Status != ClinicQueueStatus.Waiting)
-            return BadRequest(new { message = "لا يمكن نداء المريض إلا في حالة الانتظار" });
+        // CON-01 FIX: Use centralized transition validation
+        if (!ClinicQueueStatusTransitions.IsValidTransition(item.Status, ClinicQueueStatus.Called))
+            return BadRequest(new { message = $"لا يمكن تغيير حالة الطابور من {StatusArabic.GetValueOrDefault(item.Status, item.Status.ToString())} إلى تم النداء" });
 
         // Validate and assign room if provided
         var roomName = req?.RoomName ?? item.RoomName;
@@ -239,31 +240,42 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
     [HttpPost("{id:guid}/enter-room")]
     public async Task<IActionResult> EnterRoom(Guid id)
     {
-        var item = await db.ClinicQueueItems.FindAsync(id);
-        if (item is null)
-            return NotFound(new { message = "عنصر الطابور غير موجود" });
-
-        // Must be Called or Waiting to enter room
-        if (item.Status != ClinicQueueStatus.Called && item.Status != ClinicQueueStatus.Waiting)
-            return BadRequest(new { message = "يجب نداء المريض أولاً قبل دخول الغرفة" });
-
-        item.Status = ClinicQueueStatus.InRoom;
-        item.InRoomAt = DateTime.UtcNow;
-        item.UpdatedAt = DateTime.UtcNow;
-
-        await SyncAppointmentStatus(item, AppointmentStatus.InRoom);
-
-        await db.SaveChangesAsync();
-
-        return Ok(new
+        // CON-03 FIX: Add transaction for concurrency protection
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            item.Id,
-            Status = item.Status.ToString(),
-            StatusArabic = StatusArabic[item.Status],
-            item.RoomName,
-            item.InRoomAt,
-            message = "تم تسجيل دخول المريض إلى الغرفة بنجاح"
-        });
+            var item = await db.ClinicQueueItems.FindAsync(id);
+            if (item is null)
+                return NotFound(new { message = "عنصر الطابور غير موجود" });
+
+            // CON-01 FIX: Use centralized transition validation
+            if (!ClinicQueueStatusTransitions.IsValidTransition(item.Status, ClinicQueueStatus.InRoom))
+                return BadRequest(new { message = $"لا يمكن تغيير حالة الطابور من {StatusArabic.GetValueOrDefault(item.Status, item.Status.ToString())} إلى داخل الغرفة" });
+
+            item.Status = ClinicQueueStatus.InRoom;
+            item.InRoomAt = DateTime.UtcNow;
+            item.UpdatedAt = DateTime.UtcNow;
+
+            await SyncAppointmentStatus(item, AppointmentStatus.InRoom);
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                item.Id,
+                Status = item.Status.ToString(),
+                StatusArabic = StatusArabic[item.Status],
+                item.RoomName,
+                item.InRoomAt,
+                message = "تم تسجيل دخول المريض إلى الغرفة بنجاح"
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     // ─── POST /api/clinic-queue/{id}/start ───────────────────────────────────
@@ -278,9 +290,9 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (item is null)
             return NotFound(new { message = "عنصر الطابور غير موجود" });
 
-        // Must be InRoom or Called to start
-        if (item.Status != ClinicQueueStatus.InRoom && item.Status != ClinicQueueStatus.Called)
-            return BadRequest(new { message = "لا يمكن بدء المعالجة إلا بعد دخول الغرفة أو النداء" });
+        // CON-01 FIX: Use centralized transition validation
+        if (!ClinicQueueStatusTransitions.IsValidTransition(item.Status, ClinicQueueStatus.InProgress))
+            return BadRequest(new { message = $"لا يمكن تغيير حالة الطابور من {StatusArabic.GetValueOrDefault(item.Status, item.Status.ToString())} إلى قيد المعالجة" });
 
         // M2 FIX: Wrap Visit creation + QueueItem update in a transaction
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -334,30 +346,41 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id)
     {
-        var item = await db.ClinicQueueItems.FindAsync(id);
-        if (item is null)
-            return NotFound(new { message = "عنصر الطابور غير موجود" });
-
-        // Must be InProgress to complete
-        if (item.Status != ClinicQueueStatus.InProgress)
-            return BadRequest(new { message = "لا يمكن إكمال العنصر إلا أثناء المعالجة" });
-
-        item.Status = ClinicQueueStatus.Completed;
-        item.CompletedAt = DateTime.UtcNow;
-        item.UpdatedAt = DateTime.UtcNow;
-
-        await SyncAppointmentStatus(item, AppointmentStatus.Completed);
-
-        await db.SaveChangesAsync();
-
-        return Ok(new
+        // CON-03 FIX: Add transaction for concurrency protection
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            item.Id,
-            Status = item.Status.ToString(),
-            StatusArabic = StatusArabic[item.Status],
-            item.CompletedAt,
-            message = "تم إكمال عنصر الطابور بنجاح"
-        });
+            var item = await db.ClinicQueueItems.FindAsync(id);
+            if (item is null)
+                return NotFound(new { message = "عنصر الطابور غير موجود" });
+
+            // CON-01 FIX: Use centralized transition validation
+            if (!ClinicQueueStatusTransitions.IsValidTransition(item.Status, ClinicQueueStatus.Completed))
+                return BadRequest(new { message = $"لا يمكن تغيير حالة الطابور من {StatusArabic.GetValueOrDefault(item.Status, item.Status.ToString())} إلى مكتمل" });
+
+            item.Status = ClinicQueueStatus.Completed;
+            item.CompletedAt = DateTime.UtcNow;
+            item.UpdatedAt = DateTime.UtcNow;
+
+            await SyncAppointmentStatus(item, AppointmentStatus.Completed);
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                item.Id,
+                Status = item.Status.ToString(),
+                StatusArabic = StatusArabic[item.Status],
+                item.CompletedAt,
+                message = "تم إكمال عنصر الطابور بنجاح"
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     // ─── POST /api/clinic-queue/{id}/cancel ──────────────────────────────────
@@ -369,9 +392,9 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
         if (item is null)
             return NotFound(new { message = "عنصر الطابور غير موجود" });
 
-        // Cannot cancel completed or already cancelled items
-        if (item.Status == ClinicQueueStatus.Completed || item.Status == ClinicQueueStatus.Cancelled)
-            return BadRequest(new { message = "لا يمكن إلغاء عنصر مكتمل أو ملغي بالفعل" });
+        // CON-01 FIX: Use centralized transition validation
+        if (!ClinicQueueStatusTransitions.IsValidTransition(item.Status, ClinicQueueStatus.Cancelled))
+            return BadRequest(new { message = $"لا يمكن إلغاء عنصر في حالة {StatusArabic.GetValueOrDefault(item.Status, item.Status.ToString())}" });
 
         item.Status = ClinicQueueStatus.Cancelled;
         item.CancelledAt = DateTime.UtcNow;
@@ -563,6 +586,10 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
                     && ActiveStatuses.Contains(q.Status)
                     && q.IsActive);
 
+            // SEC-01 FIX: Validate appointment status transition before applying
+            if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Waiting))
+                return BadRequest(new { message = $"لا يمكن تغيير حالة الموعد من {appointment.Status} إلى {AppointmentStatus.Waiting}" });
+
             appointment.Status = AppointmentStatus.Waiting;
             appointment.ArrivedAt = DateTime.UtcNow;
             appointment.UpdatedAt = DateTime.UtcNow;
@@ -615,6 +642,15 @@ public class ClinicQueueController(AppDbContext db) : ControllerBase
             var appointment = await db.Appointments.FindAsync(item.AppointmentId.Value);
             if (appointment != null && appointment.IsActive)
             {
+                // SEC-01 FIX: Validate appointment status transition before applying
+                if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, appointmentStatus))
+                {
+                    // Log invalid transition but don't throw — queue and appointment can diverge
+                    // The queue transition is already validated by ClinicQueueStatusTransitions
+                    // This prevents corrupting appointment state while allowing queue to proceed
+                    return;
+                }
+
                 appointment.Status = appointmentStatus;
                 appointment.UpdatedAt = DateTime.UtcNow;
 

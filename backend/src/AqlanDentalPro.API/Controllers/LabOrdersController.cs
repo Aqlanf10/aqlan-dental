@@ -147,53 +147,68 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabOrderRequest req)
     {
-        var year = DateTime.UtcNow.Year;
-        var count = await db.LabOrders.IgnoreQueryFilters()
-            .CountAsync(l => l.OrderNumber != null && l.OrderNumber.StartsWith($"LAB-{year}-"));
-
-        var order = new LabOrder
+        // CON-02 FIX: Use advisory lock to prevent race condition on order number generation
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            PatientId     = req.PatientId,
-            OrthoCaseId   = req.OrthoCaseId,
-            OrderNumber   = $"LAB-{year}-{(count + 1):D3}",
-            ApplianceType = req.ApplianceType,
-            LabName       = req.LabName,
-            SentDate      = !string.IsNullOrWhiteSpace(req.SentDate)
-                ? DateOnly.Parse(req.SentDate) : DateOnly.FromDateTime(DateTime.Today),
-            ExpectedDate  = !string.IsNullOrWhiteSpace(req.ExpectedDate)
-                ? DateOnly.Parse(req.ExpectedDate) : null,
-            Priority      = req.Priority,
-            Instructions  = req.Instructions,
-            Cost          = req.Cost,
-            DoctorId      = req.DoctorId ?? currentUser.UserId,
-            Status        = "sent"
-        };
+            // Acquire advisory lock for lab order number generation
+            var lockKey = Math.Abs("LabOrderNumber".GetHashCode()) % 100000;
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        db.LabOrders.Add(order);
-        await db.SaveChangesAsync();
+            var year = DateTime.UtcNow.Year;
+            var count = await db.LabOrders.IgnoreQueryFilters()
+                .CountAsync(l => l.OrderNumber != null && l.OrderNumber.StartsWith($"LAB-{year}-"));
 
-        // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
-        var orderNumber = order.OrderNumber;
-        var applianceType = req.ApplianceType;
-        var orderId = order.Id;
-        _ = Task.Run(async () =>
+            var order = new LabOrder
+            {
+                PatientId     = req.PatientId,
+                OrthoCaseId   = req.OrthoCaseId,
+                OrderNumber   = $"LAB-{year}-{(count + 1):D3}",
+                ApplianceType = req.ApplianceType,
+                LabName       = req.LabName,
+                SentDate      = !string.IsNullOrWhiteSpace(req.SentDate)
+                    ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : DateOnly.FromDateTime(DateTime.Today) : DateOnly.FromDateTime(DateTime.Today),
+                ExpectedDate  = !string.IsNullOrWhiteSpace(req.ExpectedDate)
+                    ? DateOnly.TryParse(req.ExpectedDate, out var expectedDate) ? expectedDate : (DateOnly?)null : null,
+                Priority      = req.Priority,
+                Instructions  = req.Instructions,
+                Cost          = req.Cost,
+                DoctorId      = req.DoctorId ?? currentUser.UserId,
+                Status        = "sent"
+            };
+
+            db.LabOrders.Add(order);
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
+            var orderNumber = order.OrderNumber;
+            var applianceType = req.ApplianceType;
+            var orderId = order.Id;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                    var msg = $"طلب مختبر جديد {orderNumber} — {applianceType}";
+                    await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
+                    await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "[LabOrders] Create notification failed for order {OrderId}", orderId);
+                }
+            });
+
+            return CreatedAtAction(nameof(GetById), new { id = order.Id },
+                new { order.Id, order.OrderNumber });
+        }
+        catch
         {
-            try
-            {
-                using var scope = scopeFactory.CreateScope();
-                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
-                var msg = $"طلب مختبر جديد {orderNumber} — {applianceType}";
-                await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
-                await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "[LabOrders] Create notification failed for order {OrderId}", orderId);
-            }
-        });
-
-        return CreatedAtAction(nameof(GetById), new { id = order.Id },
-            new { order.Id, order.OrderNumber });
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     [HttpPut("{id:guid}/status")]
@@ -208,7 +223,11 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
 
         order.Status = req.Status;
         if (req.Status == "received" && !string.IsNullOrWhiteSpace(req.ReceivedDate))
-            order.ReceivedDate = DateOnly.Parse(req.ReceivedDate);
+        {
+            if (!DateOnly.TryParse(req.ReceivedDate, out var receivedDate))
+                return BadRequest(new { message = "تنسيق تاريخ الاستلام غير صالح. استخدم YYYY-MM-DD" });
+            order.ReceivedDate = receivedDate;
+        }
 
         await db.SaveChangesAsync();
 

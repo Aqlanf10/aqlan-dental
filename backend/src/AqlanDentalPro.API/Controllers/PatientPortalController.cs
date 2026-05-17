@@ -65,6 +65,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/reset-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("PortalAuthPolicy")] // SEC-04 FIX: Rate limit password reset
     public async Task<IActionResult> ResetPassword([FromBody] PatientResetPasswordRequest req)
     {
         try

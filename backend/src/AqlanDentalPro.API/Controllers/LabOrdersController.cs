@@ -147,68 +147,114 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabOrderRequest req)
     {
-        // CON-02 FIX: Use advisory lock to prevent race condition on order number generation
-        await using var tx = await db.Database.BeginTransactionAsync();
-        try
+        // CON-02 FIX: Use advisory lock + unique constraint retry to prevent race condition
+        // on order number generation. Strategy: advisory lock serializes generation within
+        // the DB, unique index on OrderNumber is the safety net, and retry with fresh count
+        // handles the extremely unlikely case where both fail.
+        const int maxRetries = 3;
+
+        for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            // Acquire advisory lock for lab order number generation
-            var lockKey = Math.Abs("LabOrderNumber".GetHashCode()) % 100000;
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
-            var year = DateTime.UtcNow.Year;
-            var count = await db.LabOrders.IgnoreQueryFilters()
-                .CountAsync(l => l.OrderNumber != null && l.OrderNumber.StartsWith($"LAB-{year}-"));
-
-            var order = new LabOrder
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
             {
-                PatientId     = req.PatientId,
-                OrthoCaseId   = req.OrthoCaseId,
-                OrderNumber   = $"LAB-{year}-{(count + 1):D3}",
-                ApplianceType = req.ApplianceType,
-                LabName       = req.LabName,
-                SentDate      = !string.IsNullOrWhiteSpace(req.SentDate)
-                    ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : DateOnly.FromDateTime(DateTime.Today) : DateOnly.FromDateTime(DateTime.Today),
-                ExpectedDate  = !string.IsNullOrWhiteSpace(req.ExpectedDate)
-                    ? DateOnly.TryParse(req.ExpectedDate, out var expectedDate) ? expectedDate : (DateOnly?)null : null,
-                Priority      = req.Priority,
-                Instructions  = req.Instructions,
-                Cost          = req.Cost,
-                DoctorId      = req.DoctorId ?? currentUser.UserId,
-                Status        = "sent"
-            };
+                // Acquire advisory lock for lab order number generation
+                var lockKey = Math.Abs("LabOrderNumber".GetHashCode()) % 100000;
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-            db.LabOrders.Add(order);
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
+                var year = DateTime.UtcNow.Year;
+                var count = await db.LabOrders.IgnoreQueryFilters()
+                    .CountAsync(l => l.OrderNumber != null && l.OrderNumber.StartsWith($"LAB-{year}-"));
 
-            // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
-            var orderNumber = order.OrderNumber;
-            var applianceType = req.ApplianceType;
-            var orderId = order.Id;
-            _ = Task.Run(async () =>
-            {
+                var order = new LabOrder
+                {
+                    PatientId     = req.PatientId,
+                    OrthoCaseId   = req.OrthoCaseId,
+                    OrderNumber   = $"LAB-{year}-{(count + 1):D3}",
+                    ApplianceType = req.ApplianceType,
+                    LabName       = req.LabName,
+                    SentDate      = !string.IsNullOrWhiteSpace(req.SentDate)
+                        ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : DateOnly.FromDateTime(DateTime.Today) : DateOnly.FromDateTime(DateTime.Today),
+                    ExpectedDate  = !string.IsNullOrWhiteSpace(req.ExpectedDate)
+                        ? DateOnly.TryParse(req.ExpectedDate, out var expectedDate) ? expectedDate : (DateOnly?)null : null,
+                    Priority      = req.Priority,
+                    Instructions  = req.Instructions,
+                    Cost          = req.Cost,
+                    DoctorId      = req.DoctorId ?? currentUser.UserId,
+                    Status        = "sent"
+                };
+
+                db.LabOrders.Add(order);
+
                 try
                 {
-                    using var scope = scopeFactory.CreateScope();
-                    var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
-                    var msg = $"طلب مختبر جديد {orderNumber} — {applianceType}";
-                    await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
-                    await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
+                    await db.SaveChangesAsync();
+                    await tx.CommitAsync();
                 }
-                catch (Exception ex)
+                catch (DbUpdateException ex) when (IsUniqueViolation(ex))
                 {
-                    logger.LogWarning(ex, "[LabOrders] Create notification failed for order {OrderId}", orderId);
+                    // CON-02 FIX: Unique constraint on OrderNumber caught a duplicate.
+                    // Roll back and retry with a fresh count.
+                    await tx.RollbackAsync();
+                    logger.LogWarning("CON-02: Lab order number collision on attempt {Attempt}, retrying", attempt + 1);
+                    continue;
                 }
-            });
 
-            return CreatedAtAction(nameof(GetById), new { id = order.Id },
-                new { order.Id, order.OrderNumber });
+                // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
+                var orderNumber = order.OrderNumber;
+                var applianceType = req.ApplianceType;
+                var orderId = order.Id;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var scope = scopeFactory.CreateScope();
+                        var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                        var msg = $"طلب مختبر جديد {orderNumber} — {applianceType}";
+                        await notifications.NotifyRoleAsync("Admin", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
+                        await notifications.NotifyRoleAsync("Reception", "lab", "طلب مختبر جديد", msg, "LabOrder", orderId);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "[LabOrders] Create notification failed for order {OrderId}", orderId);
+                    }
+                });
+
+                return CreatedAtAction(nameof(GetById), new { id = order.Id },
+                    new { order.Id, order.OrderNumber });
+            }
+            catch (DbUpdateException)
+            {
+                // Re-throw if not a unique violation (already handled above)
+                await tx.RollbackAsync();
+                throw;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
-        catch
+
+        // All retries exhausted — this should never happen with advisory lock + unique index
+        logger.LogError("CON-02: Failed to generate unique lab order number after {MaxRetries} attempts", maxRetries);
+        return StatusCode(500, new { message = "فشل إنشاء رقم طلب فريد بعد عدة محاولات. يرجى المحاولة مرة أخرى." });
+    }
+
+    /// <summary>
+    /// CON-02 FIX: Checks if a DbUpdateException is a PostgreSQL unique constraint violation (error code 23505).
+    /// </summary>
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        var inner = ex.InnerException;
+        while (inner != null)
         {
-            await tx.RollbackAsync();
-            throw;
+            if (inner.Message.Contains("23505") || inner.Message.Contains("duplicate key") ||
+                inner.Message.Contains("unique constraint") || inner.Message.Contains("OrderNumber"))
+                return true;
+            inner = inner.InnerException;
         }
+        return false;
     }
 
     [HttpPut("{id:guid}/status")]

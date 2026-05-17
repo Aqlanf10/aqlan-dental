@@ -18,10 +18,11 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
     }
 
     public async Task<IEnumerable<AppointmentDto>> GetByDateRangeAsync(
-        DateOnly from, DateOnly to, Guid? doctorId = null, Guid? patientId = null)
+        DateOnly from, DateOnly to, Guid? doctorId = null, Guid? patientId = null, AppointmentStatus? status = null)
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
-        var list = await repo.GetByDateRangeAsync(from, to, branchId, doctorId, patientId);
+        // GAP-01 FIX: Pass status to repository for DB-level filtering
+        var list = await repo.GetByDateRangeAsync(from, to, branchId, doctorId, patientId, status);
         return list.Select(ToDto);
     }
 

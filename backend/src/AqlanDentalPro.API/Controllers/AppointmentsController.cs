@@ -54,16 +54,21 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     public async Task<IActionResult> GetByRange(
         [FromQuery] string? from,
         [FromQuery] string? to,
+        [FromQuery] string? startDate,
+        [FromQuery] string? endDate,
         [FromQuery] Guid? doctorId,
         [FromQuery] Guid? patientId,
         [FromQuery] string? status,
         [FromQuery] Guid? branchId)
     {
-        // GAP-01 FIX: Safe date parsing with clear Arabic error messages
+        // GAP-01 FIX: Accept both from/to (backend standard) and startDate/endDate (frontend convention)
+        var fromDateStr = from ?? startDate;
+        var toDateStr = to ?? endDate;
+
         DateOnly fromDate;
-        if (from != null)
+        if (fromDateStr != null)
         {
-            if (!DateOnly.TryParse(from, out fromDate))
+            if (!DateOnly.TryParse(fromDateStr, out fromDate))
                 return BadRequest(new { message = "تنسيق تاريخ البداية غير صالح. استخدم YYYY-MM-DD" });
         }
         else
@@ -72,9 +77,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         }
 
         DateOnly toDate;
-        if (to != null)
+        if (toDateStr != null)
         {
-            if (!DateOnly.TryParse(to, out toDate))
+            if (!DateOnly.TryParse(toDateStr, out toDate))
                 return BadRequest(new { message = "تنسيق تاريخ النهاية غير صالح. استخدم YYYY-MM-DD" });
         }
         else
@@ -82,7 +87,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             toDate = fromDate;
         }
 
-        // GAP-01 FIX: Support status filtering
+        // GAP-01 FIX: Safely parse status filter with Arabic error message
         AppointmentStatus? statusFilter = null;
         if (!string.IsNullOrWhiteSpace(status))
         {
@@ -91,12 +96,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             statusFilter = parsedStatus;
         }
 
-        var list = await service.GetByDateRangeAsync(fromDate, toDate, doctorId, patientId);
-
-        // Apply status filter if provided
-        var result = statusFilter.HasValue
-            ? list.Where(a => a.Status == statusFilter.Value.ToString())
-            : list;
+        // GAP-01 FIX: Pass status to service for DB-level filtering (was in-memory before)
+        var result = await service.GetByDateRangeAsync(fromDate, toDate, doctorId, patientId, statusFilter);
 
         return Ok(result);
     }

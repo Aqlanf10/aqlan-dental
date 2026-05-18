@@ -15,7 +15,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patient-journey")]
 [Authorize(Policy = "StaffOnly")]
-public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyController> logger) : ControllerBase
+public class PatientJourneyController(AppDbContext db) : ControllerBase
 {
     // ─── 1. GET /api/patient-journey/today ────────────────────────────────────
     /// <summary>Returns today's patient journey list combining appointments,

@@ -97,16 +97,22 @@ public class AuthServiceTests
 
     // ─── VerifyPassword Tests (via reflection) ──────────────────────────────
 
+    // VerifyPassword is now an instance method (needs _logger for legacy deprecation logging)
     private static readonly MethodInfo VerifyPasswordMethod =
         typeof(AuthService).GetMethod("VerifyPassword",
-            BindingFlags.NonPublic | BindingFlags.Static,
+            BindingFlags.NonPublic | BindingFlags.Instance,
             null,
             [typeof(string), typeof(string), typeof(string)],
             null)!;
 
     private static bool CallVerifyPassword(string password, string storedHash, string storedSalt)
     {
-        return (bool)VerifyPasswordMethod.Invoke(null, [password, storedHash, storedSalt])!;
+        // Create an AuthService instance with mocked dependencies
+        var userRepo = new Mock<IUserRepository>();
+        var tokenService = new Mock<ITokenService>();
+        var logger = new Mock<ILogger<AuthService>>();
+        var authService = new AuthService(userRepo.Object, tokenService.Object, logger.Object);
+        return (bool)VerifyPasswordMethod.Invoke(authService, [password, storedHash, storedSalt])!;
     }
 
     [Fact]

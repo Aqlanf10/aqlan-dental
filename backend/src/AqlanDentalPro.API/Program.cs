@@ -407,6 +407,69 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// ── CRITICAL: Ensure Users table schema is up-to-date ──────────────────
+// HOTFIX: The Users table MUST have MustChangePassword, DeletedAt, and DeletedBy
+// columns for the app to function. If ENABLE_STARTUP_DB_MAINTENANCE is false,
+// MigrateAsync() is skipped and these columns may be missing.
+// This check runs UNCONDITIONALLY (not gated by the maintenance flag) because
+// the app cannot serve login requests without these columns.
+try
+{
+    using var schemaScope = app.Services.CreateScope();
+    var schemaDb = schemaScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var schemaLogger = schemaScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await schemaDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- Users.MustChangePassword (SEC-02 FIX, migration 20260525000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Users') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'MustChangePassword') THEN
+                    ALTER TABLE "Users" ADD COLUMN "MustChangePassword" boolean NOT NULL DEFAULT false;
+                END IF;
+                -- Users.DeletedAt (soft-delete, migration 20260522000000)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "Users" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                -- Users.DeletedBy (soft-delete, migration 20260522000000)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "Users" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+                -- Users.PasswordSalt (per-user salt, migration 20260521000000)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'PasswordSalt') THEN
+                    ALTER TABLE "Users" ADD COLUMN "PasswordSalt" text NOT NULL DEFAULT '';
+                END IF;
+            END IF;
+
+            -- Doctors.DeletedAt (soft-delete, migration 20260522000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Doctors') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+                -- Doctors.CompensationType (Sprint 6)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "CompensationType" character varying(20) NOT NULL DEFAULT 'None';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DefaultCommissionPercentage') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "DefaultCommissionPercentage" numeric(5,2) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationNotes') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "CompensationNotes" character varying(500) NULL;
+                END IF;
+            END IF;
+        END $$;
+    """);
+
+    schemaLogger.LogInformation("HOTFIX: Users/Doctors table schema verified — critical columns ensured");
+}
+catch (Exception ex)
+{
+    var schemaLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    schemaLogger2.LogError(ex, "HOTFIX: Failed to ensure Users/Doctors table schema. Staff login may fail with PostgresException!");
+}
+
 // ── One-time Admin Password Reset ─────────────────────────────────
 // SEC-03 FIX: Admin password reset only from environment variables.
 // In production: ADMIN_DEFAULT_PASSWORD is REQUIRED. No fallback.

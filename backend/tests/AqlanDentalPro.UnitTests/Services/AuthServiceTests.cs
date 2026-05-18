@@ -1,6 +1,10 @@
 using System.Reflection;
+using AqlanDentalPro.Application.Interfaces.Repositories;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Moq;
 using Xunit;
 
 namespace AqlanDentalPro.UnitTests.Services;

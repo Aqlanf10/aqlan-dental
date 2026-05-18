@@ -586,9 +586,10 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
 
     // ─── GET /api/clinic-queue/rooms/db ──────────────────────────────────────
     /// <summary>Returns active rooms from the ClinicRooms table (database-driven).
-    /// Falls back to ClinicRoomNames constants if no rooms exist yet.</summary>
+    /// Falls back to ClinicRoomNames constants if no rooms exist yet.
+    /// Staff-only — room data includes internal IDs and codes not intended for public access.
+    /// Public TV display uses GET /api/clinic-queue/rooms (hardcoded) instead.</summary>
     [HttpGet("rooms/db")]
-    [AllowAnonymous]
     public async Task<IActionResult> GetRoomsFromDb()
     {
         var rooms = await db.ClinicRooms

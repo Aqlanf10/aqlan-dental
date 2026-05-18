@@ -37,7 +37,6 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/forgot-password")]
     [AllowAnonymous]
-    [EnableRateLimiting("PortalAuthPolicy")]
     [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-04 FIX: Stricter limit on forgot-password
     public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
     {
@@ -66,7 +65,6 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/reset-password")]
     [AllowAnonymous]
-    [EnableRateLimiting("PortalAuthPolicy")]
     [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-04 FIX: Stricter limit on reset-password (3/15min)
     public async Task<IActionResult> ResetPassword([FromBody] PatientResetPasswordRequest req)
     {

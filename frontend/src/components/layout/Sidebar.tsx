@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
+  Route,
   BarChart2, Package, FlaskConical, Settings, LogOut,
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock,
   UserRound, Building2, Monitor, UserCog,
@@ -34,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/",             label: "لوحة التحكم",       icon: LayoutDashboard, roles: [], section: "رئيسي" },
   { href: "/patients",     label: "المرضى",             icon: Users,           roles: [] },
   { href: "/appointments", label: "المواعيد",           icon: Calendar,        roles: [] },
+  { href: "/patient-journey", label: "رحلة المرضى",     icon: Route,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/clinic-queue", label: "طابور العيادة",     icon: ClipboardList,   roles: [] },
   { href: "/clinic-display", label: "شاشة العرض",       icon: Monitor,         roles: [] },
   { href: "/doctors",      label: "الأطباء",           icon: UserRound,       roles: ["Admin"] },

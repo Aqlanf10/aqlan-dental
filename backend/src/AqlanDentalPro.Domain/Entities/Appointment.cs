@@ -28,6 +28,12 @@ public class Appointment : BaseEntity
     /// <summary>When the patient entered the room.</summary>
     public DateTime? InRoomAt { get; set; }
 
+    // ── Patient Journey fields (Sprint: Command Center) ────────────────────
+    /// <summary>Selected service for this appointment (from services catalog).</summary>
+    public Guid? ServiceId { get; set; }
+    /// <summary>Selected room from ClinicRooms table.</summary>
+    public Guid? ClinicRoomId { get; set; }
+
     public Patient Patient { get; set; } = null!;
     public Doctor Doctor { get; set; } = null!;
     public Branch? Branch { get; set; }

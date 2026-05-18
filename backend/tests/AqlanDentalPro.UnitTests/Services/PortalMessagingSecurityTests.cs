@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -71,7 +72,6 @@ public class PortalMessagingSecurityTests
             PasswordHash = hash,
             PasswordSalt = salt,
             Role = UserRole.Patient,
-            Phone = phone,
             IsActive = true
         };
         db.Users.Add(linkedUser);

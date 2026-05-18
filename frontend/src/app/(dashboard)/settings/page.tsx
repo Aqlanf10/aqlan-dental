@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Settings, Users, Shield, Save, Plus, X, UserCheck, UserX, FileSearch, Globe } from "lucide-react";
+import { Settings, Users, Shield, Save, Plus, X, UserCheck, UserX, FileSearch, Globe, Stethoscope, DoorOpen } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -414,7 +414,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Quick links */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Link
           href="/settings/website"
           className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-blue hover:shadow-md transition group"
@@ -437,6 +437,30 @@ export default function SettingsPage() {
           <div>
             <p className="font-semibold text-gray-900">سجل التدقيق</p>
             <p className="text-sm text-gray-500">عرض كل العمليات المنفذة في النظام</p>
+          </div>
+        </Link>
+        <Link
+          href="/settings/services"
+          className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-blue hover:shadow-md transition group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-100 transition">
+            <Stethoscope className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">خدمات العيادة</p>
+            <p className="text-sm text-gray-500">إدارة كتالوج الخدمات والأسعار</p>
+          </div>
+        </Link>
+        <Link
+          href="/settings/rooms"
+          className="flex items-center gap-4 bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:border-clinic-blue hover:shadow-md transition group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0 group-hover:bg-amber-100 transition">
+            <DoorOpen className="w-5 h-5 text-amber-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">غرف العيادة</p>
+            <p className="text-sm text-gray-500">إدارة الغرف وتوزيعها</p>
           </div>
         </Link>
       </div>

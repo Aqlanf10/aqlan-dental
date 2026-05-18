@@ -91,3 +91,5 @@ uploads/
 public/uploads/
 .vercel
 .railway/
+agent-ctx/
+frontend/bun.lock

@@ -13,5 +13,11 @@ public class VisitConfiguration : IEntityTypeConfiguration<Visit>
     {
         // DB-01 FIX: Index for querying visits by doctor
         builder.HasIndex(v => v.DoctorId);
+
+        // Patient Journey fields (Sprint: Command Center)
+        builder.Property(v => v.ServiceId).IsRequired(false);
+        builder.Property(v => v.CheckoutStatus).HasMaxLength(30).IsRequired(false);
+        builder.Property(v => v.ReadyForCheckoutAt).IsRequired(false);
+        builder.Property(v => v.AmountDueReference).HasPrecision(12, 2).IsRequired(false);
     }
 }

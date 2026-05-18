@@ -584,6 +584,36 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
         return Ok(ClinicRoomNames.DefaultRooms);
     }
 
+    // ─── GET /api/clinic-queue/rooms/db ──────────────────────────────────────
+    /// <summary>Returns active rooms from the ClinicRooms table (database-driven).
+    /// Falls back to ClinicRoomNames constants if no rooms exist yet.
+    /// Staff-only — room data includes internal IDs and codes not intended for public access.
+    /// Public TV display uses GET /api/clinic-queue/rooms (hardcoded) instead.</summary>
+    [HttpGet("rooms/db")]
+    public async Task<IActionResult> GetRoomsFromDb()
+    {
+        var rooms = await db.ClinicRooms
+            .OrderBy(r => r.SortOrder)
+            .ThenBy(r => r.ArabicName)
+            .Select(r => new { r.Id, r.ArabicName, r.EnglishName, r.Code, RoomType = r.RoomType.ToString() })
+            .ToListAsync();
+
+        if (rooms.Count == 0)
+        {
+            // Fallback to constants for backward compatibility
+            return Ok(ClinicRoomNames.DefaultRooms.Select((name, i) => new
+            {
+                Id = Guid.Empty,
+                ArabicName = name,
+                EnglishName = (string?)null,
+                Code = $"room-{i + 1}",
+                RoomType = "Treatment"
+            }));
+        }
+
+        return Ok(rooms);
+    }
+
     // ─── Legacy endpoints (backward compatibility) ───────────────────────────
 
     /// <summary>Marks appointment as Waiting and sets ArrivedAt. Legacy endpoint.</summary>

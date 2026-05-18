@@ -123,6 +123,10 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (account.VerificationCodeExpiry < DateTime.UtcNow)
             return (null, "انتهت صلاحية رمز التحقق");
 
+        // SEC-05 FIX: Validate new password strength (minimum 8 characters)
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+            return (null, "كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
+
         // Update password
         var salt = AuthService.GenerateSalt();
         var hash = AuthService.HashPassword(newPassword, salt);
@@ -257,8 +261,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             Convert.FromBase64String(account.PasswordHash)))
             return (null, "كلمة المرور الحالية غير صحيحة");
 
-        // C-05 FIX: Enforce minimum password length of 8 characters
-        if (newPassword.Length < 8)
+        // SEC-05 FIX: Validate new password strength (minimum 8 characters)
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
             return (null, "كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
 
         // Update password
@@ -297,10 +301,18 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             return (null, "تم تعطيل هذا الحساب");
 
         // C-04 FIX: Constant-time refresh token comparison
-        if (!CryptographicOperations.FixedTimeEquals(
-            Convert.FromBase64String(account.RefreshToken ?? ""),
-            Convert.FromBase64String(refreshToken)))
+        // Gracefully handle malformed (non-Base64) tokens — they are invalid by definition.
+        try
+        {
+            if (!CryptographicOperations.FixedTimeEquals(
+                Convert.FromBase64String(account.RefreshToken ?? ""),
+                Convert.FromBase64String(refreshToken)))
+                return (null, "رمز التحديث غير صالح");
+        }
+        catch (FormatException)
+        {
             return (null, "رمز التحديث غير صالح");
+        }
 
         if (account.RefreshTokenExpiry < DateTime.UtcNow)
             return (null, "انتهت صلاحية رمز التحديث");
@@ -880,11 +892,36 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
     }
 
+    // SEC-05 FIX: Generate a secure temporary password (10 chars with special characters)
+    // Matches the strength pattern used in EmployeesController.GenerateSecureTemporaryPassword
     private static string GenerateTemporaryPassword()
     {
-        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-        var bytes = RandomNumberGenerator.GetBytes(8);
-        return new string(bytes.Select(b => chars[b % chars.Length]).ToArray());
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghjkmnpqrstuvwxyz";
+        const string digits = "23456789";
+        const string special = "!@#$%";
+        const string all = upper + lower + digits + special;
+
+        var bytes = RandomNumberGenerator.GetBytes(10);
+        var chars = new char[10];
+
+        // Ensure at least one of each category
+        chars[0] = upper[bytes[0] % upper.Length];
+        chars[1] = lower[bytes[1] % lower.Length];
+        chars[2] = digits[bytes[2] % digits.Length];
+        chars[3] = special[bytes[3] % special.Length];
+
+        for (var i = 4; i < 10; i++)
+            chars[i] = all[bytes[i] % all.Length];
+
+        // Fisher-Yates shuffle
+        for (var i = chars.Length - 1; i > 0; i--)
+        {
+            var j = bytes[i] % (i + 1);
+            (chars[i], chars[j]) = (chars[j], chars[i]);
+        }
+
+        return new string(chars);
     }
 
     private static PatientPortalProfileDto MapProfile(Patient patient, PatientAccount? account = null) => new()

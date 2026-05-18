@@ -183,7 +183,7 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
             PatientId = req.PatientId,
             AppointmentId = req.AppointmentId,
             VisitDate = !string.IsNullOrWhiteSpace(req.VisitDate)
-                ? DateOnly.Parse(req.VisitDate)
+                ? DateOnly.TryParse(req.VisitDate, out var vd) ? vd : DateOnly.FromDateTime(DateTime.Today)
                 : DateOnly.FromDateTime(DateTime.Today),
             VisitType = req.VisitType,
             Specialty = specialty,
@@ -196,7 +196,7 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
             NextVisitPlan = req.NextVisitPlan,
             Cost = req.Cost,
             NextVisitDate = !string.IsNullOrWhiteSpace(req.NextVisitDate)
-                ? DateOnly.Parse(req.NextVisitDate)
+                ? DateOnly.TryParse(req.NextVisitDate, out var nvd) ? nvd : (DateOnly?)null
                 : null,
         };
 
@@ -224,7 +224,11 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
             return BadRequest(new { message = "لا يمكن تعديل زيارة محذوفة" });
 
         if (req.VisitDate != null)
-            visit.VisitDate = DateOnly.Parse(req.VisitDate);
+        {
+            if (!DateOnly.TryParse(req.VisitDate, out var visitDate))
+                return BadRequest(new { message = "تنسيق تاريخ الزيارة غير صالح. استخدم YYYY-MM-DD" });
+            visit.VisitDate = visitDate;
+        }
         if (req.VisitType != null)
             visit.VisitType = req.VisitType;
         if (req.Specialty != null)
@@ -251,7 +255,11 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
         if (req.Cost.HasValue)
             visit.Cost = req.Cost;
         if (req.NextVisitDate != null)
-            visit.NextVisitDate = string.IsNullOrWhiteSpace(req.NextVisitDate) ? null : DateOnly.Parse(req.NextVisitDate);
+        {
+            if (!DateOnly.TryParse(req.NextVisitDate, out var nextVisitDate))
+                return BadRequest(new { message = "تنسيق تاريخ الزيارة القادمة غير صالح. استخدم YYYY-MM-DD" });
+            visit.NextVisitDate = string.IsNullOrWhiteSpace(req.NextVisitDate) ? null : nextVisitDate;
+        }
 
         visit.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Net;
 using System.Text.Json;
 
@@ -57,6 +58,14 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
         // Remove after the Redis resilience issue is resolved.
         problem.Extensions["errorType"] = ex.GetType().Name;
         problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
+
+        // Include Npgsql-specific diagnostic info if it's a PostgresException
+        if (ex is PostgresException pgEx)
+        {
+            problem.Extensions["pgSqlState"] = pgEx.SqlState;
+            problem.Extensions["pgMessageText"] = pgEx.MessageText;
+            problem.Extensions["pgSeverity"] = pgEx.Severity;
+        }
 
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/problem+json";

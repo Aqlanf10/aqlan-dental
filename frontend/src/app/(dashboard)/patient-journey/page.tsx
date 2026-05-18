@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Users, UserCheck, Clock, DoorOpen, CreditCard, CheckCircle2,
   Plus, X, Save, Search, Filter, RefreshCw, Stethoscope,
@@ -110,6 +111,7 @@ const inputCls =
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function PatientJourneyPage() {
+  const router = useRouter();
   const { user } = useAuthStore();
   const userRole = user?.role ?? "";
 
@@ -294,7 +296,7 @@ export default function PatientJourneyPage() {
     setActionLoading(true);
     setDialogError("");
     try {
-      await api.post(`/api/patient-journey/${selectedItem.appointmentId}/checkout`, {
+      const res = await api.post(`/api/patient-journey/${selectedItem.appointmentId}/checkout`, {
         paymentAmount: checkoutAmount > 0 ? checkoutAmount : null,
         paymentMethod: checkoutPayment,
         nextAppointmentDate: checkoutNextDate || null,
@@ -303,6 +305,10 @@ export default function PatientJourneyPage() {
       });
       setShowCheckout(false);
       loadJourney();
+      // If payment is needed, guide user to Payments page
+      if (checkoutAmount > 0 && res.data?.nextActions?.some((a: string) => a.includes("المالية"))) {
+        router.push(`/finance?patientId=${selectedItem.patientId}`);
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       setDialogError(msg);
@@ -684,9 +690,14 @@ export default function PatientJourneyPage() {
               <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{dialogError}</p>
             )}
 
+            {/* Info banner — checkout is workflow-status only */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+              إنهاء الحساب هنا يغيّر حالة الزيارة فقط. لتسجيل الدّفع الفعلي، انتقل إلى صفحة المالية بعد الإنهاء.
+            </div>
+
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">المبلغ المطلوب</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">المبلغ المطلوب (مرجعي)</label>
                 <input
                   type="number"
                   value={checkoutAmount}
@@ -697,7 +708,7 @@ export default function PatientJourneyPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">طريقة الدفع</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">طريقة الدفع (مرجعية)</label>
                 <select
                   value={checkoutPayment}
                   onChange={(e) => setCheckoutPayment(e.target.value)}

@@ -142,7 +142,7 @@ public class PatientJourneyController(AppDbContext db) : ControllerBase
     // ─── 2. POST /api/patient-journey/{appointmentId}/intake ────────────────
     /// <summary>Reception confirms patient arrival and records intake info.</summary>
     [HttpPost("{appointmentId:guid}/intake")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> Intake(Guid appointmentId, [FromBody] IntakeRequest req)
     {
         var appointment = await db.Appointments.FindAsync(appointmentId);
@@ -203,7 +203,7 @@ public class PatientJourneyController(AppDbContext db) : ControllerBase
     // ─── 3. POST /api/patient-journey/{appointmentId}/send-to-queue ─────────
     /// <summary>Create or reuse queue item for the appointment.</summary>
     [HttpPost("{appointmentId:guid}/send-to-queue")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> SendToQueue(Guid appointmentId, [FromBody] SendToQueueRequest? req = null)
     {
         var appointment = await db.Appointments.FindAsync(appointmentId);
@@ -435,9 +435,10 @@ public class PatientJourneyController(AppDbContext db) : ControllerBase
     }
 
     // ─── 6. POST /api/patient-journey/{appointmentId}/checkout ──────────────
-    /// <summary>Complete checkout for the patient journey.</summary>
+    /// <summary>Complete checkout — workflow-status only. No payment is created;
+    /// the frontend should redirect to the Payments module for actual payment processing.</summary>
     [HttpPost("{appointmentId:guid}/checkout")]
-    [Authorize(Policy = "AdminOnly")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> Checkout(Guid appointmentId, [FromBody] CheckoutRequest req)
     {
         var appointment = await db.Appointments.FindAsync(appointmentId);
@@ -456,22 +457,12 @@ public class PatientJourneyController(AppDbContext db) : ControllerBase
         if (visit.CheckoutStatus != "ReadyForCheckout")
             return BadRequest(new { message = "الزيارة ليست جاهزة للحساب بعد" });
 
-        // Record payment if amount provided — use existing Payment entity
-        if (req.PaymentAmount.HasValue && req.PaymentAmount.Value > 0)
-        {
-            var payment = new Payment
-            {
-                PatientId = appointment.PatientId,
-                Amount = req.PaymentAmount.Value,
-                PaymentDate = DateOnly.FromDateTime(DateTime.UtcNow),
-                PaymentMethod = req.PaymentMethod ?? "cash",
-                DoctorId = appointment.DoctorId,
-                BranchId = appointment.BranchId,
-                ReceivedBy = GetCurrentUserId(),
-                Notes = req.Notes ?? "دفع عبر رحلة المريض"
-            };
-            db.Payments.Add(payment);
-        }
+        // Checkout is workflow-status only — no direct Payment creation.
+        // Actual payment processing should be done via the existing Payments module
+        // (FinanceService.CreatePaymentAsync) to ensure receipt generation, notifications,
+        // contract linking, and audit trail are handled correctly.
+        // PaymentAmount/PaymentMethod are stored as reference in the response for
+        // the frontend to guide the user to the Payments page.
 
         // Mark visit as checked out
         visit.CheckoutStatus = "CheckedOut";
@@ -491,7 +482,9 @@ public class PatientJourneyController(AppDbContext db) : ControllerBase
         if (req.NextAppointmentDate.HasValue)
             nextActions.Add("حجز موعد متابعة");
         if (req.PaymentAmount.HasValue && req.PaymentAmount.Value > 0)
-            nextActions.Add("طباعة إيصال الدفع");
+            nextActions.Add("تسجيل الدفع عبر صفحة المالية");
+        if (visit.AmountDueReference.HasValue && visit.AmountDueReference.Value > 0)
+            nextActions.Add("المبلغ المستحق: " + visit.AmountDueReference.Value.ToString("N0") + " ر.ي");
 
         return Ok(new
         {

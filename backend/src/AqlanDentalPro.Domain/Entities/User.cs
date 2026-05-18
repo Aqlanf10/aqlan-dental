@@ -13,6 +13,8 @@ public class User : BaseEntity
     public DateTime? LastLogin { get; set; }
     public bool TwoFactorEnabled { get; set; } = false;
     public string? TwoFactorSecret { get; set; }
+    /// <summary>When true, the user must change their password on next login. SEC-02 FIX.</summary>
+    public bool MustChangePassword { get; set; } = false;
 
     public Branch? Branch { get; set; }
     public Doctor? Doctor { get; set; }

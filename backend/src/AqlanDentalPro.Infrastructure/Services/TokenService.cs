@@ -27,6 +27,8 @@ public class TokenService(IConfiguration config, IConnectionMultiplexer redis) :
             new(ClaimTypes.Role, user.Role.ToString()),
             new("branchId", user.BranchId?.ToString() ?? ""),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            // SEC-02 FIX: Include mustChangePassword claim so middleware can enforce password change
+            new("mustChangePassword", user.MustChangePassword.ToString().ToLowerInvariant()),
         };
 
         var token = new JwtSecurityToken(

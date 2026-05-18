@@ -51,7 +51,8 @@ public sealed class PatientResetPasswordRequestValidator : AbstractValidator<Pat
 
         RuleFor(x => x.NewPassword)
             .NotEmpty().WithMessage("كلمة المرور الجديدة مطلوبة")
-            .MinimumLength(6).WithMessage("كلمة المرور يجب أن تكون 6 أحرف على الأقل")
+            // SEC-05 FIX: Increased from 6 to 8 characters to match staff password policy
+            .MinimumLength(8).WithMessage("كلمة المرور يجب أن تكون 8 أحرف على الأقل")
             .MaximumLength(100).WithMessage("كلمة المرور يجب ألا تتجاوز 100 حرف");
     }
 }
@@ -68,7 +69,8 @@ public sealed class PatientChangePasswordRequestValidator : AbstractValidator<Pa
 
         RuleFor(x => x.NewPassword)
             .NotEmpty().WithMessage("كلمة المرور الجديدة مطلوبة")
-            .MinimumLength(6).WithMessage("كلمة المرور يجب أن تكون 6 أحرف على الأقل")
+            // SEC-05 FIX: Increased from 6 to 8 characters to match staff password policy
+            .MinimumLength(8).WithMessage("كلمة المرور يجب أن تكون 8 أحرف على الأقل")
             .MaximumLength(100).WithMessage("كلمة المرور يجب ألا تتجاوز 100 حرف");
     }
 }

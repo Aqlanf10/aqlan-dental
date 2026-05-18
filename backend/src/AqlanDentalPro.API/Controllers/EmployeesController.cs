@@ -5,6 +5,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -189,12 +190,20 @@ public class EmployeesController(AppDbContext db) : ControllerBase
         }
 
         // Create User account
-        var password = req.Password ?? "Aqlan@2024";
-        if (password.Length < 8)
-            return BadRequest(new { message = "كلمة المرور يجب أن تكون 8 أحرف على الأقل" });
+        // SEC-02 FIX: Generate secure random temporary password instead of hardcoded default
+        string tempPassword;
+        if (!string.IsNullOrWhiteSpace(req.Password) && req.Password.Length >= 8)
+        {
+            tempPassword = req.Password;
+        }
+        else
+        {
+            // Generate a secure 12-character temporary password
+            tempPassword = GenerateSecureTemporaryPassword();
+        }
 
         var salt = AuthService.GenerateSalt();
-        var hash = AuthService.HashPassword(password, salt);
+        var hash = AuthService.HashPassword(tempPassword, salt);
 
         var user = new User
         {
@@ -203,6 +212,7 @@ public class EmployeesController(AppDbContext db) : ControllerBase
             PasswordSalt = salt,
             Role = role,
             BranchId = req.BranchId,
+            MustChangePassword = true, // SEC-02 FIX: Force password change on first login
         };
         db.Users.Add(user);
 
@@ -240,6 +250,10 @@ public class EmployeesController(AppDbContext db) : ControllerBase
             Role = user.Role.ToString(),
             employee.IsActive,
             employee.CreatedAt,
+            // SEC-02 FIX: Return temporary password once so admin can share it with employee
+            TemporaryPassword = tempPassword,
+            MustChangePassword = true,
+            message = "تم إنشاء الموظف بنجاح. يجب على الموظف تغيير كلمة المرور عند تسجيل الدخول الأول"
         });
     }
 
@@ -350,5 +364,38 @@ public class EmployeesController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
 
         return Ok(new { message = employee.IsActive ? "تم تفعيل الموظف بنجاح" : "تم تعطيل الموظف بنجاح" });
+    }
+
+    /// <summary>
+    /// SEC-02 FIX: Generates a secure random temporary password (12 chars: uppercase + lowercase + digits + special).
+    /// </summary>
+    private static string GenerateSecureTemporaryPassword()
+    {
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghjkmnpqrstuvwxyz";
+        const string digits = "23456789";
+        const string special = "!@#$%";
+        const string all = upper + lower + digits + special;
+
+        var bytes = RandomNumberGenerator.GetBytes(12);
+        var chars = new char[12];
+
+        // Ensure at least one of each category
+        chars[0] = upper[bytes[0] % upper.Length];
+        chars[1] = lower[bytes[1] % lower.Length];
+        chars[2] = digits[bytes[2] % digits.Length];
+        chars[3] = special[bytes[3] % special.Length];
+
+        for (var i = 4; i < 12; i++)
+            chars[i] = all[bytes[i] % all.Length];
+
+        // Shuffle
+        for (var i = chars.Length - 1; i > 0; i--)
+        {
+            var j = bytes[i] % (i + 1);
+            (chars[i], chars[j]) = (chars[j], chars[i]);
+        }
+
+        return new string(chars);
     }
 }

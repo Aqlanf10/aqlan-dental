@@ -32,6 +32,9 @@ public class ClinicQueueItemConfiguration : IEntityTypeConfiguration<ClinicQueue
             .HasFilter("\"Status\" NOT IN ('Completed', 'Cancelled')")
             .IsUnique();
 
+        // DB-01 FIX: Index for querying queue items by doctor
+        builder.HasIndex(q => q.DoctorId);
+
         builder.HasOne(q => q.Patient)
             .WithMany()
             .HasForeignKey(q => q.PatientId)

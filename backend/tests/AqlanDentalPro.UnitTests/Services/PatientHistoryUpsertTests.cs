@@ -8,6 +8,7 @@ using AqlanDentalPro.Domain.Enums;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace AqlanDentalPro.UnitTests.Services;
@@ -21,6 +22,8 @@ public class PatientHistoryUpsertTests
     private readonly Mock<IPatientRepository> _repoMock;
     private readonly Mock<ICurrentUserService> _currentUserMock;
     private readonly Mock<IConfiguration> _configMock;
+    private readonly Mock<IPatientPortalService> _portalServiceMock;
+    private readonly Mock<ILogger<PatientService>> _loggerMock;
     private readonly PatientService _service;
 
     public PatientHistoryUpsertTests()
@@ -28,12 +31,14 @@ public class PatientHistoryUpsertTests
         _repoMock = new Mock<IPatientRepository>();
         _currentUserMock = new Mock<ICurrentUserService>();
         _configMock = new Mock<IConfiguration>();
+        _portalServiceMock = new Mock<IPatientPortalService>();
+        _loggerMock = new Mock<ILogger<PatientService>>();
 
         _currentUserMock.Setup(c => c.BranchId).Returns(Guid.NewGuid());
         _currentUserMock.Setup(c => c.IsAdmin).Returns(false);
         _configMock.Setup(c => c["Settings:PatientNumberPrefix"]).Returns("GM");
 
-        _service = new PatientService(_repoMock.Object, _currentUserMock.Object, _configMock.Object);
+        _service = new PatientService(_repoMock.Object, _currentUserMock.Object, _configMock.Object, _portalServiceMock.Object, _loggerMock.Object);
     }
 
     private static Patient CreateTestPatient(Guid? id = null)

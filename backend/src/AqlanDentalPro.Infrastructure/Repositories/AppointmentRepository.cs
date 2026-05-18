@@ -38,7 +38,7 @@ public class AppointmentRepository(AppDbContext context)
     }
 
     public async Task<IEnumerable<Appointment>> GetByDateRangeAsync(
-        DateOnly from, DateOnly to, Guid? branchId, Guid? doctorId, Guid? patientId = null)
+        DateOnly from, DateOnly to, Guid? branchId, Guid? doctorId, Guid? patientId = null, AppointmentStatus? status = null)
     {
         var query = DbSet
             .Include(a => a.Patient)
@@ -48,6 +48,8 @@ public class AppointmentRepository(AppDbContext context)
         if (branchId.HasValue) query = query.Where(a => a.BranchId == branchId);
         if (doctorId.HasValue) query = query.Where(a => a.DoctorId == doctorId);
         if (patientId.HasValue) query = query.Where(a => a.PatientId == patientId);
+        // GAP-01 FIX: Apply status filter at DB level instead of in-memory
+        if (status.HasValue) query = query.Where(a => a.Status == status.Value);
 
         return await query.OrderBy(a => a.AppointmentDate).ThenBy(a => a.StartTime).ToListAsync();
     }

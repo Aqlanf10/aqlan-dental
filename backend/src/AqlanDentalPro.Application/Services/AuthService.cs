@@ -11,6 +11,7 @@ namespace AqlanDentalPro.Application.Services;
 
 public class AuthService(IUserRepository userRepo, ITokenService tokenService, ILogger<AuthService> logger) : IAuthService
 {
+    private readonly ILogger<AuthService> _logger = logger;
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
         var user = await userRepo.GetByUsernameAsync(request.Username);
@@ -119,7 +120,7 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
     /// Verifies a password against the stored hash and salt.
     /// Supports both per-user salt (current) and legacy fixed-salt (Phase 1) hashes.
     /// </summary>
-    private static bool VerifyPassword(string password, string storedHash, string storedSalt)
+    private bool VerifyPassword(string password, string storedHash, string storedSalt)
     {
         try
         {
@@ -135,13 +136,15 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
 
             // Fallback: legacy Phase 1 fixed-salt hash (DOP=1, fixed salt)
             // SEC-02 FIX: Log deprecation warning — this path should be removed once all users are migrated
-            logger.LogWarning(
+            _logger.LogWarning(
                 "SEC-02 DEPRECATION: Legacy fixed-salt hash used for user verification. " +
                 "This indicates a user still has a Phase 1 hash. " +
                 "User should change their password to migrate to per-user salt. " +
                 "Username={Username}",
                 "REDACTED"); // Don't log username for privacy
+#pragma warning disable CS0618 // Suppress obsolete warning — intentionally calling legacy method
             var legacyHash = HashPasswordLegacy(password);
+#pragma warning restore CS0618
             return CryptographicOperations.FixedTimeEquals(
                 Convert.FromBase64String(legacyHash),
                 Convert.FromBase64String(storedHash));

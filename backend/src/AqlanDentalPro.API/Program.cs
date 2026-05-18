@@ -38,9 +38,23 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
         npgsql => npgsql.MigrationsAssembly("AqlanDentalPro.Infrastructure")));
 
 // ── Redis ─────────────────────────────────────────────────────────────────────
+// HOTFIX: Use AbortOnConnectFail=false so the app starts even when Redis is unavailable.
+// ConnectionMultiplexer.Connect() normally throws RedisConnectionException if the server
+// is unreachable, which crashes the entire DI resolution chain (LoginAttemptService,
+// TokenService, etc.) and turns every staff login into a 500.
+// With AbortOnConnectFail=false, Connect() returns a multiplexer that will retry in the
+// background. Individual Redis operations on a disconnected multiplexer will throw
+// RedisConnectionException / RedisTimeoutException — those are caught by try/catch in
+// LoginAttemptService and TokenService (resilience pattern).
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(builder.Configuration["Redis:ConnectionString"]
-        ?? "localhost:6379"));
+{
+    var connString = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+    var options = ConfigurationOptions.Parse(connString);
+    options.AbortOnConnectFail = false;
+    options.ConnectRetry = 3;
+    options.ReconnectRetryPolicy = new ExponentialRetry(5000);
+    return ConnectionMultiplexer.Connect(options);
+});
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 var jwtKey = builder.Configuration["Jwt:SecretKey"]

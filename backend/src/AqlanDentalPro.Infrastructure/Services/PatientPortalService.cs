@@ -301,10 +301,18 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             return (null, "تم تعطيل هذا الحساب");
 
         // C-04 FIX: Constant-time refresh token comparison
-        if (!CryptographicOperations.FixedTimeEquals(
-            Convert.FromBase64String(account.RefreshToken ?? ""),
-            Convert.FromBase64String(refreshToken)))
+        // Gracefully handle malformed (non-Base64) tokens — they are invalid by definition.
+        try
+        {
+            if (!CryptographicOperations.FixedTimeEquals(
+                Convert.FromBase64String(account.RefreshToken ?? ""),
+                Convert.FromBase64String(refreshToken)))
+                return (null, "رمز التحديث غير صالح");
+        }
+        catch (FormatException)
+        {
             return (null, "رمز التحديث غير صالح");
+        }
 
         if (account.RefreshTokenExpiry < DateTime.UtcNow)
             return (null, "انتهت صلاحية رمز التحديث");

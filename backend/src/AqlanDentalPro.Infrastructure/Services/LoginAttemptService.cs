@@ -22,7 +22,7 @@ public class LoginAttemptService : ILoginAttemptService
         _logger = logger;
     }
 
-    public async Task<int> RecordFailedAttemptAsync(string username)
+    public Task<int> RecordFailedAttemptAsync(string username)
     {
         var key = $"login:fail:{username}";
         var lockKey = $"login:lock:{username}";
@@ -44,7 +44,7 @@ public class LoginAttemptService : ILoginAttemptService
 
         // Increment counter with expiry window
         _redis.StringSet(key, currentCount, AttemptWindow);
-        return currentCount;
+        return Task.FromResult(currentCount);
     }
 
     public async Task<(bool IsLocked, int RemainingMinutes)> IsLockedOutAsync(string username)
@@ -66,11 +66,12 @@ public class LoginAttemptService : ILoginAttemptService
         return (false, 0);
     }
 
-    public async Task ResetFailedAttemptsAsync(string username)
+    public Task ResetFailedAttemptsAsync(string username)
     {
         var key = $"login:fail:{username}";
         var lockKey = $"login:lock:{username}";
         _redis.KeyDelete([key, lockKey]);
         _logger.LogInformation("Failed login attempts reset for user '{Username}'", username);
+        return Task.CompletedTask;
     }
 }

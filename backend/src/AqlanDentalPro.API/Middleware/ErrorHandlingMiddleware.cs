@@ -52,6 +52,12 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             Instance = context.Request.Path
         };
 
+        // HOTFIX DIAGNOSTIC: Include exception type name in response to diagnose
+        // production 500 errors. This is safe — type names don't contain sensitive data.
+        // Remove after the Redis resilience issue is resolved.
+        problem.Extensions["errorType"] = ex.GetType().Name;
+        problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
+
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/problem+json";
         await context.Response.WriteAsync(JsonSerializer.Serialize(problem));

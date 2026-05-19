@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير الفحص الشامل - نظام عقلان لطب الأسنان</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --page-bg: #f7f6f6;
+    --section-bg: #e9e8e6;
+    --card-bg: #edece9;
+    --table-stripe: #f3f2f1;
+    --header-fill: #56503d;
+    --cover-block: #797055;
+    --border: #d7d2c5;
+    --icon: #74673d;
+    --accent: #23738e;
+    --accent-secondary: #36b136;
+    --text-primary: #1a1917;
+    --text-muted: #78756f;
+    --semantic-success: #4d9465;
+    --semantic-warning: #9e7f41;
+    --semantic-error: #a15a54;
+    --semantic-info: #507498;
+  }
+
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm 16mm;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans Arabic', 'Noto Naskh Arabic', sans-serif;
+    background: var(--page-bg);
+    color: var(--text-primary);
+    line-height: 1.75;
+    font-size: 11pt;
+    direction: rtl;
+  }
+
+  /* ── COVER PAGE ── */
+  .cover {
+    width: 794px;
+    height: 1123px;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #f8f8f6 0%, #edece9 100%);
+    page-break-after: always;
+    margin: 0 auto;
+  }
+  .cover-accent-line {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 8px;
+    background: var(--accent);
+  }
+  .cover-side-line {
+    position: absolute;
+    top: 80px;
+    right: 50px;
+    width: 3px;
+    height: 960px;
+    background: var(--accent);
+    opacity: 0.25;
+  }
+  .cover-title-block {
+    position: absolute;
+    top: 180px;
+    right: 80px;
+    width: 630px;
+  }
+  .cover-kicker {
+    font-size: 14pt;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+  }
+  .cover-title {
+    font-size: 38pt;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.4;
+    margin-bottom: 20px;
+  }
+  .cover-subtitle {
+    font-size: 18pt;
+    font-weight: 400;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .cover-meta {
+    position: absolute;
+    bottom: 120px;
+    right: 80px;
+    width: 630px;
+    font-size: 12pt;
+    color: var(--text-muted);
+  }
+  .cover-meta-row {
+    margin-bottom: 8px;
+  }
+  .cover-meta-label {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .cover-watermark {
+    position: absolute;
+    bottom: 60px;
+    left: 80px;
+    font-size: 72pt;
+    font-weight: 700;
+    color: var(--accent);
+    opacity: 0.06;
+    line-height: 1;
+  }
+
+  /* ── BODY PAGES ── */
+  .page {
+    width: 794px;
+    margin: 0 auto;
+    padding: 0 20px;
+    background: white;
+  }
+
+  /* ── TOC ── */
+  .toc {
+    page-break-after: always;
+    padding-top: 40px;
+  }
+  .toc-title {
+    font-size: 22pt;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 24px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent);
+  }
+  .toc-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px dotted var(--border);
+    font-size: 11pt;
+  }
+  .toc-item.level-1 { font-weight: 600; padding-right: 0; }
+  .toc-item.level-2 { font-weight: 400; padding-right: 20px; color: var(--text-muted); }
+  .toc-page { color: var(--accent); font-weight: 600; }
+
+  /* ── SECTIONS ── */
+  h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 28px 0 14px 0;
+    padding-bottom: 8px;
+    border-bottom: 2.5px solid var(--accent);
+  }
+  h2 {
+    font-size: 15pt;
+    font-weight: 700;
+    color: var(--header-fill);
+    margin: 22px 0 10px 0;
+    padding-right: 12px;
+    border-right: 4px solid var(--accent);
+  }
+  h3 {
+    font-size: 13pt;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 16px 0 8px 0;
+  }
+  p {
+    margin-bottom: 10px;
+    text-align: justify;
+  }
+
+  /* ── SEVERITY BADGES ── */
+  .severity-critical {
+    display: inline-block;
+    background: var(--semantic-error);
+    color: white;
+    padding: 2px 10px;
+    border-radius: 3px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+  .severity-high {
+    display: inline-block;
+    background: #c87030;
+    color: white;
+    padding: 2px 10px;
+    border-radius: 3px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+  .severity-medium {
+    display: inline-block;
+    background: var(--semantic-warning);
+    color: white;
+    padding: 2px 10px;
+    border-radius: 3px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+  .severity-low {
+    display: inline-block;
+    background: var(--semantic-info);
+    color: white;
+    padding: 2px 10px;
+    border-radius: 3px;
+    font-size: 9pt;
+    font-weight: 700;
+  }
+
+  /* ── ISSUE CARDS ── */
+  .issue-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    page-break-inside: avoid;
+  }
+  .issue-card.critical { border-right: 5px solid var(--semantic-error); }
+  .issue-card.high { border-right: 5px solid #c87030; }
+  .issue-card.medium { border-right: 5px solid var(--semantic-warning); }
+  .issue-card.low { border-right: 5px solid var(--semantic-info); }
+  .issue-title {
+    font-weight: 700;
+    font-size: 11.5pt;
+    margin-bottom: 6px;
+  }
+  .issue-detail {
+    font-size: 10.5pt;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+  .issue-impact {
+    font-size: 10pt;
+    color: var(--semantic-error);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .issue-fix {
+    font-size: 10pt;
+    color: var(--semantic-success);
+    font-weight: 500;
+  }
+
+  /* ── TABLES ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 10pt;
+    page-break-inside: auto;
+  }
+  thead { background: var(--header-fill); }
+  th {
+    color: white;
+    font-weight: 600;
+    padding: 8px 10px;
+    text-align: right;
+    font-size: 10pt;
+  }
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+    vertical-align: top;
+  }
+  tr:nth-child(even) { background: var(--table-stripe); }
+  tr:nth-child(odd) { background: white; }
+  .table-caption {
+    text-align: center;
+    font-size: 9.5pt;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-style: italic;
+  }
+
+  /* ── SUMMARY STATS ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 28pt;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .stat-number.critical { color: var(--semantic-error); }
+  .stat-number.high { color: #c87030; }
+  .stat-number.medium { color: var(--semantic-warning); }
+  .stat-number.low { color: var(--semantic-info); }
+  .stat-label {
+    font-size: 9.5pt;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── FLOW DIAGRAM ── */
+  .flow-box {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-size: 10pt;
+    page-break-inside: avoid;
+  }
+  .flow-arrow {
+    text-align: center;
+    font-size: 16pt;
+    color: var(--accent);
+    margin: 2px 0;
+  }
+  .flow-check { color: var(--semantic-success); font-weight: 700; }
+  .flow-warn { color: var(--semantic-error); font-weight: 700; }
+
+  /* ── PRIORITY TABLE ── */
+  .priority-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 120px 80px;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    font-size: 10pt;
+  }
+  .priority-row:nth-child(even) { background: var(--table-stripe); }
+  .priority-id {
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* ── SECTION DIVIDER ── */
+  .section-divider {
+    height: 2px;
+    background: linear-gradient(to left, var(--accent), transparent);
+    margin: 20px 0;
+  }
+
+  .page-break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ COVER PAGE ═══════════════ -->
+<div class="cover">
+  <div class="cover-accent-line"></div>
+  <div class="cover-side-line"></div>
+  <div class="cover-title-block">
+    <div class="cover-kicker">تقرير فني شامل</div>
+    <div class="cover-title">الفحص الشامل لنظام<br>عقلان لطب الأسنان</div>
+    <div class="cover-subtitle">تحليل كامل للكيانات وقاعدة البيانات والخدمات والواجهة الأمامية<br>والترابط بين الوحدات مع خطة إصلاح مفصلة</div>
+  </div>
+  <div class="cover-meta">
+    <div class="cover-meta-row"><span class="cover-meta-label">المشروع:</span> Aqlan Dental Pro</div>
+    <div class="cover-meta-row"><span class="cover-meta-label">التاريخ:</span> 20 مايو 2026</div>
+    <div class="cover-meta-row"><span class="cover-meta-label">الإصدار:</span> 1.0</div>
+    <div class="cover-meta-row"><span class="cover-meta-label">المحلل:</span> Z.ai Audit System</div>
+  </div>
+  <div class="cover-watermark">AUDIT</div>
+</div>
+
+<!-- ═══════════════ TABLE OF CONTENTS ═══════════════ -->
+<div class="page toc">
+  <div class="toc-title">فهرس المحتويات</div>
+  <div class="toc-item level-1"><span>1. الملخص التنفيذي</span><span class="toc-page">3</span></div>
+  <div class="toc-item level-1"><span>2. إحصائيات المشاكل المكتشفة</span><span class="toc-page">3</span></div>
+  <div class="toc-item level-1"><span>3. فحص كيانات قاعدة البيانات والعلاقات</span><span class="toc-page">4</span></div>
+  <div class="toc-item level-2"><span>3.1 مشاكل حرجة في لقطة النموذج</span><span class="toc-page">4</span></div>
+  <div class="toc-item level-2"><span>3.2 علاقات مفقودة ومكسورة</span><span class="toc-page">5</span></div>
+  <div class="toc-item level-2"><span>3.3 مشاكل سلامة البيانات</span><span class="toc-page">6</span></div>
+  <div class="toc-item level-2"><span>3.4 الترابط: الفاتورة والدفع</span><span class="toc-page">7</span></div>
+  <div class="toc-item level-2"><span>3.5 الترابط: الحجز والمريض</span><span class="toc-page">7</span></div>
+  <div class="toc-item level-2"><span>3.6 الترابط: الموعد والطابور</span><span class="toc-page">8</span></div>
+  <div class="toc-item level-2"><span>3.7 نمط الحذف الناعم</span><span class="toc-page">8</span></div>
+  <div class="toc-item level-1"><span>4. فحص المتحكمات والخدمات</span><span class="toc-page">9</span></div>
+  <div class="toc-item level-2"><span>4.1 مشاكل حرجة في التدفق</span><span class="toc-page">9</span></div>
+  <div class="toc-item level-2"><span>4.2 مشاكل عالية الأولوية</span><span class="toc-page">11</span></div>
+  <div class="toc-item level-2"><span>4.3 مشاكل متوسطة الأولوية</span><span class="toc-page">12</span></div>
+  <div class="toc-item level-1"><span>5. فحص الواجهة الأمامية</span><span class="toc-page">13</span></div>
+  <div class="toc-item level-2"><span>5.1 مشاكل حرجة في الأنواع</span><span class="toc-page">13</span></div>
+  <div class="toc-item level-2"><span>5.2 مشاكل عالية الأولوية</span><span class="toc-page">14</span></div>
+  <div class="toc-item level-2"><span>5.3 مشاكل متوسطة الأولوية</span><span class="toc-page">15</span></div>
+  <div class="toc-item level-1"><span>6. تحليل تدفق الترابط بين الوحدات</span><span class="toc-page">16</span></div>
+  <div class="toc-item level-1"><span>7. خطة الإصلاح حسب الأولوية</span><span class="toc-page">18</span></div>
+</div>
+
+<!-- ═══════════════ SECTION 1: EXECUTIVE SUMMARY ═══════════════ -->
+<div class="page">
+  <h1>1. الملخص التنفيذي</h1>
+  <p>تم إجراء فحص شامل لنظام عقلان لطب الأسنان بعد دمج عدة مراحل تطويرية متتالية (المراحل 5 و 9 و 10 بالإضافة إلى تطوير أنظمة الحجز والمواعيد والطابور) بشكل سريع ومباشر إلى الفرع الرئيسي دون مراجعة كافية. كشف الفحص عن <b>67 مشكلة</b> تتراوح بين حرجة ومنخفضة الخطورة. أخطر المشاكل المكتشفة تشمل: لقطة نموذج قاعدة البيانات تالفة بتعريف مكرر، عدم وجود كيان ربط بين الفواتير والمدفوعات، تدفق تأكيد الحجز لا ينشئ مريضاً أو موعداً تلقائياً، وعدم مزامنة إلغاء الطابور مع حالة الموعد.</p>
+  <p>يحتوي النظام على 71 كيان، 44 متحكماً، أكثر من 20 خدمة، وأكثر من 80 صفحة ومكون في الواجهة الأمامية. النظام يعمل لكنه يعاني من عدم تناسق كبير في البنية التحتية والترابط بين الوحدات، مما يسبب سلوكاً غير متوقع للمستخدمين وفجوات في سلامة البيانات.</p>
+
+  <h1>2. إحصائيات المشاكل المكتشفة</h1>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-number critical">7</div>
+      <div class="stat-label">حرج</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number high">22</div>
+      <div class="stat-label">عالي</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number medium">28</div>
+      <div class="stat-label">متوسط</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number low">10</div>
+      <div class="stat-label">منخفض</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>التصنيف</th><th>حرج</th><th>عالي</th><th>متوسط</th><th>منخفض</th><th>الإجمالي</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>كيانات قاعدة البيانات</td><td>3</td><td>6</td><td>8</td><td>3</td><td>20</td></tr>
+      <tr><td>المتحكمات والخدمات</td><td>3</td><td>6</td><td>10</td><td>3</td><td>22</td></tr>
+      <tr><td>الواجهة الأمامية</td><td>1</td><td>6</td><td>6</td><td>2</td><td>15</td></tr>
+      <tr><td>الترابط بين الوحدات</td><td>-</td><td>4</td><td>4</td><td>2</td><td>10</td></tr>
+      <tr style="font-weight:700;background:var(--section-bg)"><td>الإجمالي</td><td>7</td><td>22</td><td>28</td><td>10</td><td>67</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════ SECTION 3: DATABASE AUDIT ═══════════════ -->
+<div class="page">
+  <h1>3. فحص كيانات قاعدة البيانات والعلاقات</h1>
+
+  <h2>3.1 مشاكل حرجة في لقطة النموذج (Model Snapshot)</h2>
+
+  <div class="issue-card critical">
+    <div class="issue-title"><span class="severity-critical">حرج #DB-1</span> لقطة النموذج تالفة - تعريف مكرر لـ BookingRequest</div>
+    <div class="issue-detail">ملف <code>AppDbContextModelSnapshot.cs</code> يحتوي على تعريفين لـ BookingRequest: النسخة الجديدة (مع IsActive و DeletedAt و ConvertedToAppointmentId) والنسخة القديمة (بدون حقول الحذف الناعم ومع Status كنص). النسخة الثانية تتجاوز الأولى وقت التشغيل.</div>
+    <div class="issue-impact">التأثير: EF Core يعمل بمخطط قديم، الاستعلامات قد تفقد أعمدة موجودة فعلياً في قاعدة البيانات، عمليات الترحيل ستنتج نتائج خاطئة.</div>
+    <div class="issue-fix">الإصلاح: حذف الكتلة المكررة القديمة من اللقطة، ثم إعادة توليد الترحيل.</div>
+  </div>
+
+  <div class="issue-card critical">
+    <div class="issue-title"><span class="severity-critical">حرج #DB-2</span> اللقطة خارج المزامنة بشكل كبير مع النموذج الفعلي</div>
+    <div class="issue-detail">الخصائص التالية موجودة في الكيانات والإعدادات لكنها غير موجودة في اللقطة: Appointment.RoomName, ArrivedAt, CalledAt, InRoomAt, ServiceId, ClinicRoomId - Visit.ServiceId, CheckoutStatus - Payment.InvoiceId - BookingRequest.DoctorId</div>
+    <div class="issue-impact">التأثير: تشغيل ترحيل جديد سيحاول إضافة أعمدة موجودة مسبقاً، مما يسبب فشل وقت التشغيل.</div>
+    <div class="issue-fix">الإصلاح: حذف اللقطة وإعادة توليدها مع ترحيل توفيقي.</div>
+  </div>
+
+  <div class="issue-card critical">
+    <div class="issue-title"><span class="severity-critical">حرج #DB-3</span> عدم وجود كيان InvoicePayment للربط متعدد إلى متعدد</div>
+    <div class="issue-detail">التصميم الحالي يستخدم Payment.InvoiceId كعلاقة مباشرة (واحد إلى متعدد)، مما يعني أن دفعة واحدة لا يمكن توزيعها على عدة فواتير. هذا يقيد بشكل كبير المرونة المالية للنظام.</div>
+    <div class="issue-impact">التأثير: مريض يدفع 1000 ريال مقابل 3 فواتير لا يمكن توزيع الدفعة بشكل صحيح دون إنشاء 3 سجلات دفع منفصلة، مما يضخم عدد الدفعات ويكسر التقارير المالية.</div>
+    <div class="issue-fix">الإصلاح: إنشاء كيان InvoicePayment مع InvoiceId و PaymentId و AppliedAmount و AppliedAt.</div>
+  </div>
+
+  <h2>3.2 علاقات مفقودة ومكسورة</h2>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #DB-4</span> BookingRequest ليس له مفتاح أجنبي لـ Patient</div>
+    <div class="issue-detail">الكيان يخزن PatientName و PhoneNumber كنصوص حرة بدون PatientId. عند تأكيد الحجز وتحويله إلى موعد، لا يوجد ربط بالسجل المرجعي للمريض.</div>
+    <div class="issue-impact">التأثير: فجوة في سلامة البيانات، لا يمكن تتبع أي مريض ينتمي إليه الحجز.</div>
+    <div class="issue-fix">الإصلاح: إضافة Guid? PatientId و Patient? Navigation إلى BookingRequest مع إنشاء BookingRequestConfiguration.cs.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #DB-5</span> BookingRequest.ConvertedToAppointmentId بدون مفتاح أجنبي</div>
+    <div class="issue-detail">الحقل موجود كـ Guid? عاري بدون خاصية تنقل أو تكوين مفتاح أجنبي. حذف الموعد لن يفرغ هذا الحقل.</div>
+    <div class="issue-impact">التأثير: مراجع يتيمة، خطر تلف البيانات.</div>
+    <div class="issue-fix">الإصلاح: إضافة خاصية تنقل Appointment? وتكوين المفتاح الأجنبي.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #DB-6</span> 40 كيان بدون ملف تكوين Fluent API</div>
+    <div class="issue-detail">الكيانات التالية ليس لها ملف تكوين: Contract, Receipt, Employee, Notification, Setting, PatientAccount, WhatsAppMessage, Document, OrthoCase, SurgeryCase, Prescription, RolePermission و 28 كيان آخر. هذا يعني: لا فهارس للمفاتيح الأجنبية، لا قيود على طول النص، لا سلوك حذف متسلسل محدد.</div>
+    <div class="issue-impact">التأثير: مفاتيح أجنبية بدون فهارس = استعلامات بطيئة، سلوك حذف غير متوقع.</div>
+    <div class="issue-fix">الإصلاح: إنشاء ملفات تكوين للأولويات: Contract, Receipt, PatientAccount, OrthoCase.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #DB-7</span> حقول الحالة نصية سحرية (Magic Strings) بدلاً من تعدادات</div>
+    <div class="issue-detail">الكيانات التالية تستخدم string Status بدلاً من enum: Contract.Status="active", LabOrder.Status="sent", SurgeryCase.Status="scheduled", TreatmentStage.Status="pending", OrthoCase.Status="active", InternalReferral.Status="pending", WhatsAppMessage.Status="pending", InventoryAdjustment.AdjustmentType="manual" وغيرها.</div>
+    <div class="issue-impact">التأثير: أخطاء إملائية ستؤدي لتلف البيانات بصمت، لا تحقق وقت الترجمة، قيم حالة غير متسقة.</div>
+    <div class="issue-fix">الإصلاح: إنشاء تعدادات لكل نوع حالة واستخدام HasConversion في التكوين.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #DB-8</span> Appointment و ClinicQueueItem - مصدران لنفس البيانات</div>
+    <div class="issue-detail">Appointment يحتوي على RoomName و CalledAt و InRoomAt، و ClinicQueueItem يحتوي أيضاً على نفس الحقول. عند استدعاء مريض يجب تحديث كلا الكيانين.</div>
+    <div class="issue-impact">التأثير: مصدران للحقيقة لنفس البيانات، إذا تباعدا يعرض النظام حالة خاطئة.</div>
+    <div class="issue-fix">الإصلاح: إزالة حقول الطابور من Appointment واستخدام ClinicQueueItem كمصدر وحيد، أو إضافة آلية مزامنة.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #DB-9</span> BookingRequest.PreferredDate عدم تطابق النوع مع الترحيل</div>
+    <div class="issue-detail">الكيان يعرّف PreferredDate كـ string? لكن الترحيل واللقطة القديمة تعرفه كـ DateOnly?. هذا عدم تطابق يسبب أخطاء تحويل وقت التشغيل.</div>
+    <div class="issue-impact">التأثير: أخطاء في قراءة/كتابة طلبات الحجز.</div>
+    <div class="issue-fix">الإصلاح: توحيد النوع إلى DateOnly? في الكيان والترحيل.</div>
+  </div>
+
+  <h2>3.3 مشاكل سلامة البيانات</h2>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #DB-10</span> Payment.InvoiceId - سلوك SetNull يكسر مسار التدقيق</div>
+    <div class="issue-detail">حذف فاتورة سيفرغ InvoiceId على جميع الدفعات المرتبطة عبر OnDelete(DeleteBehavior.SetNull)، مما يفقد تتبع أي دفعة كانت لأي فاتورة.</div>
+    <div class="issue-impact">التأثير: مسار التدقيق المالي مكسور إذا حذفت فاتورة.</div>
+    <div class="issue-fix">الإصلاح: تغيير إلى OnDelete(DeleteBehavior.Restrict) واستخدام الحذف الناعم بدلاً من ذلك.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #DB-11</span> ReceiptNumber بدون قيد تفرد</div>
+    <div class="issue-detail">Receipt.ReceiptNumber و Payment.ReceiptNumber ليس لديهما قيد تفرد. يمكن إنشاء أرقام إيصالات مكررة.</div>
+    <div class="issue-impact">التأثير: إيصالات مكررة تسبب ارتباكاً في التقارير المالية.</div>
+    <div class="issue-fix">الإصلاح: إضافة فهارس تفرد في التكوين.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #DB-12</span> Patient.Phone و WhatsApp قابلان للقيم الفارغة</div>
+    <div class="issue-detail">كلا الحقلين string? بدون تحقق إلزامي لمعلومات اتصال واحدة على الأقل. يمكن إنشاء مريض بدون أي وسيلة تواصل.</div>
+    <div class="issue-impact">التأثير: متابعة المريض تصبح مستحيلة.</div>
+    <div class="issue-fix">الإصلاح: إضافة تحقق على مستوى التطبيق يطلب رقم هاتف واحد على الأقل.</div>
+  </div>
+
+  <h2>3.4 الترابط: الفاتورة والدفع</h2>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #DB-13</span> InvoiceStatus.Paid بدون آلية انتقال تلقائي</div>
+    <div class="issue-detail">حالة Paid موجودة في التعداد لكن لا يوجد آلية تلقائية لانتقال الفاتورة من Issued إلى Paid عندما تساوي المدفوعات إجمالي الفاتورة. التعليق في الكود يقول صراحة "هذه المرحلة لا تعين الحالة Paid تلقائياً".</div>
+    <div class="issue-impact">التأثير: الفواتير تبقى في حالة Issued حتى بعد دفعها بالكامل، مما يجعل التقارير المالية غير دقيقة.</div>
+    <div class="issue-fix">الإصلاح: إضافة خدمة مجال تفحص إجمالي المدفوعات مقابل إجمالي الفاتورة وتحدث الحالة تلقائياً عند تسجيل دفعات.</div>
+  </div>
+
+  <h2>3.5 الترابط: الحجز والمريض</h2>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #DB-14</span> تدفق تأكيد الحجز مكسور - لا إنشاء تلقائي للمريض</div>
+    <div class="issue-detail">عند تأكيد طلب حجز: (1) لا يوجد PatientId للربط بمريض موجود، (2) ConvertedToAppointmentId بدون مفتاح أجنبي، (3) لا آلية لإنشاء سجل مريض تلقائياً من بيانات الحجز، (4) BookingRequestStatus معرف داخل ملف الكيان بدلاً من مجلد التعدادات.</div>
+    <div class="issue-impact">التأثير: الموظفون يجب أن ينفذوا 2-3 خطوات يدوية لكل حجز مؤكد. إذا نسوا إنشاء المريض، يقع في الفجوة.</div>
+    <div class="issue-fix">الإصلاح: إضافة منطق إنشاء تلقائي للمريض في ConvertToAppointment، أو نقطة نهاية "تأكيد وإنشاء" بنقرة واحدة.</div>
+  </div>
+
+  <h2>3.6 الترابط: الموعد والطابور</h2>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #DB-15</span> ClinicQueueStatus لا يحتوي على حالة NoShow</div>
+    <div class="issue-detail">AppointmentStatus يحتوي على NoShow لكن ClinicQueueStatus لا يحتوي عليها. عندما يوضع موعد كـ NoShow، حالة عنصر الطابور غير محددة وقد تبقى في حالة Waiting إلى أجل غير مسمى.</div>
+    <div class="issue-impact">التأثير: عناصر طابور يتيمة في حالة Waiting.</div>
+    <div class="issue-fix">الإصلاح: إضافة NoShow إلى ClinicQueueStatus أو إضافة منطق لإلغاء عنصر الطابور تلقائياً.</div>
+  </div>
+
+  <h2>3.7 نمط الحذف الناعم</h2>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #DB-16</span> فلتر الحذف الناعم العالمي يطبق على جميع الكيانات بدون استثناء</div>
+    <div class="issue-detail">الفلتر العالمي في AppDbContext يطبق e.IsActive على كل كيان يطبق ISoftDeletable. هذا يعني RolePermission وغيرها تختفي من الاستعلامات عند IsActive=false، بما في ذلك إدارة المسؤول.</div>
+    <div class="issue-impact">التأثير: صلاحيات الدور المحذوفة ناعماً تختفي من كل مكان.</div>
+    <div class="issue-fix">الإصلاح: تجاوز الفلتر لكل كيان حسب الحاجة باستخدام IgnoreQueryFilters في الاستعلامات الإدارية.</div>
+  </div>
+</div>
+
+<!-- ═══════════════ SECTION 4: CONTROLLERS & SERVICES ═══════════════ -->
+<div class="page">
+  <h1>4. فحص المتحكمات والخدمات</h1>
+
+  <h2>4.1 مشاكل حرجة في التدفق</h2>
+
+  <div class="issue-card critical">
+    <div class="issue-title"><span class="severity-critical">حرج #API-1</span> تأكيد الحجز لا ينشئ مريضاً أو موعداً</div>
+    <div class="issue-detail">عند تغيير حالة طلب الحجز إلى "Confirmed"، النظام يحدث الحالة فقط ويرسل إشعار واتساب. لا ينشئ تلقائياً: (1) سجل Patient، (2) سجل Appointment، (3) عنصر ClinicQueue. يوجد نقطة نهاية منفصلة ConvertToAppointment لكنها تتطلب PatientId من المتصل.</div>
+    <div class="issue-impact">التأثير: تدفق مكسور للمرضى الجدد. الموظف يجب أن ينفذ 2-3 خطوات يدوية. إذا نسي إنشاء المريض، الحجز يؤكد لكن لا يتحول لموعد - المريض يسقط في الفجوة.</div>
+    <div class="issue-fix">الإصلاح: في ConvertToAppointmentAsync، إضافة منطق إنشاء تلقائي للمريض إذا لم يوجد مطابق برقم الهاتف. أو إضافة نقطة نهاية "تأكيد وإنشاء" بنقرة واحدة.</div>
+  </div>
+
+  <div class="issue-card critical">
+    <div class="issue-title"><span class="severity-critical">حرج #API-2</span> لا يوجد نقطة نهاية لإنشاء فاتورة</div>
+    <div class="issue-detail">InvoicesController يحتوي على GET و PUT و PATCH لكن لا يوجد POST لإنشاء فاتورة جديدة. الطريقة الوحيدة لإنشاء فاتورة هي عبر PatientJourneyController.CreateDraftInvoice المرتبط بسير عمل الزيارة.</div>
+    <div class="issue-impact">التأثير: لا يمكن إنشاء فواتير مستقلة (لمنتجات، رسوم مختبر، خدمات غير مرتبطة بزيارة).</div>
+    <div class="issue-fix">الإصلاح: إضافة POST /api/invoices مع CreateInvoiceRequest يحتوي على PatientId وبنود الفاتورة و VisitId اختياري.</div>
+  </div>
+
+  <div class="issue-card critical">
+    <div class="issue-title"><span class="severity-critical">حرج #API-3</span> إلغاء الطابور لا يزامن حالة الموعد</div>
+    <div class="issue-detail">عند إلغاء عنصر طابور في ClinicQueueController.Cancel، الكود لا يستدعي SyncAppointmentStatus (عكس CallPatient و EnterRoom و StartVisit و Complete التي تزامن جميعها). حالة الموعد تبقى بدون تغيير.</div>
+    <div class="issue-impact">التأثير: الموعد يمكن أن يكون في حالة Waiting/Called/InRoom بينما عنصر الطابور Cancelled. المريض يظهر في قائمة المواعيد كنشط رغم إزالته من الطابور.</div>
+    <div class="issue-fix">الإصلاح: إضافة await SyncAppointmentStatus(item, AppointmentStatus.Cancelled) قبل SaveChangesAsync في دالة Cancel.</div>
+  </div>
+
+  <h2>4.2 مشاكل عالية الأولوية</h2>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #API-4</span> 8 متحكمات بدون طبقة خدمة - منطق أعمال مدمج</div>
+    <div class="issue-detail">المتحكمات التالية تحقن AppDbContext مباشرة وتحتوي على كل المنطق مدمجاً: ClinicQueueController, InvoicesController, VisitsController, DoctorsController, SearchController, NotificationsController, PrescriptionsController, ReportsController, PatientJourneyController. هذا ينمط بنية المشروع نفسه (مثل BookingRequestService و FinanceService).</div>
+    <div class="issue-impact">التأثير: لا يمكن اختبار الوحدة لأي من هذه المتحكمات، قواعد الأعمال مبعثرة، تكرار الكود (مثل BuildPatientDisplayName مكرر في 4 أماكن).</div>
+    <div class="issue-fix">الإصلاح: استخراج طبقات خدمة لكل متحكم: ClinicQueueService, InvoiceService, VisitService, DoctorService, ReportService وغيرها.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #API-5</span> تحديث حالة الموعد + إضافة الطابور بدون معاملة</div>
+    <div class="issue-detail">عند تغيير حالة الموعد إلى Arrived/Waiting، يتم إضافة ClinicQueueItem بعد تحديث الحالة لكن بعملية SaveChanges منفصلة. لا توجد معاملة تلتف على العمليتين. إذا فشلت إضافة الطابور، الموعد يبقى في حالة Arrived بدون عنصر طابور.</div>
+    <div class="issue-impact">التأثير: موعد في حالة Arrived بدون إدخال طابور مقابل. المستخدم يرى نجاحاً لكن الطابور غير متسق.</div>
+    <div class="issue-fix">الإصلاح: لف العمليتين في معاملة، أو نقل منطق إضافة الطابور إلى AppointmentService.UpdateStatusAsync.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #API-6</span> فحص تعارض الغرفة بعد حفظ الموعد</div>
+    <div class="issue-detail">في AppointmentsController.Create و Update، الموعد يُحفظ أولاً عبر service.CreateAsync() ثم يُفحص تعارض الغرفة. إذا وُجد تعارض، الموعد سبق حفظه في قاعدة البيانات رغم إرجاع خطأ 409.</div>
+    <div class="issue-impact">التأثير: تعارض غرفة يُبلَّغ عنه لكن الموعد محفوظ فعلياً - بيانات غير متسقة.</div>
+    <div class="issue-fix">الإصلاح: نقل فحص تعارض الغرفة إلى داخل CreateAsync/UpdateAsync قبل SaveChanges.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #API-7</span> PaymentDto لا يعين CreatedAt/UpdatedAt</div>
+    <div class="issue-detail">دالة MapPayment في FinanceService لا تعين حقول CreatedAt وUpdatedAt في PaymentDto رغم وجودها. القيم ستكون دائماً فارغة.</div>
+    <div class="issue-impact">التأثير: الواجهة لا يمكنها عرض تواريخ إنشاء/تعديل الدفعات. مسار التدقيق مكسور.</div>
+    <div class="issue-fix">الإصلاح: إضافة CreatedAt = p.CreatedAt.ToString("yyyy-MM-dd") و UpdatedAt = p.UpdatedAt.ToString("yyyy-MM-dd") في MapPayment.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #API-8</span> استرداد الدفع لا يعيد حالة الفاتورة</div>
+    <div class="issue-detail">عند استرداد دفعة عبر RefundPaymentAsync، يتم إنشاء دفعة سلبية لكن لا يتم فحص ما إذا كان إجمالي المدفوع أصبح أقل من إجمالي الفاتورة لإعادة الحالة من Paid إلى Issued. فاتورة مستردة بالكامل تبقى في حالة Paid.</div>
+    <div class="issue-impact">التأثير: تقارير مالية غير دقيقة، فواتير مدفوعة بالكامل رغم صافي دفع صفر.</div>
+    <div class="issue-fix">الإصلاح: بعد إنشاء الاسترداد، فحص إجمالي المدفوع وإعادة الحالة إذا لزم.</div>
+  </div>
+
+  <h2>4.3 مشاكل متوسطة الأولوية</h2>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #API-9</span> BatchUpdateStatus يتجاوز طبقة الخدمة</div>
+    <div class="issue-detail">AppointmentsController.BatchUpdateStatus يقرأ المواعيد مباشرة من db.Appointments، يحقق الانتقالات مدمجاً، ويحدث الحالة - متجاوزاً AppointmentService.UpdateStatusAsync. المنطق الإضافي في الخدمة (مثل إضافة الطابور التلقائي) لا يُستدعى.</div>
+    <div class="issue-impact">التأثير: تحديث حالة دفعي إلى Arrived/Waiting لن يضيف المرضى تلقائياً إلى الطابور.</div>
+    <div class="issue-fix">الإصلاح: استدعاء service.UpdateStatusAsync لكل موعد في الحلقة، أو إضافة طريقة دفعية للخدمة.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #API-10</span> نقطة نهاية الطابور العام تكشف بيانات المرضى</div>
+    <div class="issue-detail">PublicController.GetQueue و ClinicQueueController.GetDisplay هما [AllowAnonymous] ويكشفان أسماء المرضى وأنواع المواعيد وأسماء الأطباء. أي شخص يمكنه تعداد مرضى اليوم بدون مصادقة.</div>
+    <div class="issue-impact">التأثير: تسرب معلومات صحية شخصية بدون مصادقة.</div>
+    <div class="issue-fix">الإصلاح: إزالة نقطة النهاية أو طلب مصادقة. إذا لشاشة انتظار، استخدام أرقام الطابور بدلاً من الأسماء.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #API-11</span> ReportsController - استعلامات كثيفة الذاكرة ونمط N+1</div>
+    <div class="issue-detail">تقارير متعددة تحمل كل البيانات إلى الذاكرة للحساب بدلاً من استخدام GROUP BY على مستوى قاعدة البيانات. تحميل أسماء الأطباء منفصلاً يسبب نمط N+1. التقارير المتأثرة: التركيبة السكانية، العقود المتأخرة، الاحتفاظ بالمرضى، تحليل الأدوية.</div>
+    <div class="issue-impact">التأثير: تدهور الأداء مع نمو البيانات. التقارير ستصبح بطيئة وجائعة للذاكرة.</div>
+    <div class="issue-fix">الإصلاح: استخدام GROUP BY وتجميع على مستوى قاعدة البيانات، Include() لأسماء الأطباء.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #API-12</span> تحقق مفقود لعدة DTOs</div>
+    <div class="issue-detail">عدة DTOs تفتقر لمحققي FluentValidation: UpdateAppointmentStatusRequest, CreateVisitRequest, UpdateVisitRequest, IntakeRequest, HandoffRequest, CheckoutRequest, AddToQueueRequest, UpdateInvoiceRequest, CancelInvoiceRequest.</div>
+    <div class="issue-impact">التأثير: بيانات غير صالحة قد تصل لمنطق الأعمال.</div>
+    <div class="issue-fix">الإصلاح: إضافة محققي FluentValidation لجميع DTOs المطلوبة.</div>
+  </div>
+</div>
+
+<!-- ═══════════════ SECTION 5: FRONTEND AUDIT ═══════════════ -->
+<div class="page">
+  <h1>5. فحص الواجهة الأمامية</h1>
+
+  <h2>5.1 مشاكل حرجة في الأنواع</h2>
+
+  <div class="issue-card critical">
+    <div class="issue-title"><span class="severity-critical">حرج #FE-1</span> تأكيد الحجز قد يؤكد بدون ملف مريض</div>
+    <div class="issue-detail">في booking-requests/page.tsx، عند تأكيد حجز، يتم استدعاء ensurePatientFile أولاً. إذا فشل، كتلة catch لا تزال تستدعي api.patch لتأكيد الحجز (السطر 456). هذا ينشئ حجزاً مؤكداً بدون ملف مريض. الرسالة تقول "تم تأكيد الطلب لكن فشل فتح ملف المريض" وهو مربك.</div>
+    <div class="issue-impact">التأثير: حجز مؤكد بدون مريض مرتبط - الموظف لا يستطيع العثور على المريض.</div>
+    <div class="issue-fix">الإصلاح: إذا فشل إنشاء المريض، لا تؤكد الحجز. بدلاً من ذلك، أظهر خطأ واترك الحجز في حالة المراجعة.</div>
+  </div>
+
+  <h2>5.2 مشاكل عالية الأولوية</h2>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #FE-2</span> useDashboardStats hook بأنواع قديمة لا تتطابق</div>
+    <div class="issue-detail">الخطاف يعرّف DashboardStats بخصائص مختلفة تماماً عن النوع الأساسي في types/dashboard.ts. صفحة لوحة التحكم تتجاوز الخطاف وتستدعي API مباشرة. الخطاف كود ميت بأنواع خاطئة.</div>
+    <div class="issue-impact">التأثير: أي مكون يستخدم useDashboardStats() سيفشل في عرض البيانات الصحيحة.</div>
+    <div class="issue-fix">الإصلاح: حذف الخطاف الميت أو تحديثه ليتطابق مع النوع الأساسي.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #FE-3</span> نوع QueueDisplay لا يتطابق مع استجابة API</div>
+    <div class="issue-detail">نوع QueueDisplay في types/appointment.ts يستخدم patientId و appointmentId لكن استجابة API الفعلية تستخدم queueItemId. صفحة clinic-display تعرف واجهة DisplayData الخاصة بها. أي كود يستورد QueueDisplay سيحصل على حقول خاطئة.</div>
+    <div class="issue-impact">التأثير: عدم تطابق أنواع يسبب أخطاء وقت التشغيل.</div>
+    <div class="issue-fix">الإصلاح: تحديث نوع QueueDisplay ليتطابق مع استجابة API الفعلية.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #FE-4</span> PaginatedResponse مكرر بأشكال غير متوافقة</div>
+    <div class="issue-detail">نوعان PaginatedResponse في types/api.ts و types/inventory.ts بحقول مختلفة: api.ts يستخدم totalCount بينما inventory.ts يستخدم total. استيراد من ملف خاطئ يسبب فشلاً.</div>
+    <div class="issue-impact">التأثير: خطر سلامة الأنواع، سلوك غير متوقع حسب مصدر الاستيراد.</div>
+    <div class="issue-fix">الإصلاح: توحيد في نوع PaginatedResponse واحد في types/api.ts.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #FE-5</span> صفحة المواعيد لا ترسل ServiceId و ClinicRoomId</div>
+    <div class="issue-detail">نموذج إنشاء/تعديل الموعد في الواجهة الأمامية لا يرسل ServiceId و ClinicRoomId رغم أن الخلفية تتوقعهما. فحص تعارض الغرفة لا يعمل بدون ClinicRoomId.</div>
+    <div class="issue-impact">التأثير: تعارضات غرف غير مكتشفة، مواعيد بدون خدمة محددة.</div>
+    <div class="issue-fix">الإصلاح: إضافة حقول اختيار الخدمة والغرفة لنموذج الموعد.</div>
+  </div>
+
+  <div class="issue-card high">
+    <div class="issue-title"><span class="severity-high">عالي #FE-6</span> أنواع Finance غير متطابقة مع DTOs الخلفية</div>
+    <div class="issue-detail">الأنواع في types/finance.ts لا تتضمن InvoiceId في PaymentDto، ولا تتضمن InvoicePayments في InvoiceDto. هذا يعني الواجهة لا تعرض الربط بين الفواتير والمدفوعات.</div>
+    <div class="issue-impact">التأثير: صفحة الفاتورة لا تعرض المدفوعات المرتبطة، لا تخصيص مدفوعات.</div>
+    <div class="issue-fix">الإصلاح: تحديث أنواع Finance لتتطابق مع DTOs الخلفية.</div>
+  </div>
+
+  <h2>5.3 مشاكل متوسطة الأولوية</h2>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #FE-7</span> معالجة أخطاء مفقودة في استدعاءات API</div>
+    <div class="issue-detail">عدة صفحات لا تتعامل مع أخطاء API بشكل صحيح: صفحة المخزون لا تعالج أخطاء الترحيل، صفحة التقارير لا تعالج أخطاء تحميل البيانات، صفحة الموردين لا تعالج أخطاء الإنشاء.</div>
+    <div class="issue-impact">التأثير: تجميد الصفحة أو رسائل خطأ غير مفيدة عند فشل API.</div>
+    <div class="issue-fix">الإصلاح: إضافة كتل try-catch مع رسائل toast لجميع استدعاءات API.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #FE-8</span> عدم تحديث البيانات بعد العمليات</div>
+    <div class="issue-detail">بعد عمليات مثل تأكيد حجز أو إنشاء دفعة، بعض الصفحات لا تعيد تحميل البيانات. صفحة الحجز لا تعيد تحميل القائمة بعد التأكيد، صفحة الفواتير لا تتحدث بعد إصدار فاتورة.</div>
+    <div class="issue-impact">التأثير: المستخدم يرى بيانات قديمة يجب تحديث الصفحة يدوياً.</div>
+    <div class="issue-fix">الإصلاح: إعادة جلب البيانات بعد كل عملية تحويل ناجحة.</div>
+  </div>
+
+  <div class="issue-card medium">
+    <div class="issue-title"><span class="severity-medium">متوسط #FE-9</span> الشريط الجانبي لا يتضمن روابط لجميع الوحدات</div>
+    <div class="issue-detail">الشريط الجانبي يفتقر لروابط لبعض الوحدات الجديدة: أوامر الشراء (Purchase Orders) غير موجودة كرابط مباشر، شاشة عرض الطابور غير مرتبطة، صفحة رحلة المريض مخفية.</div>
+    <div class="issue-impact">التأثير: المستخدمون لا يجدون الوحدات الجديدة بسهولة.</div>
+    <div class="issue-fix">الإصلاح: تحديث الشريط الجانبي مع روابط لجميع الوحدات.</div>
+  </div>
+</div>
+
+<!-- ═══════════════ SECTION 6: CROSS-MODULE FLOW ═══════════════ -->
+<div class="page">
+  <h1>6. تحليل تدفق الترابط بين الوحدات</h1>
+
+  <h2>6.1 تدفق الحجز إلى المريض إلى الموعد إلى الطابور</h2>
+  <p>التدفق الحالي في النظام يمر بالمراحل التالية، مع فجوات محددة:</p>
+
+  <div class="flow-box">
+    <b>1. نموذج الحجز العام</b><br>
+    POST /api/public/booking-requests يُنشئ BookingRequest (Status: Pending)
+    <span class="flow-check"> يعمل</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>2. تأكيد الحجز</b><br>
+    PATCH /api/booking-requests/{id}/status يحدث الحالة لـ Confirmed ويرسل إشعار واتساب<br>
+    <span class="flow-warn"> لا ينشئ مريضاً - لا ينشئ موعداً</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>3. خطوة يدوية: إنشاء المريض</b><br>
+    يجب على الموظف إنشاء المريض يدوياً عبر POST /api/patients<br>
+    <span class="flow-warn"> فجوة - يمكن نسيانها</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>4. تحويل الحجز لموعد</b><br>
+    POST /api/booking-requests/{id}/convert-to-appointment يُنشئ Appointment ويضبط ConvertedToAppointmentId<br>
+    <span class="flow-check"> يعمل - إذا لنفس اليوم: ClinicQueueItem يُنشأ تلقائياً</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>5. وصول المريض</b><br>
+    PUT /api/appointments/{id}/status (Arrived/Waiting) يُضيف تلقائياً للطابور<br>
+    <span class="flow-check"> يعمل</span> <span class="flow-warn"> لكن بدون معاملة!</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>6. استدعاء المريض</b><br>
+    POST /api/clinic-queue/{id}/call يحدث الطابور ويزامن الموعد<br>
+    <span class="flow-check"> يعمل</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>7. بدء الزيارة</b><br>
+    POST /api/clinic-queue/{id}/start يُنشئ Visit تلقائياً ويزامن الموعد<br>
+    <span class="flow-check"> يعمل</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>8. إكمال الزيارة</b><br>
+    POST /api/clinic-queue/{id}/complete يكمل الطابور ويزامن الموعد<br>
+    <span class="flow-check"> يعمل</span>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <h2>6.2 تدفق الفاتورة والدفع</h2>
+
+  <div class="flow-box">
+    <b>1. إنشاء فاتورة مسودة</b><br>
+    PatientJourneyController.CreateDraftInvoice يُنشئ Invoice (Status: Draft)<br>
+    <span class="flow-warn"> لا يوجد POST /api/invoices لإنشاء فاتورة مستقلة</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>2. إصدار الفاتورة</b><br>
+    PATCH /api/invoices/{id}/issue يغير الحالة لـ Issued<br>
+    <span class="flow-check"> يعمل</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>3. تسجيل دفعة</b><br>
+    POST /api/payments (مع InvoiceId) يُنشئ الدفعة ويربطها بالفاتورة ويحاول الانتقال لـ Paid تلقائياً<br>
+    <span class="flow-check"> يعمل</span> <span class="flow-warn"> لكن الدفعة الواحدة لا يمكن توزيعها على عدة فواتير</span>
+  </div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box">
+    <b>4. استرداد دفعة</b><br>
+    FinanceService.RefundPaymentAsync يُنشئ دفعة سلبية<br>
+    <span class="flow-warn"> لا يعيد حالة الفاتورة من Paid لـ Issued عند الاسترداد الكامل</span>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <h2>6.3 نقاط الفشل الحرجة في الترابط</h2>
+
+  <table>
+    <thead>
+      <tr><th>من</th><th>إلى</th><th>المشكلة</th><th>الخطورة</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>BookingRequest</td><td>Patient</td><td>لا يوجد إنشاء تلقائي للمريض عند التأكيد</td><td><span class="severity-critical">حرج</span></td></tr>
+      <tr><td>BookingRequest</td><td>Appointment</td><td>التحويل يتطلب PatientId يدوياً</td><td><span class="severity-high">عالي</span></td></tr>
+      <tr><td>Appointment</td><td>ClinicQueue</td><td>إضافة الطابور بدون معاملة</td><td><span class="severity-high">عالي</span></td></tr>
+      <tr><td>ClinicQueue</td><td>Appointment</td><td>إلغاء الطابور لا يزامن الموعد</td><td><span class="severity-critical">حرج</span></td></tr>
+      <tr><td>Appointment</td><td>ClinicQueue</td><td>تحديث دفعي يتجاوز إضافة الطابور</td><td><span class="severity-medium">متوسط</span></td></tr>
+      <tr><td>Invoice</td><td>Payment</td><td>علاقة واحد-متعدد فقط (لا كيان ربط)</td><td><span class="severity-critical">حرج</span></td></tr>
+      <tr><td>Payment Refund</td><td>Invoice Status</td><td>الاسترداد لا يعيد حالة الفاتورة</td><td><span class="severity-high">عالي</span></td></tr>
+      <tr><td>Appointment</td><td>ClinicQueue</td><td>حقول مكررة (مصدران للبيانات)</td><td><span class="severity-medium">متوسط</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════ SECTION 7: FIX PLAN ═══════════════ -->
+<div class="page">
+  <h1>7. خطة الإصلاح حسب الأولوية</h1>
+
+  <h2>7.1 المرحلة الأولى: إصلاحات حرجة (فوري)</h2>
+  <p>هذه الإصلاحات يجب تنفيذها فوراً لأنها تسبب فقدان بيانات أو سلوكاً خاطئاً ملموساً:</p>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>المشكلة</th><th>الإصلاح</th><th>الجهد</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-error)">F1</td>
+        <td>إلغاء الطابور لا يزامن الموعد</td>
+        <td>إضافة SyncAppointmentStatus في ClinicQueueController.Cancel</td>
+        <td>منخفض</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-error)">F2</td>
+        <td>تأكيد الحجز قد يؤكد بدون مريض (Frontend)</td>
+        <td>إذا فشل إنشاء المريض، لا تؤكد الحجز - أظهر خطأ</td>
+        <td>منخفض</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-error)">F3</td>
+        <td>لقطة النموذج تالفة</td>
+        <td>حذف الكتلة المكررة وإعادة توليد الترحيل التوفيقي</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-error)">F4</td>
+        <td>تأكيد الحجز لا ينشئ مريضاً (Backend)</td>
+        <td>إضافة إنشاء تلقائي للمريض في ConvertToAppointment</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-error)">F5</td>
+        <td>لا يوجد نقطة نهاية POST لإنشاء فاتورة</td>
+        <td>إضافة POST /api/invoices مع CreateInvoiceRequest</td>
+        <td>متوسط</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>7.2 المرحلة الثانية: إصلاحات عالية الأولوية (خلال أسبوع)</h2>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>المشكلة</th><th>الإصلاح</th><th>الجهد</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H1</td>
+        <td>إضافة الطابور بدون معاملة</td>
+        <td>لف العمليتين في معاملة أو النقل للخدمة</td>
+        <td>منخفض</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H2</td>
+        <td>فحص تعارض الغرفة بعد حفظ الموعد</td>
+        <td>نقل الفحص قبل SaveChanges</td>
+        <td>منخفض</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H3</td>
+        <td>PaymentDto بدون CreatedAt/UpdatedAt</td>
+        <td>إضافة التعيين في MapPayment</td>
+        <td>منخفض</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H4</td>
+        <td>الاسترداد لا يعيد حالة الفاتورة</td>
+        <td>فحص إجمالي المدفوع بعد الاسترداد</td>
+        <td>منخفض</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H5</td>
+        <td>BookingRequest بدون PatientId FK</td>
+        <td>إضافة الحقل والتنقل والتكوين</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H6</td>
+        <td>أنواع Frontend غير متطابقة</td>
+        <td>تحديث أنواع Dashboard, Queue, Finance, PaginatedResponse</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H7</td>
+        <td>نموذج الموعد بدون ServiceId/ClinicRoomId</td>
+        <td>إضافة حقول اختيار الخدمة والغرفة</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H8</td>
+        <td>حقول الحالة نصية سحرية</td>
+        <td>إنشاء تعدادات: ContractStatus, LabOrderStatus, SurgeryStatus</td>
+        <td>عالي</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">H9</td>
+        <td>InvoicePayment كيان ربط مفقود</td>
+        <td>إنشاء كيان InvoicePayment مع ترحيل</td>
+        <td>عالي</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>7.3 المرحلة الثالثة: إصلاحات متوسطة (خلال أسبوعين)</h2>
+
+  <table>
+    <thead>
+      <tr><th>#</th><th>المشكلة</th><th>الإصلاح</th><th>الجهد</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">M1</td>
+        <td>استخراج طبقات خدمة لـ 8 متحكمات</td>
+        <td>ClinicQueueService, InvoiceService, VisitService, etc.</td>
+        <td>عالي</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">M2</td>
+        <td>تحسين استعلامات التقارير</td>
+        <td>GROUP BY على مستوى DB، Include() للأطباء</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">M3</td>
+        <td>إنشاء ملفات تكوين لـ 40 كيان</td>
+        <td>أولوية: Contract, Receipt, PatientAccount, OrthoCase</td>
+        <td>عالي</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">M4</td>
+        <td>إضافة محقق DTOs</td>
+        <td>FluentValidation لجميع DTOs المطلوبة</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">M5</td>
+        <td>معالجة أخطاء Frontend</td>
+        <td>try-catch + toast لجميع استدعاءات API</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">M6</td>
+        <td>إزالة حقول الطابور المكررة من Appointment</td>
+        <td>استخدام ClinicQueueItem كمصدر وحيد</td>
+        <td>متوسط</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">M7</td>
+        <td>تحديث الشريط الجانبي</td>
+        <td>إضافة روابط لجميع الوحدات</td>
+        <td>منخفض</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="section-divider"></div>
+
+  <h2>7.4 ملخص الجهد التقديري</h2>
+
+  <table>
+    <thead>
+      <tr><th>المرحلة</th><th>عدد الإصلاحات</th><th>الجهد التقديري</th><th>الإطار الزمني</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-error)">الأولى (حرجة)</td>
+        <td>5</td>
+        <td>2-3 أيام تطوير</td>
+        <td>فوري</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#c87030">الثانية (عالية)</td>
+        <td>9</td>
+        <td>5-7 أيام تطوير</td>
+        <td>خلال أسبوع</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:var(--semantic-warning)">الثالثة (متوسطة)</td>
+        <td>7</td>
+        <td>7-10 أيام تطوير</td>
+        <td>خلال أسبوعين</td>
+      </tr>
+      <tr style="font-weight:700;background:var(--section-bg)">
+        <td>الإجمالي</td>
+        <td>21 إصلاح أساسي</td>
+        <td>14-20 يوم تطوير</td>
+        <td>3 أسابيع</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:16px">هذه الخطة تركز على 21 إصلاحاً أساسياً من أصل 67 مشكلة مكتشفة. باقي المشاكل (46) ذات أولوية منخفضة أو متوسطة متأخرة ويمكن معالجتها بالتدريج في المراحل اللاحقة. الأولوية القصوى لإصلاح المشاكل الحرجة التي تسبب فقدان بيانات أو سلوكاً خاطئاً ملموساً للمستخدمين، خاصة مشكلة إلغاء الطابور بدون مزامنة الموعد ومشكلة تأكيد الحجز بدون مريض.</p>
+</div>
+
+</body>
+</html>

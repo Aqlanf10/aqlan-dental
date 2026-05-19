@@ -30,4 +30,6 @@ public class OrthoCase : BaseEntity
     public ExtractionDecision? ExtractionDecision { get; set; }
     public ICollection<LabOrder> LabOrders { get; set; } = [];
     public ICollection<ClinicalPhoto> Photos { get; set; } = [];
+    public OrthoDiagnosis? Diagnosis { get; set; }
+    public ICollection<OrthoClinicalPhoto> OrthoClinicalPhotos { get; set; } = [];
 }

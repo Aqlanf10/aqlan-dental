@@ -80,9 +80,14 @@ portalApi.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // If not a 401 or already retried, reject
-    if (error.response?.status !== 401 || originalRequest._retry) {
-      if (error.response?.status === 401) {
+    // If not a 401, already retried, or this is a portal auth endpoint
+    // (login/forgot-password/reset-password), skip the refresh-token flow.
+    // Auth endpoints returning 401 mean bad credentials — not an expired token.
+    // Without this guard, a wrong-password login would trigger clearAuthAndRedirect()
+    // (full page reload) before the catch block in login/page.tsx could setError().
+    const isPortalAuthEndpoint = originalRequest.url?.includes('/api/portal/auth/');
+    if (error.response?.status !== 401 || originalRequest._retry || isPortalAuthEndpoint) {
+      if (error.response?.status === 401 && !isPortalAuthEndpoint) {
         clearAuthAndRedirect();
       }
       return Promise.reject(error);

@@ -65,6 +65,7 @@ ServiceFabricBackup/
 *.pfx
 secrets.json
 appsettings.Production.json
+appsettings.Development.json
 
 # ===========================
 # Docker

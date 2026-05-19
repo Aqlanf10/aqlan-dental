@@ -738,6 +738,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     public async Task<bool> DeleteMessageAsync(Guid conversationId, Guid messageId)
     {
         var message = await db.Messages
+            .Include(m => m.Attachments)
             .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId && m.SenderId == UserId);
 
         if (message is null) return false;
@@ -746,6 +747,14 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         message.AttachmentUrl = null;
         message.AttachmentName = null;
         message.AttachmentType = null;
+
+        // Soft-delete any MessageAttachment records so they no longer appear in responses
+        foreach (var att in message.Attachments)
+        {
+            att.IsActive = false;
+            att.DeletedAt = DateTime.UtcNow;
+        }
+
         await db.SaveChangesAsync();
         return true;
     }

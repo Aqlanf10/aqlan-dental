@@ -1111,13 +1111,13 @@ export default function BookPage() {
         <div className="bg-white rounded-3xl shadow-xl border border-slate-100 border-t-4 border-t-[#87CEEB] overflow-hidden">
           <div className="p-6 sm:p-8">
             {/* Step Indicator */}
-            <StepIndicator />
+            {StepIndicator()}
 
             {/* Step Content */}
-            {step === 1 && <Step1 />}
-            {step === 2 && <Step2 />}
-            {step === 3 && <Step3 />}
-            {step === 4 && <Step4 />}
+            {step === 1 && Step1()}
+            {step === 2 && Step2()}
+            {step === 3 && Step3()}
+            {step === 4 && Step4()}
 
             {/* Server error */}
             {serverError && step === 4 && (

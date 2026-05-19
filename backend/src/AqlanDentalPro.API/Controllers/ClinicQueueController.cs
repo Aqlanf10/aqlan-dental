@@ -439,6 +439,12 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
             item.CancelledAt = DateTime.UtcNow;
             item.UpdatedAt = DateTime.UtcNow;
 
+            // F1 FIX: Sync appointment status when cancelling queue item.
+            // Previously, Cancel was the only state-changing endpoint that didn't sync,
+            // causing appointments to remain in Waiting/Called/InRoom while the queue
+            // item was Cancelled — a critical data consistency gap.
+            await SyncAppointmentStatus(item, AppointmentStatus.Cancelled);
+
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 

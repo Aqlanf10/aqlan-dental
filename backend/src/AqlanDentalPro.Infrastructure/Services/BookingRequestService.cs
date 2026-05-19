@@ -384,6 +384,58 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
         if (bookingRequest.ConvertedToAppointmentId.HasValue)
             throw new ArgumentException("تم تحويل هذا الطلب بالفعل إلى موعد");
 
+        // ── F4 FIX: Auto find-or-create patient if PatientId not provided ──
+        // Previously, ConvertToAppointment required a PatientId from the caller.
+        // For new patients (typical public booking use case), staff had to manually
+        // create the patient first — a step that was often missed, creating orphan
+        // confirmed bookings. Now we auto-resolve the patient:
+        Guid patientId = dto.PatientId;
+
+        if (patientId == Guid.Empty)
+        {
+            // Try to find existing patient by phone number
+            var normalizedPhone = NormalizePhone(bookingRequest.PhoneNumber);
+            Patient? existingPatient = null;
+
+            if (!string.IsNullOrWhiteSpace(normalizedPhone))
+            {
+                existingPatient = await db.Patients
+                    .FirstOrDefaultAsync(p => p.IsActive &&
+                        (p.NormalizedPhone == normalizedPhone || p.NormalizedWhatsApp == normalizedPhone));
+            }
+
+            if (existingPatient != null)
+            {
+                patientId = existingPatient.Id;
+            }
+            else
+            {
+                // Create a new patient from booking request data
+                var nameParts = bookingRequest.PatientName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var newPatient = new Patient
+                {
+                    FirstName = nameParts.Length > 0 ? nameParts[0] : "مريض",
+                    MiddleName = nameParts.Length > 2 ? string.Join(" ", nameParts[1..^1]) : null,
+                    LastName = nameParts.Length > 1 ? nameParts[^1] : "غير محدد",
+                    Phone = bookingRequest.PhoneNumber?.Trim(),
+                    WhatsApp = bookingRequest.PhoneNumber?.Trim(),
+                    ReferralSource = "طلب حجز من الموقع",
+                    PrimaryDoctorId = bookingRequest.DoctorId,
+                    DentalHistory = !string.IsNullOrWhiteSpace(bookingRequest.Notes)
+                        ? new DentalHistory { Notes = $"ملاحظات طلب الحجز: {bookingRequest.Notes}" }
+                        : null
+                };
+
+                db.Patients.Add(newPatient);
+                await db.SaveChangesAsync(); // Save to get the ID
+                patientId = newPatient.Id;
+
+                logger.LogInformation(
+                    "F4: Auto-created patient {PatientId} from booking request {BookingRequestId}",
+                    patientId, bookingRequestId);
+            }
+        }
+
         // 4. Check for appointment conflicts
         var hasConflict = await db.Appointments
             .AnyAsync(a => a.DoctorId == dto.DoctorId
@@ -395,10 +447,10 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
         if (hasConflict)
             throw new ArgumentException("يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
 
-        // 5. Create the Appointment
+        // 5. Create the Appointment (use resolved patientId instead of dto.PatientId)
         var appointment = new Appointment
         {
-            PatientId = dto.PatientId,
+            PatientId = patientId,
             DoctorId = dto.DoctorId,
             AppointmentDate = dto.AppointmentDate,
             StartTime = dto.StartTime,
@@ -446,7 +498,7 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
             {
                 var queueItem = new ClinicQueueItem
                 {
-                    PatientId = dto.PatientId,
+                    PatientId = patientId,
                     AppointmentId = appointment.Id,
                     DoctorId = dto.DoctorId,
                     Status = ClinicQueueStatus.Waiting,

@@ -441,20 +441,20 @@ export default function BookingRequestsPage() {
 
   async function handleStatusChange(item: BookingRequest, status: BookingStatus, staffNotes: string) {
     if (status === "Confirmed") {
-      // Create/find patient file FIRST — only confirm booking if patient creation succeeds
+      // F2 FIX: Create/find patient file FIRST — only confirm booking if patient creation succeeds.
+      // Previously, if patient creation failed, the booking was still confirmed (creating an orphan
+      // confirmed booking with no patient file). Now we DO NOT confirm the booking on failure.
       try {
         const patientId = await ensurePatientFile(item);
+        // Patient file created/found successfully — now confirm the booking
         await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
         router.push(`/patients/${patientId}`);
         return;
       } catch (err: unknown) {
         const axiosErr = err as { response?: { data?: { message?: string } }; message?: string };
         const msg = axiosErr?.response?.data?.message || axiosErr?.message || "تعذّر إنشاء ملف المريض";
-        setError(`تم تأكيد الطلب لكن فشل فتح ملف المريض: ${msg}`);
-        // Still mark booking as confirmed so staff can retry from the patient list
-        try {
-          await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
-        } catch { /* ignore — status might already be confirmed */ }
+        // F2 FIX: Do NOT confirm the booking. Show error and keep in current status.
+        setError(`فشل فتح ملف المريض: ${msg}. لم يتم تأكيد الطلب — حاول مرة أخرى.`);
         await fetchItems(page);
         return;
       }

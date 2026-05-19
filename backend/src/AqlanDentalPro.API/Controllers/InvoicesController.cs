@@ -18,6 +18,146 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "FinanceAccess")]
 public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger<InvoicesController> logger) : ControllerBase
 {
+    // ─── F5: POST /api/invoices — Create standalone invoice ──────────────────
+    /// <summary>
+    /// Creates a new draft invoice. Unlike PatientJourneyController.CreateDraftInvoice
+    /// which is tied to a Visit workflow, this endpoint allows creating standalone
+    /// invoices for products, lab fees, or services not tied to a visit.
+    /// </summary>
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateInvoiceRequest req)
+    {
+        // Validate patient exists
+        var patient = await db.Patients.FindAsync(req.PatientId);
+        if (patient == null || !patient.IsActive)
+            return BadRequest(new { message = "المريض غير موجود أو محذوف" });
+
+        // Validate appointment if provided
+        if (req.AppointmentId.HasValue)
+        {
+            var appointment = await db.Appointments.FindAsync(req.AppointmentId.Value);
+            if (appointment == null)
+                return BadRequest(new { message = "الموعد غير موجود" });
+            if (appointment.PatientId != req.PatientId)
+                return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
+        }
+
+        // Validate visit if provided
+        if (req.VisitId.HasValue)
+        {
+            var visit = await db.Visits.FindAsync(req.VisitId.Value);
+            if (visit == null)
+                return BadRequest(new { message = "الزيارة غير موجودة" });
+            if (visit.PatientId != req.PatientId)
+                return BadRequest(new { message = "الزيارة لا تنتمي لهذا المريض" });
+        }
+
+        // Use advisory lock for invoice number generation to prevent duplicates
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var lockKey = (int)(DateTime.UtcNow.ToString("yyyyMMdd").GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            var invoiceNumber = await GenerateInvoiceNumberAsync(db);
+            var userId = GetCurrentUserId();
+
+            var invoice = new Invoice
+            {
+                InvoiceNumber = invoiceNumber,
+                PatientId = req.PatientId,
+                VisitId = req.VisitId,
+                AppointmentId = req.AppointmentId,
+                Status = InvoiceStatus.Draft,
+                Notes = req.Notes,
+                CreatedBy = userId,
+                UpdatedBy = userId
+            };
+
+            db.Invoices.Add(invoice);
+
+            // Add line items if provided
+            if (req.LineItems != null && req.LineItems.Count > 0)
+            {
+                var sortOrder = 0;
+                foreach (var itemReq in req.LineItems)
+                {
+                    string serviceNameSnapshot = itemReq.ServiceNameSnapshot ?? "خدمة علاجية";
+                    string description = itemReq.Description ?? serviceNameSnapshot;
+
+                    // If service is provided, look up price and name
+                    if (itemReq.ServiceId.HasValue)
+                    {
+                        var service = await db.ClinicServices.FindAsync(itemReq.ServiceId.Value);
+                        if (service != null)
+                        {
+                            if (string.IsNullOrWhiteSpace(itemReq.ServiceNameSnapshot))
+                                serviceNameSnapshot = service.ArabicName;
+                        }
+                    }
+
+                    var quantity = itemReq.Quantity > 0 ? itemReq.Quantity : 1;
+                    var unitPrice = itemReq.UnitPrice;
+                    var totalPrice = quantity * unitPrice;
+
+                    var lineItem = new InvoiceLineItem
+                    {
+                        InvoiceId = invoice.Id,
+                        ServiceId = itemReq.ServiceId,
+                        ServiceNameSnapshot = serviceNameSnapshot,
+                        Description = description,
+                        Quantity = quantity,
+                        UnitPrice = unitPrice,
+                        TotalPrice = totalPrice,
+                        RelatedTreatmentPlanStepId = itemReq.RelatedTreatmentPlanStepId,
+                        RelatedVisitId = itemReq.RelatedVisitId,
+                        SortOrder = sortOrder++
+                    };
+
+                    db.InvoiceLineItems.Add(lineItem);
+                }
+            }
+
+            await db.SaveChangesAsync();
+
+            // Recalculate totals from line items
+            var allLineItems = await db.InvoiceLineItems
+                .Where(l => l.InvoiceId == invoice.Id && l.IsActive)
+                .ToListAsync();
+            invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
+            var discount = req.DiscountAmount ?? 0;
+            var tax = req.TaxAmount ?? 0;
+            invoice.DiscountAmount = discount;
+            invoice.TaxAmount = tax;
+            invoice.TotalAmount = invoice.Subtotal - discount + tax;
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Created($"/api/invoices/{invoice.Id}", new
+            {
+                invoice.Id,
+                invoice.InvoiceNumber,
+                invoice.PatientId,
+                invoice.VisitId,
+                invoice.AppointmentId,
+                Status = invoice.Status.ToString(),
+                StatusArabic = GetStatusArabic(invoice.Status),
+                invoice.Subtotal,
+                invoice.DiscountAmount,
+                invoice.TaxAmount,
+                invoice.TotalAmount,
+                invoice.Notes,
+                message = "تم إنشاء الفاتورة بنجاح"
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
     // ─── 1. GET /api/invoices — List all invoices ──────────────────────────
     /// <summary>Returns paginated list of invoices with optional filters.</summary>
     [HttpGet]
@@ -411,6 +551,29 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
 }
 
 // ─── Request DTOs ────────────────────────────────────────────────────────────
+
+/// <summary>F5: Request DTO for creating a standalone invoice.</summary>
+public class CreateInvoiceRequest
+{
+    public Guid PatientId { get; set; }
+    public Guid? VisitId { get; set; }
+    public Guid? AppointmentId { get; set; }
+    public List<CreateInvoiceLineItemRequest>? LineItems { get; set; }
+    public decimal? DiscountAmount { get; set; }
+    public decimal? TaxAmount { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class CreateInvoiceLineItemRequest
+{
+    public Guid? ServiceId { get; set; }
+    public string? ServiceNameSnapshot { get; set; }
+    public string? Description { get; set; }
+    public int Quantity { get; set; } = 1;
+    public decimal UnitPrice { get; set; }
+    public Guid? RelatedTreatmentPlanStepId { get; set; }
+    public Guid? RelatedVisitId { get; set; }
+}
 
 public class UpdateInvoiceRequest
 {

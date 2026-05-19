@@ -205,6 +205,27 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    // F3 FIX: Add missing queue/clinic-flow fields that exist in entity + DB
+                    b.Property<string?>("RoomName")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("ArrivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CalledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("InRoomAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    // F3 FIX: Add missing Patient Journey fields that exist in entity + DB
+                    b.Property<Guid?>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ClinicRoomId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BranchId");
@@ -263,52 +284,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.ToTable("AuditLogs");
                 });
 
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.BookingRequest", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PatientName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("PhoneNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateOnly?>("PreferredDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("PreferredTime")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ServiceType")
-                        .HasColumnType("text");
-
-                    b.Property<string>("StaffNotes")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("BookingRequests");
-                });
+            // F3 FIX: Removed duplicate old BookingRequest definition that was overriding
+            // the correct definition (lines 74-147). The old definition was missing:
+            // IsActive, DeletedAt, DeletedBy, ReviewedAt, ReviewedBy, ConvertedToAppointmentId,
+            // DoctorId, and used string Status instead of int (BookingRequestStatus enum).
+            // This caused EF Core to operate with the wrong schema at runtime.
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Branch", b =>
                 {
@@ -2128,6 +2108,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("DoctorId")
+                        .HasColumnType("uuid");
+
+                    // F3 FIX: Add missing InvoiceId FK that exists in entity + DB
+                    b.Property<Guid?>("InvoiceId")
                         .HasColumnType("uuid");
 
                     b.Property<bool>("IsActive")

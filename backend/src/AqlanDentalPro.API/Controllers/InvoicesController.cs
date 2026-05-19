@@ -344,7 +344,7 @@ public class InvoicesController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>Generates a unique invoice number: INV-yyyyMMdd-NNN.</summary>
-    internal static async Task<string> GenerateInvoiceNumberAsync(AppDbContext db)
+    public static async Task<string> GenerateInvoiceNumberAsync(AppDbContext db)
     {
         var today = DateTime.UtcNow;
         var datePart = today.ToString("yyyyMMdd");

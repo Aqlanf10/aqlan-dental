@@ -1,3 +1,5 @@
+using AqlanDentalPro.Domain.Enums;
+
 namespace AqlanDentalPro.Domain.Entities;
 
 public class OrthoCase : BaseEntity
@@ -11,7 +13,8 @@ public class OrthoCase : BaseEntity
     public int? ExpectedDurationMonths { get; set; }
     public string? CurrentStage { get; set; }
     public int StagePercentage { get; set; } = 0;
-    public string Status { get; set; } = "active";
+    /// <summary>M2 FIX: Changed from string to OrthoCaseStatus enum with HasConversion&lt;string&gt; for DB compatibility.</summary>
+    public OrthoCaseStatus Status { get; set; } = OrthoCaseStatus.Active;
     public string? ExtractionDecisionValue { get; set; }
     public string? RetentionPlan { get; set; }
     public decimal? TotalFee { get; set; }

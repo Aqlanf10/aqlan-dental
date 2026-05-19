@@ -1,3 +1,5 @@
+using AqlanDentalPro.Domain.Enums;
+
 namespace AqlanDentalPro.Domain.Entities;
 
 public class SurgeryCase : BaseEntity
@@ -7,7 +9,8 @@ public class SurgeryCase : BaseEntity
     public Guid? DoctorId { get; set; }
     public string SurgeryType { get; set; } = string.Empty;
     public string? TeethInvolved { get; set; }
-    public string Status { get; set; } = "scheduled";
+    /// <summary>M2 FIX: Changed from string to SurgeryCaseStatus enum with HasConversion&lt;string&gt; for DB compatibility.</summary>
+    public SurgeryCaseStatus Status { get; set; } = SurgeryCaseStatus.Scheduled;
 
     public Patient Patient { get; set; } = null!;
     public Doctor? Doctor { get; set; }

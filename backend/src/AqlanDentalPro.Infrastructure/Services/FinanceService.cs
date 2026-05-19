@@ -20,7 +20,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .AsQueryable();
 
         if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
-        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ContractStatus>(status, true, out var contractStatus))
+            query = query.Where(c => c.Status == contractStatus);
 
         return await query
             .OrderByDescending(c => c.CreatedAt)
@@ -78,7 +79,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             StartDate = req.StartDate != null ? DateOnly.Parse(req.StartDate) : DateOnly.FromDateTime(DateTime.Today),
             DiscountAmount = req.DiscountAmount,
             DiscountReason = req.DiscountReason,
-            Status = "active",
+            Status = ContractStatus.Active,
             Notes = req.Notes,
             CreatedBy = currentUser.UserId
         };
@@ -118,7 +119,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var contracts = await db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
-            .Where(c => c.Status == "active" && c.InstallmentAmount > 0 && c.StartDate != null)
+            .Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null)
             .ToListAsync();
 
         var overdue = new List<OverdueContractDto>();
@@ -286,22 +287,21 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<ContractDetailDto?> UpdateContractStatusAsync(Guid id, string status)
     {
-        var allowed = new[] { "active", "completed", "cancelled" };
-        if (!allowed.Contains(status)) return null;
+        if (!Enum.TryParse<ContractStatus>(status, true, out var contractStatus)) return null;
 
         var contract = await db.Contracts
             .Include(c => c.Payments)
             .FirstOrDefaultAsync(c => c.Id == id);
         if (contract == null) return null;
 
-        contract.Status    = status;
+        contract.Status    = contractStatus;
         contract.UpdatedAt = DateTime.UtcNow;
 
         // H8 FIX: When cancelling a contract with active payments, soft-delete
         // all linked payments to prevent financial reports from including
         // payments for cancelled contracts. Previously, cancelling a contract
         // left its payments active, causing incorrect balance calculations.
-        if (status == "cancelled")
+        if (contractStatus == ContractStatus.Cancelled)
         {
             var activePayments = contract.Payments.Where(p => p.IsActive).ToList();
             foreach (var payment in activePayments)
@@ -362,8 +362,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             TotalDiscounts   = contracts.Sum(c => c.DiscountAmount),
             TotalPaid        = contracts.Sum(c => c.Payments.Sum(p => p.Amount)),
             TotalRemaining   = contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)),
-            ActiveContracts  = contracts.Count(c => c.Status == "active"),
-            CompletedContracts = contracts.Count(c => c.Status == "completed"),
+            ActiveContracts  = contracts.Count(c => c.Status == ContractStatus.Active),
+            CompletedContracts = contracts.Count(c => c.Status == ContractStatus.Completed),
             Contracts        = contracts.Select(c => new ContractStatementDto
             {
                 Id              = c.Id,
@@ -400,11 +400,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var totalOutstanding = await db.Contracts
             .Include(c => c.Payments)
-            .Where(c => c.Status == "active")
+            .Where(c => c.Status == ContractStatus.Active)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
 
-        var activeContracts = await db.Contracts.CountAsync(c => c.Status == "active");
+        var activeContracts = await db.Contracts.CountAsync(c => c.Status == ContractStatus.Active);
 
         var recentPayments = await db.Payments
             .Include(p => p.Patient)
@@ -520,7 +520,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var today          = DateOnly.FromDateTime(DateTime.Today);
         var overdueAmount  = 0m;
-        foreach (var c in contracts.Where(c => c.Status == "active" && c.InstallmentAmount > 0 && c.StartDate != null))
+        foreach (var c in contracts.Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null))
         {
             var months   = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
             var expected = c.DownPayment + Math.Min(months, c.InstallmentsCount) * (c.InstallmentAmount ?? 0);
@@ -548,7 +548,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             OverdueAmount        = overdueAmount,
             LatestPayment        = latestPayment == null ? null : MapPayment(latestPayment),
             FinancialStatus      = status,
-            ActiveContractsCount = contracts.Count(c => c.Status == "active"),
+            ActiveContractsCount = contracts.Count(c => c.Status == ContractStatus.Active),
             TotalPaymentsCount   = contracts.Sum(c => c.Payments.Count)
         };
     }

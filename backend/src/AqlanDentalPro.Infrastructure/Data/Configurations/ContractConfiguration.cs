@@ -1,14 +1,13 @@
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace AqlanDentalPro.Infrastructure.Data.Configurations;
 
 /// <summary>
-/// H1 FIX: FluentAPI configuration for Contract entity.
-/// Previously, Contract had zero configuration — no decimal precision, no FK
-/// relationships, no indexes, no max-length constraints. This caused financial
-/// precision loss, slow queries, and unconstrained status values.
+/// H1/M2 FIX: FluentAPI configuration for Contract entity.
+/// ContractStatus enum stored as string in DB for backward compatibility.
 /// </summary>
 public class ContractConfiguration : IEntityTypeConfiguration<Contract>
 {
@@ -20,8 +19,10 @@ public class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(c => c.DiscountAmount).HasPrecision(12, 2);
         builder.Property(c => c.InstallmentAmount).HasPrecision(12, 2);
 
+        // M2 FIX: Enum conversion — stored as string in DB, mapped to ContractStatus enum in C#
+        builder.Property(c => c.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
+
         // String constraints
-        builder.Property(c => c.Status).HasMaxLength(20).IsRequired();
         builder.Property(c => c.Specialty).HasMaxLength(100);
         builder.Property(c => c.DiscountReason).HasMaxLength(300);
         builder.Property(c => c.Notes).HasMaxLength(1000);

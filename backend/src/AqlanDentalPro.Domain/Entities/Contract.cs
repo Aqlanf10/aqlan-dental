@@ -1,3 +1,5 @@
+using AqlanDentalPro.Domain.Enums;
+
 namespace AqlanDentalPro.Domain.Entities;
 
 public class Contract : BaseEntity
@@ -12,7 +14,8 @@ public class Contract : BaseEntity
     public DateOnly? StartDate { get; set; }
     public decimal DiscountAmount { get; set; } = 0;
     public string? DiscountReason { get; set; }
-    public string Status { get; set; } = "active";
+    /// <summary>M2 FIX: Changed from string to ContractStatus enum with HasConversion&lt;string&gt; for DB compatibility.</summary>
+    public ContractStatus Status { get; set; } = ContractStatus.Active;
     public string? Notes { get; set; }
     public Guid? CreatedBy { get; set; }
 

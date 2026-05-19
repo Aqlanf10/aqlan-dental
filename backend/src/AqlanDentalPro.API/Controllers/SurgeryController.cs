@@ -1,4 +1,5 @@
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
@@ -176,7 +177,8 @@ public class SurgeryController(AppDbContext db) : ControllerBase
             .Include(s => s.Doctor)
             .AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(s => s.Status == status);
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<SurgeryCaseStatus>(status, true, out var surgeryStatus))
+            query = query.Where(s => s.Status == surgeryStatus);
         if (doctorId.HasValue) query = query.Where(s => s.DoctorId == doctorId);
         if (patientId.HasValue) query = query.Where(s => s.PatientId == patientId);
         if (!string.IsNullOrWhiteSpace(search))
@@ -252,7 +254,7 @@ public class SurgeryController(AppDbContext db) : ControllerBase
             DoctorId      = req.DoctorId,
             SurgeryType   = req.SurgeryType,
             TeethInvolved = req.TeethInvolved,
-            Status        = "scheduled"
+            Status        = SurgeryCaseStatus.Scheduled
         };
 
         db.SurgeryCases.Add(surgery);
@@ -268,7 +270,10 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         var surgery = await db.SurgeryCases.FindAsync(id);
         if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
 
-        surgery.Status = req.Status;
+        if (!Enum.TryParse<SurgeryCaseStatus>(req.Status, true, out var surgeryStatus))
+            return BadRequest(new { message = "حالة الجراحة غير صالحة" });
+
+        surgery.Status = surgeryStatus;
         await db.SaveChangesAsync();
         return Ok(new { id, status = req.Status });
     }
@@ -280,8 +285,23 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
 
         surgery.IsActive = false;
+        surgery.DeletedAt = DateTime.UtcNow;
+
+        // M3 FIX: Cascade soft-delete to child records
+        var preop = await db.PreopReports.FirstOrDefaultAsync(r => r.SurgeryCaseId == id && r.IsActive);
+        if (preop != null) { preop.IsActive = false; preop.DeletedAt = DateTime.UtcNow; }
+
+        var operative = await db.OperativeReports.FirstOrDefaultAsync(r => r.SurgeryCaseId == id && r.IsActive);
+        if (operative != null) { operative.IsActive = false; operative.DeletedAt = DateTime.UtcNow; }
+
+        var postop = await db.PostopRecords.FirstOrDefaultAsync(r => r.SurgeryCaseId == id && r.IsActive);
+        if (postop != null) { postop.IsActive = false; postop.DeletedAt = DateTime.UtcNow; }
+
+        var referrals = await db.HospitalReferrals.Where(r => r.SurgeryCaseId == id && r.IsActive).ToListAsync();
+        foreach (var r in referrals) { r.IsActive = false; r.DeletedAt = DateTime.UtcNow; }
+
         await db.SaveChangesAsync();
-        return Ok(new { message = "تم حذف الحالة بنجاح" });
+        return Ok(new { message = "تم حذف الحالة والسجلات المرتبطة بنجاح" });
     }
 
     [HttpGet("{id:guid}/preop")]

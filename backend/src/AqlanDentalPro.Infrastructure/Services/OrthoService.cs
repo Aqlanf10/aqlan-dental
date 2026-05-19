@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.DTOs.Ortho;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,7 +21,8 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 
         if (doctorId.HasValue) query = query.Where(c => c.DoctorId == doctorId);
         if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
-        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(c => c.Status == status);
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<OrthoCaseStatus>(status, true, out var orthoStatus))
+            query = query.Where(c => c.Status == orthoStatus);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
@@ -119,7 +121,7 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
             StartDate = req.StartDate != null ? DateOnly.Parse(req.StartDate) : null,
             ExpectedDurationMonths = req.ExpectedDurationMonths,
             TotalFee = req.TotalFee,
-            Status = "active"
+            Status = OrthoCaseStatus.Active
         };
 
         db.OrthoCases.Add(orthoCase);

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import type { CreatePatientRequest, PatientProfile } from "@/types/patient";
 import {
   Clock, CheckCircle2, XCircle, Eye, Loader2, RefreshCw,
   Phone, Mail, Calendar, MessageSquare, Filter, Globe, CalendarPlus,
@@ -111,6 +112,40 @@ function normalizePhone(phone: string): string {
   return p;
 }
 
+function splitPatientName(fullName: string): Pick<CreatePatientRequest, "firstName" | "middleName" | "lastName"> {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { firstName: "Patient", lastName: "File" };
+  }
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: "غير محدد" };
+  }
+  return {
+    firstName: parts[0],
+    middleName: parts.length > 2 ? parts.slice(1, -1).join(" ") : undefined,
+    lastName: parts[parts.length - 1],
+  };
+}
+
+function buildPatientPayload(item: BookingRequest): CreatePatientRequest {
+  const noteParts = [
+    item.serviceType ? `الخدمة المطلوبة: ${item.serviceType}` : null,
+    item.preferredDate || item.preferredTime
+      ? `موعد الحجز المفضل: ${[item.preferredDate, item.preferredTime].filter(Boolean).join(" ")}`
+      : null,
+    item.notes ? `ملاحظات طلب الحجز: ${item.notes}` : null,
+  ].filter(Boolean);
+
+  return {
+    ...splitPatientName(item.patientName),
+    phone: item.phoneNumber,
+    whatsApp: item.phoneNumber,
+    referralSource: "طلب حجز من الموقع",
+    primaryDoctorId: item.doctorId ?? undefined,
+    dentalHistory: noteParts.length > 0 ? { notes: noteParts.join("\n") } : undefined,
+  };
+}
+
 function isToday(dateStr: string | null): boolean {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -155,7 +190,7 @@ function ConvertedBadge() {
 interface DetailModalProps {
   item: BookingRequest;
   onClose: () => void;
-  onStatusChange: (id: string, status: BookingStatus, notes: string) => Promise<void>;
+  onStatusChange: (item: BookingRequest, status: BookingStatus, notes: string) => Promise<void>;
   onCreateAppointment: (item: BookingRequest) => void;
   onViewAppointment: (appointmentId: string) => void;
 }
@@ -172,7 +207,7 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
   async function handleStatusChange(status: BookingStatus) {
     setLoading(true);
     try {
-      await onStatusChange(item.id, status, staffNotes);
+      await onStatusChange(item, status, staffNotes);
       onClose();
     } finally {
       setLoading(false);
@@ -370,8 +405,36 @@ export default function BookingRequestsPage() {
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
-  async function handleStatusChange(id: string, status: BookingStatus, staffNotes: string) {
-    await api.patch(`/api/booking-requests/${id}/status`, { status, staffNotes });
+  async function ensurePatientFile(item: BookingRequest): Promise<string> {
+    const normalizedPhone = normalizePhone(item.phoneNumber);
+    if (normalizedPhone) {
+      const params = new URLSearchParams({ phone: normalizedPhone });
+      const { data } = await api.get<{
+        isDuplicate: boolean;
+        matches: Array<{ id: string; matchType: string }>;
+      }>(`/api/patients/check-duplicate?${params.toString()}`);
+      const existing = data.matches.find((match) =>
+        match.matchType === "phone" || match.matchType === "whatsapp"
+      );
+      if (existing) return existing.id;
+    }
+
+    const { data: created } = await api.post<PatientProfile>(
+      "/api/patients",
+      buildPatientPayload(item)
+    );
+    return created.id;
+  }
+
+  async function handleStatusChange(item: BookingRequest, status: BookingStatus, staffNotes: string) {
+    await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
+
+    if (status === "Confirmed") {
+      const patientId = await ensurePatientFile(item);
+      router.push(`/patients/${patientId}`);
+      return;
+    }
+
     await fetchItems();
   }
 

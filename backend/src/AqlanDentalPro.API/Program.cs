@@ -470,6 +470,78 @@ catch (Exception ex)
     schemaLogger2.LogError(ex, "HOTFIX: Failed to ensure Users/Doctors table schema. Staff login may fail with PostgresException!");
 }
 
+// ── CRITICAL: Ensure MessageAttachments table exists ─────────────────────────
+// HOTFIX: PR #150 added .Include(m => m.Attachments) in MessagingService.
+// If migration 20260602000000_AddMessageAttachments was not applied (because
+// ENABLE_STARTUP_DB_MAINTENANCE is false), every GET /api/messages/conversations/{id}
+// throws "relation MessageAttachments does not exist" → 500.
+// This guard runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var maScope = app.Services.CreateScope();
+    var maDb     = maScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var maLogger = maScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await maDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- Create MessageAttachments table if not present (migration 20260602000000)
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'MessageAttachments'
+            ) THEN
+                CREATE TABLE "MessageAttachments" (
+                    "Id"        uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "MessageId" uuid                     NOT NULL,
+                    "FileUrl"   character varying(1000)  NOT NULL,
+                    "FileName"  character varying(255)   NOT NULL,
+                    "FileSize"  bigint                   NOT NULL DEFAULT 0,
+                    "MimeType"  character varying(100)   NOT NULL,
+                    "IsActive"  boolean                  NOT NULL DEFAULT true,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "DeletedAt" timestamp with time zone NULL,
+                    CONSTRAINT "PK_MessageAttachments" PRIMARY KEY ("Id")
+                );
+            END IF;
+
+            -- Add FK to Messages if missing
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_MessageAttachments_Messages_MessageId'
+            ) THEN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'Messages'
+                ) THEN
+                    ALTER TABLE "MessageAttachments"
+                        ADD CONSTRAINT "FK_MessageAttachments_Messages_MessageId"
+                        FOREIGN KEY ("MessageId")
+                        REFERENCES "Messages"("Id")
+                        ON DELETE CASCADE;
+                END IF;
+            END IF;
+
+            -- Create index on MessageId if missing
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND tablename  = 'MessageAttachments'
+                  AND indexname  = 'IX_MessageAttachments_MessageId'
+            ) THEN
+                CREATE INDEX "IX_MessageAttachments_MessageId"
+                    ON "MessageAttachments" ("MessageId");
+            END IF;
+        END $$;
+    """);
+
+    maLogger.LogInformation("HOTFIX: MessageAttachments table schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var maLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    maLogger2.LogError(ex, "HOTFIX: Failed to ensure MessageAttachments schema. Opening conversations will return 500!");
+}
+
 // ── One-time Admin Password Reset ─────────────────────────────────
 // SEC-03 FIX: Admin password reset only from environment variables.
 // In production: ADMIN_DEFAULT_PASSWORD is REQUIRED. No fallback.

@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Wallet, CreditCard, FileSignature, TrendingDown, ArrowLeft } from "lucide-react";
+import { Wallet, CreditCard, FileSignature, FileText, TrendingDown, ArrowLeft } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
+import type { Invoice } from "@/types/finance";
 
 interface ContractStatementDto {
   id: string;
@@ -65,8 +66,23 @@ const methodLabel: Record<string, string> = {
   card: "بطاقة",
 };
 
+const INVOICE_STATUS_LABELS: Record<string, string> = {
+  Draft: "مسودة",
+  Issued: "مصدرة",
+  Cancelled: "ملغاة",
+  Paid: "مدفوعة",
+};
+
+const INVOICE_STATUS_COLORS: Record<string, string> = {
+  Draft: "bg-blue-50 text-blue-700",
+  Issued: "bg-green-50 text-green-700",
+  Cancelled: "bg-gray-100 text-gray-500",
+  Paid: "bg-emerald-50 text-emerald-700",
+};
+
 export function FinanceTab({ patientId }: FinanceTabProps) {
   const [statement, setStatement] = useState<AccountStatementDto | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,6 +97,11 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
         setError("تعذّر تحميل البيانات المالية");
         setLoading(false);
       });
+
+    api
+      .get<Invoice[]>(`/api/patients/${patientId}/invoices`)
+      .then((r) => setInvoices(r.data))
+      .catch(() => {});
   }, [patientId]);
 
   if (loading) {
@@ -212,6 +233,49 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
                   {p.receiptNumber && <p className="text-xs text-[#94a3b8]">{p.receiptNumber}</p>}
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Invoices */}
+      <div>
+        <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-[#3d7ab5]" />
+          الفواتير
+        </h3>
+        {invoices.length === 0 ? (
+          <p className="text-sm text-[#94a3b8]">لا توجد فواتير مسجّلة</p>
+        ) : (
+          <div className="space-y-2">
+            {invoices.map((inv) => (
+              <Link
+                key={inv.id}
+                href={`/finance/invoices/${inv.id}`}
+                className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9] hover:border-[#3d7ab5]/30 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#3d7ab5]" />
+                  <div>
+                    <p className="text-sm font-medium text-[#0d2137]">{inv.invoiceNumber}</p>
+                    <p className="text-xs text-[#94a3b8]">{new Date(inv.createdAt).toLocaleDateString("ar-YE")}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn(
+                      "text-xs px-2 py-0.5 rounded-full font-medium",
+                      INVOICE_STATUS_COLORS[inv.status] ?? "bg-gray-100 text-gray-600"
+                    )}
+                  >
+                    {inv.statusArabic ?? INVOICE_STATUS_LABELS[inv.status] ?? inv.status}
+                  </span>
+                  <p className="text-sm font-semibold text-[#3d7ab5]">
+                    {inv.totalAmount.toLocaleString()}
+                  </p>
+                  <ArrowLeft className="w-3.5 h-3.5 text-[#94a3b8]" />
+                </div>
+              </Link>
             ))}
           </div>
         )}

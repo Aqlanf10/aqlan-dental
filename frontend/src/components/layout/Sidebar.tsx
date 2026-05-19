@@ -6,7 +6,7 @@ import {
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   Route,
   BarChart2, Package, FlaskConical, Settings, LogOut,
-  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock,
+  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
 } from "lucide-react";
 import Image from "next/image";
@@ -54,6 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/whatsapp",    label: "واتساب",             icon: MessageSquare,   roles: [] },
   // Section: عمليات
   { href: "/finance",      label: "المالية",            icon: Wallet,          roles: ["Admin", "Reception", "Accountant"], section: "عمليات" },
+  { href: "/finance/invoices", label: "الفواتير",        icon: FileText,        roles: ["Admin", "Reception", "Accountant"] },
   { href: "/prescriptions", label: "الوصفات الطبية",    icon: Pill,            roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/lab",          label: "المختبر",            icon: FlaskConical,    roles: ["Admin", "Orthodontist"] },
   { href: "/inventory",    label: "المخزون",            icon: Package,         roles: ["Admin"] },

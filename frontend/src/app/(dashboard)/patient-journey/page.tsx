@@ -1,14 +1,16 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Users, UserCheck, Clock, DoorOpen, CreditCard, CheckCircle2,
   Plus, X, Save, Search, Filter, RefreshCw, Stethoscope,
-  ArrowRight, Phone, CalendarDays, ChevronDown
+  ArrowRight, Phone, CalendarDays, ChevronDown, FileText
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
+import { toast } from "@/stores/toastStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -152,6 +154,10 @@ export default function PatientJourneyPage() {
   const [checkoutNextService, setCheckoutNextService] = useState("");
   const [checkoutNotes, setCheckoutNotes] = useState("");
 
+  // Draft invoice creation
+  const [draftInvoiceLoading, setDraftInvoiceLoading] = useState(false);
+  const [draftInvoiceResult, setDraftInvoiceResult] = useState<{ invoiceId: string; invoiceNumber: string } | null>(null);
+
   // ─── Data Loading ─────────────────────────────────────────────────────────
 
   const loadJourney = useCallback(() => {
@@ -237,6 +243,8 @@ export default function PatientJourneyPage() {
       setCheckoutNextDate("");
       setCheckoutNextService("");
       setCheckoutNotes("");
+      setDraftInvoiceLoading(false);
+      setDraftInvoiceResult(null);
       setDialogError("");
       setShowCheckout(true);
       return;
@@ -694,6 +702,65 @@ export default function PatientJourneyPage() {
             <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
               إنهاء الحساب هنا يغيّر حالة الزيارة فقط. لتسجيل الدّفع الفعلي، انتقل إلى صفحة المالية بعد الإنهاء.
             </div>
+
+            {/* Create Draft Invoice */}
+            {selectedItem.checkoutStatus === "ReadyForCheckout" && !draftInvoiceResult && (
+              <div className="border border-[#3d7ab5]/20 bg-[#f7fafd] rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium text-[#0d2137]">
+                    <FileText className="w-4 h-4 text-[#3d7ab5]" />
+                    إنشاء فاتورة مسودة
+                  </div>
+                  <button
+                    type="button"
+                    disabled={draftInvoiceLoading}
+                    onClick={async () => {
+                      if (!selectedItem.visitId) {
+                        toast.error("لا يوجد زيارة مرتبطة لإنشاء فاتورة");
+                        return;
+                      }
+                      setDraftInvoiceLoading(true);
+                      try {
+                        const res = await api.post<{ id: string; invoiceNumber: string }>(
+                          `/api/patient-journey/${selectedItem.visitId}/create-draft-invoice`
+                        );
+                        setDraftInvoiceResult({
+                          invoiceId: res.data.id,
+                          invoiceNumber: res.data.invoiceNumber,
+                        });
+                        toast.success(`تم إنشاء الفاتورة ${res.data.invoiceNumber}`);
+                      } catch {
+                        toast.error("فشل إنشاء الفاتورة المسودة");
+                      } finally {
+                        setDraftInvoiceLoading(false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-[#3d7ab5] text-white hover:opacity-90 disabled:opacity-50 transition"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    {draftInvoiceLoading ? "جارٍ الإنشاء..." : "إنشاء فاتورة مسودة"}
+                  </button>
+                </div>
+                <p className="text-xs text-[#94a3b8]">الدفع يتم عبر صفحة المالية</p>
+              </div>
+            )}
+
+            {/* Draft invoice result */}
+            {draftInvoiceResult && (
+              <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-1">
+                <p className="text-sm font-medium text-green-800">
+                  تم إنشاء الفاتورة: <span className="font-mono">{draftInvoiceResult.invoiceNumber}</span>
+                </p>
+                <Link
+                  href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                  className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
+                >
+                  <FileText className="w-3 h-3" />
+                  عرض الفاتورة
+                </Link>
+                <p className="text-xs text-[#94a3b8]">الدفع يتم عبر صفحة المالية</p>
+              </div>
+            )}
 
             <div className="space-y-3">
               <div>

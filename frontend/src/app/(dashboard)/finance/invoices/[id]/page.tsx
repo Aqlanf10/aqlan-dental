@@ -751,9 +751,7 @@ export default function InvoiceDetailPage() {
                 {payments.map((p) => (
                   <tr key={p.id} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 text-gray-700">
-                      {p.paymentDate
-                        ? new Date(p.paymentDate).toLocaleDateString("ar-SA")
-                        : "—"}
+                      {p.paymentDate || "—"}
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold text-gray-900">
                       {formatYemeniRiyal(p.amount)}

@@ -125,7 +125,7 @@ export interface InvoiceDetail extends Invoice {
 export interface InvoicePayment {
   id: string;
   amount: number;
-  paymentDate: DateOnly;
+  paymentDate: string;
   paymentMethod?: string;
   receiptNumber?: string;
   notes?: string;

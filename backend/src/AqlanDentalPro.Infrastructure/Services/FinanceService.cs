@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -175,10 +176,26 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         var receiptNumber = $"RCP-{DateTime.UtcNow:yyyyMMdd}-{Random.Shared.Next(1000, 9999)}";
 
+        // Validate InvoiceId if provided
+        Invoice? invoice = null;
+        if (req.InvoiceId.HasValue)
+        {
+            invoice = await db.Invoices.FindAsync(req.InvoiceId.Value);
+            if (invoice == null || !invoice.IsActive)
+                throw new ArgumentException("الفاتورة المحددة غير موجودة");
+            // Only Issued invoices can receive payments
+            if (invoice.Status != InvoiceStatus.Issued)
+                throw new ArgumentException("يمكن تسجيل الدفعات للفواتير المصدرة فقط");
+            // Payment patient must match invoice patient
+            if (req.PatientId != invoice.PatientId)
+                throw new ArgumentException("المريض في الدفعة لا يطابق المريض في الفاتورة");
+        }
+
         var payment = new Payment
         {
             PatientId = req.PatientId,
             ContractId = req.ContractId,
+            InvoiceId = req.InvoiceId,
             Amount = req.Amount,
             PaymentDate = DateOnly.FromDateTime(DateTime.Today),
             PaymentMethod = req.PaymentMethod,
@@ -203,8 +220,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         await db.SaveChangesAsync();
 
+        // Auto-transition invoice to Paid if payments cover the total
+        if (invoice != null)
+        {
+            await TryMarkInvoicePaidAsync(invoice.Id);
+        }
+
         await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
         await db.Entry(payment).Reference(p => p.Doctor).LoadAsync();
+        // Load Invoice navigation for mapping
+        if (payment.InvoiceId.HasValue)
+            await db.Entry(payment).Reference(p => p.Invoice).LoadAsync();
 
         var dto = MapPayment(payment);
 
@@ -392,6 +418,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         {
             PatientId          = payment.PatientId,
             ContractId         = payment.ContractId,
+            InvoiceId          = payment.InvoiceId,
             Amount             = -payment.Amount,
             PaymentDate        = DateOnly.FromDateTime(DateTime.Today),
             PaymentMethod      = payment.PaymentMethod,
@@ -481,6 +508,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         PatientId = p.PatientId,
         PatientName = p.Patient?.FirstName + " " + p.Patient?.LastName,
         ContractId = p.ContractId,
+        InvoiceId = p.InvoiceId,
+        InvoiceNumber = p.Invoice?.InvoiceNumber,
         Amount = p.Amount,
         PaymentDate = p.PaymentDate.ToString("yyyy-MM-dd"),
         PaymentMethod = p.PaymentMethod,
@@ -490,4 +519,27 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         ReceiptNumber = p.ReceiptNumber,
         Notes = p.Notes
     };
+
+    /// <summary>
+    /// Checks if total payments for an invoice cover its TotalAmount.
+    /// If so, transitions the invoice status from Issued → Paid.
+    /// Safe to call after payment creation or refund.
+    /// </summary>
+    public async Task TryMarkInvoicePaidAsync(Guid invoiceId)
+    {
+        var invoice = await db.Invoices.FindAsync(invoiceId);
+        if (invoice == null || invoice.Status != InvoiceStatus.Issued) return;
+
+        var totalPaid = await db.Payments
+            .Where(p => p.InvoiceId == invoiceId && p.IsActive)
+            .SumAsync(p => p.Amount);
+
+        if (totalPaid >= invoice.TotalAmount)
+        {
+            invoice.Status = InvoiceStatus.Paid;
+            invoice.UpdatedBy = currentUser.UserId;
+            invoice.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+    }
 }

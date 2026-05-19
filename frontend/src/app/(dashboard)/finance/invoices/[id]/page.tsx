@@ -11,12 +11,16 @@ import {
   XCircle,
   Save,
   Link as LinkIcon,
+  CreditCard,
+  CheckCircle2,
+  Receipt,
 } from "lucide-react";
 import type {
   InvoiceDetail,
   InvoiceLineItem,
   UpdateInvoiceRequest,
   UpdateInvoiceLineItemRequest,
+  InvoicePayment,
 } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
@@ -82,6 +86,13 @@ export default function InvoiceDetailPage() {
   const [editTax, setEditTax] = useState(0);
   const [editNotes, setEditNotes] = useState("");
 
+  // Payment dialog state
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
+
   const loadInvoice = useCallback(() => {
     setLoading(true);
     api
@@ -92,6 +103,7 @@ export default function InvoiceDetailPage() {
         setEditDiscount(r.data.discountAmount ?? 0);
         setEditTax(r.data.taxAmount ?? 0);
         setEditNotes(r.data.notes ?? "");
+        setPaymentAmount(r.data.remainingAmount ?? r.data.totalAmount);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -100,6 +112,8 @@ export default function InvoiceDetailPage() {
   useEffect(loadInvoice, [loadInvoice]);
 
   const isDraft = invoice?.status === "Draft";
+  const isIssued = invoice?.status === "Issued";
+  const isPaid = invoice?.status === "Paid";
 
   // ─── Edit handlers ───────────────────────────────────────────────────────
 
@@ -202,6 +216,29 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const handleRecordPayment = async () => {
+    if (!invoice || paymentAmount <= 0) return;
+    setPaymentLoading(true);
+    try {
+      await api.post("/api/payments", {
+        patientId: invoice.patientId,
+        invoiceId: invoice.id,
+        amount: paymentAmount,
+        paymentMethod,
+        serviceDescription: `دفعة فاتورة ${invoice.invoiceNumber}`,
+        notes: paymentNotes || undefined,
+      });
+      toast.success("تم تسجيل الدفعة بنجاح");
+      setShowPaymentDialog(false);
+      setPaymentNotes("");
+      loadInvoice(); // Reload to reflect paid amount / status change
+    } catch {
+      toast.error("فشل تسجيل الدفعة");
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
   // ─── Computed values ─────────────────────────────────────────────────────
 
   const displayItems: EditLineItem[] = editMode
@@ -213,6 +250,9 @@ export default function InvoiceDetailPage() {
   const discountAmt = editMode ? editDiscount : (invoice?.discountAmount ?? 0);
   const taxAmt = editMode ? editTax : (invoice?.taxAmount ?? 0);
   const total = subtotal - discountAmt + taxAmt;
+  const paidAmount = invoice?.paidAmount ?? 0;
+  const remainingAmount = invoice?.remainingAmount ?? total;
+  const payments: InvoicePayment[] = invoice?.payments ?? [];
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -344,14 +384,83 @@ export default function InvoiceDetailPage() {
               إلغاء
             </button>
           )}
+          {isIssued && remainingAmount > 0 && (
+            <button
+              onClick={() => {
+                setPaymentAmount(remainingAmount);
+                setShowPaymentDialog(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              تسجيل دفعة
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Payment reminder */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-xs text-blue-700 flex items-center gap-2">
-        <LinkIcon className="w-3.5 h-3.5 flex-shrink-0" />
-        الدفع يتم عبر صفحة المالية
-      </div>
+      {/* Payment status banner for Issued/Paid invoices */}
+      {(isIssued || isPaid) && (
+        <div
+          className={cn(
+            "rounded-xl border shadow-sm p-4",
+            isPaid
+              ? "bg-emerald-50 border-emerald-200"
+              : remainingAmount > 0
+                ? "bg-amber-50 border-amber-200"
+                : "bg-emerald-50 border-emerald-200"
+          )}
+        >
+          <div className="flex items-center gap-3">
+            {isPaid || remainingAmount <= 0 ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            ) : (
+              <CreditCard className="w-5 h-5 text-amber-600 flex-shrink-0" />
+            )}
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <span
+                  className={cn(
+                    "text-sm font-medium",
+                    isPaid || remainingAmount <= 0
+                      ? "text-emerald-800"
+                      : "text-amber-800"
+                  )}
+                >
+                  {isPaid || remainingAmount <= 0
+                    ? "تم سداد الفاتورة بالكامل"
+                    : `المبلغ المتبقي: ${formatYemeniRiyal(remainingAmount)}`}
+                </span>
+                <span className="text-xs text-gray-500">
+                  المدفوع: {formatYemeniRiyal(paidAmount)} / {formatYemeniRiyal(total)}
+                </span>
+              </div>
+              {/* Progress bar */}
+              <div className="mt-2 h-2 bg-white/60 rounded-full overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-500",
+                    isPaid || remainingAmount <= 0
+                      ? "bg-emerald-500"
+                      : "bg-amber-500"
+                  )}
+                  style={{
+                    width: `${Math.min(100, total > 0 ? (paidAmount / total) * 100 : 0)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Draft info banner */}
+      {isDraft && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-xs text-blue-700 flex items-center gap-2">
+          <LinkIcon className="w-3.5 h-3.5 flex-shrink-0" />
+          الفاتورة مسودة — قم بإصدارها أولاً قبل تسجيل الدفعات
+        </div>
+      )}
 
       {/* Invoice summary card */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
@@ -612,17 +721,176 @@ export default function InvoiceDetailPage() {
         )}
       </div>
 
-      {/* Link to payments page */}
-      <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-        <LinkIcon className="w-3.5 h-3.5" />
-        <span>لإجراء الدفع، انتقل إلى</span>
-        <Link
-          href="/finance/payments"
-          className="text-clinic-blue hover:underline font-medium"
-        >
-          صفحة الدفعات
-        </Link>
-      </div>
+      {/* Linked Payments */}
+      {payments.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+            <Receipt className="w-4 h-4 text-gray-500" />
+            <h2 className="font-bold text-gray-900">المدفوعات المرتبطة</h2>
+            <span className="text-xs text-gray-400 mr-auto">
+              {payments.length} دفعة
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  {["التاريخ", "المبلغ", "طريقة الدفع", "رقم الإيصال", "ملاحظات"].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap"
+                      >
+                        {h}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {payments.map((p) => (
+                  <tr key={p.id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 text-gray-700">
+                      {p.paymentDate
+                        ? new Date(p.paymentDate).toLocaleDateString("ar-SA")
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 font-mono font-semibold text-gray-900">
+                      {formatYemeniRiyal(p.amount)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {p.paymentMethod === "cash"
+                        ? "نقدي"
+                        : p.paymentMethod === "card"
+                          ? "بطاقة"
+                          : p.paymentMethod === "bank_transfer"
+                            ? "تحويل بنكي"
+                            : p.paymentMethod ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.receiptNumber ? (
+                        <Link
+                          href={`/finance/payments/${p.id}`}
+                          className="text-clinic-blue hover:underline font-mono text-xs"
+                        >
+                          {p.receiptNumber}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px] truncate">
+                      {p.notes || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Link to payments page (for Issued with no payments yet) */}
+      {isIssued && payments.length === 0 && (
+        <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+          <LinkIcon className="w-3.5 h-3.5" />
+          <span>لإجراء الدفع، استخدم زر &quot;تسجيل دفعة&quot; أعلاه</span>
+        </div>
+      )}
+
+      {/* ─── Payment Dialog ──────────────────────────────────────────────── */}
+      {showPaymentDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              تسجيل دفعة — فاتورة {invoice.invoiceNumber}
+            </h3>
+
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">الإجمالي</span>
+                  <span className="font-mono font-bold">
+                    {formatYemeniRiyal(total)}
+                  </span>
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-gray-500">المدفوع سابقاً</span>
+                  <span className="font-mono">{formatYemeniRiyal(paidAmount)}</span>
+                </div>
+                <div className="flex justify-between mt-1 border-t pt-1">
+                  <span className="text-gray-700 font-medium">المتبقي</span>
+                  <span className="font-mono font-bold text-amber-700">
+                    {formatYemeniRiyal(remainingAmount)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  مبلغ الدفعة (ر.ي)
+                </label>
+                <input
+                  type="number"
+                  min={0.01}
+                  max={remainingAmount}
+                  step={0.01}
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(+e.target.value || 0)}
+                  className={inputCls}
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  طريقة الدفع
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="cash">نقدي</option>
+                  <option value="card">بطاقة</option>
+                  <option value="bank_transfer">تحويل بنكي</option>
+                  <option value="check">شيك</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  ملاحظات (اختياري)
+                </label>
+                <input
+                  type="text"
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  className={inputCls}
+                  placeholder="ملاحظات إضافية"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                onClick={handleRecordPayment}
+                disabled={paymentLoading || paymentAmount <= 0 || paymentAmount > remainingAmount}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-50 transition"
+              >
+                <CreditCard className="w-4 h-4" />
+                {paymentLoading ? "جارٍ التسجيل..." : "تسجيل الدفعة"}
+              </button>
+              <button
+                onClick={() => setShowPaymentDialog(false)}
+                className="px-4 py-2.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

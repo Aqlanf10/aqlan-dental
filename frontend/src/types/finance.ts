@@ -23,6 +23,8 @@ export interface Payment {
   patientId: string;
   patientName: string;
   contractId?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
   amount: number;
   paymentDate: string;
   paymentMethod?: string;
@@ -73,6 +75,7 @@ export interface CreateContractRequest {
 export interface CreatePaymentRequest {
   patientId: string;
   contractId?: string;
+  invoiceId?: string;
   amount: number;
   paymentMethod?: string;
   serviceDescription?: string;
@@ -113,7 +116,19 @@ export interface Invoice {
 export interface InvoiceDetail extends Invoice {
   createdBy?: string;
   updatedBy?: string;
+  paidAmount?: number;
+  remainingAmount?: number;
   lineItems: InvoiceLineItem[];
+  payments?: InvoicePayment[];
+}
+
+export interface InvoicePayment {
+  id: string;
+  amount: number;
+  paymentDate: DateOnly;
+  paymentMethod?: string;
+  receiptNumber?: string;
+  notes?: string;
 }
 
 export interface InvoiceLineItem {

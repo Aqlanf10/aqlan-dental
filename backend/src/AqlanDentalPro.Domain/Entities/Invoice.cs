@@ -49,4 +49,7 @@ public class Invoice : BaseEntity
     public Visit? Visit { get; set; }
     public Appointment? Appointment { get; set; }
     public ICollection<InvoiceLineItem> LineItems { get; set; } = [];
+
+    /// <summary>Payments linked to this invoice (via Payment.InvoiceId).</summary>
+    public ICollection<Payment> Payments { get; set; } = [];
 }

@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { normalizePhone } from "@/lib/utils";
 import type { CreatePatientRequest, PatientProfile } from "@/types/patient";
+import type { PaginatedResponse } from "@/types/api";
 import {
   Clock, CheckCircle2, XCircle, Eye, Loader2, RefreshCw,
   Phone, Mail, Calendar, MessageSquare, Filter, Globe, CalendarPlus,
   Search, User, Stethoscope, ExternalLink, MessageCircle,
+  ChevronLeft, ChevronRight, Ban,
 } from "lucide-react";
 
 type BookingStatus = "Pending" | "Reviewed" | "Confirmed" | "Rejected";
@@ -380,13 +382,33 @@ export default function BookingRequestsPage() {
   const [selected, setSelected] = useState<BookingRequest | null>(null);
   const [error, setError] = useState("");
 
-  const fetchItems = useCallback(async () => {
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const pageSize = 20;
+
+  const fetchItems = useCallback(async (pageNum: number = 1) => {
     setLoading(true);
     setError("");
     try {
-      // Fetch all items — filters are client-side
-      const res = await api.get<BookingRequest[]>("/api/booking-requests");
-      setItems(res.data);
+      // Try paginated endpoint first
+      const res = await api.get<BookingRequest[] | PaginatedResponse<BookingRequest>>(
+        `/api/booking-requests?page=${pageNum}&pageSize=${pageSize}`
+      );
+      const data = res.data;
+      if (Array.isArray(data)) {
+        // Non-paginated response — fallback to client-side
+        setItems(data);
+        setTotalCount(data.length);
+        setTotalPages(1);
+      } else {
+        // Paginated response
+        setItems(data.data ?? []);
+        setTotalCount(data.totalCount ?? 0);
+        setTotalPages(data.totalPages ?? 1);
+        setPage(data.page ?? pageNum);
+      }
     } catch {
       setError("تعذّر تحميل طلبات الحجز");
     } finally {
@@ -394,7 +416,7 @@ export default function BookingRequestsPage() {
     }
   }, []);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => { fetchItems(1); }, [fetchItems]);
 
   async function ensurePatientFile(item: BookingRequest): Promise<string> {
     const normalizedPhone = normalizePhone(item.phoneNumber);
@@ -433,13 +455,13 @@ export default function BookingRequestsPage() {
         try {
           await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
         } catch { /* ignore — status might already be confirmed */ }
-        await fetchItems();
+        await fetchItems(page);
         return;
       }
     }
 
     await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
-    await fetchItems();
+    await fetchItems(page);
   }
 
   function handleCreateAppointment(item: BookingRequest) {
@@ -525,7 +547,7 @@ export default function BookingRequestsPage() {
             </span>
           )}
           <button
-            onClick={fetchItems}
+            onClick={() => fetchItems(page)}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
           >
@@ -638,6 +660,12 @@ export default function BookingRequestsPage() {
                       </span>
                       <StatusBadge status={item.status} />
                       {isConverted && <ConvertedBadge />}
+                      {item.staffNotes?.includes("إلغاء من قبل المريض") && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border bg-orange-50 border-orange-200 text-orange-700">
+                          <Ban className="w-3.5 h-3.5" />
+                          إلغاء من قبل المريض
+                        </span>
+                      )}
                     </div>
 
                     {/* Details grid */}
@@ -728,6 +756,58 @@ export default function BookingRequestsPage() {
           onCreateAppointment={handleCreateAppointment}
           onViewAppointment={handleViewAppointment}
         />
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-4">
+          <button
+            onClick={() => fetchItems(page - 1)}
+            disabled={page <= 1 || loading}
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronRight className="w-4 h-4" />
+            السابق
+          </button>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              let pageNum: number;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (page <= 3) {
+                pageNum = i + 1;
+              } else if (page >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = page - 2 + i;
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => fetchItems(pageNum)}
+                  className={`w-9 h-9 rounded-lg text-sm font-semibold transition ${
+                    pageNum === page
+                      ? "bg-clinic-blue text-white"
+                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => fetchItems(page + 1)}
+            disabled={page >= totalPages || loading}
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            التالي
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs text-gray-400 mr-2">
+            {totalCount} طلب
+          </span>
+        </div>
       )}
     </div>
   );

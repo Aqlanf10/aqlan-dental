@@ -50,7 +50,7 @@ public sealed class UpdateBookingRequestStatusDtoValidator : AbstractValidator<U
     {
         RuleFor(x => x.Status)
             .NotEmpty().WithMessage("الحالة مطلوبة")
-            .Must(BeAValidStatus).WithMessage("الحالة يجب أن تكون: Pending, Approved, Rejected, Converted");
+            .Must(BeAValidStatus).WithMessage("الحالة يجب أن تكون: Pending, Reviewed, Confirmed, Rejected");
 
         RuleFor(x => x.StaffNotes)
             .MaximumLength(500).WithMessage("ملاحظات الموظف يجب ألا تتجاوز 500 حرف")
@@ -58,7 +58,7 @@ public sealed class UpdateBookingRequestStatusDtoValidator : AbstractValidator<U
     }
 
     private static bool BeAValidStatus(string status) =>
-        status is "Pending" or "Approved" or "Rejected" or "Converted";
+        status is "Pending" or "Reviewed" or "Confirmed" or "Rejected";
 }
 
 /// <summary>
@@ -89,5 +89,18 @@ public sealed class ConvertBookingRequestToAppointmentDtoValidator : AbstractVal
         RuleFor(x => x.AppointmentType)
             .MaximumLength(100).WithMessage("نوع الموعد يجب ألا يتجاوز 100 حرف")
             .When(x => !string.IsNullOrWhiteSpace(x.AppointmentType));
+    }
+}
+
+/// <summary>
+/// Validates public booking cancellation — PhoneNumber is required.
+/// </summary>
+public sealed class CancelPublicBookingRequestValidator : AbstractValidator<CancelPublicBookingRequest>
+{
+    public CancelPublicBookingRequestValidator()
+    {
+        RuleFor(x => x.PhoneNumber)
+            .NotEmpty().WithMessage("رقم الهاتف مطلوب")
+            .MaximumLength(20).WithMessage("رقم الهاتف يجب ألا يتجاوز 20 رقماً");
     }
 }

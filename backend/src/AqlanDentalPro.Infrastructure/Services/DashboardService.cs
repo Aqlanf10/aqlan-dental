@@ -1,4 +1,6 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +13,10 @@ public record DashboardStats(
     int ActiveOrthoCases,
     int PendingLabOrders,
     int OverdueContractsCount,
-    decimal TotalRevenueMTD);
+    decimal TotalRevenueMTD,
+    int QueueWaitingCount,
+    int PendingBookingRequestsCount,
+    int TodayArrivedCount);
 
 public class DashboardCharts
 {
@@ -77,9 +82,25 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var pendingLabOrders   = await labQuery.CountAsync();
         var totalRevenueMTD    = await revenueQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
 
+        // Queue waiting count
+        var queueWaitingCount = await db.ClinicQueueItems
+            .CountAsync(q => q.QueueDate == today
+                          && q.Status == ClinicQueueStatus.Waiting
+                          && q.IsActive);
+
+        // Pending booking requests count
+        var pendingBookingRequestsCount = await db.BookingRequests
+            .CountAsync(r => r.Status == BookingRequestStatus.Pending && r.IsActive);
+
+        // Today arrived count (appointments with Arrived/Waiting status today)
+        var todayArrivedCount = await db.Appointments
+            .CountAsync(a => a.AppointmentDate == today
+                          && (a.Status == AppointmentStatus.Arrived || a.Status == AppointmentStatus.Waiting)
+                          && a.IsActive);
+
         return new DashboardStats(
             appointmentsToday, newPatientsToday, totalPatients, activeOrthoCases, pendingLabOrders,
-            overdueCount, totalRevenueMTD);
+            overdueCount, totalRevenueMTD, queueWaitingCount, pendingBookingRequestsCount, todayArrivedCount);
     }
 
     public async Task<DashboardCharts> GetChartsAsync()

@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.BookingRequests;
+using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
@@ -6,10 +7,11 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class BookingRequestService(AppDbContext db) : IBookingRequestService
+public class BookingRequestService(AppDbContext db, ILogger<BookingRequestService> logger) : IBookingRequestService
 {
     // Clinic working hours: Saturday-Thursday 08:00-20:00, Friday closed
     private static readonly TimeOnly ClinicOpen = new(8, 0);
@@ -162,6 +164,34 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
             .ToListAsync();
 
         return items.Select(r => ToDto(r, r.Doctor?.Name)).ToList();
+    }
+
+    public async Task<PaginatedResponse<BookingRequestDto>> GetAllPaginatedAsync(string? statusFilter, int page, int pageSize)
+    {
+        var query = db.BookingRequests.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(statusFilter) &&
+            Enum.TryParse<BookingRequestStatus>(statusFilter, ignoreCase: true, out var status))
+        {
+            query = query.Where(r => r.Status == status);
+        }
+
+        var totalCount = await query.CountAsync();
+
+        var items = await query
+            .Include(r => r.Doctor)
+            .OrderByDescending(r => r.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PaginatedResponse<BookingRequestDto>
+        {
+            Data = items.Select(r => ToDto(r, r.Doctor?.Name)),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
     }
 
     public async Task<BookingRequestDto?> GetByIdAsync(Guid id)
@@ -391,6 +421,40 @@ public class BookingRequestService(AppDbContext db) : IBookingRequestService
         bookingRequest.StaffNotes = existingNotes + "تم تحويل الطلب إلى موعد";
 
         await db.SaveChangesAsync();
+
+        // 8. If appointment is today, also add patient to the clinic queue
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (dto.AppointmentDate == today)
+        {
+            var activeStatuses = new HashSet<ClinicQueueStatus>
+            {
+                ClinicQueueStatus.Waiting,
+                ClinicQueueStatus.Called,
+                ClinicQueueStatus.InRoom,
+                ClinicQueueStatus.InProgress
+            };
+
+            var existingQueueItem = await db.ClinicQueueItems
+                .AnyAsync(q => q.AppointmentId == appointment.Id
+                            && q.QueueDate == today
+                            && activeStatuses.Contains(q.Status)
+                            && q.IsActive);
+
+            if (!existingQueueItem)
+            {
+                var queueItem = new ClinicQueueItem
+                {
+                    PatientId = dto.PatientId,
+                    AppointmentId = appointment.Id,
+                    DoctorId = dto.DoctorId,
+                    Status = ClinicQueueStatus.Waiting,
+                    QueueDate = today,
+                    AddedByUserId = convertedBy
+                };
+                db.ClinicQueueItems.Add(queueItem);
+                await db.SaveChangesAsync();
+            }
+        }
 
         return ToDto(bookingRequest, bookingRequest.Doctor?.Name);
     }

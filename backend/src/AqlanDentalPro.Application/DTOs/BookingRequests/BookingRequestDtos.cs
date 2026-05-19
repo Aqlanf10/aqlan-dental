@@ -66,3 +66,7 @@ public record ConvertBookingRequestToAppointmentDto(
     string? AppointmentType,
     int DurationMinutes = 30
 );
+
+public record CancelPublicBookingRequest(
+    [Required] string PhoneNumber
+);

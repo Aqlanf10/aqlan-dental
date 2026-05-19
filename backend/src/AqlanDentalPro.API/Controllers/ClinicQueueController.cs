@@ -34,17 +34,22 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
     // The local StatusArabic dictionary has been removed to ensure single source of truth.
 
     // ─── GET /api/clinic-queue/today ─────────────────────────────────────────
-    /// <summary>Returns today's clinic queue items.</summary>
+    /// <summary>Returns today's clinic queue items. Optional doctorId filter.</summary>
     [HttpGet("today")]
-    public async Task<IActionResult> GetTodayQueue()
+    public async Task<IActionResult> GetTodayQueue([FromQuery] Guid? doctorId)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var items = await db.ClinicQueueItems
+        var query = db.ClinicQueueItems
             .Include(q => q.Patient)
             .Include(q => q.Doctor)
             .Include(q => q.Appointment)
-            .Where(q => q.QueueDate == today && q.IsActive)
+            .Where(q => q.QueueDate == today && q.IsActive);
+
+        if (doctorId.HasValue)
+            query = query.Where(q => q.DoctorId == doctorId.Value);
+
+        var items = await query
             .OrderBy(q => q.CreatedAt)
             .ToListAsync();
 
@@ -116,17 +121,21 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
                     return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
             }
 
-            // Validate doctor if provided
-            if (req.DoctorId.HasValue)
-            {
-                var doctorExists = await db.Doctors.AnyAsync(d => d.Id == req.DoctorId.Value && d.IsActive);
-                if (!doctorExists)
-                    return NotFound(new { message = "الطبيب غير موجود" });
-            }
+            // Validate doctor (now required)
+            if (req.DoctorId == Guid.Empty)
+                return BadRequest(new { message = "معرف الطبيب مطلوب" });
+
+            var doctorExists = await db.Doctors.AnyAsync(d => d.Id == req.DoctorId && d.IsActive);
+            if (!doctorExists)
+                return NotFound(new { message = "الطبيب غير موجود" });
 
             // Validate room name if provided
-            if (!string.IsNullOrWhiteSpace(req.RoomName) && !ClinicRoomNames.IsValid(req.RoomName))
-                return BadRequest(new { message = "اسم الغرفة غير صالح. يجب أن يكون: غرفة 1 أو غرفة 2 أو غرفة 3" });
+            if (!string.IsNullOrWhiteSpace(req.RoomName))
+            {
+                var isValidRoom = await IsRoomValidAsync(req.RoomName);
+                if (!isValidRoom)
+                    return BadRequest(new { message = "اسم الغرفة غير صالح" });
+            }
 
             // Look for existing visit to link
             Guid? visitId = req.VisitId;
@@ -143,6 +152,8 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
                 AppointmentId = req.AppointmentId,
                 VisitId = visitId,
                 DoctorId = req.DoctorId,
+                ServiceId = req.ServiceId,
+                ClinicRoomId = req.ClinicRoomId,
                 RoomName = req.RoomName,
                 Status = ClinicQueueStatus.Waiting,
                 QueueDate = today,
@@ -202,8 +213,12 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
 
             // Validate and assign room if provided
             var roomName = req?.RoomName ?? item.RoomName;
-            if (!string.IsNullOrWhiteSpace(roomName) && !ClinicRoomNames.IsValid(roomName))
-                return BadRequest(new { message = "اسم الغرفة غير صالح" });
+            if (!string.IsNullOrWhiteSpace(roomName))
+            {
+                var isValidRoom = await IsRoomValidAsync(roomName);
+                if (!isValidRoom)
+                    return BadRequest(new { message = "اسم الغرفة غير صالح" });
+            }
 
             item.Status = ClinicQueueStatus.Called;
             item.CalledAt = DateTime.UtcNow;
@@ -452,8 +467,8 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
         if (item is null)
             return NotFound(new { message = "عنصر الطابور غير موجود" });
 
-        if (!ClinicRoomNames.IsValid(req.RoomName))
-            return BadRequest(new { message = "اسم الغرفة غير صالح. يجب أن يكون: غرفة 1 أو غرفة 2 أو غرفة 3" });
+        if (!await IsRoomValidAsync(req.RoomName))
+            return BadRequest(new { message = "اسم الغرفة غير صالح" });
 
         // Can only change room for active items
         if (!ActiveStatuses.Contains(item.Status))
@@ -576,12 +591,85 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
     }
 
     // ─── GET /api/clinic-queue/rooms ─────────────────────────────────────────
-    /// <summary>Returns available room names for the room selector.</summary>
+    /// <summary>Returns available room names for the room selector. Queries from DB.</summary>
     [HttpGet("rooms")]
     [AllowAnonymous]
-    public IActionResult GetRooms()
+    public async Task<IActionResult> GetRooms()
     {
-        return Ok(ClinicRoomNames.DefaultRooms);
+        var rooms = await db.ClinicRooms
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.SortOrder)
+            .ThenBy(r => r.ArabicName)
+            .Select(r => new { r.Id, r.ArabicName, r.EnglishName, r.Code, RoomType = r.RoomType.ToString() })
+            .ToListAsync();
+
+        if (rooms.Count == 0)
+        {
+            // Fallback to constants for backward compatibility
+            return Ok(ClinicRoomNames.DefaultRooms.Select((name, i) => new
+            {
+                Id = Guid.Empty,
+                ArabicName = name,
+                EnglishName = (string?)null,
+                Code = $"room-{i + 1}",
+                RoomType = "Treatment"
+            }));
+        }
+
+        return Ok(rooms);
+    }
+
+    // ─── GET /api/clinic-queue/estimated-wait ───────────────────────────────
+    /// <summary>
+    /// Returns estimated wait time for the queue.
+    /// Calculated based on average service time of completed items today.
+    /// </summary>
+    [HttpGet("estimated-wait")]
+    public async Task<IActionResult> GetEstimatedWait()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // Calculate average service time from completed items today
+        var completedItems = await db.ClinicQueueItems
+            .Where(q => q.QueueDate == today
+                     && q.Status == ClinicQueueStatus.Completed
+                     && q.StartedAt.HasValue
+                     && q.CompletedAt.HasValue
+                     && q.IsActive)
+            .Select(q => new { q.StartedAt, q.CompletedAt })
+            .ToListAsync();
+
+        double averageServiceTimeMinutes = 15; // Default fallback
+        if (completedItems.Count > 0)
+        {
+            var avgTicks = completedItems
+                .Where(q => q.CompletedAt!.Value > q.StartedAt!.Value)
+                .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
+                .DefaultIfEmpty(15)
+                .Average();
+            averageServiceTimeMinutes = Math.Max(1, avgTicks);
+        }
+
+        // Count waiting + called (not yet InRoom)
+        var waitingCount = await db.ClinicQueueItems
+            .CountAsync(q => q.QueueDate == today
+                          && q.Status == ClinicQueueStatus.Waiting
+                          && q.IsActive);
+
+        var calledNotInRoomCount = await db.ClinicQueueItems
+            .CountAsync(q => q.QueueDate == today
+                          && q.Status == ClinicQueueStatus.Called
+                          && q.IsActive);
+
+        var itemsAhead = waitingCount + calledNotInRoomCount;
+        var currentWaitMinutes = (int)Math.Ceiling(itemsAhead * averageServiceTimeMinutes);
+
+        return Ok(new
+        {
+            averageServiceTimeMinutes = Math.Round(averageServiceTimeMinutes, 1),
+            currentWaitMinutes,
+            waitingCount = itemsAhead
+        });
     }
 
     // ─── GET /api/clinic-queue/rooms/db ──────────────────────────────────────
@@ -662,6 +750,8 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
                     PatientId = appointment.PatientId,
                     AppointmentId = appointment.Id,
                     DoctorId = appointment.DoctorId,
+                    ServiceId = appointment.ServiceId,
+                    ClinicRoomId = appointment.ClinicRoomId,
                     RoomName = appointment.RoomName,
                     Status = ClinicQueueStatus.Waiting,
                     QueueDate = today,
@@ -696,6 +786,24 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
         return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
     }
 
+    /// <summary>
+    /// Validates a room name by checking the ClinicRooms DB table first,
+    /// then falling back to the hardcoded ClinicRoomNames constants.
+    /// </summary>
+    private async Task<bool> IsRoomValidAsync(string? roomName)
+    {
+        if (string.IsNullOrWhiteSpace(roomName)) return false;
+
+        // Check DB rooms first
+        var dbRoomExists = await db.ClinicRooms
+            .AnyAsync(r => r.IsActive && (r.ArabicName == roomName || r.EnglishName == roomName || r.Code == roomName));
+
+        if (dbRoomExists) return true;
+
+        // Fallback to hardcoded constants for backward compatibility
+        return ClinicRoomNames.IsValid(roomName);
+    }
+
     private async Task SyncAppointmentStatus(ClinicQueueItem item, AppointmentStatus appointmentStatus)
     {
         if (item.AppointmentId.HasValue)
@@ -721,9 +829,11 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
                 appointment.Status = appointmentStatus;
                 appointment.UpdatedAt = DateTime.UtcNow;
 
-                // Sync room name
+                // Sync room name and ClinicRoomId
                 if (!string.IsNullOrWhiteSpace(item.RoomName))
                     appointment.RoomName = item.RoomName;
+                if (item.ClinicRoomId.HasValue)
+                    appointment.ClinicRoomId = item.ClinicRoomId;
             }
         }
     }
@@ -755,7 +865,9 @@ public class AddToQueueRequest
     public Guid PatientId { get; set; }
     public Guid? AppointmentId { get; set; }
     public Guid? VisitId { get; set; }
-    public Guid? DoctorId { get; set; }
+    public Guid DoctorId { get; set; }
+    public Guid? ServiceId { get; set; }
+    public Guid? ClinicRoomId { get; set; }
     public string? RoomName { get; set; }
     public string? Notes { get; set; }
 }

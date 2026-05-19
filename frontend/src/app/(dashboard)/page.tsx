@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Calendar, Users, Activity, FlaskConical, AlertTriangle, Wallet, Plus } from "lucide-react";
+import { Calendar, Users, Activity, FlaskConical, AlertTriangle, Wallet, Plus, ListOrdered } from "lucide-react";
 import Link from "next/link";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
@@ -181,6 +181,33 @@ export default function DashboardPage() {
               description="أقساط متأخرة السداد"
               href="/finance/overdue"
             />
+          </div>
+
+          {/* Queue Status Widget */}
+          <div style={cardStyle}>
+            <h3 className="font-extrabold text-sm mb-3.5" style={{ color: "#0d2137" }}>حالة الطابور</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg p-3 text-center" style={{ background: "#f5922e10", border: "1.5px solid #f5922e25" }}>
+                <div className="text-xl font-extrabold" style={{ color: "#f5922e" }}>{stats?.queueWaitingCount ?? 0}</div>
+                <div className="text-xs font-medium mt-1" style={{ color: "#64748b" }}>عدد المنتظرين</div>
+              </div>
+              <div className="rounded-lg p-3 text-center" style={{ background: "#22c55e10", border: "1.5px solid #22c55e25" }}>
+                <div className="text-xl font-extrabold" style={{ color: "#22c55e" }}>{stats?.todayArrivedCount ?? 0}</div>
+                <div className="text-xs font-medium mt-1" style={{ color: "#64748b" }}>عدد الواصلين</div>
+              </div>
+              <div className="rounded-lg p-3 text-center" style={{ background: "#3d7ab510", border: "1.5px solid #3d7ab525" }}>
+                <div className="text-xl font-extrabold" style={{ color: "#3d7ab5" }}>{stats?.pendingBookingRequestsCount ?? 0}</div>
+                <div className="text-xs font-medium mt-1" style={{ color: "#64748b" }}>طلبات حجز معلقة</div>
+              </div>
+            </div>
+            <Link
+              href="/clinic-queue"
+              className="mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold text-white transition hover:opacity-90"
+              style={{ background: "#3d7ab5" }}
+            >
+              <ListOrdered className="w-4 h-4" />
+              فتح الطابور
+            </Link>
           </div>
         </div>
       </div>

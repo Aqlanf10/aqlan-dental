@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus } from "lucide-react";
+import { MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus, UserX } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
@@ -12,7 +12,10 @@ const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 const STATUS_TRANSITIONS: Record<string, { value: string; label: string }[]> = {
   Scheduled:  [{ value: "Confirmed", label: "تأكيد" }, { value: "Arrived", label: "وصل" }, { value: "Cancelled", label: "إلغاء" }],
   Confirmed:  [{ value: "Arrived",    label: "وصل" },   { value: "Cancelled", label: "إلغاء" }],
-  Arrived:    [{ value: "InProgress", label: "بدأ" },   { value: "NoShow", label: "غياب" }],
+  Arrived:    [{ value: "Waiting", label: "في الانتظار" }, { value: "NoShow", label: "غياب" }],
+  Waiting:    [{ value: "Called", label: "تم النداء" }, { value: "NoShow", label: "غياب" }],
+  Called:     [{ value: "InRoom", label: "داخل الغرفة" }, { value: "NoShow", label: "غياب" }],
+  InRoom:     [{ value: "InProgress", label: "بدأ" }, { value: "Cancelled", label: "إلغاء" }],
   InProgress: [{ value: "Completed",  label: "اكتمل" }, { value: "Cancelled", label: "إلغاء" }],
   Completed:  [],
   Cancelled:  [{ value: "Scheduled",  label: "إعادة جدولة" }],
@@ -23,6 +26,9 @@ const STATUS_COLORS: Record<string, string> = {
   Scheduled:  "bg-blue-50 border-blue-200 text-blue-800",
   Confirmed:  "bg-clinic-blue-50 border-clinic-blue-100 text-clinic-navy-700",
   Arrived:    "bg-yellow-50 border-yellow-200 text-yellow-800",
+  Waiting:    "bg-amber-50 border-amber-200 text-amber-800",
+  Called:     "bg-cyan-50 border-cyan-200 text-cyan-800",
+  InRoom:     "bg-purple-50 border-purple-200 text-purple-800",
   InProgress: "bg-purple-50 border-purple-200 text-purple-800",
   Completed:  "bg-green-50 border-green-200 text-green-800",
   Cancelled:  "bg-gray-50 border-gray-200 text-gray-500",
@@ -44,6 +50,7 @@ function newApptUrl(date: string, hour: number, doctorId?: string): string {
 export function DaySchedule({ date, doctorId }: Props) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [noShowLoading, setNoShowLoading] = useState(false);
 
   // NOTE: This component uses direct api.get() with from/to params instead of useAppointments hook.
   // The useAppointments hook uses startDate/endDate query params, while the backend expects from/to for date-range queries.
@@ -65,6 +72,36 @@ export function DaySchedule({ date, doctorId }: Props) {
     setAppointments((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status } : a))
     );
+  };
+
+  const handleNoShowAll = async () => {
+    const remaining = appointments.filter(
+      (a) => a.status === "Scheduled" || a.status === "Confirmed"
+    );
+    if (remaining.length === 0) {
+      toast.info("لا توجد مواعيد مجدولة أو مؤكدة لتحويلها");
+      return;
+    }
+    if (!confirm(`هل أنت متأكد من تسجيل غياب ${remaining.length} موعد؟`)) return;
+    setNoShowLoading(true);
+    try {
+      await api.post("/api/appointments/batch-status", {
+        appointmentIds: remaining.map((a) => a.id),
+        status: "NoShow",
+      });
+      setAppointments((prev) =>
+        prev.map((a) =>
+          a.status === "Scheduled" || a.status === "Confirmed"
+            ? { ...a, status: "NoShow" }
+            : a
+        )
+      );
+      toast.success(`تم تسجيل غياب ${remaining.length} موعد`);
+    } catch {
+      toast.error("فشل تسجيل الغياب الجماعي");
+    } finally {
+      setNoShowLoading(false);
+    }
   };
 
   if (loading) {
@@ -93,6 +130,19 @@ export function DaySchedule({ date, doctorId }: Props) {
 
   return (
     <div className="space-y-1.5">
+      {/* No-show all button */}
+      {appointments.some((a) => a.status === "Scheduled" || a.status === "Confirmed") && (
+        <div className="flex justify-start mb-3">
+          <button
+            onClick={handleNoShowAll}
+            disabled={noShowLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition disabled:opacity-50"
+          >
+            <UserX className="w-3.5 h-3.5" />
+            {noShowLoading ? "جارٍ التحديث..." : "تسجيل غياب الباقين"}
+          </button>
+        </div>
+      )}
       {HOURS.map((h) => {
         const slotAppts = appointments.filter((a) =>
           a.startTime.startsWith(String(h).padStart(2, "0"))
@@ -238,8 +288,20 @@ function AppointmentCard({
           <span>{a.doctorName}</span>
           <span>·</span>
           <span>{a.appointmentType}</span>
+          {a.serviceName && (
+            <>
+              <span>·</span>
+              <span className="text-[#3d7ab5]">{a.serviceName}</span>
+            </>
+          )}
           <span>·</span>
           <span className="font-mono">{formatTime(a.startTime)} – {formatTime(a.endTime)}</span>
+          {a.roomName && (
+            <>
+              <span>·</span>
+              <span className="flex items-center gap-0.5 text-purple-600">📍 {a.roomName}</span>
+            </>
+          )}
         </div>
       </div>
 

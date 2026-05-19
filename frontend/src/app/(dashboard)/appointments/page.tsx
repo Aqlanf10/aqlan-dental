@@ -5,6 +5,7 @@ import { ChevronRight, ChevronLeft, CalendarDays, Plus, LayoutGrid, List, Calend
 import { DaySchedule } from "@/components/appointments/DaySchedule";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
+import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
 import { formatArabicDate, cn } from "@/lib/utils";
 import api from "@/lib/api";
 
@@ -208,14 +209,18 @@ export default function AppointmentsPage() {
       </div>
 
       {/* Schedule */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        {view === "day" ? (
-          <DaySchedule date={date} doctorId={doctorId || undefined} />
-        ) : view === "week" ? (
-          <WeekCalendar anchor={date} doctorId={doctorId || undefined} onDateClick={(d) => { setDate(d); setView("day"); }} />
-        ) : (
-          <MonthCalendar anchor={date} doctorId={doctorId || undefined} onDateClick={(d) => { setDate(d); setView("day"); }} />
-        )}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="xl:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          {view === "day" ? (
+            <DaySchedule date={date} doctorId={doctorId || undefined} />
+          ) : view === "week" ? (
+            <WeekCalendar anchor={date} doctorId={doctorId || undefined} onDateClick={(d) => { setDate(d); setView("day"); }} />
+          ) : (
+            <MonthCalendar anchor={date} doctorId={doctorId || undefined} onDateClick={(d) => { setDate(d); setView("day"); }} />
+          )}
+        </div>
+        {/* Upcoming sidebar */}
+        <UpcomingWidget />
       </div>
     </div>
   );

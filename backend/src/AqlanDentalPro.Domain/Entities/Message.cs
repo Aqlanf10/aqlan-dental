@@ -21,4 +21,5 @@ public class Message : BaseEntity
     public User Sender { get; set; } = null!;
     public Message? ReplyTo { get; set; }
     public ICollection<MessageRead> Reads { get; set; } = [];
+    public ICollection<MessageAttachment> Attachments { get; set; } = [];
 }

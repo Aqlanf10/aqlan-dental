@@ -320,7 +320,293 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         await db.SaveChangesAsync();
         return Ok(new { existing.Id, message = "تم حفظ قرار الخلع" });
     }
+
+    // ─── Retention Records ─────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/retention")]
+    public async Task<IActionResult> GetRetention(Guid id)
+    {
+        var record = await db.RetentionRecords
+            .Include(r => r.Visits)
+            .Where(r => r.OrthoCaseId == id)
+            .FirstOrDefaultAsync();
+        if (record is null) return Ok(null);
+        return Ok(new
+        {
+            record.Id,
+            DebondDate   = record.DebondDate?.ToString("yyyy-MM-dd"),
+            record.UpperRetainer,
+            record.LowerRetainer,
+            record.Instructions,
+            record.Status,
+            Visits = record.Visits
+                .OrderBy(v => v.VisitDate)
+                .Select(v => new
+                {
+                    v.Id,
+                    VisitDate     = v.VisitDate?.ToString("yyyy-MM-dd"),
+                    v.Period,
+                    v.ToothStability,
+                    v.RetainerStatus,
+                    v.Notes,
+                })
+        });
+    }
+
+    [HttpPut("{id:guid}/retention")]
+    public async Task<IActionResult> UpsertRetention(Guid id, [FromBody] UpsertRetentionRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.RetentionRecords.FirstOrDefaultAsync(r => r.OrthoCaseId == id);
+        if (existing is null)
+        {
+            existing = new RetentionRecord { OrthoCaseId = id };
+            db.RetentionRecords.Add(existing);
+        }
+
+        existing.DebondDate    = req.DebondDate != null ? DateOnly.Parse(req.DebondDate) : null;
+        existing.UpperRetainer = req.UpperRetainer;
+        existing.LowerRetainer = req.LowerRetainer;
+        existing.Instructions  = req.Instructions;
+        existing.Status        = req.Status ?? existing.Status;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم حفظ سجل الاحتفاظ" });
+    }
+
+    [HttpPost("{id:guid}/retention/visits")]
+    public async Task<IActionResult> AddRetentionVisit(Guid id, [FromBody] CreateRetentionVisitRequest req)
+    {
+        var retention = await db.RetentionRecords.FirstOrDefaultAsync(r => r.OrthoCaseId == id);
+        if (retention is null) return NotFound(new { message = "سجل الاحتفاظ غير موجود — أنشئ سجل الاحتفاظ أولاً" });
+
+        var visit = new RetentionVisit
+        {
+            RetentionRecordId = retention.Id,
+            VisitDate         = req.VisitDate != null ? DateOnly.Parse(req.VisitDate) : DateOnly.FromDateTime(DateTime.Today),
+            Period            = req.Period,
+            ToothStability    = req.ToothStability,
+            RetainerStatus    = req.RetainerStatus,
+            Notes             = req.Notes,
+        };
+        db.RetentionVisits.Add(visit);
+        await db.SaveChangesAsync();
+        return Ok(new
+        {
+            visit.Id,
+            VisitDate     = visit.VisitDate?.ToString("yyyy-MM-dd"),
+            visit.Period,
+            visit.ToothStability,
+            visit.RetainerStatus,
+            visit.Notes,
+        });
+    }
+
+    [HttpGet("{id:guid}/retention/visits")]
+    public async Task<IActionResult> GetRetentionVisits(Guid id)
+    {
+        var visits = await db.RetentionVisits
+            .Where(v => v.RetentionRecord.OrthoCaseId == id)
+            .OrderByDescending(v => v.VisitDate)
+            .Select(v => new
+            {
+                v.Id,
+                VisitDate     = v.VisitDate != null ? v.VisitDate.Value.ToString("yyyy-MM-dd") : null,
+                v.Period,
+                v.ToothStability,
+                v.RetainerStatus,
+                v.Notes,
+            })
+            .ToListAsync();
+        return Ok(visits);
+    }
+
+    // ─── Diagnosis Summary ──────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/diagnosis")]
+    public async Task<IActionResult> GetDiagnosis(Guid id)
+    {
+        var diagnosis = await db.OrthoDiagnoses
+            .Where(d => d.OrthoCaseId == id)
+            .FirstOrDefaultAsync();
+
+        if (diagnosis is not null)
+        {
+            return Ok(new
+            {
+                diagnosis.Id,
+                diagnosis.SkeletalClassification,
+                diagnosis.DentalClassification,
+                diagnosis.FacialPattern,
+                diagnosis.ANB,
+                diagnosis.Wits,
+                diagnosis.FMA,
+                diagnosis.SNA,
+                diagnosis.SNB,
+                diagnosis.IMPA,
+                diagnosis.Summary,
+            });
+        }
+
+        // Compute a summary from ClinicalExam, ProblemList, and CephAnalysis measurements
+        var orthoCase = await db.OrthoCases
+            .Include(c => c.ClinicalExam)
+            .Include(c => c.ProblemList)
+            .Include(c => c.CephAnalyses)
+                .ThenInclude(a => a.Measurements)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        // Derive skeletal classification from the latest ceph measurements
+        var latestCeph = orthoCase.CephAnalyses
+            .OrderByDescending(a => a.AnalysisDate)
+            .FirstOrDefault();
+        var measurements = latestCeph?.Measurements ?? [];
+
+        var anbValue = measurements.FirstOrDefault(m => m.MeasurementName == "ANB")?.MeasurementValue;
+        var witsValue = measurements.FirstOrDefault(m => m.MeasurementName == "Wits")?.MeasurementValue;
+        var fmaValue = measurements.FirstOrDefault(m => m.MeasurementName == "FMA")?.MeasurementValue;
+        var snaValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNA")?.MeasurementValue;
+        var snbValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNB")?.MeasurementValue;
+        var impaValue = measurements.FirstOrDefault(m => m.MeasurementName == "IMPA")?.MeasurementValue;
+
+        string? skeletalClass = anbValue switch
+        {
+            >= 0 and <= 4 => "Class I",
+            > 4 => "Class II",
+            < 0 => "Class III",
+            null => null
+        };
+
+        string? facialPattern = fmaValue switch
+        {
+            < 22 => "Hypodivergent",
+            >= 22 and <= 28 => "Normodivergent",
+            > 28 => "Hyperdivergent",
+            null => null
+        };
+
+        string? dentalClass = orthoCase.ClinicalExam?.MolarRelation;
+
+        var problemSummary = orthoCase.ProblemList.Count > 0
+            ? string.Join("، ", orthoCase.ProblemList.OrderBy(p => p.SortOrder).Select(p => p.Description))
+            : null;
+
+        return Ok(new
+        {
+            Id = (Guid?)null,
+            SkeletalClassification = skeletalClass,
+            DentalClassification = dentalClass,
+            FacialPattern = facialPattern,
+            ANB = anbValue,
+            Wits = witsValue,
+            FMA = fmaValue,
+            SNA = snaValue,
+            SNB = snbValue,
+            IMPA = impaValue,
+            Summary = problemSummary,
+        });
+    }
+
+    [HttpPut("{id:guid}/diagnosis")]
+    public async Task<IActionResult> UpsertDiagnosis(Guid id, [FromBody] UpsertDiagnosisRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.OrthoDiagnoses.FirstOrDefaultAsync(d => d.OrthoCaseId == id);
+        if (existing is null)
+        {
+            existing = new OrthoDiagnosis { OrthoCaseId = id };
+            db.OrthoDiagnoses.Add(existing);
+        }
+
+        existing.SkeletalClassification = req.SkeletalClassification;
+        existing.DentalClassification   = req.DentalClassification;
+        existing.FacialPattern          = req.FacialPattern;
+        existing.ANB                    = req.ANB;
+        existing.Wits                   = req.Wits;
+        existing.FMA                    = req.FMA;
+        existing.SNA                    = req.SNA;
+        existing.SNB                    = req.SNB;
+        existing.IMPA                   = req.IMPA;
+        existing.Summary                = req.Summary;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم حفظ التشخيص" });
+    }
+
+    // ─── Clinical Photos ────────────────────────────────────────────────────────
+
+    [HttpPost("{id:guid}/photos")]
+    public async Task<IActionResult> AddPhoto(Guid id, [FromBody] AddOrthoPhotoRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var maxOrder = await db.OrthoClinicalPhotos
+            .Where(p => p.OrthoCaseId == id)
+            .MaxAsync(p => (int?)p.SortOrder) ?? 0;
+
+        var photo = new OrthoClinicalPhoto
+        {
+            OrthoCaseId = id,
+            PhotoUrl    = req.PhotoUrl,
+            PhotoType   = req.PhotoType ?? "Intraoral",
+            Caption     = req.Caption,
+            TakenAt     = req.TakenAt ?? DateTime.UtcNow,
+            SortOrder   = req.SortOrder ?? (maxOrder + 1),
+        };
+        db.OrthoClinicalPhotos.Add(photo);
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            photo.Id,
+            photo.PhotoUrl,
+            photo.PhotoType,
+            photo.Caption,
+            TakenAt   = photo.TakenAt.ToString("yyyy-MM-dd"),
+            photo.SortOrder,
+        });
+    }
+
+    [HttpGet("{id:guid}/photos")]
+    public async Task<IActionResult> GetPhotos(Guid id)
+    {
+        var photos = await db.OrthoClinicalPhotos
+            .Where(p => p.OrthoCaseId == id)
+            .OrderBy(p => p.SortOrder).ThenBy(p => p.TakenAt)
+            .Select(p => new
+            {
+                p.Id,
+                p.PhotoUrl,
+                p.PhotoType,
+                p.Caption,
+                TakenAt   = p.TakenAt.ToString("yyyy-MM-dd"),
+                p.SortOrder,
+            })
+            .ToListAsync();
+        return Ok(photos);
+    }
+
+    [HttpDelete("{id:guid}/photos/{photoId:guid}")]
+    public async Task<IActionResult> DeletePhoto(Guid id, Guid photoId)
+    {
+        var photo = await db.OrthoClinicalPhotos
+            .FirstOrDefaultAsync(p => p.Id == photoId && p.OrthoCaseId == id);
+        if (photo is null) return NotFound(new { message = "الصورة غير موجودة" });
+
+        db.OrthoClinicalPhotos.Remove(photo);
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم حذف الصورة" });
+    }
 }
+
+// ─── Request DTOs ────────────────────────────────────────────────────────────
 
 public class UpdateStageRequest
 {
@@ -353,4 +639,45 @@ public sealed class UpsertTreatmentPlanRequest
     public string? RetentionPlan          { get; init; }
     public string? TreatmentGoals         { get; init; }
     public string? RisksLimitations       { get; init; }
+}
+
+public sealed class UpsertRetentionRequest
+{
+    public string? DebondDate    { get; init; }
+    public string? UpperRetainer { get; init; }
+    public string? LowerRetainer { get; init; }
+    public string? Instructions  { get; init; }
+    public string? Status        { get; init; }
+}
+
+public sealed class CreateRetentionVisitRequest
+{
+    public string? VisitDate      { get; init; }
+    public string? Period         { get; init; }
+    public string? ToothStability { get; init; }
+    public string? RetainerStatus { get; init; }
+    public string? Notes          { get; init; }
+}
+
+public sealed class UpsertDiagnosisRequest
+{
+    public string? SkeletalClassification { get; init; }
+    public string? DentalClassification   { get; init; }
+    public string? FacialPattern          { get; init; }
+    public decimal? ANB                   { get; init; }
+    public decimal? Wits                  { get; init; }
+    public decimal? FMA                   { get; init; }
+    public decimal? SNA                   { get; init; }
+    public decimal? SNB                   { get; init; }
+    public decimal? IMPA                  { get; init; }
+    public string? Summary                { get; init; }
+}
+
+public sealed class AddOrthoPhotoRequest
+{
+    public string PhotoUrl   { get; init; } = string.Empty;
+    public string? PhotoType { get; init; }
+    public string? Caption   { get; init; }
+    public DateTime? TakenAt { get; init; }
+    public int? SortOrder    { get; init; }
 }

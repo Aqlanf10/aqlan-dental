@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -15,7 +16,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/invoices")]
 [Authorize(Policy = "FinanceAccess")]
-public class InvoicesController(AppDbContext db) : ControllerBase
+public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger<InvoicesController> logger) : ControllerBase
 {
     // ─── 1. GET /api/invoices — List all invoices ──────────────────────────
     /// <summary>Returns paginated list of invoices with optional filters.</summary>
@@ -71,7 +72,7 @@ public class InvoicesController(AppDbContext db) : ControllerBase
     }
 
     // ─── 2. GET /api/invoices/{id} — Invoice detail ───────────────────────
-    /// <summary>Returns full invoice with line items.</summary>
+    /// <summary>Returns full invoice with line items and payment summary.</summary>
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -81,10 +82,14 @@ public class InvoicesController(AppDbContext db) : ControllerBase
             .Include(i => i.Appointment)
             .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
                 .ThenInclude(l => l.Service)
+            .Include(i => i.Payments.Where(p => p.IsActive))
             .FirstOrDefaultAsync(i => i.Id == id);
 
         if (invoice == null)
             return NotFound(new { message = "الفاتورة غير موجودة" });
+
+        var paidAmount = invoice.Payments.Sum(p => p.Amount);
+        var remainingAmount = Math.Max(0, invoice.TotalAmount - paidAmount);
 
         return Ok(new
         {
@@ -100,6 +105,8 @@ public class InvoicesController(AppDbContext db) : ControllerBase
             invoice.DiscountAmount,
             invoice.TaxAmount,
             invoice.TotalAmount,
+            PaidAmount = paidAmount,
+            RemainingAmount = remainingAmount,
             invoice.Notes,
             invoice.CreatedAt,
             invoice.UpdatedAt,
@@ -119,7 +126,18 @@ public class InvoicesController(AppDbContext db) : ControllerBase
                 l.RelatedTreatmentPlanStepId,
                 l.RelatedVisitId,
                 l.SortOrder
-            })
+            }),
+            Payments = invoice.Payments
+                .OrderByDescending(p => p.PaymentDate)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Amount,
+                    p.PaymentDate,
+                    p.PaymentMethod,
+                    p.ReceiptNumber,
+                    p.Notes
+                })
         });
     }
 
@@ -320,6 +338,23 @@ public class InvoicesController(AppDbContext db) : ControllerBase
             StatusArabic = GetStatusArabic(invoice.Status),
             message = "تم إلغاء الفاتورة بنجاح"
         });
+    }
+
+    // ─── 7. GET /api/invoices/{id}/pdf — Invoice PDF ──────────────────────
+    /// <summary>Generates a PDF for the invoice with Arabic/RTL support.</summary>
+    [HttpGet("{id:guid}/pdf")]
+    public async Task<IActionResult> GetInvoicePdf(Guid id)
+    {
+        try
+        {
+            var pdfBytes = await pdfService.GenerateInvoicePdfAsync(id);
+            return File(pdfBytes, "application/pdf", $"invoice-{id}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Invoice PDF generation failed for invoice {InvoiceId}", id);
+            return NotFound(new { message = ex.Message });
+        }
     }
 
     // ─── Private helpers ───────────────────────────────────────────────────

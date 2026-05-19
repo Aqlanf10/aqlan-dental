@@ -71,6 +71,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<ClinicService> ClinicServices => Set<ClinicService>();
     public DbSet<ClinicRoom> ClinicRooms => Set<ClinicRoom>();
+    public DbSet<PatientTreatmentPlanStep> PatientTreatmentPlanSteps => Set<PatientTreatmentPlanStep>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

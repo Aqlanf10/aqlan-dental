@@ -38,6 +38,7 @@ import { DocumentsTab } from "@/components/patient/tabs/DocumentsTab";
 import { LabOrdersTab } from "@/components/patient/tabs/LabOrdersTab";
 import { TimelineTab } from "@/components/patient/tabs/TimelineTab";
 import { PortalAccessTab } from "@/components/patient/tabs/PortalAccessTab";
+import { TreatmentPlanTab } from "@/components/patient/tabs/TreatmentPlanTab";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ interface SurgeryCase { id: string; caseNumber: string; surgeryType: string; sta
 
 type Tab = "overview" | "info" | "medical" | "dental" | "appointments" | "visits" |
   "finance" | "contracts" | "payments" | "messages" | "orthodontics" | "general" |
-  "surgery" | "photos" | "radiographs" | "prescriptions" | "referrals" |
+  "surgery" | "treatment-plan" | "photos" | "radiographs" | "prescriptions" | "referrals" |
   "documents" | "lab-orders" | "timeline" | "portal-access";
 
 interface TabDef {
@@ -79,6 +80,7 @@ const TABS: TabDef[] = [
   { key: "orthodontics",  label: "التقويم",             icon: Activity,         group: 1 },
   { key: "general",       label: "طب الأسنان العام",    icon: Grid3x3,          group: 1 },
   { key: "surgery",       label: "الجراحة",             icon: Scissors,         group: 1 },
+  { key: "treatment-plan", label: "خطة العلاج",          icon: ClipboardList,    group: 1 },
   // Group 2 — Clinical Records
   { key: "photos",        label: "الصور",               icon: ImageIcon,        group: 2 },
   { key: "radiographs",   label: "الأشعة",              icon: ScanLine,         group: 2 },
@@ -235,6 +237,8 @@ export default function PatientProfilePage() {
         return <GeneralDentistryTab patientId={id} />;
       case "surgery":
         return <SurgeryTab patientId={id} />;
+      case "treatment-plan":
+        return <TreatmentPlanTab patientId={id} />;
       case "photos":
         return <PhotosTab patientId={id} />;
       case "radiographs":

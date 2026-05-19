@@ -64,7 +64,9 @@ public record ConvertBookingRequestToAppointmentDto(
     [Required] TimeOnly StartTime,
     [Required] TimeOnly EndTime,
     string? AppointmentType,
-    int DurationMinutes = 30
+    int DurationMinutes = 30,
+    Guid? ServiceId = null,
+    Guid? ClinicRoomId = null
 );
 
 public record CancelPublicBookingRequest(

@@ -183,8 +183,12 @@ function StaffLoginPanel() {
   const onSubmit = async (data: StaffFormData) => {
     setError("");
     try {
-      await login(data);
-      router.push("/");
+      const mustChange = await login(data);
+      if (mustChange) {
+        router.push("/change-password");
+      } else {
+        router.push("/");
+      }
     } catch (err) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");

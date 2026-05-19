@@ -336,6 +336,8 @@ public class InventoryController(AppDbContext db) : ControllerBase
         if (item is null) return NotFound(new { message = "المادة غير موجودة" });
 
         item.IsActive = false;
+        item.DeletedAt = DateTime.UtcNow;
+        item.DeletedBy = GetCurrentUserId();
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف المادة بنجاح" });
     }

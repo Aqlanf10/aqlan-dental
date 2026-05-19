@@ -778,7 +778,7 @@ if (enableStartupDbMaintenance)
     // PatientAccounts table creation — now handled by EF migration 20260430120000_AddPatientPortal
     // (removed in TD-020 Phase C1-e)
 
-    // Add Username/PasswordHash/PasswordSalt/InitialPassword columns to PatientAccounts
+    // Add Username/PasswordHash/PasswordSalt columns to PatientAccounts
     try
     {
         await db.Database.ExecuteSqlRawAsync("""
@@ -791,9 +791,6 @@ if (enableStartupDbMaintenance)
                 END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordSalt') THEN
                     ALTER TABLE "PatientAccounts" ADD COLUMN "PasswordSalt" character varying(128) NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'InitialPassword') THEN
-                    ALTER TABLE "PatientAccounts" ADD COLUMN "InitialPassword" character varying(20) NULL;
                 END IF;
             END $$;
         """);

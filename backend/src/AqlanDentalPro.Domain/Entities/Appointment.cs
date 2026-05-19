@@ -38,4 +38,6 @@ public class Appointment : BaseEntity
     public Doctor Doctor { get; set; } = null!;
     public Branch? Branch { get; set; }
     public Visit? Visit { get; set; }
+    public ClinicService? Service { get; set; }
+    public ClinicRoom? ClinicRoom { get; set; }
 }

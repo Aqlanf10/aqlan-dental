@@ -217,6 +217,8 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         RoomName = a.RoomName,
         ArrivedAt = a.ArrivedAt,
         CalledAt = a.CalledAt,
-        InRoomAt = a.InRoomAt
+        InRoomAt = a.InRoomAt,
+        ServiceId = a.ServiceId,
+        ClinicRoomId = a.ClinicRoomId
     };
 }

@@ -37,10 +37,17 @@ export interface Supplier {
   email?: string;
   address?: string;
   notes?: string;
-  isActive: boolean;
+  isActive?: boolean;
   purchaseOrderCount?: number;
   totalSpent?: number;
-  createdAt: string;
+  createdAt?: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface CreateSupplierRequest {
@@ -89,6 +96,7 @@ export interface CreatePurchaseOrderRequest {
   supplierId: string;
   expectedDate?: string;
   notes?: string;
+  taxAmount?: number;
   lineItems: {
     inventoryItemId?: string;
     itemName: string;

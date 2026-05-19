@@ -64,74 +64,74 @@ interface AppointmentAnalytics {
 }
 
 interface PatientDemographics {
-  ageDistribution: { range: string; count: number }[];
-  genderSplit: { gender: string; count: number; pct: number }[];
+  ageDistribution: { bucket: string; count: number }[];
+  genderSplit: { label: string; count: number; percentage: number }[];
   referralSources: { source: string; count: number }[];
   newPatientsPerMonth: { month: string; count: number }[];
   activePatients: number;
 }
 
 interface RevenueComparison {
-  currentTotal: number;
-  previousTotal: number;
-  percentChange: number;
-  monthlyBreakdown: { month: string; current: number; previous: number }[];
-  specialtyComparison: { specialty: string; current: number; previous: number }[];
+  currentPeriodTotal: number;
+  previousPeriodTotal: number;
+  percentageChange: number;
+  monthlyComparison: { month: string; currentPeriod: number; previousPeriod: number }[];
+  specialtyComparison: { specialty: string; currentPeriod: number; previousPeriod: number }[];
 }
 
 interface OverdueContracts {
   overdueContracts: {
-    id: string; patientName: string; contractNo: string;
-    totalAmount: number; paidAmount: number; overdueAmount: number;
-    daysOverdue: number; nextInstallmentDate: string;
+    contractId: string; patientName: string;
+    totalAmount: number; paidAmount: number; remaining: number;
+    daysOverdue: number;
   }[];
-  agingBuckets: { range: string; count: number; total: number }[];
-  totalOverdue: number;
+  agingBuckets: { bucket: string; amount: number }[];
+  totalOverdueAmount: number;
 }
 
 interface OrthoProgress {
   casesByStatus: { status: string; count: number }[];
-  avgTreatmentDuration: number;
-  casesPerDoctor: { doctor: string; count: number }[];
+  averageTreatmentDurationMonths: number;
+  casesPerDoctor: { doctorId: string; doctorName: string; count: number }[];
   orthoRevenue: number;
 }
 
 interface SurgeryStats {
   casesByType: { type: string; count: number }[];
-  casesPerDoctor: { doctor: string; count: number }[];
+  casesPerDoctor: { doctorId: string; doctorName: string; count: number }[];
   monthlyTrend: { month: string; count: number }[];
 }
 
 interface TreatmentPlanCompletion {
   stepsByStatus: { status: string; count: number }[];
   completionRate: number;
-  perDoctorBreakdown: { doctor: string; total: number; completed: number; rate: number }[];
+  perDoctor: { doctorId: string; doctorName: string; totalSteps: number; completedSteps: number; completionRate: number }[];
 }
 
 interface LabOrders {
   ordersByStatus: { status: string; count: number }[];
-  perDoctorCount: { doctor: string; count: number }[];
-  overdueCount: number;
+  perDoctor: { doctorId: string; doctorName: string; count: number }[];
+  overdueOrdersCount: number;
 }
 
 interface PrescriptionAnalytics {
-  topPrescribed: { medication: string; count: number }[];
-  perDoctorCount: { doctor: string; count: number }[];
+  mostPrescribed: { drugName: string; count: number }[];
+  perDoctor: { doctorId: string; doctorName: string; count: number }[];
   monthlyTrend: { month: string; count: number }[];
 }
 
 interface PatientRetention {
   newPatients: number;
   returningPatients: number;
-  avgDaysBetweenVisits: number;
-  churnRiskCount: number;
+  averageDaysBetweenVisits: number;
+  churnRiskPatients: number;
 }
 
 interface BookingFunnel {
   byStatus: { status: string; count: number }[];
   conversionRate: number;
   appointmentCreationRate: number;
-  perServiceBreakdown: { service: string; total: number; completed: number; rate: number }[];
+  perService: { service: string; total: number; confirmed: number; converted: number }[];
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -451,7 +451,7 @@ function PatientDemographicsReport({ data }: { data: PatientDemographics }) {
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={data.ageDistribution} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-                <XAxis dataKey="range" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+                <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip content={<TooltipCount unit="مريض" />} />
                 <Bar dataKey="count" fill="#3d7ab5" radius={[4, 4, 0, 0]} maxBarSize={32} />
@@ -466,7 +466,7 @@ function PatientDemographicsReport({ data }: { data: PatientDemographics }) {
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie data={data.genderSplit} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
-                  paddingAngle={3} dataKey="count" nameKey="gender">
+                  paddingAngle={3} dataKey="count" nameKey="label">
                   {data.genderSplit.map((_, i) => (
                     <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                   ))}
@@ -476,10 +476,10 @@ function PatientDemographicsReport({ data }: { data: PatientDemographics }) {
             </ResponsiveContainer>
             <div className="mt-3 flex justify-center gap-4">
               {data.genderSplit.map((g, i) => (
-                <div key={g.gender} className="flex items-center gap-1.5 text-xs">
+                <div key={g.label} className="flex items-center gap-1.5 text-xs">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
-                  <span className="text-gray-600">{g.gender === "Male" ? "ذكر" : g.gender === "Female" ? "أنثى" : g.gender}</span>
-                  <span className="font-semibold">{g.count} ({formatPct(g.pct)})</span>
+                  <span className="text-gray-600">{g.label}</span>
+                  <span className="font-semibold">{g.count} ({formatPct(g.percentage)})</span>
                 </div>
               ))}
             </div>
@@ -641,27 +641,27 @@ function FinancialReportView({ data }: { data: FinancialReport }) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function RevenueComparisonReport({ data }: { data: RevenueComparison }) {
-  const isPositive = data.percentChange >= 0;
+  const isPositive = data.percentageChange >= 0;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="الفترة الحالية" value={formatYemeniRiyal(data.currentTotal)} icon={Wallet} color="bg-emerald-50 text-emerald-600 border-emerald-200" />
-        <StatCard label="الفترة السابقة" value={formatYemeniRiyal(data.previousTotal)} icon={Wallet} color="bg-gray-50 text-gray-600 border-gray-200" />
-        <StatCard label="نسبة التغيير" value={formatPct(Math.abs(data.percentChange))}
+        <StatCard label="الفترة الحالية" value={formatYemeniRiyal(data.currentPeriodTotal)} icon={Wallet} color="bg-emerald-50 text-emerald-600 border-emerald-200" />
+        <StatCard label="الفترة السابقة" value={formatYemeniRiyal(data.previousPeriodTotal)} icon={Wallet} color="bg-gray-50 text-gray-600 border-gray-200" />
+        <StatCard label="نسبة التغيير" value={formatPct(Math.abs(data.percentageChange))}
           icon={isPositive ? TrendingUp : TrendingUp}
           color={isPositive ? "bg-green-50 text-green-600 border-green-200" : "bg-red-50 text-red-600 border-red-200"} />
       </div>
 
-      {data.monthlyBreakdown.length > 0 && (
+      {data.monthlyComparison.length > 0 && (
         <ChartCard title="المقارنة الشهرية" icon={<TrendingUp className="w-4 h-4 text-clinic-blue" />}>
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data.monthlyBreakdown} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
+            <BarChart data={data.monthlyComparison} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
               <XAxis dataKey="month" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tickFormatter={formatYER} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
-              <Tooltip formatter={(v, n) => [`${Number(v).toLocaleString()} ر.ي`, n === "current" ? "الحالية" : "السابقة"]} />
-              <Bar dataKey="current" fill="#3d7ab5" name="الحالية" radius={[3, 3, 0, 0]} maxBarSize={24} />
-              <Bar dataKey="previous" fill="#d1d5db" name="السابقة" radius={[3, 3, 0, 0]} maxBarSize={24} />
+              <Tooltip formatter={(v, n) => [`${Number(v).toLocaleString()} ر.ي`, n === "currentPeriod" ? "الحالية" : "السابقة"]} />
+              <Bar dataKey="currentPeriod" fill="#3d7ab5" name="الحالية" radius={[3, 3, 0, 0]} maxBarSize={24} />
+              <Bar dataKey="previousPeriod" fill="#d1d5db" name="السابقة" radius={[3, 3, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -676,8 +676,8 @@ function RevenueComparisonReport({ data }: { data: RevenueComparison }) {
               <YAxis type="category" dataKey="specialty" tick={{ fontSize: 10, fill: "#6B7280" }} width={60}
                 tickFormatter={(v: string) => SPECIALTY_LABELS[v] ?? v} />
               <Tooltip formatter={(v) => [`${Number(v).toLocaleString()} ر.ي`, ""]} />
-              <Bar dataKey="current" fill="#3d7ab5" radius={[0, 3, 3, 0]} maxBarSize={16} />
-              <Bar dataKey="previous" fill="#d1d5db" radius={[0, 3, 3, 0]} maxBarSize={16} />
+              <Bar dataKey="currentPeriod" fill="#3d7ab5" radius={[0, 3, 3, 0]} maxBarSize={16} />
+              <Bar dataKey="previousPeriod" fill="#d1d5db" radius={[0, 3, 3, 0]} maxBarSize={16} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -694,7 +694,7 @@ function OverdueContractsReport({ data }: { data: OverdueContracts }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="إجمالي المتأخرات" value={formatYemeniRiyal(data.totalOverdue)} icon={Wallet} color="bg-red-50 text-red-600 border-red-200" />
+        <StatCard label="إجمالي المتأخرات" value={formatYemeniRiyal(data.totalOverdueAmount)} icon={Wallet} color="bg-red-50 text-red-600 border-red-200" />
         <StatCard label="عدد العقود المتأخرة" value={data.overdueContracts.length.toString()} icon={FileSpreadsheet} color="bg-orange-50 text-orange-600 border-orange-200" />
       </div>
 
@@ -703,10 +703,10 @@ function OverdueContractsReport({ data }: { data: OverdueContracts }) {
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={data.agingBuckets} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-              <XAxis dataKey="range" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+              <XAxis dataKey="bucket" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tickFormatter={formatYER} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <Tooltip content={<TooltipRevenue />} />
-              <Bar dataKey="total" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={32} />
+              <Bar dataKey="amount" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={32} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -721,19 +721,18 @@ function OverdueContractsReport({ data }: { data: OverdueContracts }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                 <tr>
-                  {["المريض", "رقم العقد", "المبلغ الإجمالي", "المدفوع", "المتأخر", "أيام التأخير"].map((h) => (
+                  {["المريض", "المبلغ الإجمالي", "المدفوع", "المتبقي", "أيام التأخير"].map((h) => (
                     <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {data.overdueContracts.map((c) => (
-                  <tr key={c.id} className="hover:bg-gray-50 transition">
+                  <tr key={c.contractId} className="hover:bg-gray-50 transition">
                     <td className="px-4 py-3 font-medium text-gray-900">{c.patientName}</td>
-                    <td className="px-4 py-3 text-gray-600">{c.contractNo}</td>
                     <td className="px-4 py-3 font-mono">{formatYemeniRiyal(c.totalAmount)}</td>
                     <td className="px-4 py-3 font-mono text-green-700">{formatYemeniRiyal(c.paidAmount)}</td>
-                    <td className="px-4 py-3 font-mono font-semibold text-red-700">{formatYemeniRiyal(c.overdueAmount)}</td>
+                    <td className="px-4 py-3 font-mono font-semibold text-red-700">{formatYemeniRiyal(c.remaining)}</td>
                     <td className="px-4 py-3 font-mono text-red-600">{c.daysOverdue} يوم</td>
                   </tr>
                 ))}
@@ -809,7 +808,7 @@ function OrthoProgressReport({ data }: { data: OrthoProgress }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <StatCard label="إيرادات التقويم" value={formatYemeniRiyal(data.orthoRevenue)} icon={Wallet} color="bg-emerald-50 text-emerald-600 border-emerald-200" />
-        <StatCard label="متوسط مدة العلاج" value={`${data.avgTreatmentDuration} يوم`} icon={Clock} color="bg-blue-50 text-blue-600 border-blue-200" />
+        <StatCard label="متوسط مدة العلاج" value={`${data.averageTreatmentDurationMonths} شهر`} icon={Clock} color="bg-blue-50 text-blue-600 border-blue-200" />
         <StatCard label="إجمالي الحالات" value={data.casesByStatus.reduce((a, c) => a + c.count, 0).toString()} icon={Activity} color="bg-purple-50 text-purple-600 border-purple-200" />
       </div>
 
@@ -843,7 +842,7 @@ function OrthoProgressReport({ data }: { data: OrthoProgress }) {
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={data.casesPerDoctor} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-              <XAxis dataKey="doctor" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+              <XAxis dataKey="doctorName" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipCount unit="حالة" />} />
               <Bar dataKey="count" fill="#f5922e" radius={[4, 4, 0, 0]} maxBarSize={32} />
@@ -885,7 +884,7 @@ function SurgeryStatsReport({ data }: { data: SurgeryStats }) {
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={data.casesPerDoctor} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-              <XAxis dataKey="doctor" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+              <XAxis dataKey="doctorName" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipCount unit="عملية" />} />
               <Bar dataKey="count" fill="#f5922e" radius={[4, 4, 0, 0]} maxBarSize={32} />
@@ -948,7 +947,7 @@ function TreatmentPlanCompletionReport({ data }: { data: TreatmentPlanCompletion
         </ChartCard>
       )}
 
-      {data.perDoctorBreakdown.length > 0 && (
+      {data.perDoctor.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-gray-100">
             <h3 className="font-bold text-gray-900 text-sm">التفصيل حسب الطبيب</h3>
@@ -963,17 +962,17 @@ function TreatmentPlanCompletionReport({ data }: { data: TreatmentPlanCompletion
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {data.perDoctorBreakdown.map((d) => (
-                  <tr key={d.doctor} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-medium text-gray-900">{d.doctor}</td>
-                    <td className="px-4 py-3 font-mono text-gray-700">{d.total}</td>
-                    <td className="px-4 py-3 font-mono text-green-700">{d.completed}</td>
+                {data.perDoctor.map((d) => (
+                  <tr key={d.doctorId} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 font-medium text-gray-900">{d.doctorName}</td>
+                    <td className="px-4 py-3 font-mono text-gray-700">{d.totalSteps}</td>
+                    <td className="px-4 py-3 font-mono text-green-700">{d.completedSteps}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-20">
-                          <div className="h-full bg-green-500 rounded-full" style={{ width: `${d.rate}%` }} />
+                          <div className="h-full bg-green-500 rounded-full" style={{ width: `${d.completionRate}%` }} />
                         </div>
-                        <span className="font-mono text-sm font-semibold text-green-700">{formatPct(d.rate)}</span>
+                        <span className="font-mono text-sm font-semibold text-green-700">{formatPct(d.completionRate)}</span>
                       </div>
                     </td>
                   </tr>
@@ -995,7 +994,7 @@ function LabOrdersReport({ data }: { data: LabOrders }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="طلبات متأخرة" value={data.overdueCount.toString()} icon={Clock} color="bg-red-50 text-red-600 border-red-200" />
+        <StatCard label="طلبات متأخرة" value={data.overdueOrdersCount.toString()} icon={Clock} color="bg-red-50 text-red-600 border-red-200" />
         <StatCard label="إجمالي الطلبات" value={data.ordersByStatus.reduce((a, s) => a + s.count, 0).toString()} icon={FileSpreadsheet} color="bg-blue-50 text-blue-600 border-blue-200" />
       </div>
 
@@ -1024,12 +1023,12 @@ function LabOrdersReport({ data }: { data: LabOrders }) {
         </ChartCard>
       )}
 
-      {data.perDoctorCount.length > 0 && (
+      {data.perDoctor.length > 0 && (
         <ChartCard title="الطلبات حسب الطبيب" icon={<Stethoscope className="w-4 h-4 text-clinic-orange" />}>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={data.perDoctorCount} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
+            <BarChart data={data.perDoctor} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-              <XAxis dataKey="doctor" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+              <XAxis dataKey="doctorName" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipCount unit="طلب" />} />
               <Bar dataKey="count" fill="#f5922e" radius={[4, 4, 0, 0]} maxBarSize={32} />
@@ -1052,13 +1051,13 @@ function PrescriptionAnalyticsReport({ data }: { data: PrescriptionAnalytics }) 
         <StatCard label="إجمالي الوصفات" value={data.monthlyTrend.reduce((a, m) => a + m.count, 0).toString()} icon={Pill} color="bg-blue-50 text-blue-600 border-blue-200" />
       </div>
 
-      {data.topPrescribed.length > 0 && (
+      {data.mostPrescribed.length > 0 && (
         <ChartCard title="الأدوية الأكثر وصفاً" icon={<Pill className="w-4 h-4 text-clinic-blue" />}>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={data.topPrescribed} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+            <BarChart data={data.mostPrescribed} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
               <XAxis type="number" tick={{ fontSize: 9, fill: "#9CA3AF" }} allowDecimals={false} />
-              <YAxis type="category" dataKey="medication" tick={{ fontSize: 10, fill: "#6B7280" }} width={100} />
+              <YAxis type="category" dataKey="drugName" tick={{ fontSize: 10, fill: "#6B7280" }} width={100} />
               <Tooltip content={<TooltipCount unit="وصفة" />} />
               <Bar dataKey="count" fill="#3d7ab5" radius={[0, 3, 3, 0]} maxBarSize={20} />
             </BarChart>
@@ -1066,12 +1065,12 @@ function PrescriptionAnalyticsReport({ data }: { data: PrescriptionAnalytics }) 
         </ChartCard>
       )}
 
-      {data.perDoctorCount.length > 0 && (
+      {data.perDoctor.length > 0 && (
         <ChartCard title="الوصفات حسب الطبيب" icon={<Stethoscope className="w-4 h-4 text-clinic-orange" />}>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={data.perDoctorCount} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
+            <BarChart data={data.perDoctor} margin={{ top: 0, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-              <XAxis dataKey="doctor" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+              <XAxis dataKey="doctorName" tick={{ fontSize: 10, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} allowDecimals={false} />
               <Tooltip content={<TooltipCount unit="وصفة" />} />
               <Bar dataKey="count" fill="#f5922e" radius={[4, 4, 0, 0]} maxBarSize={32} />
@@ -1111,8 +1110,8 @@ function PatientRetentionReport({ data }: { data: PatientRetention }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="المرضى الجدد" value={data.newPatients.toString()} icon={UserCheck} color="bg-blue-50 text-blue-600 border-blue-200" />
         <StatCard label="المرضى العائدون" value={data.returningPatients.toString()} icon={Heart} color="bg-green-50 text-green-600 border-green-200" />
-        <StatCard label="متوسط أيام بين الزيارات" value={`${data.avgDaysBetweenVisits}`} icon={Clock} color="bg-purple-50 text-purple-600 border-purple-200" />
-        <StatCard label="خطر فقدان العملاء" value={data.churnRiskCount.toString()} icon={TrendingUp} color="bg-red-50 text-red-600 border-red-200" />
+        <StatCard label="متوسط أيام بين الزيارات" value={`${data.averageDaysBetweenVisits}`} icon={Clock} color="bg-purple-50 text-purple-600 border-purple-200" />
+        <StatCard label="خطر فقدان العملاء" value={data.churnRiskPatients.toString()} icon={TrendingUp} color="bg-red-50 text-red-600 border-red-200" />
       </div>
 
       <ChartCard title="توزيع المرضى" icon={<Users className="w-4 h-4 text-clinic-blue" />}>
@@ -1154,11 +1153,11 @@ function PatientRetentionReport({ data }: { data: PatientRetention }) {
         </div>
       </ChartCard>
 
-      {data.churnRiskCount > 0 && (
+      {data.churnRiskPatients > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-5 h-5 text-red-600" />
-            <p className="text-sm font-bold text-red-700">تنبيه: {data.churnRiskCount} مريض معرضون للمغادرة</p>
+            <p className="text-sm font-bold text-red-700">تنبيه: {data.churnRiskPatients} مريض معرضون للمغادرة</p>
           </div>
           <p className="text-xs text-red-600">هؤلاء المرضى لم يزوروا المركز منذ فترة طويلة. يُنصح بالتواصل معهم.</p>
         </div>
@@ -1208,7 +1207,7 @@ function BookingFunnelReport({ data }: { data: BookingFunnel }) {
         </ChartCard>
       )}
 
-      {data.perServiceBreakdown.length > 0 && (
+      {data.perService.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="p-4 border-b border-gray-100">
             <h3 className="font-bold text-gray-900 text-sm">التفصيل حسب الخدمة</h3>
@@ -1217,27 +1216,31 @@ function BookingFunnelReport({ data }: { data: BookingFunnel }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {["الخدمة", "الإجمالي", "المكتمل", "نسبة التحويل"].map((h) => (
+                  {["الخدمة", "الإجمالي", "المؤكد", "المحول", "نسبة التحويل"].map((h) => (
                     <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {data.perServiceBreakdown.map((s) => (
-                  <tr key={s.service} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-medium text-gray-900">{s.service}</td>
-                    <td className="px-4 py-3 font-mono text-gray-700">{s.total}</td>
-                    <td className="px-4 py-3 font-mono text-green-700">{s.completed}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-20">
-                          <div className="h-full bg-green-500 rounded-full" style={{ width: `${s.rate}%` }} />
+                {data.perService.map((s) => {
+                  const convRate = s.confirmed > 0 ? Math.round((s.converted / s.confirmed) * 100) : 0;
+                  return (
+                    <tr key={s.service} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 font-medium text-gray-900">{s.service}</td>
+                      <td className="px-4 py-3 font-mono text-gray-700">{s.total}</td>
+                      <td className="px-4 py-3 font-mono text-green-700">{s.confirmed}</td>
+                      <td className="px-4 py-3 font-mono text-blue-700">{s.converted}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-20">
+                            <div className="h-full bg-green-500 rounded-full" style={{ width: `${convRate}%` }} />
+                          </div>
+                          <span className="font-mono text-sm font-semibold text-green-700">{formatPct(convRate)}</span>
                         </div>
-                        <span className="font-mono text-sm font-semibold text-green-700">{formatPct(s.rate)}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

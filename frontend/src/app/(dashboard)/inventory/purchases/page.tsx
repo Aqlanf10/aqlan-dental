@@ -14,7 +14,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { formatYemeniRiyal, formatArabicDate, cn } from "@/lib/utils";
 import type {
   PurchaseOrder, PurchaseOrderStatus, CreatePurchaseOrderRequest,
-  Supplier, InventoryItem, ReceivePurchaseOrderRequest,
+  Supplier, InventoryItem, ReceivePurchaseOrderRequest, PaginatedResponse,
 } from "@/types/inventory";
 
 /* ─── Status helpers ────────────────────────────────────────────────────────── */
@@ -64,8 +64,8 @@ function CreatePOModal({ onClose }: { onClose: () => void }) {
   const { data: suppliers } = useQuery({
     queryKey: ["suppliers"],
     queryFn: async () => {
-      const res = await api.get<Supplier[]>("/api/suppliers");
-      return res.data;
+      const res = await api.get<PaginatedResponse<Supplier>>("/api/suppliers?pageSize=100");
+      return res.data.data;
     },
   });
 
@@ -141,6 +141,7 @@ function CreatePOModal({ onClose }: { onClose: () => void }) {
       supplierId,
       expectedDate: expectedDate || undefined,
       notes: notes || undefined,
+      taxAmount: 0,
       lineItems: lineItems.map((li) => ({
         inventoryItemId: li.inventoryItemId,
         itemName: li.itemName,
@@ -649,8 +650,8 @@ export default function PurchaseOrdersPage() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["purchase-orders"],
     queryFn: async () => {
-      const res = await api.get<PurchaseOrder[]>("/api/purchase-orders");
-      return res.data;
+      const res = await api.get<PaginatedResponse<PurchaseOrder>>("/api/purchase-orders?pageSize=100");
+      return res.data.data;
     },
   });
 

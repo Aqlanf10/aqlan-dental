@@ -16,7 +16,7 @@ interface AuthState {
   user: UserDto | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (credentials: LoginRequest) => Promise<void>;
+  login: (credentials: LoginRequest) => Promise<boolean>;
   logout: () => Promise<void>;
   fetchMe: () => Promise<void>;
 }
@@ -31,13 +31,15 @@ export const useAuthStore = create<AuthState>()(
       login: async (credentials) => {
         set({ isLoading: true });
         try {
-          const { data } = await api.post<{ accessToken: string; user: UserDto }>(
+          const { data } = await api.post<{ accessToken: string; user: UserDto; mustChangePassword?: boolean }>(
             "/api/auth/login",
             credentials
           );
           localStorage.setItem("access_token", data.accessToken);
           setAuthCookie(true);
           set({ user: data.user, isAuthenticated: true });
+          // Return true if user must change password so caller can redirect
+          return !!(data.mustChangePassword || data.user.mustChangePassword);
         } finally {
           set({ isLoading: false });
         }

@@ -406,7 +406,9 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
             DurationMinutes = dto.DurationMinutes,
             AppointmentType = dto.AppointmentType ?? bookingRequest.ServiceType ?? "عام",
             Notes = bookingRequest.Notes,
-            CreatedBy = convertedBy
+            CreatedBy = convertedBy,
+            ServiceId = dto.ServiceId,
+            ClinicRoomId = dto.ClinicRoomId
         };
 
         db.Appointments.Add(appointment);

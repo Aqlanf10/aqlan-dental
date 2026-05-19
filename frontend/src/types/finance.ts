@@ -12,11 +12,15 @@ export interface Contract {
   installmentAmount?: number;
   startDate?: string;
   status: string;
+  // Detail-only fields — only present in GET /api/contracts/{id}
   discountAmount?: number;
   discountReason?: string;
   notes?: string;
   payments?: Payment[];
 }
+
+/** Lightweight contract type used in list views — excludes detail-only fields */
+export type ContractListItem = Omit<Contract, "discountAmount" | "discountReason" | "notes" | "payments">;
 
 export interface Payment {
   id: string;

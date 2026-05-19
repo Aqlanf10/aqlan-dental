@@ -1268,68 +1268,86 @@ function MessageBubble({
             </p>
           )}
 
-          {/* Attachment */}
-          {message.attachmentUrl && (
-            message.attachmentType?.startsWith("audio/") ? (
-              <div className={cn("mt-2", isMine ? "text-white/90" : "")}>
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <audio
-                  controls
-                  src={toFullUploadUrl(message.attachmentUrl)}
-                  className="max-w-[220px] h-9 rounded"
-                  style={{ filter: isMine ? "invert(1) brightness(0.9)" : "none" }}
-                />
-              </div>
-            ) : message.attachmentType?.startsWith("image/") ? (
-              <a
-                href={toFullUploadUrl(message.attachmentUrl)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block mt-2"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={toFullUploadUrl(message.attachmentUrl)}
-                  alt={message.attachmentName ?? "صورة مرفقة"}
-                  className="max-w-[200px] rounded-lg cursor-pointer"
-                />
-              </a>
-            ) : message.attachmentType === "application/pdf" ? (
-              <div className={cn(
-                "mt-2 p-2.5 rounded-lg flex items-center gap-2.5",
-                isMine ? "bg-white/15" : "bg-gray-50 border border-gray-200"
-              )}>
-                <FileText className={cn("w-5 h-5 flex-shrink-0", isMine ? "text-white/80" : "text-red-500")} />
-                <span className="text-xs truncate flex-1">{message.attachmentName ?? "مرفق PDF"}</span>
-                <a
-                  href={toFullUploadUrl(message.attachmentUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(
-                    "text-xs font-semibold underline",
-                    isMine ? "text-white/90 hover:text-white" : "text-[#3d7ab5] hover:text-[#3d7ab5]/80"
-                  )}
-                >
-                  فتح
-                </a>
-              </div>
-            ) : (
-              <a
-                href={toFullUploadUrl(message.attachmentUrl)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(
-                  "mt-2 p-2 rounded-lg flex items-center gap-2",
-                  isMine ? "bg-white/10" : "bg-gray-50"
+          {/* Attachment(s) — prefer attachments[] if present, fall back to single attachment */}
+          {(() => {
+            const allAttachments: Array<{ url: string; fileName?: string; fileType?: string }> =
+              message.attachments && message.attachments.length > 0
+                ? message.attachments.map((a) => ({ url: a.url, fileName: a.fileName, fileType: a.fileType }))
+                : message.attachmentUrl
+                  ? [{ url: message.attachmentUrl, fileName: message.attachmentName, fileType: message.attachmentType }]
+                  : [];
+            if (allAttachments.length === 0) return null;
+            return (
+              <div className="mt-2 space-y-1.5">
+                {allAttachments.map((att, idx) =>
+                  att.fileType?.startsWith("audio/") ? (
+                    <div key={idx} className={cn(isMine ? "text-white/90" : "")}>
+                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                      <audio
+                        controls
+                        src={toFullUploadUrl(att.url)}
+                        className="max-w-[220px] h-9 rounded"
+                        style={{ filter: isMine ? "invert(1) brightness(0.9)" : "none" }}
+                      />
+                    </div>
+                  ) : att.fileType?.startsWith("image/") ? (
+                    <a
+                      key={idx}
+                      href={toFullUploadUrl(att.url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={toFullUploadUrl(att.url)}
+                        alt={att.fileName ?? "صورة مرفقة"}
+                        className="max-w-[200px] rounded-lg cursor-pointer"
+                      />
+                    </a>
+                  ) : att.fileType === "application/pdf" ? (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "p-2.5 rounded-lg flex items-center gap-2.5",
+                        isMine ? "bg-white/15" : "bg-gray-50 border border-gray-200"
+                      )}
+                    >
+                      <FileText className={cn("w-5 h-5 flex-shrink-0", isMine ? "text-white/80" : "text-red-500")} />
+                      <span className="text-xs truncate flex-1">{att.fileName ?? "مرفق PDF"}</span>
+                      <a
+                        href={toFullUploadUrl(att.url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          "text-xs font-semibold underline",
+                          isMine ? "text-white/90 hover:text-white" : "text-[#3d7ab5] hover:text-[#3d7ab5]/80"
+                        )}
+                      >
+                        فتح
+                      </a>
+                    </div>
+                  ) : (
+                    <a
+                      key={idx}
+                      href={toFullUploadUrl(att.url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn(
+                        "p-2 rounded-lg flex items-center gap-2",
+                        isMine ? "bg-white/10" : "bg-gray-50"
+                      )}
+                    >
+                      <Paperclip className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-xs truncate underline">
+                        {att.fileName ?? "مرفق"}
+                      </span>
+                    </a>
+                  )
                 )}
-              >
-                <Paperclip className="w-4 h-4 flex-shrink-0" />
-                <span className="text-xs truncate underline">
-                  {message.attachmentName ?? "مرفق"}
-                </span>
-              </a>
-            )
-          )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Time + read status */}

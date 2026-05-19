@@ -23,6 +23,10 @@ public class AppointmentDto
     public DateTime? ArrivedAt { get; set; }
     public DateTime? CalledAt { get; set; }
     public DateTime? InRoomAt { get; set; }
+
+    // Patient Journey fields (Sprint: Command Center)
+    public Guid? ServiceId { get; set; }
+    public Guid? ClinicRoomId { get; set; }
 }
 
 public class CreateAppointmentRequest

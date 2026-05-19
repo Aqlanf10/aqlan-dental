@@ -64,5 +64,15 @@ public class ClinicQueueItemConfiguration : IEntityTypeConfiguration<ClinicQueue
             .WithMany()
             .HasForeignKey(q => q.CalledByUserId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(q => q.Service)
+            .WithMany()
+            .HasForeignKey(q => q.ServiceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(q => q.ClinicRoom)
+            .WithMany()
+            .HasForeignKey(q => q.ClinicRoomId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

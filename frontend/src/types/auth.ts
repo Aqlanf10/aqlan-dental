@@ -6,6 +6,7 @@ export interface UserDto {
   doctorName?: string;
   doctorColor?: string;
   doctorInitials?: string;
+  mustChangePassword?: boolean;
 }
 
 export interface LoginRequest {
@@ -16,4 +17,10 @@ export interface LoginRequest {
 export interface LoginResponse {
   accessToken: string;
   user: UserDto;
+  mustChangePassword?: boolean;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }

@@ -4,6 +4,14 @@ export type ConversationFilter = "all" | "unread" | "StaffToStaff" | "StaffToPat
 
 export type RecipientType = "TreatingDoctor" | "Reception" | "Admin";
 
+export interface MessageAttachment {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  url: string;
+}
+
 export interface ConversationParticipant {
   userId: string;
   username: string;
@@ -42,6 +50,7 @@ export interface Message {
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentType?: string;
+  attachments?: MessageAttachment[];
   replyToId?: string;
   replyToContent?: string;
   replyToSenderName?: string;

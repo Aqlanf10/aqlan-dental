@@ -39,6 +39,8 @@ public class ClinicQueueItem : BaseEntity
     public Appointment? Appointment { get; set; }
     public Visit? Visit { get; set; }
     public Doctor? Doctor { get; set; }
+    public ClinicService? Service { get; set; }
+    public ClinicRoom? ClinicRoom { get; set; }
     public User? AddedByUser { get; set; }
     public User? CalledByUser { get; set; }
 }

@@ -36,7 +36,7 @@ public class WhatsAppService(
         else
         {
             var template = await db.WhatsAppTemplates
-                .FirstOrDefaultAsync(t => t.TemplateKey == request.TemplateType && t.IsActive);
+                .FirstOrDefaultAsync(t => t.TemplateKey == request.TemplateType && t.IsTemplateActive);
             if (template == null)
                 throw new InvalidOperationException($"القالب '{request.TemplateType}' غير موجود أو غير مفعّل");
 
@@ -217,7 +217,7 @@ public class WhatsAppService(
                 TemplateKey = t.TemplateKey,
                 NameAr = t.NameAr,
                 ContentTemplate = t.ContentTemplate,
-                IsActive = t.IsActive,
+                IsActive = t.IsTemplateActive,
                 Category = t.Category
             })
             .ToListAsync();
@@ -229,7 +229,7 @@ public class WhatsAppService(
         if (template == null) return null;
 
         template.ContentTemplate = request.ContentTemplate;
-        template.IsActive = request.IsActive;
+        template.IsTemplateActive = request.IsActive;
         await db.SaveChangesAsync();
 
         return new WhatsAppTemplateDto
@@ -238,7 +238,7 @@ public class WhatsAppService(
             TemplateKey = template.TemplateKey,
             NameAr = template.NameAr,
             ContentTemplate = template.ContentTemplate,
-            IsActive = template.IsActive,
+            IsActive = template.IsTemplateActive,
             Category = template.Category
         };
     }

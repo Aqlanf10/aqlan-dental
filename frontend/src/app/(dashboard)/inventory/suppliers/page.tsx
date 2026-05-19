@@ -11,8 +11,8 @@ import { toast } from "@/stores/toastStore";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { formatYemeniRiyal, cn } from "@/lib/utils";
-import type { Supplier, CreateSupplierRequest } from "@/types/inventory";
+import { cn } from "@/lib/utils";
+import type { Supplier, CreateSupplierRequest, PaginatedResponse } from "@/types/inventory";
 
 /* ─── Supplier Form Modal ──────────────────────────────────────────────────── */
 function SupplierFormModal({
@@ -171,8 +171,8 @@ export default function SuppliersPage() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["suppliers"],
     queryFn: async () => {
-      const res = await api.get<Supplier[]>("/api/suppliers");
-      return res.data;
+      const res = await api.get<PaginatedResponse<Supplier>>("/api/suppliers?pageSize=100");
+      return res.data.data;
     },
   });
 
@@ -272,7 +272,7 @@ export default function SuppliersPage() {
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             {isLoading ? (
               <div className="p-6">
-                <TableSkeleton rows={6} cols={7} />
+                <TableSkeleton rows={6} cols={6} />
               </div>
             ) : suppliers.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
@@ -291,7 +291,6 @@ export default function SuppliersPage() {
                         "الهاتف",
                         "البريد",
                         "أوامر الشراء",
-                        "الإجمالي المُنفق",
                         "إجراءات",
                       ].map((h) => (
                         <th
@@ -358,11 +357,6 @@ export default function SuppliersPage() {
                         </td>
                         <td className="px-4 py-3 text-gray-700 font-medium">
                           {supplier.purchaseOrderCount ?? 0}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-sm">
-                          {supplier.totalSpent != null
-                            ? formatYemeniRiyal(supplier.totalSpent)
-                            : "—"}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 justify-end">

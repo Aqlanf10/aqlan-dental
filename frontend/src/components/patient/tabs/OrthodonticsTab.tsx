@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Activity } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
 
 interface OrthoCaseDto {
@@ -45,10 +46,14 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
 
   if (cases.length === 0) {
     return (
-      <div className="text-center py-12 text-[#94a3b8]" dir="rtl">
-        <Activity className="w-10 h-10 mx-auto mb-2 opacity-30" />
-        <p className="text-sm">لا توجد حالات تقويمية</p>
-      </div>
+      <EmptyState
+        icon={Activity}
+        title="لا توجد حالات تقويمية"
+        description="لم يتم تسجيل أي حالات تقويمية لهذا المريض"
+        actionLabel="حالة تقويمية جديدة"
+        actionHref={`/ortho/new?patientId=${patientId}`}
+        actionVariant="outline"
+      />
     );
   }
 

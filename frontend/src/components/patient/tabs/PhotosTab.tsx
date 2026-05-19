@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Image as ImageIcon, Plus, Trash2, X, Upload, Camera, Filter, Eye } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
@@ -217,25 +218,25 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
     <div className="space-y-4" dir="rtl">
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#3d7ab518" }}>
-          <Camera className="w-4 h-4 flex-shrink-0" style={{ color: "#3d7ab5" }} />
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-[#3d7ab510]">
+          <Camera className="w-4 h-4 flex-shrink-0 text-[#3d7ab5]" />
           <div className="min-w-0">
-            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>الصور</p>
-            <p className="text-sm font-bold" style={{ color: "#3d7ab5" }}>{activePhotos.length}</p>
+            <p className="text-xs truncate text-[#94a3b8]">الصور</p>
+            <p className="text-sm font-bold text-[#3d7ab5]">{activePhotos.length}</p>
           </div>
         </div>
-        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#a855f718" }}>
-          <Filter className="w-4 h-4 flex-shrink-0" style={{ color: "#a855f7" }} />
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-purple-50">
+          <Filter className="w-4 h-4 flex-shrink-0 text-purple-500" />
           <div className="min-w-0">
-            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>الفئات</p>
-            <p className="text-sm font-bold" style={{ color: "#a855f7" }}>{categoryCount}</p>
+            <p className="text-xs truncate text-[#94a3b8]">الفئات</p>
+            <p className="text-sm font-bold text-purple-500">{categoryCount}</p>
           </div>
         </div>
-        <div className="rounded-lg px-3 py-2.5 flex items-center gap-2.5" style={{ background: "#22c55e18" }}>
-          <ImageIcon className="w-4 h-4 flex-shrink-0" style={{ color: "#22c55e" }} />
+        <div className="rounded-xl px-3 py-2.5 flex items-center gap-2.5 bg-green-50">
+          <ImageIcon className="w-4 h-4 flex-shrink-0 text-green-500" />
           <div className="min-w-0">
-            <p className="text-xs truncate" style={{ color: "#94a3b8" }}>آخر رفع</p>
-            <p className="text-sm font-bold" style={{ color: "#22c55e" }}>{activePhotos[0]?.photoDate ? formatArabicDate(activePhotos[0].photoDate) : "—"}</p>
+            <p className="text-xs truncate text-[#94a3b8]">آخر رفع</p>
+            <p className="text-sm font-bold text-green-500">{activePhotos[0]?.photoDate ? formatArabicDate(activePhotos[0].photoDate) : "—"}</p>
           </div>
         </div>
       </div>
@@ -281,17 +282,20 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 animate-pulse">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="aspect-square bg-[#f1f5f9] rounded-lg" />
+            <div key={i} className="aspect-square bg-[#f1f5f9] rounded-xl" />
           ))}
         </div>
       ) : error ? (
         <div className="text-center py-8 text-red-500 text-sm">{error}</div>
       ) : activePhotos.length === 0 ? (
-        <div className="text-center py-12 text-[#94a3b8]">
-          <Camera className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">لا توجد صور بعد</p>
-          <p className="text-xs mt-1">اضغط &quot;إضافة صورة&quot; لرفع صورة سريرية</p>
-        </div>
+        <EmptyState
+          icon={ImageIcon}
+          title="لا توجد صور"
+          description="لم يتم رفع أي صور لهذا المريض"
+          actionLabel="رفع صورة"
+          actionOnClick={openAddModal}
+          actionVariant="secondary"
+        />
       ) : (
         /* Photo Gallery Grid */
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">

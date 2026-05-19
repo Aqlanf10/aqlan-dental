@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { MessageCircle, Send, Loader2, AlertTriangle, ExternalLink, Eye } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -209,15 +210,11 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
       {/* Messages list */}
       <div className="flex-1 max-h-96 overflow-y-auto space-y-2 mb-3">
         {messages.length === 0 ? (
-          <div className="text-center py-8">
-            <MessageCircle className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm text-gray-400 mb-3">
-              لا توجد رسائل مع هذا المريض بعد
-            </p>
-            <p className="text-xs text-gray-300">
-              اكتب رسالة لبدء نقاش داخلي حول هذا المريض
-            </p>
-          </div>
+          <EmptyState
+            icon={MessageCircle}
+            title="لا توجد رسائل"
+            description="ابدأ محادثة مع المريض"
+          />
         ) : (
           messages.map((msg) => (
             <MessageBubble

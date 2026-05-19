@@ -79,23 +79,23 @@ public class UsersController(
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var users = await db.Users
-            .OrderBy(u => u.Username)
-            .Select(u => new
-            {
-                u.Id,
-                u.Username,
-                u.Email,
-                Role = u.Role.ToString(),
-                u.BranchId,
-                u.IsActive,
-                LastLoginAt = u.LastLogin,
-                DoctorName = db.Doctors
-                    .Where(d => d.UserId == u.Id)
-                    .Select(d => d.Name)
-                    .FirstOrDefault()
-            })
-            .ToListAsync();
+        // N+1 FIX: Single query with LeftJoin instead of correlated subquery per user
+        var users = await (from u in db.Users
+                           join d in db.Doctors on u.Id equals d.UserId into dj
+                           from doctor in dj.DefaultIfEmpty()
+                           orderby u.Username
+                           select new
+                           {
+                               u.Id,
+                               u.Username,
+                               u.Email,
+                               Role = u.Role.ToString(),
+                               u.BranchId,
+                               u.IsActive,
+                               LastLoginAt = u.LastLogin,
+                               DoctorName = doctor != null ? doctor.Name : null
+                           })
+                          .ToListAsync();
 
         return Ok(users);
     }
@@ -105,36 +105,26 @@ public class UsersController(
     [Authorize]
     public async Task<IActionResult> GetContacts([FromServices] MessagingService messagingService)
     {
-        var users = await db.Users
-            .Where(u => u.IsActive)
-            .OrderBy(u => u.Username)
-            .Select(u => new
-            {
-                u.Id,
-                u.Username,
-                Role = u.Role.ToString(),
-                DoctorName = db.Doctors
-                    .Where(d => d.UserId == u.Id)
-                    .Select(d => d.Name)
-                    .FirstOrDefault(),
-                DoctorColor = db.Doctors
-                    .Where(d => d.UserId == u.Id)
-                    .Select(d => d.Color)
-                    .FirstOrDefault(),
-                DoctorInitials = db.Doctors
-                    .Where(d => d.UserId == u.Id)
-                    .Select(d => d.AvatarInitials)
-                    .FirstOrDefault()
-            })
-            .ToListAsync();
+        // N+1 FIX: Single query with LeftJoin instead of 3 correlated subqueries per user
+        var users = await (from u in db.Users
+                           where u.IsActive
+                           join d in db.Doctors on u.Id equals d.UserId into dj
+                           from doctor in dj.DefaultIfEmpty()
+                           orderby u.Username
+                           select new
+                           {
+                               u.Id,
+                               u.Username,
+                               Role = u.Role.ToString(),
+                               DoctorName = doctor != null ? doctor.Name : null,
+                               DoctorColor = doctor != null ? doctor.Color : null,
+                               DoctorInitials = doctor != null ? doctor.AvatarInitials : null
+                           })
+                          .ToListAsync();
 
-        // H8 FIX: Fetch all messaging permissions in a single batch to avoid N+1 queries
+        // H8 FIX: Batch messaging permissions — single DB call instead of N+1
         var userIds = users.Select(u => u.Id).ToList();
-        var messagingPermissions = new Dictionary<Guid, bool>();
-        foreach (var uid in userIds)
-        {
-            messagingPermissions[uid] = await messagingService.CanMessageUserPublicAsync(uid);
-        }
+        var messagingPermissions = await messagingService.CanMessageUsersBatchAsync(userIds);
 
         var filtered = users.Select(u => new
         {

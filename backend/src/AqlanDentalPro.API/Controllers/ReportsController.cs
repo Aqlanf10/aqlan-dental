@@ -9,13 +9,16 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = "ReportsAccess")]
-public class ReportsController(AppDbContext db, IPdfService pdfService) : ControllerBase
+public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<ReportsController> logger) : ControllerBase
 {
     [HttpGet("center-summary")]
     public async Task<IActionResult> GetCenterSummary([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         var totalPatients = await db.Patients.CountAsync();
         var newPatients = await db.Patients.CountAsync(p => DateOnly.FromDateTime(p.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(p.CreatedAt.Date) <= toDate);
@@ -40,33 +43,53 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
     [HttpGet("doctor-performance")]
     public async Task<IActionResult> GetDoctorPerformance([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
+
+        var doctorIds = await db.Doctors.Where(d => d.IsActive).Select(d => d.Id).ToListAsync();
+
+        // Batch all 5 metrics in single GROUP BY queries instead of N×5 round-trips
+        var appointmentStats = await db.Appointments
+            .Where(a => doctorIds.Contains(a.DoctorId) && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate)
+            .GroupBy(a => a.DoctorId)
+            .Select(g => new { DoctorId = g.Key, Count = g.Count(), Completed = g.Count(a => a.Status == Domain.Enums.AppointmentStatus.Completed) })
+            .ToListAsync();
+
+        var orthoStats = await db.OrthoCases
+            .Where(c => c.DoctorId != null && doctorIds.Contains(c.DoctorId.Value) && c.Status == "active")
+            .GroupBy(c => c.DoctorId!.Value)
+            .Select(g => new { DoctorId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var treatmentStats = await db.GeneralTreatments
+            .Where(t => t.DoctorId != null && doctorIds.Contains(t.DoctorId.Value) && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate)
+            .GroupBy(t => t.DoctorId!.Value)
+            .Select(g => new { DoctorId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var revenueStats = await db.Payments
+            .Where(p => p.DoctorId != null && doctorIds.Contains(p.DoctorId.Value) && p.PaymentDate >= fromDate && p.PaymentDate <= toDate)
+            .GroupBy(p => p.DoctorId!.Value)
+            .Select(g => new { DoctorId = g.Key, Revenue = g.Sum(p => p.Amount) })
+            .ToListAsync();
 
         var doctors = await db.Doctors.Where(d => d.IsActive).ToListAsync();
 
-        var performance = new List<object>();
-        foreach (var d in doctors)
+        var performance = doctors.Select(d => new
         {
-            var appointmentCount = await db.Appointments.CountAsync(a => a.DoctorId == d.Id && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate);
-            var completedCount = await db.Appointments.CountAsync(a => a.DoctorId == d.Id && a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed);
-            var orthoCasesCount = await db.OrthoCases.CountAsync(c => c.DoctorId == d.Id && c.Status == "active");
-            var treatmentsCount = await db.GeneralTreatments.CountAsync(t => t.DoctorId == d.Id && DateOnly.FromDateTime(t.CreatedAt.Date) >= fromDate);
-            var revenue = await db.Payments.Where(p => p.DoctorId == d.Id && p.PaymentDate >= fromDate && p.PaymentDate <= toDate).SumAsync(p => (decimal?)p.Amount) ?? 0;
-
-            performance.Add(new
-            {
-                doctorId = d.Id,
-                name = d.Name,
-                color = d.Color,
-                specialty = d.Specialty,
-                appointmentCount,
-                completedCount,
-                orthoCasesCount,
-                treatmentsCount,
-                revenue
-            });
-        }
+            doctorId = d.Id,
+            name = d.Name,
+            color = d.Color,
+            specialty = d.Specialty,
+            appointmentCount = appointmentStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Count ?? 0,
+            completedCount = appointmentStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Completed ?? 0,
+            orthoCasesCount = orthoStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Count ?? 0,
+            treatmentsCount = treatmentStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Count ?? 0,
+            revenue = revenueStats.FirstOrDefault(s => s.DoctorId == d.Id)?.Revenue ?? 0
+        });
 
         return Ok(performance);
     }
@@ -74,8 +97,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
     [HttpGet("financial")]
     public async Task<IActionResult> GetFinancialReport([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate = !string.IsNullOrWhiteSpace(to) ? DateOnly.Parse(to) : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         // Fetch raw groups then format DateOnly in memory (EF can't translate DateOnly.ToString)
         var paymentsRaw = await db.Payments
@@ -138,8 +164,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
     [HttpGet("export/payments")]
     public async Task<IActionResult> ExportPayments([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate   = !string.IsNullOrWhiteSpace(to)   ? DateOnly.Parse(to)   : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         var payments = await db.Payments
             .Include(p => p.Patient)
@@ -176,8 +205,11 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
     [HttpGet("export/appointments")]
     public async Task<IActionResult> ExportAppointments([FromQuery] string? from, [FromQuery] string? to)
     {
-        var fromDate = !string.IsNullOrWhiteSpace(from) ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today.AddDays(-30));
-        var toDate   = !string.IsNullOrWhiteSpace(to)   ? DateOnly.Parse(to)   : DateOnly.FromDateTime(DateTime.Today);
+        // ERR-01 FIX: Safe date parsing
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
 
         var appts = await db.Appointments
             .Include(a => a.Patient)
@@ -224,6 +256,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService) : Contro
         }
         catch (ArgumentException ex)
         {
+            logger.LogWarning(ex, "Financial statement PDF generation failed for patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }

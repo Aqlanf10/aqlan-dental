@@ -1,8 +1,10 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 
 namespace AqlanDentalPro.Infrastructure.Data;
 
@@ -58,6 +60,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ConversationParticipant> ConversationParticipants => Set<ConversationParticipant>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageRead> MessageReads => Set<MessageRead>();
+    public DbSet<MessageAttachment> MessageAttachments => Set<MessageAttachment>();
     public DbSet<PatientAccount> PatientAccounts => Set<PatientAccount>();
     public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
     public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
@@ -66,12 +69,46 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();
     public DbSet<BookingRequest> BookingRequests => Set<BookingRequest>();
     public DbSet<ClinicQueueItem> ClinicQueueItems => Set<ClinicQueueItem>();
+    public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<ClinicService> ClinicServices => Set<ClinicService>();
+    public DbSet<ClinicRoom> ClinicRooms => Set<ClinicRoom>();
+    public DbSet<PatientTreatmentPlanStep> PatientTreatmentPlanSteps => Set<PatientTreatmentPlanStep>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<InvoiceLineItem> InvoiceLineItems => Set<InvoiceLineItem>();
+    public DbSet<OrthoDiagnosis> OrthoDiagnoses => Set<OrthoDiagnosis>();
+    public DbSet<OrthoClinicalPhoto> OrthoClinicalPhotos => Set<OrthoClinicalPhoto>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+
+        // Prevent EF Core from treating System.Text.Json.JsonDocument as an entity type.
+        // JsonDocument is only used as a scalar property (serialized to jsonb in PostgreSQL,
+        // or to string via ValueConverter in InMemory). Without Ignore, the ConstructorBindingConvention
+        // attempts to find a constructor for JsonDocument and fails.
+        modelBuilder.Ignore<JsonDocument>();
+
+        // Global value converter for JsonDocument? properties.
+        // Npgsql (PostgreSQL) maps JsonDocument → jsonb natively at runtime,
+        // but the InMemory provider cannot construct JsonDocument via constructor binding.
+        // This explicit converter ensures both providers work: it serializes JsonDocument
+        // to its raw JSON text for storage, and parses it back on read.
+        // HasColumnType("jsonb") on individual configurations still directs PostgreSQL
+        // to store the converted string as a jsonb column.
+        var jsonConverter = new ValueConverter<JsonDocument?, string?>(
+            v => v == null ? null : v.RootElement.GetRawText(),
+            v => string.IsNullOrEmpty(v) ? null : JsonDocument.Parse(v, default));
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties()
+                         .Where(p => p.ClrType == typeof(JsonDocument) && p.GetValueConverter() == null))
+            {
+                property.SetValueConverter(jsonConverter);
+            }
+        }
 
         // Global soft-delete query filter for all ISoftDeletable entities
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())

@@ -14,7 +14,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/appointments")]
 [Authorize(Policy = "StaffOnly")]
-public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp) : ControllerBase
+public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, ILogger<AppointmentsController> logger) : ControllerBase
 {
     /// <summary>Check if a time slot conflicts with existing appointments</summary>
     [HttpPost("check-conflict")]
@@ -29,9 +29,15 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpGet("stats")]
     public async Task<IActionResult> GetDailyStats([FromQuery] string? date)
     {
-        var targetDate = string.IsNullOrWhiteSpace(date)
-            ? DateOnly.FromDateTime(DateTime.UtcNow)
-            : DateOnly.Parse(date);
+        DateOnly targetDate;
+        if (string.IsNullOrWhiteSpace(date))
+        {
+            targetDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        }
+        else if (!DateOnly.TryParse(date, out targetDate))
+        {
+            return BadRequest(new { message = "تنسيق التاريخ غير صالح. استخدم YYYY-MM-DD" });
+        }
 
         var stats = await service.GetDailyStatsAsync(targetDate);
         return Ok(stats);
@@ -48,14 +54,52 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     public async Task<IActionResult> GetByRange(
         [FromQuery] string? from,
         [FromQuery] string? to,
+        [FromQuery] string? startDate,
+        [FromQuery] string? endDate,
         [FromQuery] Guid? doctorId,
-        [FromQuery] Guid? patientId)
+        [FromQuery] Guid? patientId,
+        [FromQuery] string? status,
+        [FromQuery] Guid? branchId)
     {
-        var fromDate = from != null ? DateOnly.Parse(from) : DateOnly.FromDateTime(DateTime.Today);
-        var toDate = to != null ? DateOnly.Parse(to) : fromDate;
+        // GAP-01 FIX: Accept both from/to (backend standard) and startDate/endDate (frontend convention)
+        var fromDateStr = from ?? startDate;
+        var toDateStr = to ?? endDate;
 
-        var list = await service.GetByDateRangeAsync(fromDate, toDate, doctorId, patientId);
-        return Ok(list);
+        DateOnly fromDate;
+        if (fromDateStr != null)
+        {
+            if (!DateOnly.TryParse(fromDateStr, out fromDate))
+                return BadRequest(new { message = "تنسيق تاريخ البداية غير صالح. استخدم YYYY-MM-DD" });
+        }
+        else
+        {
+            fromDate = DateOnly.FromDateTime(DateTime.Today);
+        }
+
+        DateOnly toDate;
+        if (toDateStr != null)
+        {
+            if (!DateOnly.TryParse(toDateStr, out toDate))
+                return BadRequest(new { message = "تنسيق تاريخ النهاية غير صالح. استخدم YYYY-MM-DD" });
+        }
+        else
+        {
+            toDate = fromDate;
+        }
+
+        // GAP-01 FIX: Safely parse status filter with Arabic error message
+        AppointmentStatus? statusFilter = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<AppointmentStatus>(status, true, out var parsedStatus))
+                return BadRequest(new { message = $"حالة الموعد '{status}' غير صالحة" });
+            statusFilter = parsedStatus;
+        }
+
+        // GAP-01 FIX: Pass status to service for DB-level filtering (was in-memory before)
+        var result = await service.GetByDateRangeAsync(fromDate, toDate, doctorId, patientId, statusFilter);
+
+        return Ok(result);
     }
 
     [HttpGet("patient/{patientId:guid}")]
@@ -155,8 +199,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
 
             return Ok(new { message = "تم إرسال التذكير بنجاح" });
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogWarning(ex, "Failed to send WhatsApp reminder for appointment {AppointmentId}", id);
             return BadRequest(new { message = "فشل إرسال التذكير عبر واتساب" });
         }
     }
@@ -185,10 +230,10 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (existingVisit)
             return Conflict(new { message = "تم إنشاء زيارة لهذا الموعد مسبقًا" });
 
-        // 4. Validate appointment status — only certain statuses can start a visit
-        var allowedStatuses = new[] { AppointmentStatus.Scheduled, AppointmentStatus.Confirmed, AppointmentStatus.Arrived, AppointmentStatus.Waiting, AppointmentStatus.Called, AppointmentStatus.InRoom, AppointmentStatus.InProgress };
-        if (!allowedStatuses.Contains(appointment.Status))
-            return BadRequest(new { message = "لا يمكن بدء زيارة لموعد بحالة " + appointment.Status.ToString() });
+        // 4. Validate appointment status transition using centralized rules
+        var targetStatus = AppointmentStatus.InProgress;
+        if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
+            return BadRequest(new { message = $"لا يمكن تغيير حالة الموعد من {appointment.Status} إلى {targetStatus}. يجب اتباع تسلسل الحالات الصحيح" });
 
         // 5. Create visit linked to appointment
         var visit = new Visit
@@ -204,8 +249,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
 
         db.Visits.Add(visit);
 
-        // 6. Update appointment status to InProgress
-        appointment.Status = AppointmentStatus.InProgress;
+        // 6. Update appointment status to InProgress (transition already validated above)
+        appointment.Status = targetStatus;
         appointment.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();

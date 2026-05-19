@@ -42,6 +42,12 @@ public static class DbSeeder
             if (!await context.Settings.AnyAsync())
                 await SeedSettingsAsync(context);
 
+            if (!await context.ClinicServices.AnyAsync())
+                await SeedClinicServicesAsync(context);
+
+            if (!await context.ClinicRooms.AnyAsync())
+                await SeedClinicRoomsAsync(context);
+
             await context.SaveChangesAsync();
 
             // Test data (patients, appointments, ortho, finance)
@@ -125,6 +131,10 @@ public static class DbSeeder
             (id: new Guid("20000000-0000-0000-0000-000000000008"), username: "accountant1", role: UserRole.Accountant,     name: "المحاسب",              specialty: (string?)null,             color: "#6B7280", initials: "مح"),
         };
 
+        // SEC-03 FIX: Seed password for initial user accounts only.
+        // This is used ONLY when the database is empty (first seed — SeedUsersAndDoctorsAsync).
+        // In production, users MUST change this password on first login.
+        // For existing deployments, use ADMIN_RESET_PASSWORD env var to force a reset.
         var defaultPassword = "AqlanDental2024!";
 
         foreach (var (id, username, role, name, specialty, color, initials) in usersData)
@@ -172,6 +182,9 @@ public static class DbSeeder
 
         if (users.Count == 0) return;
 
+        // SEC-03 NOTE: This re-hashes users who still have unsalted (Phase 1) passwords.
+        // Since we can't know their original passwords, we reset to the seed default.
+        // These users should use ADMIN_RESET_PASSWORD or the forgot-password flow.
         var defaultPassword = "AqlanDental2024!";
 
         foreach (var user in users)
@@ -302,6 +315,45 @@ public static class DbSeeder
             new Setting { Key = "website.whatsappButtonText",   Value = "تواصل عبر الواتساب", Category = "website" },
         };
         await context.Settings.AddRangeAsync(settings);
+    }
+
+    private static async Task SeedClinicServicesAsync(AppDbContext context)
+    {
+        var services = new[]
+        {
+            new ClinicService { ArabicName = "معاينة", EnglishName = "Consultation", Code = "CONS", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 5000, RequiresDoctor = true, RequiresConsultationFee = true, SortOrder = 1 },
+            new ClinicService { ArabicName = "متابعة", EnglishName = "Follow-up", Code = "FOLL", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 15, DefaultPrice = 3000, RequiresDoctor = true, SortOrder = 2 },
+            new ClinicService { ArabicName = "طوارئ", EnglishName = "Emergency", Code = "EMER", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 7000, RequiresDoctor = true, RequiresConsultationFee = true, SortOrder = 3 },
+            new ClinicService { ArabicName = "حشوة", EnglishName = "Filling", Code = "FILL", Category = ServiceCategory.Restorative, DefaultDurationMinutes = 45, DefaultPrice = 15000, RequiresDoctor = true, SortOrder = 4 },
+            new ClinicService { ArabicName = "علاج عصب", EnglishName = "Root Canal", Code = "RC", Category = ServiceCategory.Endodontics, DefaultDurationMinutes = 60, DefaultPrice = 40000, RequiresDoctor = true, SortOrder = 5 },
+            new ClinicService { ArabicName = "تنظيف جير", EnglishName = "Scaling", Code = "SCAL", Category = ServiceCategory.Preventive, DefaultDurationMinutes = 30, DefaultPrice = 10000, RequiresDoctor = false, SortOrder = 6 },
+            new ClinicService { ArabicName = "خلع بسيط", EnglishName = "Simple Extraction", Code = "EXT-S", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 30, DefaultPrice = 10000, RequiresDoctor = true, SortOrder = 7 },
+            new ClinicService { ArabicName = "خلع جراحي", EnglishName = "Surgical Extraction", Code = "EXT-G", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 60, DefaultPrice = 30000, RequiresDoctor = true, SortOrder = 8 },
+            new ClinicService { ArabicName = "كشف تقويم", EnglishName = "Ortho Consultation", Code = "ORTH-C", Category = ServiceCategory.Orthodontics, DefaultDurationMinutes = 30, DefaultPrice = 5000, RequiresDoctor = true, RequiresConsultationFee = true, SortOrder = 9 },
+            new ClinicService { ArabicName = "شد تقويم", EnglishName = "Ortho Adjustment", Code = "ORTH-A", Category = ServiceCategory.Orthodontics, DefaultDurationMinutes = 20, DefaultPrice = 5000, RequiresDoctor = true, SortOrder = 10 },
+            new ClinicService { ArabicName = "زراعة", EnglishName = "Implant", Code = "IMPL", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 90, DefaultPrice = 200000, RequiresDoctor = true, SortOrder = 11 },
+            new ClinicService { ArabicName = "تركيبات زيركون", EnglishName = "Zirconia Crown", Code = "CROWN-Z", Category = ServiceCategory.Prosthodontics, DefaultDurationMinutes = 45, DefaultPrice = 60000, RequiresDoctor = true, SortOrder = 12 },
+            new ClinicService { ArabicName = "تركيبات إيماكس", EnglishName = "E-Max Veneer/Crown", Code = "EMAX", Category = ServiceCategory.Prosthodontics, DefaultDurationMinutes = 45, DefaultPrice = 50000, RequiresDoctor = true, SortOrder = 13 },
+            new ClinicService { ArabicName = "فينير", EnglishName = "Veneer", Code = "VENEER", Category = ServiceCategory.Cosmetic, DefaultDurationMinutes = 45, DefaultPrice = 50000, RequiresDoctor = true, ShowInBooking = false, SortOrder = 14 },
+            new ClinicService { ArabicName = "تبييض", EnglishName = "Whitening", Code = "WHITE", Category = ServiceCategory.Cosmetic, DefaultDurationMinutes = 60, DefaultPrice = 30000, RequiresDoctor = false, SortOrder = 15 },
+            new ClinicService { ArabicName = "أشعة", EnglishName = "X-Ray", Code = "XRAY", Category = ServiceCategory.Radiology, DefaultDurationMinutes = 15, DefaultPrice = 5000, RequiresDoctor = false, ShowInBooking = false, ShowInTreatmentPlan = false, SortOrder = 16 },
+            new ClinicService { ArabicName = "أخرى", EnglishName = "Other", Code = "OTHER", Category = ServiceCategory.Other, DefaultDurationMinutes = 30, DefaultPrice = 0, RequiresDoctor = true, ShowInBooking = false, SortOrder = 99 },
+        };
+        await context.ClinicServices.AddRangeAsync(services);
+    }
+
+    private static async Task SeedClinicRoomsAsync(AppDbContext context)
+    {
+        var rooms = new[]
+        {
+            new ClinicRoom { ArabicName = "غرفة 1", EnglishName = "Room 1", Code = "ROOM-1", RoomType = RoomType.Treatment, SortOrder = 1 },
+            new ClinicRoom { ArabicName = "غرفة 2", EnglishName = "Room 2", Code = "ROOM-2", RoomType = RoomType.Treatment, SortOrder = 2 },
+            new ClinicRoom { ArabicName = "غرفة 3", EnglishName = "Room 3", Code = "ROOM-3", RoomType = RoomType.Treatment, SortOrder = 3 },
+            new ClinicRoom { ArabicName = "غرفة الجراحة", EnglishName = "Surgery Room", Code = "SURG-1", RoomType = RoomType.Surgery, SortOrder = 4 },
+            new ClinicRoom { ArabicName = "غرفة الأشعة", EnglishName = "X-Ray Room", Code = "XRAY-1", RoomType = RoomType.Radiology, SortOrder = 5 },
+            new ClinicRoom { ArabicName = "الاستقبال", EnglishName = "Reception", Code = "RECP-1", RoomType = RoomType.Reception, SortOrder = 6 },
+        };
+        await context.ClinicRooms.AddRangeAsync(rooms);
     }
 
     private static async Task SeedTestDataAsync(AppDbContext context)

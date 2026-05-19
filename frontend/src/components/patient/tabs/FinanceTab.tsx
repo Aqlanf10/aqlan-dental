@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Wallet, CreditCard, FileSignature, TrendingDown, ArrowLeft } from "lucide-react";
+import { Wallet, CreditCard, FileSignature, FileText, TrendingDown, ArrowLeft } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
+import type { Invoice } from "@/types/finance";
 
 interface ContractStatementDto {
   id: string;
@@ -64,8 +66,23 @@ const methodLabel: Record<string, string> = {
   card: "بطاقة",
 };
 
+const INVOICE_STATUS_LABELS: Record<string, string> = {
+  Draft: "مسودة",
+  Issued: "مصدرة",
+  Cancelled: "ملغاة",
+  Paid: "مدفوعة",
+};
+
+const INVOICE_STATUS_COLORS: Record<string, string> = {
+  Draft: "bg-blue-50 text-blue-700",
+  Issued: "bg-green-50 text-green-700",
+  Cancelled: "bg-gray-100 text-gray-500",
+  Paid: "bg-emerald-50 text-emerald-700",
+};
+
 export function FinanceTab({ patientId }: FinanceTabProps) {
   const [statement, setStatement] = useState<AccountStatementDto | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,6 +97,11 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
         setError("تعذّر تحميل البيانات المالية");
         setLoading(false);
       });
+
+    api
+      .get<Invoice[]>(`/api/patients/${patientId}/invoices`)
+      .then((r) => setInvoices(r.data))
+      .catch(() => {});
   }, [patientId]);
 
   if (loading) {
@@ -93,7 +115,11 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
   }
 
   if (error || !statement) {
-    return <p className="text-sm text-red-500 text-center py-4">{error ?? "لا توجد بيانات مالية"}</p>;
+    return error ? (
+      <p className="text-sm text-red-500 text-center py-4">{error}</p>
+    ) : (
+      <EmptyState icon={Wallet} title="لا توجد بيانات مالية" description="لم يتم تسجيل أي معاملات مالية لهذا المريض" />
+    );
   }
 
   const { totalContracted, totalDiscounts, totalPaid, totalRemaining, activeContracts, completedContracts, contracts, recentPayments } = statement;
@@ -102,19 +128,19 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
     <div className="space-y-6" dir="rtl">
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="rounded-lg px-4 py-3 bg-[#eef4fb]">
+        <div className="rounded-xl px-4 py-3 bg-[#eef4fb]">
           <p className="text-xs text-[#64748b]">إجمالي العقود</p>
-          <p className="text-lg font-bold text-[#1e5fa3]">{totalContracted.toLocaleString()}</p>
+          <p className="text-lg font-bold text-[#3d7ab5]">{totalContracted.toLocaleString()}</p>
         </div>
-        <div className="rounded-lg px-4 py-3 bg-green-50">
+        <div className="rounded-xl px-4 py-3 bg-green-50">
           <p className="text-xs text-[#64748b]">إجمالي المدفوع</p>
           <p className="text-lg font-bold text-green-700">{totalPaid.toLocaleString()}</p>
         </div>
-        <div className="rounded-lg px-4 py-3 bg-orange-50">
+        <div className="rounded-xl px-4 py-3 bg-orange-50">
           <p className="text-xs text-[#64748b]">إجمالي المتبقي</p>
           <p className="text-lg font-bold text-orange-600">{totalRemaining.toLocaleString()}</p>
         </div>
-        <div className="rounded-lg px-4 py-3 bg-purple-50">
+        <div className="rounded-xl px-4 py-3 bg-purple-50">
           <p className="text-xs text-[#64748b]">الخصومات</p>
           <p className="text-lg font-bold text-purple-600">{totalDiscounts.toLocaleString()}</p>
         </div>
@@ -135,7 +161,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
       {/* Contracts */}
       <div>
         <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
-          <FileSignature className="w-4 h-4 text-[#1e5fa3]" />
+          <FileSignature className="w-4 h-4 text-[#3d7ab5]" />
           العقود
         </h3>
         {contracts.length === 0 ? (
@@ -149,7 +175,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
                 <Link
                   key={c.id}
                   href={`/finance/contracts/${c.id}`}
-                  className="flex flex-col gap-2 p-3 bg-[#f7fafd] rounded-lg border border-[#e8f0f9] hover:border-[#1e5fa3]/30 transition-colors"
+                  className="flex flex-col gap-2 p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9] hover:border-[#3d7ab5]/30 transition-colors"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -172,7 +198,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
                   {/* progress bar */}
                   <div className="h-1.5 bg-[#e2e8f0] rounded-full overflow-hidden">
                     <div
-                      className={cn("h-full rounded-full transition-all", c.status === "cancelled" ? "bg-red-400" : "bg-[#1e5fa3]")}
+                      className={cn("h-full rounded-full transition-all", c.status === "cancelled" ? "bg-red-400" : "bg-[#3d7ab5]")}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
@@ -186,7 +212,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
       {/* Recent Payments */}
       <div>
         <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
-          <CreditCard className="w-4 h-4 text-[#1e5fa3]" />
+          <CreditCard className="w-4 h-4 text-[#3d7ab5]" />
           المدفوعات الأخيرة
         </h3>
         {recentPayments.length === 0 ? (
@@ -194,7 +220,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
         ) : (
           <div className="space-y-2">
             {recentPayments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-lg border border-[#e8f0f9]">
+              <div key={p.id} className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9]">
                 <div className="flex items-center gap-2">
                   <TrendingDown className="w-4 h-4 text-green-500" />
                   <div>
@@ -203,10 +229,53 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
                   </div>
                 </div>
                 <div className="text-left">
-                  <p className="text-sm font-semibold text-[#1e5fa3]">{p.amount.toLocaleString()}</p>
+                  <p className="text-sm font-semibold text-[#3d7ab5]">{p.amount.toLocaleString()}</p>
                   {p.receiptNumber && <p className="text-xs text-[#94a3b8]">{p.receiptNumber}</p>}
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Invoices */}
+      <div>
+        <h3 className="text-sm font-semibold text-[#0d2137] mb-3 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-[#3d7ab5]" />
+          الفواتير
+        </h3>
+        {invoices.length === 0 ? (
+          <p className="text-sm text-[#94a3b8]">لا توجد فواتير مسجّلة</p>
+        ) : (
+          <div className="space-y-2">
+            {invoices.map((inv) => (
+              <Link
+                key={inv.id}
+                href={`/finance/invoices/${inv.id}`}
+                className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9] hover:border-[#3d7ab5]/30 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#3d7ab5]" />
+                  <div>
+                    <p className="text-sm font-medium text-[#0d2137]">{inv.invoiceNumber}</p>
+                    <p className="text-xs text-[#94a3b8]">{new Date(inv.createdAt).toLocaleDateString("ar-YE")}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn(
+                      "text-xs px-2 py-0.5 rounded-full font-medium",
+                      INVOICE_STATUS_COLORS[inv.status] ?? "bg-gray-100 text-gray-600"
+                    )}
+                  >
+                    {inv.statusArabic ?? INVOICE_STATUS_LABELS[inv.status] ?? inv.status}
+                  </span>
+                  <p className="text-sm font-semibold text-[#3d7ab5]">
+                    {inv.totalAmount.toLocaleString()}
+                  </p>
+                  <ArrowLeft className="w-3.5 h-3.5 text-[#94a3b8]" />
+                </div>
+              </Link>
             ))}
           </div>
         )}

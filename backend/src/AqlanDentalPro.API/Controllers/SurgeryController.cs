@@ -4,6 +4,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -45,11 +46,29 @@ public sealed class UpsertPreopRequest
     public string? AnesthesiaType { get; init; }
     public bool ConsentSigned { get; init; }
     public Guid? DoctorId { get; init; }
+    public Dictionary<string, bool>? Checklist { get; init; }
+    public List<string>? RequiredTests { get; init; }
+}
+
+public sealed class PrescriptionItemDto
+{
+    public string? Medicine { get; init; }
+    public string? Dosage { get; init; }
+    public string? Frequency { get; init; }
+    public string? Duration { get; init; }
+}
+
+public sealed class FollowupItemDto
+{
+    public string? Date { get; init; }
+    public string? Notes { get; init; }
 }
 
 public sealed class UpsertPostopRequest
 {
     public string? Instructions { get; init; }
+    public List<PrescriptionItemDto>? Prescription { get; init; }
+    public List<FollowupItemDto>? FollowupSchedule { get; init; }
 }
 
 public sealed class UpdateSurgeryStatusRequestValidator : AbstractValidator<UpdateSurgeryStatusRequest>
@@ -62,6 +81,78 @@ public sealed class UpdateSurgeryStatusRequestValidator : AbstractValidator<Upda
         RuleFor(x => x.Status)
             .NotEmpty().WithMessage("الحالة مطلوبة")
             .Must(s => ValidStatuses.Contains(s)).WithMessage("الحالة غير صالحة");
+    }
+}
+
+public sealed class UpsertOperativeReportRequest
+{
+    public string? SurgeryDateTime { get; init; }
+    public int? DurationMinutes { get; init; }
+    public string? AnesthesiaUsed { get; init; }
+    public string? Technique { get; init; }
+    public string? DetailedDescription { get; init; }
+    public string? Outcome { get; init; }
+    public string? Complications { get; init; }
+    public int? SuturesCount { get; init; }
+    public bool SpecimenSent { get; init; }
+    public Guid? DoctorId { get; init; }
+}
+
+public sealed class UpsertOperativeReportRequestValidator : AbstractValidator<UpsertOperativeReportRequest>
+{
+    public UpsertOperativeReportRequestValidator()
+    {
+        RuleFor(x => x.DurationMinutes)
+            .GreaterThanOrEqualTo(0).WithMessage("المدة يجب أن تكون قيمة موجبة")
+            .When(x => x.DurationMinutes.HasValue);
+        RuleFor(x => x.SuturesCount)
+            .GreaterThanOrEqualTo(0).WithMessage("عدد الغرز يجب أن يكون قيمة موجبة")
+            .When(x => x.SuturesCount.HasValue);
+    }
+}
+
+public sealed class CreateHospitalReferralRequest
+{
+    public string? HospitalName { get; init; }
+    public string? Reason { get; init; }
+    public string? ReferralDate { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed class UpdateHospitalReferralRequest
+{
+    public string? HospitalName { get; init; }
+    public string? Reason { get; init; }
+    public string? ReferralDate { get; init; }
+    public string? Status { get; init; }
+    public string? Notes { get; init; }
+}
+
+public sealed class UpdateHospitalReferralRequestValidator : AbstractValidator<UpdateHospitalReferralRequest>
+{
+    private static readonly HashSet<string> ValidStatuses = ["pending", "in_progress", "completed", "cancelled"];
+    public UpdateHospitalReferralRequestValidator()
+    {
+        RuleFor(x => x.Status)
+            .Must(s => string.IsNullOrEmpty(s) || ValidStatuses.Contains(s))
+            .WithMessage("حالة الإحالة غير صالحة");
+    }
+}
+
+public sealed class UpdateSurgeryCaseRequest
+{
+    public Guid? DoctorId { get; init; }
+    public string? SurgeryType { get; init; }
+    public string? TeethInvolved { get; init; }
+}
+
+public sealed class UpdateSurgeryCaseRequestValidator : AbstractValidator<UpdateSurgeryCaseRequest>
+{
+    public UpdateSurgeryCaseRequestValidator()
+    {
+        RuleFor(x => x.SurgeryType)
+            .MaximumLength(200).WithMessage("نوع الجراحة يجب ألا يتجاوز 200 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.SurgeryType));
     }
 }
 
@@ -206,6 +297,8 @@ public class SurgeryController(AppDbContext db) : ControllerBase
             SurgeryDate     = report.SurgeryDate?.ToString("yyyy-MM-dd"),
             report.SurgeryLocation,
             report.AnesthesiaType,
+            report.Checklist,
+            report.RequiredTests,
             report.ConsentSigned,
             DoctorName      = report.Doctor?.Name,
             report.DoctorId,
@@ -228,6 +321,12 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         existing.SurgeryDate     = req.SurgeryDate != null ? DateOnly.Parse(req.SurgeryDate) : null;
         existing.SurgeryLocation = req.SurgeryLocation;
         existing.AnesthesiaType  = req.AnesthesiaType;
+        existing.Checklist = req.Checklist != null
+            ? JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(req.Checklist))
+            : null;
+        existing.RequiredTests = req.RequiredTests != null
+            ? JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(req.RequiredTests))
+            : null;
         existing.ConsentSigned   = req.ConsentSigned;
         existing.DoctorId        = req.DoctorId;
 
@@ -243,6 +342,8 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         return Ok(new {
             record.Id,
             record.Instructions,
+            record.Prescription,
+            record.FollowupSchedule,
         });
     }
 
@@ -259,7 +360,158 @@ public class SurgeryController(AppDbContext db) : ControllerBase
             db.PostopRecords.Add(existing);
         }
         existing.Instructions = req.Instructions;
+        existing.Prescription = req.Prescription != null
+            ? JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(req.Prescription))
+            : null;
+        existing.FollowupSchedule = req.FollowupSchedule != null
+            ? JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(req.FollowupSchedule))
+            : null;
         await db.SaveChangesAsync();
         return Ok(new { existing.Id, message = "تم الحفظ" });
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSurgeryCaseRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة الجراحية غير موجودة" });
+
+        if (req.DoctorId.HasValue) surgery.DoctorId = req.DoctorId;
+        if (req.SurgeryType is not null) surgery.SurgeryType = req.SurgeryType;
+        if (req.TeethInvolved is not null) surgery.TeethInvolved = req.TeethInvolved;
+
+        await db.SaveChangesAsync();
+        return Ok(new { id = surgery.Id, message = "تم التحديث" });
+    }
+
+    [HttpGet("{id:guid}/operative")]
+    public async Task<IActionResult> GetOperativeReport(Guid id)
+    {
+        var report = await db.OperativeReports
+            .Include(r => r.Doctor)
+            .FirstOrDefaultAsync(r => r.SurgeryCaseId == id);
+        if (report is null) return Ok(null);
+        return Ok(new {
+            report.Id,
+            SurgeryDateTime = report.SurgeryDateTime?.ToString("yyyy-MM-ddTHH:mm"),
+            report.DurationMinutes,
+            report.AnesthesiaUsed,
+            report.Technique,
+            report.DetailedDescription,
+            report.Outcome,
+            report.Complications,
+            report.SuturesCount,
+            report.SpecimenSent,
+            DoctorName = report.Doctor?.Name,
+            report.DoctorId,
+            ApprovedAt = report.ApprovedAt?.ToString("yyyy-MM-ddTHH:mm"),
+        });
+    }
+
+    [HttpPut("{id:guid}/operative")]
+    public async Task<IActionResult> UpsertOperativeReport(Guid id, [FromBody] UpsertOperativeReportRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.OperativeReports.FirstOrDefaultAsync(r => r.SurgeryCaseId == id);
+        if (existing is null)
+        {
+            existing = new OperativeReport { SurgeryCaseId = id };
+            db.OperativeReports.Add(existing);
+        }
+
+        existing.SurgeryDateTime = !string.IsNullOrEmpty(req.SurgeryDateTime) ? DateTime.Parse(req.SurgeryDateTime) : null;
+        existing.DurationMinutes = req.DurationMinutes;
+        existing.AnesthesiaUsed = req.AnesthesiaUsed;
+        existing.Technique = req.Technique;
+        existing.DetailedDescription = req.DetailedDescription;
+        existing.Outcome = req.Outcome;
+        existing.Complications = req.Complications;
+        existing.SuturesCount = req.SuturesCount;
+        existing.SpecimenSent = req.SpecimenSent;
+        existing.DoctorId = req.DoctorId;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم الحفظ" });
+    }
+
+    [HttpPut("{id:guid}/operative/approve")]
+    public async Task<IActionResult> ApproveOperativeReport(Guid id)
+    {
+        var report = await db.OperativeReports.FirstOrDefaultAsync(r => r.SurgeryCaseId == id);
+        if (report is null) return NotFound(new { message = "التقرير الجراحي غير موجود" });
+
+        report.ApprovedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return Ok(new { report.Id, ApprovedAt = report.ApprovedAt.Value.ToString("yyyy-MM-ddTHH:mm"), message = "تم اعتماد التقرير" });
+    }
+
+    [HttpGet("{id:guid}/referrals")]
+    public async Task<IActionResult> GetReferrals(Guid id)
+    {
+        var referrals = await db.HospitalReferrals
+            .Where(r => r.SurgeryCaseId == id)
+            .OrderByDescending(r => r.ReferralDate)
+            .ThenByDescending(r => r.CreatedAt)
+            .Select(r => new {
+                r.Id,
+                r.HospitalName,
+                r.Reason,
+                ReferralDate = r.ReferralDate != null ? r.ReferralDate.Value.ToString("yyyy-MM-dd") : null,
+                r.Status,
+                r.Notes,
+                CreatedAt = r.CreatedAt.ToString("yyyy-MM-dd"),
+            })
+            .ToListAsync();
+        return Ok(referrals);
+    }
+
+    [HttpPost("{id:guid}/referrals")]
+    public async Task<IActionResult> CreateReferral(Guid id, [FromBody] CreateHospitalReferralRequest req)
+    {
+        var surgery = await db.SurgeryCases.FindAsync(id);
+        if (surgery is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var referral = new HospitalReferral
+        {
+            SurgeryCaseId = id,
+            HospitalName = req.HospitalName,
+            Reason = req.Reason,
+            ReferralDate = !string.IsNullOrEmpty(req.ReferralDate) ? DateOnly.Parse(req.ReferralDate) : null,
+            Status = "pending",
+            Notes = req.Notes,
+        };
+
+        db.HospitalReferrals.Add(referral);
+        await db.SaveChangesAsync();
+        return Ok(new { referral.Id, message = "تم إنشاء الإحالة" });
+    }
+
+    [HttpPut("{id:guid}/referrals/{referralId:guid}")]
+    public async Task<IActionResult> UpdateReferral(Guid id, Guid referralId, [FromBody] UpdateHospitalReferralRequest req)
+    {
+        var referral = await db.HospitalReferrals.FirstOrDefaultAsync(r => r.Id == referralId && r.SurgeryCaseId == id);
+        if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
+
+        if (req.HospitalName is not null) referral.HospitalName = req.HospitalName;
+        if (req.Reason is not null) referral.Reason = req.Reason;
+        if (req.ReferralDate is not null) referral.ReferralDate = DateOnly.Parse(req.ReferralDate);
+        if (req.Status is not null) referral.Status = req.Status;
+        if (req.Notes is not null) referral.Notes = req.Notes;
+
+        await db.SaveChangesAsync();
+        return Ok(new { referral.Id, message = "تم تحديث الإحالة" });
+    }
+
+    [HttpDelete("{id:guid}/referrals/{referralId:guid}")]
+    public async Task<IActionResult> DeleteReferral(Guid id, Guid referralId)
+    {
+        var referral = await db.HospitalReferrals.FirstOrDefaultAsync(r => r.Id == referralId && r.SurgeryCaseId == id);
+        if (referral is null) return NotFound(new { message = "الإحالة غير موجودة" });
+
+        referral.IsActive = false;
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم حذف الإحالة" });
     }
 }

@@ -23,6 +23,8 @@ export interface Payment {
   patientId: string;
   patientName: string;
   contractId?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
   amount: number;
   paymentDate: string;
   paymentMethod?: string;
@@ -73,6 +75,7 @@ export interface CreateContractRequest {
 export interface CreatePaymentRequest {
   patientId: string;
   contractId?: string;
+  invoiceId?: string;
   amount: number;
   paymentMethod?: string;
   serviceDescription?: string;
@@ -89,4 +92,73 @@ export interface UpdatePaymentRequest {
   specialty?: string;
   doctorId?: string;
   notes?: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  patientId: string;
+  patientName?: string;
+  visitId?: string;
+  appointmentId?: string;
+  status: "Draft" | "Issued" | "Cancelled" | "Paid";
+  statusArabic?: string;
+  subtotal: number;
+  discountAmount?: number;
+  taxAmount?: number;
+  totalAmount: number;
+  lineItemCount?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceDetail extends Invoice {
+  createdBy?: string;
+  updatedBy?: string;
+  paidAmount?: number;
+  remainingAmount?: number;
+  lineItems: InvoiceLineItem[];
+  payments?: InvoicePayment[];
+}
+
+export interface InvoicePayment {
+  id: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod?: string;
+  receiptNumber?: string;
+  notes?: string;
+}
+
+export interface InvoiceLineItem {
+  id: string;
+  invoiceId: string;
+  serviceId?: string;
+  serviceName?: string;
+  serviceNameSnapshot: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  relatedTreatmentPlanStepId?: string;
+  relatedVisitId?: string;
+  sortOrder: number;
+}
+
+export interface UpdateInvoiceRequest {
+  lineItems?: UpdateInvoiceLineItemRequest[];
+  discountAmount?: number;
+  taxAmount?: number;
+  notes?: string;
+}
+
+export interface UpdateInvoiceLineItemRequest {
+  serviceId?: string;
+  serviceNameSnapshot?: string;
+  description?: string;
+  quantity: number;
+  unitPrice: number;
+  relatedTreatmentPlanStepId?: string;
+  relatedVisitId?: string;
 }

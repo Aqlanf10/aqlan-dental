@@ -52,6 +52,12 @@ export default function FinancePage() {
             <Plus className="w-4 h-4" />
             دفعة جديدة
           </Link>
+          <Link href="/finance/invoices"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#3d7ab5]/5 transition"
+          >
+            <FileText className="w-4 h-4" />
+            الفواتير
+          </Link>
         </div>
       </div>
 

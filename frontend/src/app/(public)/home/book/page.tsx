@@ -317,10 +317,19 @@ export default function BookPage() {
     setIsConflict(false);
 
     try {
-      // Generate reCAPTCHA token if available
+      // Generate reCAPTCHA token if available. A reCAPTCHA failure must never
+      // block the booking: the backend treats the token as optional and only
+      // validates it when present. Without this inner guard, a failed
+      // executeRecaptcha (script blocked, or domain not whitelisted in the
+      // Google reCAPTCHA console) throws and surfaces as a misleading
+      // "تعذّر الاتصال بالخادم" network error.
       let recaptchaToken: string | undefined;
       if (executeRecaptcha) {
-        recaptchaToken = await executeRecaptcha('booking_submit');
+        try {
+          recaptchaToken = await executeRecaptcha('booking_submit');
+        } catch {
+          recaptchaToken = undefined;
+        }
       }
 
       const res = await fetch(`${API_URL}/api/public/booking-requests`, {
@@ -1111,13 +1120,13 @@ export default function BookPage() {
         <div className="bg-white rounded-3xl shadow-xl border border-slate-100 border-t-4 border-t-[#87CEEB] overflow-hidden">
           <div className="p-6 sm:p-8">
             {/* Step Indicator */}
-            <StepIndicator />
+            {StepIndicator()}
 
             {/* Step Content */}
-            {step === 1 && <Step1 />}
-            {step === 2 && <Step2 />}
-            {step === 3 && <Step3 />}
-            {step === 4 && <Step4 />}
+            {step === 1 && Step1()}
+            {step === 2 && Step2()}
+            {step === 3 && Step3()}
+            {step === 4 && Step4()}
 
             {/* Server error */}
             {serverError && step === 4 && (

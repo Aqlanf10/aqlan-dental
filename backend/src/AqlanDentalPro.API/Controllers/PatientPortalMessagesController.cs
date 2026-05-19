@@ -18,14 +18,23 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/portal/messages")]
 [Authorize(Policy = "PatientAccess")]
-public class PatientPortalMessagesController(AppDbContext db, INotificationService notifications) : ControllerBase
+public class PatientPortalMessagesController(AppDbContext db, INotificationService notifications, ILogger<PatientPortalMessagesController> logger) : ControllerBase
 {
     private static readonly HashSet<string> ValidRecipientTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "TreatingDoctor", "Reception", "Admin"
     };
 
-    private Guid PatientId => Guid.Parse(User.FindFirst("patientId")!.Value);
+    private Guid PatientId
+    {
+        get
+        {
+            var claim = User.FindFirst("patientId");
+            if (claim == null || !Guid.TryParse(claim.Value, out var id))
+                throw new UnauthorizedAccessException("Missing or invalid patientId claim");
+            return id;
+        }
+    }
     private Guid? LinkedUserId => Guid.TryParse(User.FindFirst("userId")?.Value, out var id) ? id : null;
 
     /// <summary>
@@ -140,7 +149,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 UserId = doctor.UserId,
                 DisplayName = $"د. {doctor.Name}",
                 Role = doctorUser?.Role.ToString() ?? "Doctor",
-                AvatarInitials = doctor.AvatarInitials ?? doctor.Name?.Substring(0, 1),
+                AvatarInitials = doctor.AvatarInitials ?? (!string.IsNullOrEmpty(doctor.Name) ? doctor.Name.Substring(0, 1) : null),
                 Color = doctor.Color ?? "#0d9488"
             });
         }
@@ -214,6 +223,18 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Take(pageSize)
             .ToListAsync();
 
+        // N+1 FIX: Batch unread counts — single DB query instead of per-conversation queries
+        var convIds = conversations.Select(c => c.Id).ToList();
+        var unreadCounts = convIds.Count > 0
+            ? await db.Messages
+                .Where(m => convIds.Contains(m.ConversationId)
+                         && m.SenderId != userId.Value
+                         && !m.Reads.Any(r => r.UserId == userId.Value))
+                .GroupBy(m => m.ConversationId)
+                .Select(g => new { ConversationId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.ConversationId, x => x.Count)
+            : new Dictionary<Guid, int>();
+
         var result = new List<ConversationListDto>();
         foreach (var conv in conversations)
         {
@@ -228,11 +249,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
                 PatientId = conv.PatientId,
                 LastMessageAt = conv.LastMessageAt,
                 LastMessagePreview = conv.LastMessagePreview,
-                UnreadCount = await db.Messages
-                    .Where(m => m.ConversationId == conv.Id
-                             && m.SenderId != userId.Value
-                             && !m.Reads.Any(r => r.UserId == userId.Value))
-                    .CountAsync(),
+                UnreadCount = unreadCounts.GetValueOrDefault(conv.Id),
                 OtherParticipant = otherParticipant != null ? MapParticipant(otherParticipant) : null,
                 Participants = conv.Participants.Select(MapParticipant).ToList(),
                 RecipientType = conv.RecipientType,
@@ -507,9 +524,11 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Select(cp => cp.UserId)
             .ToListAsync();
 
-        foreach (var pid in otherParticipants)
-            await notifications.NotifyAsync(pid, "message", "رسالة جديدة من مريض",
-                $"رسالة من {senderName}", "Conversation", conversationId);
+        // N+1 FIX: Send notifications in parallel instead of sequential await per participant
+        var notificationTasks = otherParticipants.Select(pid =>
+            notifications.NotifyAsync(pid, "message", "رسالة جديدة من مريض",
+                $"رسالة من {senderName}", "Conversation", conversationId));
+        await Task.WhenAll(notificationTasks);
 
         return Ok(MapMessage(loaded));
     }
@@ -541,6 +560,7 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
             // Concurrent mark-as-read already inserted these rows — idempotent success
+            logger.LogDebug(ex, "Concurrent mark-as-read deduplication for conversation {ConversationId}", conversationId);
         }
 
         return NoContent();
@@ -789,11 +809,16 @@ public class PatientPortalMessagesController(AppDbContext db, INotificationServi
             .Select(c => c.Id)
             .ToListAsync();
 
+        // Batch check: find which conversations already have this user as participant
+        var existingParticipantConvIds = (await db.ConversationParticipants
+            .Where(cp => patientFacingConvIds.Contains(cp.ConversationId) && cp.UserId == userId)
+            .Select(cp => cp.ConversationId)
+            .ToListAsync())
+            .ToHashSet();
+
         foreach (var convId in patientFacingConvIds)
         {
-            var isParticipant = await db.ConversationParticipants
-                .AnyAsync(cp => cp.ConversationId == convId && cp.UserId == userId);
-            if (!isParticipant)
+            if (!existingParticipantConvIds.Contains(convId))
             {
                 db.ConversationParticipants.Add(new ConversationParticipant
                 {

@@ -34,8 +34,12 @@ export default function PortalLoginPage() {
       setAuth(data.profile, data.accessToken, data.mustChangePassword);
       router.push("/portal");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      if (!axiosErr.response) {
+        setError("تعذّر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مجدداً.");
+      } else {
+        setError(axiosErr.response.data?.message || "اسم المستخدم أو كلمة المرور غير صحيحة");
+      }
     } finally {
       setLoading(false);
     }
@@ -188,7 +192,7 @@ export default function PortalLoginPage() {
                   <button
                     type="button"
                     onClick={() => { setStep("forgot"); setError(""); setSuccess(""); }}
-                    className="text-sm text-[#f5922e] hover:text-[#c47022] transition font-medium bg-transparent border-none cursor-pointer p-0"
+                    className="text-sm text-[#f5922e] hover:text-[#e07d1e] transition font-medium bg-transparent border-none cursor-pointer p-0"
                   >
                     نسيت كلمة المرور؟
                   </button>
@@ -199,7 +203,7 @@ export default function PortalLoginPage() {
                   disabled={loading}
                   className={cn(
                     "w-full py-3 px-4 rounded-lg font-semibold text-white transition-all",
-                    "bg-[#f5922e] hover:bg-[#c47022] active:scale-[0.98]",
+                    "bg-[#f5922e] hover:bg-[#e07d1e] active:scale-[0.98]",
                     "disabled:opacity-60 disabled:cursor-not-allowed"
                   )}
                 >
@@ -248,7 +252,7 @@ export default function PortalLoginPage() {
                   disabled={loading}
                   className={cn(
                     "w-full py-3 px-4 rounded-lg font-semibold text-white transition-all",
-                    "bg-[#f5922e] hover:bg-[#c47022] active:scale-[0.98]",
+                    "bg-[#f5922e] hover:bg-[#e07d1e] active:scale-[0.98]",
                     "disabled:opacity-60 disabled:cursor-not-allowed"
                   )}
                 >
@@ -330,7 +334,7 @@ export default function PortalLoginPage() {
                   disabled={loading}
                   className={cn(
                     "w-full py-3 px-4 rounded-lg font-semibold text-white transition-all",
-                    "bg-[#f5922e] hover:bg-[#c47022] active:scale-[0.98]",
+                    "bg-[#f5922e] hover:bg-[#e07d1e] active:scale-[0.98]",
                     "disabled:opacity-60 disabled:cursor-not-allowed"
                   )}
                 >

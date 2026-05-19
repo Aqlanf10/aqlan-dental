@@ -1,9 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <!-- Background -->
-  <rect width="512" height="512" rx="96" fill="#0F1B2D"/>
-  <!-- Tooth shape -->
-  <path d="M256 80c-52 0-88 36-96 72-8 36 4 76 20 116 16 40 28 84 36 124 4 20 8 40 40 40s36-20 40-40c8-40 20-84 36-124 16-40 28-80 20-116-8-36-44-72-96-72z" fill="white" opacity="0.95"/>
-  <!-- Blue accent curve -->
-  <path d="M200 160c-4 24 2 56 16 92" stroke="#2563EB" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.8"/>
-  <path d="M312 160c4 24-2 56-16 92" stroke="#F97316" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.7"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 846" width="1000" height="846">
+  <title>Aqlan Dental Pro</title>
+  <image width="1000" height="846"></image>
 </svg>

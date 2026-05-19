@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Calendar, Plus } from "lucide-react";
 import api from "@/lib/api";
+import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, formatTime, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 
 interface AppointmentDto {
@@ -100,15 +101,18 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-[#94a3b8]">
-          <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">لا توجد مواعيد في الفترة المحددة</p>
-        </div>
+        <EmptyState
+          icon={Calendar}
+          title="لا توجد مواعيد"
+          description="لم يتم حجز أي مواعيد لهذا المريض بعد"
+          actionLabel="موعد جديد"
+          actionHref={`/appointments/new?patientId=${patientId}&patientName=${encodeURIComponent(patientName)}`}
+        />
       ) : (
         <div className="space-y-2">
           {filtered.map((apt) => (
             <Link key={apt.id} href={`/appointments/${apt.id}`}
-              className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#e8f0f9] transition"
+              className="flex items-center justify-between p-3 bg-white border border-[#e8f0f9] rounded-lg hover:border-[#3d7ab5] hover:shadow-sm transition"
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-[#3d7ab518] flex items-center justify-center flex-shrink-0">

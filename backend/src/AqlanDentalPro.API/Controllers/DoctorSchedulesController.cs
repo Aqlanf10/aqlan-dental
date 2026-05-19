@@ -119,6 +119,11 @@ public class DoctorSchedulesController(AppDbContext db, ICurrentUserService curr
                 return BadRequest(new { message = validationTimeError });
         }
 
+        // Batch-load all existing schedules for this doctor in one query instead of N queries
+        var existingSchedules = await db.DoctorSchedules
+            .Where(ds => ds.DoctorId == doctorId && ds.IsActive)
+            .ToDictionaryAsync(ds => ds.DayOfWeek, ds => ds);
+
         foreach (var req in scheduleDays)
         {
             var startTime = TimeOnly.Parse(req.StartTime);
@@ -126,10 +131,7 @@ public class DoctorSchedulesController(AppDbContext db, ICurrentUserService curr
             TimeOnly? breakStart = req.BreakStart != null ? TimeOnly.Parse(req.BreakStart) : null;
             TimeOnly? breakEnd = req.BreakEnd != null ? TimeOnly.Parse(req.BreakEnd) : null;
 
-            var existing = await db.DoctorSchedules
-                .FirstOrDefaultAsync(ds => ds.DoctorId == doctorId && ds.DayOfWeek == req.DayOfWeek && ds.IsActive);
-
-            if (existing is null)
+            if (!existingSchedules.TryGetValue(req.DayOfWeek, out var existing))
             {
                 db.DoctorSchedules.Add(new Domain.Entities.DoctorSchedule
                 {

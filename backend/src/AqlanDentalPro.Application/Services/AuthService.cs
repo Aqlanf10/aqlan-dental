@@ -5,11 +5,13 @@ using AqlanDentalPro.Domain.Enums;
 using Konscious.Security.Cryptography;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class AuthService(IUserRepository userRepo, ITokenService tokenService) : IAuthService
+public class AuthService(IUserRepository userRepo, ITokenService tokenService, ILogger<AuthService> logger) : IAuthService
 {
+    private readonly ILogger<AuthService> _logger = logger;
     public async Task<LoginResponse?> LoginAsync(LoginRequest request)
     {
         var user = await userRepo.GetByUsernameAsync(request.Username);
@@ -71,6 +73,7 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
 
         user.PasswordHash = newHash;
         user.PasswordSalt = newSalt;
+        user.MustChangePassword = false; // SEC-02 FIX: Clear flag after successful password change
         user.UpdatedAt = DateTime.UtcNow;
 
         await userRepo.SaveChangesAsync();
@@ -85,7 +88,8 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
         BranchId = user.BranchId,
         DoctorName = user.Doctor?.Name,
         DoctorColor = user.Doctor?.Color,
-        DoctorInitials = user.Doctor?.AvatarInitials
+        DoctorInitials = user.Doctor?.AvatarInitials,
+        MustChangePassword = user.MustChangePassword // SEC-02 FIX: Expose to frontend
     };
 
     /// <summary>
@@ -116,7 +120,7 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
     /// Verifies a password against the stored hash and salt.
     /// Supports both per-user salt (current) and legacy fixed-salt (Phase 1) hashes.
     /// </summary>
-    private static bool VerifyPassword(string password, string storedHash, string storedSalt)
+    private bool VerifyPassword(string password, string storedHash, string storedSalt)
     {
         try
         {
@@ -131,7 +135,16 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
             }
 
             // Fallback: legacy Phase 1 fixed-salt hash (DOP=1, fixed salt)
+            // SEC-02 FIX: Log deprecation warning — this path should be removed once all users are migrated
+            _logger.LogWarning(
+                "SEC-02 DEPRECATION: Legacy fixed-salt hash used for user verification. " +
+                "This indicates a user still has a Phase 1 hash. " +
+                "User should change their password to migrate to per-user salt. " +
+                "Username={Username}",
+                "REDACTED"); // Don't log username for privacy
+#pragma warning disable CS0618 // Suppress obsolete warning — intentionally calling legacy method
             var legacyHash = HashPasswordLegacy(password);
+#pragma warning restore CS0618
             return CryptographicOperations.FixedTimeEquals(
                 Convert.FromBase64String(legacyHash),
                 Convert.FromBase64String(storedHash));
@@ -142,7 +155,13 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService) :
         }
     }
 
-    // Legacy hash format from Phase 1 (fixed global salt, DOP=1)
+    // SEC-02 TODO: Legacy hash format from Phase 1 (fixed global salt, DOP=1)
+    // This method MUST be removed once all users have been migrated to per-user salts.
+    // Migration path: Users are auto-migrated when they use ChangePasswordAsync().
+    // Track migration progress via the deprecation log above.
+    // After confirming zero legacy-hash log entries for 30+ days, remove this method
+    // and simplify VerifyPassword to per-user-salt only.
+    [Obsolete("Legacy Phase 1 hash — remove after full user migration to per-user salts")]
     private static string HashPasswordLegacy(string password)
     {
         var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password))

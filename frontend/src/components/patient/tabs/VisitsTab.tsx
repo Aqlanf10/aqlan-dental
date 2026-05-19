@@ -12,6 +12,7 @@ import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
+import { EmptyState } from "./EmptyState";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -108,7 +109,7 @@ const SPECIALTY_COLORS: Record<string, { bg: string; text: string; icon: string 
   OralSurgery:   { bg: "bg-red-50",      text: "text-red-700",    icon: "text-red-600" },
   Periodontics:  { bg: "bg-pink-50",     text: "text-pink-700",   icon: "text-pink-600" },
   Endodontics:   { bg: "bg-amber-50",    text: "text-amber-700",  icon: "text-amber-600" },
-  Prosthodontics:{ bg: "bg-teal-50",     text: "text-teal-700",   icon: "text-teal-600" },
+  Prosthodontics:{ bg: "bg-blue-50",     text: "text-blue-700",   icon: "text-blue-600" },
 };
 
 const APPOINTMENT_STATUS_LABELS: Record<string, string> = {
@@ -363,7 +364,7 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
           { label: "اليوم", value: stats.today, color: "text-amber-600", bg: "bg-amber-50" },
           { label: "مرتبطة بموعد", value: stats.linked, color: "text-purple-600", bg: "bg-purple-50" },
         ].map(({ label, value, color, bg }) => (
-          <div key={label} className={cn("rounded-lg px-3 py-2 flex items-center gap-2", bg)}>
+          <div key={label} className={cn("rounded-xl px-3 py-2 flex items-center gap-2", bg)}>
             <div className="min-w-0">
               <p className="text-xs text-[#94a3b8] truncate">{label}</p>
               <p className={cn("text-sm font-bold truncate", color)}>{value}</p>
@@ -435,15 +436,21 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
           <button onClick={fetchVisits} className="mt-2 text-xs text-[#3d7ab5] hover:underline">إعادة المحاولة</button>
         </div>
       ) : filteredVisits.length === 0 ? (
-        <div className="text-center py-12 text-[#94a3b8]">
-          <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">
-            {hasActiveFilters ? "لا توجد زيارات تطابق الفلاتر" : "لا توجد زيارات مسجلة"}
-          </p>
-          {hasActiveFilters && (
-            <button onClick={clearFilters} className="mt-2 text-xs text-[#3d7ab5] hover:underline">مسح الفلاتر</button>
-          )}
-        </div>
+        hasActiveFilters ? (
+          <EmptyState
+            icon={ClipboardList}
+            title="لا توجد زيارات تطابق الفلاتر"
+            description="جرب تغيير معايير البحث أو مسح الفلاتر"
+            actionLabel="مسح الفلاتر"
+            actionOnClick={clearFilters}
+          />
+        ) : (
+          <EmptyState
+            icon={ClipboardList}
+            title="لا توجد زيارات"
+            description="لم يتم تسجيل أي زيارة لهذا المريض"
+          />
+        )
       ) : (
         <div className="space-y-3">
           {filteredVisits.map((visit) => {

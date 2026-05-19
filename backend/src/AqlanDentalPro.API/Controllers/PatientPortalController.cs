@@ -37,7 +37,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/forgot-password")]
     [AllowAnonymous]
-    [EnableRateLimiting("PortalAuthPolicy")]
+    [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-04 FIX: Stricter limit on forgot-password
     public async Task<IActionResult> ForgotPassword([FromBody] PatientForgotPasswordRequest req)
     {
         // reCAPTCHA validation
@@ -65,6 +65,7 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
     [HttpPost("auth/reset-password")]
     [AllowAnonymous]
+    [EnableRateLimiting("PortalPasswordResetPolicy")] // SEC-04 FIX: Stricter limit on reset-password (3/15min)
     public async Task<IActionResult> ResetPassword([FromBody] PatientResetPasswordRequest req)
     {
         try
@@ -192,8 +193,9 @@ public class PatientPortalController(IPatientPortalService portalService, IConfi
 
             return Ok(new { username, temporaryPassword = plainPassword, message = "تم إنشاء حساب البوابة بنجاح", alreadyExists = false });
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Failed to create portal account for patient {PatientId}", patientId);
             return StatusCode(500, new { message = "حدث خطأ أثناء إنشاء حساب البوابة. يرجى المحاولة لاحقاً" });
         }
     }

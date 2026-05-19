@@ -1,12 +1,13 @@
 "use client";
 import { Suspense, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, Search, ArrowRight } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
+import { SURGERY_TYPES } from "@/types/surgery";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -20,11 +21,6 @@ const schema = z.object({
 });
 type FormData = z.infer<typeof schema>;
 
-const SURGERY_TYPES = [
-  "قلع بسيط", "قلع جراحي", "قلع ضرس العقل", "زراعة أسنان",
-  "كسر الفك", "خراج حاد", "كيس فكي", "جراحة اللثة", "أخرى"
-];
-
 const inputCls = (err?: string) => cn(
   "w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue",
   err ? "border-red-400" : "border-gray-300"
@@ -32,6 +28,9 @@ const inputCls = (err?: string) => cn(
 
 function NewSurgeryForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const prePatientId = searchParams.get("patientId");
+  const prePatientName = searchParams.get("patientName");
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -46,6 +45,11 @@ function NewSurgeryForm() {
   useEffect(() => {
     api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (prePatientId) setValue("patientId", prePatientId);
+    if (prePatientName) setPatientSearch(prePatientName);
+  }, [prePatientId, prePatientName, setValue]);
 
   useEffect(() => {
     if (patientSearch.length < 2) { setPatientResults([]); return; }

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using System.Security.Claims;
+using Xunit;
 
 namespace AqlanDentalPro.UnitTests.Middleware;
 

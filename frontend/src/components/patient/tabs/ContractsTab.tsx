@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FileSignature, AlertCircle, Plus, ChevronLeft } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
+import { EmptyState } from "./EmptyState";
 import type { Contract } from "@/types/finance";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -79,17 +80,13 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
 
   if (contracts.length === 0) {
     return (
-      <div className="text-center py-12" dir="rtl">
-        <FileSignature className="w-10 h-10 mx-auto mb-2 opacity-30" />
-        <p className="text-sm text-[#94a3b8]">لا توجد عقود مسجّلة</p>
-        <Link
-          href={`/finance/contracts/new?patientId=${patientId}`}
-          className="inline-flex items-center gap-1.5 mt-3 px-3 py-2 text-xs font-semibold rounded-lg text-white bg-[#3d7ab5] hover:opacity-90 transition"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          إنشاء عقد
-        </Link>
-      </div>
+      <EmptyState
+        icon={FileSignature}
+        title="لا توجد عقود مسجّلة"
+        description="لم يتم تسجيل أي عقود لهذا المريض"
+        actionLabel="إنشاء عقد"
+        actionHref={`/finance/contracts/new?patientId=${patientId}`}
+      />
     );
   }
 
@@ -109,19 +106,19 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-lg px-3 py-2 bg-[#3d7ab518] flex items-center gap-2">
+        <div className="rounded-xl px-3 py-2 bg-[#3d7ab518] flex items-center gap-2">
           <div className="min-w-0">
             <p className="text-xs text-[#94a3b8]">إجمالي العقود</p>
             <p className="text-sm font-bold text-[#3d7ab5]">{totalContractValue.toLocaleString()} ر.ي</p>
           </div>
         </div>
-        <div className="rounded-lg px-3 py-2 bg-green-50 flex items-center gap-2">
+        <div className="rounded-xl px-3 py-2 bg-green-50 flex items-center gap-2">
           <div className="min-w-0">
             <p className="text-xs text-[#94a3b8]">المدفوع</p>
             <p className="text-sm font-bold text-green-600">{totalPaid.toLocaleString()} ر.ي</p>
           </div>
         </div>
-        <div className="rounded-lg px-3 py-2 bg-amber-50 flex items-center gap-2">
+        <div className="rounded-xl px-3 py-2 bg-amber-50 flex items-center gap-2">
           <div className="min-w-0">
             <p className="text-xs text-[#94a3b8]">المتبقي</p>
             <p className="text-sm font-bold text-amber-600">{totalRemaining.toLocaleString()} ر.ي</p>

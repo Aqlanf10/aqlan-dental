@@ -3,6 +3,10 @@ namespace AqlanDentalPro.Domain.Entities;
 public class Payment : BaseEntity
 {
     public Guid? ContractId { get; set; }
+
+    /// <summary>Linked invoice (optional — payment may be linked to a contract, an invoice, or standalone).</summary>
+    public Guid? InvoiceId { get; set; }
+
     public Guid PatientId { get; set; }
     public decimal Amount { get; set; }
     public DateOnly PaymentDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
@@ -16,6 +20,7 @@ public class Payment : BaseEntity
     public string? Notes { get; set; }
 
     public Contract? Contract { get; set; }
+    public Invoice? Invoice { get; set; }
     public Patient Patient { get; set; } = null!;
     public Doctor? Doctor { get; set; }
     public Branch? Branch { get; set; }

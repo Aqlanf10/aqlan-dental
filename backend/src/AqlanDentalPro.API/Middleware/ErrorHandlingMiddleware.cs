@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 using System.Text.Json;
 
@@ -27,6 +28,8 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             UnauthorizedAccessException => (HttpStatusCode.Unauthorized, "غير مصرح"),
             KeyNotFoundException        => (HttpStatusCode.NotFound, "العنصر غير موجود"),
             InvalidOperationException   => (HttpStatusCode.BadRequest, "عملية غير صالحة"),
+            // ERR-02 FIX: Handle concurrency conflicts with 409 Conflict
+            DbUpdateConcurrencyException => (HttpStatusCode.Conflict, "تعارض في التحديث"),
             _                          => (HttpStatusCode.InternalServerError, "خطأ في الخادم")
         };
 
@@ -35,6 +38,7 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
         {
             UnauthorizedAccessException => ex.Message, // Safe to expose auth errors
             KeyNotFoundException => ex.Message,         // Safe to expose not-found errors
+            DbUpdateConcurrencyException => "تم تعديل البيانات بواسطة مستخدم آخر. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
             _ => context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true
                 ? "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً."
                 : ex.Message // Only expose details in development
@@ -47,6 +51,12 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             Detail = detail,
             Instance = context.Request.Path
         };
+
+        // HOTFIX DIAGNOSTIC: Include exception type name in response to diagnose
+        // production 500 errors. This is safe — type names don't contain sensitive data.
+        // Remove after the Redis resilience issue is resolved.
+        problem.Extensions["errorType"] = ex.GetType().Name;
+        problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
 
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/problem+json";

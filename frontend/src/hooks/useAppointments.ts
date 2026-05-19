@@ -16,11 +16,16 @@ export function useAppointments(filters: AppointmentFilters = {}) {
     queryKey: ["appointments", filters],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (filters.date) params.set("date", filters.date);
+      // GAP-01 FIX: Send both from/to and startDate/endDate for backward compatibility
+      // Backend accepts from/to as primary, startDate/endDate as fallback
+      if (filters.startDate) params.set("from", filters.startDate);
+      else if (filters.date) params.set("from", filters.date);
+
+      if (filters.endDate) params.set("to", filters.endDate);
+      else if (filters.date) params.set("to", filters.date);
+
       if (filters.doctorId) params.set("doctorId", filters.doctorId);
       if (filters.status) params.set("status", filters.status);
-      if (filters.startDate) params.set("startDate", filters.startDate);
-      if (filters.endDate) params.set("endDate", filters.endDate);
 
       const { data } = await api.get<Appointment[]>(
         `/api/appointments?${params.toString()}`

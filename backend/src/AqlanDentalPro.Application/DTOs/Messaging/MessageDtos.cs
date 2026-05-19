@@ -48,6 +48,7 @@ public class MessageDto
     public string? AttachmentUrl { get; set; }
     public string? AttachmentName { get; set; }
     public string? AttachmentType { get; set; }
+    public List<MessageAttachmentDto> Attachments { get; set; } = [];
     public Guid? ReplyToId { get; set; }
     public string? ReplyToContent { get; set; }
     public string? ReplyToSenderName { get; set; }
@@ -57,6 +58,17 @@ public class MessageDto
     public bool IsReadByMe { get; set; }
     public int ReadCount { get; set; }
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>مرفق رسالة</summary>
+public class MessageAttachmentDto
+{
+    public Guid Id { get; set; }
+    public Guid MessageId { get; set; }
+    public string FileUrl { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+    public string MimeType { get; set; } = string.Empty;
 }
 
 /// <summary>إحصائيات المراسلة</summary>

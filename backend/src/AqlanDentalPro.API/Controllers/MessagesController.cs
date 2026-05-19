@@ -10,7 +10,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/messages")]
 [Authorize(Policy = "StaffOnly")]
-public class MessagesController(MessagingService messagingService, AppDbContext db) : ControllerBase
+public class MessagesController(MessagingService messagingService, AppDbContext db, ILogger<MessagesController> logger) : ControllerBase
 {
     /// <summary>فحص حالة جداول المراسلة (Admin فقط)</summary>
     [HttpGet("schema-status")]
@@ -34,7 +34,9 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+            // H-SEC FIX: Never expose raw exception messages to client
+            logger.LogError(ex, "Schema status check failed");
+            return StatusCode(500, new { error = "حدث خطأ أثناء فحص حالة قاعدة البيانات" });
         }
     }
     /// <summary>جلب محادثاتي</summary>
@@ -80,10 +82,12 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (UnauthorizedAccessException ex)
         {
+            logger.LogWarning(ex, "Unauthorized message send to conversation {ConversationId}", conversationId);
             return Forbid(ex.Message);
         }
         catch (ArgumentException ex)
         {
+            logger.LogWarning(ex, "Invalid argument sending message to conversation {ConversationId}", conversationId);
             return BadRequest(new { message = ex.Message });
         }
     }
@@ -126,6 +130,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (KeyNotFoundException ex)
         {
+            logger.LogWarning(ex, "Patient not found for patient-facing conversation, patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }
@@ -144,6 +149,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (KeyNotFoundException ex)
         {
+            logger.LogWarning(ex, "Patient not found for internal patient conversation, patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }
@@ -192,6 +198,7 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
         catch (KeyNotFoundException ex)
         {
+            logger.LogWarning(ex, "Patient not found for internal conversation lookup, patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
     }

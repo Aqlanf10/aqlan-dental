@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
-public class BookingRequestsController(IBookingRequestService service, ICurrentUserService currentUser, IRecaptchaService recaptcha) : ControllerBase
+public class BookingRequestsController(IBookingRequestService service, ICurrentUserService currentUser, IRecaptchaService recaptcha, ILogger<BookingRequestsController> logger) : ControllerBase
 {
     // ── Public endpoints ─────────────────────────────────────────────────
 
@@ -65,14 +65,17 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
         }
         catch (SlotNotAvailableException ex)
         {
+            logger.LogWarning(ex, "Booking slot no longer available");
             return Conflict(new { message = ex.Message });
         }
         catch (DuplicateBookingRequestException ex)
         {
+            logger.LogWarning(ex, "Duplicate booking request detected");
             return Conflict(new { message = ex.Message });
         }
         catch (ArgumentException ex)
         {
+            logger.LogWarning(ex, "Invalid booking request argument");
             return BadRequest(new { message = ex.Message });
         }
     }
@@ -129,6 +132,7 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
         }
         catch (ArgumentException ex)
         {
+            logger.LogWarning(ex, "Invalid argument converting booking request {BookingRequestId} to appointment", id);
             return BadRequest(new { message = ex.Message });
         }
     }

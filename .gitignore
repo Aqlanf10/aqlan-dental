@@ -65,6 +65,7 @@ ServiceFabricBackup/
 *.pfx
 secrets.json
 appsettings.Production.json
+appsettings.Development.json
 
 # ===========================
 # Docker
@@ -91,3 +92,5 @@ uploads/
 public/uploads/
 .vercel
 .railway/
+agent-ctx/
+frontend/bun.lock

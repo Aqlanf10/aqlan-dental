@@ -105,6 +105,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 .ThenInclude(u => u.Doctor)
             .Include(m => m.Reads)
             .Include(m => m.ReplyTo)
+            .Include(m => m.Attachments)
             .OrderByDescending(m => m.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -487,15 +488,17 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         if (!await IsParticipantAsync(conversationId))
             throw new UnauthorizedAccessException("لست مشاركاً في هذه المحادثة");
 
-        // Validate content: allow attachment-only messages (either Content or AttachmentUrl must be present)
+        // Validate content: allow attachment-only messages (either Content, AttachmentUrl, or Attachments must be present)
         var content = request.Content?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(request.AttachmentUrl))
+        var hasLegacyAttachment = !string.IsNullOrWhiteSpace(request.AttachmentUrl);
+        var hasMultiAttachments = request.Attachments != null && request.Attachments.Count > 0;
+        if (string.IsNullOrWhiteSpace(content) && !hasLegacyAttachment && !hasMultiAttachments)
             throw new ArgumentException("يجب أن تحتوي الرسالة على نص أو مرفق");
         if (content.Length > MaxMessageLength)
             throw new ArgumentException($"محتوى الرسالة طويل جداً. الحد الأقصى {MaxMessageLength} حرف");
 
-        // Validate attachment if provided
-        if (!string.IsNullOrWhiteSpace(request.AttachmentUrl))
+        // Validate legacy single attachment if provided
+        if (hasLegacyAttachment)
         {
             if (!request.AttachmentUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("رابط المرفق غير صالح");
@@ -507,6 +510,25 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             };
             if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
                 throw new ArgumentException("نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF، رسائل صوتية");
+        }
+
+        // Validate multi-attachments if provided
+        if (hasMultiAttachments)
+        {
+            var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "image/jpeg", "image/png", "application/pdf",
+                "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
+            };
+            foreach (var att in request.Attachments!)
+            {
+                if (string.IsNullOrWhiteSpace(att.FileUrl) || !att.FileUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException($"رابط المرفق '{att.FileName}' غير صالح");
+                if (string.IsNullOrWhiteSpace(att.MimeType) || !allowedMimeTypes.Contains(att.MimeType))
+                    throw new ArgumentException($"نوع المرفق '{att.FileName}' غير مدعوم");
+                if (att.FileSize > 10 * 1024 * 1024)
+                    throw new ArgumentException($"حجم المرفق '{att.FileName}' يتجاوز الحد الأقصى (10 ميجابايت)");
+            }
         }
 
         var msg = new Message
@@ -521,6 +543,22 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         };
 
         await db.Messages.AddAsync(msg);
+
+        // Save multi-attachments
+        if (hasMultiAttachments)
+        {
+            foreach (var att in request.Attachments!)
+            {
+                db.MessageAttachments.Add(new MessageAttachment
+                {
+                    MessageId = msg.Id,
+                    FileUrl = att.FileUrl,
+                    FileName = att.FileName,
+                    FileSize = att.FileSize,
+                    MimeType = att.MimeType
+                });
+            }
+        }
 
         // Update conversation preview
         var conv = await db.Conversations.FindAsync(conversationId);
@@ -542,6 +580,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 .ThenInclude(u => u.Doctor)
             .Include(m => m.Reads)
             .Include(m => m.ReplyTo)
+            .Include(m => m.Attachments)
             .FirstAsync(m => m.Id == msg.Id);
 
         // Notify other participants
@@ -636,6 +675,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             .Include(m => m.Sender).ThenInclude(u => u.Doctor)
             .Include(m => m.Reads)
             .Include(m => m.ReplyTo).ThenInclude(r => r!.Sender).ThenInclude(u => u.Doctor)
+            .Include(m => m.Attachments)
             .FirstOrDefaultAsync(m => m.Id == messageId
                 && m.ConversationId == conversationId
                 && m.SenderId == UserId
@@ -698,6 +738,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     public async Task<bool> DeleteMessageAsync(Guid conversationId, Guid messageId)
     {
         var message = await db.Messages
+            .Include(m => m.Attachments)
             .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == conversationId && m.SenderId == UserId);
 
         if (message is null) return false;
@@ -706,6 +747,14 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         message.AttachmentUrl = null;
         message.AttachmentName = null;
         message.AttachmentType = null;
+
+        // Soft-delete any MessageAttachment records so they no longer appear in responses
+        foreach (var att in message.Attachments)
+        {
+            att.IsActive = false;
+            att.DeletedAt = DateTime.UtcNow;
+        }
+
         await db.SaveChangesAsync();
         return true;
     }
@@ -767,6 +816,53 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
     // ─── التحقق من صلاحية المراسلة (عام) ────────────────────────────────────────
     public async Task<bool> CanMessageUserPublicAsync(Guid targetUserId) => await CanMessageUserAsync(targetUserId);
+
+    /// <summary>Batch check messaging permissions for multiple users — avoids N+1 queries.</summary>
+    public async Task<Dictionary<Guid, bool>> CanMessageUsersBatchAsync(IReadOnlyList<Guid> targetUserIds)
+    {
+        if (targetUserIds.Count == 0) return new Dictionary<Guid, bool>();
+
+        var currentUser = await db.Users.Include(u => u.Doctor).FirstOrDefaultAsync(u => u.Id == UserId);
+        if (currentUser == null) return targetUserIds.ToDictionary(id => id, _ => false);
+
+        // Admin and BranchManager can message everyone — single DB check
+        if (currentUser.Role is UserRole.Admin or UserRole.BranchManager)
+            return targetUserIds.ToDictionary(id => id, _ => true);
+
+        // All staff can message patients — load all target users in one query
+        var targetUsers = await db.Users
+            .Where(u => targetUserIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.Role })
+            .ToDictionaryAsync(u => u.Id, u => u.Role);
+
+        // All internal staff can message each other (same logic as CanMessageUserAsync)
+        static bool CanMessage(UserRole currentRole, UserRole targetRole) => targetRole switch
+        {
+            UserRole.Patient => true,
+            UserRole.Admin or UserRole.BranchManager => currentRole is not UserRole.Patient,
+            _ => currentRole switch
+            {
+                UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                    => targetRole is UserRole.Reception or UserRole.Accountant or UserRole.Admin
+                        or UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                        or UserRole.Assistant or UserRole.BranchManager,
+                UserRole.Reception
+                    => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                        or UserRole.Admin or UserRole.Accountant or UserRole.Assistant or UserRole.BranchManager,
+                UserRole.Accountant
+                    => targetRole is UserRole.Admin or UserRole.Orthodontist or UserRole.GeneralDentist
+                        or UserRole.OralSurgeon or UserRole.Reception or UserRole.Assistant or UserRole.BranchManager,
+                UserRole.Assistant
+                    => targetRole is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon
+                        or UserRole.Reception or UserRole.Admin or UserRole.Accountant or UserRole.BranchManager,
+                _ => false
+            }
+        };
+
+        return targetUserIds.ToDictionary(
+            id => id,
+            id => targetUsers.TryGetValue(id, out var role) && CanMessage(currentUser.Role, role));
+    }
 
     // ─── Private Helpers ─────────────────────────────────────────────────────
     private async Task<bool> IsParticipantAsync(Guid conversationId)
@@ -864,6 +960,17 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             AttachmentUrl = msg.AttachmentUrl,
             AttachmentName = msg.AttachmentName,
             AttachmentType = msg.AttachmentType,
+            Attachments = (msg.Attachments ?? [])
+                .Where(a => a.IsActive)
+                .Select(a => new MessageAttachmentDto
+                {
+                    Id = a.Id,
+                    MessageId = a.MessageId,
+                    FileUrl = a.FileUrl,
+                    FileName = a.FileName,
+                    FileSize = a.FileSize,
+                    MimeType = a.MimeType
+                }).ToList(),
             ReplyToId = msg.ReplyToId,
             ReplyToContent = msg.ReplyTo?.Content?.Length > 100
                 ? msg.ReplyTo.Content[..100] + "..."

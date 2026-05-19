@@ -19,6 +19,10 @@ public class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
         builder.Property(a => a.CalledAt).IsRequired(false);
         builder.Property(a => a.InRoomAt).IsRequired(false);
 
+        // Patient Journey fields (Sprint: Command Center)
+        builder.Property(a => a.ServiceId).IsRequired(false);
+        builder.Property(a => a.ClinicRoomId).IsRequired(false);
+
         // Composite index for conflict detection
         builder.HasIndex(a => new { a.DoctorId, a.AppointmentDate, a.StartTime });
 

@@ -4,9 +4,10 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
+  Route,
   BarChart2, Package, FlaskConical, Settings, LogOut,
-  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock,
-  UserRound, Building2, Monitor,
+  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
+  UserRound, Building2, Monitor, UserCog,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -15,13 +16,18 @@ import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
 import { useUnreadCount } from "@/hooks/useMessaging";
 
+/* ─── Brand colors (Aqlan Dental Pro) ──────────────────────────────────────── */
+const BRAND_PRIMARY = "#1a3a5c";  // dark sky — sidebar background
+const BRAND_PRIMARY_LIGHT = "#244b73";  // for hover/border
+const BRAND_ORANGE = "#f5922e";   // active link, CTA
+
 /* ─── Role-based navigation permissions ────────────────────────────────────── */
 type NavItem = {
   href: string;
   label: string;
   icon: React.ElementType;
-  roles: string[]; // empty = all roles
-  section?: string; // section header for grouping
+  roles: string[];
+  section?: string;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -29,9 +35,11 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/",             label: "لوحة التحكم",       icon: LayoutDashboard, roles: [], section: "رئيسي" },
   { href: "/patients",     label: "المرضى",             icon: Users,           roles: [] },
   { href: "/appointments", label: "المواعيد",           icon: Calendar,        roles: [] },
+  { href: "/patient-journey", label: "رحلة المرضى",     icon: Route,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/clinic-queue", label: "طابور العيادة",     icon: ClipboardList,   roles: [] },
   { href: "/clinic-display", label: "شاشة العرض",       icon: Monitor,         roles: [] },
   { href: "/doctors",      label: "الأطباء",           icon: UserRound,       roles: ["Admin"] },
+  { href: "/employees",    label: "الموظفين",          icon: UserCog,         roles: ["Admin"] },
   { href: "/branches",     label: "الفروع",            icon: Building2,       roles: ["Admin"] },
   { href: "/schedule",     label: "جداول الأطباء",     icon: Clock,           roles: ["Admin", "Reception"] },
   // Section: تخصصات
@@ -46,6 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/whatsapp",    label: "واتساب",             icon: MessageSquare,   roles: [] },
   // Section: عمليات
   { href: "/finance",      label: "المالية",            icon: Wallet,          roles: ["Admin", "Reception", "Accountant"], section: "عمليات" },
+  { href: "/finance/invoices", label: "الفواتير",        icon: FileText,        roles: ["Admin", "Reception", "Accountant"] },
   { href: "/prescriptions", label: "الوصفات الطبية",    icon: Pill,            roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/lab",          label: "المختبر",            icon: FlaskConical,    roles: ["Admin", "Orthodontist"] },
   { href: "/inventory",    label: "المخزون",            icon: Package,         roles: ["Admin"] },
@@ -64,8 +73,6 @@ const ROLE_LABELS: Record<string, string> = {
   Accountant: "محاسب",
   Assistant: "مساعد",
   BranchManager: "مدير فرع",
-  // L2 FIX: Added fallback for any unmapped roles
-  // Shows the role name directly instead of raw English key
 };
 
 /* ─── Sidebar Component ──────────────────────────────────────────────────────── */
@@ -78,7 +85,6 @@ export function Sidebar() {
 
   const userRole = user?.role ?? "";
 
-  // Filter nav items by role, and track which sections to show
   const visibleItems = NAV_ITEMS.filter(
     (item) => item.roles.length === 0 || item.roles.includes(userRole)
   );
@@ -88,12 +94,10 @@ export function Sidebar() {
     router.push("/login");
   }, [logout, router]);
 
-  // Close mobile sidebar on route change
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
-  // Prevent body scroll when mobile sidebar is open
   useEffect(() => {
     if (mobileOpen) {
       document.body.style.overflow = "hidden";
@@ -111,7 +115,7 @@ export function Sidebar() {
       <button
         onClick={() => setMobileOpen(true)}
         className="lg:hidden fixed top-3.5 right-3 z-50 w-10 h-10 rounded-lg border flex items-center justify-center text-white hover:opacity-90"
-        style={{ backgroundColor: "#0d2137", borderColor: "#1a3a5c" }}
+        style={{ backgroundColor: BRAND_PRIMARY, borderColor: BRAND_PRIMARY_LIGHT }}
         aria-label="فتح القائمة"
       >
         <Menu className="w-5 h-5" />
@@ -125,16 +129,16 @@ export function Sidebar() {
         />
       )}
 
-      {/* ── Sidebar (Dark Navy — matches ZIP) ─────────────────────────── */}
+      {/* ── Sidebar — Brand Dark Sky ─────────────────────────────────── */}
       <aside
         className={cn(
           "w-64 flex flex-col h-full fixed top-0 right-0 z-40 transition-transform duration-300",
           "lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"
         )}
-        style={{ backgroundColor: "#0d2137" }}
+        style={{ backgroundColor: BRAND_PRIMARY }}
       >
-        {/* Logo — matches ZIP exactly */}
+        {/* Logo */}
         <div className="border-b min-h-[72px] flex items-center px-4 py-4" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           <div className="flex items-center gap-2.5 flex-1">
             <div className="w-[38px] h-[38px] rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ background: "#fff", padding: 2 }}>
@@ -150,12 +154,11 @@ export function Sidebar() {
               <p className="font-extrabold text-white text-sm leading-tight">
                 Aqlan Dental Pro
               </p>
-              <p className="text-[11px] mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.45)" }}>
+              <p className="text-[11px] mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.55)" }}>
                 مركز د. عقلان الكامل
               </p>
             </div>
           </div>
-          {/* Close button for mobile */}
           <button
             onClick={() => setMobileOpen(false)}
             className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center"
@@ -168,23 +171,21 @@ export function Sidebar() {
           </button>
         </div>
 
-        {/* Navigation with section groups */}
+        {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2">
           {visibleItems.map(({ href, label, icon: Icon, section }) => {
             const isCurrent = href === "/"
               ? pathname === "/"
               : pathname.startsWith(href);
 
-            // Show unread badge on messages link
             const unreadCount = href === "/messages" ? unreadData?.totalUnread : undefined;
 
             return (
               <div key={href}>
-                {/* Section header */}
                 {section && (
                   <div
                     className="px-[18px] pt-3.5 pb-1 text-[10px] font-bold uppercase tracking-wider"
-                    style={{ color: "rgba(255,255,255,0.3)" }}
+                    style={{ color: "rgba(255,255,255,0.35)" }}
                   >
                     {section}
                   </div>
@@ -198,10 +199,10 @@ export function Sidebar() {
                       : "hover:text-white"
                   )}
                   style={isCurrent ? {
-                    background: "rgba(61,122,181,0.35)",
-                    borderRight: "3px solid #3d7ab5",
+                    background: "rgba(245,146,46,0.18)",
+                    borderRight: `3px solid ${BRAND_ORANGE}`,
                   } : {
-                    color: "rgba(255,255,255,0.6)",
+                    color: "rgba(255,255,255,0.65)",
                     borderRight: "3px solid transparent",
                   }}
                   onMouseEnter={(e) => {
@@ -213,7 +214,7 @@ export function Sidebar() {
                 >
                   <Icon
                     className="w-[18px] h-[18px] flex-shrink-0"
-                    style={{ color: isCurrent ? "#3d7ab5" : "rgba(255,255,255,0.6)" }}
+                    style={{ color: isCurrent ? BRAND_ORANGE : "rgba(255,255,255,0.65)" }}
                   />
                   <span className="flex-1">{label}</span>
                   {unreadCount && unreadCount > 0 && (
@@ -230,11 +231,11 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* User footer — matches ZIP */}
+        {/* User footer */}
         <div className="px-4 py-3 border-t flex items-center gap-2.5" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           <div
             className="w-[34px] h-[34px] rounded-full flex items-center justify-center text-white text-[13px] font-bold flex-shrink-0"
-            style={{ backgroundColor: "#3d7ab5" }}
+            style={{ backgroundColor: BRAND_ORANGE }}
           >
             {user?.doctorInitials ?? user?.username?.charAt(0).toUpperCase() ?? "م"}
           </div>
@@ -242,15 +243,15 @@ export function Sidebar() {
             <p className="text-[13px] font-bold text-white truncate">
               {user?.doctorName ?? user?.username}
             </p>
-            <p className="text-[11px] truncate" style={{ color: "rgba(255,255,255,0.4)" }}>
+            <p className="text-[11px] truncate" style={{ color: "rgba(255,255,255,0.5)" }}>
               {ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? "موظف"}
             </p>
           </div>
           <button
             onClick={handleLogout}
             className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-            style={{ color: "rgba(255,255,255,0.4)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.1)")}
+            style={{ color: "rgba(255,255,255,0.5)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.15)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             title="تسجيل الخروج"
           >

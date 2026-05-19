@@ -157,7 +157,7 @@ function DayCard({
       className={cn(
         "rounded-xl border transition-colors",
         schedule.isWorking
-          ? "border-[#0d9488]/30 bg-[#0d9488]/5"
+          ? "border-[#3d7ab5]/30 bg-[#3d7ab5]/5"
           : "border-gray-200 bg-gray-50/50"
       )}
     >
@@ -176,7 +176,7 @@ function DayCard({
           className={cn(
             "flex items-center gap-2 min-w-[110px] px-3 py-1.5 rounded-lg text-sm font-semibold transition",
             schedule.isWorking
-              ? "bg-[#0d9488] text-white"
+              ? "bg-[#3d7ab5] text-white"
               : "bg-gray-200 text-gray-500"
           )}
         >
@@ -193,7 +193,7 @@ function DayCard({
         <span
           className={cn(
             "text-sm font-bold",
-            schedule.isWorking ? "text-[#0d9488]" : "text-gray-400"
+            schedule.isWorking ? "text-[#3d7ab5]" : "text-gray-400"
           )}
         >
           {day.label}
@@ -208,7 +208,7 @@ function DayCard({
                 type="time"
                 value={schedule.startTime}
                 onChange={(e) => onChange({ startTime: e.target.value })}
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] bg-white"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] bg-white"
               />
             </div>
 
@@ -219,7 +219,7 @@ function DayCard({
                 type="time"
                 value={schedule.endTime}
                 onChange={(e) => onChange({ endTime: e.target.value })}
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] bg-white"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] bg-white"
               />
             </div>
 
@@ -231,7 +231,7 @@ function DayCard({
                 onChange={(e) =>
                   onChange({ slotDurationMinutes: Number(e.target.value) })
                 }
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0d9488] bg-white"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] bg-white"
               >
                 {SLOT_DURATIONS.map((d) => (
                   <option key={d.value} value={d.value}>
@@ -255,7 +255,7 @@ function DayCard({
                     setShowBreak(true);
                   }
                 }}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#0d9488] transition px-2 py-1 rounded-lg hover:bg-[#0d9488]/5"
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#3d7ab5] transition px-2 py-1 rounded-lg hover:bg-[#3d7ab5]/5"
               >
                 {showBreak ? (
                   <ChevronUp className="w-3 h-3" />
@@ -270,7 +270,7 @@ function DayCard({
                 <button
                   type="button"
                   onClick={() => setShowCopyMenu((v) => !v)}
-                  className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#0d9488] transition px-2 py-1 rounded-lg hover:bg-[#0d9488]/5"
+                  className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#3d7ab5] transition px-2 py-1 rounded-lg hover:bg-[#3d7ab5]/5"
                   title="نسخ من يوم آخر"
                 >
                   <Copy className="w-3 h-3" />
@@ -295,7 +295,7 @@ function DayCard({
                             onCopyFrom(d.index);
                             setShowCopyMenu(false);
                           }}
-                          className="w-full text-right px-3 py-1.5 text-xs text-gray-700 hover:bg-[#0d9488]/5 hover:text-[#0d9488] transition"
+                          className="w-full text-right px-3 py-1.5 text-xs text-gray-700 hover:bg-[#3d7ab5]/5 hover:text-[#3d7ab5] transition"
                         >
                           {d.label}
                         </button>
@@ -531,7 +531,7 @@ export default function DoctorSchedulesPage() {
   const doctorSpecialty = doctor?.specialty
     ? SPECIALTY_LABELS[doctor.specialty] ?? doctor.specialty
     : "";
-  const doctorColor = doctor?.color ?? "#0d9488";
+  const doctorColor = doctor?.color ?? "#3d7ab5";
   const doctorInitials = doctor?.avatarInitials ?? doctorName.charAt(0) ?? "د";
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -555,7 +555,7 @@ export default function DoctorSchedulesPage() {
           </p>
           <button
             onClick={() => router.push("/doctors")}
-            className="text-sm text-[#0d9488] hover:underline font-medium"
+            className="text-sm text-[#3d7ab5] hover:underline font-medium"
           >
             العودة للأطباء
           </button>
@@ -588,8 +588,8 @@ export default function DoctorSchedulesPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-            <CalendarClock className="w-5 h-5 text-[#0d9488]" />
+          <div className="w-10 h-10 rounded-xl bg-[#3d7ab5]/10 flex items-center justify-center">
+            <CalendarClock className="w-5 h-5 text-[#3d7ab5]" />
           </div>
         </div>
       </div>
@@ -597,7 +597,7 @@ export default function DoctorSchedulesPage() {
       {/* ── Back button ── */}
       <button
         onClick={() => router.push("/doctors")}
-        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-[#0d9488] transition font-medium"
+        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-[#3d7ab5] transition font-medium"
       >
         <ArrowRight className="w-4 h-4" />
         العودة للأطباء
@@ -614,7 +614,7 @@ export default function DoctorSchedulesPage() {
       {/* ── Legend ── */}
       <div className="flex flex-wrap gap-4 text-xs text-gray-500">
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-[#0d9488]" />
+          <span className="w-3 h-3 rounded-full bg-[#3d7ab5]" />
           يوم عمل نشط
         </div>
         <div className="flex items-center gap-1.5">
@@ -641,7 +641,7 @@ export default function DoctorSchedulesPage() {
             className={cn(
               "text-[11px] px-2.5 py-1 rounded-full font-semibold transition",
               schedule[d.index]?.isWorking
-                ? "bg-[#0d9488] text-white"
+                ? "bg-[#3d7ab5] text-white"
                 : "bg-gray-100 text-gray-400"
             )}
           >
@@ -658,7 +658,7 @@ export default function DoctorSchedulesPage() {
             <p className="text-gray-600 font-medium mb-2">{scheduleError}</p>
             <button
               onClick={() => window.location.reload()}
-              className="text-sm text-[#0d9488] hover:underline font-medium"
+              className="text-sm text-[#3d7ab5] hover:underline font-medium"
             >
               إعادة المحاولة
             </button>
@@ -720,7 +720,7 @@ export default function DoctorSchedulesPage() {
             "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition shadow-sm",
             saving
               ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-              : "bg-[#0d9488] text-white hover:opacity-90"
+              : "bg-[#3d7ab5] text-white hover:opacity-90"
           )}
         >
           {saving ? (

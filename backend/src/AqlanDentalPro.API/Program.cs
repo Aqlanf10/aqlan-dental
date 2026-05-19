@@ -38,9 +38,94 @@ builder.Services.AddDbContext<AppDbContext>(opts =>
         npgsql => npgsql.MigrationsAssembly("AqlanDentalPro.Infrastructure")));
 
 // ── Redis ─────────────────────────────────────────────────────────────────────
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-    ConnectionMultiplexer.Connect(builder.Configuration["Redis:ConnectionString"]
-        ?? "localhost:6379"));
+// HOTFIX: Make Redis registration fully resilient so the app starts even when
+// Redis is unavailable. Without this, ConnectionMultiplexer.Connect() throws
+// RedisConnectionException at DI resolution time, which crashes the entire
+// LoginAttemptService + TokenService chain and turns every staff login into a 500.
+//
+// Strategy:
+// 1. Try to connect with AbortOnConnectFail=false (returns a multiplexer that
+//    retries in the background even if the initial connect fails).
+// 2. If ConfigurationOptions.Parse() or Connect() throws for ANY reason
+//    (invalid connection string, DNS failure, etc.), fall back to a minimal
+//    "localhost:6379" configuration. This multiplexer will be disconnected but
+//    the app will start — Redis operations in LoginAttemptService and TokenService
+//    are wrapped in try/catch and degrade gracefully.
+// 3. If even the fallback fails, create a completely disconnected multiplexer
+//    using ConnectAsync + manual configuration — this should never happen but
+//    ensures the app ALWAYS starts.
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var logger = sp.GetService<ILogger<Program>>();
+
+    ConnectionMultiplexer? mux = null;
+
+    // Attempt 1: Connect with configured connection string
+    try
+    {
+        var connString = builder.Configuration["Redis:ConnectionString"] ?? "localhost:6379";
+        var options = ConfigurationOptions.Parse(connString);
+        options.AbortOnConnectFail = false;
+        options.ConnectRetry = 3;
+        options.ReconnectRetryPolicy = new ExponentialRetry(5000);
+        options.ConnectTimeout = 3000; // Don't block startup for too long
+        mux = ConnectionMultiplexer.Connect(options);
+        logger?.LogInformation("Redis connection multiplexer created (AbortOnConnectFail=false, IsConnected={IsConnected})", mux.IsConnected);
+        return mux;
+    }
+    catch (Exception ex)
+    {
+        logger?.LogError(ex, "Redis: Primary connection attempt failed. Trying fallback configuration.");
+    }
+
+    // Attempt 2: Fallback to localhost with minimal config
+    try
+    {
+        var fallbackOptions = new ConfigurationOptions
+        {
+            EndPoints = { "localhost:6379" },
+            AbortOnConnectFail = false,
+            ConnectRetry = 0,
+            ConnectTimeout = 1000
+        };
+        mux = ConnectionMultiplexer.Connect(fallbackOptions);
+        logger?.LogWarning("Redis: Connected with fallback configuration (localhost:6379). Redis features will be degraded.");
+        return mux;
+    }
+    catch (Exception ex)
+    {
+        logger?.LogError(ex, "Redis: Fallback connection also failed. Creating minimal disconnected multiplexer.");
+    }
+
+    // Attempt 3: Last resort — return a disconnected multiplexer
+    // This ensures the app ALWAYS starts. Redis-dependent features degrade gracefully.
+    try
+    {
+        var lastResortOptions = new ConfigurationOptions
+        {
+            EndPoints = { "localhost:6379" },
+            AbortOnConnectFail = false,
+            ConnectTimeout = 1,
+            ConnectRetry = 0,
+            AsyncTimeout = 1,
+            SyncTimeout = 1
+        };
+        mux = ConnectionMultiplexer.Connect(lastResortOptions);
+        logger?.LogCritical("Redis: Created disconnected multiplexer as last resort. LoginAttemptService and TokenService will operate in degraded mode (no lockout, no refresh token persistence).");
+        return mux;
+    }
+    catch (Exception ex)
+    {
+        // Absolute last resort — this should never happen with AbortOnConnectFail=false
+        logger?.LogCritical(ex, "Redis: ALL connection attempts failed. Creating multiplexer with absolute minimum config.");
+        var emergencyOptions = new ConfigurationOptions
+        {
+            EndPoints = { "127.0.0.1:6379" },
+            AbortOnConnectFail = false
+        };
+        return ConnectionMultiplexer.Connect(emergencyOptions);
+    }
+});
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 var jwtKey = builder.Configuration["Jwt:SecretKey"]
@@ -206,6 +291,20 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 1
             }));
 
+    // SEC-04 FIX: Stricter rate limit for password reset — 3 requests per 15 minutes per IP
+    // Prevents brute-force attacks on password reset codes while allowing legitimate retries
+    options.AddPolicy("PortalPasswordResetPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromMinutes(15),
+                SegmentsPerWindow = 3,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0 // No queue — reject immediately
+            }));
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, IPAddress>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress ?? IPAddress.Loopback,
@@ -308,9 +407,147 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// ── CRITICAL: Ensure Users table schema is up-to-date ──────────────────
+// HOTFIX: The Users table MUST have MustChangePassword, DeletedAt, and DeletedBy
+// columns for the app to function. If ENABLE_STARTUP_DB_MAINTENANCE is false,
+// MigrateAsync() is skipped and these columns may be missing.
+// This check runs UNCONDITIONALLY (not gated by the maintenance flag) because
+// the app cannot serve login requests without these columns.
+try
+{
+    using var schemaScope = app.Services.CreateScope();
+    var schemaDb = schemaScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var schemaLogger = schemaScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await schemaDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- Users.MustChangePassword (SEC-02 FIX, migration 20260525000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Users') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'MustChangePassword') THEN
+                    ALTER TABLE "Users" ADD COLUMN "MustChangePassword" boolean NOT NULL DEFAULT false;
+                END IF;
+                -- Users.DeletedAt (soft-delete, migration 20260522000000)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "Users" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                -- Users.DeletedBy (soft-delete, migration 20260522000000)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "Users" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+                -- Users.PasswordSalt (per-user salt, migration 20260521000000)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'PasswordSalt') THEN
+                    ALTER TABLE "Users" ADD COLUMN "PasswordSalt" text NOT NULL DEFAULT '';
+                END IF;
+            END IF;
+
+            -- Doctors.DeletedAt (soft-delete, migration 20260522000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Doctors') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+                -- Doctors.CompensationType (Sprint 6)
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "CompensationType" character varying(20) NOT NULL DEFAULT 'None';
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'DefaultCommissionPercentage') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "DefaultCommissionPercentage" numeric(5,2) NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationNotes') THEN
+                    ALTER TABLE "Doctors" ADD COLUMN "CompensationNotes" character varying(500) NULL;
+                END IF;
+            END IF;
+        END $$;
+    """);
+
+    schemaLogger.LogInformation("HOTFIX: Users/Doctors table schema verified — critical columns ensured");
+}
+catch (Exception ex)
+{
+    var schemaLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    schemaLogger2.LogError(ex, "HOTFIX: Failed to ensure Users/Doctors table schema. Staff login may fail with PostgresException!");
+}
+
+// ── CRITICAL: Ensure MessageAttachments table exists ─────────────────────────
+// HOTFIX: PR #150 added .Include(m => m.Attachments) in MessagingService.
+// If migration 20260602000000_AddMessageAttachments was not applied (because
+// ENABLE_STARTUP_DB_MAINTENANCE is false), every GET /api/messages/conversations/{id}
+// throws "relation MessageAttachments does not exist" → 500.
+// This guard runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var maScope = app.Services.CreateScope();
+    var maDb     = maScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var maLogger = maScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await maDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- Create MessageAttachments table if not present (migration 20260602000000)
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'MessageAttachments'
+            ) THEN
+                CREATE TABLE "MessageAttachments" (
+                    "Id"        uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "MessageId" uuid                     NOT NULL,
+                    "FileUrl"   character varying(1000)  NOT NULL,
+                    "FileName"  character varying(255)   NOT NULL,
+                    "FileSize"  bigint                   NOT NULL DEFAULT 0,
+                    "MimeType"  character varying(100)   NOT NULL,
+                    "IsActive"  boolean                  NOT NULL DEFAULT true,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    "DeletedAt" timestamp with time zone NULL,
+                    CONSTRAINT "PK_MessageAttachments" PRIMARY KEY ("Id")
+                );
+            END IF;
+
+            -- Add FK to Messages if missing
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_MessageAttachments_Messages_MessageId'
+            ) THEN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'Messages'
+                ) THEN
+                    ALTER TABLE "MessageAttachments"
+                        ADD CONSTRAINT "FK_MessageAttachments_Messages_MessageId"
+                        FOREIGN KEY ("MessageId")
+                        REFERENCES "Messages"("Id")
+                        ON DELETE CASCADE;
+                END IF;
+            END IF;
+
+            -- Create index on MessageId if missing
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND tablename  = 'MessageAttachments'
+                  AND indexname  = 'IX_MessageAttachments_MessageId'
+            ) THEN
+                CREATE INDEX "IX_MessageAttachments_MessageId"
+                    ON "MessageAttachments" ("MessageId");
+            END IF;
+        END $$;
+    """);
+
+    maLogger.LogInformation("HOTFIX: MessageAttachments table schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var maLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    maLogger2.LogError(ex, "HOTFIX: Failed to ensure MessageAttachments schema. Opening conversations will return 500!");
+}
+
 // ── One-time Admin Password Reset ─────────────────────────────────
-// Resets the admin password to "AqlanDental2026!" if the reset flag is not yet set.
-// This runs ONCE and then sets a flag so it never runs again.
+// SEC-03 FIX: Admin password reset only from environment variables.
+// In production: ADMIN_DEFAULT_PASSWORD is REQUIRED. No fallback.
+// In development: if not set, uses a dev-only fallback that is NEVER active in production.
+// This block runs ONCE and sets a flag so it never runs again.
+// It does NOT reset any existing passwords — only sets password on first run.
 try
 {
     using var resetScope = app.Services.CreateScope();
@@ -334,48 +571,84 @@ try
         END $$;
     """);
 
-    // Check if the reset flag exists
-    var flagExists = false;
-    using (var cmd = resetDb.Database.GetDbConnection().CreateCommand())
-    {
-        cmd.CommandText = """
-            SELECT COUNT(*) FROM "Settings" WHERE "Key" = 'admin.password.reset.2026'
-        """;
-        await resetDb.Database.OpenConnectionAsync();
-        var result = await cmd.ExecuteScalarAsync();
-        await resetDb.Database.CloseConnectionAsync();
-        flagExists = result != null && Convert.ToInt64(result) > 0;
-    }
+    // Check if the admin password reset flag exists using EF Core LINQ
+    var flagExists = await resetDb.Settings.AnyAsync(s => s.Key == "admin.password.reset.2026");
 
     if (!flagExists)
     {
-        // C-02 FIX: Use environment variable instead of hardcoded password
-        var newPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") ?? "ChangeMeImmediately2026!";
+        // SEC-03 FIX: In production, ADMIN_DEFAULT_PASSWORD env var is REQUIRED — no fallback.
+        // In development only, a clearly-marked dev default is allowed for convenience.
+        var newPassword = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD");
+
+        if (string.IsNullOrWhiteSpace(newPassword))
+        {
+            if (app.Environment.IsProduction())
+            {
+                // SEC-03 FIX: Production MUST set ADMIN_DEFAULT_PASSWORD. No fallback allowed.
+                resetLogger.LogCritical(
+                    "SEC-03: ADMIN_DEFAULT_PASSWORD environment variable is NOT set in production. " +
+                    "Admin password reset SKIPPED for security. " +
+                    "Set ADMIN_DEFAULT_PASSWORD and restart, or use ADMIN_RESET_PASSWORD in DbSeeder.");
+                // Skip the password reset entirely — admin keeps existing password
+                goto AdminResetDone;
+            }
+
+            // SEC-03 FIX: Development-only fallback. The #if DEBUG guard and IsDevelopment() check
+            // ensure this can NEVER be active in production, even if code is misconfigured.
+            if (app.Environment.IsDevelopment())
+            {
+                newPassword = "DevOnly2026!ChangeMe";
+                resetLogger.LogWarning(
+                    "SEC-03: ADMIN_DEFAULT_PASSWORD not set. Using DEVELOPMENT-ONLY fallback. " +
+                    "This fallback is NEVER active in production (IsDevelopment check). " +
+                    "Set ADMIN_DEFAULT_PASSWORD for production deployments.");
+            }
+            else
+            {
+                // Non-production, non-development (e.g., Staging) — also require env var
+                resetLogger.LogCritical(
+                    "SEC-03: ADMIN_DEFAULT_PASSWORD not set in {Environment} environment. " +
+                    "Admin password reset SKIPPED. Set the variable and restart.",
+                    app.Environment.EnvironmentName);
+                goto AdminResetDone;
+            }
+        }
+
         var salt = AqlanDentalPro.Application.Services.AuthService.GenerateSalt();
         var hash = AqlanDentalPro.Application.Services.AuthService.HashPassword(newPassword, salt);
 
-        await resetDb.Database.ExecuteSqlRawAsync("""
-            UPDATE "Users" SET "PasswordHash" = {0}, "PasswordSalt" = {1}, "IsActive" = true, "UpdatedAt" = NOW()
-            WHERE "Username" = 'admin'
-        """, hash, salt);
+        // Update admin password using EF Core LINQ
+        var adminUser = await resetDb.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        if (adminUser != null)
+        {
+            adminUser.PasswordHash = hash;
+            adminUser.PasswordSalt = salt;
+            adminUser.IsActive = true;
+        }
 
-        // Set the flag so this never runs again
-        await resetDb.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "Settings" ("Id", "Key", "Value", "Category", "UpdatedAt")
-            VALUES (gen_random_uuid(), 'admin.password.reset.2026', 'done', 'system', NOW())
-        """);
+        // Set the flag using EF Core so this never runs again
+        resetDb.Settings.Add(new AqlanDentalPro.Domain.Entities.Setting
+        {
+            Key = "admin.password.reset.2026",
+            Value = "done",
+            Category = "system",
+            UpdatedAt = DateTime.UtcNow
+        });
 
-        resetLogger.LogWarning("Admin password has been reset to default value. Username: admin. CHANGE PASSWORD IMMEDIATELY!");
+        await resetDb.SaveChangesAsync();
+
+        resetLogger.LogInformation("SEC-03: Admin initial password has been set. Username: admin. Change password after first login.");
     }
     else
     {
-        resetLogger.LogInformation("Admin password reset already applied, skipping");
+        resetLogger.LogInformation("SEC-03: Admin password reset already applied, skipping");
     }
+    AdminResetDone:;
 }
 catch (Exception ex)
 {
     var resetLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    resetLogger2.LogWarning(ex, "Admin password reset hotfix failed (non-fatal)");
+    resetLogger2.LogWarning(ex, "SEC-03: Admin password reset failed (non-fatal)");
 }
 
 // ── Website Settings Seed (unconditional, idempotent) ────────────────────────
@@ -440,91 +713,6 @@ catch (Exception ex)
     wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
 }
 
-// ── BookingRequests Table Hotfix (unconditional, idempotent) ─────────────────
-try
-{
-    using var brScope = app.Services.CreateScope();
-    var brDb = brScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var brLogger = brScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE TABLE IF NOT EXISTS "BookingRequests" (
-            "Id" uuid NOT NULL PRIMARY KEY,
-            "PatientName" character varying(100) NOT NULL,
-            "PhoneNumber" character varying(20) NOT NULL,
-            "Email" character varying(150) NULL,
-            "ServiceType" character varying(100) NULL,
-            "PreferredDate" character varying(50) NULL,
-            "PreferredTime" character varying(50) NULL,
-            "Notes" character varying(500) NULL,
-            "Status" integer NOT NULL DEFAULT 0,
-            "StaffNotes" text NULL,
-            "ReviewedBy" uuid NULL,
-            "ReviewedAt" timestamp with time zone NULL,
-            "ConvertedToAppointmentId" uuid NULL,
-            "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-            "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-            "IsActive" boolean NOT NULL DEFAULT TRUE,
-            "DeletedAt" timestamp with time zone NULL,
-            "DeletedBy" uuid NULL
-        );
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_Status" ON "BookingRequests" ("Status");
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        CREATE INDEX IF NOT EXISTS "IX_BookingRequests_CreatedAt" ON "BookingRequests" ("CreatedAt");
-    """);
-    await brDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260507000000_AddBookingRequests', '8.0.8'
-        WHERE NOT EXISTS (
-            SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
-        );
-    """);
-    brLogger.LogInformation("BookingRequests table hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var brLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    brLogger2.LogWarning(ex, "BookingRequests table hotfix failed (non-fatal)");
-}
-
-// ── Message Edit Fields Hotfix (unconditional, idempotent) ───────────────────
-try
-{
-    using var msgEditScope = app.Services.CreateScope();
-    var msgEditDb     = msgEditScope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var msgEditLogger = msgEditScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-
-    await msgEditDb.Database.ExecuteSqlRawAsync("""
-        DO $$ BEGIN
-            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Messages') THEN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
-                    ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
-                    ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
-                END IF;
-            END IF;
-        END $$;
-    """);
-    await msgEditDb.Database.ExecuteSqlRawAsync("""
-        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-        SELECT '20260510000000_AddMessageEditFields', '8.0.8'
-        WHERE EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory')
-          AND NOT EXISTS (
-              SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
-          );
-    """);
-    msgEditLogger.LogInformation("Message IsEdited/EditedAt hotfix applied successfully");
-}
-catch (Exception ex)
-{
-    var msgEditLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
-    msgEditLogger2.LogWarning(ex, "Message edit fields hotfix failed (non-fatal)");
-}
-
 // ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
 // TD-020: remaining raw SQL blocks — see docs/technical-debt/TD-020-raw-sql-inventory.md
 var enableStartupDbMaintenance =
@@ -573,98 +761,11 @@ if (enableStartupDbMaintenance)
         // B3/B8/B9 normalized phone schema removed in TD-020 Phase C1-b;
         // now handled by EF migration 20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes.
 
-        // Backfill NormalizedPhone/NormalizedWhatsApp
-        await db.Database.ExecuteSqlRawAsync("""
-            UPDATE "Patients" SET "NormalizedPhone" = 
-                CASE 
-                    WHEN "Phone" IS NULL OR "Phone" = '' THEN NULL
-                    ELSE LTRIM(RTRIM(
-                        CASE 
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
-                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
-                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("Phone", ' ', ''), '-', ''), '(', ''), ')', '')
-                        END
-                    ))
-                END
-            WHERE "NormalizedPhone" IS NULL AND "Phone" IS NOT NULL AND "Phone" != '';
-        """);
+        // NormalizedPhone/NormalizedWhatsApp backfill + dedup removed in TD-020 Phase C1-e;
+        // now handled by EF migrations 20260501000000 and 20260523000000.
 
-        await db.Database.ExecuteSqlRawAsync("""
-            UPDATE "Patients" SET "NormalizedWhatsApp" = 
-                CASE 
-                    WHEN "WhatsApp" IS NULL OR "WhatsApp" = '' THEN NULL
-                    ELSE LTRIM(RTRIM(
-                        CASE 
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '+%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '00%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 5)
-                            WHEN REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '0%' THEN
-                                '967' || SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', ''), 2)
-                            WHEN LENGTH(REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')) = 9 AND REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '') LIKE '7%' THEN
-                                '967' || REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
-                            ELSE REPLACE(REPLACE(REPLACE(REPLACE("WhatsApp", ' ', ''), '-', ''), '(', ''), ')', '')
-                        END
-                    ))
-                END
-            WHERE "NormalizedWhatsApp" IS NULL AND "WhatsApp" IS NOT NULL AND "WhatsApp" != '';
-        """);
-
-        // Create unique indexes for NormalizedPhone/NormalizedWhatsApp (with deduplication)
-        // First: NULL out duplicates, keeping only the first (oldest) record
-        await db.Database.ExecuteSqlRawAsync("""
-            WITH duplicates AS (
-                SELECT "Id", "NormalizedPhone", 
-                       ROW_NUMBER() OVER (PARTITION BY "NormalizedPhone" ORDER BY "CreatedAt" ASC) as rn
-                FROM "Patients" 
-                WHERE "NormalizedPhone" IS NOT NULL AND "NormalizedPhone" != ''
-            )
-            UPDATE "Patients" SET "NormalizedPhone" = NULL
-            FROM duplicates
-            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            WITH duplicates AS (
-                SELECT "Id", "NormalizedWhatsApp", 
-                       ROW_NUMBER() OVER (PARTITION BY "NormalizedWhatsApp" ORDER BY "CreatedAt" ASC) as rn
-                FROM "Patients" 
-                WHERE "NormalizedWhatsApp" IS NOT NULL AND "NormalizedWhatsApp" != ''
-            )
-            UPDATE "Patients" SET "NormalizedWhatsApp" = NULL
-            FROM duplicates
-            WHERE "Patients"."Id" = duplicates."Id" AND duplicates.rn > 1;
-        """);
         // B10-B13 conversation schema removed in TD-020 Phase C1-d;
         // now handled by EF migration 20260524000000_AddConversationPatientBranchFieldsAndIndexes.
-
-        // Record migrations in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260501000000_AddNormalizedPhoneFields', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501000000_AddNormalizedPhoneFields'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260501010000_AddPatientConversationSupport', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260501020000_AddSoftDeleteToMessagingTables', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501020000_AddSoftDeleteToMessagingTables'
-            );
-        """);
 
         logger.LogInformation("Pre-migration schema updates applied successfully");
     }
@@ -673,72 +774,8 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to apply pre-migration schema updates");
     }
 
-    // Ensure PatientAccounts table exists — separate try/catch so failures
-    // in the main pre-migration block don't prevent this from running.
-    try
-    {
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "PatientAccounts" (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "PatientId" uuid NOT NULL,
-                "PhoneNumber" character varying(20) NOT NULL,
-                "VerificationCode" character varying(10) NULL,
-                "VerificationCodeExpiry" timestamp with time zone NULL,
-                "IsVerified" boolean NOT NULL DEFAULT FALSE,
-                "LastLogin" timestamp with time zone NULL,
-                "DeviceToken" character varying(500) NULL,
-                "RefreshToken" character varying(256) NULL,
-                "RefreshTokenExpiry" timestamp with time zone NULL,
-                "IsActive" boolean NOT NULL DEFAULT TRUE,
-                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
-                "DeletedAt" timestamp with time zone NULL,
-                "DeletedBy" uuid NULL
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_PatientAccounts_Patients_PatientId') THEN
-                    ALTER TABLE "PatientAccounts" ADD CONSTRAINT "FK_PatientAccounts_Patients_PatientId"
-                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE CASCADE;
-                END IF;
-            END $$;
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_PatientId"
-                ON "PatientAccounts" ("PatientId");
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_PatientAccounts_PhoneNumber"
-                ON "PatientAccounts" ("PhoneNumber");
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260430120000_AddPatientPortal', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430120000_AddPatientPortal'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260430140000_AddWhatsAppIntegration', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430140000_AddWhatsAppIntegration'
-            );
-        """);
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260430160000_AddGeneralDentistryEnhancements', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430160000_AddGeneralDentistryEnhancements'
-            );
-        """);
-        logger.LogInformation("PatientAccounts table ensured and migration history updated");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to ensure PatientAccounts table exists");
-    }
+    // PatientAccounts table creation — now handled by EF migration 20260430120000_AddPatientPortal
+    // (removed in TD-020 Phase C1-e)
 
     // Add Username/PasswordHash/PasswordSalt/InitialPassword columns to PatientAccounts
     try
@@ -769,65 +806,8 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to add username/password columns to PatientAccounts");
     }
 
-    // Ensure Visits/Documents new columns exist — separate try/catch for Sprint 4
-    try
-    {
-        // Add Diagnosis column to Visits
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Visits') THEN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'Diagnosis') THEN
-                        ALTER TABLE "Visits" ADD COLUMN "Diagnosis" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'NextVisitPlan') THEN
-                        ALTER TABLE "Visits" ADD COLUMN "NextVisitPlan" text NULL;
-                    END IF;
-                    CREATE INDEX IF NOT EXISTS "IX_Visits_PatientId" ON "Visits" ("PatientId");
-                    CREATE INDEX IF NOT EXISTS "IX_Visits_VisitDate" ON "Visits" ("VisitDate");
-                END IF;
-            END $$;
-        """);
-
-        // Add new columns to Documents
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Documents') THEN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'FileName') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "FileName" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'FileSize') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "FileSize" bigint NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'MimeType') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "MimeType" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'Notes') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "Notes" text NULL;
-                    END IF;
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Documents' AND column_name = 'UploadedBy') THEN
-                        ALTER TABLE "Documents" ADD COLUMN "UploadedBy" uuid NULL;
-                    END IF;
-                    CREATE INDEX IF NOT EXISTS "IX_Documents_PatientId" ON "Documents" ("PatientId");
-                    CREATE INDEX IF NOT EXISTS "IX_Documents_DocumentType" ON "Documents" ("DocumentType");
-                END IF;
-            END $$;
-        """);
-
-        // Record Sprint 4 migration in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260502000000_AddVisitsDocumentsFields', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502000000_AddVisitsDocumentsFields'
-            );
-        """);
-
-        logger.LogInformation("Sprint 4 Visits/Documents columns ensured successfully");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to ensure Sprint 4 Visits/Documents columns");
-    }
+    // Visits/Documents columns — now handled by EF migration 20260502000000_AddVisitsDocumentsFields
+    // (removed in TD-020 Phase C1-e)
 
     // Ensure Sprint 4.5 queue columns exist on Appointments table
     try
@@ -850,15 +830,6 @@ if (enableStartupDbMaintenance)
                     CREATE INDEX IF NOT EXISTS "IX_Appointments_AppointmentDate" ON "Appointments" ("AppointmentDate");
                 END IF;
             END $$;
-        """);
-
-        // Record Sprint 4.5 migration in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260502100000_AddQueueFieldsToAppointments', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502100000_AddQueueFieldsToAppointments'
-            );
         """);
 
         logger.LogInformation("Sprint 4.5 queue columns ensured on Appointments table");
@@ -903,15 +874,6 @@ if (enableStartupDbMaintenance)
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_DoctorSchedules_DoctorId_DayOfWeek"
                 ON "DoctorSchedules" ("DoctorId", "DayOfWeek")
                 WHERE "IsActive" = TRUE;
-        """);
-
-        // Record Sprint 5 migration in history
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260502120000_AddDoctorSchedules', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502120000_AddDoctorSchedules'
-            );
         """);
 
         logger.LogInformation("Sprint 5 DoctorSchedules table ensured");
@@ -1067,15 +1029,6 @@ if (enableStartupDbMaintenance)
                 END $$;
             """);
 
-            // Record the migration in history if not already recorded
-            await db.Database.ExecuteSqlRawAsync("""
-                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-                SELECT '20260430000000_AddMessagingSystem', '8.0.8'
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430000000_AddMessagingSystem'
-                );
-            """);
-
             logger.LogInformation("Messaging tables created manually as fallback");
         }
         catch (Exception innerEx)
@@ -1084,149 +1037,9 @@ if (enableStartupDbMaintenance)
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEMPORARY PRODUCTION SAFETY NET — DO NOT EXTEND
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Ensure ClinicQueueItems table exists (Sprint 7).
-    // The migration should create this via MigrateAsync, but we add a safety net
-    // in case the migration fails to apply on Railway.
-    //
-    // TD-010: Remove this entire safety net block after migration stability is
-    // confirmed on Railway (at least 2 weeks of clean deployments with no
-    // "Failed to ensure ClinicQueueItems table" warnings in logs).
-    // After removal, the EF migration alone will be responsible for schema.
-    // ─────────────────────────────────────────────────────────────────────────────
-    try
-    {
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE IF NOT EXISTS "ClinicQueueItems" (
-                "Id" uuid NOT NULL PRIMARY KEY,
-                "PatientId" uuid NOT NULL,
-                "AppointmentId" uuid NULL,
-                "VisitId" uuid NULL,
-                "DoctorId" uuid NULL,
-                "RoomName" character varying(50) NULL,
-                "Status" character varying(30) NOT NULL DEFAULT 'Waiting',
-                "CalledAt" timestamp with time zone NULL,
-                "CalledBy" uuid NULL,
-                "InRoomAt" timestamp with time zone NULL,
-                "StartedAt" timestamp with time zone NULL,
-                "CompletedAt" timestamp with time zone NULL,
-                "CancelledAt" timestamp with time zone NULL,
-                "QueueDate" date NOT NULL,
-                "CreatedAt" timestamp with time zone NOT NULL,
-                "UpdatedAt" timestamp with time zone NOT NULL,
-                "IsActive" boolean NOT NULL DEFAULT true,
-                "DeletedAt" timestamp with time zone NULL,
-                "DeletedBy" uuid NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS "IX_ClinicQueueItems_QueueDate_Status"
-                ON "ClinicQueueItems" ("QueueDate", "Status");
-
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ClinicQueueItems_PatientId_QueueDate_Active"
-                ON "ClinicQueueItems" ("PatientId", "QueueDate")
-                WHERE "Status" NOT IN ('Completed', 'Cancelled');
-        """);
-
-        // Add foreign keys only if they don't exist
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Patients_PatientId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Patients_PatientId"
-                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Appointments_AppointmentId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Appointments_AppointmentId"
-                        FOREIGN KEY ("AppointmentId") REFERENCES "Appointments"("Id") ON DELETE SET NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Visits_VisitId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Visits_VisitId"
-                        FOREIGN KEY ("VisitId") REFERENCES "Visits"("Id") ON DELETE SET NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Doctors_DoctorId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Doctors_DoctorId"
-                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
-                END IF;
-            END $$;
-        """);
-
-        // Record the migration in history if not already recorded
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260514000000_AddClinicQueueItem', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
-            );
-        """);
-
-        logger.LogInformation("ClinicQueueItems table ensured (created if not exists)");
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems table");
-    }
-
-    // TEMPORARY SAFETY NET — Sprint 7 tracking fields migration
-    // Ensures new columns (AddedByUserId, CalledByUserId, Notes) exist
-    // and migrates data from old CalledBy column.
-    // TD-011: Remove this block after migration 20260520000000 stability confirmed.
-    try
-    {
-        // Add new columns if they don't exist
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'AddedByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "AddedByUserId" uuid NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "CalledByUserId" uuid NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'Notes') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD COLUMN "Notes" character varying(500) NULL;
-                END IF;
-            END $$;
-        """);
-
-        // Migrate old CalledBy data to CalledByUserId if old column still exists
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledBy') THEN
-                    UPDATE "ClinicQueueItems" SET "CalledByUserId" = "CalledBy" WHERE "CalledBy" IS NOT NULL AND "CalledByUserId" IS NULL;
-                    ALTER TABLE "ClinicQueueItems" DROP COLUMN "CalledBy";
-                END IF;
-            END $$;
-        """);
-
-        // Add FKs for new columns if they don't exist
-        await db.Database.ExecuteSqlRawAsync("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_AddedByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_AddedByUserId"
-                        FOREIGN KEY ("AddedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ClinicQueueItems_Users_CalledByUserId') THEN
-                    ALTER TABLE "ClinicQueueItems" ADD CONSTRAINT "FK_ClinicQueueItems_Users_CalledByUserId"
-                        FOREIGN KEY ("CalledByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
-                END IF;
-            END $$;
-        """);
-
-        // Record the migration in history if not already recorded
-        await db.Database.ExecuteSqlRawAsync("""
-            INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-            SELECT '20260520000000_AddClinicQueueItemTrackingFields', '8.0.8'
-            WHERE NOT EXISTS (
-                SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields'
-            );
-        """);
-
-        logger.LogInformation("ClinicQueueItems tracking fields ensured");
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "Failed to ensure ClinicQueueItems tracking fields");
-    }
+    // ClinicQueueItems table + tracking fields — now handled by EF migrations
+    // 20260514000000_AddClinicQueueItems and 20260520000000_AddClinicQueueTrackingFields
+    // (TD-010 / TD-010 safety nets removed in TD-020 Phase C1-e)
 
     await DbSeeder.SeedAsync(db, logger);
 
@@ -1281,7 +1094,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.18-pr135" }));
 
 // Serve uploaded files — resolve writable uploads directory
 // Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback

@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
@@ -133,5 +134,42 @@ public class PatientRepository(AppDbContext context)
                 .Max());
 
         return $"{yearPrefix}{(maxSuffix + 1):D3}";
+    }
+
+    public async Task<Dictionary<Guid, DateTime?>> GetLastVisitDatesAsync(IEnumerable<Guid> patientIds)
+    {
+        var ids = patientIds.ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, DateTime?>();
+
+        var result = new Dictionary<Guid, DateTime?>();
+
+        // Batch-load last appointment date (excluding Cancelled and NoShow)
+        var lastAppointmentDates = await Context.Set<Appointment>()
+            .Where(a => ids.Contains(a.PatientId)
+                     && a.Status != AppointmentStatus.Cancelled
+                     && a.Status != AppointmentStatus.NoShow)
+            .GroupBy(a => a.PatientId)
+            .Select(g => new { PatientId = g.Key, LastDate = g.Max(a => (DateTime?)a.AppointmentDate.ToDateTime(TimeOnly.MinValue)) })
+            .ToDictionaryAsync(x => x.PatientId, x => x.LastDate);
+
+        // Batch-load last visit date
+        var lastVisitDates = await Context.Set<Visit>()
+            .Where(v => ids.Contains(v.PatientId))
+            .GroupBy(v => v.PatientId)
+            .Select(g => new { PatientId = g.Key, LastDate = g.Max(v => (DateTime?)v.VisitDate.ToDateTime(TimeOnly.MinValue)) })
+            .ToDictionaryAsync(x => x.PatientId, x => x.LastDate);
+
+        foreach (var id in ids)
+        {
+            var apptDate = lastAppointmentDates.GetValueOrDefault(id);
+            var visitDate = lastVisitDates.GetValueOrDefault(id);
+
+            if (apptDate.HasValue && visitDate.HasValue)
+                result[id] = apptDate.Value > visitDate.Value ? apptDate : visitDate;
+            else
+                result[id] = apptDate ?? visitDate;
+        }
+
+        return result;
     }
 }

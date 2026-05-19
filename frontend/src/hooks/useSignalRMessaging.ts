@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { HubConnectionBuilder, HubConnection, LogLevel } from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
@@ -17,7 +17,14 @@ const HUB_URL = process.env.NEXT_PUBLIC_API_URL
 export function useSignalRMessaging() {
   const connectionRef = useRef<HubConnection | null>(null);
   const queryClient = useQueryClient();
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
+  const [token, setToken] = useState<string | null>(null);
+
+  // قراءة التوكن من localStorage عند التحميل
+  useEffect(() => {
+    const t = localStorage.getItem("access_token");
+    setToken(t);
+  }, [user]);
 
   const connect = useCallback(async () => {
     if (connectionRef.current?.state === "Connected") return;

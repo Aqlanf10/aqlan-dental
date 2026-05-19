@@ -40,7 +40,7 @@ export function MessagesTab({ patientId }: MessagesTabProps) {
         onSuccess: (data) => {
           setConversationId(data.id);
         },
-        onError: () {
+        onError: () => {
           // لا نعرض خطأ — قد لا تكون هناك محادثة بعد
         },
       });

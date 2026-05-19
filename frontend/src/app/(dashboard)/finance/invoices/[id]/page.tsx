@@ -204,7 +204,9 @@ export default function InvoiceDetailPage() {
 
   // ─── Computed values ─────────────────────────────────────────────────────
 
-  const displayItems = editMode ? editLineItems : (invoice?.lineItems ?? []);
+  const displayItems: EditLineItem[] = editMode
+    ? editLineItems
+    : toEditLineItems(invoice?.lineItems ?? []);
   const subtotal = editMode
     ? calcSubtotal(editLineItems)
     : invoice?.subtotal ?? 0;
@@ -499,12 +501,10 @@ export default function InvoiceDetailPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {displayItems.map((li, idx) => {
-                  const itemTotal = editMode
-                    ? li.quantity * li.unitPrice
-                    : li.totalPrice;
+                  const itemTotal = li.quantity * li.unitPrice;
 
                   return (
-                    <tr key={li.tempId ?? li.id ?? idx} className="hover:bg-gray-50 transition">
+                    <tr key={li.tempId ?? idx} className="hover:bg-gray-50 transition">
                       <td className="px-4 py-3">
                         {isDraft && editMode ? (
                           <input

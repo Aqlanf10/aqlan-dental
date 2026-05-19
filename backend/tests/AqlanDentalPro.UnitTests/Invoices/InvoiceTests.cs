@@ -1,4 +1,5 @@
 using Xunit;
+using AqlanDentalPro.API.Controllers;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -353,33 +354,41 @@ public class InvoiceTests
     // ─── Finance Safety Tests ──────────────────────────────────────────────
 
     [Fact]
-    public async Task Invoice_NoPatientBalanceChange()
+    public async Task Invoice_NoContractChange()
     {
         await using var db = CreateContext();
         var patientId = Guid.NewGuid();
 
-        var account = new PatientAccount
+        // Create a contract to verify it's not changed by invoice creation
+        var contract = new Contract
         {
             PatientId = patientId,
-            Balance = 0m
+            TotalAmount = 20000m,
+            DownPayment = 5000m,
+            Status = "active"
         };
-        db.PatientAccounts.Add(account);
+        db.Contracts.Add(contract);
         await db.SaveChangesAsync();
+        var contractId = contract.Id;
 
+        // Create and issue invoice
         var invoice = new Invoice
         {
             PatientId = patientId,
             InvoiceNumber = "INV-20260531-050",
-            Status = InvoiceStatus.Draft,
+            Status = InvoiceStatus.Issued,
             Subtotal = 10000m,
             TotalAmount = 10000m
         };
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync();
 
-        var savedAccount = await db.PatientAccounts
-            .FirstOrDefaultAsync(a => a.PatientId == patientId);
-        savedAccount!.Balance.Should().Be(0m);
+        // Verify contract is unchanged — invoice does not modify contracts
+        var savedContract = await db.Contracts.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => c.Id == contractId);
+        savedContract!.TotalAmount.Should().Be(20000m);
+        savedContract.DownPayment.Should().Be(5000m);
+        savedContract.Status.Should().Be("active");
     }
 
     [Fact]

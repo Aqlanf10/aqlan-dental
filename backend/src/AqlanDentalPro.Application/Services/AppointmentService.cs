@@ -47,7 +47,9 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
             AppointmentType = req.AppointmentType,
             Specialty = req.Specialty != null ? Enum.Parse<Specialty>(req.Specialty, true) : null,
             Notes = req.Notes,
-            CreatedBy = currentUser.UserId
+            CreatedBy = currentUser.UserId,
+            ServiceId = req.ServiceId,
+            ClinicRoomId = req.ClinicRoomId
         };
 
         await repo.AddAsync(appointment);
@@ -142,6 +144,8 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         appointment.AppointmentType = req.AppointmentType;
         appointment.Specialty       = req.Specialty != null ? Enum.Parse<Specialty>(req.Specialty, true) : null;
         appointment.Notes           = req.Notes;
+        appointment.ServiceId       = req.ServiceId;
+        appointment.ClinicRoomId    = req.ClinicRoomId;
 
         repo.Update(appointment);
         await repo.SaveChangesAsync();

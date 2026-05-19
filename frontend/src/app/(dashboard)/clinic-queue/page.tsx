@@ -37,6 +37,8 @@ interface ClinicQueueItem {
   doctorName: string;
   doctorId?: string;
   roomName?: string;
+  serviceId?: string;
+  serviceName?: string;
   status: "Waiting" | "Called" | "InRoom" | "InProgress" | "Completed" | "Cancelled";
   statusArabic: string;
   calledAt?: string;
@@ -45,6 +47,26 @@ interface ClinicQueueItem {
   completedAt?: string;
   notes?: string;
   createdAt: string;
+}
+
+interface DbRoom {
+  id: string;
+  arabicName: string;
+  englishName?: string;
+  code?: string;
+  roomType?: string;
+}
+
+interface DoctorOption {
+  id: string;
+  name: string;
+  specialty?: string;
+  color?: string;
+}
+
+interface EstimatedWait {
+  averageWaitMinutes: number;
+  waitingCount: number;
 }
 
 type QueueStatus = ClinicQueueItem["status"];
@@ -79,7 +101,8 @@ function formatTime(dateStr?: string): string {
 export default function ClinicQueuePage() {
   const router = useRouter();
   const [items, setItems] = useState<ClinicQueueItem[]>([]);
-  const [rooms, setRooms] = useState<string[]>([]);
+  const [rooms, setRooms] = useState<DbRoom[]>([]);
+  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -87,6 +110,8 @@ export default function ClinicQueuePage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [doctorFilter, setDoctorFilter] = useState<string>("");
+  const [estimatedWait, setEstimatedWait] = useState<EstimatedWait | null>(null);
 
   // Call dialog
   const [callModalFor, setCallModalFor] = useState<string | null>(null);
@@ -105,7 +130,10 @@ export default function ClinicQueuePage() {
     // Skip auto-refresh when a modal is open to avoid disrupting user actions
     if (callModalFor || changeRoomFor || cancelConfirmFor) return;
     try {
-      const { data } = await api.get<ClinicQueueItem[]>("/api/clinic-queue/today");
+      const params = new URLSearchParams();
+      if (doctorFilter) params.set("doctorId", doctorFilter);
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      const { data } = await api.get<ClinicQueueItem[]>(`/api/clinic-queue/today${qs}`);
       setItems(data);
       setError(null);
       setLastRefresh(new Date());
@@ -122,24 +150,59 @@ export default function ClinicQueuePage() {
     } finally {
       setLoading(false);
     }
-  }, [callModalFor, changeRoomFor, cancelConfirmFor, loading]);
+  }, [callModalFor, changeRoomFor, cancelConfirmFor, loading, doctorFilter]);
 
   const fetchRooms = useCallback(async () => {
     try {
-      const { data } = await api.get<string[]>("/api/clinic-queue/rooms");
-      setRooms(data);
+      const { data } = await api.get<DbRoom[]>("/api/clinic-queue/rooms");
+      if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && "arabicName" in data[0]) {
+        setRooms(data);
+      } else if (Array.isArray(data) && data.length > 0 && typeof data[0] === "string") {
+        // Backward compat: old API returns string[]
+        setRooms((data as unknown as string[]).map((name, i) => ({ id: String(i), arabicName: name })));
+      }
     } catch {
       // fallback
-      setRooms(["غرفة 1", "غرفة 2", "غرفة 3"]);
+      setRooms([
+        { id: "1", arabicName: "غرفة 1" },
+        { id: "2", arabicName: "غرفة 2" },
+        { id: "3", arabicName: "غرفة 3" },
+      ]);
+    }
+  }, []);
+
+  const fetchDoctors = useCallback(async () => {
+    try {
+      const { data } = await api.get<DoctorOption[]>("/api/doctors");
+      setDoctors(data ?? []);
+    } catch {
+      setDoctors([]);
+    }
+  }, []);
+
+  const fetchEstimatedWait = useCallback(async () => {
+    try {
+      const { data } = await api.get<EstimatedWait>("/api/clinic-queue/estimated-wait");
+      setEstimatedWait(data);
+    } catch {
+      setEstimatedWait(null);
     }
   }, []);
 
   useEffect(() => {
     fetchQueue();
     fetchRooms();
+    fetchDoctors();
+    fetchEstimatedWait();
     const interval = setInterval(fetchQueue, 15_000);
     return () => clearInterval(interval);
-  }, [fetchQueue, fetchRooms]);
+  }, [fetchQueue, fetchRooms, fetchDoctors, fetchEstimatedWait]);
+
+  // Re-fetch when doctor filter changes
+  useEffect(() => {
+    fetchQueue();
+    fetchEstimatedWait();
+  }, [doctorFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Today's date in Arabic
   const todayDateStr = new Date().toLocaleDateString("ar-SA", {
@@ -283,12 +346,53 @@ export default function ClinicQueuePage() {
         <CounterCard label="قيد المعالجة" count={inProgressCount} icon={<Play className="w-5 h-5" />} color="#10b981" bgColor="#ecfdf5" borderColor="#a7f3d0" />
       </div>
 
+      {/* Estimated wait + Doctor filter */}
+      <div className="flex flex-wrap gap-3 items-center">
+        {/* Doctor filter dropdown */}
+        {doctors.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Stethoscope className="w-4 h-4" style={{ color: "#3d7ab5" }} />
+            <select
+              value={doctorFilter}
+              onChange={(e) => setDoctorFilter(e.target.value)}
+              className="px-3 py-2 rounded-xl text-sm border border-gray-200 focus:border-[#3d7ab5] outline-none focus:ring-2 focus:ring-[#3d7ab5]/20 bg-white"
+            >
+              <option value="">كل الأطباء</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Estimated wait time card */}
+        {estimatedWait && (
+          <div
+            className="flex items-center gap-3 px-4 py-2.5 rounded-xl border"
+            style={{ background: "#eff6ff", borderColor: "#bfdbfe" }}
+          >
+            <Clock className="w-4 h-4" style={{ color: "#3b82f6" }} />
+            <div className="text-sm">
+              <span className="font-bold" style={{ color: "#1d4ed8" }}>
+                متوسط وقت الانتظار: {estimatedWait.averageWaitMinutes} دقيقة
+              </span>
+              <span className="mx-2" style={{ color: "#93c5fd" }}>|</span>
+              <span style={{ color: "#3b82f6" }}>
+                عدد المنتظرين: {estimatedWait.waitingCount}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Add to Queue Panel */}
       {showAddPanel && (
         <AddToQueuePanel
           rooms={rooms}
+          doctors={doctors}
           onAdded={() => {
             fetchQueue();
+            fetchEstimatedWait();
             setShowAddPanel(false);
           }}
           onClose={() => setShowAddPanel(false)}
@@ -545,6 +649,11 @@ function QueueCard({
               <Stethoscope className="w-3 h-3" />
               {item.doctorName || "—"}
             </span>
+            {item.serviceName && (
+              <span className="flex items-center gap-1 text-[#3d7ab5] font-medium">
+                {item.serviceName}
+              </span>
+            )}
             {item.appointmentTime && (
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
@@ -675,12 +784,13 @@ function RoomSelectDialog({
 }: {
   title: string;
   description: string;
-  rooms: string[];
+  rooms: DbRoom[];
   onConfirm: (room: string) => void;
   onCancel: () => void;
   loading: boolean;
 }) {
-  const [selectedRoom, setSelectedRoom] = useState(rooms[0] || "غرفة 1");
+  const roomNames = rooms.map((r) => r.arabicName);
+  const [selectedRoom, setSelectedRoom] = useState(roomNames[0] || "غرفة 1");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -689,7 +799,7 @@ function RoomSelectDialog({
         <h3 className="text-lg font-bold mb-1" style={{ color: "#0d2137" }}>{title}</h3>
         <p className="text-sm mb-4" style={{ color: "#64748b" }}>{description}</p>
         <div className="grid grid-cols-3 gap-3">
-          {rooms.map((room) => (
+          {roomNames.map((room) => (
             <button
               key={room}
               onClick={() => setSelectedRoom(room)}
@@ -729,10 +839,12 @@ function RoomSelectDialog({
 /* ─── Add To Queue Panel ─────────────────────────────────────────────────────── */
 function AddToQueuePanel({
   rooms,
+  doctors,
   onAdded,
   onClose,
 }: {
-  rooms: string[];
+  rooms: DbRoom[];
+  doctors: DoctorOption[];
   onAdded: () => void;
   onClose: () => void;
 }) {
@@ -741,6 +853,7 @@ function AddToQueuePanel({
   const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null);
   const [searching, setSearching] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState("");
+  const [selectedDoctorId, setSelectedDoctorId] = useState("");
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -785,6 +898,7 @@ function AddToQueuePanel({
       await api.post("/api/clinic-queue", {
         patientId: selectedPatient.id,
         roomName: selectedRoom || undefined,
+        doctorId: selectedDoctorId || undefined,
       });
       onAdded();
     } catch (err: unknown) {
@@ -859,6 +973,25 @@ function AddToQueuePanel({
         )}
       </div>
 
+      {/* Doctor selection */}
+      {doctors.length > 0 && (
+        <div>
+          <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0d2137" }}>
+            الطبيب <span className="font-normal text-gray-400">(مطلوب)</span>
+          </label>
+          <select
+            value={selectedDoctorId}
+            onChange={(e) => setSelectedDoctorId(e.target.value)}
+            className="w-full px-3 py-2.5 rounded-xl text-sm border border-gray-200 focus:border-[#3d7ab5] outline-none focus:ring-2 focus:ring-[#3d7ab5]/20 bg-white"
+          >
+            <option value="">اختر الطبيب...</option>
+            {doctors.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` — ${d.specialty}` : ""}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Room Selector */}
       <div>
         <label className="block text-sm font-semibold mb-1.5" style={{ color: "#0d2137" }}>الغرفة <span className="font-normal text-gray-400">(اختياري)</span></label>
@@ -876,16 +1009,16 @@ function AddToQueuePanel({
           </button>
           {rooms.map((room) => (
             <button
-              key={room}
-              onClick={() => setSelectedRoom(room)}
+              key={room.id}
+              onClick={() => setSelectedRoom(room.arabicName)}
               className="px-3 py-2 rounded-lg text-xs font-medium transition-all border-2"
               style={
-                selectedRoom === room
+                selectedRoom === room.arabicName
                   ? { background: "#3d7ab5", color: "#fff", borderColor: "#3d7ab5" }
                   : { background: "#f8fafc", color: "#475569", borderColor: "#e2e8f0" }
               }
             >
-              {room}
+              {room.arabicName}
             </button>
           ))}
         </div>

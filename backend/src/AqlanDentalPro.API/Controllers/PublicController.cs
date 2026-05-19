@@ -90,6 +90,21 @@ public class PublicController : ControllerBase
         return Ok(items);
     }
 
+    /// <summary>الخدمات المتاحة للحجز العام</summary>
+    [HttpGet("public/booking-services")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetBookingServices()
+    {
+        var services = await _db.ClinicServices
+            .AsNoTracking()
+            .Where(s => s.ShowInBooking && s.IsActive)
+            .OrderBy(s => s.SortOrder)
+            .ThenBy(s => s.ArabicName)
+            .Select(s => new { s.Id, s.ArabicName, s.EnglishName, s.Code, s.DefaultDurationMinutes, Category = s.Category.ToString() })
+            .ToListAsync();
+        return Ok(services);
+    }
+
     /// <summary>قائمة الأطباء العامة (للحجز العام)</summary>
     [HttpGet("public/doctors")]
     [AllowAnonymous]

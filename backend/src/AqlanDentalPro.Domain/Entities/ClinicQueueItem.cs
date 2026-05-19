@@ -12,6 +12,8 @@ public class ClinicQueueItem : BaseEntity
     public Guid? AppointmentId { get; set; }
     public Guid? VisitId { get; set; }
     public Guid? DoctorId { get; set; }
+    public Guid? ServiceId { get; set; }
+    public Guid? ClinicRoomId { get; set; }
     public string? RoomName { get; set; }
     public ClinicQueueStatus Status { get; set; } = ClinicQueueStatus.Waiting;
 

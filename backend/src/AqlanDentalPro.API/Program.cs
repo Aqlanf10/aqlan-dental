@@ -767,6 +767,37 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to ensure Sprint 4.5 queue columns");
     }
 
+    // Ensure Sprint 8 queue/appointment integration columns exist
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicQueueItems') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'ServiceId') THEN
+                        ALTER TABLE "ClinicQueueItems" ADD COLUMN "ServiceId" uuid NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'ClinicRoomId') THEN
+                        ALTER TABLE "ClinicQueueItems" ADD COLUMN "ClinicRoomId" uuid NULL;
+                    END IF;
+                END IF;
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Appointments') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'ServiceId') THEN
+                        ALTER TABLE "Appointments" ADD COLUMN "ServiceId" uuid NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'ClinicRoomId') THEN
+                        ALTER TABLE "Appointments" ADD COLUMN "ClinicRoomId" uuid NULL;
+                    END IF;
+                END IF;
+            END $$;
+        """);
+
+        logger.LogInformation("Sprint 8 queue/appointment integration columns ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Sprint 8 integration columns");
+    }
+
     // Ensure Sprint 5 DoctorSchedules table exists
     try
     {

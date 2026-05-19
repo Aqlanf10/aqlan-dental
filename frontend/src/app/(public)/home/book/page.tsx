@@ -22,7 +22,8 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-const SERVICES = [
+/** Hardcoded fallback if API fails */
+const FALLBACK_SERVICES = [
   "تقويم الأسنان",
   "طب الأسنان العام",
   "جراحة الوجه والفكين",
@@ -147,6 +148,9 @@ export default function BookPage() {
   const [serverError, setServerError] = useState("");
   const [isConflict, setIsConflict] = useState(false);
 
+  // ── Services state ──
+  const [services, setServices] = useState<string[]>(FALLBACK_SERVICES);
+
   // ── Doctors state ──
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [doctorsLoaded, setDoctorsLoaded] = useState(false);
@@ -159,6 +163,28 @@ export default function BookPage() {
   const [closedMessage, setClosedMessage] = useState("");
   const [availabilityDoctorName, setAvailabilityDoctorName] = useState("");
   const { executeRecaptcha } = useGoogleReCaptcha();
+
+  // ── Fetch services on page load ──
+  useEffect(() => {
+    async function fetchServices() {
+      try {
+        const res = await fetch(`${API_URL}/api/public/booking-services`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            // API returns ClinicService objects — use ArabicName field
+            const names = data.map((s: { arabicName?: string; name?: string; ArabicName?: string }) =>
+              s.arabicName || s.ArabicName || s.name || ""
+            ).filter(Boolean);
+            if (names.length > 0) setServices(names);
+          }
+        }
+      } catch {
+        // silently fail — fallback services are already set
+      }
+    }
+    fetchServices();
+  }, []);
 
   // ── Fetch doctors on page load ──
   useEffect(() => {
@@ -714,7 +740,7 @@ export default function BookPage() {
             className="w-full px-4 py-3.5 rounded-xl border border-slate-200 hover:border-slate-300 focus:border-[#87CEEB] outline-none focus:ring-2 focus:ring-[#87CEEB]/20 transition-all duration-200 bg-white text-right"
           >
             <option value="">اختر الخدمة...</option>
-            {SERVICES.map((s) => (
+            {services.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>

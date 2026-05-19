@@ -122,6 +122,28 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var (result, error) = await service.CreateAsync(req);
         if (error != null)
             return Conflict(new { message = error });
+
+        // Check room conflict if ClinicRoomId is provided
+        if (req.ClinicRoomId.HasValue && result != null)
+        {
+            var date = DateOnly.Parse(req.AppointmentDate);
+            var start = TimeOnly.Parse(req.StartTime);
+            var end = start.AddMinutes(req.DurationMinutes);
+
+            var roomConflict = await db.Appointments
+                .AnyAsync(a => a.ClinicRoomId == req.ClinicRoomId
+                            && a.AppointmentDate == date
+                            && a.StartTime < end
+                            && a.EndTime > start
+                            && a.IsActive
+                            && a.Status != AppointmentStatus.Cancelled
+                            && a.Status != AppointmentStatus.NoShow
+                            && a.Id != result.Id);
+
+            if (roomConflict)
+                return Conflict(new { message = "الغرفة محجوزة في هذا الوقت" });
+        }
+
         return CreatedAtAction(nameof(GetById), new { id = result!.Id }, result);
     }
 
@@ -131,6 +153,28 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var (result, error) = await service.UpdateAsync(id, req);
         if (error != null)
             return error.Contains("تعارض") ? Conflict(new { message = error }) : NotFound(new { message = error });
+
+        // Check room conflict if ClinicRoomId is provided
+        if (req.ClinicRoomId.HasValue && result != null)
+        {
+            var date = DateOnly.Parse(req.AppointmentDate);
+            var start = TimeOnly.Parse(req.StartTime);
+            var end = start.AddMinutes(req.DurationMinutes);
+
+            var roomConflict = await db.Appointments
+                .AnyAsync(a => a.ClinicRoomId == req.ClinicRoomId
+                            && a.AppointmentDate == date
+                            && a.StartTime < end
+                            && a.EndTime > start
+                            && a.IsActive
+                            && a.Status != AppointmentStatus.Cancelled
+                            && a.Status != AppointmentStatus.NoShow
+                            && a.Id != id);
+
+            if (roomConflict)
+                return Conflict(new { message = "الغرفة محجوزة في هذا الوقت" });
+        }
+
         return Ok(result);
     }
 
@@ -139,7 +183,153 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     {
         var (result, error) = await service.UpdateStatusAsync(id, req.Status);
         if (error != null) return BadRequest(new { message = error });
-        return result == null ? NotFound() : Ok(result);
+        if (result == null) return NotFound();
+
+        // Auto-add to queue when appointment status changes to Arrived or Waiting
+        if (req.Status is "Arrived" or "Waiting")
+        {
+            try
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var activeStatuses = new HashSet<ClinicQueueStatus>
+                {
+                    ClinicQueueStatus.Waiting,
+                    ClinicQueueStatus.Called,
+                    ClinicQueueStatus.InRoom,
+                    ClinicQueueStatus.InProgress
+                };
+
+                // Check if a queue item already exists for this appointment
+                var existingQueueItem = await db.ClinicQueueItems
+                    .AnyAsync(q => q.AppointmentId == id && q.QueueDate == today
+                                && activeStatuses.Contains(q.Status)
+                                && q.IsActive);
+
+                if (!existingQueueItem)
+                {
+                    var appointment = await db.Appointments.FindAsync(id);
+                    if (appointment != null)
+                    {
+                        var queueItem = new ClinicQueueItem
+                        {
+                            PatientId = appointment.PatientId,
+                            AppointmentId = appointment.Id,
+                            DoctorId = appointment.DoctorId,
+                            ServiceId = appointment.ServiceId,
+                            ClinicRoomId = appointment.ClinicRoomId,
+                            RoomName = appointment.RoomName,
+                            Status = ClinicQueueStatus.Waiting,
+                            QueueDate = today,
+                        };
+                        db.ClinicQueueItems.Add(queueItem);
+                        await db.SaveChangesAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to auto-add appointment {AppointmentId} to queue", id);
+                // Don't fail the status update if queue add fails
+            }
+        }
+
+        return Ok(result);
+    }
+
+    // ─── POST /api/appointments/batch-status ─────────────────────────────────
+    /// <summary>Update multiple appointments status at once (e.g., marking no-shows at end of day).</summary>
+    [HttpPost("batch-status")]
+    public async Task<IActionResult> BatchUpdateStatus([FromBody] BatchUpdateStatusRequest req)
+    {
+        if (!Enum.TryParse<AppointmentStatus>(req.Status, true, out var targetStatus))
+            return BadRequest(new { message = "حالة الموعد غير صالحة" });
+
+        var appointments = await db.Appointments
+            .Where(a => req.AppointmentIds.Contains(a.Id) && a.IsActive)
+            .ToListAsync();
+
+        var updated = 0;
+        var skipped = 0;
+        foreach (var appointment in appointments)
+        {
+            if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
+            {
+                appointment.Status = targetStatus;
+                appointment.UpdatedAt = DateTime.UtcNow;
+                updated++;
+            }
+            else
+            {
+                skipped++;
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        return Ok(new { updated, skipped, message = $"تم تحديث {updated} موعد، تم تخطي {skipped} موعد بسبب تعارض في الحالة" });
+    }
+
+    // ─── GET /api/appointments/upcoming ──────────────────────────────────────
+    /// <summary>Get upcoming appointments for the next N hours.</summary>
+    [HttpGet("upcoming")]
+    public async Task<IActionResult> GetUpcoming([FromQuery] int hours = 2)
+    {
+        if (hours < 1) hours = 1;
+        if (hours > 72) hours = 72;
+
+        var now = DateTime.UtcNow;
+        var today = DateOnly.FromDateTime(now);
+        var currentTime = TimeOnly.FromDateTime(now);
+        var maxTime = currentTime.AddHours(hours);
+
+        var targetStatuses = new List<AppointmentStatus>
+        {
+            AppointmentStatus.Scheduled,
+            AppointmentStatus.Confirmed
+        };
+
+        // For same-day appointments
+        var appointments = await db.Appointments
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .Where(a => a.IsActive
+                     && targetStatuses.Contains(a.Status)
+                     && a.AppointmentDate == today
+                     && a.StartTime >= currentTime
+                     && a.StartTime <= maxTime)
+            .OrderBy(a => a.StartTime)
+            .ToListAsync();
+
+        // If hours span across midnight, also get next day's early appointments
+        if (maxTime < currentTime)
+        {
+            var tomorrow = today.AddDays(1);
+            var tomorrowAppointments = await db.Appointments
+                .Include(a => a.Patient)
+                .Include(a => a.Doctor)
+                .Where(a => a.IsActive
+                         && targetStatuses.Contains(a.Status)
+                         && a.AppointmentDate == tomorrow
+                         && a.StartTime <= maxTime)
+                .OrderBy(a => a.StartTime)
+                .ToListAsync();
+
+            appointments = appointments.Concat(tomorrowAppointments).ToList();
+        }
+
+        var result = appointments.Select(a => new
+        {
+            a.Id,
+            PatientName = a.Patient != null ? $"{a.Patient.FirstName} {a.Patient.LastName}".Trim() : "",
+            DoctorName = a.Doctor != null ? a.Doctor.Name : "",
+            a.AppointmentDate,
+            StartTime = a.StartTime.ToString("HH:mm"),
+            EndTime = a.EndTime.ToString("HH:mm"),
+            Status = a.Status.ToString(),
+            a.AppointmentType
+        });
+
+        return Ok(result);
     }
 
     // ─── DELETE /api/appointments/{id} (soft-delete) ─────────────────────────

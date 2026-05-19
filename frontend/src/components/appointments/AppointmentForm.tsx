@@ -18,6 +18,20 @@ interface Doctor {
   color?: string;
 }
 
+interface ServiceOption {
+  id: string;
+  arabicName: string;
+  defaultDurationMinutes: number;
+  defaultPrice: number;
+  category?: string;
+}
+
+interface RoomOption {
+  id: string;
+  arabicName: string;
+  roomType?: string;
+}
+
 const schema = z.object({
   patientId:       z.string().min(1, "اختر مريضاً"),
   doctorId:        z.string().min(1, "اختر طبيباً"),
@@ -26,6 +40,8 @@ const schema = z.object({
   durationMinutes: z.number().min(5).max(240),
   appointmentType: z.string().min(1, "نوع الموعد مطلوب"),
   notes:           z.string().optional(),
+  serviceId:       z.string().optional(),
+  clinicRoomId:    z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -46,6 +62,8 @@ interface Props {
     durationMinutes: number;
     appointmentType: string;
     notes?:          string;
+    serviceId?:      string;
+    clinicRoomId?:   string;
   };
 }
 
@@ -56,6 +74,8 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
   const [serverError, setServerError] = useState("");
   const [isConflict, setIsConflict] = useState(false);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
+  const [rooms, setRooms] = useState<RoomOption[]>([]);
 
   // Available slots state
   const [slots, setSlots] = useState<string[]>([]);
@@ -80,16 +100,43 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
       startTime:       editDefaults?.startTime ?? "",
       appointmentType: editDefaults?.appointmentType ?? "",
       notes:           editDefaults?.notes ?? "",
+      serviceId:       editDefaults?.serviceId ?? "",
+      clinicRoomId:    editDefaults?.clinicRoomId ?? "",
     },
   });
 
   const watchedDate   = useWatch({ control, name: "appointmentDate" });
   const watchedDoctor = useWatch({ control, name: "doctorId" });
+  const watchedServiceId = useWatch({ control, name: "serviceId" });
 
   // Load doctors
   useEffect(() => {
     api.get<Doctor[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
   }, []);
+
+  // Load services (ShowInReception=true)
+  useEffect(() => {
+    api.get<ServiceOption[]>("/api/settings/services", { params: { showInReception: true } })
+      .then((r) => setServices(r.data ?? []))
+      .catch(() => {});
+  }, []);
+
+  // Load rooms
+  useEffect(() => {
+    api.get<RoomOption[]>("/api/settings/rooms")
+      .then((r) => setRooms(r.data ?? []))
+      .catch(() => {});
+  }, []);
+
+  // Auto-set type & duration when service changes
+  useEffect(() => {
+    if (!watchedServiceId) return;
+    const svc = services.find((s) => s.id === watchedServiceId);
+    if (svc) {
+      setValue("appointmentType", svc.arabicName, { shouldValidate: true });
+      setValue("durationMinutes", svc.defaultDurationMinutes, { shouldValidate: true });
+    }
+  }, [watchedServiceId, services, setValue]);
 
   // Fetch available slots when doctor + date change
   useEffect(() => {
@@ -154,6 +201,8 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
         durationMinutes: data.durationMinutes,
         appointmentType: data.appointmentType,
         notes:           data.notes,
+        serviceId:       data.serviceId || undefined,
+        clinicRoomId:    data.clinicRoomId || undefined,
       };
       if (isEditMode) {
         await api.put(`/api/appointments/${appointmentId}`, payload);
@@ -251,6 +300,36 @@ export function AppointmentForm({ defaultPatientId, defaultPatientName, appointm
             <p className="mt-1 text-xs text-red-600">{errors.appointmentType.message}</p>
           )}
         </div>
+
+        {/* Service (optional) */}
+        {services.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              الخدمة <span className="text-gray-400 font-normal">(اختياري)</span>
+            </label>
+            <select {...register("serviceId")} className={inputCls()}>
+              <option value="">— اختر الخدمة —</option>
+              {services.map((s) => (
+                <option key={s.id} value={s.id}>{s.arabicName}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Room (optional) */}
+        {rooms.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              الغرفة <span className="text-gray-400 font-normal">(اختياري)</span>
+            </label>
+            <select {...register("clinicRoomId")} className={inputCls()}>
+              <option value="">— اختر الغرفة —</option>
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>{r.arabicName}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Date */}
         <div>

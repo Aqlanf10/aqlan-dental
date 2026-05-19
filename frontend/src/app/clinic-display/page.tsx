@@ -27,6 +27,7 @@ interface DisplayData {
     doctorName: string;
     roomName: string;
     calledAt: string;
+    estimatedWaitMinutes?: number;
   } | null;
   waitingCount: number;
   waitingList: {
@@ -34,6 +35,7 @@ interface DisplayData {
     patientNumber: string;
     patientName: string;
     doctorName: string;
+    estimatedWaitMinutes?: number;
     status: string;
   }[];
   recentlyCalled: {
@@ -562,12 +564,18 @@ export default function ClinicDisplayPage() {
                   onContextMenu={(e) => handlePatientContextMenu(e, data.latestCalled!.patientName, data.latestCalled!.patientNumber, data.latestCalled!.roomName)}>
                   <div className="flex items-center gap-3 mb-6"><Volume2 className="w-8 h-8 text-teal-300 animate-pulse" /><span className="text-2xl font-bold text-teal-300">النداء الأخير</span></div>
                   <div className="text-center space-y-4">
-                    <div className="text-5xl md:text-7xl font-extrabold text-white leading-tight">{data.latestCalled.patientName || `ملف رقم ${data.latestCalled.patientNumber}`}</div>
+                    <div className="text-5xl md:text-7xl font-extrabold text-white leading-tight animate-pulse">{data.latestCalled.patientName || `ملف رقم ${data.latestCalled.patientNumber}`}</div>
                     {data.latestCalled.patientName && <div className="text-2xl md:text-3xl text-teal-200 font-mono">رقم الملف: {data.latestCalled.patientNumber}</div>}
                     <div className="flex items-center justify-center gap-5 mt-6">
                       <div className="flex items-center gap-3 bg-teal-800/60 px-6 py-3 rounded-2xl"><MapPin className="w-6 h-6 text-teal-300" /><span className="text-2xl font-bold text-teal-200">{data.latestCalled.roomName || RECEPTION_FALLBACK}</span></div>
                       {data.latestCalled.doctorName && <div className="flex items-center gap-3 bg-teal-800/60 px-6 py-3 rounded-2xl"><Stethoscope className="w-6 h-6 text-teal-300" /><span className="text-xl text-teal-200">{data.latestCalled.doctorName}</span></div>}
                     </div>
+                    {data.latestCalled.estimatedWaitMinutes != null && data.latestCalled.estimatedWaitMinutes > 0 && (
+                      <div className="flex items-center justify-center gap-2 mt-3 text-lg text-amber-300">
+                        <Clock className="w-5 h-5" />
+                        وقت الانتظار المتوقع: {data.latestCalled.estimatedWaitMinutes} دقيقة
+                      </div>
+                    )}
                     <div className="flex items-center justify-center gap-2 text-base text-gray-400 mt-3"><Clock className="w-4 h-4" />{formatTimeAgo(data.latestCalled.calledAt)}</div>
                     <button onClick={handleRepeatAnnounce} disabled={!voiceEnabled} className={`mt-5 px-8 py-3 rounded-xl font-bold text-lg transition flex items-center gap-3 mx-auto ${voiceEnabled ? "bg-teal-600 text-white hover:bg-teal-500 shadow-lg shadow-teal-900/30 active:scale-95" : "bg-white/10 text-gray-400 cursor-not-allowed"}`} title={voiceEnabled ? "إعادة النداء الصوتي للمريض الحالي" : "فعّل النداء الصوتي أولاً"}>
                       <Volume2 className="w-6 h-6" /> إعادة النداء
@@ -587,7 +595,12 @@ export default function ClinicDisplayPage() {
                     {data.waitingList.map((w, i) => (
                       <div key={w.queueItemId || i} className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5">
                         <div className="flex items-center gap-3"><span className="text-sm text-gray-500 w-7 text-center font-bold">{i + 1}</span><span className="text-lg font-medium text-gray-200">{w.patientName}</span><span className="text-sm text-gray-500 font-mono">{w.patientNumber}</span></div>
-                        {w.doctorName && <span className="text-sm text-gray-400 flex items-center gap-1"><Stethoscope className="w-3 h-3" />{w.doctorName}</span>}
+                        <div className="flex items-center gap-3">
+                          {w.doctorName && <span className="text-sm text-gray-400 flex items-center gap-1"><Stethoscope className="w-3 h-3" />{w.doctorName}</span>}
+                          {w.estimatedWaitMinutes != null && w.estimatedWaitMinutes > 0 && (
+                            <span className="text-xs text-amber-400 flex items-center gap-1"><Clock className="w-3 h-3" />~{w.estimatedWaitMinutes} د</span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -605,12 +618,18 @@ export default function ClinicDisplayPage() {
                   <div className="space-y-4">
                     {data.recentlyCalled.map((item, i) => {
                       const cfg = getStatusDisplay(item.status);
+                      const isCalled = item.status === "Called";
                       return (
-                        <div key={item.queueItemId || i} className="flex items-center gap-5 px-6 py-5 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                        <div key={item.queueItemId || i} className={`flex items-center gap-5 px-6 py-5 rounded-2xl border transition-colors cursor-pointer ${
+                          isCalled ? "bg-blue-900/40 border-blue-500/40 ring-2 ring-blue-400/30" : "bg-white/5 border-white/5 hover:bg-white/10"
+                        }`}
                           onContextMenu={(e) => handlePatientContextMenu(e, item.patientName, item.patientNumber, item.roomName)}>
                           <div className="flex items-center justify-center w-20 h-14 rounded-xl bg-cyan-900/50 border border-cyan-700/30"><span className="text-xl font-bold text-cyan-300">{item.roomName || RECEPTION_FALLBACK}</span></div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-3 flex-wrap"><span className="text-2xl font-bold text-white">{item.patientName}</span><span className="text-base text-gray-500 font-mono">{item.patientNumber}</span></div>
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className={`text-2xl font-bold text-white ${isCalled ? "animate-pulse" : ""}`}>{item.patientName}</span>
+                              <span className="text-base text-gray-500 font-mono">{item.patientNumber}</span>
+                            </div>
                             <div className="flex items-center gap-4 mt-2">
                               {item.doctorName && <span className="flex items-center gap-1.5 text-base text-gray-400"><Stethoscope className="w-4 h-4" />{item.doctorName}</span>}
                               <span className="text-sm text-gray-500 flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{formatTimeAgo(item.calledAt)}</span>

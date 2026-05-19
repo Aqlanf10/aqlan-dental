@@ -14,8 +14,12 @@ export interface Appointment {
   specialty?: string;
   status: string;
   notes?: string;
-  // Queue / clinic-flow fields (Sprint 4.5)
+  // Service / Room linking (Sprint 5)
+  serviceId?: string;
+  serviceName?: string;
+  clinicRoomId?: string;
   roomName?: string | null;
+  // Queue / clinic-flow fields (Sprint 4.5)
   arrivedAt?: string | null;
   calledAt?: string | null;
   inRoomAt?: string | null;
@@ -30,6 +34,31 @@ export interface CreateAppointmentRequest {
   appointmentType: string;
   specialty?: string;
   notes?: string;
+  serviceId?: string;
+  clinicRoomId?: string;
+}
+
+export interface BatchUpdateStatusRequest {
+  appointmentIds: string[];
+  status: string;
+}
+
+export interface UpcomingAppointment {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientNumber: string;
+  doctorId: string;
+  doctorName: string;
+  doctorColor?: string;
+  appointmentDate: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  appointmentType: string;
+  status: string;
+  serviceName?: string;
+  roomName?: string;
 }
 
 export interface QueueItem {

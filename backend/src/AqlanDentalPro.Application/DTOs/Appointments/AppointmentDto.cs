@@ -35,10 +35,19 @@ public class CreateAppointmentRequest
     public string AppointmentType { get; set; } = string.Empty;
     public string? Specialty { get; set; }
     public string? Notes { get; set; }
+    public Guid? ServiceId { get; set; }
+    public Guid? ClinicRoomId { get; set; }
 }
 
 public class UpdateAppointmentStatusRequest
 {
+    public string Status { get; set; } = string.Empty;
+}
+
+/// <summary>Request body for batch updating appointment statuses.</summary>
+public class BatchUpdateStatusRequest
+{
+    public List<Guid> AppointmentIds { get; set; } = [];
     public string Status { get; set; } = string.Empty;
 }
 

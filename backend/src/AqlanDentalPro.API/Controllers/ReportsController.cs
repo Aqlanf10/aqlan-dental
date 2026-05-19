@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -265,7 +266,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         // Peak hours distribution
         var peakHours = appointments
-            .GroupBy(a => a.StartTime.Hours)
+            .GroupBy(a => a.StartTime.Hour)
             .Select(g => new { hour = g.Key, label = $"{g.Key:D2}:00", count = g.Count() })
             .OrderBy(x => x.hour)
             .ToList();

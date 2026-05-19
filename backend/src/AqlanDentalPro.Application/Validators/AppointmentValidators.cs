@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Domain.Enums;
 using FluentValidation;
 
 namespace AqlanDentalPro.Application.Validators;
@@ -28,4 +29,20 @@ public sealed class CreateAppointmentRequestValidator : AbstractValidator<Create
             .NotEmpty().WithMessage("نوع الموعد مطلوب")
             .MaximumLength(100).WithMessage("نوع الموعد يجب ألا يتجاوز 100 حرف");
     }
+}
+
+public sealed class BatchUpdateStatusRequestValidator : AbstractValidator<BatchUpdateStatusRequest>
+{
+    public BatchUpdateStatusRequestValidator()
+    {
+        RuleFor(x => x.AppointmentIds)
+            .NotEmpty().WithMessage("قائمة المواعيد مطلوبة");
+
+        RuleFor(x => x.Status)
+            .NotEmpty().WithMessage("الحالة مطلوبة")
+            .Must(BeAValidStatus).WithMessage("الحالة يجب أن تكون: Scheduled, Confirmed, Arrived, Waiting, Called, InRoom, InProgress, Completed, Cancelled, NoShow");
+    }
+
+    private static bool BeAValidStatus(string status) =>
+        Enum.TryParse<AppointmentStatus>(status, ignoreCase: true, out _);
 }

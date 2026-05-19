@@ -227,19 +227,28 @@ var allowedOrigins = builder.Configuration["AllowedOrigins"]?.Split(',', StringS
 allowedOrigins = [..allowedOrigins,
     "https://aqlan-dental-pro.vercel.app",
     "https://aqlan-dental.vercel.app"];
-builder.Services.AddCors(opts => opts.AddPolicy("AllowFrontend", policy =>
+builder.Services.AddCors(opts =>
 {
-    policy.SetIsOriginAllowed(origin =>
-        {
-            // Allow configured origins
-            if (allowedOrigins.Contains(origin)) return true;
-            // C-01 FIX: Removed wildcard *.vercel.app — only explicitly listed origins are allowed
-            return false;
-        })
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials();
-}));
+    // Authenticated staff endpoints — strict origins, cookies allowed
+    opts.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.SetIsOriginAllowed(origin =>
+            {
+                if (allowedOrigins.Contains(origin)) return true;
+                // C-01 FIX: Removed wildcard *.vercel.app — only explicitly listed origins are allowed
+                return false;
+            })
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+
+    // Public API endpoints (/api/public/*) — no auth/cookies, any origin is safe
+    opts.AddPolicy("AllowPublicApi", policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
 
 // ── Rate Limiting (H1 FIX: prevent brute-force on auth endpoints) ────────────
 builder.Services.AddRateLimiter(options =>

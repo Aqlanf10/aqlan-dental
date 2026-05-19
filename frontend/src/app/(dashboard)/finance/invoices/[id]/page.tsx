@@ -14,6 +14,7 @@ import {
   CreditCard,
   CheckCircle2,
   Receipt,
+  Download,
 } from "lucide-react";
 import type {
   InvoiceDetail,
@@ -395,6 +396,17 @@ export default function InvoiceDetailPage() {
               <CreditCard className="w-3.5 h-3.5" />
               تسجيل دفعة
             </button>
+          )}
+          {(isIssued || isPaid) && (
+            <a
+              href={`${api.defaults.baseURL}/api/invoices/${id}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 transition"
+            >
+              <Download className="w-3.5 h-3.5" />
+              PDF
+            </a>
           )}
         </div>
       </div>

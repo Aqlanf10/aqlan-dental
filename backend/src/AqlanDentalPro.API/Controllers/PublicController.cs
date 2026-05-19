@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.EntityFrameworkCore;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Domain.Entities;
@@ -9,6 +10,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 [ApiController]
 [Route("api")]
+[EnableCors("AllowPublicApi")]
 public class PublicController : ControllerBase
 {
     private readonly AppDbContext _db;

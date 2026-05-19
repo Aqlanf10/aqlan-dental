@@ -126,3 +126,97 @@ public sealed class UpdateContractRequestValidator : AbstractValidator<UpdateCon
             .When(x => !string.IsNullOrWhiteSpace(x.Notes));
     }
 }
+
+// ─── H5: Invoice validators ─────────────────────────────────────────────────
+
+/// <summary>
+/// H5 FIX: Validates CreateInvoiceRequest — prevents negative amounts,
+/// zero quantities, empty patient ID, and unbounded strings.
+/// </summary>
+public sealed class CreateInvoiceRequestValidator : AbstractValidator<CreateInvoiceRequest>
+{
+    public CreateInvoiceRequestValidator()
+    {
+        RuleFor(x => x.PatientId)
+            .NotEmpty().WithMessage("معرّف المريض مطلوب");
+
+        RuleFor(x => x.DiscountAmount)
+            .GreaterThanOrEqualTo(0).WithMessage("مبلغ الخصم يجب أن يكون صفراً أو أكثر")
+            .When(x => x.DiscountAmount.HasValue);
+
+        RuleFor(x => x.TaxAmount)
+            .GreaterThanOrEqualTo(0).WithMessage("مبلغ الضريبة يجب أن يكون صفراً أو أكثر")
+            .When(x => x.TaxAmount.HasValue);
+
+        RuleFor(x => x.Notes)
+            .MaximumLength(1000).WithMessage("الملاحظات يجب ألا تتجاوز 1000 حرف")
+            .When(x => x.Notes != null);
+
+        RuleForEach(x => x.LineItems)
+            .SetValidator(new CreateInvoiceLineItemRequestValidator());
+    }
+}
+
+public sealed class CreateInvoiceLineItemRequestValidator : AbstractValidator<CreateInvoiceLineItemRequest>
+{
+    public CreateInvoiceLineItemRequestValidator()
+    {
+        RuleFor(x => x.UnitPrice)
+            .GreaterThan(0).WithMessage("سعر الوحدة يجب أن يكون أكبر من صفر");
+
+        RuleFor(x => x.Quantity)
+            .GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر");
+
+        RuleFor(x => x.ServiceNameSnapshot)
+            .MaximumLength(200).WithMessage("اسم الخدمة يجب ألا يتجاوز 200 حرف")
+            .When(x => x.ServiceNameSnapshot != null);
+
+        RuleFor(x => x.Description)
+            .MaximumLength(500).WithMessage("الوصف يجب ألا يتجاوز 500 حرف")
+            .When(x => x.Description != null);
+    }
+}
+
+/// <summary>
+/// H5 FIX: Validates UpdateInvoiceRequest — same rules as create but for draft updates.
+/// </summary>
+public sealed class UpdateInvoiceRequestValidator : AbstractValidator<UpdateInvoiceRequest>
+{
+    public UpdateInvoiceRequestValidator()
+    {
+        RuleFor(x => x.DiscountAmount)
+            .GreaterThanOrEqualTo(0).WithMessage("مبلغ الخصم يجب أن يكون صفراً أو أكثر")
+            .When(x => x.DiscountAmount.HasValue);
+
+        RuleFor(x => x.TaxAmount)
+            .GreaterThanOrEqualTo(0).WithMessage("مبلغ الضريبة يجب أن يكون صفراً أو أكثر")
+            .When(x => x.TaxAmount.HasValue);
+
+        RuleFor(x => x.Notes)
+            .MaximumLength(1000).WithMessage("الملاحظات يجب ألا تتجاوز 1000 حرف")
+            .When(x => x.Notes != null);
+
+        RuleForEach(x => x.LineItems)
+            .SetValidator(new UpdateInvoiceLineItemRequestValidator());
+    }
+}
+
+public sealed class UpdateInvoiceLineItemRequestValidator : AbstractValidator<UpdateInvoiceLineItemRequest>
+{
+    public UpdateInvoiceLineItemRequestValidator()
+    {
+        RuleFor(x => x.UnitPrice)
+            .GreaterThan(0).WithMessage("سعر الوحدة يجب أن يكون أكبر من صفر");
+
+        RuleFor(x => x.Quantity)
+            .GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر");
+
+        RuleFor(x => x.ServiceNameSnapshot)
+            .MaximumLength(200).WithMessage("اسم الخدمة يجب ألا يتجاوز 200 حرف")
+            .When(x => x.ServiceNameSnapshot != null);
+
+        RuleFor(x => x.Description)
+            .MaximumLength(500).WithMessage("الوصف يجب ألا يتجاوز 500 حرف")
+            .When(x => x.Description != null);
+    }
+}

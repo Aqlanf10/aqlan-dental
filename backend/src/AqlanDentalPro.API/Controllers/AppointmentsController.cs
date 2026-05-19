@@ -348,6 +348,25 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         appointment.DeletedBy = currentUser.UserId;
         appointment.UpdatedAt = DateTime.UtcNow;
 
+        // H4 FIX: Cancel any active queue item for this appointment.
+        // Previously, soft-deleting an appointment left the linked ClinicQueueItem
+        // in an active state (Waiting/Called/InRoom), causing the TV display and
+        // queue listing to show patients for deleted appointments.
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var activeQueueItem = await db.ClinicQueueItems
+            .FirstOrDefaultAsync(q => q.AppointmentId == id
+                && q.QueueDate == today
+                && q.Status != ClinicQueueStatus.Completed
+                && q.Status != ClinicQueueStatus.Cancelled
+                && q.IsActive);
+
+        if (activeQueueItem != null)
+        {
+            activeQueueItem.Status = ClinicQueueStatus.Cancelled;
+            activeQueueItem.CancelledAt = DateTime.UtcNow;
+            activeQueueItem.UpdatedAt = DateTime.UtcNow;
+        }
+
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف الموعد بنجاح" });
     }

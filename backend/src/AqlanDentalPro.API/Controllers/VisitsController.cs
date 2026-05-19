@@ -281,8 +281,35 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
         visit.IsActive = false;
         visit.DeletedAt = DateTime.UtcNow;
         visit.DeletedBy = currentUser.UserId;
+
+        // H6 FIX: Cascade soft-delete to linked prescriptions and general treatments.
+        // Previously, soft-deleting a visit left orphaned prescriptions and treatments
+        // that appeared in patient records with no valid visit context.
+        var prescriptions = await db.Prescriptions
+            .Where(p => p.VisitId == id && p.IsActive)
+            .ToListAsync();
+        foreach (var p in prescriptions)
+        {
+            p.IsActive = false;
+            p.DeletedAt = DateTime.UtcNow;
+        }
+
+        var treatments = await db.GeneralTreatments
+            .Where(t => t.VisitId == id && t.IsActive)
+            .ToListAsync();
+        foreach (var t in treatments)
+        {
+            t.IsActive = false;
+            t.DeletedAt = DateTime.UtcNow;
+        }
+
         await db.SaveChangesAsync();
 
-        return Ok(new { message = "تم حذف الزيارة بنجاح" });
+        var cascadedCount = prescriptions.Count + treatments.Count;
+        var msg = cascadedCount > 0
+            ? $"تم حذف الزيارة و{prescriptions.Count} وصفة طبية و{treatments.Count} علاج مرتبط"
+            : "تم حذف الزيارة بنجاح";
+
+        return Ok(new { message = msg });
     }
 }

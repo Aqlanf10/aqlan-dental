@@ -340,30 +340,55 @@ public class EmployeesController(AppDbContext db) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var employee = await db.Employees.FindAsync(id);
+        var employee = await db.Employees
+            .Include(e => e.User)
+            .FirstOrDefaultAsync(e => e.Id == id);
         if (employee is null)
             return NotFound(new { message = "الموظف غير موجود" });
 
-        // Soft delete only the employee, NOT the user account
+        // H2 FIX: Soft-delete both the employee AND the linked user account.
+        // Previously, only the Employee was deactivated, leaving the User account
+        // fully active — terminated employees could still log in.
         employee.IsActive = false;
         employee.DeletedAt = DateTime.UtcNow;
 
+        if (employee.User != null && employee.User.IsActive)
+        {
+            employee.User.IsActive = false;
+            employee.User.DeletedAt = DateTime.UtcNow;
+        }
+
         await db.SaveChangesAsync();
 
-        return Ok(new { message = "تم حذف الموظف بنجاح" });
+        return Ok(new { message = "تم حذف الموظف وحساب المستخدم المرتبط بنجاح" });
     }
 
     [HttpPut("{id:guid}/status")]
     public async Task<IActionResult> ToggleStatus(Guid id)
     {
-        var employee = await db.Employees.FindAsync(id);
+        var employee = await db.Employees
+            .Include(e => e.User)
+            .FirstOrDefaultAsync(e => e.Id == id);
         if (employee is null)
             return NotFound(new { message = "الموظف غير موجود" });
 
         employee.IsActive = !employee.IsActive;
+
+        // H2 FIX: Sync user account status with employee status.
+        // When reactivating an employee, also reactivate their user account.
+        // When deactivating, also deactivate the user account to prevent login.
+        if (employee.User != null)
+        {
+            employee.User.IsActive = employee.IsActive;
+            if (!employee.IsActive)
+                employee.User.DeletedAt = DateTime.UtcNow;
+            else
+                employee.User.DeletedAt = null;
+        }
+
         await db.SaveChangesAsync();
 
-        return Ok(new { message = employee.IsActive ? "تم تفعيل الموظف بنجاح" : "تم تعطيل الموظف بنجاح" });
+        return Ok(new { message = employee.IsActive ? "تم تفعيل الموظف وحساب المستخدم بنجاح" : "تم تعطيل الموظف وحساب المستخدم بنجاح" });
     }
 
     /// <summary>

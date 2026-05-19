@@ -10,5 +10,11 @@ public class Inventory : BaseEntity
     public decimal? CostPerUnit { get; set; }
     public Guid? BranchId { get; set; }
 
+    public string? BatchNumber { get; set; }
+    public DateOnly? ExpiryDate { get; set; }
+    public Guid? DefaultSupplierId { get; set; }
+    public Supplier? DefaultSupplier { get; set; }
+
     public Branch? Branch { get; set; }
+    public ICollection<InventoryAdjustment> Adjustments { get; set; } = [];
 }

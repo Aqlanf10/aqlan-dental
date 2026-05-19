@@ -77,6 +77,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<InvoiceLineItem> InvoiceLineItems => Set<InvoiceLineItem>();
     public DbSet<OrthoDiagnosis> OrthoDiagnoses => Set<OrthoDiagnosis>();
     public DbSet<OrthoClinicalPhoto> OrthoClinicalPhotos => Set<OrthoClinicalPhoto>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLineItem> PurchaseOrderLineItems => Set<PurchaseOrderLineItem>();
+    public DbSet<InventoryAdjustment> InventoryAdjustments => Set<InventoryAdjustment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

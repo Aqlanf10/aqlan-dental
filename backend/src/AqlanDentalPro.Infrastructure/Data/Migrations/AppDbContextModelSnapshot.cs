@@ -128,6 +128,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<string?>("StaffNotes")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("DoctorId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -142,6 +145,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("Status");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("DoctorId");
 
                     b.ToTable("BookingRequests");
                 });

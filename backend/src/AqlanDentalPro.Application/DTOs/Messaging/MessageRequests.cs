@@ -23,6 +23,18 @@ public class SendMessageRequest
     public string? AttachmentName { get; set; }
     public string? AttachmentType { get; set; }
     public Guid? ReplyToId { get; set; }
+
+    /// <summary>مرفقات إضافية (متعددة) — يدعم عدة مرفقات لكل رسالة.</summary>
+    public List<AttachmentItem>? Attachments { get; set; }
+}
+
+/// <summary>مرفق واحد لرسالة</summary>
+public class AttachmentItem
+{
+    public string FileUrl { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public long FileSize { get; set; }
+    public string MimeType { get; set; } = string.Empty;
 }
 
 /// <summary>عدد الرسائل غير المقروءة</summary>

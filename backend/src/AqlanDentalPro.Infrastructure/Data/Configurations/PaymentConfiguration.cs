@@ -16,5 +16,13 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
 
         // DB-01 FIX: Index for querying payments by branch
         builder.HasIndex(p => p.BranchId);
+
+        // Invoice link
+        builder.HasIndex(p => p.InvoiceId);
+
+        builder.HasOne(p => p.Invoice)
+            .WithMany(i => i.Payments)
+            .HasForeignKey(p => p.InvoiceId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

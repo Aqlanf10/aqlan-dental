@@ -25,4 +25,7 @@
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.1.2" />
     <PackageReference Include="QuestPDF" Version="2024.10.3" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\Fonts\**" CopyToOutputDirectory="PreserveNewest" LinkBase="Fonts\" />
+  </ItemGroup>
 </Project>

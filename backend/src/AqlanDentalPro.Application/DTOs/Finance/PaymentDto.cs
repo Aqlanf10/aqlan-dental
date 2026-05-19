@@ -6,6 +6,8 @@ public class PaymentDto
     public Guid PatientId { get; set; }
     public string PatientName { get; set; } = string.Empty;
     public Guid? ContractId { get; set; }
+    public Guid? InvoiceId { get; set; }
+    public string? InvoiceNumber { get; set; }
     public decimal Amount { get; set; }
     public string PaymentDate { get; set; } = string.Empty;
     public string? PaymentMethod { get; set; }
@@ -24,6 +26,7 @@ public class CreatePaymentRequest
 {
     public Guid PatientId { get; set; }
     public Guid? ContractId { get; set; }
+    public Guid? InvoiceId { get; set; }
     public decimal Amount { get; set; }
     public string? PaymentMethod { get; set; } = "cash";
     public string? ServiceDescription { get; set; }

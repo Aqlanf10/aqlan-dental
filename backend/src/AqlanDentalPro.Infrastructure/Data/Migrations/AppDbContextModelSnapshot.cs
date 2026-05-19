@@ -1671,6 +1671,57 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.ToTable("OrthoCases");
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OrthoClinicalPhoto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OrthoCaseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PhotoType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("PhotoUrl")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("TakenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrthoCaseId");
+
+                    b.ToTable("OrthoClinicalPhotos");
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OrthoClinicalExam", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1763,6 +1814,77 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("OrthoClinicalExams");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OrthoDiagnosis", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("ANB")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DentalClassification")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FacialPattern")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<decimal?>("FMA")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<decimal?>("IMPA")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("OrthoCaseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("SNA")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<decimal?>("SNB")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<string>("SkeletalClassification")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("Wits")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrthoCaseId")
+                        .IsUnique();
+
+                    b.ToTable("OrthoDiagnoses");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OrthoVisit", b =>
@@ -3506,6 +3628,28 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("OrthoCase");
                 });
 
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OrthoClinicalPhoto", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.OrthoCase", "OrthoCase")
+                        .WithMany("OrthoClinicalPhotos")
+                        .HasForeignKey("OrthoCaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrthoCase");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OrthoDiagnosis", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.OrthoCase", "OrthoCase")
+                        .WithOne("Diagnosis")
+                        .HasForeignKey("AqlanDentalPro.Domain.Entities.OrthoDiagnosis", "OrthoCaseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrthoCase");
+                });
+
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Patient", b =>
                 {
                     b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
@@ -3873,11 +4017,15 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Navigation("ClinicalExam");
 
+                    b.Navigation("Diagnosis");
+
                     b.Navigation("ExtractionDecision");
 
                     b.Navigation("LabOrders");
 
                     b.Navigation("ModelAnalyses");
+
+                    b.Navigation("OrthoClinicalPhotos");
 
                     b.Navigation("Photos");
 

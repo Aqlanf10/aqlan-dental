@@ -13,6 +13,8 @@ public class PdfService : IPdfService
     private readonly AppDbContext _db;
     private readonly ILogger<PdfService> _logger;
 
+    public const string ArabicFontName = "NotoNaskhArabic";
+
     // Font registration is done once statically
     private static bool _fontRegistered = false;
 
@@ -28,11 +30,23 @@ public class PdfService : IPdfService
         if (_fontRegistered) return;
         _fontRegistered = true;
 
-        // Use standard fonts as fallback — for Arabic, the browser-side print works better
-        // QuestPDF will use the font for Latin characters
-        // NOTE: For full Arabic PDF support, add a custom Arabic font file (e.g., NotoSansArabic.ttf)
-        // and register it here: FontManager.RegisterFont(File.ReadAllBytes("path/to/font.ttf"));
         QuestPDF.Settings.License = LicenseType.Community;
+
+        // Register Arabic font for RTL PDF support
+        var fontPaths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Fonts", "NotoNaskhArabic-Regular.ttf"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "NotoNaskhArabic-Regular.ttf"),
+        };
+
+        foreach (var path in fontPaths)
+        {
+            if (File.Exists(path))
+            {
+                FontManager.RegisterFont(File.ReadAllBytes(path));
+                break;
+            }
+        }
     }
 
     public async Task<byte[]> GeneratePaymentReceiptAsync(Guid paymentId)
@@ -68,6 +82,23 @@ public class PdfService : IPdfService
             .ToListAsync();
 
         var document = new FinancialStatementDocument(patient, payments);
+        var bytes = document.GeneratePdf();
+        return bytes;
+    }
+
+    public async Task<byte[]> GenerateInvoicePdfAsync(Guid invoiceId)
+    {
+        var invoice = await _db.Invoices
+            .Include(i => i.Patient)
+            .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
+                .ThenInclude(l => l.Service)
+            .Include(i => i.Payments.Where(p => p.IsActive))
+            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+
+        if (invoice == null)
+            throw new ArgumentException("الفاتورة غير موجودة");
+
+        var document = new InvoiceDocument(invoice);
         var bytes = document.GeneratePdf();
         return bytes;
     }

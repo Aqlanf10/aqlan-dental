@@ -15,7 +15,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patient-journey")]
 [Authorize(Policy = "StaffOnly")]
-public class PatientJourneyController(AppDbContext db) : ControllerBase
+public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyController> logger) : ControllerBase
 {
     // ─── 1. GET /api/patient-journey/today ────────────────────────────────────
     /// <summary>Returns today's patient journey list combining appointments,
@@ -495,6 +495,185 @@ public class PatientJourneyController(AppDbContext db) : ControllerBase
             NextActions = nextActions,
             message = "تم إنهاء الحساب بنجاح"
         });
+    }
+
+    // ─── 7. POST /api/patient-journey/{visitId}/create-draft-invoice ────────
+    /// <summary>Creates a Draft Invoice from a visit that is ready for checkout.
+    /// Uses Visit.AmountDueReference and linked ServiceId for line item pricing.
+    /// Does NOT create a Payment. Does NOT alter Contract or Patient balance.
+    /// If a Draft invoice already exists for this Visit, returns the existing one.
+    /// Uses advisory lock + unique constraint retry to prevent race condition on
+    /// invoice number generation (same pattern as LabOrdersController).</summary>
+    [HttpPost("{visitId:guid}/create-draft-invoice")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<IActionResult> CreateDraftInvoice(Guid visitId)
+    {
+        var visit = await db.Visits
+            .Include(v => v.Appointment)
+            .FirstOrDefaultAsync(v => v.Id == visitId);
+        if (visit == null)
+            return NotFound(new { message = "الزيارة غير موجودة" });
+        if (!visit.IsActive)
+            return BadRequest(new { message = "الزيارة محذوفة" });
+
+        // Duplicate prevention: check for existing active Draft invoice for this Visit
+        var existingDraft = await db.Invoices
+            .Include(i => i.LineItems)
+            .FirstOrDefaultAsync(i => i.VisitId == visitId && i.Status == InvoiceStatus.Draft && i.IsActive);
+
+        if (existingDraft != null)
+        {
+            return Ok(new
+            {
+                existingDraft.Id,
+                existingDraft.InvoiceNumber,
+                Status = existingDraft.Status.ToString(),
+                StatusArabic = "مسودة",
+                existingDraft.TotalAmount,
+                IsExisting = true,
+                message = "توجد فاتورة مسودة لهذه الزيارة بالفعل"
+            });
+        }
+
+        // CON-02: Advisory lock + unique constraint retry to prevent race condition
+        // on invoice number generation. Strategy mirrors LabOrdersController.
+        var userId = GetCurrentUserId();
+
+        // Determine service and price (outside transaction — read-only lookup)
+        ClinicService? service = null;
+        var serviceId = visit.ServiceId ?? visit.Appointment?.ServiceId;
+        if (serviceId.HasValue)
+        {
+            service = await db.ClinicServices.FindAsync(serviceId.Value);
+        }
+
+        string serviceName = service?.ArabicName ?? "خدمة علاجية";
+        decimal unitPrice = visit.AmountDueReference
+            ?? service?.DefaultPrice
+            ?? 0;
+
+        const int maxRetries = 3;
+
+        for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                // Acquire advisory lock for invoice number generation
+                var lockKey = Math.Abs("InvoiceNumber".GetHashCode()) % 100000;
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+                // Re-check for existing draft inside transaction (prevents TOCTOU race)
+                var txExistingDraft = await db.Invoices
+                    .FirstOrDefaultAsync(i => i.VisitId == visitId && i.Status == InvoiceStatus.Draft && i.IsActive);
+
+                if (txExistingDraft != null)
+                {
+                    await tx.RollbackAsync();
+                    return Ok(new
+                    {
+                        txExistingDraft.Id,
+                        txExistingDraft.InvoiceNumber,
+                        Status = txExistingDraft.Status.ToString(),
+                        StatusArabic = "مسودة",
+                        txExistingDraft.TotalAmount,
+                        IsExisting = true,
+                        message = "توجد فاتورة مسودة لهذه الزيارة بالفعل"
+                    });
+                }
+
+                var invoiceNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
+
+                var lineItem = new InvoiceLineItem
+                {
+                    ServiceId = service?.Id,
+                    ServiceNameSnapshot = serviceName,
+                    Description = serviceName,
+                    Quantity = 1,
+                    UnitPrice = unitPrice,
+                    TotalPrice = unitPrice,
+                    RelatedVisitId = visitId,
+                    SortOrder = 0
+                };
+
+                var invoice = new Invoice
+                {
+                    PatientId = visit.PatientId,
+                    VisitId = visitId,
+                    AppointmentId = visit.AppointmentId,
+                    InvoiceNumber = invoiceNumber,
+                    Status = InvoiceStatus.Draft,
+                    Subtotal = unitPrice,
+                    TotalAmount = unitPrice,
+                    CreatedBy = userId,
+                    UpdatedBy = userId,
+                    LineItems = [lineItem]
+                };
+
+                db.Invoices.Add(invoice);
+
+                // IMPORTANT: No Payment is created. No Contract is changed.
+                // No patient balance is altered. Payments module remains source of truth.
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                    await tx.CommitAsync();
+                }
+                catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+                {
+                    // Unique constraint on InvoiceNumber caught a duplicate.
+                    // Roll back and retry with a fresh number.
+                    await tx.RollbackAsync();
+                    logger.LogWarning("CON-02: Invoice number collision on attempt {Attempt}, retrying", attempt + 1);
+                    continue;
+                }
+
+                return Ok(new
+                {
+                    invoice.Id,
+                    invoice.InvoiceNumber,
+                    Status = invoice.Status.ToString(),
+                    StatusArabic = "مسودة",
+                    invoice.Subtotal,
+                    invoice.TotalAmount,
+                    LineItemCount = invoice.LineItems.Count,
+                    IsExisting = false,
+                    message = "تم إنشاء الفاتورة المسودة بنجاح"
+                });
+            }
+            catch (DbUpdateException)
+            {
+                // Re-throw if not a unique violation (already handled above)
+                await tx.RollbackAsync();
+                throw;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+
+        // All retries exhausted — this should never happen with advisory lock + unique index
+        logger.LogError("CON-02: Failed to generate unique invoice number after {MaxRetries} attempts", maxRetries);
+        return StatusCode(500, new { message = "فشل إنشاء رقم فاتورة فريد بعد عدة محاولات. يرجى المحاولة مرة أخرى." });
+    }
+
+    /// <summary>
+    /// CON-02 FIX: Checks if a DbUpdateException is a PostgreSQL unique constraint violation (error code 23505).
+    /// </summary>
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        var inner = ex.InnerException;
+        while (inner != null)
+        {
+            if (inner.Message.Contains("23505") || inner.Message.Contains("duplicate key") ||
+                inner.Message.Contains("unique constraint") || inner.Message.Contains("InvoiceNumber"))
+                return true;
+            inner = inner.InnerException;
+        }
+        return false;
     }
 
     // ─── Private helpers ─────────────────────────────────────────────────────

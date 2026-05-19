@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { normalizePhone } from "@/lib/utils";
 import type { CreatePatientRequest, PatientProfile } from "@/types/patient";
 import {
   Clock, CheckCircle2, XCircle, Eye, Loader2, RefreshCw,
@@ -100,16 +101,6 @@ function parseTimeToISO(t: string | null): string | undefined {
     return `${h.toString().padStart(2, "0")}:${min}`;
   }
   return undefined;
-}
-
-function normalizePhone(phone: string): string {
-  let p = phone.replace(/[\s\-\(\)\+]/g, "");
-  if (p.startsWith("0")) {
-    p = "967" + p.substring(1);
-  } else if (p.startsWith("7") && p.length === 9) {
-    p = "967" + p;
-  }
-  return p;
 }
 
 function splitPatientName(fullName: string): Pick<CreatePatientRequest, "firstName" | "middleName" | "lastName"> {
@@ -427,14 +418,27 @@ export default function BookingRequestsPage() {
   }
 
   async function handleStatusChange(item: BookingRequest, status: BookingStatus, staffNotes: string) {
-    await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
-
     if (status === "Confirmed") {
-      const patientId = await ensurePatientFile(item);
-      router.push(`/patients/${patientId}`);
-      return;
+      // Create/find patient file FIRST — only confirm booking if patient creation succeeds
+      try {
+        const patientId = await ensurePatientFile(item);
+        await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
+        router.push(`/patients/${patientId}`);
+        return;
+      } catch (err: unknown) {
+        const axiosErr = err as { response?: { data?: { message?: string } }; message?: string };
+        const msg = axiosErr?.response?.data?.message || axiosErr?.message || "تعذّر إنشاء ملف المريض";
+        setError(`تم تأكيد الطلب لكن فشل فتح ملف المريض: ${msg}`);
+        // Still mark booking as confirmed so staff can retry from the patient list
+        try {
+          await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
+        } catch { /* ignore — status might already be confirmed */ }
+        await fetchItems();
+        return;
+      }
     }
 
+    await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
     await fetchItems();
   }
 

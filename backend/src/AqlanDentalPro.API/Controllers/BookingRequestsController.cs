@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -18,6 +19,7 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     /// </summary>
     [HttpGet("api/public/booking-availability")]
     [AllowAnonymous]
+    [EnableCors("AllowPublicApi")]
     public async Task<IActionResult> GetAvailability([FromQuery] string date, [FromQuery] string? serviceType, [FromQuery] Guid? doctorId)
     {
         if (string.IsNullOrWhiteSpace(date))
@@ -38,6 +40,7 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     /// </summary>
     [HttpPost("api/public/booking-requests")]
     [AllowAnonymous]
+    [EnableCors("AllowPublicApi")]
     [EnableRateLimiting("BookingPolicy")]
     [Honeypot]
     public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto dto)

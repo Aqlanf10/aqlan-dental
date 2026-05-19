@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using QuestPDF.Drawing;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -43,7 +44,8 @@ public class PdfService : IPdfService
         {
             if (File.Exists(path))
             {
-                FontManager.RegisterFont(File.ReadAllBytes(path));
+                using var stream = File.OpenRead(path);
+                FontManager.RegisterFont(stream);
                 break;
             }
         }

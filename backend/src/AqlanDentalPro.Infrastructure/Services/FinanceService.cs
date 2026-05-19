@@ -189,6 +189,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             // Payment patient must match invoice patient
             if (req.PatientId != invoice.PatientId)
                 throw new ArgumentException("المريض في الدفعة لا يطابق المريض في الفاتورة");
+
+            // Server-side overpayment guard
+            var alreadyPaid = await db.Payments
+                .Where(p => p.InvoiceId == invoice.Id && p.IsActive)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+            var remaining = invoice.TotalAmount - alreadyPaid;
+            if (req.Amount > remaining)
+                throw new ArgumentException($"المبلغ ({req.Amount:N0}) يتجاوز الرصيد المتبقي للفاتورة ({remaining:N0})");
         }
 
         var payment = new Payment

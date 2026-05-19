@@ -256,7 +256,7 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
                 page.Size(PageSizes.A4);
                 page.Margin(2, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.ContentDirection(Direction.RTL);
+                page.ContentFromRightToLeft();
                 page.DefaultTextStyle(x => x.FontSize(10).FontFamily(FontName));
 
                 page.Header().Element(ComposeHeader);

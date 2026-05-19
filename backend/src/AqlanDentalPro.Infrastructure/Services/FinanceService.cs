@@ -197,6 +197,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             var remaining = invoice.TotalAmount - alreadyPaid;
             if (req.Amount > remaining)
                 throw new ArgumentException($"المبلغ ({req.Amount:N0}) يتجاوز الرصيد المتبقي للفاتورة ({remaining:N0})");
+
         }
 
         var payment = new Payment

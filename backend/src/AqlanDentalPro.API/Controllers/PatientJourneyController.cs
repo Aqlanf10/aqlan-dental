@@ -497,6 +497,106 @@ public class PatientJourneyController(AppDbContext db) : ControllerBase
         });
     }
 
+    // ─── 7. POST /api/patient-journey/{visitId}/create-draft-invoice ────────
+    /// <summary>Creates a Draft Invoice from a visit that is ready for checkout.
+    /// Uses Visit.AmountDueReference and linked ServiceId for line item pricing.
+    /// Does NOT create a Payment. Does NOT alter Contract or Patient balance.
+    /// If a Draft invoice already exists for this Visit, returns the existing one.</summary>
+    [HttpPost("{visitId:guid}/create-draft-invoice")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<IActionResult> CreateDraftInvoice(Guid visitId)
+    {
+        var visit = await db.Visits
+            .Include(v => v.Appointment)
+            .FirstOrDefaultAsync(v => v.Id == visitId);
+        if (visit == null)
+            return NotFound(new { message = "الزيارة غير موجودة" });
+        if (!visit.IsActive)
+            return BadRequest(new { message = "الزيارة محذوفة" });
+
+        // Duplicate prevention: check for existing active Draft invoice for this Visit
+        var existingDraft = await db.Invoices
+            .Include(i => i.LineItems)
+            .FirstOrDefaultAsync(i => i.VisitId == visitId && i.Status == InvoiceStatus.Draft && i.IsActive);
+
+        if (existingDraft != null)
+        {
+            return Ok(new
+            {
+                existingDraft.Id,
+                existingDraft.InvoiceNumber,
+                Status = existingDraft.Status.ToString(),
+                StatusArabic = "مسودة",
+                existingDraft.TotalAmount,
+                IsExisting = true,
+                message = "توجد فاتورة مسودة لهذه الزيارة بالفعل"
+            });
+        }
+
+        var userId = GetCurrentUserId();
+        var invoiceNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
+
+        // Determine service and price
+        ClinicService? service = null;
+        var serviceId = visit.ServiceId ?? visit.Appointment?.ServiceId;
+        if (serviceId.HasValue)
+        {
+            service = await db.ClinicServices.FindAsync(serviceId.Value);
+        }
+
+        // Build line item
+        string serviceName = service?.ArabicName ?? "خدمة علاجية";
+        decimal unitPrice = visit.AmountDueReference
+            ?? service?.DefaultPrice
+            ?? 0;
+
+        var lineItem = new InvoiceLineItem
+        {
+            ServiceId = service?.Id,
+            ServiceNameSnapshot = serviceName,
+            Description = serviceName,
+            Quantity = 1,
+            UnitPrice = unitPrice,
+            TotalPrice = unitPrice,
+            RelatedVisitId = visitId,
+            SortOrder = 0
+        };
+
+        var invoice = new Invoice
+        {
+            PatientId = visit.PatientId,
+            VisitId = visitId,
+            AppointmentId = visit.AppointmentId,
+            InvoiceNumber = invoiceNumber,
+            Status = InvoiceStatus.Draft,
+            Subtotal = unitPrice,
+            TotalAmount = unitPrice,
+            CreatedBy = userId,
+            UpdatedBy = userId,
+            LineItems = [lineItem]
+        };
+
+        db.Invoices.Add(invoice);
+
+        // IMPORTANT: No Payment is created. No Contract is changed.
+        // No patient balance is altered. Payments module remains source of truth.
+
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            invoice.Id,
+            invoice.InvoiceNumber,
+            Status = invoice.Status.ToString(),
+            StatusArabic = "مسودة",
+            invoice.Subtotal,
+            invoice.TotalAmount,
+            LineItemCount = invoice.LineItems.Count,
+            IsExisting = false,
+            message = "تم إنشاء الفاتورة المسودة بنجاح"
+        });
+    }
+
     // ─── Private helpers ─────────────────────────────────────────────────────
 
     private static string DetermineNextAction(AppointmentStatus apptStatus, ClinicQueueStatus? queueStatus, string? checkoutStatus)

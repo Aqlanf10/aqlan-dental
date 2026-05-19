@@ -31,6 +31,7 @@ import {
   Check,
   Mic,
   BarChart3,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -249,7 +250,7 @@ export default function MessagesPage() {
     searchQuery || undefined,
     activeFilter
   );
-  const { data: conversation } = useConversation(selectedConvId);
+  const { data: conversation, isLoading: convDetailLoading, isError: convDetailError, refetch: refetchConv } = useConversation(selectedConvId);
   const sendMessage = useSendMessage(selectedConvId ?? "");
   const markAsRead = useMarkAsRead(selectedConvId ?? "");
   const { data: unreadData } = useUnreadCount();
@@ -528,7 +529,35 @@ export default function MessagesPage() {
             !isMobileDetail ? "hidden md:flex" : "flex"
           )}
         >
-          {selectedConvId && conversation ? (
+          {selectedConvId && convDetailLoading ? (
+            /* Loading state — shown while fetching the conversation */
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-[#3d7ab5] mx-auto mb-3" />
+                <p className="text-sm text-gray-400">جارٍ تحميل المحادثة...</p>
+              </div>
+            </div>
+          ) : selectedConvId && convDetailError ? (
+            /* Error state — API failed (e.g. 500, network error) */
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center max-w-xs mx-auto">
+                <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+                  <AlertTriangle className="w-8 h-8 text-red-400" />
+                </div>
+                <p className="text-gray-700 font-semibold mb-1">تعذّر تحميل المحادثة</p>
+                <p className="text-gray-400 text-sm mb-4">
+                  حدث خطأ أثناء جلب الرسائل. قد يكون الخادم يُعاد تشغيله، حاول مجدداً.
+                </p>
+                <button
+                  onClick={() => refetchConv()}
+                  className="px-4 py-2 bg-[#3d7ab5] text-white rounded-lg text-sm font-semibold hover:opacity-90 transition flex items-center gap-2 mx-auto"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  إعادة المحاولة
+                </button>
+              </div>
+            </div>
+          ) : selectedConvId && conversation ? (
             <ChatArea
               conversation={conversation}
               currentUserId={user?.id ?? ""}

@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useSignalRMessaging } from "@/hooks/useSignalRMessaging";
 
 export default function DashboardLayout({
   children,
@@ -15,6 +16,9 @@ export default function DashboardLayout({
   const { isAuthenticated, fetchMe, user } = useAuthStore();
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
+
+  // SignalR: اتصال فوري للمراسلة والإشعارات
+  useSignalRMessaging();
 
   useEffect(() => {
     // If we have a persisted auth state but no user data, try to fetch it

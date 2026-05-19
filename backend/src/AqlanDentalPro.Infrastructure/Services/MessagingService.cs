@@ -9,7 +9,7 @@ using Npgsql;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class MessagingService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications)
+public class MessagingService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, IRealTimePushService pushService) : IMessagingService
 {
     private Guid UserId => currentUser.UserId ?? throw new UnauthorizedAccessException();
 
@@ -590,13 +590,22 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             .Select(cp => cp.UserId)
             .ToListAsync();
 
-        foreach (var pid in otherParticipants)
-        {
-            await notifications.NotifyAsync(pid, "message", "رسالة جديدة",
-                $"رسالة جديدة من {senderName}", "Conversation", conversationId);
-        }
+        // إرسال الإشعارات بالتوازي + دفع الرسالة فورياً عبر SignalR
+        var notificationTasks = otherParticipants.Select(pid =>
+            notifications.NotifyAsync(pid, "message", "رسالة جديدة",
+                $"رسالة جديدة من {senderName}", "Conversation", conversationId));
+        await Task.WhenAll(notificationTasks);
 
-        return MapMessageDto(loaded);
+        // SignalR: دفع الرسالة الجديدة لمشاركي المحادثة
+        var messageDto = MapMessageDto(loaded);
+        await pushService.PushToConversationAsync(conversationId, "NewMessage", messageDto);
+
+        // SignalR: تحديث عدد غير المقروء لكل مشارك
+        var pushUnreadTasks = otherParticipants.Select(pid =>
+            pushService.PushToUserAsync(pid, "UnreadCountUpdated", new { conversationId }));
+        await Task.WhenAll(pushUnreadTasks);
+
+        return messageDto;
     }
 
     // ─── تحديد كمقروء ──────────────────────────────────────────────────────────
@@ -766,7 +775,9 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId);
         if (participant == null) return;
 
-        db.ConversationParticipants.Remove(participant);
+        // Soft-delete: بدلاً من الحذف النهائي، نستخدم الحذف الناعم للحفاظ على سلامة البيانات
+        participant.IsActive = false;
+        participant.DeletedAt = DateTime.UtcNow;
 
         // Add system message
         await db.Messages.AddAsync(new Message
@@ -778,6 +789,27 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         });
 
         await db.SaveChangesAsync();
+    }
+
+    // ─── جلب رسائل جديدة منذ تاريخ (تصفية بالسيرفر) ─────────────────────────────
+    public async Task<List<MessageDto>> PollNewMessagesAsync(Guid conversationId, DateTime since)
+    {
+        if (!await IsParticipantAsync(conversationId))
+            throw new UnauthorizedAccessException("لست مشاركاً في هذه المحادثة");
+
+        var messages = await db.Messages
+            .Where(m => m.ConversationId == conversationId && m.CreatedAt > since)
+            .Include(m => m.Sender)
+                .ThenInclude(u => u.Doctor)
+            .Include(m => m.Reads)
+            .Include(m => m.ReplyTo)
+                .ThenInclude(r => r!.Sender)
+                    .ThenInclude(u => u.Doctor)
+            .Include(m => m.Attachments)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        return messages.Select(MapMessageDto).ToList();
     }
 
     // ─── التحقق من صلاحية المراسلة ─────────────────────────────────────────────

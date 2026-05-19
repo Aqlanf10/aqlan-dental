@@ -38,12 +38,24 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
         var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
 
         var today = DateOnly.FromDateTime(DateTime.Today);
+        var todayStart = DateTime.UtcNow.Date;   // بداية اليوم بالتوقيت العالمي
+        var todayEnd = todayStart.AddDays(1);     // نهاية اليوم
 
         var activeContracts = await db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
             .Where(c => c.Status == "active" && c.StartDate.HasValue && c.InstallmentsCount > 0)
             .ToListAsync();
+
+        // ─── منع التكرار: جلب الإشعارات التي أُرسلت اليوم لنفس العقود ──────────
+        var todayOverdueContractIds = await db.Notifications
+            .Where(n => n.Type == "payment"
+                     && n.Title == "قسط متأخر"
+                     && n.RelatedEntity == "Contract"
+                     && n.CreatedAt >= todayStart && n.CreatedAt < todayEnd)
+            .Select(n => n.RelatedId)
+            .Distinct()
+            .ToHashSetAsync();
 
         int count = 0;
         foreach (var c in activeContracts)
@@ -56,6 +68,10 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
 
             if (expectedPaid - actualPaid > 0)
             {
+                // ─── تخطي العقود التي سبق إرسال إشعار عنها اليوم ──────────────
+                if (todayOverdueContractIds.Contains(c.Id))
+                    continue;
+
                 count++;
                 var overdueAmt = expectedPaid - actualPaid;
                 var patientName = c.Patient != null
@@ -74,6 +90,6 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
                 null, null);
         }
 
-        logger.LogInformation("OverdueNotificationJob: checked {Count} overdue contracts", count);
+        logger.LogInformation("OverdueNotificationJob: checked {Count} overdue contracts (deduped from {Total} active)", count, activeContracts.Count);
     }
 }

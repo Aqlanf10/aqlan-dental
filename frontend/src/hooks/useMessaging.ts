@@ -48,7 +48,7 @@ export function useConversations(
       };
     },
     staleTime: 5_000,
-    refetchInterval: 15_000, // refresh conversation list every 15s
+    refetchInterval: 60_000, // تم تقليله من 15s لأن SignalR يدفع التحديثات فورياً
   });
 }
 
@@ -65,7 +65,7 @@ export function useConversation(conversationId: string | null, page = 1) {
     },
     enabled: !!conversationId,
     staleTime: 2_000,
-    refetchInterval: conversationId ? 4_000 : false, // poll every 4s when conversation is open
+    refetchInterval: conversationId ? 30_000 : false, // تم تقليله من 4s لأن SignalR يدفع الرسائل فورياً
   });
 }
 
@@ -78,7 +78,7 @@ export function useUnreadCount() {
       return data as UnreadCount;
     },
     staleTime: 10_000,
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
 }

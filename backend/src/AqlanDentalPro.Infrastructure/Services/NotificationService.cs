@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class NotificationService(AppDbContext db) : INotificationService
+public class NotificationService(AppDbContext db, IRealTimePushService pushService) : INotificationService
 {
     public async Task NotifyAsync(Guid userId, string type, string title, string body,
         string? relatedEntity = null, Guid? relatedId = null)
@@ -22,6 +22,9 @@ public class NotificationService(AppDbContext db) : INotificationService
             IsRead = false,
         });
         await db.SaveChangesAsync();
+
+        // دفع الإشعار فوراً عبر SignalR
+        await pushService.PushToUserAsync(userId, "NewNotification", new { type, title, body, relatedEntity, relatedId });
     }
 
     public async Task NotifyRoleAsync(string role, string type, string title, string body,
@@ -49,7 +52,12 @@ public class NotificationService(AppDbContext db) : INotificationService
         }
 
         if (userIds.Count > 0)
+        {
             await db.SaveChangesAsync();
+
+            // دفع الإشعار لجميع المستخدمين بهذا الدور عبر SignalR
+            await pushService.PushToRoleAsync(parsedRole.ToString(), "NewNotification", new { type, title, body, relatedEntity, relatedId });
+        }
     }
 
     public async Task NotifyDoctorAsync(Guid doctorId, string type, string title, string body,

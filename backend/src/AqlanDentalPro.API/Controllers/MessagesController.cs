@@ -1,6 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Messaging;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
-using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +10,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/messages")]
 [Authorize(Policy = "StaffOnly")]
-public class MessagesController(MessagingService messagingService, AppDbContext db, ILogger<MessagesController> logger) : ControllerBase
+public class MessagesController(IMessagingService messagingService, AppDbContext db, ILogger<MessagesController> logger) : ControllerBase
 {
     /// <summary>فحص حالة جداول المراسلة (Admin فقط)</summary>
     [HttpGet("schema-status")]
@@ -203,20 +203,21 @@ public class MessagesController(MessagingService messagingService, AppDbContext 
         }
     }
 
-    /// <summary>جلب رسائل جديدة منذ آخر رسالة (للـ polling)</summary>
+    /// <summary>جلب رسائل جديدة منذ آخر رسالة (للـ polling) — تصفية بالسيرفر</summary>
     [HttpGet("conversations/{conversationId:guid}/poll")]
     public async Task<IActionResult> PollMessages(Guid conversationId, [FromQuery] string? since = null)
     {
-        var result = await messagingService.GetConversationAsync(conversationId, 1, 50);
-        if (result == null) return NotFound(new { message = "المحادثة غير موجودة" });
+        if (since == null || !DateTime.TryParse(since, null, System.Globalization.DateTimeStyles.RoundtripKind, out var sinceDate))
+            return BadRequest(new { message = "يجب تحديد معامل 'since' بصيغة تاريخ صالحة" });
 
-        if (since != null && DateTime.TryParse(since, null, System.Globalization.DateTimeStyles.RoundtripKind, out var sinceDate))
+        try
         {
-            result.Messages = result.Messages
-                .Where(m => m.CreatedAt > sinceDate)
-                .ToList();
+            var messages = await messagingService.PollNewMessagesAsync(conversationId, sinceDate);
+            return Ok(new { messages });
         }
-
-        return Ok(result);
+        catch (UnauthorizedAccessException)
+        {
+            return NotFound(new { message = "المحادثة غير موجودة" });
+        }
     }
 }

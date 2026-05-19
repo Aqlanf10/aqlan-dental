@@ -94,7 +94,7 @@ public sealed class MessagingSendMessageRequestValidator : AbstractValidator<Sen
     {
         RuleFor(x => x.Content)
             .NotEmpty().WithMessage("محتوى الرسالة مطلوب")
-            .MaximumLength(5000).WithMessage("محتوى الرسالة يجب ألا يتجاوز 5000 حرف");
+            .MaximumLength(2000).WithMessage("محتوى الرسالة يجب ألا يتجاوز 2000 حرف");
 
         RuleFor(x => x.AttachmentUrl)
             .MaximumLength(500).WithMessage("رابط المرفق يجب ألا يتجاوز 500 حرف")
@@ -115,7 +115,7 @@ public sealed class EditMessageRequestValidator : AbstractValidator<EditMessageR
     {
         RuleFor(x => x.Content)
             .NotEmpty().WithMessage("محتوى الرسالة مطلوب")
-            .MaximumLength(5000).WithMessage("محتوى الرسالة يجب ألا يتجاوز 5000 حرف");
+            .MaximumLength(2000).WithMessage("محتوى الرسالة يجب ألا يتجاوز 2000 حرف");
     }
 }
 

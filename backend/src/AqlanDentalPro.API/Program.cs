@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Hubs;
 using AqlanDentalPro.API.Middleware;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
@@ -347,7 +348,9 @@ builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<OrthoService>();
 builder.Services.AddScoped<FinanceService>();
 builder.Services.AddScoped<GeneralService>();
-builder.Services.AddScoped<MessagingService>();
+builder.Services.AddScoped<IMessagingService, MessagingService>();
+builder.Services.AddScoped<IPatientPortalMessagingService, PatientPortalMessagingService>();
+builder.Services.AddScoped<IRealTimePushService, SignalRPushService>();
 builder.Services.AddScoped<CephService>();
 builder.Services.AddScoped<IPatientPortalService, PatientPortalService>();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
@@ -377,6 +380,13 @@ builder.WebHost.ConfigureKestrel(opts =>
 });
 
 // ── Controllers + Swagger ─────────────────────────────────────────────────────
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = false;
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
+    options.MaximumReceiveMessageSize = 10 * 1024; // 10 KB
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -1172,5 +1182,6 @@ app.UseAuthorization();
 app.UseMiddleware<MustChangePasswordMiddleware>();
 app.UseMiddleware<AuditLogMiddleware>();
 app.MapControllers();
+app.MapHub<MessagingHub>("/hubs/messaging");
 
 app.Run();

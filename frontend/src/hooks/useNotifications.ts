@@ -27,7 +27,7 @@ export function useNotificationUnreadCount() {
       return data;
     },
     staleTime: 20_000,
-    refetchInterval: 25_000,
+    refetchInterval: 120_000, // تم تقليله من 25s لأن SignalR يدفع الإشعارات فورياً
     refetchOnWindowFocus: true,
   });
 }

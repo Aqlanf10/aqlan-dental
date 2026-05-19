@@ -507,11 +507,12 @@ public class InvoiceTests
     {
         await using var db = CreateContext();
         var patientId = Guid.NewGuid();
+        var todayPrefix = $"INV-{DateTime.UtcNow:yyyyMMdd}-";
 
         var invoice1 = new Invoice
         {
             PatientId = patientId,
-            InvoiceNumber = "INV-20260531-001",
+            InvoiceNumber = $"{todayPrefix}001",
             Subtotal = 1000m,
             TotalAmount = 1000m
         };
@@ -519,7 +520,7 @@ public class InvoiceTests
         await db.SaveChangesAsync();
 
         var nextNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
-        nextNumber.Should().Be("INV-20260531-002");
+        nextNumber.Should().Be($"{todayPrefix}002");
     }
 
     [Fact]

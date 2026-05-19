@@ -34,8 +34,12 @@ export default function PortalLoginPage() {
       setAuth(data.profile, data.accessToken, data.mustChangePassword);
       router.push("/portal");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");
+      const axiosErr = err as { response?: { data?: { message?: string } } };
+      if (!axiosErr.response) {
+        setError("تعذّر الاتصال بالخادم. تحقق من اتصالك بالإنترنت وحاول مجدداً.");
+      } else {
+        setError(axiosErr.response.data?.message || "اسم المستخدم أو كلمة المرور غير صحيحة");
+      }
     } finally {
       setLoading(false);
     }

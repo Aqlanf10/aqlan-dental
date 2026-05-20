@@ -28,12 +28,12 @@ public class PrescriptionConfiguration : IEntityTypeConfiguration<Prescription>
 
         // Relationships
         builder.HasOne(p => p.Patient)
-            .WithMany()
+            .WithMany(pt => pt.Prescriptions)
             .HasForeignKey(p => p.PatientId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(p => p.Visit)
-            .WithMany()
+            .WithMany(v => v.Prescriptions)
             .HasForeignKey(p => p.VisitId)
             .OnDelete(DeleteBehavior.SetNull);
 

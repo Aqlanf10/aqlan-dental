@@ -33,7 +33,6 @@ public class Patient : BaseEntity
     public ICollection<Contract> Contracts { get; set; } = [];
     public ICollection<Payment> Payments { get; set; } = [];
     public ICollection<InternalReferral> ReferralsFrom { get; set; } = [];
-    public ICollection<InternalReferral> ReferralsTo { get; set; } = [];
     public ICollection<Prescription> Prescriptions { get; set; } = [];
     public ICollection<AiRecommendation> AiRecommendations { get; set; } = [];
 }

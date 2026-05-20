@@ -25,7 +25,7 @@ public class SurgeryCaseConfiguration : IEntityTypeConfiguration<SurgeryCase>
         builder.HasIndex(s => s.Status);
 
         builder.HasOne(s => s.Patient)
-            .WithMany()
+            .WithMany(p => p.SurgeryCases)
             .HasForeignKey(s => s.PatientId)
             .OnDelete(DeleteBehavior.Restrict);
 

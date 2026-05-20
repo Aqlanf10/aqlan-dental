@@ -31,7 +31,7 @@ public class GeneralTreatmentConfiguration : IEntityTypeConfiguration<GeneralTre
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(t => t.Visit)
-            .WithMany()
+            .WithMany(v => v.GeneralTreatments)
             .HasForeignKey(t => t.VisitId)
             .OnDelete(DeleteBehavior.SetNull);
 

@@ -91,17 +91,25 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     public async Task<ConversationDetailDto?> GetConversationAsync(Guid conversationId, int page = 1, int pageSize = 50)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
-        // Use IgnoreQueryFilters for participants to include soft-deleted ones
+
+        // FIX: Load conversation WITHOUT IgnoreQueryFilters to avoid loading
+        // soft-deleted Users/Doctors/Patients. Instead, load participants
+        // separately with targeted IgnoreQueryFilters to show left users.
         var conv = await db.Conversations
-            .Include(c => c.Participants)
-                .ThenInclude(p => p.User)
-                    .ThenInclude(u => u.Doctor)
             .Include(c => c.Patient)
-            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(c => c.Id == conversationId && c.IsActive);
 
         if (conv == null || !await IsParticipantAsync(conversationId))
             return null;
+
+        // Load participants separately with IgnoreQueryFilters to include soft-deleted ones
+        // (users who left the conversation should still appear in the participant list)
+        var participants = await db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .Where(cp => cp.ConversationId == conversationId)
+            .Include(cp => cp.User)
+                .ThenInclude(u => u.Doctor)
+            .ToListAsync();
 
         var messages = await db.Messages
             .Where(m => m.ConversationId == conversationId)
@@ -147,7 +155,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             PatientName = patientName,
             PatientNumber = patientNumber,
             PatientPhone = patientPhone,
-            Participants = conv.Participants.Select(MapParticipantDto).ToList(),
+            Participants = participants.Select(MapParticipantDto).ToList(),
             Messages = messages.Select(MapMessageDto).ToList(),
             CreatedAt = conv.CreatedAt,
             RecipientType = conv.RecipientType,
@@ -251,8 +259,12 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == patientId);
             if (patient == null) return;
 
-            // Check if a User with this patient's number already exists (from seed or previous runs)
-            var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == patient.PatientNumber);
+            // FIX: Use IgnoreQueryFilters when searching for existing User by username.
+            // Without this, a soft-deleted User with the same username would be invisible,
+            // causing a unique constraint violation on re-creation.
+            var existingUser = await db.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Username == patient.PatientNumber);
 
             if (account == null)
             {
@@ -268,6 +280,19 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                         IsActive = true
                     };
                     db.Users.Add(existingUser);
+                    try { await db.SaveChangesAsync(); }
+                    catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+                    {
+                        // Concurrent request created the user — reload it
+                        existingUser = await db.Users.IgnoreQueryFilters()
+                            .FirstAsync(u => u.Username == patient.PatientNumber);
+                    }
+                }
+                else if (!existingUser.IsActive)
+                {
+                    // Reactivate soft-deleted user
+                    existingUser.IsActive = true;
+                    existingUser.DeletedAt = null;
                     await db.SaveChangesAsync();
                 }
 
@@ -299,6 +324,17 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                         IsActive = true
                     };
                     db.Users.Add(existingUser);
+                    try { await db.SaveChangesAsync(); }
+                    catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+                    {
+                        existingUser = await db.Users.IgnoreQueryFilters()
+                            .FirstAsync(u => u.Username == patient.PatientNumber);
+                    }
+                }
+                else if (!existingUser.IsActive)
+                {
+                    existingUser.IsActive = true;
+                    existingUser.DeletedAt = null;
                     await db.SaveChangesAsync();
                 }
 
@@ -816,9 +852,12 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── حذف محادثة (مغادرة) ──────────────────────────────────────────────────
     public async Task LeaveConversationAsync(Guid conversationId)
     {
+        // FIX: Use IgnoreQueryFilters to find the participant even if already soft-deleted
         var participant = await db.ConversationParticipants
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId);
         if (participant == null) return;
+        if (!participant.IsActive) return; // Already left
 
         // Soft-delete: بدلاً من الحذف النهائي، نستخدم الحذف الناعم للحفاظ على سلامة البيانات
         participant.IsActive = false;
@@ -944,12 +983,13 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── Private Helpers ─────────────────────────────────────────────────────
     private async Task<bool> IsParticipantAsync(Guid conversationId)
     {
-        // Use IgnoreQueryFilters so soft-deleted participants (who left via LeaveConversation)
-        // are still considered "participants" for access-checking purposes.
-        // This prevents a re-added participant from being denied access.
+        // FIX: Check IsActive — only active participants can access conversations.
+        // If a user left (IsActive=false), they should NOT be able to view/send.
+        // Re-added users get IsActive=true again via the reactivate logic in
+        // GetOrCreatePatientConversationAsync / GetOrCreatePatientFacingConversationAsync.
         return await db.ConversationParticipants
             .IgnoreQueryFilters()
-            .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId);
+            .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId && cp.IsActive);
     }
 
     private async Task<int> GetUnreadCountAsync(Guid conversationId)
@@ -963,12 +1003,12 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
     private async Task<Conversation?> FindDirectConversationAsync(Guid userId1, Guid userId2)
     {
-        // B-2 FIX: Use IgnoreQueryFilters on Participants so we find conversations
+        // FIX: Use IgnoreQueryFilters on Participants so we find conversations
         // even if one participant was soft-deleted (left the conversation).
-        // Without this, leaving a direct conversation and re-opening it creates a duplicate.
+        // Only return active conversations (not soft-deleted).
         return await db.Conversations
             .Include(c => c.Participants)
-            .Where(c => !c.IsGroup
+            .Where(c => c.IsActive && !c.IsGroup
                      && c.Participants.Any(p => p.UserId == userId1)
                      && c.Participants.Any(p => p.UserId == userId2))
             .IgnoreQueryFilters()

@@ -37,10 +37,22 @@ public class PatientAccountLinkingService : IPatientAccountLinkingService
 
         // Not yet linked — create the link
         var username = account.Username ?? account.Patient?.PatientNumber ?? $"patient-{patientId}";
-        var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        // FIX: Use IgnoreQueryFilters to find soft-deleted Users by username.
+        // Without this, a soft-deleted User with the same username is invisible,
+        // causing a unique constraint violation on re-creation.
+        var existingUser = await _db.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Username == username);
 
         if (existingUser != null)
         {
+            // Reactivate soft-deleted user if needed
+            if (!existingUser.IsActive)
+            {
+                existingUser.IsActive = true;
+                existingUser.DeletedAt = null;
+                _logger.LogInformation("Reactivated soft-deleted User {Username} for linking", username);
+            }
             account.LinkedUserId = existingUser.Id;
         }
         else
@@ -54,7 +66,16 @@ public class PatientAccountLinkingService : IPatientAccountLinkingService
                 IsActive = true
             };
             _db.Users.Add(linkedUser);
-            await _db.SaveChangesAsync();
+            try { await _db.SaveChangesAsync(); }
+            catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                // Concurrent request created the user — reload it
+                existingUser = await _db.Users.IgnoreQueryFilters()
+                    .FirstAsync(u => u.Username == username);
+                account.LinkedUserId = existingUser.Id;
+                await _db.SaveChangesAsync();
+                return account.LinkedUserId.Value;
+            }
             account.LinkedUserId = linkedUser.Id;
         }
 
@@ -64,5 +85,10 @@ public class PatientAccountLinkingService : IPatientAccountLinkingService
             account.Username, account.LinkedUserId);
 
         return account.LinkedUserId.Value;
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is Npgsql.PostgresException pgEx && pgEx.SqlState == "23505";
     }
 }

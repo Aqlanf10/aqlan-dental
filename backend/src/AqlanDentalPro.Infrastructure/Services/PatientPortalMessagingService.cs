@@ -619,15 +619,23 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
         Guid conversationId, Guid userId, int page = 1, int pageSize = 50)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
-        // Use IgnoreQueryFilters for participants to include soft-deleted ones (e.g., users who left)
+
+        // FIX: Load conversation WITHOUT IgnoreQueryFilters on root query to avoid
+        // loading soft-deleted Users/Doctors. Load participants separately.
         var conv = await _db.Conversations
-            .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
             .Include(c => c.Patient)
-            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(c => c.Id == conversationId && c.IsActive);
 
         if (conv == null)
             throw new ServiceException("المحادثة غير موجودة", 404);
+
+        // Load participants separately with targeted IgnoreQueryFilters
+        var participants = await _db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .Where(cp => cp.ConversationId == conversationId)
+            .Include(cp => cp.User)
+                .ThenInclude(u => u.Doctor)
+            .ToListAsync();
 
         var messages = await _db.Messages
             .Where(m => m.ConversationId == conversationId)
@@ -653,7 +661,7 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
                 : null,
             PatientNumber = conv.Patient?.PatientNumber,
             PatientPhone = conv.Patient?.Phone,
-            Participants = conv.Participants.Select(MapParticipant).ToList(),
+            Participants = participants.Select(MapParticipant).ToList(),
             Messages = messages.Select(m => MapMessage(m, userId)).ToList(),
             CreatedAt = conv.CreatedAt,
             RecipientType = conv.RecipientType,

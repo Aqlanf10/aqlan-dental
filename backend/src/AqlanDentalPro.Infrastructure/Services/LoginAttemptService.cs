@@ -33,14 +33,14 @@ public class LoginAttemptService : ILoginAttemptService
         _logger = logger;
     }
 
-    public Task<int> RecordFailedAttemptAsync(string username)
+    public async Task<int> RecordFailedAttemptAsync(string username)
     {
         try
         {
             var key = $"login:fail:{username}";
             var lockKey = $"login:lock:{username}";
 
-            var raw = _redis.StringGet(key);
+            var raw = await _redis.StringGetAsync(key);
             var currentCount = raw.IsNull ? 0 : (int)raw;
             currentCount++;
 
@@ -50,32 +50,32 @@ public class LoginAttemptService : ILoginAttemptService
             if (currentCount >= MaxFailedAttempts)
             {
                 // Set lockout
-                _redis.StringSet(lockKey, DateTime.UtcNow.Add(LockoutDuration).ToString("O"), LockoutDuration);
+                await _redis.StringSetAsync(lockKey, DateTime.UtcNow.Add(LockoutDuration).ToString("O"), LockoutDuration);
                 _logger.LogWarning("Account '{Username}' locked out for {Minutes} minutes",
                     username, LockoutDuration.TotalMinutes);
             }
 
             // Increment counter with expiry window
-            _redis.StringSet(key, currentCount, AttemptWindow);
-            return Task.FromResult(currentCount);
+            await _redis.StringSetAsync(key, currentCount, AttemptWindow);
+            return currentCount;
         }
         catch (RedisConnectionException ex)
         {
             _logger.LogError(ex, "Redis unavailable during RecordFailedAttemptAsync for user '{Username}'. Lockout counter not updated. Login will proceed without lockout protection.",
                 username);
-            return Task.FromResult(0);
+            return 0;
         }
         catch (RedisTimeoutException ex)
         {
             _logger.LogError(ex, "Redis timeout during RecordFailedAttemptAsync for user '{Username}'. Lockout counter not updated.",
                 username);
-            return Task.FromResult(0);
+            return 0;
         }
         catch (RedisException ex)
         {
             _logger.LogError(ex, "Redis error during RecordFailedAttemptAsync for user '{Username}'. Lockout counter not updated.",
                 username);
-            return Task.FromResult(0);
+            return 0;
         }
     }
 

@@ -81,10 +81,13 @@ public class TokenService : ITokenService
             var tokenKey = $"refresh:{userId}:{hash[..16]}";
             var ownerKey = $"refresh:owner:{hash[..16]}";
             var batch = _db.CreateBatch();
-            _ = batch.StringSetAsync(tokenKey, hash, expiry);
-            _ = batch.StringSetAsync(ownerKey, userId.ToString(), expiry);
+            var task1 = batch.StringSetAsync(tokenKey, hash, expiry);
+            var task2 = batch.StringSetAsync(ownerKey, userId.ToString(), expiry);
             batch.Execute();
-            await Task.CompletedTask;
+            // LOGIN FIX: Properly await the batch tasks instead of Task.CompletedTask.
+            // Without this, the refresh token may not be persisted to Redis before the
+            // login response is sent, causing refresh-token operations to fail.
+            await Task.WhenAll(task1, task2);
         }
         catch (RedisConnectionException ex)
         {

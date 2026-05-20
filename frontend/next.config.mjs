@@ -13,6 +13,8 @@ const nextConfig = {
     const backendUrl = process.env.BACKEND_URL ?? "http://localhost:5000";
     return [
       { source: "/api/:path*", destination: `${backendUrl}/api/:path*` },
+      // SignalR WebSocket hub proxy — required for real-time messaging
+      { source: "/hubs/:path*", destination: `${backendUrl}/hubs/:path*` },
     ];
   },
 };

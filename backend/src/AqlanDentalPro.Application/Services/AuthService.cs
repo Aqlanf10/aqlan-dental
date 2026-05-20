@@ -60,13 +60,13 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
         return user == null ? null : MapToDto(user);
     }
 
-    public async Task<bool> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
+    public async Task<string?> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
     {
-        var user = await userRepo.GetByIdAsync(userId);
-        if (user == null || !user.IsActive) return false;
+        var user = await userRepo.GetByIdWithDoctorAsync(userId);
+        if (user == null || !user.IsActive) return null;
 
         if (!VerifyPassword(currentPassword, user.PasswordHash, user.PasswordSalt))
-            return false;
+            return null;
 
         var newSalt = GenerateSalt();
         var newHash = HashPassword(newPassword, newSalt);
@@ -77,7 +77,12 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
         user.UpdatedAt = DateTime.UtcNow;
 
         await userRepo.SaveChangesAsync();
-        return true;
+
+        // LOGIN FIX: Return a new access token with mustChangePassword=false.
+        // Without this, the old JWT still carries mustChangePassword=true,
+        // and MustChangePasswordMiddleware blocks ALL subsequent API calls,
+        // making the system unusable until the user manually re-logs in.
+        return tokenService.GenerateAccessToken(user);
     }
 
     private static UserDto MapToDto(Domain.Entities.User user) => new()

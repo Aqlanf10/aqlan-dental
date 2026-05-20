@@ -106,11 +106,11 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
         var userId = currentUser.UserId;
         if (!userId.HasValue) return Unauthorized();
 
-        var success = await authService.ChangePasswordAsync(userId.Value, request.CurrentPassword, request.NewPassword);
-        if (!success)
+        var newAccessToken = await authService.ChangePasswordAsync(userId.Value, request.CurrentPassword, request.NewPassword);
+        if (newAccessToken == null)
             return BadRequest(new { message = "كلمة المرور الحالية غير صحيحة" });
 
-        return Ok(new { message = "تم تغيير كلمة المرور بنجاح" });
+        return Ok(new { message = "تم تغيير كلمة المرور بنجاح", accessToken = newAccessToken });
     }
 
     private void SetRefreshTokenCookie(string token)

@@ -3,6 +3,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace AqlanDentalPro.API.Hubs;
 
@@ -85,8 +86,11 @@ public class MessagingHub(AppDbContext db, ILogger<MessagingHub> logger) : Hub
 
     private Guid? GetUserId()
     {
-        var claim = Context.User?.FindFirst("userId");
-        if (claim != null && Guid.TryParse(claim.Value, out var id))
+        // JWT uses ClaimTypes.NameIdentifier (mapped from "sub" claim) for user ID.
+        // Must match CurrentUserService.UserId logic exactly.
+        var sub = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
+                  ?? Context.User?.FindFirstValue("sub");
+        if (sub != null && Guid.TryParse(sub, out var id))
             return id;
         return null;
     }

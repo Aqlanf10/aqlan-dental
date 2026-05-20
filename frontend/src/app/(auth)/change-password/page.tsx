@@ -46,10 +46,16 @@ export default function StaffChangePasswordPage() {
 
     setLoading(true);
     try {
-      await api.post("/api/auth/change-password", {
+      const { data } = await api.post<{ message: string; accessToken?: string }>("/api/auth/change-password", {
         currentPassword,
         newPassword,
       });
+      // LOGIN FIX: If the backend returns a new access token (with mustChangePassword=false
+      // claim), use it immediately. Without this, the old JWT still has mustChangePassword=true
+      // and MustChangePasswordMiddleware blocks ALL subsequent API calls.
+      if (data.accessToken) {
+        localStorage.setItem("access_token", data.accessToken);
+      }
       // Update user state to clear mustChangePassword flag
       await useAuthStore.getState().fetchMe();
       router.push("/");

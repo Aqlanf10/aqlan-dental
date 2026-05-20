@@ -235,6 +235,7 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
         if (recipientUserId.HasValue)
         {
             var allowedUser = await _db.Users
+                .Include(u => u.Doctor)
                 .Where(u => u.Id == recipientUserId.Value && u.IsActive)
                 .FirstOrDefaultAsync();
             if (allowedUser == null)

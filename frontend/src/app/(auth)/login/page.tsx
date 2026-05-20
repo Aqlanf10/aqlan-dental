@@ -189,9 +189,19 @@ function StaffLoginPanel() {
       } else {
         router.push("/");
       }
-    } catch (err) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string } }; code?: string; message?: string };
+      if (!axiosErr.response) {
+        // Network error — server unreachable
+        if (axiosErr.code === "ERR_NETWORK" || axiosErr.code === "ECONNREFUSED" || axiosErr.code === "ECONNABORTED") {
+          setError("لا يمكن الاتصال بالخادم. تأكد من الاتصال بالإنترنت ثم حاول مرة أخرى.");
+        } else {
+          setError("لا يمكن الاتصال بالخادم. تأكد من الاتصال بالإنترنت ثم حاول مرة أخرى.");
+        }
+      } else {
+        const msg = axiosErr.response?.data?.message;
+        setError(msg || "اسم المستخدم أو كلمة المرور غير صحيحة");
+      }
     }
   };
 

@@ -151,10 +151,10 @@ public class LoginAttemptServiceTests
     [Fact]
     public async Task RecordFailedAttemptAsync_WhenRedisThrowsConnectionException_ReturnsZero()
     {
-        // Arrange
+        // Arrange — LoginAttemptService now uses StringGetAsync (async), not StringGet (sync)
         _mockDatabase
-            .Setup(db => db.StringGet(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
-            .Throws(new RedisConnectionException(ConnectionFailureType.UnableToConnect,
+            .Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new RedisConnectionException(ConnectionFailureType.UnableToConnect,
                 "It was not possible to connect to the redis server(s)"));
 
         var service = CreateService();
@@ -169,10 +169,10 @@ public class LoginAttemptServiceTests
     [Fact]
     public async Task RecordFailedAttemptAsync_WhenRedisThrowsTimeoutException_ReturnsZero()
     {
-        // Arrange
+        // Arrange — LoginAttemptService now uses StringGetAsync (async)
         _mockDatabase
-            .Setup(db => db.StringGet(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
-            .Throws(new RedisTimeoutException("Timeout performing StringGet", CommandStatus.Unknown));
+            .Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new RedisTimeoutException("Timeout performing StringGet", CommandStatus.Unknown));
 
         var service = CreateService();
 
@@ -186,10 +186,10 @@ public class LoginAttemptServiceTests
     [Fact]
     public async Task RecordFailedAttemptAsync_WhenRedisThrowsGenericRedisException_ReturnsZero()
     {
-        // Arrange
+        // Arrange — LoginAttemptService now uses StringGetAsync (async)
         _mockDatabase
-            .Setup(db => db.StringGet(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
-            .Throws(new RedisException("Unexpected Redis error"));
+            .Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new RedisException("Unexpected Redis error"));
 
         var service = CreateService();
 
@@ -203,15 +203,15 @@ public class LoginAttemptServiceTests
     [Fact]
     public async Task RecordFailedAttemptAsync_WhenRedisWorks_ReturnsIncrementedCount()
     {
-        // Arrange
+        // Arrange — LoginAttemptService now uses async Redis methods
         _mockDatabase
-            .Setup(db => db.StringGet(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
-            .Returns(RedisValue.Null);
+            .Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(RedisValue.Null);
         _mockDatabase
-            .Setup(db => db.StringSet(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(),
+            .Setup(db => db.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(),
                 It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<When>(),
                 It.IsAny<CommandFlags>()))
-            .Returns(true);
+            .ReturnsAsync(true);
 
         var service = CreateService();
 
@@ -225,15 +225,15 @@ public class LoginAttemptServiceTests
     [Fact]
     public async Task RecordFailedAttemptAsync_WithExistingCount_IncrementsAndReturns()
     {
-        // Arrange
+        // Arrange — LoginAttemptService now uses async Redis methods
         _mockDatabase
-            .Setup(db => db.StringGet(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
-            .Returns(new RedisValue("3")); // 3 previous failures
+            .Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(new RedisValue("3")); // 3 previous failures
         _mockDatabase
-            .Setup(db => db.StringSet(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(),
+            .Setup(db => db.StringSetAsync(It.IsAny<RedisKey>(), It.IsAny<RedisValue>(),
                 It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<When>(),
                 It.IsAny<CommandFlags>()))
-            .Returns(true);
+            .ReturnsAsync(true);
 
         var service = CreateService();
 

@@ -40,6 +40,10 @@ export const useAuthStore = create<AuthState>()(
           set({ user: data.user, isAuthenticated: true });
           // Return true if user must change password so caller can redirect
           return !!(data.mustChangePassword || data.user.mustChangePassword);
+        } catch (error: unknown) {
+          // Re-throw so login page can show appropriate error message
+          // (network errors vs auth errors need different messages)
+          throw error;
         } finally {
           set({ isLoading: false });
         }

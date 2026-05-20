@@ -173,7 +173,7 @@ public class InvoiceTests
         {
             PatientId = patientId,
             TotalAmount = 10000m,
-            Status = "active"
+            Status = ContractStatus.Active
         };
         db.Contracts.Add(contract);
         await db.SaveChangesAsync();
@@ -192,7 +192,7 @@ public class InvoiceTests
         var savedContract = await db.Contracts.IgnoreQueryFilters()
             .FirstOrDefaultAsync(c => c.Id == contract.Id);
         savedContract!.TotalAmount.Should().Be(10000m);
-        savedContract.Status.Should().Be("active");
+        savedContract.Status.Should().Be(ContractStatus.Active);
     }
 
     // ─── Duplicate Prevention Tests ────────────────────────────────────────
@@ -365,7 +365,7 @@ public class InvoiceTests
             PatientId = patientId,
             TotalAmount = 20000m,
             DownPayment = 5000m,
-            Status = "active"
+            Status = ContractStatus.Active
         };
         db.Contracts.Add(contract);
         await db.SaveChangesAsync();
@@ -388,7 +388,7 @@ public class InvoiceTests
             .FirstOrDefaultAsync(c => c.Id == contractId);
         savedContract!.TotalAmount.Should().Be(20000m);
         savedContract.DownPayment.Should().Be(5000m);
-        savedContract.Status.Should().Be("active");
+        savedContract.Status.Should().Be(ContractStatus.Active);
     }
 
     [Fact]

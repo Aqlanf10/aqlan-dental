@@ -395,17 +395,19 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
 
         var conv = accessResult.Conversation!;
         var content = request.Content?.Trim() ?? string.Empty;
+        var hasLegacyAttachment = !string.IsNullOrWhiteSpace(request.AttachmentUrl);
+        var hasMultiAttachments = request.Attachments != null && request.Attachments.Count > 0;
 
-        // Allow attachment-only messages: either Content or AttachmentUrl must be present
-        if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(request.AttachmentUrl))
+        // Allow attachment-only messages: either Content, AttachmentUrl, or Attachments must be present
+        if (string.IsNullOrWhiteSpace(content) && !hasLegacyAttachment && !hasMultiAttachments)
             throw new ServiceException("يجب أن تحتوي الرسالة على نص أو مرفق", 400);
         if (content.Length > 2000)
             throw new ServiceException("محتوى الرسالة طويل جداً، الحد الأقصى 2000 حرف", 400);
 
-        // Validate attachment if provided
-        if (!string.IsNullOrWhiteSpace(request.AttachmentUrl))
+        // Validate legacy single attachment if provided
+        if (hasLegacyAttachment)
         {
-            if (!request.AttachmentUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+            if (!request.AttachmentUrl!.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
                 throw new ServiceException("رابط المرفق غير صالح", 400);
 
             var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -415,6 +417,25 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
             };
             if (string.IsNullOrWhiteSpace(request.AttachmentType) || !allowedMimeTypes.Contains(request.AttachmentType))
                 throw new ServiceException("نوع المرفق غير مدعوم. الأنواع المسموحة: صور JPEG، صور PNG، ملفات PDF، رسائل صوتية", 400);
+        }
+
+        // Validate multi-attachments if provided
+        if (hasMultiAttachments)
+        {
+            var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "image/jpeg", "image/png", "application/pdf",
+                "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/wav"
+            };
+            foreach (var att in request.Attachments!)
+            {
+                if (string.IsNullOrWhiteSpace(att.FileUrl) || !att.FileUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+                    throw new ServiceException($"رابط المرفق '{att.FileName}' غير صالح", 400);
+                if (string.IsNullOrWhiteSpace(att.MimeType) || !allowedMimeTypes.Contains(att.MimeType))
+                    throw new ServiceException($"نوع المرفق '{att.FileName}' غير مدعوم", 400);
+                if (att.FileSize > 10 * 1024 * 1024)
+                    throw new ServiceException($"حجم المرفق '{att.FileName}' يتجاوز الحد الأقصى (10 ميجابايت)", 400);
+            }
         }
 
         var msg = new Message
@@ -430,6 +451,22 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
 
         _db.Messages.Add(msg);
 
+        // Save multi-attachments
+        if (hasMultiAttachments)
+        {
+            foreach (var att in request.Attachments!)
+            {
+                _db.MessageAttachments.Add(new MessageAttachment
+                {
+                    MessageId = msg.Id,
+                    FileUrl = att.FileUrl,
+                    FileName = att.FileName,
+                    FileSize = att.FileSize,
+                    MimeType = att.MimeType
+                });
+            }
+        }
+
         conv.LastMessageAt = DateTime.UtcNow;
         var previewText = !string.IsNullOrWhiteSpace(content) ? content
             : (!string.IsNullOrWhiteSpace(request.AttachmentName) ? "📎 " + request.AttachmentName : "مرفق");
@@ -442,6 +479,7 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
             .Include(m => m.Sender).ThenInclude(u => u.Doctor)
             .Include(m => m.Reads)
             .Include(m => m.ReplyTo)
+            .Include(m => m.Attachments)
             .FirstAsync(m => m.Id == msg.Id);
 
         var senderName = loaded.Sender?.Doctor?.Name ?? loaded.Sender?.Username ?? "مريض";
@@ -585,6 +623,7 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
             .Include(m => m.Sender).ThenInclude(u => u.Doctor)
             .Include(m => m.Reads)
             .Include(m => m.ReplyTo)
+            .Include(m => m.Attachments)
             .OrderByDescending(m => m.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -815,11 +854,22 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
         AttachmentUrl = m.AttachmentUrl,
         AttachmentName = m.AttachmentName,
         AttachmentType = m.AttachmentType,
+        Attachments = m.Attachments?.Select(a => new MessageAttachmentDto
+        {
+            Id = a.Id,
+            MessageId = a.MessageId,
+            FileUrl = a.FileUrl,
+            FileName = a.FileName,
+            FileSize = a.FileSize,
+            MimeType = a.MimeType
+        }).ToList() ?? [],
         ReplyToId = m.ReplyToId,
         ReplyToContent = m.ReplyTo?.Content?.Length > 100
             ? m.ReplyTo.Content[..100] + "..." : m.ReplyTo?.Content,
         ReplyToSenderName = m.ReplyTo?.Sender?.Doctor?.Name ?? m.ReplyTo?.Sender?.Username,
         IsSystemMessage = m.IsSystemMessage,
+        IsEdited = m.IsEdited,
+        EditedAt = m.EditedAt,
         IsReadByMe = m.Reads.Any(r => r.UserId == currentUserId),
         ReadCount = m.Reads.Count,
         CreatedAt = m.CreatedAt

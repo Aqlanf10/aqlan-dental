@@ -87,14 +87,23 @@ public sealed class CreateConversationRequestValidator : AbstractValidator<Creat
 
 /// <summary>
 /// Validates send message request.
+/// Allows attachment-only messages (no Content required when attachments are present).
 /// </summary>
 public sealed class MessagingSendMessageRequestValidator : AbstractValidator<SendMessageRequest>
 {
     public MessagingSendMessageRequestValidator()
     {
+        // Content is optional when attachments are present, but must respect max length when provided
         RuleFor(x => x.Content)
-            .NotEmpty().WithMessage("محتوى الرسالة مطلوب")
-            .MaximumLength(2000).WithMessage("محتوى الرسالة يجب ألا يتجاوز 2000 حرف");
+            .MaximumLength(2000).WithMessage("محتوى الرسالة يجب ألا يتجاوز 2000 حرف")
+            .When(x => !string.IsNullOrWhiteSpace(x.Content));
+
+        // Cross-field validation: at least one of Content, AttachmentUrl, or Attachments must be present
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Content)
+                     || !string.IsNullOrWhiteSpace(x.AttachmentUrl)
+                     || (x.Attachments != null && x.Attachments.Count > 0))
+            .WithMessage("يجب أن تحتوي الرسالة على نص أو مرفق");
 
         RuleFor(x => x.AttachmentUrl)
             .MaximumLength(500).WithMessage("رابط المرفق يجب ألا يتجاوز 500 حرف")
@@ -103,6 +112,23 @@ public sealed class MessagingSendMessageRequestValidator : AbstractValidator<Sen
         RuleFor(x => x.AttachmentName)
             .MaximumLength(200).WithMessage("اسم المرفق يجب ألا يتجاوز 200 حرف")
             .When(x => !string.IsNullOrWhiteSpace(x.AttachmentName));
+
+        // Validate individual attachments when present
+        RuleForEach(x => x.Attachments ?? new List<AttachmentItem>())
+            .ChildRules(att =>
+            {
+                att.RuleFor(a => a.FileUrl)
+                    .NotEmpty().WithMessage("رابط المرفق مطلوب")
+                    .MaximumLength(1000).WithMessage("رابط المرفق يجب ألا يتجاوز 1000 حرف");
+                att.RuleFor(a => a.FileName)
+                    .NotEmpty().WithMessage("اسم المرفق مطلوب")
+                    .MaximumLength(255).WithMessage("اسم المرفق يجب ألا يتجاوز 255 حرف");
+                att.RuleFor(a => a.MimeType)
+                    .NotEmpty().WithMessage("نوع المرفق مطلوب")
+                    .MaximumLength(100).WithMessage("نوع المرفق يجب ألا يتجاوز 100 حرف");
+                att.RuleFor(a => a.FileSize)
+                    .LessThanOrEqualTo(10 * 1024 * 1024).WithMessage("حجم المرفق يجب ألا يتجاوز 10 ميجابايت");
+            });
     }
 }
 

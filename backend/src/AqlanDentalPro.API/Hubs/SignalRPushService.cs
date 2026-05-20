@@ -1,8 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
-using AqlanDentalPro.Domain.Enums;
-using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Hubs;
 
@@ -10,7 +7,7 @@ namespace AqlanDentalPro.API.Hubs;
 /// تنفيذ خدمة الدفع الفوري باستخدام SignalR.
 /// تُسجَّل في DI كـ Scoped لتتوافق مع دورة حياة الخدمات الأخرى.
 /// </summary>
-public class SignalRPushService(IHubContext<MessagingHub> hubContext, AppDbContext db) : IRealTimePushService
+public class SignalRPushService(IHubContext<MessagingHub> hubContext) : IRealTimePushService
 {
     public async Task PushToUserAsync(Guid userId, string eventName, object? payload = null)
     {

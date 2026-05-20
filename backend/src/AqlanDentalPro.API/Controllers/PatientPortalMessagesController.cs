@@ -1,6 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Messaging;
 using AqlanDentalPro.Application.Interfaces.Services;
-using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,9 +15,7 @@ namespace AqlanDentalPro.API.Controllers;
 [Route("api/portal/messages")]
 [Authorize(Policy = "PatientAccess")]
 public class PatientPortalMessagesController(
-    IPatientPortalMessagingService messagingService,
-    AppDbContext db,
-    ILogger<PatientPortalMessagesController> logger) : ControllerBase
+    IPatientPortalMessagingService messagingService) : ControllerBase
 {
     private Guid PatientId
     {

@@ -89,7 +89,7 @@ public sealed class UpdateSupplierRequestValidator : AbstractValidator<UpdateSup
 [ApiController]
 [Route("api/suppliers")]
 [Authorize(Policy = "AdminOnly")]
-public class SuppliersController(AppDbContext db, ILogger<SuppliersController> logger) : ControllerBase
+public class SuppliersController(AppDbContext db) : ControllerBase
 {
     // ─── 1. GET /api/suppliers — List all suppliers ──────────────────────
     /// <summary>Returns paginated list of suppliers with optional search.</summary>

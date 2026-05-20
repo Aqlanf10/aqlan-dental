@@ -108,11 +108,19 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
         // Ensure patient is a participant in their PatientFacing conversations
         await EnsurePatientInPatientFacingConversationsAsync(patientId, userId);
 
-        // SECURITY: Only PatientFacing conversations for this patient where patient is a participant
+        // Find conversation IDs where this user is an ACTIVE participant.
+        // Use IgnoreQueryFilters to see soft-deleted participants, then filter by IsActive manually.
+        var myActiveConvIds = await _db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .Where(cp => cp.UserId == userId && cp.IsActive)
+            .Select(cp => cp.ConversationId)
+            .ToListAsync();
+
+        // SECURITY: Only PatientFacing conversations for this patient where patient is an active participant
         var query = _db.Conversations
             .Where(c => c.ConversationType == ConversationType.PatientFacing.ToString()
                       && c.PatientId == patientId
-                      && c.Participants.Any(p => p.UserId == userId))
+                      && myActiveConvIds.Contains(c.Id))
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
@@ -254,8 +262,20 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
 
         if (existingConv != null)
         {
-            var isAlreadyParticipant = existingConv.Participants.Any(p => p.UserId == userId);
-            if (!isAlreadyParticipant)
+            // Use IgnoreQueryFilters to find soft-deleted participants and reactivate them
+            var existingParticipant = await _db.ConversationParticipants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(cp => cp.ConversationId == existingConv.Id && cp.UserId == userId);
+            if (existingParticipant != null)
+            {
+                if (!existingParticipant.IsActive)
+                {
+                    existingParticipant.IsActive = true;
+                    existingParticipant.DeletedAt = null;
+                    await _db.SaveChangesAsync();
+                }
+            }
+            else
             {
                 _db.ConversationParticipants.Add(new ConversationParticipant
                 {
@@ -511,11 +531,18 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
     /// <inheritdoc />
     public async Task<UnreadCountDto> GetUnreadCountAsync(Guid patientId, Guid userId)
     {
+        // Find active participant conversation IDs (use IgnoreQueryFilters to see soft-deleted, then filter IsActive)
+        var myActiveConvIds = await _db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .Where(cp => cp.UserId == userId && cp.IsActive)
+            .Select(cp => cp.ConversationId)
+            .ToListAsync();
+
         // SECURITY: Only count PatientFacing conversations belonging to this patient
         var patientFacingConvIds = await _db.Conversations
             .Where(c => c.PatientId == patientId
                      && c.ConversationType == ConversationType.PatientFacing.ToString()
-                     && c.Participants.Any(p => p.UserId == userId))
+                     && myActiveConvIds.Contains(c.Id))
             .Select(c => c.Id)
             .ToListAsync();
 
@@ -563,10 +590,21 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
         if (conv.PatientId != patientId)
             return AccessVerificationResult.Fail("ليس لديك صلاحية الوصول لهذه المحادثة", 403);
 
-        // SECURITY: Patient must be a participant
-        var isParticipant = conv.Participants.Any(p => p.UserId == userId);
-        if (!isParticipant)
+        // SECURITY: Patient must be an active participant.
+        // Use IgnoreQueryFilters to find soft-deleted participants, then check IsActive.
+        var participant = await _db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == userId);
+        if (participant == null)
             return AccessVerificationResult.Fail("لست مشاركاً في هذه المحادثة", 403);
+        if (!participant.IsActive)
+        {
+            // Reactivate the participant — they should have access to their own conversations
+            participant.IsActive = true;
+            participant.DeletedAt = null;
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Reactivated soft-deleted participant {UserId} in conversation {ConversationId}", userId, conversationId);
+        }
 
         return AccessVerificationResult.Success(conv);
     }
@@ -581,10 +619,12 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
         Guid conversationId, Guid userId, int page = 1, int pageSize = 50)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
+        // Use IgnoreQueryFilters for participants to include soft-deleted ones (e.g., users who left)
         var conv = await _db.Conversations
             .Include(c => c.Participants).ThenInclude(p => p.User).ThenInclude(u => u.Doctor)
             .Include(c => c.Patient)
-            .FirstOrDefaultAsync(c => c.Id == conversationId);
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => c.Id == conversationId && c.IsActive);
 
         if (conv == null)
             throw new ServiceException("المحادثة غير موجودة", 404);
@@ -633,16 +673,31 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
             .Select(c => c.Id)
             .ToListAsync();
 
-        // Batch check: find which conversations already have this user as participant
-        var existingParticipantConvIds = (await _db.ConversationParticipants
+        if (patientFacingConvIds.Count == 0) return;
+
+        // Use IgnoreQueryFilters to find ALL participants (including soft-deleted).
+        // This prevents unique constraint violations when trying to re-add a soft-deleted participant.
+        var existingParticipants = await _db.ConversationParticipants
+            .IgnoreQueryFilters()
             .Where(cp => patientFacingConvIds.Contains(cp.ConversationId) && cp.UserId == userId)
-            .Select(cp => cp.ConversationId)
-            .ToListAsync())
-            .ToHashSet();
+            .ToListAsync();
+
+        var existingParticipantConvIds = existingParticipants.Select(cp => cp.ConversationId).ToHashSet();
 
         foreach (var convId in patientFacingConvIds)
         {
-            if (!existingParticipantConvIds.Contains(convId))
+            var existing = existingParticipants.FirstOrDefault(cp => cp.ConversationId == convId);
+            if (existing != null)
+            {
+                // Reactivate soft-deleted participant
+                if (!existing.IsActive)
+                {
+                    existing.IsActive = true;
+                    existing.DeletedAt = null;
+                    _logger.LogInformation("Reactivated soft-deleted participant {UserId} in conversation {ConversationId}", userId, convId);
+                }
+            }
+            else
             {
                 _db.ConversationParticipants.Add(new ConversationParticipant
                 {
@@ -654,7 +709,15 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
             }
         }
 
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent request already inserted this participant — idempotent success
+            _logger.LogDebug(ex, "Concurrent participant insert deduplication for user {UserId}", userId);
+        }
     }
 
     /// <summary>

@@ -20,14 +20,16 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         int page = 1, int pageSize = 20, string? search = null, string? type = null)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
-        // Query conversations directly (not through participants) to allow Include
-        var myConversationIds = await db.ConversationParticipants
-            .Where(cp => cp.UserId == UserId)
+        // Query conversations directly (not through participants) to allow Include.
+        // Use IgnoreQueryFilters to find soft-deleted participants, then filter by IsActive manually.
+        var myActiveConversationIds = await db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .Where(cp => cp.UserId == UserId && cp.IsActive)
             .Select(cp => cp.ConversationId)
             .ToListAsync();
 
         var query = db.Conversations
-            .Where(c => myConversationIds.Contains(c.Id))
+            .Where(c => myActiveConversationIds.Contains(c.Id))
             .Include(c => c.Patient)
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
@@ -61,7 +63,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
         // Batch fetch unread counts to avoid N+1
         var unreadCounts = await db.Messages
-            .Where(m => myConversationIds.Contains(m.ConversationId)
+            .Where(m => myActiveConversationIds.Contains(m.ConversationId)
                      && m.SenderId != UserId
                      && !m.Reads.Any(r => r.UserId == UserId))
             .GroupBy(m => m.ConversationId)
@@ -89,12 +91,14 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     public async Task<ConversationDetailDto?> GetConversationAsync(Guid conversationId, int page = 1, int pageSize = 50)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
+        // Use IgnoreQueryFilters for participants to include soft-deleted ones
         var conv = await db.Conversations
             .Include(c => c.Participants)
                 .ThenInclude(p => p.User)
                     .ThenInclude(u => u.Doctor)
             .Include(c => c.Patient)
-            .FirstOrDefaultAsync(c => c.Id == conversationId);
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => c.Id == conversationId && c.IsActive);
 
         if (conv == null || !await IsParticipantAsync(conversationId))
             return null;
@@ -303,17 +307,30 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
             }
         }
 
-        // Add linked user as participant if not already
+        // Add linked user as participant if not already (use IgnoreQueryFilters to prevent duplicate)
         var alreadyParticipant = await db.ConversationParticipants
+            .IgnoreQueryFilters()
             .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == account.LinkedUserId.Value);
         if (!alreadyParticipant)
         {
-            await db.ConversationParticipants.AddAsync(new ConversationParticipant
+            // Check if soft-deleted participant exists and reactivate
+            var softDeletedParticipant = await db.ConversationParticipants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == account.LinkedUserId.Value);
+            if (softDeletedParticipant != null && !softDeletedParticipant.IsActive)
             {
-                ConversationId = conversationId,
-                UserId = account.LinkedUserId.Value,
-                IsAdmin = false
-            });
+                softDeletedParticipant.IsActive = true;
+                softDeletedParticipant.DeletedAt = null;
+            }
+            else if (softDeletedParticipant == null)
+            {
+                await db.ConversationParticipants.AddAsync(new ConversationParticipant
+                {
+                    ConversationId = conversationId,
+                    UserId = account.LinkedUserId.Value,
+                    IsAdmin = false
+                });
+            }
         }
     }
 
@@ -413,8 +430,8 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         if (existing == null)
             return null;
 
-        // Verify current user is a participant
-        if (!existing.Participants.Any(p => p.UserId == UserId))
+        // Verify current user is a participant (use IgnoreQueryFilters to find soft-deleted)
+        if (!await db.ConversationParticipants.IgnoreQueryFilters().AnyAsync(cp => cp.ConversationId == existing.Id && cp.UserId == UserId && cp.IsActive))
             return null;
 
         return await GetConversationAsync(existing.Id);
@@ -655,6 +672,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
             // Update participant's LastReadAt
             var participant = await db.ConversationParticipants
+                .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId);
             if (participant != null)
                 participant.LastReadAt = DateTime.UtcNow;
@@ -670,14 +688,16 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── عدد غير المقروء ──────────────────────────────────────────────────────
     public async Task<UnreadCountDto> GetUnreadCountAsync()
     {
-        var myConversationIds = await db.ConversationParticipants
-            .Where(cp => cp.UserId == UserId)
+        // Use IgnoreQueryFilters to find active participant conversation IDs
+        var myActiveConversationIds = await db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .Where(cp => cp.UserId == UserId && cp.IsActive)
             .Select(cp => cp.ConversationId)
             .ToListAsync();
 
         // Batch fetch all unread counts in one query
         var unreadByConv = await db.Messages
-            .Where(m => myConversationIds.Contains(m.ConversationId)
+            .Where(m => myActiveConversationIds.Contains(m.ConversationId)
                      && m.SenderId != UserId
                      && !m.Reads.Any(r => r.UserId == UserId))
             .GroupBy(m => m.ConversationId)
@@ -730,8 +750,9 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── إحصائيات المراسلة ───────────────────────────────────────────────────────
     public async Task<MessagingStatsDto> GetStatsAsync()
     {
-        var myConversationIds = await db.ConversationParticipants
-            .Where(cp => cp.UserId == UserId)
+        var myActiveConversationIds = await db.ConversationParticipants
+            .IgnoreQueryFilters()
+            .Where(cp => cp.UserId == UserId && cp.IsActive)
             .Select(cp => cp.ConversationId)
             .ToListAsync();
 
@@ -739,18 +760,18 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         var weekAgoUtc = DateTime.UtcNow.AddDays(-7);
 
         var conversations = await db.Conversations
-            .Where(c => myConversationIds.Contains(c.Id))
+            .Where(c => myActiveConversationIds.Contains(c.Id))
             .Select(c => new { c.ConversationType, c.LastMessageAt })
             .ToListAsync();
 
         var messagesToday = await db.Messages
-            .Where(m => myConversationIds.Contains(m.ConversationId)
+            .Where(m => myActiveConversationIds.Contains(m.ConversationId)
                      && m.CreatedAt >= todayUtc
                      && !m.IsSystemMessage)
             .CountAsync();
 
         var messagesThisWeek = await db.Messages
-            .Where(m => myConversationIds.Contains(m.ConversationId)
+            .Where(m => myActiveConversationIds.Contains(m.ConversationId)
                      && m.CreatedAt >= weekAgoUtc
                      && !m.IsSystemMessage)
             .CountAsync();

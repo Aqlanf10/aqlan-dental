@@ -12,14 +12,13 @@ const HUB_URL = process.env.NEXT_PUBLIC_API_URL
 /**
  * Hook لإدارة اتصال SignalR للمراسلة والإشعارات الفورية.
  * يتصل تلقائياً عند تسجيل الدخول وينقطع عند تسجيل الخروج.
- * يستمع لأحداث الرسائل الجديدة والإشعارات ويحدّث React Query cache.
+ * يستمع لجميع أحداث الرسائل والإشعارات ويحدّث React Query cache.
  */
 export function useSignalRMessaging() {
   const connectionRef = useRef<HubConnection | null>(null);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const [token, setToken] = useState<string | null>(null);
-  // F-1 FIX: Track connection state in useState so React re-renders on change
   const [isConnected, setIsConnected] = useState(false);
 
   // قراءة التوكن من localStorage عند التحميل
@@ -45,7 +44,6 @@ export function useSignalRMessaging() {
 
       // رسالة جديدة في محادثة
       connection.on("NewMessage", () => {
-        // تحديث cache المحادثة المفتوحة وقائمة المحادثات
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
         queryClient.invalidateQueries({ queryKey: ["conversation"] });
         queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
@@ -62,7 +60,24 @@ export function useSignalRMessaging() {
         queryClient.invalidateQueries({ queryKey: ["notifications"] });
       });
 
-      // إعادة الاتصال — F-1 FIX: Update connection state
+      // تعديل رسالة
+      connection.on("MessageEdited", () => {
+        queryClient.invalidateQueries({ queryKey: ["conversation"] });
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      });
+
+      // حذف رسالة
+      connection.on("MessageDeleted", () => {
+        queryClient.invalidateQueries({ queryKey: ["conversation"] });
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      });
+
+      // تحديث قائمة المحادثات (مثلاً إضافة مشارك جديد)
+      connection.on("ConversationsUpdated", () => {
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      });
+
+      // إعادة الاتصال
       connection.onreconnected(() => {
         setIsConnected(true);
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -70,14 +85,14 @@ export function useSignalRMessaging() {
         queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
       });
 
-      // انقطاع الاتصال — F-1 FIX: Update connection state
+      // انقطاع الاتصال
       connection.onclose(() => {
         setIsConnected(false);
       });
 
       await connection.start();
       connectionRef.current = connection;
-      setIsConnected(true); // F-1 FIX: Set connected after successful start
+      setIsConnected(true);
     } catch (err) {
       console.warn("SignalR connection failed, falling back to polling:", err);
       setIsConnected(false);
@@ -93,7 +108,7 @@ export function useSignalRMessaging() {
       }
       connectionRef.current = null;
     }
-    setIsConnected(false); // F-1 FIX: Clear connected state
+    setIsConnected(false);
   }, []);
 
   // الانضمام لمجموعة محادثة
@@ -133,6 +148,6 @@ export function useSignalRMessaging() {
   return {
     joinConversation,
     leaveConversation,
-    isConnected, // F-1 FIX: Returns live state from useState
+    isConnected,
   };
 }

@@ -93,7 +93,7 @@ export function usePortalConversations() {
       return (data.data ?? []) as PortalConversationListItem[];
     },
     staleTime: 10_000,
-    refetchInterval: 15_000,
+    refetchInterval: 60_000, // شبكة أمان — يُقلَّل تلقائياً عند اتصال SignalR
   });
 }
 
@@ -109,7 +109,7 @@ export function usePortalConversation(conversationId: string | null) {
     },
     enabled: !!conversationId,
     staleTime: 3_000,
-    refetchInterval: conversationId ? 8_000 : false,
+    refetchInterval: conversationId ? 30_000 : false, // شبكة أمان — يُقلَّل تلقائياً عند اتصال SignalR
   });
 }
 
@@ -123,7 +123,7 @@ export function usePortalUnreadCount() {
       return data;
     },
     staleTime: 15_000,
-    refetchInterval: 20_000,
+    refetchInterval: 60_000, // شبكة أمان — يُقلَّل تلقائياً عند اتصال SignalR
     refetchOnWindowFocus: true,
   });
 }

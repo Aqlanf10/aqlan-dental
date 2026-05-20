@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import { usePortalUnreadCount } from "@/hooks/usePortalMessaging";
+import { usePortalSignalR } from "@/hooks/usePortalSignalR";
 import { Home, Calendar, Stethoscope, Pill, CreditCard, UserCircle, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const pathname = usePathname();
   const { isAuthenticated, mustChangePassword } = usePatientAuthStore();
   const hasRehydrated = useHasRehydrated();
+  const [portalToken, setPortalToken] = useState<string | null>(null);
+
+  // Read portal token from localStorage for SignalR connection
+  useEffect(() => {
+    if (isAuthenticated) {
+      const token = localStorage.getItem("portal_token");
+      setPortalToken(token);
+    } else {
+      setPortalToken(null);
+    }
+  }, [isAuthenticated]);
+
+  // Enable SignalR for real-time messaging updates in the portal
+  usePortalSignalR(portalToken);
 
   useEffect(() => {
     // Do NOT make any redirect decisions until Zustand persist has

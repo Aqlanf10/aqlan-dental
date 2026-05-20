@@ -48,7 +48,7 @@ export function useConversations(
       };
     },
     staleTime: 5_000,
-    refetchInterval: 60_000, // تم تقليله من 15s لأن SignalR يدفع التحديثات فورياً
+    refetchInterval: 300_000, // شبكة أمان فقط — SignalR يدفع التحديثات فورياً
   });
 }
 
@@ -65,7 +65,7 @@ export function useConversation(conversationId: string | null, page = 1) {
     },
     enabled: !!conversationId,
     staleTime: 2_000,
-    refetchInterval: conversationId ? 30_000 : false, // تم تقليله من 4s لأن SignalR يدفع الرسائل فورياً
+    refetchInterval: conversationId ? 120_000 : false, // شبكة أمان فقط — SignalR يدفع الرسائل فورياً
   });
 }
 
@@ -78,7 +78,7 @@ export function useUnreadCount() {
       return data as UnreadCount;
     },
     staleTime: 10_000,
-    refetchInterval: 60_000,
+    refetchInterval: 300_000, // شبكة أمان فقط — SignalR يدفع التحديثات فورياً
     refetchOnWindowFocus: true,
   });
 }

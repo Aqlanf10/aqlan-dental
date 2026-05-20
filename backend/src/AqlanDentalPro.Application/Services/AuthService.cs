@@ -17,7 +17,20 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
         var user = await userRepo.GetByUsernameAsync(request.Username);
         if (user == null) return null;
 
-        if (!VerifyPassword(request.Password, user.PasswordHash, user.PasswordSalt)) return null;
+        var (passwordValid, isLegacyHash) = VerifyPasswordWithMigrationFlag(request.Password, user.PasswordHash, user.PasswordSalt);
+        if (!passwordValid) return null;
+
+        // SEC-02 FIX: Auto-migrate legacy fixed-salt hashes to per-user salts on successful login.
+        // This eliminates the need for users to explicitly change their password.
+        if (isLegacyHash)
+        {
+            var newSalt = GenerateSalt();
+            var newHash = HashPassword(request.Password, newSalt);
+            user.PasswordHash = newHash;
+            user.PasswordSalt = newSalt;
+            user.UpdatedAt = DateTime.UtcNow;
+            _logger.LogInformation("SEC-02: Auto-migrated legacy password hash for user {UserId}", user.Id);
+        }
 
         user.LastLogin = DateTime.UtcNow;
         await userRepo.SaveChangesAsync();
@@ -122,10 +135,10 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
     }
 
     /// <summary>
-    /// Verifies a password against the stored hash and salt.
-    /// Supports both per-user salt (current) and legacy fixed-salt (Phase 1) hashes.
+    /// Verifies a password and indicates whether it matched the legacy hash format.
+    /// Used by LoginAsync to trigger automatic migration from fixed-salt to per-user-salt.
     /// </summary>
-    private bool VerifyPassword(string password, string storedHash, string storedSalt)
+    private (bool isValid, bool isLegacyHash) VerifyPasswordWithMigrationFlag(string password, string storedHash, string storedSalt)
     {
         try
         {
@@ -133,39 +146,45 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
             if (!string.IsNullOrEmpty(storedSalt))
             {
                 var hash = HashPassword(password, storedSalt);
-                // C-03 FIX: Use constant-time comparison to prevent timing attacks
                 if (CryptographicOperations.FixedTimeEquals(
                     Convert.FromBase64String(hash),
-                    Convert.FromBase64String(storedHash))) return true;
+                    Convert.FromBase64String(storedHash))) return (true, false);
             }
 
             // Fallback: legacy Phase 1 fixed-salt hash (DOP=1, fixed salt)
-            // SEC-02 FIX: Log deprecation warning — this path should be removed once all users are migrated
-            _logger.LogWarning(
-                "SEC-02 DEPRECATION: Legacy fixed-salt hash used for user verification. " +
-                "This indicates a user still has a Phase 1 hash. " +
-                "User should change their password to migrate to per-user salt. " +
-                "Username={Username}",
-                "REDACTED"); // Don't log username for privacy
 #pragma warning disable CS0618 // Suppress obsolete warning — intentionally calling legacy method
             var legacyHash = HashPasswordLegacy(password);
 #pragma warning restore CS0618
-            return CryptographicOperations.FixedTimeEquals(
+            if (CryptographicOperations.FixedTimeEquals(
                 Convert.FromBase64String(legacyHash),
-                Convert.FromBase64String(storedHash));
+                Convert.FromBase64String(storedHash)))
+            {
+                _logger.LogWarning("SEC-02: Legacy fixed-salt hash verified — will auto-migrate on login");
+                return (true, true);
+            }
+
+            return (false, false);
         }
         catch
         {
-            return false;
+            return (false, false);
         }
     }
 
-    // SEC-02 TODO: Legacy hash format from Phase 1 (fixed global salt, DOP=1)
-    // This method MUST be removed once all users have been migrated to per-user salts.
-    // Migration path: Users are auto-migrated when they use ChangePasswordAsync().
-    // Track migration progress via the deprecation log above.
-    // After confirming zero legacy-hash log entries for 30+ days, remove this method
-    // and simplify VerifyPassword to per-user-salt only.
+    /// <summary>
+    /// Verifies a password against the stored hash and salt.
+    /// Supports both per-user salt (current) and legacy fixed-salt (Phase 1) hashes.
+    /// </summary>
+    private bool VerifyPassword(string password, string storedHash, string storedSalt)
+    {
+        var (isValid, _) = VerifyPasswordWithMigrationFlag(password, storedHash, storedSalt);
+        return isValid;
+    }
+
+    // SEC-02: Legacy hash format from Phase 1 (fixed global salt, DOP=1)
+    // Users are now auto-migrated to per-user salts on login (VerifyPasswordWithMigrationFlag).
+    // This method should be removed once all users have been migrated.
+    // After confirming zero legacy-hash log entries for 30+ days, remove this method.
     [Obsolete("Legacy Phase 1 hash — remove after full user migration to per-user salts")]
     private static string HashPasswordLegacy(string password)
     {

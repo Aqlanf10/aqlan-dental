@@ -23,7 +23,8 @@ public partial class AddMessageAttachments : Migration
                 IsActive = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
                 CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                 UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
-                DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
             },
             constraints: table =>
             {

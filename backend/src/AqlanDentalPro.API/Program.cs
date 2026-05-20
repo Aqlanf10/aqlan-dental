@@ -511,8 +511,17 @@ try
                     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
                     "UpdatedAt" timestamp with time zone NOT NULL DEFAULT now(),
                     "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid                     NULL,
                     CONSTRAINT "PK_MessageAttachments" PRIMARY KEY ("Id")
                 );
+            END IF;
+
+            -- CRITICAL FIX: Add DeletedBy column if missing (causes "column DeletedBy does not exist" → 500 on conversation open)
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'MessageAttachments' AND column_name = 'DeletedBy'
+            ) THEN
+                ALTER TABLE "MessageAttachments" ADD COLUMN "DeletedBy" uuid NULL;
             END IF;
 
             -- Add FK to Messages if missing
@@ -553,6 +562,80 @@ catch (Exception ex)
     maLogger2.LogError(ex, "HOTFIX: Failed to ensure MessageAttachments schema. Opening conversations will return 500!");
 }
 
+// ── CRITICAL: Ensure BaseEntity columns exist on ALL messaging tables ────
+// HOTFIX: The MessageAttachments migration (20260602000000) was missing the
+// DeletedBy column. Other tables may also lack it if migrations partially
+// failed. This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var msgSchemaScope = app.Services.CreateScope();
+    var msgSchemaDb = msgSchemaScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var msgSchemaLogger = msgSchemaScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await msgSchemaDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- MessageAttachments: add DeletedBy if missing
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'MessageAttachments') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'MessageAttachments' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "MessageAttachments" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+            END IF;
+
+            -- Messages: add DeletedAt/DeletedBy/IsEdited/EditedAt if missing
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Messages') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
+                    ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
+                END IF;
+            END IF;
+
+            -- ConversationParticipants: add DeletedAt/DeletedBy if missing
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ConversationParticipants') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "ConversationParticipants" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "ConversationParticipants" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+            END IF;
+
+            -- MessageReads: add DeletedAt/DeletedBy if missing
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'MessageReads') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'MessageReads' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "MessageReads" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'MessageReads' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "MessageReads" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+            END IF;
+
+            -- Conversations: add DeletedAt/DeletedBy if missing
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Conversations') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'DeletedAt') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'DeletedBy') THEN
+                    ALTER TABLE "Conversations" ADD COLUMN "DeletedBy" uuid NULL;
+                END IF;
+            END IF;
+        END $$;
+    """);
+
+    msgSchemaLogger.LogInformation("HOTFIX: All messaging tables BaseEntity columns ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var msgSchemaLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    msgSchemaLogger2.LogError(ex, "HOTFIX: Failed to ensure messaging tables BaseEntity columns. Messaging may return 500!");
+}
 
 // ── One-time Admin Password Reset ─────────────────────────────────
 // SEC-03 FIX: Admin password reset only from environment variables.
@@ -993,7 +1076,9 @@ if (enableStartupDbMaintenance)
                     "IsMuted" boolean NOT NULL,
                     "CreatedAt" timestamp with time zone NOT NULL,
                     "UpdatedAt" timestamp with time zone NOT NULL,
-                    "IsActive" boolean NOT NULL
+                    "IsActive" boolean NOT NULL,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_ConversationParticipants_ConversationId_UserId" 
                     ON "ConversationParticipants" ("ConversationId", "UserId");
@@ -1006,6 +1091,13 @@ if (enableStartupDbMaintenance)
                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_ConversationParticipants_Users_UserId') THEN
                         ALTER TABLE "ConversationParticipants" ADD CONSTRAINT "FK_ConversationParticipants_Users_UserId" 
                             FOREIGN KEY ("UserId") REFERENCES "Users"("Id") ON DELETE CASCADE;
+                    END IF;
+                    -- Ensure DeletedAt/DeletedBy columns exist on ConversationParticipants
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'DeletedAt') THEN
+                        ALTER TABLE "ConversationParticipants" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'DeletedBy') THEN
+                        ALTER TABLE "ConversationParticipants" ADD COLUMN "DeletedBy" uuid NULL;
                     END IF;
                 END $$;
             """);
@@ -1023,7 +1115,9 @@ if (enableStartupDbMaintenance)
                     "IsSystemMessage" boolean NOT NULL,
                     "CreatedAt" timestamp with time zone NOT NULL,
                     "UpdatedAt" timestamp with time zone NOT NULL,
-                    "IsActive" boolean NOT NULL
+                    "IsActive" boolean NOT NULL,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL
                 );
                 CREATE INDEX IF NOT EXISTS "IX_Messages_ConversationId" ON "Messages" ("ConversationId");
                 CREATE INDEX IF NOT EXISTS "IX_Messages_CreatedAt" ON "Messages" ("CreatedAt");
@@ -1041,6 +1135,20 @@ if (enableStartupDbMaintenance)
                         ALTER TABLE "Messages" ADD CONSTRAINT "FK_Messages_Messages_ReplyToId" 
                             FOREIGN KEY ("ReplyToId") REFERENCES "Messages"("Id") ON DELETE SET NULL;
                     END IF;
+                    -- Ensure DeletedAt/DeletedBy columns exist on Messages
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedAt') THEN
+                        ALTER TABLE "Messages" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedBy') THEN
+                        ALTER TABLE "Messages" ADD COLUMN "DeletedBy" uuid NULL;
+                    END IF;
+                    -- Ensure IsEdited/EditedAt columns exist on Messages
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
+                        ALTER TABLE "Messages" ADD COLUMN "IsEdited" boolean NOT NULL DEFAULT false;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'EditedAt') THEN
+                        ALTER TABLE "Messages" ADD COLUMN "EditedAt" timestamp with time zone NULL;
+                    END IF;
                 END $$;
             """);
 
@@ -1052,7 +1160,9 @@ if (enableStartupDbMaintenance)
                     "ReadAt" timestamp with time zone NOT NULL,
                     "CreatedAt" timestamp with time zone NOT NULL,
                     "UpdatedAt" timestamp with time zone NOT NULL,
-                    "IsActive" boolean NOT NULL
+                    "IsActive" boolean NOT NULL,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_MessageReads_MessageId_UserId" 
                     ON "MessageReads" ("MessageId", "UserId");
@@ -1065,6 +1175,13 @@ if (enableStartupDbMaintenance)
                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_MessageReads_Users_UserId') THEN
                         ALTER TABLE "MessageReads" ADD CONSTRAINT "FK_MessageReads_Users_UserId" 
                             FOREIGN KEY ("UserId") REFERENCES "Users"("Id") ON DELETE CASCADE;
+                    END IF;
+                    -- Ensure DeletedAt/DeletedBy columns exist on MessageReads
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'MessageReads' AND column_name = 'DeletedAt') THEN
+                        ALTER TABLE "MessageReads" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'MessageReads' AND column_name = 'DeletedBy') THEN
+                        ALTER TABLE "MessageReads" ADD COLUMN "DeletedBy" uuid NULL;
                     END IF;
                 END $$;
             """);

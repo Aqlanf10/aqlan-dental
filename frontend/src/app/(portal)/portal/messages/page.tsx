@@ -166,7 +166,7 @@ export default function PortalMessagesPage() {
   const [patientUserId] = useState<string | null>(() => getPatientUserId());
 
   const { data: conversations = [], isLoading, isError, error } = usePortalConversations();
-  const { data: conversation } = usePortalConversation(selectedConvId);
+  const { data: conversation, isLoading: convDetailLoading, isError: convDetailError, error: convDetailErrorObj, refetch: refetchConv } = usePortalConversation(selectedConvId);
   const { data: unreadData } = usePortalUnreadCount();
   const markAsRead = usePortalMarkAsRead(selectedConvId);
   const sendMessage = usePortalSendMessage(selectedConvId ?? "");
@@ -306,7 +306,32 @@ export default function PortalMessagesPage() {
               !showMobileChat ? "hidden md:flex" : "flex"
             )}
           >
-            {selectedConvId && conversation ? (
+            {selectedConvId && convDetailLoading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <Loader2 className="w-8 h-8 animate-spin text-teal-500 mx-auto mb-3" />
+                  <p className="text-sm text-gray-400">جارٍ تحميل المحادثة...</p>
+                </div>
+              </div>
+            ) : selectedConvId && convDetailError ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center max-w-xs mx-auto">
+                  <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+                    <AlertTriangle className="w-8 h-8 text-red-400" />
+                  </div>
+                  <p className="text-gray-700 font-semibold mb-1">لا يمكن تحمّل البيانات</p>
+                  <p className="text-gray-400 text-sm mb-4">
+                    حدث خطأ أثناء جلب الرسائل. حاول مجدداً.
+                  </p>
+                  <button
+                    onClick={() => refetchConv()}
+                    className="px-4 py-2 bg-teal-500 text-white rounded-lg text-sm font-semibold hover:bg-teal-600 transition flex items-center gap-2 mx-auto"
+                  >
+                    إعادة المحاولة
+                  </button>
+                </div>
+              </div>
+            ) : selectedConvId && conversation ? (
               <ChatArea
                 conversation={conversation}
                 patientUserId={patientUserId}

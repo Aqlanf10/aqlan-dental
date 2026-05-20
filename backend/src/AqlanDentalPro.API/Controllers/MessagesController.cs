@@ -58,9 +58,17 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
-        var result = await messagingService.GetConversationAsync(conversationId, page, pageSize);
-        if (result == null) return NotFound(new { message = "المحادثة غير موجودة أو ليس لديك صلاحية الوصول" });
-        return Ok(result);
+        try
+        {
+            var result = await messagingService.GetConversationAsync(conversationId, page, pageSize);
+            if (result == null) return NotFound(new { message = "المحادثة غير موجودة أو ليس لديك صلاحية الوصول" });
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load conversation {ConversationId}", conversationId);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل بيانات المحادثة" });
+        }
     }
 
     /// <summary>إنشاء محادثة جديدة</summary>

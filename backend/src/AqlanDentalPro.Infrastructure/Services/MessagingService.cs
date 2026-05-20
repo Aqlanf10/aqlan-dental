@@ -923,7 +923,11 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     // ─── Private Helpers ─────────────────────────────────────────────────────
     private async Task<bool> IsParticipantAsync(Guid conversationId)
     {
+        // Use IgnoreQueryFilters so soft-deleted participants (who left via LeaveConversation)
+        // are still considered "participants" for access-checking purposes.
+        // This prevents a re-added participant from being denied access.
         return await db.ConversationParticipants
+            .IgnoreQueryFilters()
             .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == UserId);
     }
 

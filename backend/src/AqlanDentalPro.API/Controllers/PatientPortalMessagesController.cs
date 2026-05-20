@@ -99,9 +99,16 @@ public class PatientPortalMessagesController(
         var userId = await ResolveUserIdAsync();
         if (userId == null) return StatusCode(403, new { message = "حساب البوابة غير مرتبط بحساب مراسلة" });
 
-        var result = await messagingService.GetConversationAsync(PatientId, userId.Value, conversationId, page, pageSize);
-        if (result == null) return NotFound(new { message = "المحادثة غير موجودة أو ليس لديك صلاحية الوصول" });
-        return Ok(result);
+        try
+        {
+            var result = await messagingService.GetConversationAsync(PatientId, userId.Value, conversationId, page, pageSize);
+            if (result == null) return NotFound(new { message = "المحادثة غير موجودة أو ليس لديك صلاحية الوصول" });
+            return Ok(result);
+        }
+        catch (ServiceException ex)
+        {
+            return StatusCode(ex.StatusCode, new { message = ex.Message });
+        }
     }
 
     // ─── POST /api/portal/messages/conversations/{conversationId}/messages ────

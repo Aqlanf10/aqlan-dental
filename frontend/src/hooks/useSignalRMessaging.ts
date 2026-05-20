@@ -19,6 +19,8 @@ export function useSignalRMessaging() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const [token, setToken] = useState<string | null>(null);
+  // F-1 FIX: Track connection state in useState so React re-renders on change
+  const [isConnected, setIsConnected] = useState(false);
 
   // قراءة التوكن من localStorage عند التحميل
   useEffect(() => {
@@ -60,17 +62,25 @@ export function useSignalRMessaging() {
         queryClient.invalidateQueries({ queryKey: ["notifications"] });
       });
 
-      // إعادة الاتصال
+      // إعادة الاتصال — F-1 FIX: Update connection state
       connection.onreconnected(() => {
+        setIsConnected(true);
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
         queryClient.invalidateQueries({ queryKey: ["unreadCount"] });
         queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
       });
 
+      // انقطاع الاتصال — F-1 FIX: Update connection state
+      connection.onclose(() => {
+        setIsConnected(false);
+      });
+
       await connection.start();
       connectionRef.current = connection;
+      setIsConnected(true); // F-1 FIX: Set connected after successful start
     } catch (err) {
       console.warn("SignalR connection failed, falling back to polling:", err);
+      setIsConnected(false);
     }
   }, [token, queryClient]);
 
@@ -83,6 +93,7 @@ export function useSignalRMessaging() {
       }
       connectionRef.current = null;
     }
+    setIsConnected(false); // F-1 FIX: Clear connected state
   }, []);
 
   // الانضمام لمجموعة محادثة
@@ -122,6 +133,6 @@ export function useSignalRMessaging() {
   return {
     joinConversation,
     leaveConversation,
-    isConnected: connectionRef.current?.state === "Connected",
+    isConnected, // F-1 FIX: Returns live state from useState
   };
 }

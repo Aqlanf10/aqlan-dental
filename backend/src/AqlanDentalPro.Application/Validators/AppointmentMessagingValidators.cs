@@ -77,12 +77,12 @@ public sealed class CreateConversationRequestValidator : AbstractValidator<Creat
             .When(x => !string.IsNullOrWhiteSpace(x.InitialMessage));
 
         RuleFor(x => x.ConversationType)
-            .Must(BeAValidType).WithMessage("نوع المحادثة يجب أن يكون: StaffToStaff أو StaffToPatient")
+            .Must(BeAValidType).WithMessage("نوع المحادثة يجب أن يكون: StaffToStaff أو StaffToPatient أو PatientFacing")
             .When(x => !string.IsNullOrWhiteSpace(x.ConversationType));
     }
 
     private static bool BeAValidType(string? type) =>
-        type is "StaffToStaff" or "StaffToPatient";
+        type is "StaffToStaff" or "StaffToPatient" or "PatientFacing";
 }
 
 /// <summary>

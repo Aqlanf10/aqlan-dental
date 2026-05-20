@@ -16,6 +16,8 @@ const PUBLIC_PATHS = [
   "/api/auth",
   "/api/public",
   "/api/portal",
+  "/hubs",         // SignalR WebSocket hub proxy
+  "/health",       // Backend health check endpoint
   "/portal/login",
   "/queue-display",
   "/clinic-display",

@@ -166,8 +166,21 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
         if (existing != null)
         {
-            // Add current staff user as participant if not already
-            if (!existing.Participants.Any(p => p.UserId == UserId))
+            // B-1 FIX: Use IgnoreQueryFilters to find soft-deleted participants.
+            // If a participant previously left (soft-deleted), reactivate instead of
+            // inserting a new row (which would violate the unique constraint on ConversationId+UserId).
+            var existingParticipant = await db.ConversationParticipants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(cp => cp.ConversationId == existing.Id && cp.UserId == UserId);
+            if (existingParticipant != null)
+            {
+                if (!existingParticipant.IsActive)
+                {
+                    existingParticipant.IsActive = true;
+                    existingParticipant.DeletedAt = null;
+                }
+            }
+            else
             {
                 await db.ConversationParticipants.AddAsync(new ConversationParticipant
                 {
@@ -319,8 +332,19 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
         if (existing != null)
         {
-            // Add current staff user as participant if not already
-            if (!existing.Participants.Any(p => p.UserId == UserId))
+            // B-1 FIX: Use IgnoreQueryFilters to handle soft-deleted participants
+            var existingParticipant = await db.ConversationParticipants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(cp => cp.ConversationId == existing.Id && cp.UserId == UserId);
+            if (existingParticipant != null)
+            {
+                if (!existingParticipant.IsActive)
+                {
+                    existingParticipant.IsActive = true;
+                    existingParticipant.DeletedAt = null;
+                }
+            }
+            else
             {
                 await db.ConversationParticipants.AddAsync(new ConversationParticipant
                 {
@@ -914,11 +938,15 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
     private async Task<Conversation?> FindDirectConversationAsync(Guid userId1, Guid userId2)
     {
+        // B-2 FIX: Use IgnoreQueryFilters on Participants so we find conversations
+        // even if one participant was soft-deleted (left the conversation).
+        // Without this, leaving a direct conversation and re-opening it creates a duplicate.
         return await db.Conversations
             .Include(c => c.Participants)
             .Where(c => !c.IsGroup
                      && c.Participants.Any(p => p.UserId == userId1)
                      && c.Participants.Any(p => p.UserId == userId2))
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync();
     }
 

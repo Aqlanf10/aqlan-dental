@@ -23,4 +23,9 @@ public class SignalRPushService(IHubContext<MessagingHub> hubContext) : IRealTim
     {
         await hubContext.Clients.Group($"conv-{conversationId}").SendAsync(eventName, payload);
     }
+
+    public async Task PushToAllAsync(string eventName, object? payload = null)
+    {
+        await hubContext.Clients.All.SendAsync(eventName, payload);
+    }
 }

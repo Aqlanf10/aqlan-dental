@@ -118,4 +118,10 @@ public static class MessagingHubEvents
 
     /// <summary>تحديث قائمة المحادثات</summary>
     public const string ConversationsUpdated = "ConversationsUpdated";
+
+    /// <summary>تغيير حالة عنصر في الطابور (إضافة/استدعاء/دخول/بدء/إكمال/إلغاء)</summary>
+    public const string QueueUpdated = "QueueUpdated";
+
+    /// <summary>استدعاء مريض — للتحديث الفوري على شاشة العرض</summary>
+    public const string PatientCalled = "PatientCalled";
 }

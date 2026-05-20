@@ -1,9 +1,11 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Constants;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.API.Hubs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +22,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/clinic-queue")]
 [Authorize(Policy = "StaffOnly")]
-public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueController> logger) : ControllerBase
+public class ClinicQueueController(AppDbContext db, IRealTimePushService pushService, ILogger<ClinicQueueController> logger) : ControllerBase
 {
     private static readonly HashSet<ClinicQueueStatus> ActiveStatuses =
     [
@@ -165,6 +167,9 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // SignalR: Notify all clients that queue has changed
+            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "added", item.Id, item.PatientId });
+
             return Created($"/api/clinic-queue/{item.Id}", new
             {
                 item.Id,
@@ -231,6 +236,10 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // SignalR: Notify TV display and all staff of patient call
+            await pushService.PushToAllAsync(MessagingHubEvents.PatientCalled, new { item.Id, item.PatientId, item.RoomName, item.CalledAt });
+            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "called", item.Id, item.PatientId });
 
             return Ok(new
             {
@@ -396,6 +405,9 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // SignalR: Notify all clients that queue has changed
+            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "completed", item.Id, item.PatientId });
+
             return Ok(new
             {
                 item.Id,
@@ -447,6 +459,9 @@ public class ClinicQueueController(AppDbContext db, ILogger<ClinicQueueControlle
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // SignalR: Notify all clients that queue has changed
+            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "cancelled", item.Id, item.PatientId });
 
             return Ok(new
             {

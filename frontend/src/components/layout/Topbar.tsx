@@ -118,16 +118,16 @@ export function Topbar() {
     searchTimer.current = setTimeout(() => runSearch(val), 300);
   };
 
-  /* ── Notification unread count with polling ── */
+  /* ── Notification unread count — SignalR handles real-time updates ── */
   const { data: notifData } = useQuery({
     queryKey: ["notificationUnreadCount"],
     queryFn: async () => {
       const { data } = await api.get<{ count: number }>("/api/notifications/unread-count");
       return data;
     },
-    staleTime: 20_000,
-    refetchInterval: 25_000,
-    refetchOnWindowFocus: true,
+    staleTime: 120_000,       // 2 min — rely on SignalR for invalidation
+    refetchInterval: false,   // No polling — SignalR pushes updates instantly
+    refetchOnWindowFocus: true, // Safety net on tab focus
   });
 
   // Keep local unreadCount in sync with the query

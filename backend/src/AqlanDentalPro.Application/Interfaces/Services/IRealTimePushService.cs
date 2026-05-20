@@ -14,4 +14,7 @@ public interface IRealTimePushService
 
     /// <summary>إرسال حدث لجميع المشاركين في محادثة</summary>
     Task PushToConversationAsync(Guid conversationId, string eventName, object? payload = null);
+
+    /// <summary>إرسال حدث لجميع العملاء المتصلين (بث عام)</summary>
+    Task PushToAllAsync(string eventName, object? payload = null);
 }

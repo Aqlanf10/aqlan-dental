@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Exceptions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -25,17 +26,19 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
     {
         var (statusCode, title) = ex switch
         {
-            UnauthorizedAccessException => (HttpStatusCode.Unauthorized, "غير مصرح"),
-            KeyNotFoundException        => (HttpStatusCode.NotFound, "العنصر غير موجود"),
-            InvalidOperationException   => (HttpStatusCode.BadRequest, "عملية غير صالحة"),
+            ServiceException sex          => ((HttpStatusCode)sex.StatusCode, "خطأ في الطلب"),
+            UnauthorizedAccessException  => (HttpStatusCode.Unauthorized, "غير مصرح"),
+            KeyNotFoundException         => (HttpStatusCode.NotFound, "العنصر غير موجود"),
+            InvalidOperationException    => (HttpStatusCode.BadRequest, "عملية غير صالحة"),
             // ERR-02 FIX: Handle concurrency conflicts with 409 Conflict
             DbUpdateConcurrencyException => (HttpStatusCode.Conflict, "تعارض في التحديث"),
-            _                          => (HttpStatusCode.InternalServerError, "خطأ في الخادم")
+            _                           => (HttpStatusCode.InternalServerError, "خطأ في الخادم")
         };
 
         // H3 FIX: Don't expose raw exception messages to clients in production
         var detail = ex switch
         {
+            ServiceException => ex.Message, // Business-rule messages are safe to expose
             UnauthorizedAccessException => ex.Message, // Safe to expose auth errors
             KeyNotFoundException => ex.Message,         // Safe to expose not-found errors
             DbUpdateConcurrencyException => "تم تعديل البيانات بواسطة مستخدم آخر. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
@@ -52,11 +55,13 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             Instance = context.Request.Path
         };
 
-        // HOTFIX DIAGNOSTIC: Include exception type name in response to diagnose
-        // production 500 errors. This is safe — type names don't contain sensitive data.
-        // Remove after the Redis resilience issue is resolved.
-        problem.Extensions["errorType"] = ex.GetType().Name;
-        problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
+        // Diagnostic: Include exception type in non-production environments only
+        var isProduction = context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true;
+        if (!isProduction)
+        {
+            problem.Extensions["errorType"] = ex.GetType().Name;
+            problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
+        }
 
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/problem+json";

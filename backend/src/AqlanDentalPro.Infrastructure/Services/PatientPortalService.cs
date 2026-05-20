@@ -17,7 +17,7 @@ using System.Net.Http.Json;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<PatientPortalService> logger) : IPatientPortalService
+public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpClientFactory httpClientFactory, IPatientAccountLinkingService linkingService, ILogger<PatientPortalService> logger) : IPatientPortalService
 {
     public async Task<(PatientAuthResponse? response, string? error)> LoginAsync(string username, string password)
     {
@@ -44,7 +44,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             return (null, "تم تعطيل هذا الحساب");
 
         // Ensure the PatientAccount has a LinkedUserId for messaging integration
-        await EnsureLinkedUserAsync(account);
+        await linkingService.EnsureLinkedUserAsync(account.PatientId);
 
         account.IsVerified = true;
         account.LastLogin = DateTime.UtcNow;
@@ -162,7 +162,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         {
             // Account already exists - do NOT return existing password
             // But ensure the LinkedUserId is set for messaging system integration
-            await EnsureLinkedUserAsync(account);
+            await linkingService.EnsureLinkedUserAsync(account.PatientId);
             await db.SaveChangesAsync();
             return (account.Username ?? patientNumber, "");
         }
@@ -187,8 +187,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         db.PatientAccounts.Add(account);
 
-        // Ensure LinkedUserId for messaging — use the unified helper
-        await EnsureLinkedUserAsync(account, phone);
+        // Ensure LinkedUserId for messaging — use the unified linking service
+        await linkingService.EnsureLinkedUserAsync(account.PatientId);
 
         await db.SaveChangesAsync();
 
@@ -685,42 +685,6 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
     }
 
     // ── Private Helpers ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Ensures a PatientAccount has a LinkedUserId for messaging system integration.
-    /// Finds an existing User by username or creates a new one, then links it.
-    /// This is the single source of truth for the linking logic.
-    /// </summary>
-    private async Task<Guid> EnsureLinkedUserAsync(PatientAccount account, string? phone = null)
-    {
-        if (account.LinkedUserId.HasValue)
-            return account.LinkedUserId.Value;
-
-        var username = account.Username ?? account.Patient?.PatientNumber ?? $"patient-{account.PatientId}";
-        var existingUser = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
-
-        if (existingUser != null)
-        {
-            account.LinkedUserId = existingUser.Id;
-        }
-        else
-        {
-            var linkedUser = new User
-            {
-                Username = username,
-                PasswordHash = account.PasswordHash ?? "",
-                PasswordSalt = account.PasswordSalt ?? "",
-                Role = UserRole.Patient,
-                IsActive = true
-            };
-            db.Users.Add(linkedUser);
-            await db.SaveChangesAsync();
-            account.LinkedUserId = linkedUser.Id;
-        }
-
-        logger.LogInformation("Auto-linked PatientAccount {Username} to messaging User {UserId}", account.Username, account.LinkedUserId);
-        return account.LinkedUserId.Value;
-    }
 
     private static PatientAppointmentDto MapAppointment(Appointment a, DateOnly? now = null)
     {

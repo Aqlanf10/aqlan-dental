@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Messaging;
+using AqlanDentalPro.Application.Exceptions;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -18,6 +19,7 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
     private readonly AppDbContext _db;
     private readonly INotificationService _notifications;
     private readonly IRealTimePushService _pushService;
+    private readonly IPatientAccountLinkingService _linkingService;
     private readonly ILogger<PatientPortalMessagingService> _logger;
 
     private static readonly HashSet<string> ValidRecipientTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -29,53 +31,21 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
         AppDbContext db,
         INotificationService notifications,
         IRealTimePushService pushService,
+        IPatientAccountLinkingService linkingService,
         ILogger<PatientPortalMessagingService> logger)
     {
         _db = db;
         _notifications = notifications;
         _pushService = pushService;
+        _linkingService = linkingService;
         _logger = logger;
     }
 
     // ─── Public API ──────────────────────────────────────────────────────────
 
     /// <inheritdoc />
-    public async Task<Guid?> EnsureLinkedUserAsync(Guid patientId)
-    {
-        var account = await _db.PatientAccounts
-            .Include(a => a.Patient)
-            .FirstOrDefaultAsync(a => a.PatientId == patientId);
-
-        if (account == null) return null;
-        if (account.LinkedUserId.HasValue)
-            return account.LinkedUserId.Value;
-
-        // Not yet linked — create the link using the same logic as PatientPortalService
-        var username = account.Username ?? account.Patient?.PatientNumber ?? $"patient-{patientId}";
-        var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
-
-        if (existingUser != null)
-        {
-            account.LinkedUserId = existingUser.Id;
-        }
-        else
-        {
-            var linkedUser = new User
-            {
-                Username = username,
-                PasswordHash = account.PasswordHash ?? "",
-                PasswordSalt = account.PasswordSalt ?? "",
-                Role = UserRole.Patient,
-                IsActive = true
-            };
-            _db.Users.Add(linkedUser);
-            await _db.SaveChangesAsync();
-            account.LinkedUserId = linkedUser.Id;
-        }
-
-        await _db.SaveChangesAsync();
-        return account.LinkedUserId.Value;
-    }
+    public Task<Guid?> EnsureLinkedUserAsync(Guid patientId)
+        => _linkingService.EnsureLinkedUserAsync(patientId);
 
     /// <inheritdoc />
     public async Task<List<PortalRecipientDto>> GetRecipientsAsync(Guid patientId)
@@ -914,16 +884,4 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
     }
 }
 
-/// <summary>
-/// Exception thrown by PatientPortalMessagingService for business-rule violations.
-/// Carries an HTTP-like status code so the controller layer can map to the appropriate IActionResult.
-/// </summary>
-public class ServiceException : Exception
-{
-    public int StatusCode { get; }
 
-    public ServiceException(string message, int statusCode) : base(message)
-    {
-        StatusCode = statusCode;
-    }
-}

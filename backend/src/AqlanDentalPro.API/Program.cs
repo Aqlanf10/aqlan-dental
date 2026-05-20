@@ -349,6 +349,7 @@ builder.Services.AddScoped<OrthoService>();
 builder.Services.AddScoped<FinanceService>();
 builder.Services.AddScoped<GeneralService>();
 builder.Services.AddScoped<IMessagingService, MessagingService>();
+builder.Services.AddScoped<IPatientAccountLinkingService, PatientAccountLinkingService>();
 builder.Services.AddScoped<IPatientPortalMessagingService, PatientPortalMessagingService>();
 builder.Services.AddScoped<IRealTimePushService, SignalRPushService>();
 builder.Services.AddScoped<CephService>();

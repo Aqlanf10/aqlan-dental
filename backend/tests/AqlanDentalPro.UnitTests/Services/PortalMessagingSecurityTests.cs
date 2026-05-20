@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -43,8 +44,9 @@ public class PortalMessagingSecurityTests
     {
         var config = CreateConfig();
         var httpClientFactory = new Mock<IHttpClientFactory>();
+        var linkingService = new Mock<IPatientAccountLinkingService>();
         var logger = new Mock<ILogger<PatientPortalService>>();
-        return new PatientPortalService(db, config.Object, httpClientFactory.Object, logger.Object);
+        return new PatientPortalService(db, config.Object, httpClientFactory.Object, linkingService.Object, logger.Object);
     }
 
     private static async Task<(Guid patientId, PatientAccount account, User linkedUser)> SeedPatientWithAccount(

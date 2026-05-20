@@ -500,7 +500,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
         // Validate legacy single attachment if provided
         if (hasLegacyAttachment)
         {
-            if (!request.AttachmentUrl.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+            if (!request.AttachmentUrl!.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("رابط المرفق غير صالح");
 
             var allowedMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

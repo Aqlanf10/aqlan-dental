@@ -52,7 +52,7 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
                 ExpectedDurationMonths = c.ExpectedDurationMonths,
                 CurrentStage = c.CurrentStage,
                 StagePercentage = c.StagePercentage,
-                Status = c.Status,
+                Status = c.Status.ToString(),
                 TotalFee = c.TotalFee
             })
             .ToListAsync();
@@ -85,7 +85,7 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
             ExpectedDurationMonths = c.ExpectedDurationMonths,
             CurrentStage = c.CurrentStage,
             StagePercentage = c.StagePercentage,
-            Status = c.Status,
+            Status = c.Status.ToString(),
             TotalFee = c.TotalFee,
             ExtractionDecisionValue = c.ExtractionDecisionValue,
             RetentionPlan = c.RetentionPlan,

@@ -407,9 +407,9 @@ public static class DbSeeder
         // ─── Ortho Cases ────────────────────────────────────────────────
         var orthoCases = new List<OrthoCase>
         {
-            new() { Id = new Guid("b0000000-0000-0000-0000-000000000001"), CaseNumber = "OR-2026-001", PatientId = patients[0].Id, DoctorId = drAqlan.Id, ApplianceType = "MBT 0.022", StartDate = today.AddDays(-60), ExpectedDurationMonths = 18, TotalFee = 800000, Status = "active", BranchId = branchId },
-            new() { Id = new Guid("b0000000-0000-0000-0000-000000000002"), CaseNumber = "OR-2026-002", PatientId = patients[2].Id, DoctorId = drAqlan.Id, ApplianceType = "Damon Q",  StartDate = today.AddDays(-30), ExpectedDurationMonths = 24, TotalFee = 1000000, Status = "active", BranchId = branchId },
-            new() { Id = new Guid("b0000000-0000-0000-0000-000000000003"), CaseNumber = "OR-2026-003", PatientId = patients[5].Id, DoctorId = drAqlan.Id, ApplianceType = "MBT 0.018", StartDate = today.AddDays(-90), ExpectedDurationMonths = 12, TotalFee = 700000, Status = "active", BranchId = branchId },
+            new() { Id = new Guid("b0000000-0000-0000-0000-000000000001"), CaseNumber = "OR-2026-001", PatientId = patients[0].Id, DoctorId = drAqlan.Id, ApplianceType = "MBT 0.022", StartDate = today.AddDays(-60), ExpectedDurationMonths = 18, TotalFee = 800000, Status = OrthoCaseStatus.Active, BranchId = branchId },
+            new() { Id = new Guid("b0000000-0000-0000-0000-000000000002"), CaseNumber = "OR-2026-002", PatientId = patients[2].Id, DoctorId = drAqlan.Id, ApplianceType = "Damon Q",  StartDate = today.AddDays(-30), ExpectedDurationMonths = 24, TotalFee = 1000000, Status = OrthoCaseStatus.Active, BranchId = branchId },
+            new() { Id = new Guid("b0000000-0000-0000-0000-000000000003"), CaseNumber = "OR-2026-003", PatientId = patients[5].Id, DoctorId = drAqlan.Id, ApplianceType = "MBT 0.018", StartDate = today.AddDays(-90), ExpectedDurationMonths = 12, TotalFee = 700000, Status = OrthoCaseStatus.Active, BranchId = branchId },
         };
         await context.OrthoCases.AddRangeAsync(orthoCases);
         await context.SaveChangesAsync();
@@ -420,9 +420,9 @@ public static class DbSeeder
 
         var contracts = new List<Contract>
         {
-            new() { Id = new Guid("c0000000-0000-0000-0000-000000000001"), PatientId = patients[0].Id, RelatedCaseId = orthoCases[0].Id, Specialty = "ortho",   TotalAmount = 800000,  DiscountAmount = 0,     InstallmentsCount = 4, InstallmentAmount = 200000, StartDate = today.AddDays(-60), Status = "active" },
-            new() { Id = new Guid("c0000000-0000-0000-0000-000000000002"), PatientId = patients[2].Id, RelatedCaseId = orthoCases[1].Id, Specialty = "ortho",   TotalAmount = 1000000, DiscountAmount = 50000, InstallmentsCount = 6, InstallmentAmount = 158333, StartDate = today.AddDays(-30), Status = "active" },
-            new() { Id = new Guid("c0000000-0000-0000-0000-000000000003"), PatientId = patients[1].Id, Specialty = "general", TotalAmount = 150000,  DiscountAmount = 0,     InstallmentsCount = 1, InstallmentAmount = 150000, StartDate = today.AddDays(-14), Status = "completed" },
+            new() { Id = new Guid("c0000000-0000-0000-0000-000000000001"), PatientId = patients[0].Id, RelatedCaseId = orthoCases[0].Id, Specialty = "ortho",   TotalAmount = 800000,  DiscountAmount = 0,     InstallmentsCount = 4, InstallmentAmount = 200000, StartDate = today.AddDays(-60), Status = ContractStatus.Active },
+            new() { Id = new Guid("c0000000-0000-0000-0000-000000000002"), PatientId = patients[2].Id, RelatedCaseId = orthoCases[1].Id, Specialty = "ortho",   TotalAmount = 1000000, DiscountAmount = 50000, InstallmentsCount = 6, InstallmentAmount = 158333, StartDate = today.AddDays(-30), Status = ContractStatus.Active },
+            new() { Id = new Guid("c0000000-0000-0000-0000-000000000003"), PatientId = patients[1].Id, Specialty = "general", TotalAmount = 150000,  DiscountAmount = 0,     InstallmentsCount = 1, InstallmentAmount = 150000, StartDate = today.AddDays(-14), Status = ContractStatus.Completed },
         };
         await context.Contracts.AddRangeAsync(contracts);
         await context.SaveChangesAsync();

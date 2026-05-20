@@ -160,7 +160,7 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
 
     void ComposeSummary(IContainer container)
     {
-        var totalCost = Patient.Contracts.Where(c => c.Status == "active").Sum(c => c.TotalAmount - c.DiscountAmount);
+        var totalCost = Patient.Contracts.Where(c => c.Status == ContractStatus.Active).Sum(c => c.TotalAmount - c.DiscountAmount);
         var totalPaid = Payments.Sum(p => p.Amount);
         var remaining = totalCost - totalPaid;
 

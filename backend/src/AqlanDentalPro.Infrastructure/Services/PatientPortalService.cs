@@ -358,12 +358,12 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var totalPaid = await db.Payments.Where(p => p.PatientId == patientId).SumAsync(p => (decimal?)p.Amount) ?? 0;
         var totalOutstanding = await db.Contracts
-            .Where(c => c.PatientId == patientId && c.Status == "active")
+            .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active)
             .Include(c => c.Payments)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
         var totalAmount = totalPaid + totalOutstanding;
-        var activeContracts = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == "active");
+        var activeContracts = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
 
         var recentPayments = await db.Payments
             .Include(p => p.Receipt)
@@ -603,7 +603,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             .Where(c => c.PatientId == patientId)
             .ToListAsync();
 
-        var activeContracts = contracts.Where(c => c.Status == "active").ToList();
+        var activeContracts = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
         var totalOutstanding = activeContracts
             .Sum(c => Math.Max(0, c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)));
         var totalAmount = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
@@ -615,7 +615,7 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             TotalAmount = c.TotalAmount - c.DiscountAmount,
             PaidAmount = c.Payments.Sum(p => p.Amount),
             RemainingAmount = Math.Max(0, c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)),
-            Status = c.Status,
+            Status = c.Status.ToString(),
             StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : null
         }).ToList();
 

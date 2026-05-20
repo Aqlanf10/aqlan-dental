@@ -49,7 +49,7 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var patientQuery = db.Patients.Where(p => p.CreatedAt >= todayStart && p.CreatedAt < todayEnd);
         if (branchId.HasValue) patientQuery = patientQuery.Where(p => p.BranchId == branchId);
 
-        var orthoQuery = db.OrthoCases.Where(o => o.Status == "active");
+        var orthoQuery = db.OrthoCases.Where(o => o.Status == OrthoCaseStatus.Active);
         if (branchId.HasValue) orthoQuery = orthoQuery.Where(o => o.BranchId == branchId);
 
         var labQuery = db.LabOrders.Where(l => l.Status == "sent" || l.Status == "manufacturing");
@@ -60,7 +60,7 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         // Overdue: active contracts where expected paid > actual paid
         var activeContracts = await db.Contracts
             .Include(c => c.Payments)
-            .Where(c => c.Status == "active" && c.StartDate.HasValue && c.InstallmentsCount > 0)
+            .Where(c => c.Status == ContractStatus.Active && c.StartDate.HasValue && c.InstallmentsCount > 0)
             .ToListAsync();
 
         var overdueCount = activeContracts.Count(c =>
@@ -149,9 +149,9 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
             AppointmentsByDay = apptByDay,
             OrthoByStatus = new OrthoStatusCounts
             {
-                Active    = orthoGroups.FirstOrDefault(g => g.status == "active")?.count ?? 0,
-                Completed = orthoGroups.FirstOrDefault(g => g.status == "completed")?.count ?? 0,
-                Cancelled = orthoGroups.FirstOrDefault(g => g.status == "cancelled")?.count ?? 0,
+                Active    = orthoGroups.FirstOrDefault(g => g.status == OrthoCaseStatus.Active)?.count ?? 0,
+                Completed = orthoGroups.FirstOrDefault(g => g.status == OrthoCaseStatus.Completed)?.count ?? 0,
+                Cancelled = orthoGroups.FirstOrDefault(g => g.status == OrthoCaseStatus.Cancelled)?.count ?? 0,
             }
         };
     }

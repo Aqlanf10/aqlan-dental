@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,7 +26,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var newPatients = await db.Patients.CountAsync(p => DateOnly.FromDateTime(p.CreatedAt.Date) >= fromDate && DateOnly.FromDateTime(p.CreatedAt.Date) <= toDate);
         var totalAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate);
         var completedAppointments = await db.Appointments.CountAsync(a => a.AppointmentDate >= fromDate && a.AppointmentDate <= toDate && a.Status == Domain.Enums.AppointmentStatus.Completed);
-        var activeOrthoCases = await db.OrthoCases.CountAsync(c => c.Status == "active");
+        var activeOrthoCases = await db.OrthoCases.CountAsync(c => c.Status == OrthoCaseStatus.Active);
         var totalRevenue = await db.Payments.Where(p => p.PaymentDate >= fromDate && p.PaymentDate <= toDate).SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         return Ok(new
@@ -60,7 +61,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             .ToListAsync();
 
         var orthoStats = await db.OrthoCases
-            .Where(c => c.DoctorId != null && doctorIds.Contains(c.DoctorId.Value) && c.Status == "active")
+            .Where(c => c.DoctorId != null && doctorIds.Contains(c.DoctorId.Value) && c.Status == OrthoCaseStatus.Active)
             .GroupBy(c => c.DoctorId!.Value)
             .Select(g => new { DoctorId = g.Key, Count = g.Count() })
             .ToListAsync();
@@ -321,7 +322,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var contracts = await db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
-            .Where(c => c.IsActive && c.Status == "active" && c.TotalAmount > 0)
+            .Where(c => c.IsActive && c.Status == ContractStatus.Active && c.TotalAmount > 0)
             .ToListAsync();
 
         var overdueList = new List<object>();
@@ -387,13 +388,13 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         // Cases by status
         var casesByStatus = await db.OrthoCases
             .Where(c => c.IsActive)
-            .GroupBy(c => c.Status ?? "unknown")
+            .GroupBy(c => c.Status.ToString())
             .Select(g => new { status = g.Key, count = g.Count() })
             .ToListAsync();
 
         // Average treatment duration for completed cases
         var completedCases = await db.OrthoCases
-            .Where(c => c.IsActive && c.Status == "completed" && c.StartDate.HasValue)
+            .Where(c => c.IsActive && c.Status == OrthoCaseStatus.Completed && c.StartDate.HasValue)
             .Select(c => new { c.StartDate, c.CreatedAt })
             .ToListAsync();
 

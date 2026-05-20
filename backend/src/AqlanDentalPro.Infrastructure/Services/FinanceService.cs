@@ -55,7 +55,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             InstallmentsCount = c.InstallmentsCount,
             InstallmentAmount = c.InstallmentAmount,
             StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
-            Status = c.Status,
+            Status = c.Status.ToString(),
             DiscountAmount = c.DiscountAmount,
             DiscountReason = c.DiscountReason,
             Notes = c.Notes,
@@ -373,7 +373,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 PaidAmount      = c.Payments.Sum(p => p.Amount),
                 RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount),
                 StartDate       = c.StartDate?.ToString("yyyy-MM-dd"),
-                Status          = c.Status,
+                Status          = c.Status.ToString(),
                 InstallmentsCount  = c.InstallmentsCount,
                 InstallmentAmount  = c.InstallmentAmount
             }).ToList(),
@@ -567,7 +567,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         InstallmentsCount = c.InstallmentsCount,
         InstallmentAmount = c.InstallmentAmount,
         StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
-        Status = c.Status
+        Status = c.Status.ToString()
     };
 
     private static PaymentDto MapPayment(Payment p) => new()

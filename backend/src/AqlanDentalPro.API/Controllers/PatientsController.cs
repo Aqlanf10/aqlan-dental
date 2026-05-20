@@ -1,6 +1,7 @@
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -247,10 +248,10 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
 
         var totalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id);
         var completedAppointments = await db.Appointments.CountAsync(a => a.PatientId == id && a.Status == Domain.Enums.AppointmentStatus.Completed);
-        var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == "active");
+        var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == OrthoCaseStatus.Active);
         var totalPaid = await db.Payments.Where(p => p.PatientId == id).SumAsync(p => (decimal?)p.Amount) ?? 0;
         var totalOutstanding = await db.Contracts
-            .Where(c => c.PatientId == id && c.Status == "active")
+            .Where(c => c.PatientId == id && c.Status == ContractStatus.Active)
             .Include(c => c.Payments)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;

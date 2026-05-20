@@ -12,10 +12,6 @@ public class TreatmentPlanConfiguration : IEntityTypeConfiguration<TreatmentPlan
 {
     public void Configure(EntityTypeBuilder<TreatmentPlan> builder)
     {
-        builder.Property(p => p.PlanName).HasMaxLength(200);
-        builder.Property(p => p.Status).HasMaxLength(20).IsRequired();
-        builder.Property(p => p.Notes).HasMaxLength(1000);
-
         // Performance indexes
         builder.HasIndex(p => p.OrthoCaseId);
 

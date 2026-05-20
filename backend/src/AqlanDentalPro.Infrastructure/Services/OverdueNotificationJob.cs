@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,7 +45,7 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
         var activeContracts = await db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
-            .Where(c => c.Status == "active" && c.StartDate.HasValue && c.InstallmentsCount > 0)
+            .Where(c => c.Status == ContractStatus.Active && c.StartDate.HasValue && c.InstallmentsCount > 0)
             .ToListAsync();
 
         // ─── منع التكرار: جلب الإشعارات التي أُرسلت اليوم لنفس العقود ──────────
@@ -55,7 +56,8 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
                      && n.CreatedAt >= todayStart && n.CreatedAt < todayEnd)
             .Select(n => n.RelatedId)
             .Distinct()
-            .ToHashSetAsync();
+            .ToListAsync();
+        var todayOverdueContractIdSet = todayOverdueContractIds.ToHashSet();
 
         int count = 0;
         foreach (var c in activeContracts)
@@ -69,7 +71,7 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
             if (expectedPaid - actualPaid > 0)
             {
                 // ─── تخطي العقود التي سبق إرسال إشعار عنها اليوم ──────────────
-                if (todayOverdueContractIds.Contains(c.Id))
+                if (todayOverdueContractIdSet.Contains(c.Id))
                     continue;
 
                 count++;

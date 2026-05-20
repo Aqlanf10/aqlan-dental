@@ -15,6 +15,8 @@ const nextConfig = {
       { source: "/api/:path*", destination: `${backendUrl}/api/:path*` },
       // SignalR WebSocket hub proxy — required for real-time messaging
       { source: "/hubs/:path*", destination: `${backendUrl}/hubs/:path*` },
+      // Health check endpoint proxy — Railway healthcheck needs this
+      { source: "/health", destination: `${backendUrl}/health` },
     ];
   },
 };

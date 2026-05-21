@@ -9,13 +9,18 @@ import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 export default function FinancePage() {
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchSummary = () => {
+    setLoading(true);
+    setError(null);
     api.get<FinanceSummary>("/api/finance/summary")
       .then((r) => setSummary(r.data))
-      .catch(() => {})
+      .catch(() => setError("تعذّر تحميل الملخص المالي. تحقق من اتصالك وأعد المحاولة."))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchSummary(); }, []);
 
   const stats = summary
     ? [
@@ -60,6 +65,20 @@ export default function FinancePage() {
           </Link>
         </div>
       </div>
+
+      {/* Error State */}
+      {error && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-5 py-4">
+          <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+          <p className="text-sm text-red-700 flex-1">{error}</p>
+          <button
+            onClick={fetchSummary}
+            className="text-sm font-medium text-red-600 hover:text-red-800 underline whitespace-nowrap"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
 
       {/* Stats */}
       {loading ? (

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { MessageSquare, Send, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Settings, ChevronDown, ChevronUp, Phone } from "lucide-react";
+import { MessageSquare, Send, RefreshCw, Clock, CheckCircle, XCircle, Settings, ChevronDown, ChevronUp } from "lucide-react";
 import { useWhatsAppDashboard, useSendPendingReminders, useRetryWhatsAppMessage, useWhatsAppTemplates, useUpdateWhatsAppTemplate } from "@/hooks/useWhatsApp";
 import { cn, formatArabicDate } from "@/lib/utils";
 import type { WhatsAppTemplate } from "@/types/whatsapp";
@@ -14,10 +14,24 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: React.Com
 };
 
 export default function WhatsAppPage() {
-  const { data: dashboard, isLoading } = useWhatsAppDashboard();
+  const { data: dashboard, isLoading, error, refetch } = useWhatsAppDashboard();
   const sendPending = useSendPendingReminders();
   const retryMutation = useRetryWhatsAppMessage();
   const [showTemplates, setShowTemplates] = useState(false);
+
+  if (error) return (
+    <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+      <XCircle className="w-12 h-12 text-red-400" />
+      <p className="text-gray-600 text-sm">تعذّر تحميل بيانات واتساب</p>
+      <button
+        onClick={() => refetch()}
+        className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition"
+      >
+        <RefreshCw className="w-4 h-4" />
+        إعادة المحاولة
+      </button>
+    </div>
+  );
 
   return (
     <div className="space-y-5 max-w-5xl">

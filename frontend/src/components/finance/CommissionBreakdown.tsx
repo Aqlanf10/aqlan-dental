@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, Lock, Unlock, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
-import type { LineItemCommission, UpdateLineItemCommissionRequest } from "@/types/commission";
+import type { LineItemCommission } from "@/types/commission";
 import { useUpdateCommissionCosts, useApproveCommission, useUnlockCommission } from "@/hooks/useCommissions";
 import { cn } from "@/lib/utils";
 

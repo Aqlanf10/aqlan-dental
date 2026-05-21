@@ -202,4 +202,129 @@ public class CommissionCalculatorTests
         // 10001 × 33% = 3300.33
         result.DoctorCommissionAmount.Should().Be(3_300.33m);
     }
+
+    // ── Recalculation consistency ─────────────────────────────────────────────
+
+    [Fact]
+    public void Calculate_DeterministicOnSameInput()
+    {
+        // Re-calculating with same parameters must yield identical result
+        var input = new CommissionCalculator.Input(
+            TotalPrice: 75_000m,
+            LineDiscountAmount: 5_000m,
+            MaterialCost: 3_000m,
+            LabCost: 2_500m,
+            OtherDirectCost: 500m,
+            DoctorCommissionPercentage: 35m,
+            BaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var r1 = CommissionCalculator.Calculate(input);
+        var r2 = CommissionCalculator.Calculate(input);
+
+        r1.NetCommissionableAmount.Should().Be(r2.NetCommissionableAmount);
+        r1.DoctorCommissionAmount.Should().Be(r2.DoctorCommissionAmount);
+        r1.CenterShareAmount.Should().Be(r2.CenterShareAmount);
+    }
+
+    // ── OtherDirectCost deducted only for AfterDiscountAndCosts ──────────────
+
+    [Fact]
+    public void Calculate_OtherDirectCost_DeductedOnlyForAfterDiscountAndCosts()
+    {
+        var baseInput = new CommissionCalculator.Input(
+            TotalPrice: 50_000m,
+            LineDiscountAmount: 0m,
+            MaterialCost: 0m,
+            LabCost: 0m,
+            OtherDirectCost: 10_000m,
+            DoctorCommissionPercentage: 50m,
+            BaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var afterCosts = CommissionCalculator.Calculate(baseInput);
+        afterCosts.NetCommissionableAmount.Should().Be(40_000m); // 50k − 10k
+        afterCosts.DoctorCommissionAmount.Should().Be(20_000m);  // 40k × 50%
+
+        var afterDiscount = CommissionCalculator.Calculate(baseInput with { BaseRule = CommissionBaseRule.AfterDiscount });
+        afterDiscount.NetCommissionableAmount.Should().Be(50_000m); // OtherDirectCost ignored
+        afterDiscount.DoctorCommissionAmount.Should().Be(25_000m);  // 50k × 50%
+    }
+
+    // ── CenterShare = Net − DoctorCommission invariant ───────────────────────
+
+    [Fact]
+    public void Calculate_CenterShare_AlwaysEqualsNetMinusDoctorCommission()
+    {
+        var input = new CommissionCalculator.Input(
+            TotalPrice: 200_000m,
+            LineDiscountAmount: 20_000m,
+            MaterialCost: 15_000m,
+            LabCost: 12_000m,
+            OtherDirectCost: 3_000m,
+            DoctorCommissionPercentage: 45m,
+            BaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var result = CommissionCalculator.Calculate(input);
+
+        result.CenterShareAmount.Should().Be(result.NetCommissionableAmount - result.DoctorCommissionAmount);
+    }
+
+    // ── Zero total price (edge case) ─────────────────────────────────────────
+
+    [Fact]
+    public void Calculate_ZeroTotalPrice_AllZero()
+    {
+        var input = new CommissionCalculator.Input(
+            TotalPrice: 0m,
+            LineDiscountAmount: 0m,
+            MaterialCost: 0m,
+            LabCost: 0m,
+            OtherDirectCost: 0m,
+            DoctorCommissionPercentage: 40m,
+            BaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var result = CommissionCalculator.Calculate(input);
+
+        result.NetCommissionableAmount.Should().Be(0m);
+        result.DoctorCommissionAmount.Should().Be(0m);
+        result.CenterShareAmount.Should().Be(0m);
+    }
+
+    // ── ProportionalCommission: zero amount ───────────────────────────────────
+
+    [Fact]
+    public void ProportionalCommission_ZeroAmount_ReturnsZero()
+    {
+        CommissionCalculator.ProportionalCommission(0m, 0.75m).Should().Be(0m);
+    }
+
+    // ── ResolveMaterialCost: zero configured cost ─────────────────────────────
+
+    [Fact]
+    public void ResolveMaterialCost_ZeroConfiguredCost_ReturnsZero()
+    {
+        CommissionCalculator.ResolveMaterialCost(100_000m, 0m, MaterialCostType.FixedAmount)
+            .Should().Be(0m);
+        CommissionCalculator.ResolveMaterialCost(100_000m, 0m, MaterialCostType.PercentageOfServicePrice)
+            .Should().Be(0m);
+    }
+
+    // ── Proportional commission: split stays consistent (no overpayment) ──────
+
+    [Fact]
+    public void ProportionalCommission_DoctorAndCenter_BothProportional_SumStaysOnNet()
+    {
+        // Full split: net 100k, doctor 40k, center 60k. At 50% paid both halve.
+        var partialDoctor = CommissionCalculator.ProportionalCommission(40_000m, 0.5m);
+        var partialCenter = CommissionCalculator.ProportionalCommission(60_000m, 0.5m);
+
+        partialDoctor.Should().Be(20_000m);
+        partialCenter.Should().Be(30_000m);
+        (partialDoctor + partialCenter).Should().Be(50_000m); // = net × 50%
+    }
+
+    [Fact]
+    public void ProportionalCommission_NegativeRatio_ClampedToZero()
+    {
+        CommissionCalculator.ProportionalCommission(40_000m, -0.25m).Should().Be(0m);
+    }
 }

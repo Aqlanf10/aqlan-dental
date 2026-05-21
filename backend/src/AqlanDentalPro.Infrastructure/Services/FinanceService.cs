@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService)
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
@@ -236,6 +236,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (invoice != null)
         {
             await TryMarkInvoicePaidAsync(invoice.Id);
+            // Trigger proportional commission for OnPaymentCollection services
+            try { await commissionService.TriggerOnPaymentCommissionsAsync(invoice.Id); }
+            catch (Exception ex) { logger.LogWarning(ex, "OnPaymentCollection commission trigger failed for invoice {InvoiceId}", invoice.Id); }
         }
 
         // Auto-transition contract to Completed if payments cover the effective amount
@@ -470,6 +473,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         {
             try { await TryMarkInvoicePaidAsync(invoiceId.Value); }
             catch (Exception ex) { logger.LogWarning(ex, "H3: Failed to re-evaluate invoice {InvoiceId} after payment deletion", invoiceId); }
+            // Re-trigger proportional commission for OnPaymentCollection services
+            try { await commissionService.TriggerOnPaymentCommissionsAsync(invoiceId.Value); }
+            catch (Exception ex) { logger.LogWarning(ex, "OnPaymentCollection commission trigger failed for invoice {InvoiceId} after payment deletion", invoiceId); }
         }
 
         // Re-evaluate contract status (Completed → Active if paid total drops below effective amount)
@@ -512,6 +518,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         {
             try { await TryMarkInvoicePaidAsync(payment.InvoiceId.Value); }
             catch (Exception ex) { logger.LogWarning(ex, "H3: Failed to re-evaluate invoice {InvoiceId} after refund", payment.InvoiceId); }
+            // Re-trigger proportional commission for OnPaymentCollection services
+            try { await commissionService.TriggerOnPaymentCommissionsAsync(payment.InvoiceId.Value); }
+            catch (Exception ex) { logger.LogWarning(ex, "OnPaymentCollection commission trigger failed for invoice {InvoiceId} after refund", payment.InvoiceId); }
         }
 
         // Re-evaluate contract status after refund (Completed → Active if paid total drops below effective amount)

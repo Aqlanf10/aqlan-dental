@@ -111,11 +111,13 @@ public record ServiceCommissionDefaultsDto(
     string DefaultMaterialCostType,
     decimal DefaultLabCost,
     decimal? DefaultDoctorCommissionPercentage,
-    string CommissionBaseRule);
+    string CommissionBaseRule,
+    string CommissionRecognitionMode);
 
 public record UpdateServiceCommissionDefaultsRequest(
     decimal DefaultMaterialCost,
     MaterialCostType DefaultMaterialCostType,
     decimal DefaultLabCost,
     decimal? DefaultDoctorCommissionPercentage,
-    CommissionBaseRule CommissionBaseRule);
+    CommissionBaseRule CommissionBaseRule,
+    CommissionRecognitionMode CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval);

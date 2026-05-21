@@ -26,4 +26,5 @@ public class ClinicService : BaseEntity
     /// <summary>Overrides Doctor.DefaultCommissionPercentage when set.</summary>
     public decimal? DefaultDoctorCommissionPercentage { get; set; }
     public CommissionBaseRule CommissionBaseRule { get; set; } = CommissionBaseRule.AfterDiscountAndCosts;
+    public CommissionRecognitionMode CommissionRecognitionMode { get; set; } = CommissionRecognitionMode.OnInvoiceApproval;
 }

@@ -55,6 +55,14 @@ public class CommissionService(
 
         if (item.CommissionStatus == CommissionStatus.Approved)
             throw new InvalidOperationException("العمولة معتمدة — يجب فتحها من قِبَل المدير قبل التعديل");
+        if (item.CommissionStatus == CommissionStatus.Paid)
+            throw new InvalidOperationException("العمولة مدفوعة — لا يمكن تعديل التكاليف");
+
+        // Validate inputs
+        if (req.MaterialCost is < 0 || req.LabCost is < 0 || req.OtherDirectCost is < 0)
+            throw new ArgumentException("التكاليف لا يمكن أن تكون سالبة");
+        if (req.DoctorCommissionPercentage is < 0 or > 100)
+            throw new ArgumentException("نسبة عمولة الطبيب يجب أن تكون بين 0 و 100");
 
         if (req.MaterialCost.HasValue)                item.MaterialCost               = req.MaterialCost.Value;
         if (req.LabCost.HasValue)                     item.LabCost                    = req.LabCost.Value;
@@ -142,9 +150,20 @@ public class CommissionService(
 
         var items = await query.OrderBy(i => i.Invoice.CreatedAt).ToListAsync();
 
-        // Compute paid commission per line item from DoctorCommissionPayments
-        // (simplified: paid commission tracked at doctor level, not per line item)
-        // For the report we show DoctorCommissionAmount as "earned" and 0 paid (pending payment tracking)
+        // Aggregate doctor-level payments for the same date range so the summary
+        // reflects ACTUAL paid commission, not just status flags.
+        var doctorIds = items.Where(i => i.DoctorId.HasValue).Select(i => i.DoctorId!.Value).Distinct().ToList();
+        var fromUtc = from.ToDateTime(TimeOnly.MinValue);
+        var toUtc   = to.ToDateTime(TimeOnly.MaxValue);
+        var paidByDoctor = await db.DoctorCommissionPayments
+            .Where(p => p.IsActive
+                     && doctorIds.Contains(p.DoctorId)
+                     && p.PaymentDate >= DateOnly.FromDateTime(fromUtc)
+                     && p.PaymentDate <= DateOnly.FromDateTime(toUtc))
+            .GroupBy(p => p.DoctorId)
+            .Select(g => new { DoctorId = g.Key, Total = g.Sum(p => p.Amount) })
+            .ToDictionaryAsync(x => x.DoctorId, x => x.Total);
+
         var rows = items.Select(i => new CommissionReportRow(
             Date: i.Invoice.CreatedAt,
             PatientName: i.Invoice.Patient != null
@@ -166,6 +185,12 @@ public class CommissionService(
             Status: i.CommissionStatus.ToString()
         )).ToList();
 
+        // Summary TotalPaid uses ACTUAL DoctorCommissionPayments (more accurate
+        // than per-row status flag, since payments are tracked at doctor level).
+        var totalPaidActual    = paidByDoctor.Values.Sum();
+        var totalEarned        = rows.Sum(r => r.DoctorCommission);
+        var totalRemainingReal = Math.Max(0m, totalEarned - totalPaidActual);
+
         var summary = new CommissionReportSummary(
             TotalGross:           rows.Sum(r => r.GrossAmount),
             TotalDiscount:        rows.Sum(r => r.Discount),
@@ -173,9 +198,9 @@ public class CommissionService(
             TotalLabCost:         rows.Sum(r => r.LabCost),
             TotalOtherCosts:      rows.Sum(r => r.OtherCosts),
             TotalNet:             rows.Sum(r => r.NetCommissionableAmount),
-            TotalDoctorCommission:rows.Sum(r => r.DoctorCommission),
-            TotalPaid:            rows.Sum(r => r.PaidCommission),
-            TotalRemaining:       rows.Sum(r => r.RemainingCommission));
+            TotalDoctorCommission:totalEarned,
+            TotalPaid:            totalPaidActual,
+            TotalRemaining:       totalRemainingReal);
 
         return new CommissionReportResponse(summary, rows);
     }
@@ -185,8 +210,28 @@ public class CommissionService(
     public async Task<DoctorCommissionPaymentDto> RecordPaymentAsync(
         RecordCommissionPaymentRequest req, Guid recordedBy)
     {
+        if (req.Amount <= 0)
+            throw new ArgumentException("مبلغ الدفعة يجب أن يكون أكبر من الصفر");
+
         var doctor = await db.Doctors.FindAsync(req.DoctorId)
             ?? throw new ArgumentException("الطبيب غير موجود");
+
+        // Enforce payment cap: cannot pay more than (approved + paid) − already-paid
+        var earned = await db.InvoiceLineItems
+            .Where(i => i.DoctorId == req.DoctorId
+                     && i.IsActive
+                     && (i.CommissionStatus == CommissionStatus.Approved
+                      || i.CommissionStatus == CommissionStatus.Paid))
+            .SumAsync(i => (decimal?)i.DoctorCommissionAmount) ?? 0m;
+
+        var alreadyPaid = await db.DoctorCommissionPayments
+            .Where(p => p.DoctorId == req.DoctorId && p.IsActive)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+        var remaining = earned - alreadyPaid;
+        if (req.Amount > remaining)
+            throw new ArgumentException(
+                $"المبلغ ({req.Amount:N2}) يتجاوز المتبقي المستحق للطبيب ({remaining:N2})");
 
         var payment = new DoctorCommissionPayment
         {
@@ -199,6 +244,12 @@ public class CommissionService(
             PaidBy          = recordedBy,
         };
 
+        // NOTE: DoctorCommissionPayment is a doctor-level lump-sum disbursement.
+        // It is NOT allocated to individual line items automatically — the LineItemIds
+        // parameter optionally marks specific items as Paid for tracking, but the
+        // payment amount is not split or reconciled per line.
+        // TODO: add a DoctorCommissionPaymentLine allocation table if per-line-item
+        //       payout reconciliation is required in the future.
         db.DoctorCommissionPayments.Add(payment);
 
         // Mark specified line items as Paid
@@ -216,6 +267,9 @@ public class CommissionService(
         }
 
         await db.SaveChangesAsync();
+
+        await LogAuditAsync(payment.Id, "RecordCommissionPayment", recordedBy,
+            $"DoctorId={req.DoctorId} Amount={req.Amount} Method={req.PaymentMethod}");
 
         return new DoctorCommissionPaymentDto(
             Id: payment.Id,
@@ -263,6 +317,19 @@ public class CommissionService(
     public async Task<ServiceCommissionDefaultsDto?> UpdateServiceDefaultsAsync(
         Guid serviceId, UpdateServiceCommissionDefaultsRequest req)
     {
+        if (req.DefaultMaterialCost < 0)
+            throw new ArgumentException("تكلفة المواد لا يمكن أن تكون سالبة");
+        if (req.DefaultLabCost < 0)
+            throw new ArgumentException("تكلفة المعمل لا يمكن أن تكون سالبة");
+        if (req.DefaultDoctorCommissionPercentage is < 0 or > 100)
+            throw new ArgumentException("نسبة العمولة يجب أن تكون بين 0 و 100");
+        if (!Enum.IsDefined(req.DefaultMaterialCostType))
+            throw new ArgumentException("نوع تكلفة المواد غير صالح");
+        if (!Enum.IsDefined(req.CommissionBaseRule))
+            throw new ArgumentException("أساس العمولة غير صالح");
+        if (!Enum.IsDefined(req.CommissionRecognitionMode))
+            throw new ArgumentException("وقت احتساب العمولة غير صالح");
+
         var svc = await db.ClinicServices.FindAsync(serviceId);
         if (svc == null) return null;
 
@@ -271,6 +338,7 @@ public class CommissionService(
         svc.DefaultLabCost                    = req.DefaultLabCost;
         svc.DefaultDoctorCommissionPercentage = req.DefaultDoctorCommissionPercentage;
         svc.CommissionBaseRule                = req.CommissionBaseRule;
+        svc.CommissionRecognitionMode         = req.CommissionRecognitionMode;
 
         await db.SaveChangesAsync();
         return MapServiceDefaults(svc);
@@ -386,12 +454,101 @@ public class CommissionService(
         DefaultMaterialCostType:          svc.DefaultMaterialCostType.ToString(),
         DefaultLabCost:                   svc.DefaultLabCost,
         DefaultDoctorCommissionPercentage:svc.DefaultDoctorCommissionPercentage,
-        CommissionBaseRule:               svc.CommissionBaseRule.ToString());
+        CommissionBaseRule:               svc.CommissionBaseRule.ToString(),
+        CommissionRecognitionMode:        svc.CommissionRecognitionMode.ToString());
 
     public async Task<Guid?> GetDoctorIdForUserAsync(Guid userId)
     {
         var doctor = await db.Doctors.FirstOrDefaultAsync(d => d.UserId == userId && d.IsActive);
         return doctor?.Id;
+    }
+
+    public async Task TriggerOnPaymentCommissionsAsync(Guid invoiceId)
+    {
+        var invoice = await db.Invoices
+            .Include(i => i.Payments.Where(p => p.IsActive))
+            .FirstOrDefaultAsync(i => i.Id == invoiceId && i.IsActive);
+
+        if (invoice == null) return;
+
+        if (invoice.TotalAmount <= 0) return;
+
+        var totalPaid = invoice.Payments.Sum(p => p.Amount);
+        var paidRatio = Math.Min(1m, totalPaid / invoice.TotalAmount);
+
+        var items = await db.InvoiceLineItems
+            .Include(i => i.Service)
+            .Where(i => i.InvoiceId == invoiceId && i.IsActive
+                     && i.Service != null
+                     && i.Service.CommissionRecognitionMode == CommissionRecognitionMode.OnPaymentCollection
+                     && i.CommissionStatus != CommissionStatus.Pending)
+            .ToListAsync();
+
+        foreach (var item in items)
+        {
+            // Compute the FULL commission first, then apply proportional ratio
+            // to BOTH doctor share and center share so the split stays consistent
+            // with the collected portion of the invoice.
+            var full = CommissionCalculator.Calculate(new CommissionCalculator.Input(
+                TotalPrice:                 item.TotalPrice,
+                LineDiscountAmount:         item.LineDiscountAmount,
+                MaterialCost:               item.MaterialCost,
+                LabCost:                    item.LabCost,
+                OtherDirectCost:            item.OtherDirectCost,
+                DoctorCommissionPercentage: item.DoctorCommissionPercentage,
+                BaseRule:                   item.CommissionBaseRule));
+
+            item.NetCommissionableAmount = full.NetCommissionableAmount;
+            item.DoctorCommissionAmount  = CommissionCalculator.ProportionalCommission(full.DoctorCommissionAmount, paidRatio);
+            item.CenterShareAmount       = CommissionCalculator.ProportionalCommission(full.CenterShareAmount, paidRatio);
+        }
+
+        if (items.Count > 0)
+            await db.SaveChangesAsync();
+    }
+
+    public async Task<List<LineItemCommissionDto>> GetBackfillPreviewAsync(DateOnly from, DateOnly to, Guid? doctorId)
+    {
+        var query = db.InvoiceLineItems
+            .Include(i => i.Invoice).ThenInclude(inv => inv.Patient)
+            .Include(i => i.Service)
+            .Include(i => i.Doctor)
+            .Where(i => i.IsActive
+                     && i.Invoice.IsActive
+                     && i.Invoice.CreatedAt.Date >= from.ToDateTime(TimeOnly.MinValue).Date
+                     && i.Invoice.CreatedAt.Date <= to.ToDateTime(TimeOnly.MaxValue).Date
+                     && i.CommissionStatus == CommissionStatus.Pending);
+
+        if (doctorId.HasValue)
+            query = query.Where(i => i.DoctorId == doctorId.Value);
+
+        var items = await query.ToListAsync();
+
+        // Compute what the commission WOULD be without saving
+        var result = new List<LineItemCommissionDto>();
+        foreach (var item in items)
+        {
+            var calc = CommissionCalculator.Calculate(new CommissionCalculator.Input(
+                TotalPrice:                 item.TotalPrice,
+                LineDiscountAmount:         item.LineDiscountAmount,
+                MaterialCost:               item.MaterialCost,
+                LabCost:                    item.LabCost,
+                OtherDirectCost:            item.OtherDirectCost,
+                DoctorCommissionPercentage: item.DoctorCommissionPercentage,
+                BaseRule:                   item.CommissionBaseRule));
+
+            // Build a preview DTO without persisting
+            var preview = MapLineItem(item) with
+            {
+                NetCommissionableAmount    = calc.NetCommissionableAmount,
+                DoctorCommissionAmount     = calc.DoctorCommissionAmount,
+                CenterShareAmount          = calc.CenterShareAmount,
+                CommissionStatus           = "Preview",
+            };
+            result.Add(preview);
+        }
+
+        return result;
     }
 
     private async Task LogAuditAsync(Guid entityId, string action, Guid userId, string details)

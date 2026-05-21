@@ -172,8 +172,33 @@ public class CommissionsController(
     public async Task<IActionResult> UpdateServiceDefaults(
         Guid serviceId, [FromBody] UpdateServiceCommissionDefaultsRequest req)
     {
-        var result = await commissionService.UpdateServiceDefaultsAsync(serviceId, req);
-        return result == null ? NotFound() : Ok(result);
+        try
+        {
+            var result = await commissionService.UpdateServiceDefaultsAsync(serviceId, req);
+            return result == null ? NotFound() : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // ── Backfill preview (admin-only, read-only) ──────────────────────────────
+
+    [HttpGet("backfill-preview")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> GetBackfillPreview(
+        [FromQuery] string from,
+        [FromQuery] string to,
+        [FromQuery] Guid? doctorId)
+    {
+        if (!DateOnly.TryParse(from, out var fromDate))
+            return BadRequest(new { message = "تاريخ البداية غير صالح" });
+        if (!DateOnly.TryParse(to, out var toDate))
+            return BadRequest(new { message = "تاريخ النهاية غير صالح" });
+
+        var result = await commissionService.GetBackfillPreviewAsync(fromDate, toDate, doctorId);
+        return Ok(result);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -48,4 +48,13 @@ public interface ICommissionService
 
     /// <summary>Returns the DoctorId for a given UserId (for role-based scoping).</summary>
     Task<Guid?> GetDoctorIdForUserAsync(Guid userId);
+
+    /// <summary>
+    /// Recalculates proportional commissions for all OnPaymentCollection line items
+    /// on the invoice based on the current paid ratio. Called after each payment.
+    /// </summary>
+    Task TriggerOnPaymentCommissionsAsync(Guid invoiceId);
+
+    /// <summary>Admin-only dry-run: returns estimated commissions for invoices in date range without saving.</summary>
+    Task<List<LineItemCommissionDto>> GetBackfillPreviewAsync(DateOnly from, DateOnly to, Guid? doctorId);
 }

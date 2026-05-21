@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -15,7 +16,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patient-journey")]
 [Authorize(Policy = "StaffOnly")]
-public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyController> logger) : ControllerBase
+public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyController> logger, ICommissionService commissionService) : ControllerBase
 {
     // ─── 1. GET /api/patient-journey/today ────────────────────────────────────
     /// <summary>Returns today's patient journey list combining appointments,
@@ -627,6 +628,13 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                     await tx.RollbackAsync();
                     logger.LogWarning("CON-02: Invoice number collision on attempt {Attempt}, retrying", attempt + 1);
                     continue;
+                }
+
+                // Auto-fill commission defaults from service catalog
+                if (lineItem.ServiceId.HasValue)
+                {
+                    try { await commissionService.AutoFillFromServiceAsync(lineItem.Id); }
+                    catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", lineItem.Id); }
                 }
 
                 return Ok(new

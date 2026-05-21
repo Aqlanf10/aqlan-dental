@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import {
   BarChart2, Download, Filter, RefreshCw,
-  TrendingUp, DollarSign, Percent, CheckCircle2,
-  ChevronDown, AlertTriangle,
+  CheckCircle2, AlertTriangle, CreditCard, X, History,
 } from "lucide-react";
-import { useCommissionReport } from "@/hooks/useCommissions";
+import {
+  useCommissionReport, useRecordCommissionPayment,
+  useCommissionPayments,
+} from "@/hooks/useCommissions";
 import { useDoctors } from "@/hooks/useDoctors";
 import type { CommissionStatus } from "@/types/commission";
 import { cn } from "@/lib/utils";
@@ -53,8 +55,20 @@ export default function CommissionsPage() {
   const [commissionStatus, setStatus]     = useState("");
   const [applied, setApplied]             = useState<{ from: string; to: string; doctorId?: string; commissionStatus?: string } | null>(null);
 
-  const { data: doctors } = useDoctors();
-  const { data: report, isLoading, error } = useCommissionReport(applied);
+  // Payment dialog
+  const [showPayDialog, setShowPayDialog] = useState(false);
+  const [showHistory, setShowHistory]     = useState(false);
+  const [payDoctorId, setPayDoctorId]     = useState("");
+  const [payAmount, setPayAmount]         = useState<number>(0);
+  const [payMethod, setPayMethod]         = useState("cash");
+  const [payRef, setPayRef]               = useState("");
+  const [payNotes, setPayNotes]           = useState("");
+  const [payErr, setPayErr]               = useState("");
+
+  const { data: doctors }                    = useDoctors();
+  const { data: report, isLoading, error }   = useCommissionReport(applied);
+  const recordPayment                        = useRecordCommissionPayment();
+  const { data: payments, refetch: refetchPayments } = useCommissionPayments();
 
   const summary = report?.summary;
   const rows    = report?.rows ?? [];
@@ -66,6 +80,30 @@ export default function CommissionsPage() {
       doctorId:         doctorId || undefined,
       commissionStatus: commissionStatus || undefined,
     });
+  }
+
+  async function handleRecordPayment() {
+    if (!payDoctorId || payAmount <= 0) {
+      setPayErr("يرجى اختيار الطبيب وإدخال مبلغ صحيح");
+      return;
+    }
+    setPayErr("");
+    try {
+      await recordPayment.mutateAsync({
+        doctorId: payDoctorId,
+        amount: payAmount,
+        paymentDate: today(),
+        paymentMethod: payMethod || undefined,
+        referenceNumber: payRef || undefined,
+        notes: payNotes || undefined,
+      });
+      setShowPayDialog(false);
+      setPayDoctorId(""); setPayAmount(0); setPayRef(""); setPayNotes("");
+      refetchPayments();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setPayErr(msg ?? "فشل تسجيل الدفعة");
+    }
   }
 
   // ── Export CSV ────────────────────────────────────────────────────────────
@@ -100,13 +138,27 @@ export default function CommissionsPage() {
           <h1 className="text-2xl font-extrabold text-gray-900">تقرير عمولات الأطباء</h1>
           <p className="text-sm text-gray-500 mt-0.5">محاسبة مستحقات الأطباء بعد خصم التكاليف المباشرة</p>
         </div>
-        <button
-          onClick={exportCsv}
-          disabled={!rows.length}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-        >
-          <Download className="w-4 h-4" /> تصدير CSV
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => { setShowHistory((v) => !v); if (!showHistory) refetchPayments(); }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <History className="w-4 h-4" /> سجل الدفعات
+          </button>
+          <button
+            onClick={() => setShowPayDialog(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-clinic-blue text-white rounded-xl text-sm font-semibold hover:bg-clinic-blue/90"
+          >
+            <CreditCard className="w-4 h-4" /> دفع عمولات
+          </button>
+          <button
+            onClick={exportCsv}
+            disabled={!rows.length}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            <Download className="w-4 h-4" /> تصدير CSV
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -245,6 +297,139 @@ export default function CommissionsPage() {
           </div>
         )}
       </div>
+
+      {/* Payment history */}
+      {showHistory && (
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+            <History className="w-4 h-4 text-gray-500" />
+            <h2 className="font-bold text-gray-900">سجل دفعات العمولات</h2>
+            <span className="text-xs text-gray-400 mr-auto">{payments?.length ?? 0} دفعة</span>
+          </div>
+          {!payments?.length ? (
+            <div className="flex items-center justify-center py-10 text-gray-400 text-sm">لا توجد دفعات مسجلة</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-600 text-xs">
+                    {["التاريخ","الطبيب","المبلغ","طريقة الدفع","المرجع","ملاحظات"].map(h => (
+                      <th key={h} className="px-4 py-3 text-right font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {payments.map((p) => (
+                    <tr key={p.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.paymentDate?.slice(0,10) ?? "—"}</td>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{p.doctorName ?? "—"}</td>
+                      <td className="px-4 py-2.5 font-bold text-green-700 whitespace-nowrap">{fmt(p.amount)} ر.ي</td>
+                      <td className="px-4 py-2.5 text-gray-600">
+                        {p.paymentMethod === "cash" ? "نقدي" : p.paymentMethod === "card" ? "بطاقة" : p.paymentMethod === "bank_transfer" ? "تحويل بنكي" : p.paymentMethod ?? "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500 font-mono text-xs">{p.referenceNumber ?? "—"}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs max-w-[160px] truncate">{p.notes ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pay commissions dialog */}
+      {showPayDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6" dir="rtl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-bold text-gray-900">تسجيل دفعة عمولة</h3>
+              <button onClick={() => setShowPayDialog(false)} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">الطبيب <span className="text-red-500">*</span></label>
+                <select
+                  value={payDoctorId}
+                  onChange={(e) => setPayDoctorId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-clinic-blue"
+                >
+                  <option value="">اختر الطبيب</option>
+                  {doctors?.filter(d => d.isActive !== false).map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">المبلغ (ر.ي) <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  value={payAmount || ""}
+                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-clinic-blue"
+                  dir="ltr"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">طريقة الدفع</label>
+                <select
+                  value={payMethod}
+                  onChange={(e) => setPayMethod(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-clinic-blue"
+                >
+                  <option value="cash">نقدي</option>
+                  <option value="card">بطاقة</option>
+                  <option value="bank_transfer">تحويل بنكي</option>
+                  <option value="check">شيك</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">رقم المرجع / الإيصال</label>
+                <input
+                  type="text"
+                  value={payRef}
+                  onChange={(e) => setPayRef(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-clinic-blue"
+                  placeholder="REF-001"
+                  dir="ltr"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">ملاحظات</label>
+                <input
+                  type="text"
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-clinic-blue"
+                  placeholder="ملاحظات اختيارية"
+                />
+              </div>
+              {payErr && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{payErr}</p>}
+            </div>
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                onClick={handleRecordPayment}
+                disabled={recordPayment.isPending || !payDoctorId || payAmount <= 0}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-50"
+              >
+                <CreditCard className="w-4 h-4" />
+                {recordPayment.isPending ? "جاري التسجيل…" : "تسجيل الدفعة"}
+              </button>
+              <button
+                onClick={() => setShowPayDialog(false)}
+                className="px-4 py-2.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

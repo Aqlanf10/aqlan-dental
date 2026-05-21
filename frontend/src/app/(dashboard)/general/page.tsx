@@ -54,12 +54,14 @@ export default function GeneralPage() {
   const [notes,         setNotes]         = useState("");
   const [saving,        setSaving]        = useState(false);
   const [formErr,       setFormErr]       = useState("");
+  const [loadErr,       setLoadErr]       = useState<string | null>(null);
 
   const fetchTreatments = () => {
     setLoading(true);
+    setLoadErr(null);
     api.get<GeneralTreatment[]>("/api/general/recent-treatments?limit=50")
       .then((r) => setTreatments(r.data))
-      .catch(() => {})
+      .catch(() => setLoadErr("تعذّر تحميل المعالجات. تحقق من اتصالك وأعد المحاولة."))
       .finally(() => setLoading(false));
   };
 
@@ -114,6 +116,20 @@ export default function GeneralPage() {
           {showForm ? "إغلاق" : "تسجيل معالجة"}
         </button>
       </div>
+
+      {/* Error State */}
+      {loadErr && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-5 py-4">
+          <span className="text-red-500 shrink-0">⚠</span>
+          <p className="text-sm text-red-700 flex-1">{loadErr}</p>
+          <button
+            onClick={fetchTreatments}
+            className="text-sm font-medium text-red-600 hover:text-red-800 underline whitespace-nowrap"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
 
       {/* Tab navigation */}
       <div className="flex gap-2 border-b border-gray-200 mb-5">

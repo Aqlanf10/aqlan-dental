@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -124,16 +125,35 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
                 try
                 {
                     using var scope = scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<AqlanDentalPro.Infrastructure.Data.AppDbContext>();
                     var whatsappService = scope.ServiceProvider.GetRequiredService<IWhatsAppService>();
+
+                    // Look up the patient by phone — booking requests don't carry a PatientId
+                    var normalizedPhone = phoneNumber?.Trim().TrimStart('+').TrimStart('0');
+                    var patient = normalizedPhone != null
+                        ? await db.Patients.FirstOrDefaultAsync(
+                            p => p.IsActive && (
+                                p.Phone != null && p.Phone.Contains(normalizedPhone) ||
+                                p.WhatsApp != null && p.WhatsApp.Contains(normalizedPhone)))
+                        : null;
+
+                    if (patient == null)
+                    {
+                        logger.LogInformation(
+                            "Booking request {Id}: no matching patient found for WhatsApp notification (phone {Phone}). Skipping.",
+                            id, phoneNumber);
+                        return;
+                    }
+
                     await whatsappService.SendMessageAsync(new SendMessageRequest
                     {
-                        PatientId = Guid.Empty, // Booking request may not have a patient ID
-                        TemplateType = dto.Status == "Confirmed" ? "booking_confirmed" : "booking_rejected",
-                        CustomMessage = $"عزيزي/عزيزتي {patientName}، {statusArabic} طلب الحجز الخاص بك",
+                        PatientId = patient.Id,
+                        TemplateType = "custom",
+                        CustomMessage = $"عزيزي/عزيزتي {patientName}، {statusArabic} طلب الحجز الخاص بك. شكراً لتواصلك مع مركز الدكتور عقلان الكامل.",
                         Parameters = new Dictionary<string, string>
                         {
-                            ["patientName"] = patientName,
-                            ["status"] = statusArabic
+                            ["patient_name"] = patientName,
+                            ["status"]       = statusArabic
                         }
                     });
                 }

@@ -43,6 +43,7 @@ public class PaymentsController(FinanceService service, IPdfService pdfService, 
     }
 
     [HttpDelete("payments/{id:guid}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> DeletePayment(Guid id)
     {
         var deleted = await service.DeletePaymentAsync(id);
@@ -50,6 +51,7 @@ public class PaymentsController(FinanceService service, IPdfService pdfService, 
     }
 
     [HttpPost("payments/{id:guid}/refund")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> RefundPayment(Guid id, [FromBody] RefundPaymentRequest? req)
     {
         var result = await service.RefundPaymentAsync(id, req?.Reason);

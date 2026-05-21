@@ -7,6 +7,7 @@ import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
+import { resolveImageUrl } from "@/hooks/useClinicBranding";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
 
   const openPreview = (xray: RadiographItem) => {
     if (!xray.fileUrl) return;
-    setPreviewUrl(xray.fileUrl);
+    setPreviewUrl(resolveImageUrl(xray.fileUrl));
     setPreviewFileName(xray.fileName ?? XRAY_TYPE_LABELS[xray.xrayType] ?? xray.xrayType);
     setPreviewMimeType(xray.mimeType);
     setPreviewOpen(true);
@@ -291,7 +292,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
                 >
                   {isImage && xray.fileUrl ? (
                     <img
-                      src={xray.fileUrl}
+                      src={resolveImageUrl(xray.fileUrl)}
                       alt={XRAY_TYPE_LABELS[xray.xrayType] ?? xray.xrayType}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                     />
@@ -337,7 +338,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
                     </button>
                   ) : (
                     <a
-                      href={xray.fileUrl}
+                      href={resolveImageUrl(xray.fileUrl)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-7 h-7 rounded-full bg-white/90 hover:bg-white flex items-center justify-center shadow-sm"

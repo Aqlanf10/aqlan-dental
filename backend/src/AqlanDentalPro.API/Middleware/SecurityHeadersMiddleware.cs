@@ -36,6 +36,10 @@ public class SecurityHeadersMiddleware
         context.Response.Headers["Permissions-Policy"] =
             "camera=(), microphone=(), geolocation=(), payment=()";
 
+        // HSTS — force HTTPS for 1 year (only meaningful in production behind HTTPS)
+        context.Response.Headers["Strict-Transport-Security"] =
+            "max-age=31536000; includeSubDomains";
+
         await _next(context);
     }
 }

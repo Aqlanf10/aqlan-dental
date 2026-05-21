@@ -136,6 +136,7 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         if (await repo.HasConflictAsync(req.DoctorId, date, start, end, excludeId: id))
             return (null, "يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
 
+        var previousDoctorId = appointment.DoctorId;
         appointment.DoctorId        = req.DoctorId;
         appointment.AppointmentDate = date;
         appointment.StartTime       = start;
@@ -149,13 +150,55 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
 
         repo.Update(appointment);
         await repo.SaveChangesAsync();
-        return (ToDto(appointment), null);
+
+        var dto           = ToDto(appointment);
+        var patientLabel  = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
+        var appointmentId = appointment.Id;
+        var newDoctorId   = req.DoctorId;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
+                if (previousDoctorId != newDoctorId)
+                {
+                    // Doctor transferred — notify the new doctor
+                    await notifications.NotifyDoctorAsync(
+                        newDoctorId,
+                        "appointment_update",
+                        "موعد محوّل إليك",
+                        $"تم تحويل موعد {patientLabel} إليك بتاريخ {dto.AppointmentDate} الساعة {dto.StartTime}",
+                        "Appointment",
+                        appointmentId);
+                }
+                else
+                {
+                    // Same doctor — notify rescheduled
+                    await notifications.NotifyDoctorAsync(
+                        newDoctorId,
+                        "appointment_update",
+                        "تم تعديل موعد",
+                        $"تم تعديل موعد {patientLabel} إلى {dto.AppointmentDate} الساعة {dto.StartTime}",
+                        "Appointment",
+                        appointmentId);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[AppointmentService] Update notification failed for appointment {Id}", appointmentId);
+            }
+        });
+
+        return (dto, null);
     }
 
     public async Task<(AppointmentDto? result, string? error)> UpdateStatusAsync(
         Guid id, string status)
     {
-        var appointment = await repo.GetByIdAsync(id);
+        var appointment = await repo.GetWithDetailAsync(id);
         if (appointment == null) return (null, "الموعد غير موجود");
 
         if (!Enum.TryParse<AppointmentStatus>(status, true, out var parsed))
@@ -180,7 +223,49 @@ public class AppointmentService(IAppointmentRepository repo, ICurrentUserService
         appointment.Status = parsed;
         repo.Update(appointment);
         await repo.SaveChangesAsync();
-        return (ToDto(appointment), null);
+
+        var dto           = ToDto(appointment);
+        var doctorId      = appointment.DoctorId;
+        var patientLabel  = dto.PatientName.Length > 0 ? dto.PatientName : "مريض";
+        var appointmentId = appointment.Id;
+
+        // Notify doctor on status changes that affect their schedule awareness
+        if (parsed is AppointmentStatus.Confirmed or AppointmentStatus.Cancelled or AppointmentStatus.NoShow)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
+                    var (notifType, title, body) = parsed switch
+                    {
+                        AppointmentStatus.Confirmed => (
+                            "appointment_confirmed",
+                            "تأكيد موعد",
+                            $"أكّد {patientLabel} حضوره بتاريخ {dto.AppointmentDate} الساعة {dto.StartTime}"),
+                        AppointmentStatus.Cancelled => (
+                            "appointment_cancelled",
+                            "إلغاء موعد",
+                            $"تم إلغاء موعد {patientLabel} بتاريخ {dto.AppointmentDate} الساعة {dto.StartTime}"),
+                        AppointmentStatus.NoShow => (
+                            "appointment_noshow",
+                            "غياب مريض",
+                            $"لم يحضر {patientLabel} لموعده بتاريخ {dto.AppointmentDate}"),
+                        _ => ("appointment_status", "تحديث موعد", $"تم تحديث حالة موعد {patientLabel}")
+                    };
+
+                    await notifications.NotifyDoctorAsync(doctorId, notifType, title, body, "Appointment", appointmentId);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "[AppointmentService] Status notification failed for appointment {Id}", appointmentId);
+                }
+            });
+        }
+
+        return (dto, null);
     }
 
     public async Task<bool> CheckConflictAsync(Guid doctorId, string date, string startTime, int durationMinutes, Guid? excludeId)

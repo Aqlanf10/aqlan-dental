@@ -26,6 +26,20 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ── Fail-Fast: رفض الإقلاع بإعدادات افتراضية في الإنتاج ──────────────────────
+if (builder.Environment.IsProduction())
+{
+    var jwtKey = builder.Configuration["Jwt:SecretKey"] ?? "";
+    if (jwtKey.Contains("CHANGE_ME") || jwtKey.Length < 32)
+        throw new InvalidOperationException(
+            "SEC: مفتاح JWT غير آمن في الإنتاج. يجب ضبط Jwt:SecretKey بقيمة عشوائية لا تقل عن 32 حرفاً.");
+
+    var connStr = builder.Configuration.GetConnectionString("DefaultConnection") ?? "";
+    if (connStr.Contains("CHANGE_ME"))
+        throw new InvalidOperationException(
+            "SEC: كلمة مرور قاعدة البيانات لم تُضبط في الإنتاج. يجب ضبط ConnectionStrings:DefaultConnection.");
+}
+
 // ── Serilog ──────────────────────────────────────────────────────────────────
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
@@ -361,7 +375,10 @@ builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
 builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
-builder.Services.AddHttpClient("WhatsApp");
+builder.Services.AddHttpClient("WhatsApp", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 
 builder.Services.AddHttpContextAccessor();
 
@@ -1263,6 +1280,15 @@ if (!string.IsNullOrWhiteSpace(uploadsPath))
 }
 else
 {
+    // تحذير حرج في الإنتاج: الملفات ستُفقد عند إعادة النشر
+    if (app.Environment.IsProduction())
+    {
+        Log.Warning(
+            "UPLOADS WARNING: متغير البيئة UPLOADS_PATH غير مضبوط في الإنتاج. " +
+            "سيتم استخدام مسار مؤقت وستُفقد جميع صور المرضى والوثائق عند إعادة النشر. " +
+            "يجب ضبط UPLOADS_PATH على Railway Persistent Volume فوراً.");
+    }
+
     uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
     try
     {

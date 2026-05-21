@@ -91,12 +91,17 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
         catch (UnauthorizedAccessException ex)
         {
             logger.LogWarning(ex, "Unauthorized message send to conversation {ConversationId}", conversationId);
-            return Forbid(ex.Message);
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "ليس لديك صلاحية الإرسال في هذه المحادثة" });
         }
         catch (ArgumentException ex)
         {
             logger.LogWarning(ex, "Invalid argument sending message to conversation {ConversationId}", conversationId);
             return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error sending message to conversation {ConversationId}", conversationId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "حدث خطأ غير متوقع أثناء إرسال الرسالة" });
         }
     }
 

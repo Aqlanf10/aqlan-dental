@@ -567,7 +567,8 @@ export default function MessagesPage() {
               onOpenPatient={(patientId) => router.push(`/patients/${patientId}`)}
               sendError={
                 sendMessage.isError
-                  ? "فشل إرسال الرسالة — تحقق من الاتصال وحاول مجدداً"
+                  ? (sendMessage.error as { response?: { data?: { message?: string } } })?.response?.data?.message
+                    ?? "فشل إرسال الرسالة — تحقق من الاتصال وحاول مجدداً"
                   : undefined
               }
             />

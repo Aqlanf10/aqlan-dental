@@ -479,20 +479,45 @@ public class PatientPortalMessagingService : IPatientPortalMessagingService
             .Select(cp => cp.UserId)
             .ToListAsync();
 
-        // N+1 FIX: Send notifications in parallel instead of sequential await per participant
-        var notificationTasks = otherParticipants.Select(pid =>
-            _notifications.NotifyAsync(pid, "message", "رسالة جديدة من مريض",
-                $"رسالة من {senderName}", "Conversation", conversationId));
-        await Task.WhenAll(notificationTasks);
+        // إرسال الإشعارات بالتتابع (ليس بالتوازي) — DbContext ليس آمنًا للتزامن
+        // Parallel NotifyAsync calls share the same Scoped DbContext, causing
+        // InvalidOperationException. See same fix in MessagingService.SendMessageAsync.
+        var messageDto = MapMessage(loaded, userId);
+        foreach (var pid in otherParticipants)
+        {
+            try
+            {
+                await _notifications.NotifyAsync(pid, "message", "رسالة جديدة من مريض",
+                    $"رسالة من {senderName}", "Conversation", conversationId);
+            }
+            catch (Exception)
+            {
+                // Non-critical: notification failure should NOT prevent message delivery
+            }
+        }
 
         // SignalR: دفع الرسالة الجديدة لمشاركي المحادثة
-        var messageDto = MapMessage(loaded, userId);
-        await _pushService.PushToConversationAsync(conversationId, "NewMessage", messageDto);
+        try
+        {
+            await _pushService.PushToConversationAsync(conversationId, "NewMessage", messageDto);
+        }
+        catch (Exception)
+        {
+            // Non-critical: SignalR push failure should NOT prevent message delivery
+        }
 
         // SignalR: تحديث عدد غير المقروء لكل مشارك
-        var pushUnreadTasks = otherParticipants.Select(pid =>
-            _pushService.PushToUserAsync(pid, "UnreadCountUpdated", new { conversationId }));
-        await Task.WhenAll(pushUnreadTasks);
+        foreach (var pid in otherParticipants)
+        {
+            try
+            {
+                await _pushService.PushToUserAsync(pid, "UnreadCountUpdated", new { conversationId });
+            }
+            catch (Exception)
+            {
+                // Non-critical
+            }
+        }
 
         return messageDto;
     }

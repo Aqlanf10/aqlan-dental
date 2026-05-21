@@ -258,57 +258,86 @@ public class WhatsAppService(
     {
         try
         {
-            var apiUrl = config["WhatsApp:ApiUrl"];
+            var apiUrl   = config["WhatsApp:ApiUrl"];
             var apiToken = config["WhatsApp:ApiToken"];
 
             if (string.IsNullOrEmpty(apiUrl) || string.IsNullOrEmpty(apiToken))
             {
                 // Demo mode: simulate successful send
-                message.Status = "sent";
-                message.SentAt = DateTime.UtcNow;
+                message.Status     = "sent";
+                message.SentAt     = DateTime.UtcNow;
                 message.ExternalId = $"demo_{Guid.NewGuid():N}";
-                logger.LogInformation("WhatsApp (demo mode): Message sent to {Phone}", message.PhoneNumber);
+                logger.LogInformation("WhatsApp (demo mode): message queued for {Phone}", message.PhoneNumber);
                 await db.SaveChangesAsync();
                 return;
             }
 
-            // Real WhatsApp Business API call
-            var payload = new
+            // Real Meta WhatsApp Cloud API — one automatic retry on transient errors
+            HttpResponseMessage? response = null;
+            string?              responseBody = null;
+            const int maxAttempts = 2;
+
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                messaging_product = "whatsapp",
-                to = message.PhoneNumber,
-                type = "text",
-                text = new { body = message.MessageContent }
-            };
+                var payload = new
+                {
+                    messaging_product = "whatsapp",
+                    to   = message.PhoneNumber,
+                    type = "text",
+                    text = new { body = message.MessageContent }
+                };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/messages")
+                var req = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/messages")
+                {
+                    Headers  = { { "Authorization", $"Bearer {apiToken}" } },
+                    Content  = JsonContent.Create(payload)
+                };
+
+                try
+                {
+                    response     = await _httpClient.SendAsync(req);
+                    responseBody = await response.Content.ReadAsStringAsync();
+
+                    // Only retry on 5xx server errors or request timeout
+                    if (response.IsSuccessStatusCode
+                        || (int)response.StatusCode < 500) break;
+                }
+                catch (HttpRequestException ex) when (attempt < maxAttempts)
+                {
+                    logger.LogWarning(ex,
+                        "WhatsApp API attempt {Attempt} failed for {Phone}, retrying…",
+                        attempt, message.PhoneNumber);
+                }
+
+                if (attempt < maxAttempts)
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+
+            if (response is null)
             {
-                Headers = { { "Authorization", $"Bearer {apiToken}" } },
-                Content = JsonContent.Create(payload)
-            };
-
-            var response = await _httpClient.SendAsync(request);
-            var responseBody = await response.Content.ReadAsStringAsync();
-
-            if (response.IsSuccessStatusCode)
+                message.Status       = "failed";
+                message.ErrorMessage = "لم يتم الاتصال بـ WhatsApp API بعد عدة محاولات";
+                message.RetryCount++;
+            }
+            else if (response.IsSuccessStatusCode)
             {
                 message.Status = "sent";
                 message.SentAt = DateTime.UtcNow;
-                using var doc = JsonDocument.Parse(responseBody);
+                using var doc  = JsonDocument.Parse(responseBody!);
                 message.ExternalId = doc.RootElement
                     .GetProperty("messages")[0]
                     .GetProperty("id").GetString();
             }
             else
             {
-                message.Status = "failed";
-                message.ErrorMessage = responseBody.Length > 500 ? responseBody[..500] : responseBody;
+                message.Status       = "failed";
+                message.ErrorMessage = responseBody!.Length > 500 ? responseBody[..500] : responseBody;
                 message.RetryCount++;
             }
         }
         catch (Exception ex)
         {
-            message.Status = "failed";
+            message.Status       = "failed";
             message.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
             message.RetryCount++;
             logger.LogError(ex, "Failed to send WhatsApp message to {Phone}", message.PhoneNumber);

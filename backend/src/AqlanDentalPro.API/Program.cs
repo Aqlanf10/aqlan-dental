@@ -375,7 +375,10 @@ builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
 builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
-builder.Services.AddHttpClient("WhatsApp");
+builder.Services.AddHttpClient("WhatsApp", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 
 builder.Services.AddHttpContextAccessor();
 

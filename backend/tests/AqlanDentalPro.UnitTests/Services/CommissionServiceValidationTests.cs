@@ -1,5 +1,4 @@
 using AqlanDentalPro.Application.DTOs.Commission;
-using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -7,7 +6,6 @@ using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using Xunit;
 
 namespace AqlanDentalPro.UnitTests.Services;
@@ -23,12 +21,8 @@ public class CommissionServiceValidationTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static CommissionService CreateService(AppDbContext db)
-    {
-        var userMock = new Mock<ICurrentUserService>();
-        userMock.SetupGet(u => u.IsAdmin).Returns(true);
-        return new CommissionService(db, userMock.Object, NullLogger<CommissionService>.Instance);
-    }
+    private static CommissionService CreateService(AppDbContext db) =>
+        new(db, NullLogger<CommissionService>.Instance);
 
     // ── UpdateServiceDefaults: cost validation ────────────────────────────────
 

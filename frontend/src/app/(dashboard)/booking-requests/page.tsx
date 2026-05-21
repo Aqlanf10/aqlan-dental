@@ -6,11 +6,12 @@ import { api } from "@/lib/api";
 import { normalizePhone } from "@/lib/utils";
 import type { CreatePatientRequest, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
+import type { DoctorDto } from "@/hooks/useDoctors";
 import {
   Clock, CheckCircle2, XCircle, Eye, Loader2, RefreshCw,
   Phone, Mail, Calendar, MessageSquare, Filter, Globe, CalendarPlus,
   Search, User, Stethoscope, ExternalLink, MessageCircle,
-  ChevronLeft, ChevronRight, Ban,
+  ChevronLeft, ChevronRight, Ban, X,
 } from "lucide-react";
 
 type BookingStatus = "Pending" | "Reviewed" | "Confirmed" | "Rejected";
@@ -373,6 +374,159 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
   );
 }
 
+// ── Convert to Appointment Modal ─────────────────────────────────────────────
+interface ConvertModalProps {
+  item: BookingRequest;
+  onClose: () => void;
+  onConverted: () => void;
+}
+
+function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
+  const [doctors, setDoctors] = useState<DoctorDto[]>([]);
+  const [doctorId, setDoctorId] = useState(item.doctorId ?? "");
+  const [date, setDate] = useState(item.preferredDate ?? "");
+  const [startTime, setStartTime] = useState(() => {
+    const t = parseTimeToISO(item.preferredTime);
+    return t ?? "";
+  });
+  const [duration, setDuration] = useState(30);
+  const [converting, setConverting] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.get<DoctorDto[]>("/api/doctors").then((r) => setDoctors(r.data)).catch(() => {});
+  }, []);
+
+  async function handleConvert() {
+    if (!doctorId) { setErr("اختر الطبيب"); return; }
+    if (!date)     { setErr("حدد تاريخ الموعد"); return; }
+    if (!startTime){ setErr("حدد وقت الموعد"); return; }
+
+    const [h, m] = startTime.split(":").map(Number);
+    const endTotal = h * 60 + m + duration;
+    const endH = Math.floor(endTotal / 60).toString().padStart(2, "0");
+    const endM = (endTotal % 60).toString().padStart(2, "0");
+
+    setConverting(true);
+    setErr("");
+    try {
+      await api.post(`/api/booking-requests/${item.id}/convert-to-appointment`, {
+        patientId: "00000000-0000-0000-0000-000000000000",
+        doctorId,
+        appointmentDate: date,
+        startTime: `${startTime}:00`,
+        endTime: `${endH}:${endM}:00`,
+        durationMinutes: duration,
+        appointmentType: item.serviceType ?? "عام",
+      });
+      onConverted();
+      onClose();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setErr(msg ?? "فشل تحويل الطلب — تحقق من عدم وجود تعارض في المواعيد");
+    } finally {
+      setConverting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()} dir="rtl">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-gray-900">تحويل إلى موعد</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{item.patientName} — {item.phoneNumber}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Doctor */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">الطبيب *</label>
+            <select
+              value={doctorId}
+              onChange={(e) => setDoctorId(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-clinic-blue focus:ring-2 focus:ring-clinic-blue/20 outline-none bg-white"
+            >
+              <option value="">— اختر طبيباً —</option>
+              {doctors.filter((d) => d.isActive !== false).map((d) => (
+                <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` — ${d.specialty}` : ""}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Date + Time */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">التاريخ *</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-clinic-blue focus:ring-2 focus:ring-clinic-blue/20 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">الوقت *</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-clinic-blue focus:ring-2 focus:ring-clinic-blue/20 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Duration */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">مدة الموعد</label>
+            <select
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-clinic-blue focus:ring-2 focus:ring-clinic-blue/20 outline-none bg-white"
+            >
+              {[15, 20, 30, 45, 60, 90].map((d) => (
+                <option key={d} value={d}>{d} دقيقة</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Service type (read-only info) */}
+          {item.serviceType && (
+            <div className="bg-clinic-blue-50 rounded-xl px-3 py-2 text-sm text-clinic-navy">
+              <span className="font-medium">الخدمة: </span>{item.serviceType}
+            </div>
+          )}
+
+          {err && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{err}</p>
+          )}
+        </div>
+
+        <div className="p-5 pt-0 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={handleConvert}
+            disabled={converting}
+            className="flex-1 py-2.5 rounded-xl bg-clinic-blue text-white text-sm font-semibold hover:bg-clinic-navy transition disabled:opacity-60 flex items-center justify-center gap-2"
+          >
+            {converting && <Loader2 className="w-4 h-4 animate-spin" />}
+            {converting ? "جاري التحويل..." : "تحويل إلى موعد"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BookingRequestsPage() {
   const router = useRouter();
   const [items, setItems] = useState<BookingRequest[]>([]);
@@ -380,6 +534,7 @@ export default function BookingRequestsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selected, setSelected] = useState<BookingRequest | null>(null);
+  const [convertItem, setConvertItem] = useState<BookingRequest | null>(null);
   const [error, setError] = useState("");
 
   // Pagination state
@@ -465,14 +620,7 @@ export default function BookingRequestsPage() {
   }
 
   function handleCreateAppointment(item: BookingRequest) {
-    const params = new URLSearchParams();
-    params.set("patientName", item.patientName);
-    if (item.preferredDate) params.set("date", item.preferredDate);
-    const t24 = parseTimeToISO(item.preferredTime);
-    if (t24) params.set("startTime", t24);
-    params.set("bookingRequestId", item.id);
-    if (item.doctorId) params.set("doctorId", item.doctorId);
-    router.push(`/appointments/new?${params.toString()}`);
+    setConvertItem(item);
   }
 
   function handleViewAppointment(appointmentId: string) {
@@ -755,6 +903,14 @@ export default function BookingRequestsPage() {
           onStatusChange={handleStatusChange}
           onCreateAppointment={handleCreateAppointment}
           onViewAppointment={handleViewAppointment}
+        />
+      )}
+
+      {convertItem && (
+        <ConvertModal
+          item={convertItem}
+          onClose={() => setConvertItem(null)}
+          onConverted={() => { fetchItems(page); }}
         />
       )}
 

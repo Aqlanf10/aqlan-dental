@@ -859,6 +859,163 @@ catch (Exception ex)
     commLogger2.LogError(ex, "HOTFIX: Failed to ensure Doctor Commission schema. Commission endpoints may return 404/500!");
 }
 
+// ── CRITICAL: Ensure Invoices and InvoiceLineItems tables exist ─────────────
+// HOTFIX: Migration history reconciliation failed in previous deployments,
+// causing MigrateAsync() to skip creating the Invoices and InvoiceLineItems
+// tables. Without these tables, ALL invoice/payment/commission endpoints
+// return 500. This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var invScope = app.Services.CreateScope();
+    var invDb     = invScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var invLogger = invScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await invDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── Create Invoices table if not exists ──────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Invoices') THEN
+                CREATE TABLE "Invoices" (
+                    "Id"            uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "PatientId"     uuid                     NOT NULL,
+                    "VisitId"       uuid                     NULL,
+                    "AppointmentId" uuid                     NULL,
+                    "InvoiceNumber" character varying(50)    NOT NULL,
+                    "Status"        character varying(20)    NOT NULL,
+                    "Subtotal"      numeric(12,2)            NOT NULL DEFAULT 0,
+                    "DiscountAmount" numeric(12,2)           NULL,
+                    "TaxAmount"     numeric(12,2)            NULL,
+                    "TotalAmount"   numeric(12,2)            NOT NULL DEFAULT 0,
+                    "Notes"         text                     NULL,
+                    "CreatedBy"     uuid                     NULL,
+                    "UpdatedBy"     uuid                     NULL,
+                    "CreatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"      boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"     timestamp with time zone  NULL,
+                    "DeletedBy"     uuid                     NULL,
+                    CONSTRAINT "PK_Invoices" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_Invoices_PatientId" ON "Invoices" ("PatientId");
+                CREATE INDEX "IX_Invoices_VisitId" ON "Invoices" ("VisitId");
+                CREATE INDEX "IX_Invoices_AppointmentId" ON "Invoices" ("AppointmentId");
+                CREATE INDEX "IX_Invoices_Status" ON "Invoices" ("Status");
+                CREATE UNIQUE INDEX "IX_Invoices_InvoiceNumber" ON "Invoices" ("InvoiceNumber");
+
+                -- FK: Invoices → Patients
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Invoices_Patients_PatientId') THEN
+                    ALTER TABLE "Invoices" ADD CONSTRAINT "FK_Invoices_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT;
+                END IF;
+            END IF;
+
+            -- ── Create InvoiceLineItems table if not exists ────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'InvoiceLineItems') THEN
+                CREATE TABLE "InvoiceLineItems" (
+                    "Id"                          uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "InvoiceId"                   uuid                     NOT NULL,
+                    "ServiceId"                   uuid                     NULL,
+                    "ServiceNameSnapshot"         character varying(200)   NOT NULL DEFAULT '',
+                    "Description"                 character varying(500)   NOT NULL DEFAULT '',
+                    "Quantity"                    integer                  NOT NULL DEFAULT 1,
+                    "UnitPrice"                   numeric(12,2)            NOT NULL DEFAULT 0,
+                    "TotalPrice"                  numeric(12,2)            NOT NULL DEFAULT 0,
+                    "RelatedTreatmentPlanStepId"  uuid                     NULL,
+                    "RelatedVisitId"              uuid                     NULL,
+                    "SortOrder"                   integer                  NOT NULL DEFAULT 0,
+                    "DoctorId"                    uuid                     NULL,
+                    "LineDiscountAmount"          numeric                  NOT NULL DEFAULT 0,
+                    "MaterialCost"                numeric                  NOT NULL DEFAULT 0,
+                    "LabCost"                     numeric                  NOT NULL DEFAULT 0,
+                    "OtherDirectCost"             numeric                  NOT NULL DEFAULT 0,
+                    "CommissionBaseRule"           integer                  NOT NULL DEFAULT 2,
+                    "DoctorCommissionPercentage"  numeric                  NOT NULL DEFAULT 0,
+                    "NetCommissionableAmount"     numeric                  NOT NULL DEFAULT 0,
+                    "DoctorCommissionAmount"      numeric                  NOT NULL DEFAULT 0,
+                    "CenterShareAmount"           numeric                  NOT NULL DEFAULT 0,
+                    "CommissionStatus"            integer                  NOT NULL DEFAULT 0,
+                    "CommissionNotes"             text                     NULL,
+                    "LabOrderId"                  uuid                     NULL,
+                    "CommissionApprovedBy"        uuid                     NULL,
+                    "CommissionApprovedAt"        timestamp with time zone  NULL,
+                    "CreatedAt"                   timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"                   timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"                    boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"                   timestamp with time zone  NULL,
+                    "DeletedBy"                   uuid                     NULL,
+                    CONSTRAINT "PK_InvoiceLineItems" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_InvoiceLineItems_InvoiceId" ON "InvoiceLineItems" ("InvoiceId");
+                CREATE INDEX "IX_InvoiceLineItems_ServiceId" ON "InvoiceLineItems" ("ServiceId");
+                CREATE INDEX "IX_InvoiceLineItems_DoctorId" ON "InvoiceLineItems" ("DoctorId");
+                CREATE INDEX "IX_InvoiceLineItems_LabOrderId" ON "InvoiceLineItems" ("LabOrderId");
+
+                -- FK: InvoiceLineItems → Invoices
+                ALTER TABLE "InvoiceLineItems" ADD CONSTRAINT "FK_InvoiceLineItems_Invoices_InvoiceId"
+                    FOREIGN KEY ("InvoiceId") REFERENCES "Invoices"("Id") ON DELETE CASCADE;
+                -- FK: InvoiceLineItems → ClinicServices
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD CONSTRAINT "FK_InvoiceLineItems_ClinicServices_ServiceId"
+                        FOREIGN KEY ("ServiceId") REFERENCES "ClinicServices"("Id") ON DELETE SET NULL;
+                END IF;
+                -- FK: InvoiceLineItems → Doctors
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Doctors') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD CONSTRAINT "FK_InvoiceLineItems_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
+                END IF;
+            END IF;
+
+            -- ── Add InvoiceId to Payments if missing ───────────────────
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Payments') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId') THEN
+                    ALTER TABLE "Payments" ADD COLUMN "InvoiceId" uuid NULL;
+                    CREATE INDEX "IX_Payments_InvoiceId" ON "Payments" ("InvoiceId");
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Payments_Invoices_InvoiceId') THEN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId') THEN
+                        ALTER TABLE "Payments" ADD CONSTRAINT "FK_Payments_Invoices_InvoiceId"
+                            FOREIGN KEY ("InvoiceId") REFERENCES "Invoices"("Id") ON DELETE SET NULL;
+                    END IF;
+                END IF;
+            END IF;
+
+            -- ── Fix __EFMigrationsHistory ──────────────────────────────
+            -- Remove incorrectly inserted records where tables don't exist
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionPercentage');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260607000000_AddCommissionRecognitionMode'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode');
+
+            -- Now insert records for tables that DO exist (created by this or previous HOTFIX blocks)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260531000000_AddInvoicesAndInvoiceLineItems', '8.0');
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260601000000_AddInvoicePaymentLink', '8.0');
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'DoctorCommissionPayments')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260606000000_AddDoctorCommissionSystem', '8.0');
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260607000000_AddCommissionRecognitionMode') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260607000000_AddCommissionRecognitionMode', '8.0');
+            END IF;
+        END $$;
+    """);
+    invLogger.LogInformation("HOTFIX: Invoices/InvoiceLineItems/Payments schema ensured and migration history reconciled (idempotent)");
+}
+catch (Exception ex)
+{
+    var invLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    invLogger2.LogError(ex, "HOTFIX: Failed to ensure Invoices/InvoiceLineItems schema. Invoice and commission endpoints may return 500!");
+}
+
 // ── One-time Admin Password Reset ─────────────────────────────────
 // SEC-03 FIX: Admin password reset only from environment variables.
 // In production: ADMIN_DEFAULT_PASSWORD is REQUIRED. No fallback.

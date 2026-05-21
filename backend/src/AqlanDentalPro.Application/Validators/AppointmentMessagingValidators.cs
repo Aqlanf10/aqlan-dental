@@ -117,8 +117,12 @@ public sealed class MessagingSendMessageRequestValidator : AbstractValidator<Sen
             .MaximumLength(200).WithMessage("اسم المرفق يجب ألا يتجاوز 200 حرف")
             .When(x => !string.IsNullOrWhiteSpace(x.AttachmentName));
 
-        // Validate individual attachments when present
+        // Validate individual attachments when present.
+        // FIX: FluentValidation cannot infer the property name from expressions
+        // containing ?? (null-coalescing). Must use OverridePropertyName("Attachments")
+        // or use RuleForEach(x => x.Attachments) with a When clause instead.
         RuleForEach(x => x.Attachments ?? new List<AttachmentItem>())
+            .OverridePropertyName("Attachments")
             .ChildRules(att =>
             {
                 att.RuleFor(a => a.FileUrl)

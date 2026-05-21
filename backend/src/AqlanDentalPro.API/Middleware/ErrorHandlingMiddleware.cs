@@ -55,12 +55,13 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             Instance = context.Request.Path
         };
 
-        // TEMPORARY: Include exception diagnostics in all environments for debugging
-        // the messaging InvalidOperationException. Will be removed after fix is confirmed.
-        problem.Extensions["errorType"] = ex.GetType().FullName;
-        problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
-        problem.Extensions["errorMessage"] = ex.Message;
-        problem.Extensions["stackTrace"] = ex.StackTrace?.Split('\n').Take(5).ToList();
+        // Diagnostic: Include exception type in non-production environments only
+        var isProduction = context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true;
+        if (!isProduction)
+        {
+            problem.Extensions["errorType"] = ex.GetType().Name;
+            problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
+        }
 
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/problem+json";

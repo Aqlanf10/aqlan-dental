@@ -244,6 +244,12 @@ public class CommissionService(
             PaidBy          = recordedBy,
         };
 
+        // NOTE: DoctorCommissionPayment is a doctor-level lump-sum disbursement.
+        // It is NOT allocated to individual line items automatically — the LineItemIds
+        // parameter optionally marks specific items as Paid for tracking, but the
+        // payment amount is not split or reconciled per line.
+        // TODO: add a DoctorCommissionPaymentLine allocation table if per-line-item
+        //       payout reconciliation is required in the future.
         db.DoctorCommissionPayments.Add(payment);
 
         // Mark specified line items as Paid
@@ -311,6 +317,19 @@ public class CommissionService(
     public async Task<ServiceCommissionDefaultsDto?> UpdateServiceDefaultsAsync(
         Guid serviceId, UpdateServiceCommissionDefaultsRequest req)
     {
+        if (req.DefaultMaterialCost < 0)
+            throw new ArgumentException("تكلفة المواد لا يمكن أن تكون سالبة");
+        if (req.DefaultLabCost < 0)
+            throw new ArgumentException("تكلفة المعمل لا يمكن أن تكون سالبة");
+        if (req.DefaultDoctorCommissionPercentage is < 0 or > 100)
+            throw new ArgumentException("نسبة العمولة يجب أن تكون بين 0 و 100");
+        if (!Enum.IsDefined(req.DefaultMaterialCostType))
+            throw new ArgumentException("نوع تكلفة المواد غير صالح");
+        if (!Enum.IsDefined(req.CommissionBaseRule))
+            throw new ArgumentException("أساس العمولة غير صالح");
+        if (!Enum.IsDefined(req.CommissionRecognitionMode))
+            throw new ArgumentException("وقت احتساب العمولة غير صالح");
+
         var svc = await db.ClinicServices.FindAsync(serviceId);
         if (svc == null) return null;
 

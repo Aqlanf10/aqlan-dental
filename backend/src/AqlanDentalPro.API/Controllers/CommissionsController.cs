@@ -172,8 +172,15 @@ public class CommissionsController(
     public async Task<IActionResult> UpdateServiceDefaults(
         Guid serviceId, [FromBody] UpdateServiceCommissionDefaultsRequest req)
     {
-        var result = await commissionService.UpdateServiceDefaultsAsync(serviceId, req);
-        return result == null ? NotFound() : Ok(result);
+        try
+        {
+            var result = await commissionService.UpdateServiceDefaultsAsync(serviceId, req);
+            return result == null ? NotFound() : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // ── Backfill preview (admin-only, read-only) ──────────────────────────────

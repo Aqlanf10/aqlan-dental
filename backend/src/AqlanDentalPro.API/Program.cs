@@ -222,6 +222,21 @@ builder.Services.AddAuthorization(opts =>
     opts.AddPolicy("AdminOrReception", policy =>
         policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Reception)));
 
+    // ── Doctor Commission policies ───────────────────────────────────────────
+    opts.AddPolicy("CommissionView", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant),
+            nameof(UserRole.Reception),
+            nameof(UserRole.Orthodontist), nameof(UserRole.GeneralDentist), nameof(UserRole.OralSurgeon)));
+
+    opts.AddPolicy("CommissionEdit", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant), nameof(UserRole.Reception)));
+
+    opts.AddPolicy("CommissionApprove", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
+
+    opts.AddPolicy("CommissionPay", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
+
     // Patient portal access - for patient-facing mobile app
     opts.AddPolicy("PatientAccess", policy =>
         policy.RequireRole("Patient"));
@@ -372,6 +387,7 @@ builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();
 builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
 builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
+builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.ICommissionService, AqlanDentalPro.Infrastructure.Services.CommissionService>();
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
 builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
@@ -1268,7 +1284,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.20-messaging-fix" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.21-ruleforeach-fix" }));
 
 // Serve uploaded files — resolve writable uploads directory
 // Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback

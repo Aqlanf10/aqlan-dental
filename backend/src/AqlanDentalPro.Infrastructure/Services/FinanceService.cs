@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Application.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService)
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
@@ -236,6 +236,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (invoice != null)
         {
             await TryMarkInvoicePaidAsync(invoice.Id);
+            // Trigger proportional commission for OnPaymentCollection services
+            try { await commissionService.TriggerOnPaymentCommissionsAsync(invoice.Id); }
+            catch (Exception ex) { logger.LogWarning(ex, "OnPaymentCollection commission trigger failed for invoice {InvoiceId}", invoice.Id); }
         }
 
         // Auto-transition contract to Completed if payments cover the effective amount

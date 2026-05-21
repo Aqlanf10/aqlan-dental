@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { MessageSquare, Send, RefreshCw, Clock, CheckCircle, XCircle, Settings, ChevronDown, ChevronUp } from "lucide-react";
+import { MessageSquare, Send, RefreshCw, Clock, CheckCircle, XCircle, Settings, ChevronDown, ChevronUp, Phone, AlertCircle } from "lucide-react";
 import { useWhatsAppDashboard, useSendPendingReminders, useRetryWhatsAppMessage, useWhatsAppTemplates, useUpdateWhatsAppTemplate } from "@/hooks/useWhatsApp";
 import { cn, formatArabicDate } from "@/lib/utils";
 import type { WhatsAppTemplate } from "@/types/whatsapp";

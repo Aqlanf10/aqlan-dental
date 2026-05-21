@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, Fragment } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -23,6 +23,9 @@ import type {
   UpdateInvoiceLineItemRequest,
   InvoicePayment,
 } from "@/types/finance";
+import type { LineItemCommission } from "@/types/commission";
+import { useInvoiceCommissions } from "@/hooks/useCommissions";
+import { CommissionBreakdown } from "@/components/finance/CommissionBreakdown";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
@@ -45,6 +48,7 @@ const inputCls =
   "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 
 interface EditLineItem {
+  id?: string;
   tempId: string;
   serviceId?: string;
   serviceNameSnapshot: string;
@@ -57,6 +61,7 @@ interface EditLineItem {
 
 function toEditLineItems(items: InvoiceLineItem[]): EditLineItem[] {
   return items.map((li, idx) => ({
+    id: li.id,
     tempId: `edit-${idx}-${li.id}`,
     serviceId: li.serviceId,
     serviceNameSnapshot: li.serviceNameSnapshot,
@@ -93,6 +98,12 @@ export default function InvoiceDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
+
+  const { data: commissionsData, refetch: refetchCommissions } = useInvoiceCommissions(invoice?.id);
+  const commissionsMap = useMemo(() => {
+    if (!commissionsData) return new Map<string, LineItemCommission>();
+    return new Map(commissionsData.map((c) => [c.lineItemId, c]));
+  }, [commissionsData]);
 
   const loadInvoice = useCallback(() => {
     setLoading(true);
@@ -620,111 +631,126 @@ export default function InvoiceDetailPage() {
                     ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {displayItems.map((li, idx) => {
                   const itemTotal = li.quantity * li.unitPrice;
+                  const commission = !editMode && li.id ? commissionsMap.get(li.id) : undefined;
 
                   return (
-                    <tr key={li.tempId ?? idx} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
-                        {isDraft && editMode ? (
-                          <input
-                            type="text"
-                            value={li.serviceNameSnapshot}
-                            onChange={(e) =>
-                              updateLineItem(
-                                li.tempId,
-                                "serviceNameSnapshot",
-                                e.target.value
-                              )
-                            }
-                            className={cn(inputCls, "min-w-[120px]")}
-                            placeholder="اسم الخدمة"
-                          />
-                        ) : (
-                          <span className="font-medium text-gray-900">
-                            {li.serviceNameSnapshot || "—"}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isDraft && editMode ? (
-                          <input
-                            type="text"
-                            value={li.description}
-                            onChange={(e) =>
-                              updateLineItem(
-                                li.tempId,
-                                "description",
-                                e.target.value
-                              )
-                            }
-                            className={cn(inputCls, "min-w-[120px]")}
-                            placeholder="الوصف"
-                          />
-                        ) : (
-                          <span className="text-gray-600">
-                            {li.description || "—"}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isDraft && editMode ? (
-                          <input
-                            type="number"
-                            min={1}
-                            value={li.quantity}
-                            onChange={(e) =>
-                              updateLineItem(
-                                li.tempId,
-                                "quantity",
-                                +e.target.value || 1
-                              )
-                            }
-                            className={cn(inputCls, "w-20")}
-                            dir="ltr"
-                          />
-                        ) : (
-                          <span className="text-gray-700">{li.quantity}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isDraft && editMode ? (
-                          <input
-                            type="number"
-                            min={0}
-                            value={li.unitPrice}
-                            onChange={(e) =>
-                              updateLineItem(
-                                li.tempId,
-                                "unitPrice",
-                                +e.target.value || 0
-                              )
-                            }
-                            className={cn(inputCls, "w-28")}
-                            dir="ltr"
-                          />
-                        ) : (
-                          <span className="font-mono text-gray-700">
-                            {formatYemeniRiyal(li.unitPrice)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono font-semibold text-gray-900">
-                        {formatYemeniRiyal(itemTotal)}
-                      </td>
-                      {isDraft && editMode && (
+                    <Fragment key={li.tempId ?? idx}>
+                      <tr className="hover:bg-gray-50 transition border-b border-gray-100">
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => removeLineItem(li.tempId)}
-                            className="text-red-400 hover:text-red-600 transition"
-                            title="حذف البند"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {isDraft && editMode ? (
+                            <input
+                              type="text"
+                              value={li.serviceNameSnapshot}
+                              onChange={(e) =>
+                                updateLineItem(
+                                  li.tempId,
+                                  "serviceNameSnapshot",
+                                  e.target.value
+                                )
+                              }
+                              className={cn(inputCls, "min-w-[120px]")}
+                              placeholder="اسم الخدمة"
+                            />
+                          ) : (
+                            <span className="font-medium text-gray-900">
+                              {li.serviceNameSnapshot || "—"}
+                            </span>
+                          )}
                         </td>
+                        <td className="px-4 py-3">
+                          {isDraft && editMode ? (
+                            <input
+                              type="text"
+                              value={li.description}
+                              onChange={(e) =>
+                                updateLineItem(
+                                  li.tempId,
+                                  "description",
+                                  e.target.value
+                                )
+                              }
+                              className={cn(inputCls, "min-w-[120px]")}
+                              placeholder="الوصف"
+                            />
+                          ) : (
+                            <span className="text-gray-600">
+                              {li.description || "—"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isDraft && editMode ? (
+                            <input
+                              type="number"
+                              min={1}
+                              value={li.quantity}
+                              onChange={(e) =>
+                                updateLineItem(
+                                  li.tempId,
+                                  "quantity",
+                                  +e.target.value || 1
+                                )
+                              }
+                              className={cn(inputCls, "w-20")}
+                              dir="ltr"
+                            />
+                          ) : (
+                            <span className="text-gray-700">{li.quantity}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isDraft && editMode ? (
+                            <input
+                              type="number"
+                              min={0}
+                              value={li.unitPrice}
+                              onChange={(e) =>
+                                updateLineItem(
+                                  li.tempId,
+                                  "unitPrice",
+                                  +e.target.value || 0
+                                )
+                              }
+                              className={cn(inputCls, "w-28")}
+                              dir="ltr"
+                            />
+                          ) : (
+                            <span className="font-mono text-gray-700">
+                              {formatYemeniRiyal(li.unitPrice)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-mono font-semibold text-gray-900">
+                          {formatYemeniRiyal(itemTotal)}
+                        </td>
+                        {isDraft && editMode && (
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => removeLineItem(li.tempId)}
+                              className="text-red-400 hover:text-red-600 transition"
+                              title="حذف البند"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                      {commission && (
+                        <tr className="border-b border-gray-100 bg-gray-50/40">
+                          <td colSpan={5} className="px-4 pb-3 pt-1">
+                            <CommissionBreakdown
+                              commission={commission}
+                              canEdit={true}
+                              canApprove={true}
+                              onUpdated={() => refetchCommissions()}
+                            />
+                          </td>
+                        </tr>
                       )}
-                    </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>

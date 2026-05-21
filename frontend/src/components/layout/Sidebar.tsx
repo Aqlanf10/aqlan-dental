@@ -8,6 +8,7 @@ import {
   BarChart2, Package, FlaskConical, Settings, LogOut,
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
+  CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -55,9 +56,14 @@ const NAV_ITEMS: NavItem[] = [
   // Section: عمليات
   { href: "/finance",      label: "المالية",            icon: Wallet,          roles: ["Admin", "Reception", "Accountant"], section: "عمليات" },
   { href: "/finance/invoices", label: "الفواتير",        icon: FileText,        roles: ["Admin", "Reception", "Accountant"] },
+  { href: "/finance/payments", label: "المدفوعات",       icon: CreditCard,      roles: ["Admin", "Reception", "Accountant"] },
+  { href: "/finance/contracts", label: "العقود",          icon: FileCheck,       roles: ["Admin", "Reception", "Accountant"] },
+  { href: "/finance/overdue", label: "المتأخرات",         icon: AlertTriangle,   roles: ["Admin", "Reception", "Accountant"] },
   { href: "/prescriptions", label: "الوصفات الطبية",    icon: Pill,            roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/lab",          label: "المختبر",            icon: FlaskConical,    roles: ["Admin", "Orthodontist"] },
   { href: "/inventory",    label: "المخزون",            icon: Package,         roles: ["Admin"] },
+  { href: "/inventory/suppliers", label: "الموردون",     icon: Truck,           roles: ["Admin"] },
+  { href: "/inventory/purchases", label: "أوامر الشراء", icon: ShoppingCart,    roles: ["Admin"] },
   // Section: تقارير
   { href: "/reports",      label: "التقارير",           icon: BarChart2,       roles: ["Admin", "Accountant"], section: "تقارير" },
   // Section: النظام

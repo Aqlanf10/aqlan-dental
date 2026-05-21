@@ -7,6 +7,7 @@ import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
+import { resolveImageUrl } from "@/hooks/useClinicBranding";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
 
   // Build preview items for the ImagePreviewModal
   const previewItems = activePhotos.map(p => ({
-    url: p.fileUrl,
+    url: resolveImageUrl(p.fileUrl),
     fileName: `${PHOTO_CATEGORIES[p.category] ?? p.category}${p.photoType ? ` - ${p.photoType}` : ""}`,
     mimeType: "image/jpeg",
   }));
@@ -311,7 +312,7 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
               >
                 {photo.thumbnailUrl || photo.fileUrl ? (
                   <img
-                    src={photo.thumbnailUrl || photo.fileUrl}
+                    src={resolveImageUrl(photo.thumbnailUrl || photo.fileUrl)}
                     alt={PHOTO_CATEGORIES[photo.category] ?? photo.category}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                   />

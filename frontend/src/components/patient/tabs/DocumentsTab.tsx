@@ -9,6 +9,7 @@ import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
+import { resolveImageUrl } from "@/hooks/useClinicBranding";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -153,7 +154,7 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
 
   const openPreview = (doc: DocumentDto) => {
     if (!doc.fileUrl) return;
-    setPreviewUrl(doc.fileUrl);
+    setPreviewUrl(resolveImageUrl(doc.fileUrl));
     setPreviewFileName(doc.fileName);
     setPreviewMimeType(doc.mimeType);
     setPreviewOpen(true);
@@ -357,7 +358,7 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                     onClick={() => isImage && openPreview(doc)}
                   >
                     {isImage && doc.fileUrl ? (
-                      <img src={doc.fileUrl} alt="" className="w-full h-full object-cover" />
+                      <img src={resolveImageUrl(doc.fileUrl)} alt="" className="w-full h-full object-cover" />
                     ) : (
                       <TypeIcon className="w-5 h-5 text-[#3d7ab5]" />
                     )}
@@ -405,7 +406,7 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                       </button>
                     ) : (
                       <a
-                        href={doc.fileUrl}
+                        href={resolveImageUrl(doc.fileUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"

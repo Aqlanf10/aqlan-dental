@@ -861,6 +861,106 @@ catch (Exception ex)
     commLogger2.LogError(ex, "HOTFIX: Failed to ensure Doctor Commission schema. Commission endpoints may return 404/500!");
 }
 
+// ── CRITICAL: Ensure ClinicServices and ClinicRooms tables exist ─────────────
+// HOTFIX: The ClinicServices table is created by migration 20260528000000_AddClinicServicesAndRooms,
+// but that migration only runs when ENABLE_STARTUP_DB_MAINTENANCE=true. On deployments where
+// this flag is false, the table never gets created, causing 500 errors on ALL endpoints that
+// reference ClinicServices (services/active, commissions/report, invoices/{id}, etc.).
+// This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var svcScope = app.Services.CreateScope();
+    var svcDb     = svcScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var svcLogger = svcScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await svcDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── Create ClinicServices table if not exists ───────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ClinicServices') THEN
+                CREATE TABLE "ClinicServices" (
+                    "Id"                              uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "ArabicName"                      character varying(200)   NOT NULL,
+                    "EnglishName"                     character varying(200)   NULL,
+                    "Code"                            character varying(50)    NOT NULL,
+                    "Department"                      character varying(100)   NULL,
+                    "Category"                        character varying(30)    NOT NULL DEFAULT 'Other',
+                    "Description"                     character varying(1000)  NULL,
+                    "DefaultDurationMinutes"          integer                  NOT NULL DEFAULT 30,
+                    "DefaultPrice"                    numeric(12,2)            NOT NULL DEFAULT 0,
+                    "RequiresDoctor"                  boolean                  NOT NULL DEFAULT true,
+                    "RequiresConsultationFee"         boolean                  NOT NULL DEFAULT false,
+                    "ShowInBooking"                   boolean                  NOT NULL DEFAULT true,
+                    "ShowInReception"                 boolean                  NOT NULL DEFAULT true,
+                    "ShowInTreatmentPlan"             boolean                  NOT NULL DEFAULT true,
+                    "SortOrder"                       integer                  NOT NULL DEFAULT 0,
+                    "DefaultMaterialCost"             numeric                  NOT NULL DEFAULT 0,
+                    "DefaultMaterialCostType"         integer                  NOT NULL DEFAULT 0,
+                    "DefaultLabCost"                  numeric                  NOT NULL DEFAULT 0,
+                    "DefaultDoctorCommissionPercentage" numeric                NULL,
+                    "CommissionBaseRule"              integer                  NOT NULL DEFAULT 2,
+                    "CommissionRecognitionMode"       integer                  NOT NULL DEFAULT 0,
+                    "IsActive"                        boolean                  NOT NULL DEFAULT true,
+                    "CreatedAt"                       timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"                       timestamp with time zone  NOT NULL DEFAULT now(),
+                    "DeletedAt"                       timestamp with time zone  NULL,
+                    "DeletedBy"                       uuid                     NULL,
+                    CONSTRAINT "PK_ClinicServices" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX "IX_ClinicServices_Code" ON "ClinicServices" ("Code");
+            END IF;
+
+            -- ── Add commission columns if table exists but columns are missing ──
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCostType') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCostType" integer NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultLabCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultLabCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultDoctorCommissionPercentage') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultDoctorCommissionPercentage" numeric NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionBaseRule') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionBaseRule" integer NOT NULL DEFAULT 2;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 0;
+                END IF;
+            END IF;
+
+            -- ── Create ClinicRooms table if not exists ──────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ClinicRooms') THEN
+                CREATE TABLE "ClinicRooms" (
+                    "Id"            uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "ArabicName"    character varying(200)   NOT NULL,
+                    "EnglishName"   character varying(200)   NULL,
+                    "Code"          character varying(50)    NOT NULL,
+                    "RoomType"      character varying(30)    NOT NULL DEFAULT 'Treatment',
+                    "SortOrder"     integer                  NOT NULL DEFAULT 0,
+                    "IsActive"      boolean                  NOT NULL DEFAULT true,
+                    "CreatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "DeletedAt"     timestamp with time zone  NULL,
+                    "DeletedBy"     uuid                     NULL,
+                    CONSTRAINT "PK_ClinicRooms" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX "IX_ClinicRooms_Code" ON "ClinicRooms" ("Code");
+                CREATE INDEX "IX_ClinicRooms_RoomType" ON "ClinicRooms" ("RoomType");
+            END IF;
+        END $$;
+    """);
+
+    svcLogger.LogInformation("HOTFIX: ClinicServices and ClinicRooms tables schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var svcLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    svcLogger2.LogError(ex, "HOTFIX: Failed to ensure ClinicServices/ClinicRooms schema. Services and Commission endpoints may return 500!");
+}
+
 // ── CRITICAL: Ensure Invoices and InvoiceLineItems tables exist ─────────────
 // HOTFIX: Migration history reconciliation failed in previous deployments,
 // causing MigrateAsync() to skip creating the Invoices and InvoiceLineItems

@@ -15,7 +15,8 @@ namespace AqlanDentalPro.API.Controllers;
 [Route("api/portal/messages")]
 [Authorize(Policy = "PatientAccess")]
 public class PatientPortalMessagesController(
-    IPatientPortalMessagingService messagingService) : ControllerBase
+    IPatientPortalMessagingService messagingService,
+    ILogger<PatientPortalMessagesController> logger) : ControllerBase
 {
     private Guid PatientId
     {
@@ -128,6 +129,21 @@ public class PatientPortalMessagesController(
         catch (ServiceException ex)
         {
             return StatusCode(ex.StatusCode, new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            logger.LogWarning(ex, "Unauthorized portal message send to conversation {ConversationId}", conversationId);
+            return StatusCode(403, new { message = "ليس لديك صلاحية الإرسال في هذه المحادثة" });
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Invalid argument in portal message send to conversation {ConversationId}", conversationId);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error sending portal message to conversation {ConversationId}", conversationId);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إرسال الرسالة" });
         }
     }
 

@@ -67,6 +67,16 @@ function getInitials(name: string) {
   return name.trim().charAt(0).toUpperCase();
 }
 
+/** Extract a human-readable error message from an API error response */
+function extractErrorMessage(error: unknown): string {
+  const err = error as { response?: { data?: { message?: string; detail?: string; title?: string } }; message?: string } | null;
+  return err?.response?.data?.message
+    ?? err?.response?.data?.detail
+    ?? err?.response?.data?.title
+    ?? err?.message
+    ?? "فشل إرسال الرسالة";
+}
+
 function getErrorMessage(error: unknown): { title: string; detail: string } {
   const err = error as { message?: string; status?: number; response?: { status?: number } } | null;
   const status = err?.status ?? err?.response?.status;
@@ -338,7 +348,7 @@ export default function PortalMessagesPage() {
                 onBack={handleBack}
                 onSend={handleSend}
                 sending={sendMessage.isPending}
-                sendError={sendMessage.isError ? "فشل إرسال الرسالة" : undefined}
+                sendError={sendMessage.isError ? extractErrorMessage(sendMessage.error) : undefined}
               />
             ) : (
               <EmptyChatPlaceholder onNew={() => setShowStartDialog(true)} />

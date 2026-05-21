@@ -98,11 +98,15 @@ public sealed class MessagingSendMessageRequestValidator : AbstractValidator<Sen
             .MaximumLength(2000).WithMessage("محتوى الرسالة يجب ألا يتجاوز 2000 حرف")
             .When(x => !string.IsNullOrWhiteSpace(x.Content));
 
-        // Cross-field validation: at least one of Content, AttachmentUrl, or Attachments must be present
-        RuleFor(x => x)
-            .Must(x => !string.IsNullOrWhiteSpace(x.Content)
-                     || !string.IsNullOrWhiteSpace(x.AttachmentUrl)
-                     || (x.Attachments != null && x.Attachments.Count > 0))
+        // Cross-field validation: at least one of Content, AttachmentUrl, or Attachments must be present.
+        // FIX: Replaced RuleFor(x => x) with RuleFor(x => x.Content) using Must overload
+        // that provides access to the parent model. RuleFor(x => x) causes InvalidOperationException
+        // with FluentValidation.AspNetCore auto-validation because ASP.NET Core's ModelState
+        // cannot map a root-level validation error to a property key.
+        RuleFor(x => x.Content)
+            .Must((model, content) => !string.IsNullOrWhiteSpace(content)
+                                    || !string.IsNullOrWhiteSpace(model.AttachmentUrl)
+                                    || (model.Attachments != null && model.Attachments.Count > 0))
             .WithMessage("يجب أن تحتوي الرسالة على نص أو مرفق");
 
         RuleFor(x => x.AttachmentUrl)

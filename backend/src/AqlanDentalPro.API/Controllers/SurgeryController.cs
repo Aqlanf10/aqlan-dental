@@ -5,6 +5,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Text.Json;
 
 namespace AqlanDentalPro.API.Controllers;
@@ -160,7 +161,7 @@ public sealed class UpdateSurgeryCaseRequestValidator : AbstractValidator<Update
 [ApiController]
 [Route("api/surgery-cases")]
 [Authorize(Policy = "SurgeryAccess")]
-public class SurgeryController(AppDbContext db) : ControllerBase
+public class SurgeryController(AppDbContext db, ILogger<SurgeryController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -243,25 +244,55 @@ public class SurgeryController(AppDbContext db) : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateSurgeryCaseRequest req)
     {
-        var year  = DateTime.UtcNow.Year;
-        var count = await db.SurgeryCases.IgnoreQueryFilters()
-            .CountAsync(c => c.CaseNumber.StartsWith($"SU-{year}-"));
-
-        var surgery = new SurgeryCase
+        const int maxRetries = 3;
+        for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            CaseNumber    = $"SU-{year}-{(count + 1):D3}",
-            PatientId     = req.PatientId,
-            DoctorId      = req.DoctorId,
-            SurgeryType   = req.SurgeryType,
-            TeethInvolved = req.TeethInvolved,
-            Status        = SurgeryCaseStatus.Scheduled
-        };
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                // CON FIX: Advisory lock to prevent race condition on case number generation
+                var lockKey = Math.Abs("SurgeryCaseNumber".GetHashCode()) % 100000;
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        db.SurgeryCases.Add(surgery);
-        await db.SaveChangesAsync();
+                var year  = DateTime.UtcNow.Year;
+                var count = await db.SurgeryCases.IgnoreQueryFilters()
+                    .CountAsync(c => c.CaseNumber.StartsWith($"SU-{year}-"));
 
-        return CreatedAtAction(nameof(GetById), new { id = surgery.Id },
-            new { surgery.Id, surgery.CaseNumber });
+                var surgery = new SurgeryCase
+                {
+                    CaseNumber    = $"SU-{year}-{(count + 1):D3}",
+                    PatientId     = req.PatientId,
+                    DoctorId      = req.DoctorId,
+                    SurgeryType   = req.SurgeryType,
+                    TeethInvolved = req.TeethInvolved,
+                    Status        = SurgeryCaseStatus.Scheduled
+                };
+
+                db.SurgeryCases.Add(surgery);
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                    await tx.CommitAsync();
+                }
+                catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+                {
+                    await tx.RollbackAsync();
+                    logger.LogWarning("Surgery case number collision on attempt {Attempt}, retrying", attempt + 1);
+                    continue;
+                }
+
+                return CreatedAtAction(nameof(GetById), new { id = surgery.Id },
+                    new { surgery.Id, surgery.CaseNumber });
+            }
+            catch (Exception ex) when (ex is not DbUpdateException)
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+
+        return StatusCode(500, new { message = "فشل إنشاء حالة الجراحة بعد عدة محاولات" });
     }
 
     [HttpPut("{id:guid}/status")]
@@ -534,4 +565,7 @@ public class SurgeryController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف الإحالة" });
     }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+        => ex.InnerException is NpgsqlException pgEx && pgEx.SqlState == "23505";
 }

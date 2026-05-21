@@ -4,6 +4,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AqlanDentalPro.Application.Services;
 
@@ -106,41 +107,70 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
 
     public async Task<OrthoCaseDetailDto> CreateAsync(CreateOrthoCaseRequest req)
     {
-        var year = DateTime.UtcNow.Year;
-        var count = await db.OrthoCases.IgnoreQueryFilters()
-            .CountAsync(c => c.CaseNumber.StartsWith($"OR-{year}-"));
-        var caseNumber = $"OR-{year}-{(count + 1):D3}";
-
-        var orthoCase = new OrthoCase
+        const int maxRetries = 3;
+        for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            CaseNumber = caseNumber,
-            PatientId = req.PatientId,
-            DoctorId = req.DoctorId,
-            BranchId = currentUser.BranchId,
-            ApplianceType = req.ApplianceType,
-            StartDate = req.StartDate != null ? DateOnly.Parse(req.StartDate) : null,
-            ExpectedDurationMonths = req.ExpectedDurationMonths,
-            TotalFee = req.TotalFee,
-            Status = OrthoCaseStatus.Active
-        };
-
-        db.OrthoCases.Add(orthoCase);
-
-        // Create default treatment stages
-        var defaultStages = new[] { "المحاذاة والتسوية", "إغلاق الفراغات", "التشطيب والتفصيل", "الاحتفاظ" };
-        for (int i = 0; i < defaultStages.Length; i++)
-        {
-            db.TreatmentStages.Add(new TreatmentStage
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
             {
-                OrthoCaseId = orthoCase.Id,
-                StageName = defaultStages[i],
-                StageOrder = i + 1,
-                Status = i == 0 ? "active" : "pending"
-            });
+                // CON FIX: Advisory lock to prevent race condition on case number generation
+                var lockKey = Math.Abs("OrthoCaseNumber".GetHashCode()) % 100000;
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+                var year = DateTime.UtcNow.Year;
+                var count = await db.OrthoCases.IgnoreQueryFilters()
+                    .CountAsync(c => c.CaseNumber.StartsWith($"OR-{year}-"));
+                var caseNumber = $"OR-{year}-{(count + 1):D3}";
+
+                var orthoCase = new OrthoCase
+                {
+                    CaseNumber = caseNumber,
+                    PatientId = req.PatientId,
+                    DoctorId = req.DoctorId,
+                    BranchId = currentUser.BranchId,
+                    ApplianceType = req.ApplianceType,
+                    StartDate = req.StartDate != null ? DateOnly.Parse(req.StartDate) : null,
+                    ExpectedDurationMonths = req.ExpectedDurationMonths,
+                    TotalFee = req.TotalFee,
+                    Status = OrthoCaseStatus.Active
+                };
+
+                db.OrthoCases.Add(orthoCase);
+
+                // Create default treatment stages
+                var defaultStages = new[] { "المحاذاة والتسوية", "إغلاق الفراغات", "التشطيب والتفصيل", "الاحتفاظ" };
+                for (int i = 0; i < defaultStages.Length; i++)
+                {
+                    db.TreatmentStages.Add(new TreatmentStage
+                    {
+                        OrthoCaseId = orthoCase.Id,
+                        StageName = defaultStages[i],
+                        StageOrder = i + 1,
+                        Status = i == 0 ? "active" : "pending"
+                    });
+                }
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                    await tx.CommitAsync();
+                }
+                catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+                {
+                    await tx.RollbackAsync();
+                    continue;
+                }
+
+                return (await GetByIdAsync(orthoCase.Id))!;
+            }
+            catch (Exception ex) when (ex is not DbUpdateException)
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
 
-        await db.SaveChangesAsync();
-        return (await GetByIdAsync(orthoCase.Id))!;
+        throw new InvalidOperationException("فشل إنشاء حالة التقويم بعد عدة محاولات");
     }
 
     public async Task<List<OrthoVisitListDto>> GetVisitsAsync(Guid caseId)
@@ -255,4 +285,7 @@ public class OrthoService(AppDbContext db, ICurrentUserService currentUser)
         NextAppointmentType = v.NextAppointmentType,
         DoctorName = v.Doctor?.Name
     };
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+        => ex.InnerException is NpgsqlException pgEx && pgEx.SqlState == "23505";
 }

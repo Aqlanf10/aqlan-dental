@@ -423,4 +423,37 @@ public class EmployeesController(AppDbContext db) : ControllerBase
 
         return new string(chars);
     }
+
+    /// <summary>
+    /// SEC-02 FIX: Generates a secure random temporary password (12 chars: uppercase + lowercase + digits + special).
+    /// </summary>
+    private static string GenerateSecureTemporaryPassword()
+    {
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghjkmnpqrstuvwxyz";
+        const string digits = "23456789";
+        const string special = "!@#$%";
+        const string all = upper + lower + digits + special;
+
+        var bytes = RandomNumberGenerator.GetBytes(12);
+        var chars = new char[12];
+
+        // Ensure at least one of each category
+        chars[0] = upper[bytes[0] % upper.Length];
+        chars[1] = lower[bytes[1] % lower.Length];
+        chars[2] = digits[bytes[2] % digits.Length];
+        chars[3] = special[bytes[3] % special.Length];
+
+        for (var i = 4; i < 12; i++)
+            chars[i] = all[bytes[i] % all.Length];
+
+        // Shuffle
+        for (var i = chars.Length - 1; i > 0; i--)
+        {
+            var j = bytes[i] % (i + 1);
+            (chars[i], chars[j]) = (chars[j], chars[i]);
+        }
+
+        return new string(chars);
+    }
 }

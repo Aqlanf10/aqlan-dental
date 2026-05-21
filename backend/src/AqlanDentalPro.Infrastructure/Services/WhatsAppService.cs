@@ -166,12 +166,13 @@ public class WhatsAppService(
             DeliveredToday = await db.WhatsAppMessages.CountAsync(m => m.DeliveredAt != null && m.DeliveredAt.Value.Date == today),
             FailedToday = await db.WhatsAppMessages.CountAsync(m => m.Status == "failed" && m.CreatedAt.Date == today),
             PendingCount = await db.WhatsAppMessages.CountAsync(m => m.Status == "pending"),
-            RecentMessages = await db.WhatsAppMessages
+            RecentMessages = (await db.WhatsAppMessages
                 .Include(m => m.Patient)
                 .OrderByDescending(m => m.CreatedAt)
                 .Take(20)
+                .ToListAsync())
                 .Select(m => MapToDto(m, m.Patient!))
-                .ToListAsync()
+                .ToList()
         };
     }
 
@@ -184,12 +185,13 @@ public class WhatsAppService(
         if (patientId.HasValue)
             query = query.Where(m => m.PatientId == patientId.Value);
 
-        return await query
+        return (await query
             .OrderByDescending(m => m.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
+            .ToListAsync())
             .Select(m => MapToDto(m, m.Patient!))
-            .ToListAsync();
+            .ToList();
     }
 
     public async Task<bool> RetryFailedMessageAsync(Guid messageId)

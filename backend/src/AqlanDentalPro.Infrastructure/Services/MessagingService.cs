@@ -9,7 +9,7 @@ using Npgsql;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class MessagingService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, IRealTimePushService pushService) : IMessagingService
+public class MessagingService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, IRealTimePushService pushService, IPatientAccountLinkingService linkingService) : IMessagingService
 {
     private Guid UserId => currentUser.UserId ?? throw new UnauthorizedAccessException();
 
@@ -247,126 +247,39 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
     }
 
     /// <summary>
-    /// Ensures the patient's linked User (for messaging) is a participant in the conversation.
-    /// If no PatientAccount or linked User exists yet, creates them.
+    /// Ensures the patient's linked User is a participant in the conversation.
+    /// Uses the unified PatientAccountLinkingService to create/link the messaging User,
+    /// then adds or reactivates the participant entry.
     /// </summary>
     private async Task EnsurePatientParticipantAsync(Guid conversationId, Guid patientId)
     {
-        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
-        if (account?.LinkedUserId == null)
-        {
-            // Patient doesn't have a messaging account yet — create one
-            var patient = await db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == patientId);
-            if (patient == null) return;
-
-            // FIX: Use IgnoreQueryFilters when searching for existing User by username.
-            // Without this, a soft-deleted User with the same username would be invisible,
-            // causing a unique constraint violation on re-creation.
-            var existingUser = await db.Users
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(u => u.Username == patient.PatientNumber);
-
-            if (account == null)
-            {
-                // No PatientAccount exists — create linked User + PatientAccount
-                if (existingUser == null)
-                {
-                    existingUser = new User
-                    {
-                        Username = patient.PatientNumber,
-                        PasswordHash = "",
-                        PasswordSalt = "",
-                        Role = UserRole.Patient,
-                        IsActive = true
-                    };
-                    db.Users.Add(existingUser);
-                    try { await db.SaveChangesAsync(); }
-                    catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
-                    {
-                        // Concurrent request created the user — reload it
-                        existingUser = await db.Users.IgnoreQueryFilters()
-                            .FirstAsync(u => u.Username == patient.PatientNumber);
-                    }
-                }
-                else if (!existingUser.IsActive)
-                {
-                    // Reactivate soft-deleted user
-                    existingUser.IsActive = true;
-                    existingUser.DeletedAt = null;
-                    await db.SaveChangesAsync();
-                }
-
-                account = new PatientAccount
-                {
-                    PatientId = patientId,
-                    PhoneNumber = patient.Phone ?? "",
-                    Username = patient.PatientNumber,
-                    IsVerified = false,
-                    MustChangePassword = true,
-                    PortalAccountActive = false,
-                    IsActive = true,
-                    LinkedUserId = existingUser.Id
-                };
-                db.PatientAccounts.Add(account);
-                await db.SaveChangesAsync();
-            }
-            else
-            {
-                // PatientAccount exists but no linked user — create or reuse one
-                if (existingUser == null)
-                {
-                    existingUser = new User
-                    {
-                        Username = patient.PatientNumber,
-                        PasswordHash = "",
-                        PasswordSalt = "",
-                        Role = UserRole.Patient,
-                        IsActive = true
-                    };
-                    db.Users.Add(existingUser);
-                    try { await db.SaveChangesAsync(); }
-                    catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
-                    {
-                        existingUser = await db.Users.IgnoreQueryFilters()
-                            .FirstAsync(u => u.Username == patient.PatientNumber);
-                    }
-                }
-                else if (!existingUser.IsActive)
-                {
-                    existingUser.IsActive = true;
-                    existingUser.DeletedAt = null;
-                    await db.SaveChangesAsync();
-                }
-
-                account.LinkedUserId = existingUser.Id;
-                await db.SaveChangesAsync();
-            }
-        }
+        // Use unified linking service to ensure the patient has a messaging User
+        var linkedUserId = await linkingService.EnsureLinkedUserAsync(patientId);
+        if (linkedUserId == null)
+            return; // No PatientAccount exists — cannot link
 
         // Add linked user as participant if not already (use IgnoreQueryFilters to prevent duplicate)
-        var alreadyParticipant = await db.ConversationParticipants
+        var existingParticipant = await db.ConversationParticipants
             .IgnoreQueryFilters()
-            .AnyAsync(cp => cp.ConversationId == conversationId && cp.UserId == account.LinkedUserId.Value);
-        if (!alreadyParticipant)
+            .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == linkedUserId.Value);
+
+        if (existingParticipant != null)
         {
-            // Check if soft-deleted participant exists and reactivate
-            var softDeletedParticipant = await db.ConversationParticipants
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(cp => cp.ConversationId == conversationId && cp.UserId == account.LinkedUserId.Value);
-            if (softDeletedParticipant != null && !softDeletedParticipant.IsActive)
+            // Reactivate soft-deleted participant
+            if (!existingParticipant.IsActive)
             {
-                softDeletedParticipant.IsActive = true;
-                softDeletedParticipant.DeletedAt = null;
+                existingParticipant.IsActive = true;
+                existingParticipant.DeletedAt = null;
             }
-            else if (softDeletedParticipant == null)
+        }
+        else
+        {
+            await db.ConversationParticipants.AddAsync(new ConversationParticipant
             {
-                await db.ConversationParticipants.AddAsync(new ConversationParticipant
-                {
-                    ConversationId = conversationId,
-                    UserId = account.LinkedUserId.Value,
-                    IsAdmin = false
-                });
-            }
+                ConversationId = conversationId,
+                UserId = linkedUserId.Value,
+                IsAdmin = false
+            });
         }
     }
 

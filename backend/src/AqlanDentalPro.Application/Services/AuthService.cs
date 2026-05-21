@@ -152,6 +152,13 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
             }
 
             // Fallback: legacy Phase 1 fixed-salt hash (DOP=1, fixed salt)
+            // SEC-02 FIX: Log deprecation warning — this path should be removed once all users are migrated
+            _logger.LogWarning(
+                "SEC-02 DEPRECATION: Legacy fixed-salt hash used for user verification. " +
+                "This indicates a user still has a Phase 1 hash. " +
+                "User should change their password to migrate to per-user salt. " +
+                "Username={Username}",
+                "REDACTED"); // Don't log username for privacy
 #pragma warning disable CS0618 // Suppress obsolete warning — intentionally calling legacy method
             var legacyHash = HashPasswordLegacy(password);
 #pragma warning restore CS0618
@@ -181,10 +188,13 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
         return isValid;
     }
 
-    // SEC-02: Legacy hash format from Phase 1 (fixed global salt, DOP=1)
-    // Users are now auto-migrated to per-user salts on login (VerifyPasswordWithMigrationFlag).
-    // This method should be removed once all users have been migrated.
-    // After confirming zero legacy-hash log entries for 30+ days, remove this method.
+    // SEC-02 TODO: Legacy hash format from Phase 1 (fixed global salt, DOP=1)
+    // This method MUST be removed once all users have been migrated to per-user salts.
+    // Migration path: Users are auto-migrated on login (VerifyPasswordWithMigrationFlag)
+    // and when they use ChangePasswordAsync().
+    // Track migration progress via the deprecation log above.
+    // After confirming zero legacy-hash log entries for 30+ days, remove this method
+    // and simplify VerifyPassword to per-user-salt only.
     [Obsolete("Legacy Phase 1 hash — remove after full user migration to per-user salts")]
     private static string HashPasswordLegacy(string password)
     {

@@ -34,7 +34,7 @@ export function useUpdateCommissionCosts() {
       const { data } = await api.patch<LineItemCommission>(`/api/commissions/line-items/${lineItemId}/costs`, req);
       return data;
     },
-    onSuccess: (_, { lineItemId }) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["commissions"] });
     },
   });

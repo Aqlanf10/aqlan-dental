@@ -119,10 +119,10 @@ public sealed class MessagingSendMessageRequestValidator : AbstractValidator<Sen
 
         // Validate individual attachments when present.
         // FIX: FluentValidation cannot infer property names from expressions containing ??
-        // (null-coalescing operator). Using RuleForEach(x => x.Attachments) with a When
-        // clause instead of RuleForEach(x => x.Attachments ?? new List<AttachmentItem>()).
-        // When the collection is null, the When clause skips validation entirely.
-        RuleForEach(x => x.Attachments!)
+        // (null-coalescing). Using simple member access x => x.Attachments with a When
+        // clause to skip validation when the collection is null or empty.
+        // The When clause must come BEFORE ChildRules so the rule is skipped entirely.
+        RuleForEach(x => x.Attachments)
             .When(x => x.Attachments != null && x.Attachments.Count > 0)
             .ChildRules(att =>
             {

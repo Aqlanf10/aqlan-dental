@@ -117,27 +117,12 @@ public sealed class MessagingSendMessageRequestValidator : AbstractValidator<Sen
             .MaximumLength(200).WithMessage("اسم المرفق يجب ألا يتجاوز 200 حرف")
             .When(x => !string.IsNullOrWhiteSpace(x.AttachmentName));
 
-        // Validate individual attachments when present.
-        // FIX: FluentValidation cannot infer property names from expressions containing ??
-        // (null-coalescing). Using simple member access x => x.Attachments with a When
-        // clause to skip validation when the collection is null or empty.
-        // The When clause must come BEFORE ChildRules so the rule is skipped entirely.
-        RuleForEach(x => x.Attachments)
-            .When(x => x.Attachments != null && x.Attachments.Count > 0)
-            .ChildRules(att =>
-            {
-                att.RuleFor(a => a.FileUrl)
-                    .NotEmpty().WithMessage("رابط المرفق مطلوب")
-                    .MaximumLength(1000).WithMessage("رابط المرفق يجب ألا يتجاوز 1000 حرف");
-                att.RuleFor(a => a.FileName)
-                    .NotEmpty().WithMessage("اسم المرفق مطلوب")
-                    .MaximumLength(255).WithMessage("اسم المرفق يجب ألا يتجاوز 255 حرف");
-                att.RuleFor(a => a.MimeType)
-                    .NotEmpty().WithMessage("نوع المرفق مطلوب")
-                    .MaximumLength(100).WithMessage("نوع المرفق يجب ألا يتجاوز 100 حرف");
-                att.RuleFor(a => a.FileSize)
-                    .LessThanOrEqualTo(10 * 1024 * 1024).WithMessage("حجم المرفق يجب ألا يتجاوز 10 ميجابايت");
-            });
+        // Attachment validation is handled in MessagingService.SendMessageAsync and
+        // PatientPortalMessagingService.SendMessageAsync — not via FluentValidation.
+        // REASON: RuleForEach with null-coalescing (??) causes InvalidOperationException
+        // in FluentValidation.AspNetCore auto-validation, and RuleForEach on nullable
+        // collections also has compatibility issues. Service-layer validation provides
+        // the same checks with better error messages and no auto-validation conflicts.
     }
 }
 

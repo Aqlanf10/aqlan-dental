@@ -11,16 +11,53 @@ public class AuditLogMiddleware(RequestDelegate next)
 {
     private static readonly HashSet<string> AuditedMethods = ["POST", "PUT", "PATCH", "DELETE"];
 
+    // GET requests on these API path segments are also audited (sensitive data access trail)
+    private static readonly HashSet<string> SensitiveGetSegments =
+        ["patients", "contracts", "payments", "invoices", "finance", "reports"];
+
+    // Request body is captured (up to 4 KB) for writes on these segments
+    private static readonly HashSet<string> BodyCaptureSegments =
+        ["payments", "contracts", "invoices", "finance"];
+
     public async Task InvokeAsync(HttpContext context, AppDbContext db, ICurrentUserService currentUser)
     {
+        var method = context.Request.Method;
+        var path   = context.Request.Path;
+
+        var isWriteMethod   = AuditedMethods.Contains(method);
+        var isSensitiveRead = method == "GET" && PathContainsAny(path, SensitiveGetSegments);
+
+        if (!isWriteMethod && !isSensitiveRead)
+        {
+            await next(context);
+            return;
+        }
+
+        // Enable buffering before calling next so we can re-read the request body afterwards
+        var captureBody = isWriteMethod && method is "POST" or "PUT"
+                          && PathContainsAny(path, BodyCaptureSegments);
+        if (captureBody)
+            context.Request.EnableBuffering();
+
         await next(context);
 
-        if (!AuditedMethods.Contains(context.Request.Method)) return;
+        // Skip anonymous requests — nothing useful to record without an actor
         if (!context.User.Identity?.IsAuthenticated == true) return;
-        if (context.Response.StatusCode >= 500) return;
 
-        var action = context.Request.Method switch
+        // Read body after pipeline (seek back to start)
+        string? requestBody = null;
+        if (captureBody && context.Request.Body.CanSeek)
         {
+            context.Request.Body.Position = 0;
+            using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+            var raw = await reader.ReadToEndAsync();
+            if (!string.IsNullOrWhiteSpace(raw) && raw.Length <= 4096)
+                requestBody = raw;
+        }
+
+        var action = method switch
+        {
+            "GET"    => AuditAction.View,
             "POST"   => AuditAction.Create,
             "PUT"    => AuditAction.Update,
             "PATCH"  => AuditAction.Update,
@@ -28,60 +65,66 @@ public class AuditLogMiddleware(RequestDelegate next)
             _        => AuditAction.View
         };
 
-        var segments = context.Request.Path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
-        var resource = segments.Length >= 2 ? segments[1] : "unknown";
+        var segments  = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        var resource  = segments.Length >= 2 ? segments[1] : (segments.Length >= 1 ? segments[0] : "unknown");
         Guid.TryParse(segments.Length >= 3 ? segments[2] : null, out var resourceId);
 
-        // Patient portal accounts have IDs in PatientAccounts, not Users.
-        // Setting UserId for them violates FK_AuditLogs_Users_UserId.
-        // For patient portal users, we store their identity in NewData metadata
-        // and leave UserId null (which is allowed — the FK is nullable with SetNull).
+        // Patient portal accounts live in PatientAccounts, not Users.
+        // Setting UserId for them would violate FK_AuditLogs_Users_UserId.
         var isPatientPortal = IsPatientPortalUser(context.User);
 
         var log = new AuditLog
         {
-            UserId = isPatientPortal ? null : currentUser.UserId,
-            Action = action,
-            Resource = resource,
+            UserId     = isPatientPortal ? null : currentUser.UserId,
+            Action     = action,
+            Resource   = resource,
             ResourceId = resourceId == Guid.Empty ? null : resourceId,
-            IpAddress = context.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = context.Request.Headers.UserAgent.ToString()
+            IpAddress  = context.Connection.RemoteIpAddress?.ToString(),
+            UserAgent  = context.Request.Headers.UserAgent.ToString()
         };
+
+        // Attach metadata: HTTP status, failure flag, request body, portal identity
+        var meta = new Dictionary<string, object?> { ["statusCode"] = context.Response.StatusCode };
+
+        if (context.Response.StatusCode >= 400)
+            meta["failed"] = true;
+
+        if (requestBody is not null)
+        {
+            try   { meta["requestBody"] = JsonSerializer.Deserialize<JsonElement>(requestBody); }
+            catch { meta["requestBody"] = requestBody; }
+        }
 
         if (isPatientPortal)
         {
-            // Preserve patient identity in NewData for traceability
-            var patientMeta = new
-            {
-                actorType = "PatientPortal",
-                patientId = context.User.FindFirstValue("patientId"),
-                patientUsername = context.User.FindFirstValue(ClaimTypes.Name)
-                                  ?? context.User.FindFirstValue("unique_name")
-            };
-            log.NewData = JsonDocument.Parse(JsonSerializer.Serialize(patientMeta));
+            meta["actorType"]       = "PatientPortal";
+            meta["patientId"]       = context.User.FindFirstValue("patientId");
+            meta["patientUsername"] = context.User.FindFirstValue(ClaimTypes.Name)
+                                      ?? context.User.FindFirstValue("unique_name");
         }
+
+        log.NewData = JsonDocument.Parse(JsonSerializer.Serialize(meta));
 
         db.AuditLogs.Add(log);
         await db.SaveChangesAsync();
     }
 
+    private static bool PathContainsAny(PathString path, HashSet<string> segments)
+    {
+        var parts = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts?.Any(p => segments.Contains(p.ToLowerInvariant())) == true;
+    }
+
     /// <summary>
-    /// Detects patient portal authenticated users.
-    /// Patient portal JWTs contain a "portal" claim or have Role = Patient.
-    /// These IDs reference PatientAccounts, not the Users table.
+    /// Patient portal JWTs carry a "portal" claim or Role = Patient.
+    /// Their sub is a PatientAccount ID, not a User ID.
     /// </summary>
     private static bool IsPatientPortalUser(ClaimsPrincipal user)
     {
-        // Primary: check for explicit "portal" claim set during patient portal auth
-        var portalClaim = user.FindFirstValue("portal");
-        if (string.Equals(portalClaim, "true", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(user.FindFirstValue("portal"), "true", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Secondary: check role claim — Patient role is exclusive to portal accounts
-        var roleClaim = user.FindFirstValue(ClaimTypes.Role);
-        if (string.Equals(roleClaim, "Patient", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
+        return string.Equals(
+            user.FindFirstValue(ClaimTypes.Role), "Patient", StringComparison.OrdinalIgnoreCase);
     }
 }

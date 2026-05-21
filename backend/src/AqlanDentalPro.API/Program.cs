@@ -835,18 +835,20 @@ try
                 END IF;
             END IF;
 
-            -- Indexes on InvoiceLineItems commission columns
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_indexes
-                WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_DoctorId'
-            ) THEN
-                CREATE INDEX "IX_InvoiceLineItems_DoctorId" ON "InvoiceLineItems" ("DoctorId");
-            END IF;
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_indexes
-                WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_LabOrderId'
-            ) THEN
-                CREATE INDEX "IX_InvoiceLineItems_LabOrderId" ON "InvoiceLineItems" ("LabOrderId");
+            -- Indexes on InvoiceLineItems commission columns (only if table exists)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'InvoiceLineItems') THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_DoctorId'
+                ) THEN
+                    CREATE INDEX "IX_InvoiceLineItems_DoctorId" ON "InvoiceLineItems" ("DoctorId");
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_LabOrderId'
+                ) THEN
+                    CREATE INDEX "IX_InvoiceLineItems_LabOrderId" ON "InvoiceLineItems" ("LabOrderId");
+                END IF;
             END IF;
         END $$;
     """);

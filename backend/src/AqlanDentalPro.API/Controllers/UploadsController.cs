@@ -22,45 +22,46 @@ public class UploadsController(ILogger<UploadsController> logger) : ControllerBa
 
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
 
-    /// <summary>
-    /// Resolves the uploads directory path. Priority:
-    /// 1. UPLOADS_PATH environment variable (for Railway persistent volumes)
-    /// 2. wwwroot/uploads relative to current directory
-    /// 3. /tmp/aqlan-uploads fallback for read-only container environments
-    /// </summary>
-    private static string EnsureUploadsDirectory()
-    {
-        // 1. Check UPLOADS_PATH env var (set by Railway for persistent volume)
-        var envPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");
-        if (!string.IsNullOrWhiteSpace(envPath))
-        {
-            Directory.CreateDirectory(envPath);
-            // Verify write permission
-            var testFile = Path.Combine(envPath, $".write-test-{Guid.NewGuid()}");
-            System.IO.File.WriteAllText(testFile, "test");
-            System.IO.File.Delete(testFile);
-            return envPath;
-        }
+    // Resolved once at first use — same logic as Program.cs static files config
+    private static string? _resolvedPath;
+    private static readonly Lock _pathLock = new();
 
-        // 2. Try wwwroot/uploads (works if directory is pre-created with proper ownership)
-        var primaryPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-        try
+    private string ResolveUploadsDirectory()
+    {
+        if (_resolvedPath is not null) return _resolvedPath;
+        lock (_pathLock)
         {
-            Directory.CreateDirectory(primaryPath);
-            // Test write permission
-            var testFile = Path.Combine(primaryPath, $".write-test-{Guid.NewGuid()}");
-            System.IO.File.WriteAllText(testFile, "test");
-            System.IO.File.Delete(testFile);
-            return primaryPath;
+            if (_resolvedPath is not null) return _resolvedPath;
+
+            var envPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");
+            if (!string.IsNullOrWhiteSpace(envPath))
+            {
+                Directory.CreateDirectory(envPath);
+                _resolvedPath = envPath;
+                return _resolvedPath;
+            }
+
+            var primaryPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+            try
+            {
+                Directory.CreateDirectory(primaryPath);
+                var probe = Path.Combine(primaryPath, $".write-test-{Guid.NewGuid()}");
+                System.IO.File.WriteAllText(probe, "test");
+                System.IO.File.Delete(probe);
+                _resolvedPath = primaryPath;
+            }
+            catch
+            {
+                var fallback = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
+                Directory.CreateDirectory(fallback);
+                logger.LogWarning(
+                    "UPLOADS_PATH غير مضبوط — سيُستخدم المجلد المؤقت {Path}. " +
+                    "الملفات ستُفقد عند إعادة النشر. اضبط UPLOADS_PATH على Railway.",
+                    fallback);
+                _resolvedPath = fallback;
+            }
         }
-        catch
-        {
-            // 3. Fallback to /tmp for containerized environments where wwwroot is read-only
-            var fallbackPath = Path.Combine(Path.GetTempPath(), "aqlan-uploads");
-            Directory.CreateDirectory(fallbackPath);
-            Console.Error.WriteLine($"[UploadsController] WARNING: Using temp directory for uploads: {fallbackPath}. Files will be LOST on redeploy. Set UPLOADS_PATH env var for persistent storage.");
-            return fallbackPath;
-        }
+        return _resolvedPath!;
     }
 
     [HttpPost]
@@ -83,7 +84,7 @@ public class UploadsController(ILogger<UploadsController> logger) : ControllerBa
         string uploadsPath;
         try
         {
-            uploadsPath = EnsureUploadsDirectory();
+            uploadsPath = ResolveUploadsDirectory();
         }
         catch (Exception ex)
         {
@@ -117,7 +118,7 @@ public class UploadsController(ILogger<UploadsController> logger) : ControllerBa
         if (fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(".."))
             return BadRequest(new { message = "اسم الملف غير صالح" });
 
-        var uploadsPath = EnsureUploadsDirectory();
+        var uploadsPath = ResolveUploadsDirectory();
         var filePath = Path.Combine(uploadsPath, fileName);
         if (!System.IO.File.Exists(filePath))
             return NotFound(new { message = "الملف غير موجود" });

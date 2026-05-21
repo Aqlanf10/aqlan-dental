@@ -99,6 +99,114 @@ public class CommissionServiceValidationTests
     }
 
     [Fact]
+    public async Task UpdateServiceDefaults_BoundaryZeroPercentage_Succeeds()
+    {
+        await using var db = CreateDb();
+        var clinicService = new ClinicService
+        {
+            ArabicName   = "فحص",
+            EnglishName  = "Exam",
+            Code         = "EXM",
+            Category     = ServiceCategory.Consultation,
+            DefaultPrice = 5_000m,
+            IsActive     = true
+        };
+        db.ClinicServices.Add(clinicService);
+        await db.SaveChangesAsync();
+
+        var svc = CreateService(db);
+        var req = new UpdateServiceCommissionDefaultsRequest(
+            DefaultMaterialCost: 0m,
+            DefaultMaterialCostType: MaterialCostType.FixedAmount,
+            DefaultLabCost: 0m,
+            DefaultDoctorCommissionPercentage: 0m,
+            CommissionBaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var result = await svc.UpdateServiceDefaultsAsync(clinicService.Id, req);
+
+        result.Should().NotBeNull();
+        result!.DefaultDoctorCommissionPercentage.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task UpdateServiceDefaults_Boundary100Percentage_Succeeds()
+    {
+        await using var db = CreateDb();
+        var clinicService = new ClinicService
+        {
+            ArabicName   = "تنظيف",
+            EnglishName  = "Cleaning",
+            Code         = "CLN",
+            Category     = ServiceCategory.Preventive,
+            DefaultPrice = 3_000m,
+            IsActive     = true
+        };
+        db.ClinicServices.Add(clinicService);
+        await db.SaveChangesAsync();
+
+        var svc = CreateService(db);
+        var req = new UpdateServiceCommissionDefaultsRequest(
+            DefaultMaterialCost: 0m,
+            DefaultMaterialCostType: MaterialCostType.FixedAmount,
+            DefaultLabCost: 0m,
+            DefaultDoctorCommissionPercentage: 100m,
+            CommissionBaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var result = await svc.UpdateServiceDefaultsAsync(clinicService.Id, req);
+
+        result.Should().NotBeNull();
+        result!.DefaultDoctorCommissionPercentage.Should().Be(100m);
+    }
+
+    [Fact]
+    public async Task UpdateServiceDefaults_NullPercentage_Succeeds()
+    {
+        await using var db = CreateDb();
+        var clinicService = new ClinicService
+        {
+            ArabicName   = "حشو",
+            EnglishName  = "Filling",
+            Code         = "FIL",
+            Category     = ServiceCategory.Restorative,
+            DefaultPrice = 8_000m,
+            IsActive     = true
+        };
+        db.ClinicServices.Add(clinicService);
+        await db.SaveChangesAsync();
+
+        var svc = CreateService(db);
+        var req = new UpdateServiceCommissionDefaultsRequest(
+            DefaultMaterialCost: 0m,
+            DefaultMaterialCostType: MaterialCostType.FixedAmount,
+            DefaultLabCost: 0m,
+            DefaultDoctorCommissionPercentage: null,
+            CommissionBaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var result = await svc.UpdateServiceDefaultsAsync(clinicService.Id, req);
+
+        result.Should().NotBeNull();
+        result!.DefaultDoctorCommissionPercentage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateServiceDefaults_NonExistentService_ReturnsNull()
+    {
+        await using var db = CreateDb();
+        var svc = CreateService(db);
+
+        var req = new UpdateServiceCommissionDefaultsRequest(
+            DefaultMaterialCost: 0m,
+            DefaultMaterialCostType: MaterialCostType.FixedAmount,
+            DefaultLabCost: 0m,
+            DefaultDoctorCommissionPercentage: 30m,
+            CommissionBaseRule: CommissionBaseRule.AfterDiscountAndCosts);
+
+        var result = await svc.UpdateServiceDefaultsAsync(Guid.NewGuid(), req);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public async Task UpdateServiceDefaults_ValidInput_SavesSuccessfully()
     {
         await using var db = CreateDb();

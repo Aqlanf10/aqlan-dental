@@ -981,17 +981,80 @@ try
             END IF;
 
             -- ── Fix __EFMigrationsHistory ──────────────────────────────
-            -- Remove incorrectly inserted records where tables don't exist
+            -- Comprehensive cleanup: delete records for migrations whose schema doesn't exist,
+            -- then insert records for schema that does exist.
+            -- This fixes the problem where a previous reconciliation inserted ALL migration
+            -- records, causing MigrateAsync() to skip creating missing tables like ClinicServices.
+
+            -- DELETE records where primary schema element doesn't exist
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430221624_AddConversationPatientAndType'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501000000_AddNormalizedPhoneFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'PatientId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501020000_AddSoftDeleteToMessagingTables'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedAt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502000000_AddVisitsDocumentsFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Visits');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502010000_AddSecurePatientPortalPasswordAuth'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'RecipientType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260508052207_AddBookingRequest'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260511000000_AddDoctorIdToBookingRequest'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'BookingRequests' AND column_name = 'DoctorId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260512000000_AddRadiographFileMetadata'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicalPhotos' AND column_name = 'FileType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicQueueItems');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledAt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520202816_SyncAuditPhase2Configurations'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'AuditLogs');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260521000000_AddPasswordSaltAndPatientPhoneIndexes'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'PasswordSalt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260522000000_AddSoftDeleteColumnsToLegacyTables'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedAt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260524000000_AddConversationPatientBranchFieldsAndIndexes'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525000000_AddMissingFKIndexesAndUserMustChangePassword'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'MustChangePassword');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260528000000_AddClinicServicesAndRooms'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260529000000_AddPatientJourneyFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'ReferralSource');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TreatmentPlanSteps');
             DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems'
                 AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices');
             DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink'
                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260602000000_AddMessageAttachments'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MessageAttachments');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260603000000_AddOrthoDiagnosisRetentionPhotos'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'OrthoDiagnoses' AND column_name = 'RetentionPhotoLeft');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260604000000_AddSuppliersAndPurchases'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Suppliers');
             DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem'
                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionPercentage');
             DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260607000000_AddCommissionRecognitionMode'
                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode');
 
-            -- Now insert records for tables that DO exist (created by this or previous HOTFIX blocks)
+            -- INSERT records for schema that DOES exist (created by HOTFIX blocks)
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430221624_AddConversationPatientAndType') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260430221624_AddConversationPatientAndType', '8.0');
+            END IF;
             IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices')
                 AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems') THEN
                 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260531000000_AddInvoicesAndInvoiceLineItems', '8.0');
@@ -1003,10 +1066,6 @@ try
             IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'DoctorCommissionPayments')
                 AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem') THEN
                 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260606000000_AddDoctorCommissionSystem', '8.0');
-            END IF;
-            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode')
-                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260607000000_AddCommissionRecognitionMode') THEN
-                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260607000000_AddCommissionRecognitionMode', '8.0');
             END IF;
         END $$;
     """);

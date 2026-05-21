@@ -241,6 +241,9 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPost("batch-status")]
     public async Task<IActionResult> BatchUpdateStatus([FromBody] BatchUpdateStatusRequest req)
     {
+        if (req.AppointmentIds.Count > 50)
+            return BadRequest(new { message = "لا يمكن تحديث أكثر من 50 موعد في المرة الواحدة" });
+
         if (!Enum.TryParse<AppointmentStatus>(req.Status, true, out var targetStatus))
             return BadRequest(new { message = "حالة الموعد غير صالحة" });
 

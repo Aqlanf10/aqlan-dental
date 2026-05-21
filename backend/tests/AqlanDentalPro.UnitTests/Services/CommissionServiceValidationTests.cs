@@ -150,7 +150,6 @@ public class CommissionServiceValidationTests
         var invoice = new Invoice
         {
             InvoiceNumber = "INV-001",
-            InvoiceDate   = DateOnly.FromDateTime(DateTime.UtcNow),
             Status        = InvoiceStatus.Issued,
             IsActive      = true,
         };
@@ -198,7 +197,6 @@ public class CommissionServiceValidationTests
         var invoice = new Invoice
         {
             InvoiceNumber = "INV-002",
-            InvoiceDate   = DateOnly.FromDateTime(DateTime.UtcNow),
             Status        = InvoiceStatus.Issued,
             IsActive      = true,
         };

@@ -29,7 +29,21 @@ jobs:
         run: dotnet build --no-restore --configuration Release --warnaserror -p:WarningsNotAsErrors=NU1903
 
       - name: Run unit tests
-        run: dotnet test tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj --no-restore --configuration Release --verbosity minimal
+        run: >
+          dotnet test
+          tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj
+          --no-build
+          --configuration Release
+          --verbosity minimal
+          --logger "trx;LogFileName=test-results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/tests/AqlanDentalPro.UnitTests/TestResults/**/*.trx
+          retention-days: 7
 
   frontend:
     name: Frontend — Lint, Type-check & Build

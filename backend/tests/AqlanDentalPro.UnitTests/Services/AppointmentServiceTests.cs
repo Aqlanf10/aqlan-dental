@@ -294,7 +294,7 @@ public class AppointmentServiceTests
     {
         // Arrange
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync((Appointment?)null);
 
         var service = CreateService();
@@ -313,7 +313,7 @@ public class AppointmentServiceTests
         // Arrange
         var appointment = new Appointment { Status = AppointmentStatus.Scheduled };
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync(appointment);
 
         var service = CreateService();
@@ -332,7 +332,7 @@ public class AppointmentServiceTests
         // Arrange
         var appointment = new Appointment { Status = AppointmentStatus.Scheduled };
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync(appointment);
 
         var service = CreateService();
@@ -352,7 +352,7 @@ public class AppointmentServiceTests
         // Arrange
         var appointment = new Appointment { Status = AppointmentStatus.Scheduled };
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync(appointment);
 
         var service = CreateService();
@@ -371,7 +371,7 @@ public class AppointmentServiceTests
         // Arrange
         var appointment = new Appointment { Status = AppointmentStatus.Completed };
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync(appointment);
 
         var service = CreateService();
@@ -390,7 +390,7 @@ public class AppointmentServiceTests
         // Arrange
         var appointment = new Appointment { Status = AppointmentStatus.Scheduled };
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync(appointment);
 
         var service = CreateService();
@@ -409,7 +409,7 @@ public class AppointmentServiceTests
         // Arrange — NoShow is a terminal state that allows re-scheduling
         var appointment = new Appointment { Status = AppointmentStatus.NoShow };
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync(appointment);
 
         var service = CreateService();
@@ -428,7 +428,7 @@ public class AppointmentServiceTests
         // Arrange — Cancelled is a terminal state that allows re-scheduling
         var appointment = new Appointment { Status = AppointmentStatus.Cancelled };
         _repoMock
-            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>()))
+            .Setup(r => r.GetWithDetailAsync(It.IsAny<Guid>()))
             .ReturnsAsync(appointment);
 
         var service = CreateService();

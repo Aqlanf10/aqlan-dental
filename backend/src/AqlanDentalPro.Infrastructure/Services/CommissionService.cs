@@ -11,7 +11,6 @@ namespace AqlanDentalPro.Infrastructure.Services;
 
 public class CommissionService(
     AppDbContext db,
-    ICurrentUserService currentUser,
     ILogger<CommissionService> logger) : ICommissionService
 {
     // ── Line item commission ──────────────────────────────────────────────────

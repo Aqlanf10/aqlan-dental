@@ -29,8 +29,8 @@ var builder = WebApplication.CreateBuilder(args);
 // ── Fail-Fast: رفض الإقلاع بإعدادات افتراضية في الإنتاج ──────────────────────
 if (builder.Environment.IsProduction())
 {
-    var jwtKey = builder.Configuration["Jwt:SecretKey"] ?? "";
-    if (jwtKey.Contains("CHANGE_ME") || jwtKey.Length < 32)
+    var prodJwtKey = builder.Configuration["Jwt:SecretKey"] ?? "";
+    if (prodJwtKey.Contains("CHANGE_ME") || prodJwtKey.Length < 32)
         throw new InvalidOperationException(
             "SEC: مفتاح JWT غير آمن في الإنتاج. يجب ضبط Jwt:SecretKey بقيمة عشوائية لا تقل عن 32 حرفاً.");
 
@@ -670,6 +670,195 @@ catch (Exception ex)
     msgSchemaLogger2.LogError(ex, "HOTFIX: Failed to ensure messaging tables BaseEntity columns. Messaging may return 500!");
 }
 
+// ── CRITICAL: Ensure Doctor Commission tables/columns exist ─────────────────
+// HOTFIX: PR #157 added the Doctor Commission module. If ENABLE_STARTUP_DB_MAINTENANCE
+// is false, MigrateAsync() is skipped and the DoctorCommissionPayments table +
+// InvoiceLineItems commission columns will be missing. Without this guard,
+// CommissionsController returns 404 (controller can't resolve dependencies) or 500
+// (missing columns). This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var commScope = app.Services.CreateScope();
+    var commDb     = commScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var commLogger = commScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await commDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- DoctorCommissionPayments table (migration 20260606000000)
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'DoctorCommissionPayments'
+            ) THEN
+                CREATE TABLE "DoctorCommissionPayments" (
+                    "Id"            uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "DoctorId"      uuid                     NOT NULL,
+                    "Amount"        numeric                  NOT NULL,
+                    "PaymentDate"   date                     NOT NULL,
+                    "PaymentMethod" character varying(50)    NULL,
+                    "ReferenceNumber" character varying(100)  NULL,
+                    "Notes"         character varying(500)    NULL,
+                    "PaidBy"        uuid                     NULL,
+                    "CreatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"      boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"     timestamp with time zone  NULL,
+                    "DeletedBy"     uuid                     NULL,
+                    CONSTRAINT "PK_DoctorCommissionPayments" PRIMARY KEY ("Id")
+                );
+            END IF;
+
+            -- FK: DoctorCommissionPayments → Doctors
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_DoctorCommissionPayments_Doctors_DoctorId'
+            ) THEN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'Doctors'
+                ) THEN
+                    ALTER TABLE "DoctorCommissionPayments"
+                        ADD CONSTRAINT "FK_DoctorCommissionPayments_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId")
+                        REFERENCES "Doctors"("Id")
+                        ON DELETE RESTRICT;
+                END IF;
+            END IF;
+
+            -- Indexes on DoctorCommissionPayments
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'DoctorCommissionPayments' AND indexname = 'IX_DoctorCommissionPayments_DoctorId'
+            ) THEN
+                CREATE INDEX "IX_DoctorCommissionPayments_DoctorId" ON "DoctorCommissionPayments" ("DoctorId");
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'DoctorCommissionPayments' AND indexname = 'IX_DoctorCommissionPayments_PaymentDate'
+            ) THEN
+                CREATE INDEX "IX_DoctorCommissionPayments_PaymentDate" ON "DoctorCommissionPayments" ("PaymentDate");
+            END IF;
+
+            -- InvoiceLineItems: commission columns (migration 20260606000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'InvoiceLineItems') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorId') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "DoctorId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LineDiscountAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "LineDiscountAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'MaterialCost') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "MaterialCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LabCost') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "LabCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'OtherDirectCost') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "OtherDirectCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionBaseRule') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionBaseRule" integer NOT NULL DEFAULT 2;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionPercentage') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "DoctorCommissionPercentage" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'NetCommissionableAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "NetCommissionableAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "DoctorCommissionAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CenterShareAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CenterShareAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionStatus') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionStatus" integer NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionNotes') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionNotes" text NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LabOrderId') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "LabOrderId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionApprovedBy') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionApprovedBy" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionApprovedAt') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionApprovedAt" timestamp with time zone NULL;
+                END IF;
+            END IF;
+
+            -- ClinicServices: commission defaults columns (migration 20260606000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCostType') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCostType" integer NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultLabCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultLabCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultDoctorCommissionPercentage') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultDoctorCommissionPercentage" numeric NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionBaseRule') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionBaseRule" integer NOT NULL DEFAULT 2;
+                END IF;
+            END IF;
+
+            -- ClinicServices: CommissionRecognitionMode column (migration 20260607000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 0;
+                END IF;
+            END IF;
+
+            -- FK: InvoiceLineItems → Doctors
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_Doctors_DoctorId'
+            ) THEN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorId') THEN
+                    ALTER TABLE "InvoiceLineItems"
+                        ADD CONSTRAINT "FK_InvoiceLineItems_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
+                END IF;
+            END IF;
+
+            -- FK: InvoiceLineItems → LabOrders
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_LabOrders_LabOrderId'
+            ) THEN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LabOrderId') THEN
+                    ALTER TABLE "InvoiceLineItems"
+                        ADD CONSTRAINT "FK_InvoiceLineItems_LabOrders_LabOrderId"
+                        FOREIGN KEY ("LabOrderId") REFERENCES "LabOrders"("Id") ON DELETE SET NULL;
+                END IF;
+            END IF;
+
+            -- Indexes on InvoiceLineItems commission columns
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_DoctorId'
+            ) THEN
+                CREATE INDEX "IX_InvoiceLineItems_DoctorId" ON "InvoiceLineItems" ("DoctorId");
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_LabOrderId'
+            ) THEN
+                CREATE INDEX "IX_InvoiceLineItems_LabOrderId" ON "InvoiceLineItems" ("LabOrderId");
+            END IF;
+        END $$;
+    """);
+
+    commLogger.LogInformation("HOTFIX: Doctor Commission tables/columns schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var commLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    commLogger2.LogError(ex, "HOTFIX: Failed to ensure Doctor Commission schema. Commission endpoints may return 404/500!");
+}
+
 // ── One-time Admin Password Reset ─────────────────────────────────
 // SEC-03 FIX: Admin password reset only from environment variables.
 // In production: ADMIN_DEFAULT_PASSWORD is REQUIRED. No fallback.
@@ -1284,7 +1473,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.21-ruleforeach-fix" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.22-pr157-commission-live" }));
 
 // Serve uploaded files — resolve writable uploads directory
 // Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback

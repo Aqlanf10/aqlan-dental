@@ -31,15 +31,31 @@ public class PaymentsController(FinanceService service, IPdfService pdfService, 
     [HttpPost("payments")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
-        var result = await service.CreatePaymentAsync(req);
-        return Ok(result);
+        try
+        {
+            var result = await service.CreatePaymentAsync(req);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Payment creation validation failed");
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPut("payments/{id:guid}")]
     public async Task<IActionResult> UpdatePayment(Guid id, [FromBody] UpdatePaymentRequest req)
     {
-        var result = await service.UpdatePaymentAsync(id, req);
-        return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+        try
+        {
+            var result = await service.UpdatePaymentAsync(id, req);
+            return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Payment update validation failed for payment {PaymentId}", id);
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpDelete("payments/{id:guid}")]

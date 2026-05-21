@@ -610,10 +610,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// <summary>
     /// H9 FIX: Generates a unique receipt number using advisory lock + sequential pattern.
     /// Format: RCP-yyyyMMdd-NNN (sequential, not random).
-    /// Uses pg_advisory_xact_lock to prevent race conditions.
+    /// CON FIX: Now wrapped in advisory lock + retry loop to prevent race conditions
+    /// when multiple payments are created concurrently.
     /// </summary>
     private async Task<string> GenerateReceiptNumberAsync()
     {
+        var lockKey = Math.Abs("ReceiptNumber".GetHashCode()) % 100000;
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
         var today = DateTime.UtcNow;
         var datePart = today.ToString("yyyyMMdd");
         var prefix = $"RCP-{datePart}-";
@@ -639,9 +643,13 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// <summary>
     /// H9 FIX: Generates a unique refund receipt number.
     /// Format: REF-yyyyMMdd-NNN (sequential).
+    /// CON FIX: Now uses advisory lock to prevent race conditions.
     /// </summary>
     private async Task<string> GenerateRefundReceiptNumberAsync()
     {
+        var lockKey = Math.Abs("RefundReceiptNumber".GetHashCode()) % 100000;
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
         var today = DateTime.UtcNow;
         var datePart = today.ToString("yyyyMMdd");
         var prefix = $"REF-{datePart}-";

@@ -81,6 +81,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLineItem> PurchaseOrderLineItems => Set<PurchaseOrderLineItem>();
     public DbSet<InventoryAdjustment> InventoryAdjustments => Set<InventoryAdjustment>();
+    public DbSet<DoctorCommissionPayment> DoctorCommissionPayments => Set<DoctorCommissionPayment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

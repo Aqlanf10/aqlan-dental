@@ -8,7 +8,7 @@ import {
   BarChart2, Package, FlaskConical, Settings, LogOut,
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
-  CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown,
+  CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown, Percent,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -94,6 +94,7 @@ const NAV: NavEntry[] = [
 
   // ── تقارير ───────────────────────────────────────────────────────────────
   { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: ["Admin","Accountant"],                                         section: "تقارير" },
+  { href: "/commissions",    label: "عمولات الأطباء",   icon: Percent,         roles: ["Admin","Accountant","Orthodontist","GeneralDentist","OralSurgeon"] },
 
   // ── الإدارة ───────────────────────────────────────────────────────────────
   { href: "/doctors",        label: "الأطباء",          icon: UserRound,       roles: ["Admin"],                                                      section: "الإدارة" },

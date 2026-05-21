@@ -18,4 +18,12 @@ public class ClinicService : BaseEntity
     public bool ShowInReception { get; set; } = true;
     public bool ShowInTreatmentPlan { get; set; } = true;
     public int SortOrder { get; set; } = 0;
+
+    // ── Commission default settings ──────────────────────────────────────────
+    public decimal DefaultMaterialCost { get; set; } = 0;
+    public MaterialCostType DefaultMaterialCostType { get; set; } = MaterialCostType.FixedAmount;
+    public decimal DefaultLabCost { get; set; } = 0;
+    /// <summary>Overrides Doctor.DefaultCommissionPercentage when set.</summary>
+    public decimal? DefaultDoctorCommissionPercentage { get; set; }
+    public CommissionBaseRule CommissionBaseRule { get; set; } = CommissionBaseRule.AfterDiscountAndCosts;
 }

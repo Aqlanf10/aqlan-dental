@@ -17,7 +17,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/invoices")]
 [Authorize(Policy = "FinanceAccess")]
-public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger<InvoicesController> logger) : ControllerBase
+public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger<InvoicesController> logger, ICommissionService commissionService) : ControllerBase
 {
     // ─── F5: POST /api/invoices — Create standalone invoice ──────────────────
     /// <summary>
@@ -120,6 +120,17 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             }
 
             await db.SaveChangesAsync();
+
+            // Auto-fill commission defaults from each line item's service catalog entry
+            var newLineItems = await db.InvoiceLineItems
+                .Where(l => l.InvoiceId == invoice.Id && l.IsActive && l.ServiceId != null)
+                .Select(l => l.Id)
+                .ToListAsync();
+            foreach (var lineItemId in newLineItems)
+            {
+                try { await commissionService.AutoFillFromServiceAsync(lineItemId); }
+                catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", lineItemId); }
+            }
 
             // Recalculate totals from line items
             var allLineItems = await db.InvoiceLineItems
@@ -398,6 +409,13 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
         invoice.TotalAmount = invoice.Subtotal - discount + tax;
 
         await db.SaveChangesAsync();
+
+        // Auto-fill commission defaults for newly added line items linked to a service
+        foreach (var liId in allLineItems.Where(l => l.ServiceId != null && l.CommissionStatus == CommissionStatus.Pending).Select(l => l.Id))
+        {
+            try { await commissionService.AutoFillFromServiceAsync(liId); }
+            catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", liId); }
+        }
 
         return Ok(new
         {

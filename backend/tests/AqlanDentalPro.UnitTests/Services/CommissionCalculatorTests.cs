@@ -307,4 +307,24 @@ public class CommissionCalculatorTests
         CommissionCalculator.ResolveMaterialCost(100_000m, 0m, MaterialCostType.PercentageOfServicePrice)
             .Should().Be(0m);
     }
+
+    // ── Proportional commission: split stays consistent (no overpayment) ──────
+
+    [Fact]
+    public void ProportionalCommission_DoctorAndCenter_BothProportional_SumStaysOnNet()
+    {
+        // Full split: net 100k, doctor 40k, center 60k. At 50% paid both halve.
+        var partialDoctor = CommissionCalculator.ProportionalCommission(40_000m, 0.5m);
+        var partialCenter = CommissionCalculator.ProportionalCommission(60_000m, 0.5m);
+
+        partialDoctor.Should().Be(20_000m);
+        partialCenter.Should().Be(30_000m);
+        (partialDoctor + partialCenter).Should().Be(50_000m); // = net × 50%
+    }
+
+    [Fact]
+    public void ProportionalCommission_NegativeRatio_ClampedToZero()
+    {
+        CommissionCalculator.ProportionalCommission(40_000m, -0.25m).Should().Be(0m);
+    }
 }

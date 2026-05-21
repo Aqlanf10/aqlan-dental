@@ -238,6 +238,13 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             await TryMarkInvoicePaidAsync(invoice.Id);
         }
 
+        // Auto-transition contract to Completed if payments cover the effective amount
+        if (payment.ContractId.HasValue)
+        {
+            try { await TryReconcileContractStatusAsync(payment.ContractId.Value); }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to reconcile contract {ContractId} after payment creation", payment.ContractId); }
+        }
+
         await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
         await db.Entry(payment).Reference(p => p.Doctor).LoadAsync();
         // Load Invoice navigation for mapping
@@ -451,19 +458,25 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var payment = await db.Payments.FindAsync(id);
         if (payment == null) return false;
 
-        var invoiceId = payment.InvoiceId; // H3: capture before deactivation
+        var invoiceId  = payment.InvoiceId;  // H3: capture before deactivation
+        var contractId = payment.ContractId; // capture before deactivation
 
         payment.IsActive  = false;
         payment.DeletedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
         // H3 FIX: Re-evaluate invoice status after deleting a payment.
-        // If the invoice was auto-transitioned to Paid, it should revert to Issued
-        // when the total paid falls below TotalAmount.
         if (invoiceId.HasValue)
         {
             try { await TryMarkInvoicePaidAsync(invoiceId.Value); }
             catch (Exception ex) { logger.LogWarning(ex, "H3: Failed to re-evaluate invoice {InvoiceId} after payment deletion", invoiceId); }
+        }
+
+        // Re-evaluate contract status (Completed → Active if paid total drops below effective amount)
+        if (contractId.HasValue)
+        {
+            try { await TryReconcileContractStatusAsync(contractId.Value); }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to reconcile contract {ContractId} after payment deletion", contractId); }
         }
 
         return true;
@@ -495,11 +508,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         await db.SaveChangesAsync();
 
         // H3 FIX: Re-evaluate invoice status after creating a refund.
-        // If the refund causes total paid to drop below TotalAmount, revert Paid → Issued.
         if (payment.InvoiceId.HasValue)
         {
             try { await TryMarkInvoicePaidAsync(payment.InvoiceId.Value); }
             catch (Exception ex) { logger.LogWarning(ex, "H3: Failed to re-evaluate invoice {InvoiceId} after refund", payment.InvoiceId); }
+        }
+
+        // Re-evaluate contract status after refund (Completed → Active if paid total drops below effective amount)
+        if (payment.ContractId.HasValue)
+        {
+            try { await TryReconcileContractStatusAsync(payment.ContractId.Value); }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to reconcile contract {ContractId} after refund", payment.ContractId); }
         }
 
         await db.Entry(refund).Reference(p => p.Patient).LoadAsync();
@@ -643,6 +662,41 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         }
 
         return $"{prefix}{nextSeq:D3}";
+    }
+
+    /// <summary>
+    /// Checks if total active payments for a contract cover its effective amount (TotalAmount - DiscountAmount).
+    /// Handles both directions:
+    ///   - Active → Completed (when payments cover the effective amount)
+    ///   - Completed → Active (when payments are deleted/refunded and no longer cover the effective amount)
+    /// Skips Cancelled contracts. Safe to call after payment creation, deletion, or refund.
+    /// </summary>
+    private async Task TryReconcileContractStatusAsync(Guid contractId)
+    {
+        var contract = await db.Contracts
+            .Include(c => c.Payments)
+            .FirstOrDefaultAsync(c => c.Id == contractId);
+
+        if (contract == null) return;
+        if (contract.Status == ContractStatus.Cancelled) return;
+
+        var effectiveAmount = contract.TotalAmount - contract.DiscountAmount;
+        var totalPaid = contract.Payments
+            .Where(p => p.IsActive)
+            .Sum(p => p.Amount);
+
+        if (contract.Status == ContractStatus.Active && totalPaid >= effectiveAmount && effectiveAmount > 0)
+        {
+            contract.Status    = ContractStatus.Completed;
+            contract.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        else if (contract.Status == ContractStatus.Completed && totalPaid < effectiveAmount)
+        {
+            contract.Status    = ContractStatus.Active;
+            contract.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
     }
 
     /// <summary>

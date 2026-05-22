@@ -537,14 +537,30 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
     {
+        // ── Contract-based financials (legacy/ortho contracts) ───────────────
         var contracts = await db.Contracts
             .Include(c => c.Payments)
             .Where(c => c.PatientId == patientId)
             .ToListAsync();
 
-        var totalCost    = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
-        var totalPaid    = contracts.Sum(c => c.Payments.Sum(p => p.Amount));
-        var outstanding  = totalCost - totalPaid;
+        var contractCost    = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
+        var contractPaid    = contracts.Sum(c => c.Payments.Sum(p => p.Amount));
+
+        // ── Invoice-based financials (new invoice system) ───────────────────
+        var invoices = await db.Invoices
+            .Include(i => i.Payments)
+            .Where(i => i.PatientId == patientId
+                     && i.Status != InvoiceStatus.Cancelled
+                     && i.IsActive)
+            .ToListAsync();
+
+        var invoiceCost = invoices.Sum(i => i.TotalAmount);
+        var invoicePaid = invoices.Sum(i => i.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+
+        // ── Combined totals ─────────────────────────────────────────────────
+        var totalCost      = contractCost + invoiceCost;
+        var totalPaid      = contractPaid + invoicePaid;
+        var outstanding    = totalCost - totalPaid;
 
         var today          = DateOnly.FromDateTime(DateTime.Today);
         var overdueAmount  = 0m;
@@ -563,7 +579,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
 
-        var status = contracts.Count == 0 ? "no_plan"
+        var totalPaymentsCount = contracts.Sum(c => c.Payments.Count)
+                               + invoices.Sum(i => i.Payments.Count(p => p.IsActive));
+
+        var status = totalCost == 0 ? "no_plan"
             : outstanding <= 0 ? "paid"
             : overdueAmount > 0 ? "overdue"
             : "on_track";
@@ -577,7 +596,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             LatestPayment        = latestPayment == null ? null : MapPayment(latestPayment),
             FinancialStatus      = status,
             ActiveContractsCount = contracts.Count(c => c.Status == ContractStatus.Active),
-            TotalPaymentsCount   = contracts.Sum(c => c.Payments.Count)
+            TotalPaymentsCount   = totalPaymentsCount
         };
     }
 

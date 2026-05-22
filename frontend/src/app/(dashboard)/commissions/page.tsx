@@ -10,6 +10,7 @@ import {
   useCommissionPayments,
 } from "@/hooks/useCommissions";
 import { useDoctors } from "@/hooks/useDoctors";
+import { useAuthStore } from "@/stores/authStore";
 import type { CommissionStatus } from "@/types/commission";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +50,9 @@ function SummaryCard({ label, value, sub, color }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CommissionsPage() {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === "Admin" || user?.role === "Accountant";
+
   const [from, setFrom]                   = useState(firstOfMonth());
   const [to, setTo]                       = useState(today());
   const [doctorId, setDoctorId]           = useState("");
@@ -180,13 +184,23 @@ export default function CommissionsPage() {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">الطبيب</label>
-            <select value={doctorId} onChange={e => setDoctorId(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-clinic-blue bg-white">
-              <option value="">كل الأطباء</option>
-              {doctors?.filter(d => d.isActive !== false).map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
+            {!isAdmin ? (
+              <div>
+                <select disabled
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm bg-gray-50 cursor-not-allowed">
+                  <option>{user?.doctorName ?? "الطبيب الحالي"}</option>
+                </select>
+                <p className="mt-1 text-[10px] text-blue-600">يعرض النظام عمولات الطبيب الحالي فقط</p>
+              </div>
+            ) : (
+              <select value={doctorId} onChange={e => setDoctorId(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-clinic-blue bg-white">
+                <option value="">كل الأطباء</option>
+                {doctors?.filter(d => d.isActive !== false).map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">حالة العمولة</label>

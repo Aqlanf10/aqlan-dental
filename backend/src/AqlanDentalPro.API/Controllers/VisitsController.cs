@@ -18,6 +18,7 @@ public sealed class CreateVisitRequest
     public string? VisitType { get; init; }
     public string? Specialty { get; init; }
     public Guid? DoctorId { get; init; }
+    public Guid? ServiceId { get; init; }
     public string? ChiefComplaint { get; init; }
     public string? ClinicalNotes { get; init; }
     public string? TreatmentDone { get; init; }
@@ -174,6 +175,13 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
                 return BadRequest(new { message = "الطبيب غير موجود" });
         }
 
+        if (req.ServiceId.HasValue)
+        {
+            var serviceExists = await db.ClinicServices.AnyAsync(s => s.Id == req.ServiceId.Value);
+            if (!serviceExists)
+                return BadRequest(new { message = "الخدمة غير موجودة" });
+        }
+
         Specialty? specialty = null;
         if (!string.IsNullOrWhiteSpace(req.Specialty) && Enum.TryParse<Specialty>(req.Specialty, true, out var s))
             specialty = s;
@@ -188,6 +196,7 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
             VisitType = req.VisitType,
             Specialty = specialty,
             DoctorId = req.DoctorId,
+            ServiceId = req.ServiceId,
             ChiefComplaint = req.ChiefComplaint,
             ClinicalNotes = req.ClinicalNotes,
             TreatmentDone = req.TreatmentDone,
@@ -201,7 +210,16 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
         };
 
         db.Visits.Add(visit);
-        await db.SaveChangesAsync();
+
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // Log detailed error for debugging schema/EF mismatches
+            return StatusCode(500, new { message = "فشل حفظ الزيارة — تحقق من قاعدة البيانات", detail = ex.InnerException?.Message ?? ex.Message });
+        }
 
         await db.Entry(visit).Reference(v => v.Doctor).LoadAsync();
 

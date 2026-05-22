@@ -388,6 +388,7 @@ builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.S
 builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
 builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
 builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.ICommissionService, AqlanDentalPro.Infrastructure.Services.CommissionService>();
+builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.IPatientAccessService, AqlanDentalPro.Infrastructure.Services.PatientAccessService>();
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
 builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
 builder.Services.AddScoped<IPdfService, PdfService>();

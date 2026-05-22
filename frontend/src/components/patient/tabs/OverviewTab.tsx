@@ -21,8 +21,8 @@ interface PatientSummary {
   totalAppointments: number;
   completedAppointments: number;
   activeOrthoCases: number;
-  totalPaid: number;
-  totalOutstanding: number;
+  totalPaid: number | null;
+  totalOutstanding: number | null;
   prescriptionsCount: number;
   // Extended fields
   lastVisitDate?: string;
@@ -317,10 +317,10 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
             <span className="text-xs font-semibold text-[#94a3b8]">الرصيد المتبقي</span>
           </div>
           <p className="text-sm font-bold text-orange-600">
-            {summary ? `${summary.totalOutstanding.toLocaleString()} ر.ي` : "—"}
+            {summary?.totalOutstanding != null ? `${summary.totalOutstanding.toLocaleString()} ر.ي` : "—"}
           </p>
           <p className="text-xs text-[#94a3b8] mt-0.5">
-            مدفوع: {summary ? `${summary.totalPaid.toLocaleString()} ر.ي` : "—"}
+            مدفوع: {summary?.totalPaid != null ? `${summary.totalPaid.toLocaleString()} ر.ي` : "—"}
           </p>
         </div>
 

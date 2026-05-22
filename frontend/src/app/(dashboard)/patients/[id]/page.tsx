@@ -46,8 +46,8 @@ interface PatientSummary {
   totalAppointments: number;
   completedAppointments: number;
   activeOrthoCases: number;
-  totalPaid: number;
-  totalOutstanding: number;
+  totalPaid: number | null;
+  totalOutstanding: number | null;
   prescriptionsCount: number;
 }
 
@@ -212,9 +212,9 @@ export default function PatientProfilePage() {
   const renderTabContent = () => {
     switch (activeTab) {
       case "overview":
-        return <OverviewTab patientId={id} summary={summary} patient={patient} onAddVisit={() => { setActiveTab("visits"); setOpenAddVisitModal(true); }} />;
+        return <OverviewTab patientId={id} summary={limited ? null : summary} patient={patient as PatientProfile} onAddVisit={() => { setActiveTab("visits"); setOpenAddVisitModal(true); }} />;
       case "info":
-        return <BasicInfoTab patient={patient} orthoCases={orthoCases} surgeryCases={surgeryCases} />;
+        return <BasicInfoTab patient={patient as PatientProfile} orthoCases={orthoCases} surgeryCases={surgeryCases} />;
       case "medical":
         return <MedicalHistoryTab patientId={id} initialData={patient.medicalHistory} />;
       case "dental":
@@ -262,8 +262,26 @@ export default function PatientProfilePage() {
 
   // ─── Main Render ────────────────────────────────────────────────────────────
 
+  const limited = patient.isLimitedView === true;
+
+  // Tabs restricted from doctors: finance, contracts, payments, messages, portal-access
+  const DOCTOR_HIDDEN_TABS: Tab[] = ["finance", "contracts", "payments", "messages", "portal-access"];
+  const visibleTabs = limited
+    ? TABS.filter(t => !DOCTOR_HIDDEN_TABS.includes(t.key))
+    : TABS;
+
   return (
     <div className="space-y-5 max-w-5xl page-content">
+      {/* Limited-view banner — shown only for doctor roles */}
+      {limited && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium" dir="rtl"
+          style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }}>
+          <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+          </svg>
+          <span>عرض سريري محدود — بيانات الاتصال والمالية محجوبة</span>
+        </div>
+      )}
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm" style={{ color: "#64748b" }}>
         <Link href="/patients" className="transition" style={{ color: "#64748b" }} onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#3d7ab5")} onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#64748b")}>المرضى</Link>
@@ -364,20 +382,22 @@ export default function PatientProfilePage() {
               <p className="text-xs mt-1" style={{ color: "#94a3b8" }}>
                 تسجيل: {formatArabicDate(patient.createdAt)}
               </p>
-              {/* Portal status badge — links to portal tab */}
-              <button
-                onClick={() => setActiveTab("portal-access")}
-                className="mt-2 flex items-center gap-2 text-xs transition cursor-pointer"
-                style={{ background: "#3d7ab510", borderRadius: 8, padding: "6px 10px", border: "1px solid #3d7ab520" }}
-              >
-                <KeyRound className="w-3.5 h-3.5" style={{ color: "#3d7ab5" }} />
-                <span style={{ color: "#3d7ab5" }}>بوابة المريض</span>
-                <span style={{ color: "#94a3b8" }}>→ اضغط للتفاصيل</span>
-              </button>
+              {/* Portal status badge — links to portal tab; hidden for doctor roles */}
+              {!limited && (
+                <button
+                  onClick={() => setActiveTab("portal-access")}
+                  className="mt-2 flex items-center gap-2 text-xs transition cursor-pointer"
+                  style={{ background: "#3d7ab510", borderRadius: 8, padding: "6px 10px", border: "1px solid #3d7ab520" }}
+                >
+                  <KeyRound className="w-3.5 h-3.5" style={{ color: "#3d7ab5" }} />
+                  <span style={{ color: "#3d7ab5" }}>بوابة المريض</span>
+                  <span style={{ color: "#94a3b8" }}>→ اضغط للتفاصيل</span>
+                </button>
+              )}
             </div>
           </div>
           <div className="flex flex-row gap-2 flex-shrink-0 order-1 sm:order-2">
-          {patient.isActive && (
+          {!limited && patient.isActive && (
             <Link
               href={`/patients/${id}/edit`}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg transition flex-shrink-0"
@@ -419,8 +439,8 @@ export default function PatientProfilePage() {
             { icon: Calendar, label: "المواعيد",     value: summary?.totalAppointments   ?? "—", color: "#3d7ab5", bg: "#3d7ab518" },
             { icon: Calendar, label: "مكتملة",       value: summary?.completedAppointments ?? "—", color: "#22c55e",  bg: "#22c55e18" },
             { icon: Activity, label: "تقويم نشط",   value: summary?.activeOrthoCases    ?? "—", color: "#a855f7", bg: "#a855f718" },
-            { icon: Wallet,   label: "مدفوع",        value: summary ? `${summary.totalPaid.toLocaleString()}` : "—", color: "#3d7ab5", bg: "#3d7ab518" },
-            { icon: Wallet,   label: "متبقي",        value: summary ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "#f5922e", bg: "#f5922e18" },
+            { icon: Wallet,   label: "مدفوع",        value: summary?.totalPaid != null ? `${summary.totalPaid.toLocaleString()}` : "—", color: "#3d7ab5", bg: "#3d7ab518" },
+            { icon: Wallet,   label: "متبقي",        value: summary?.totalOutstanding != null ? `${summary.totalOutstanding.toLocaleString()}` : "—", color: "#f5922e", bg: "#f5922e18" },
             { icon: Pill,     label: "الوصفات",      value: summary?.prescriptionsCount  ?? "—", color: "#ef4444",   bg: "#ef444418" },
           ].map(({ icon: Icon, label, value, color, bg }) => (
             <div key={label} className="rounded-lg px-3 py-2 flex items-center gap-2" style={{ background: bg }}>
@@ -564,10 +584,10 @@ export default function PatientProfilePage() {
       {/* Tabs — matches ZIP tab style */}
       <div className="overflow-hidden" style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 3px rgba(13,33,55,0.06), 0 1px 10px rgba(13,33,55,0.04)", border: "1px solid #e8f0f9" }}>
         <div className="flex overflow-x-auto" dir="rtl" style={{ borderBottom: "2px solid #e8f0f9" }}>
-          {TABS.map((tab, idx) => (
+          {visibleTabs.map((tab, idx) => (
             <span key={tab.key} className="contents">
               {/* Group separator */}
-              {idx > 0 && TABS[idx - 1].group !== tab.group && (
+              {idx > 0 && visibleTabs[idx - 1].group !== tab.group && (
                 <div className="flex flex-col items-center self-stretch my-2 flex-shrink-0 px-1">
                   <div className="flex-1 w-px" style={{ background: "#e8f0f9" }} />
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ color: "#94a3b8", background: "#f8fafc" }}>

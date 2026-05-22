@@ -12,8 +12,39 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patients")]
 [Authorize(Policy = "StaffOnly")]
-public class PatientsController(PatientService service, AppDbContext db, IPatientPortalService portalService, FinanceService financeService, ILogger<PatientsController> logger) : ControllerBase
+public class PatientsController(
+    PatientService service,
+    AppDbContext db,
+    IPatientPortalService portalService,
+    FinanceService financeService,
+    ICurrentUserService currentUser,
+    IPatientAccessService patientAccess,
+    ILogger<PatientsController> logger) : ControllerBase
 {
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns 403 if the current doctor cannot access the patient.
+    /// Always returns null for non-doctor roles (no check needed).
+    /// </summary>
+    private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
+    {
+        if (!patientAccess.IsDoctor)
+            return null;
+
+        if (!await patientAccess.CanAccessPatientAsync(patientId))
+        {
+            logger.LogWarning(
+                "Patient access denied: user {UserId} (role {Role}) attempted to access patient {PatientId}",
+                currentUser.UserId, currentUser.Role, patientId);
+            return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
+        }
+
+        return null;
+    }
+
+    // ── Patient list ──────────────────────────────────────────────────────────
+
     [HttpGet]
     public async Task<IActionResult> GetList(
         [FromQuery] string? search,
@@ -23,18 +54,45 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         [FromQuery] Guid? doctorId = null,
         [FromQuery] string? status = "active")
     {
-        var result = await service.GetListAsync(search, page, pageSize, gender, doctorId, status);
-        return Ok(result);
+        // Doctors see only their assigned patients.
+        if (patientAccess.IsDoctor)
+        {
+            var accessible = await patientAccess.GetAccessiblePatientIdsAsync();
+            if (accessible == null || accessible.Count == 0)
+                return Ok(new { items = Array.Empty<object>(), total = 0, page, pageSize });
+
+            // Force the filter to the current doctor regardless of the doctorId query param.
+            var currentDoctorId = await patientAccess.GetCurrentDoctorIdAsync();
+            var result = await service.GetListAsync(search, page, pageSize, gender, currentDoctorId, status);
+            return Ok(result);
+        }
+
+        var fullResult = await service.GetListAsync(search, page, pageSize, gender, doctorId, status);
+        return Ok(fullResult);
     }
+
+    // ── Single patient ────────────────────────────────────────────────────────
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<PatientProfileDto>> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id)
     {
+        var denied = await DenyIfDoctorCannotAccess(id);
+        if (denied != null) return denied;
+
         var patient = await service.GetByIdAsync(id);
-        return patient == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(patient);
+        if (patient == null) return NotFound(new { message = "المريض غير موجود" });
+
+        // Doctors receive a clinical-only view without contact/finance fields.
+        if (patientAccess.IsDoctor)
+            return Ok(ToClinicalDto(patient));
+
+        return Ok(patient);
     }
 
+    // ── Create ────────────────────────────────────────────────────────────────
+
     [HttpPost]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<ActionResult<PatientProfileDto>> Create([FromBody] CreatePatientRequest req)
     {
         try
@@ -58,7 +116,10 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         }
     }
 
+    // ── Duplicate check ───────────────────────────────────────────────────────
+
     [HttpGet("check-duplicate")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> CheckDuplicate(
         [FromQuery] string? phone,
         [FromQuery] string? whatsApp,
@@ -70,11 +131,9 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
     {
         var duplicates = new List<object>();
 
-        // Normalize phone for checking
         var normalizedPhone = PhoneNormalizer.Normalize(phone);
         var normalizedWhatsApp = PhoneNormalizer.Normalize(whatsApp);
 
-        // Check by normalized phone
         if (normalizedPhone != null)
         {
             var query = db.Patients
@@ -87,7 +146,6 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             if (match != null) duplicates.Add(match);
         }
 
-        // Check by normalized WhatsApp
         if (normalizedWhatsApp != null && !duplicates.Any())
         {
             var query = db.Patients
@@ -100,7 +158,6 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             if (match != null) duplicates.Add(match);
         }
 
-        // Check by patient number
         if (!string.IsNullOrWhiteSpace(patientNumber))
         {
             var query = db.Patients
@@ -113,7 +170,6 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             if (match != null) duplicates.Add(match);
         }
 
-        // Check by similar name + date of birth
         if (!string.IsNullOrWhiteSpace(firstName) && !string.IsNullOrWhiteSpace(lastName))
         {
             var nameQuery = db.Patients.IgnoreQueryFilters().Where(p => p.IsActive && p.FirstName == firstName && p.LastName == lastName);
@@ -131,7 +187,10 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         return Ok(new { isDuplicate = duplicates.Count > 0, matches = duplicates });
     }
 
+    // ── Update ────────────────────────────────────────────────────────────────
+
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<ActionResult<PatientProfileDto>> Update(Guid id, [FromBody] UpdatePatientRequest req)
     {
         try
@@ -154,6 +213,8 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             return Conflict(new { message = "رقم الهاتف أو الواتساب مستخدم مسبقاً لمريض آخر." });
         }
     }
+
+    // ── Archive / Delete / Restore ────────────────────────────────────────────
 
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = "AdminOnly")]
@@ -180,18 +241,25 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         return success ? Ok(new { message = "تم استعادة المريض بنجاح" }) : NotFound(new { message = "المريض غير موجود" });
     }
 
+    // ── Clinical history ──────────────────────────────────────────────────────
+
     [HttpGet("{id:guid}/medical-history")]
     public async Task<IActionResult> GetMedicalHistory(Guid id)
     {
+        var denied = await DenyIfDoctorCannotAccess(id);
+        if (denied != null) return denied;
+
         var patient = await service.GetByIdAsync(id);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
-        // Return empty DTO instead of null when no history exists yet
         return Ok(patient.MedicalHistory ?? new MedicalHistoryDto());
     }
 
     [HttpPut("{id:guid}/medical-history")]
     public async Task<IActionResult> UpdateMedicalHistory(Guid id, [FromBody] MedicalHistoryDto dto)
     {
+        var denied = await DenyIfDoctorCannotAccess(id);
+        if (denied != null) return denied;
+
         try
         {
             var result = await service.UpsertMedicalHistoryAsync(id, dto);
@@ -213,15 +281,20 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
     [HttpGet("{id:guid}/dental-history")]
     public async Task<IActionResult> GetDentalHistory(Guid id)
     {
+        var denied = await DenyIfDoctorCannotAccess(id);
+        if (denied != null) return denied;
+
         var patient = await service.GetByIdAsync(id);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
-        // Return empty DTO instead of null when no history exists yet
         return Ok(patient.DentalHistory ?? new DentalHistoryDto());
     }
 
     [HttpPut("{id:guid}/dental-history")]
     public async Task<IActionResult> UpdateDentalHistory(Guid id, [FromBody] DentalHistoryDto dto)
     {
+        var denied = await DenyIfDoctorCannotAccess(id);
+        if (denied != null) return denied;
+
         try
         {
             var result = await service.UpsertDentalHistoryAsync(id, dto);
@@ -240,22 +313,42 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         }
     }
 
+    // ── Summary (financial data hidden from doctors) ──────────────────────────
+
     [HttpGet("{id:guid}/summary")]
     public async Task<IActionResult> GetSummary(Guid id)
     {
+        var denied = await DenyIfDoctorCannotAccess(id);
+        if (denied != null) return denied;
+
         var exists = await db.Patients.AnyAsync(p => p.Id == id);
         if (!exists) return NotFound(new { message = "المريض غير موجود" });
 
         var totalAppointments = await db.Appointments.CountAsync(a => a.PatientId == id);
         var completedAppointments = await db.Appointments.CountAsync(a => a.PatientId == id && a.Status == Domain.Enums.AppointmentStatus.Completed);
         var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == OrthoCaseStatus.Active);
+        var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
+
+        // Financial totals are restricted to non-doctor roles.
+        if (patientAccess.IsDoctor)
+        {
+            return Ok(new
+            {
+                totalAppointments,
+                completedAppointments,
+                activeOrthoCases,
+                prescriptionsCount,
+                totalPaid = (decimal?)null,
+                totalOutstanding = (decimal?)null,
+            });
+        }
+
         var totalPaid = await db.Payments.Where(p => p.PatientId == id).SumAsync(p => (decimal?)p.Amount) ?? 0;
         var totalOutstanding = await db.Contracts
             .Where(c => c.PatientId == id && c.Status == ContractStatus.Active)
             .Include(c => c.Payments)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
-        var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
 
         return Ok(new
         {
@@ -268,9 +361,14 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         });
     }
 
+    // ── Timeline ──────────────────────────────────────────────────────────────
+
     [HttpGet("{id:guid}/timeline")]
     public async Task<IActionResult> GetTimeline(Guid id)
     {
+        var denied = await DenyIfDoctorCannotAccess(id);
+        if (denied != null) return denied;
+
         var patient = await service.GetByIdAsync(id);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
 
@@ -308,7 +406,6 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             .Take(50)
             .ToListAsync();
 
-        // Merge and sort by date descending
         var allEvents = appointmentEvents
             .Cast<object>()
             .Concat(visitEvents)
@@ -319,8 +416,10 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         return Ok(allEvents);
     }
 
+    // ── Portal credentials (reception / admin only) ───────────────────────────
+
     [HttpGet("{id:guid}/portal-credentials")]
-    [Authorize(Policy = "DoctorAccess")]
+    [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> GetPortalCredentials(Guid id)
     {
         var exists = await db.Patients.AnyAsync(p => p.Id == id);
@@ -331,6 +430,8 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         return Ok(creds);
     }
 
+    // ── Account statement (finance only) ──────────────────────────────────────
+
     [HttpGet("{id:guid}/account-statement")]
     [Authorize(Policy = "FinanceAccess")]
     public async Task<IActionResult> GetAccountStatement(Guid id)
@@ -338,4 +439,28 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
         var result = await financeService.GetAccountStatementAsync(id);
         return result == null ? NotFound(new { message = "المريض غير موجود" }) : Ok(result);
     }
+
+    // ── Mapping helpers ───────────────────────────────────────────────────────
+
+    private static PatientClinicalDto ToClinicalDto(PatientProfileDto p) => new()
+    {
+        Id = p.Id,
+        PatientNumber = p.PatientNumber,
+        FirstName = p.FirstName,
+        MiddleName = p.MiddleName,
+        LastName = p.LastName,
+        DateOfBirth = p.DateOfBirth,
+        Gender = p.Gender,
+        Age = p.Age,
+        Occupation = p.Occupation,
+        PrimaryDoctorId = p.PrimaryDoctorId,
+        PrimaryDoctorName = p.PrimaryDoctorName,
+        BranchId = p.BranchId,
+        BranchName = p.BranchName,
+        CreatedAt = p.CreatedAt,
+        IsActive = p.IsActive,
+        MedicalHistory = p.MedicalHistory,
+        DentalHistory = p.DentalHistory,
+        IsLimitedView = true,
+    };
 }

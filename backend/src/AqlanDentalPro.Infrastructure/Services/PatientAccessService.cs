@@ -94,34 +94,48 @@ public class PatientAccessService(
             return [];
 
         var d = doctorId.Value;
+        var ids = new HashSet<Guid>();
 
-        var byPrimary = db.Patients
+        // HOTFIX PR165: Replace fragile IQueryable.Union() with sequential ToListAsync queries.
+        // The 5-way Union() fails on PostgreSQL when EF Core global soft-delete query filters
+        // are active, causing HTTP 500 for doctors on GET /api/patients.
+        // Each query is now simple and independently translatable by EF Core/Npgsql.
+
+        // 1. Patients where this doctor is the primary doctor
+        var primaryIds = await db.Patients
             .Where(p => p.PrimaryDoctorId == d && p.IsActive)
-            .Select(p => p.Id);
-
-        var byAppointment = db.Appointments
-            .Where(a => a.DoctorId == d && a.IsActive)
-            .Select(a => a.PatientId);
-
-        var byVisit = db.Visits
-            .Where(v => v.DoctorId == d && v.IsActive)
-            .Select(v => v.PatientId);
-
-        var byStep = db.PatientTreatmentPlanSteps
-            .Where(s => s.ResponsibleDoctorId == d && s.IsActive)
-            .Select(s => s.PatientId);
-
-        var byReferral = db.InternalReferrals
-            .Where(r => r.ToDoctorId == d && r.IsActive)
-            .Select(r => r.PatientId);
-
-        var ids = await byPrimary
-            .Union(byAppointment)
-            .Union(byVisit)
-            .Union(byStep)
-            .Union(byReferral)
+            .Select(p => p.Id)
             .ToListAsync();
+        foreach (var id in primaryIds) ids.Add(id);
 
-        return [.. ids];
+        // 2. Patients linked via appointments
+        var appointmentIds = await db.Appointments
+            .Where(a => a.DoctorId == d && a.IsActive)
+            .Select(a => a.PatientId)
+            .ToListAsync();
+        foreach (var id in appointmentIds) ids.Add(id);
+
+        // 3. Patients linked via visits
+        var visitIds = await db.Visits
+            .Where(v => v.DoctorId == d && v.IsActive)
+            .Select(v => v.PatientId)
+            .ToListAsync();
+        foreach (var id in visitIds) ids.Add(id);
+
+        // 4. Patients linked via treatment plan steps
+        var stepIds = await db.PatientTreatmentPlanSteps
+            .Where(s => s.ResponsibleDoctorId == d && s.IsActive)
+            .Select(s => s.PatientId)
+            .ToListAsync();
+        foreach (var id in stepIds) ids.Add(id);
+
+        // 5. Patients linked via internal referrals (doctor is the recipient)
+        var referralIds = await db.InternalReferrals
+            .Where(r => r.ToDoctorId == d && r.IsActive)
+            .Select(r => r.PatientId)
+            .ToListAsync();
+        foreach (var id in referralIds) ids.Add(id);
+
+        return ids;
     }
 }

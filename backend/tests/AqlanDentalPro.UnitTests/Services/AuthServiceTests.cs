@@ -1,7 +1,10 @@
 using System.Reflection;
+using AqlanDentalPro.Application.DTOs.Auth;
 using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -171,5 +174,125 @@ public class AuthServiceTests
 
         var result = CallVerifyPassword(password, hash, "not-valid-salt!!!");
         result.Should().BeFalse();
+    }
+
+    // ─── MapToDto Tests (HOTFIX PR165: IsActive/Email were missing) ──────────
+
+    private static readonly MethodInfo MapToDtoMethod =
+        typeof(AuthService).GetMethod("MapToDto",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            null,
+            [typeof(User)],
+            null)!;
+
+    private static UserDto CallMapToDto(User user) =>
+        (UserDto)MapToDtoMethod.Invoke(null, [user])!;
+
+    [Fact]
+    public void MapToDto_MapsIsActive_True()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "testuser",
+            Role = UserRole.Reception,
+            IsActive = true,
+            PasswordHash = "h",
+            PasswordSalt = "s"
+        };
+
+        var dto = CallMapToDto(user);
+        dto.IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public void MapToDto_MapsIsActive_False()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "inactiveuser",
+            Role = UserRole.Reception,
+            IsActive = false,
+            PasswordHash = "h",
+            PasswordSalt = "s"
+        };
+
+        var dto = CallMapToDto(user);
+        dto.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void MapToDto_MapsEmail_WhenSet()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "emailuser",
+            Role = UserRole.Accountant,
+            Email = "test@aqlan.com",
+            IsActive = true,
+            PasswordHash = "h",
+            PasswordSalt = "s"
+        };
+
+        var dto = CallMapToDto(user);
+        dto.Email.Should().Be("test@aqlan.com");
+    }
+
+    [Fact]
+    public void MapToDto_MapsEmail_Null_WhenNotSet()
+    {
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "noemailuser",
+            Role = UserRole.Accountant,
+            Email = null,
+            IsActive = true,
+            PasswordHash = "h",
+            PasswordSalt = "s"
+        };
+
+        var dto = CallMapToDto(user);
+        dto.Email.Should().BeNull();
+    }
+
+    [Fact]
+    public void MapToDto_MapsAllFields()
+    {
+        var doctorId = Guid.NewGuid();
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "dr_test",
+            Role = UserRole.GeneralDentist,
+            Email = "dr@aqlan.com",
+            IsActive = true,
+            MustChangePassword = true,
+            PasswordHash = "h",
+            PasswordSalt = "s",
+            Doctor = new Doctor
+            {
+                Id = doctorId,
+                Name = "د. أحمد",
+                Color = "#FF0000",
+                AvatarInitials = "أ",
+                IsActive = true,
+            }
+        };
+
+        var dto = CallMapToDto(user);
+
+        dto.Id.Should().Be(user.Id);
+        dto.Username.Should().Be("dr_test");
+        dto.Role.Should().Be("GeneralDentist");
+        dto.Email.Should().Be("dr@aqlan.com");
+        dto.IsActive.Should().BeTrue();
+        dto.MustChangePassword.Should().BeTrue();
+        dto.DoctorId.Should().Be(doctorId);
+        dto.DoctorName.Should().Be("د. أحمد");
+        dto.DoctorColor.Should().Be("#FF0000");
+        dto.DoctorInitials.Should().Be("أ");
     }
 }

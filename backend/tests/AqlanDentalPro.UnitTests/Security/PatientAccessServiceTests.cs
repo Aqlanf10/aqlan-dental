@@ -341,4 +341,152 @@ public class PatientAccessServiceTests
         ids.Should().NotBeNull();
         ids!.Should().BeEmpty();
     }
+
+    // ── GetAccessiblePatientIds: per-link-type (HOTFIX PR165 regression) ─────
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_DoctorWithPrimaryLink_ReturnsPatient()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, _) = await SeedPatientAndDoctor(db, userId, isPrimary: true);
+
+        var svc = Build(db, CreateUser(userId, UserRole.GeneralDentist));
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids!.Should().Contain(patient.Id);
+    }
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_DoctorWithAppointmentLink_ReturnsPatient()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        db.Appointments.Add(new Appointment
+        {
+            PatientId = patient.Id,
+            DoctorId = doctor.Id,
+            AppointmentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            StartTime = TimeOnly.FromDateTime(DateTime.UtcNow),
+            EndTime = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(1)),
+            Status = AppointmentStatus.Scheduled,
+            AppointmentType = "استشارة",
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.GeneralDentist));
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids!.Should().Contain(patient.Id);
+    }
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_DoctorWithVisitLink_ReturnsPatient()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        db.Visits.Add(new Visit
+        {
+            PatientId = patient.Id,
+            DoctorId = doctor.Id,
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.GeneralDentist));
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids!.Should().Contain(patient.Id);
+    }
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_DoctorWithTreatmentStepLink_ReturnsPatient()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        db.PatientTreatmentPlanSteps.Add(new PatientTreatmentPlanStep
+        {
+            PatientId = patient.Id,
+            ResponsibleDoctorId = doctor.Id,
+            Title = "تقويم",
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.Orthodontist));
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids!.Should().Contain(patient.Id);
+    }
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_DoctorWithReferralLink_ReturnsPatient()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        // Create a separate from-doctor
+        var fromUserId = Guid.NewGuid();
+        var fromUser = new User { Id = fromUserId, Username = "drFrom", Role = UserRole.Orthodontist, IsActive = true, PasswordHash = "h", PasswordSalt = "s" };
+        db.Users.Add(fromUser);
+        var fromDoctor = new Doctor { UserId = fromUserId, Name = "د. المحيل", IsActive = true };
+        db.Doctors.Add(fromDoctor);
+        await db.SaveChangesAsync();
+
+        db.InternalReferrals.Add(new InternalReferral
+        {
+            PatientId = patient.Id,
+            FromDoctorId = fromDoctor.Id,
+            ToDoctorId = doctor.Id,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.GeneralDentist));
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids!.Should().Contain(patient.Id);
+    }
+
+    [Fact]
+    public async Task GetAccessiblePatientIds_NoDuplicateIds_WhenMultipleLinks()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId, isPrimary: true);
+
+        // Add appointment link to the same patient — should not duplicate
+        db.Appointments.Add(new Appointment
+        {
+            PatientId = patient.Id,
+            DoctorId = doctor.Id,
+            AppointmentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            StartTime = TimeOnly.FromDateTime(DateTime.UtcNow),
+            EndTime = TimeOnly.FromDateTime(DateTime.UtcNow.AddHours(1)),
+            Status = AppointmentStatus.Scheduled,
+            AppointmentType = "علاج",
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.GeneralDentist));
+        var ids = await svc.GetAccessiblePatientIdsAsync();
+
+        ids.Should().NotBeNull();
+        ids!.Should().ContainSingle(p => p == patient.Id);
+    }
 }

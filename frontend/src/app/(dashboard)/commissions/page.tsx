@@ -7,6 +7,7 @@ import {
   TrendingUp, Wallet, Building2,
   ChevronDown, ChevronUp, Search, RotateCcw,
   DollarSign, Receipt, PiggyBank, Calculator,
+  ShieldOff,
 } from "lucide-react";
 import {
   useCommissionReport, useRecordCommissionPayment,
@@ -529,17 +530,30 @@ export default function CommissionsPage() {
         {/* Error state */}
         {!isLoading && error && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-4">
-              <AlertTriangle className="w-7 h-7 text-red-500" />
-            </div>
-            <p className="text-sm font-semibold text-gray-800 mb-1">تعذّر تحميل التقرير</p>
-            <p className="text-xs text-gray-400 mb-4">حدث خطأ أثناء جلب بيانات العمولات. يرجى المحاولة مرة أخرى.</p>
-            <button
-              onClick={() => applied && refetch()}
-              className="flex items-center gap-2 px-4 py-2 bg-clinic-blue text-white rounded-lg text-sm font-medium hover:bg-clinic-blue/90 transition"
-            >
-              <RefreshCw className="w-4 h-4" /> إعادة المحاولة
-            </button>
+            {/* Permission denied (403) */}
+            {(error as { response?: { status?: number } })?.response?.status === 403 ? (
+              <>
+                <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center mb-4">
+                  <ShieldOff className="w-7 h-7 text-amber-500" />
+                </div>
+                <p className="text-sm font-semibold text-gray-800 mb-1">ليس لديك صلاحية عرض هذا التقرير</p>
+                <p className="text-xs text-gray-400 mb-4">تواصل مع مدير النظام للحصول على صلاحية الوصول لتقارير العمولات</p>
+              </>
+            ) : (
+              <>
+                <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                  <AlertTriangle className="w-7 h-7 text-red-500" />
+                </div>
+                <p className="text-sm font-semibold text-gray-800 mb-1">تعذّر تحميل التقرير</p>
+                <p className="text-xs text-gray-400 mb-4">حدث خطأ أثناء جلب بيانات العمولات. يرجى المحاولة مرة أخرى.</p>
+                <button
+                  onClick={() => applied && refetch()}
+                  className="flex items-center gap-2 px-4 py-2 bg-clinic-blue text-white rounded-lg text-sm font-medium hover:bg-clinic-blue/90 transition"
+                >
+                  <RefreshCw className="w-4 h-4" /> إعادة المحاولة
+                </button>
+              </>
+            )}
           </div>
         )}
 

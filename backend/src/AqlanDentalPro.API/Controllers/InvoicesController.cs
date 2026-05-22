@@ -252,8 +252,35 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to load invoice {InvoiceId}. Inner: {InnerMessage}", id, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "فشل تحميل الفاتورة — يرجى المحاولة مرة أخرى" });
+            logger.LogError(ex, "Failed to load invoice {InvoiceId} with full includes. Inner: {InnerMessage}", id, ex.InnerException?.Message ?? ex.Message);
+
+            // Fallback: try without the potentially problematic ThenInclude(Doctor)
+            // This handles cases where the DoctorId FK or Doctor navigation isn't fully migrated
+            try
+            {
+                invoice = await db.Invoices
+                    .Include(i => i.Patient)
+                    .Include(i => i.Visit)
+                    .Include(i => i.Appointment)
+                    .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
+                        .ThenInclude(l => l.Service)
+                    .Include(i => i.Payments.Where(p => p.IsActive))
+                    .FirstOrDefaultAsync(i => i.Id == id);
+
+                if (invoice != null)
+                {
+                    // Manually load Doctor for each line item
+                    foreach (var li in invoice.LineItems.Where(l => l.DoctorId.HasValue))
+                    {
+                        await db.Entry(li).Reference(l => l.Doctor).LoadAsync();
+                    }
+                }
+            }
+            catch (Exception ex2)
+            {
+                logger.LogError(ex2, "Failed to load invoice {InvoiceId} even with fallback query. Inner: {InnerMessage}", id, ex2.InnerException?.Message ?? ex2.Message);
+                return StatusCode(500, new { message = "فشل تحميل الفاتورة — يرجى المحاولة مرة أخرى" });
+            }
         }
 
         if (invoice == null)

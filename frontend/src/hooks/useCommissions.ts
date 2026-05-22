@@ -84,6 +84,8 @@ export function useCommissionReport(params: {
   from: string; to: string;
   doctorId?: string; branchId?: string;
   commissionStatus?: string;
+  paymentStatus?: string;
+  serviceCategory?: string;
 } | null) {
   return useQuery({
     queryKey: ["commissions", "report", params],
@@ -92,6 +94,8 @@ export function useCommissionReport(params: {
       if (params?.doctorId)         p.append("doctorId", params.doctorId);
       if (params?.branchId)         p.append("branchId", params.branchId);
       if (params?.commissionStatus) p.append("commissionStatus", params.commissionStatus);
+      if (params?.paymentStatus)    p.append("paymentStatus", params.paymentStatus);
+      if (params?.serviceCategory)  p.append("serviceCategory", params.serviceCategory);
       const { data } = await api.get<CommissionReport>(`/api/commissions/report?${p}`);
       return data;
     },

@@ -6,7 +6,7 @@ namespace AqlanDentalPro.Application.Interfaces.Repositories;
 
 public interface IPatientRepository : IGenericRepository<Patient>
 {
-    Task<PaginatedResponse<Patient>> SearchAsync(string? search, int page, int pageSize, Guid? branchId, string? gender = null, Guid? doctorId = null, string? status = "active");
+    Task<PaginatedResponse<Patient>> SearchAsync(string? search, int page, int pageSize, Guid? branchId, string? gender = null, Guid? doctorId = null, string? status = "active", IReadOnlySet<Guid>? allowedPatientIds = null);
     Task<Patient?> GetWithHistoriesAsync(Guid id);
     Task<Patient?> GetWithHistoriesIgnoreFiltersAsync(Guid id);
     Task<Patient?> GetByIdIgnoreFiltersAsync(Guid id);

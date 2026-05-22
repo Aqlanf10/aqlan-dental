@@ -19,13 +19,14 @@ public class PatientsController(
     FinanceService financeService,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess,
+    IAuditService audit,
     ILogger<PatientsController> logger) : ControllerBase
 {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns 403 if the current doctor cannot access the patient.
-    /// Always returns null for non-doctor roles (no check needed).
+    /// Returns 403 if the current doctor cannot access the patient, writing an AuditLog entry
+    /// for both granted and denied outcomes.  Returns null when no check is needed.
     /// </summary>
     private async Task<IActionResult?> DenyIfDoctorCannotAccess(Guid patientId)
     {
@@ -37,8 +38,15 @@ public class PatientsController(
             logger.LogWarning(
                 "Patient access denied: user {UserId} (role {Role}) attempted to access patient {PatientId}",
                 currentUser.UserId, currentUser.Role, patientId);
+
+            await audit.LogAsync(AuditAction.View, "Patient", patientId,
+                newData: new { status = "denied", role = currentUser.Role?.ToString(), userId = currentUser.UserId });
+
             return StatusCode(403, new { message = "غير مصرح لك بعرض بيانات هذا المريض" });
         }
+
+        await audit.LogAsync(AuditAction.View, "Patient", patientId,
+            newData: new { status = "allowed", accessType = "clinical-limited", role = currentUser.Role?.ToString() });
 
         return null;
     }
@@ -54,16 +62,16 @@ public class PatientsController(
         [FromQuery] Guid? doctorId = null,
         [FromQuery] string? status = "active")
     {
-        // Doctors see only their assigned patients.
+        // Doctors see only the patients they are linked to (all 5 link types).
         if (patientAccess.IsDoctor)
         {
             var accessible = await patientAccess.GetAccessiblePatientIdsAsync();
             if (accessible == null || accessible.Count == 0)
                 return Ok(new { items = Array.Empty<object>(), total = 0, page, pageSize });
 
-            // Force the filter to the current doctor regardless of the doctorId query param.
-            var currentDoctorId = await patientAccess.GetCurrentDoctorIdAsync();
-            var result = await service.GetListAsync(search, page, pageSize, gender, currentDoctorId, status);
+            // Pass the full accessible set — covers primary, appointment, visit, step, referral links.
+            var result = await service.GetListAsync(search, page, pageSize, gender,
+                doctorId: null, status, allowedPatientIds: accessible);
             return Ok(result);
         }
 
@@ -85,6 +93,10 @@ public class PatientsController(
         // Doctors receive a clinical-only view without contact/finance fields.
         if (patientAccess.IsDoctor)
             return Ok(ToClinicalDto(patient));
+
+        // Non-doctor roles receive the full profile including contact info — log for compliance.
+        await audit.LogAsync(AuditAction.View, "PatientContactInfo", id,
+            newData: new { role = currentUser.Role?.ToString() });
 
         return Ok(patient);
     }
@@ -349,6 +361,10 @@ public class PatientsController(
             .Include(c => c.Payments)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
+
+        // Audit: non-doctor viewed financial summary.
+        await audit.LogAsync(AuditAction.View, "PatientFinanceSummary", id,
+            newData: new { role = currentUser.Role?.ToString() });
 
         return Ok(new
         {

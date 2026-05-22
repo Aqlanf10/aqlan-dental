@@ -77,6 +77,10 @@ public class PatientAccessService(
         if (await db.PatientTreatmentPlanSteps.AnyAsync(s => s.PatientId == patientId && s.ResponsibleDoctorId == d && s.IsActive))
             return true;
 
+        // Check internal referral link (doctor is the recipient of an active referral)
+        if (await db.InternalReferrals.AnyAsync(r => r.PatientId == patientId && r.ToDoctorId == d && r.IsActive))
+            return true;
+
         return false;
     }
 
@@ -107,10 +111,15 @@ public class PatientAccessService(
             .Where(s => s.ResponsibleDoctorId == d && s.IsActive)
             .Select(s => s.PatientId);
 
+        var byReferral = db.InternalReferrals
+            .Where(r => r.ToDoctorId == d && r.IsActive)
+            .Select(r => r.PatientId);
+
         var ids = await byPrimary
             .Union(byAppointment)
             .Union(byVisit)
             .Union(byStep)
+            .Union(byReferral)
             .ToListAsync();
 
         return [.. ids];

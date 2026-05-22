@@ -252,6 +252,34 @@ public class PatientAccessServiceTests
         (await svcB.CanAccessPatientAsync(patient.Id)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task CanAccessPatient_DoctorHasInternalReferral_ReturnsTrue()
+    {
+        await using var db = CreateDb();
+        var userId = Guid.NewGuid();
+        var (patient, doctor) = await SeedPatientAndDoctor(db, userId);
+
+        // fromDoctor is a separate doctor who refers the patient to our doctor
+        var fromUserId = Guid.NewGuid();
+        var fromUser = new User { Id = fromUserId, Username = "drFrom", Role = UserRole.Orthodontist, IsActive = true, PasswordHash = "h", PasswordSalt = "s" };
+        db.Users.Add(fromUser);
+        var fromDoctor = new Doctor { UserId = fromUserId, Name = "د. المحيل", IsActive = true };
+        db.Doctors.Add(fromDoctor);
+        await db.SaveChangesAsync();
+
+        db.InternalReferrals.Add(new InternalReferral
+        {
+            PatientId    = patient.Id,
+            FromDoctorId = fromDoctor.Id,
+            ToDoctorId   = doctor.Id,
+            IsActive     = true,
+        });
+        await db.SaveChangesAsync();
+
+        var svc = Build(db, CreateUser(userId, UserRole.GeneralDentist));
+        (await svc.CanAccessPatientAsync(patient.Id)).Should().BeTrue();
+    }
+
     // ── GetAccessiblePatientIds ───────────────────────────────────────────────
 
     [Fact]

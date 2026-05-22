@@ -15,7 +15,8 @@ public class PatientRepository(AppDbContext context)
         await DbSet.FirstOrDefaultAsync(predicate);
     public async Task<PaginatedResponse<Patient>> SearchAsync(
         string? search, int page, int pageSize, Guid? branchId,
-        string? gender = null, Guid? doctorId = null, string? status = "active")
+        string? gender = null, Guid? doctorId = null, string? status = "active",
+        IReadOnlySet<Guid>? allowedPatientIds = null)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var baseQuery = status?.ToLower() switch
@@ -67,6 +68,11 @@ public class PatientRepository(AppDbContext context)
 
         if (doctorId.HasValue)
             query = query.Where(p => p.PrimaryDoctorId == doctorId);
+
+        // For doctor roles: restrict to the pre-computed set of accessible patient IDs.
+        // This covers all link types (primary, appointment, visit, step, referral).
+        if (allowedPatientIds != null)
+            query = query.Where(p => allowedPatientIds.Contains(p.Id));
 
         var total = await query.CountAsync();
 

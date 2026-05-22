@@ -100,42 +100,59 @@ public class PatientAccessService(
         // The 5-way Union() fails on PostgreSQL when EF Core global soft-delete query filters
         // are active, causing HTTP 500 for doctors on GET /api/patients.
         // Each query is now simple and independently translatable by EF Core/Npgsql.
+        // Each query is wrapped in try-catch for resilience against missing tables
+        // (e.g. if a migration hasn't been applied yet).
 
         // 1. Patients where this doctor is the primary doctor
-        var primaryIds = await db.Patients
+        await SafeAddIdsAsync(ids, async () => await db.Patients
             .Where(p => p.PrimaryDoctorId == d && p.IsActive)
             .Select(p => p.Id)
-            .ToListAsync();
-        foreach (var id in primaryIds) ids.Add(id);
+            .ToListAsync(), "Patients.PrimaryDoctorId");
 
         // 2. Patients linked via appointments
-        var appointmentIds = await db.Appointments
+        await SafeAddIdsAsync(ids, async () => await db.Appointments
             .Where(a => a.DoctorId == d && a.IsActive)
             .Select(a => a.PatientId)
-            .ToListAsync();
-        foreach (var id in appointmentIds) ids.Add(id);
+            .ToListAsync(), "Appointments.DoctorId");
 
         // 3. Patients linked via visits
-        var visitIds = await db.Visits
+        await SafeAddIdsAsync(ids, async () => await db.Visits
             .Where(v => v.DoctorId == d && v.IsActive)
             .Select(v => v.PatientId)
-            .ToListAsync();
-        foreach (var id in visitIds) ids.Add(id);
+            .ToListAsync(), "Visits.DoctorId");
 
         // 4. Patients linked via treatment plan steps
-        var stepIds = await db.PatientTreatmentPlanSteps
+        await SafeAddIdsAsync(ids, async () => await db.PatientTreatmentPlanSteps
             .Where(s => s.ResponsibleDoctorId == d && s.IsActive)
             .Select(s => s.PatientId)
-            .ToListAsync();
-        foreach (var id in stepIds) ids.Add(id);
+            .ToListAsync(), "PatientTreatmentPlanSteps.ResponsibleDoctorId");
 
         // 5. Patients linked via internal referrals (doctor is the recipient)
-        var referralIds = await db.InternalReferrals
+        await SafeAddIdsAsync(ids, async () => await db.InternalReferrals
             .Where(r => r.ToDoctorId == d && r.IsActive)
             .Select(r => r.PatientId)
-            .ToListAsync();
-        foreach (var id in referralIds) ids.Add(id);
+            .ToListAsync(), "InternalReferrals.ToDoctorId");
 
         return ids;
+    }
+
+    /// <summary>
+    /// Safely executes a query and adds results to the hash set.
+    /// If the query fails (e.g. table doesn't exist due to pending migration),
+    /// logs a warning and continues without crashing.
+    /// </summary>
+    private async Task SafeAddIdsAsync(HashSet<Guid> ids, Func<Task<List<Guid>>> query, string label)
+    {
+        try
+        {
+            var result = await query();
+            foreach (var id in result) ids.Add(id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "PatientAccessService: Query for {Label} failed (table may not exist yet). Skipping.",
+                label);
+        }
     }
 }

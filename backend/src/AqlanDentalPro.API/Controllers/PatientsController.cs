@@ -65,7 +65,23 @@ public class PatientsController(
         // Doctors see only the patients they are linked to (all 5 link types).
         if (patientAccess.IsDoctor)
         {
-            var accessible = await patientAccess.GetAccessiblePatientIdsAsync();
+            HashSet<Guid>? accessible;
+            try
+            {
+                accessible = await patientAccess.GetAccessiblePatientIdsAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "GetAccessiblePatientIdsAsync failed for user {UserId} role {Role}",
+                    patientAccess.IsDoctor, User.Identity?.Name);
+                return StatusCode(500, new
+                {
+                    title = "Patient access query failed",
+                    detail = ex.InnerException?.Message ?? ex.Message,
+                    stackTrace = ex.StackTrace?.Split('\n').Take(3)
+                });
+            }
+
             if (accessible == null || accessible.Count == 0)
                 return Ok(new { items = Array.Empty<object>(), total = 0, page, pageSize });
 

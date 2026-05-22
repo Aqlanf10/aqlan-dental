@@ -66,3 +66,30 @@ public class DentalHistoryDto
     public bool TongueThrusing { get; set; }
     public string? Notes { get; set; }
 }
+
+/// <summary>
+/// Clinical-only patient view returned to doctor roles.
+/// Sensitive contact / financial fields are intentionally omitted.
+/// </summary>
+public class PatientClinicalDto
+{
+    public Guid Id { get; set; }
+    public string PatientNumber { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string? MiddleName { get; set; }
+    public string LastName { get; set; } = string.Empty;
+    public string? DateOfBirth { get; set; }
+    public string? Gender { get; set; }
+    public int? Age { get; set; }
+    public string? Occupation { get; set; }
+    public Guid? PrimaryDoctorId { get; set; }
+    public string? PrimaryDoctorName { get; set; }
+    public Guid? BranchId { get; set; }
+    public string? BranchName { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public bool IsActive { get; set; }
+    public MedicalHistoryDto? MedicalHistory { get; set; }
+    public DentalHistoryDto? DentalHistory { get; set; }
+    /// <summary>Always true — signals to the frontend that this is a restricted view.</summary>
+    public bool IsLimitedView { get; set; } = true;
+}

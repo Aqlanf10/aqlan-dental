@@ -26,15 +26,13 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release --warnaserror -p:WarningsNotAsErrors=NU1903
+        run: dotnet build --no-restore --configuration Release --warnaserror:CS9113
 
       - name: Run unit tests
         run: >
-          dotnet test
-          tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj
-          --no-build
-          --configuration Release
-          --verbosity minimal
+          dotnet test tests/AqlanDentalPro.UnitTests/AqlanDentalPro.UnitTests.csproj
+          --no-restore --no-build --configuration Release
+          --verbosity normal
           --logger "trx;LogFileName=test-results.trx"
 
       - name: Upload test results

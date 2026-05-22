@@ -19,10 +19,11 @@ public class PatientService(
     private string NumberPrefix => config["Settings:PatientNumberPrefix"] ?? "GM";
 
     public async Task<PaginatedResponse<PatientListDto>> GetListAsync(
-        string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null, string? status = "active")
+        string? search, int page, int pageSize, string? gender = null, Guid? doctorId = null,
+        string? status = "active", IReadOnlySet<Guid>? allowedPatientIds = null)
     {
         var branchId = currentUser.IsAdmin ? null : currentUser.BranchId;
-        var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId, status);
+        var result = await repo.SearchAsync(search, page, pageSize, branchId, gender, doctorId, status, allowedPatientIds);
 
         // Batch-load last visit/appointment dates for the current page
         var patientIds = result.Data.Select(p => p.Id).ToList();

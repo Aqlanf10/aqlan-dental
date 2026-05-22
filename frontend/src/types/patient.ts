@@ -57,7 +57,10 @@ export interface PatientProfile {
   dentalHistory?: DentalHistory;
   portalUsername?: string;
   portalTemporaryPassword?: string;  // Only set on creation, never persisted
+  /** Present only when the backend returns a clinical-only view for doctor roles. */
+  isLimitedView?: boolean;
 }
+
 
 export interface CreatePatientRequest {
   firstName: string;

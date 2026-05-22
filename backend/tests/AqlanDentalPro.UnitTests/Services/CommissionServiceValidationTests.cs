@@ -21,8 +21,8 @@ public class CommissionServiceValidationTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static CommissionService CreateService(AppDbContext db)
-        => new(db, NullLogger<CommissionService>.Instance);
+    private static CommissionService CreateService(AppDbContext db) =>
+        new(db, NullLogger<CommissionService>.Instance);
 
     // ── UpdateServiceDefaults: cost validation ────────────────────────────────
 

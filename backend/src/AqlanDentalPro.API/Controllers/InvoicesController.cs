@@ -254,8 +254,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
         {
             logger.LogError(ex, "Failed to load invoice {InvoiceId} with full includes. Inner: {InnerMessage}", id, ex.InnerException?.Message ?? ex.Message);
 
-            // Fallback: try without the potentially problematic ThenInclude(Doctor)
-            // This handles cases where the DoctorId FK or Doctor navigation isn't fully migrated
+            // Fallback 1: try without ThenInclude(Doctor)
             try
             {
                 invoice = await db.Invoices
@@ -269,17 +268,36 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
 
                 if (invoice != null)
                 {
-                    // Manually load Doctor for each line item
                     foreach (var li in invoice.LineItems.Where(l => l.DoctorId.HasValue))
-                    {
                         await db.Entry(li).Reference(l => l.Doctor).LoadAsync();
-                    }
                 }
             }
             catch (Exception ex2)
             {
-                logger.LogError(ex2, "Failed to load invoice {InvoiceId} even with fallback query. Inner: {InnerMessage}", id, ex2.InnerException?.Message ?? ex2.Message);
-                return StatusCode(500, new { message = "فشل تحميل الفاتورة — يرجى المحاولة مرة أخرى" });
+                logger.LogError(ex2, "Fallback1 failed for invoice {InvoiceId}. Inner: {InnerMessage}", id, ex2.InnerException?.Message ?? ex2.Message);
+
+                // Fallback 2: minimal query — no Includes, load navigation manually
+                try
+                {
+                    invoice = await db.Invoices
+                        .Include(i => i.Patient)
+                        .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
+                        .Include(i => i.Payments.Where(p => p.IsActive))
+                        .FirstOrDefaultAsync(i => i.Id == id);
+
+                    if (invoice != null)
+                    {
+                        foreach (var li in invoice.LineItems.Where(l => l.DoctorId.HasValue))
+                            await db.Entry(li).Reference(l => l.Doctor).LoadAsync();
+                        foreach (var li in invoice.LineItems.Where(l => l.ServiceId.HasValue))
+                            await db.Entry(li).Reference(l => l.Service).LoadAsync();
+                    }
+                }
+                catch (Exception ex3)
+                {
+                    logger.LogError(ex3, "All fallbacks failed for invoice {InvoiceId}. Inner: {InnerMessage}", id, ex3.InnerException?.Message ?? ex3.Message);
+                    return StatusCode(500, new { message = "فشل تحميل الفاتورة — يرجى المحاولة مرة أخرى" });
+                }
             }
         }
 

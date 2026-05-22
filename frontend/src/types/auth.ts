@@ -8,6 +8,9 @@ export interface UserDto {
   doctorColor?: string;
   doctorInitials?: string;
   mustChangePassword?: boolean;
+  email?: string;
+  isActive?: boolean;
+  deletedAt?: string | null;
 }
 
 export interface LoginRequest {
@@ -24,4 +27,23 @@ export interface LoginResponse {
 export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
+}
+
+export interface ForgotPasswordRequest {
+  usernameOrEmail: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export interface ImpersonateRequest {
+  reason: string;
+}
+
+export interface ImpersonateResponse {
+  accessToken: string;
+  user: UserDto;
 }

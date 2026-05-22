@@ -16,17 +16,23 @@ interface AuthState {
   user: UserDto | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  originalUser: UserDto | null;
+  isImpersonating: boolean;
   login: (credentials: LoginRequest) => Promise<boolean>;
   logout: () => Promise<void>;
   fetchMe: () => Promise<void>;
+  startImpersonation: (accessToken: string, user: UserDto) => void;
+  stopImpersonation: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       isAuthenticated: false,
       isLoading: false,
+      originalUser: null,
+      isImpersonating: false,
 
       login: async (credentials) => {
         set({ isLoading: true });
@@ -37,7 +43,7 @@ export const useAuthStore = create<AuthState>()(
           );
           localStorage.setItem("access_token", data.accessToken);
           setAuthCookie(true);
-          set({ user: data.user, isAuthenticated: true });
+          set({ user: data.user, isAuthenticated: true, originalUser: null, isImpersonating: false });
           // Return true if user must change password so caller can redirect
           return !!(data.mustChangePassword || data.user.mustChangePassword);
         } catch (error: unknown) {
@@ -57,7 +63,7 @@ export const useAuthStore = create<AuthState>()(
         }
         localStorage.removeItem("access_token");
         setAuthCookie(false);
-        set({ user: null, isAuthenticated: false });
+        set({ user: null, isAuthenticated: false, originalUser: null, isImpersonating: false });
       },
 
       fetchMe: async () => {
@@ -68,13 +74,56 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           localStorage.removeItem("access_token");
           setAuthCookie(false);
-          set({ user: null, isAuthenticated: false });
+          set({ user: null, isAuthenticated: false, isImpersonating: false });
         }
+      },
+
+      startImpersonation: (accessToken: string, user: UserDto) => {
+        const currentUser = get().user;
+        if (!currentUser) return;
+        // Store the original user and token for restoration
+        localStorage.setItem("aqlan_original_token", localStorage.getItem("access_token") ?? "");
+        localStorage.setItem("access_token", accessToken);
+        set({
+          originalUser: currentUser,
+          isImpersonating: true,
+          user,
+          isAuthenticated: true,
+        });
+      },
+
+      stopImpersonation: async () => {
+        const originalToken = localStorage.getItem("aqlan_original_token");
+        if (originalToken) {
+          localStorage.setItem("access_token", originalToken);
+          localStorage.removeItem("aqlan_original_token");
+        }
+        const { originalUser } = get();
+        if (originalUser) {
+          set({
+            user: originalUser,
+            originalUser: null,
+            isImpersonating: false,
+          });
+        }
+        // Also try to call the backend to invalidate the impersonation session
+        try {
+          await api.post("/api/auth/stop-impersonation");
+        } catch {
+          // Ignore errors - we've already restored the original token locally
+        }
+        // Refresh user data from backend to ensure consistency
+        await get().fetchMe();
       },
     }),
     {
       name: "aqlan-auth",
-      partialize: (s) => ({ user: s.user, isAuthenticated: s.isAuthenticated }),
+      partialize: (s) => ({
+        user: s.user,
+        isAuthenticated: s.isAuthenticated,
+        originalUser: s.originalUser,
+        isImpersonating: s.isImpersonating,
+      }),
       onRehydrateStorage: () => (state) => {
         // Sync cookie on rehydration
         if (state?.isAuthenticated) {

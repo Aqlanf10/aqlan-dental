@@ -6,6 +6,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, User as UserIcon, ArrowRight, Loader2, Phone, KeyRound, Globe } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useAuthStore } from "@/stores/authStore";
 import { usePatientAuthStore } from "@/stores/patientAuthStore";
 import portalApi from "@/lib/portalApi";
@@ -291,9 +292,13 @@ function StaffLoginPanel() {
         </div>
 
         <div className="text-center pt-1">
-          <span className="text-[13px]" style={{ color: "rgba(255,255,255,0.7)" }}>
-            لإعادة تعيين كلمة المرور، تواصل مع مدير النظام
-          </span>
+          <Link
+            href="/forgot-password"
+            className="text-[13px] hover:underline transition"
+            style={{ color: "rgba(61,122,181,0.9)" }}
+          >
+            نسيت كلمة السر؟
+          </Link>
         </div>
 
         {/* Submit — Brand Orange CTA */}

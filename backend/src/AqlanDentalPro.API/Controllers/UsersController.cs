@@ -8,6 +8,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -69,12 +70,61 @@ public sealed class ChangePasswordRequestValidator : AbstractValidator<ChangePas
     }
 }
 
+public sealed class UpdateUserRequest
+{
+    public string? Username { get; init; }
+    public string? Email { get; init; }
+    public string? Role { get; init; }
+    public string? DoctorName { get; init; }
+    public string? DoctorSpecialty { get; init; }
+    public string? DoctorColor { get; init; }
+}
+
+public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
+{
+    public UpdateUserRequestValidator()
+    {
+        RuleFor(x => x.Username)
+            .MinimumLength(3).WithMessage("اسم المستخدم يجب أن يكون 3 أحرف على الأقل")
+            .MaximumLength(50).WithMessage("اسم المستخدم يجب ألا يتجاوز 50 حرفاً")
+            .Matches(@"^[a-zA-Z0-9_]+$").WithMessage("اسم المستخدم يجب أن يحتوي على أحرف وأرقام وشرطة سفلية فقط")
+            .When(x => !string.IsNullOrWhiteSpace(x.Username));
+
+        RuleFor(x => x.Email)
+            .EmailAddress().WithMessage("البريد الإلكتروني غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.Email));
+
+        RuleFor(x => x.Role)
+            .Must(r => Enum.TryParse<UserRole>(r, out _)).WithMessage("الدور غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.Role));
+    }
+}
+
+public sealed class RejectResetRequest
+{
+    public string? Notes { get; init; }
+}
+
+public sealed class UpdateRolePermissionsRequest
+{
+    public string Resource { get; init; } = string.Empty;
+    public bool CanView { get; init; }
+    public bool CanCreate { get; init; }
+    public bool CanEdit { get; init; }
+    public bool CanDelete { get; init; }
+    public bool CanExport { get; init; }
+    public bool CanApprove { get; init; }
+}
+
 [ApiController]
 [Route("api/users")]
 [Authorize(Policy = "AdminOnly")]
 public class UsersController(
     AppDbContext db,
-    ICurrentUserService currentUser) : ControllerBase
+    ICurrentUserService currentUser,
+    IAuditService auditService,
+    ILoginAttemptService loginAttemptService,
+    ITokenService tokenService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -93,7 +143,8 @@ public class UsersController(
                                u.BranchId,
                                u.IsActive,
                                LastLoginAt = u.LastLogin,
-                               DoctorName = doctor != null ? doctor.Name : null
+                               DoctorName = doctor != null ? doctor.Name : null,
+                               u.DeletedAt
                            })
                           .ToListAsync();
 
@@ -140,6 +191,36 @@ public class UsersController(
         return Ok(filtered);
     }
 
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var user = await (from u in db.Users
+                          join d in db.Doctors on u.Id equals d.UserId into dj
+                          from doctor in dj.DefaultIfEmpty()
+                          where u.Id == id
+                          select new
+                          {
+                              u.Id,
+                              u.Username,
+                              u.Email,
+                              Role = u.Role.ToString(),
+                              u.BranchId,
+                              u.IsActive,
+                              u.MustChangePassword,
+                              LastLoginAt = u.LastLogin,
+                              u.DeletedAt,
+                              DoctorId = doctor != null ? (Guid?)doctor.Id : null,
+                              DoctorName = doctor != null ? doctor.Name : null,
+                              DoctorSpecialty = doctor != null ? doctor.Specialty : null,
+                              DoctorColor = doctor != null ? doctor.Color : null,
+                              DoctorInitials = doctor != null ? doctor.AvatarInitials : null
+                          })
+                         .FirstOrDefaultAsync();
+
+        if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+        return Ok(user);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest req)
     {
@@ -176,7 +257,98 @@ public class UsersController(
         }
 
         await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.Create, "users", user.Id, newData: new { user.Username, Role = user.Role.ToString(), user.Email });
+
         return Created($"/api/users/{user.Id}", new { user.Id, user.Username, Role = user.Role.ToString() });
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserRequest req)
+    {
+        var user = await db.Users
+            .Include(u => u.Doctor)
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+
+        var oldData = new { user.Username, user.Email, Role = user.Role.ToString() };
+
+        // Validate unique username (excluding self)
+        if (!string.IsNullOrWhiteSpace(req.Username) && req.Username != user.Username)
+        {
+            if (await db.Users.AnyAsync(u => u.Username == req.Username))
+                return Conflict(new { message = "اسم المستخدم مستخدم بالفعل" });
+            user.Username = req.Username;
+        }
+
+        // Validate email format
+        if (req.Email != null && req.Email != user.Email)
+        {
+            if (!string.IsNullOrWhiteSpace(req.Email))
+            {
+                // Basic email validation
+                try
+                {
+                    var addr = new System.Net.Mail.MailAddress(req.Email);
+                    if (addr.Address != req.Email) throw new FormatException();
+                }
+                catch
+                {
+                    return BadRequest(new { message = "البريد الإلكتروني غير صالح" });
+                }
+            }
+            user.Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email;
+        }
+
+        // Handle role change
+        if (!string.IsNullOrWhiteSpace(req.Role) && Enum.TryParse<UserRole>(req.Role, out var newRole) && newRole != user.Role)
+        {
+            // Prevent editing the last active admin's role to non-admin
+            if (user.Role == UserRole.Admin && newRole != UserRole.Admin)
+            {
+                var activeAdminCount = await db.Users.CountAsync(u => u.Role == UserRole.Admin && u.IsActive);
+                if (activeAdminCount <= 1)
+                    return BadRequest(new { message = "لا يمكن تغيير دور آخر مدير نشط" });
+            }
+
+            var oldRole = user.Role;
+            user.Role = newRole;
+
+            // If changing role from doctor to non-doctor, keep Doctor record but mark inactive
+            if (IsDoctorRole(oldRole) && !IsDoctorRole(newRole) && user.Doctor != null)
+            {
+                user.Doctor.IsActive = false;
+            }
+            // If changing role to doctor and no Doctor record exists, create one
+            else if (!IsDoctorRole(oldRole) && IsDoctorRole(newRole) && user.Doctor == null)
+            {
+                var doctorName = req.DoctorName ?? user.Username;
+                db.Doctors.Add(new Doctor
+                {
+                    UserId = user.Id,
+                    Name = doctorName,
+                    Specialty = req.DoctorSpecialty,
+                    Color = req.DoctorColor ?? "#0E7490",
+                    AvatarInitials = doctorName.Split(' ').FirstOrDefault()?.Substring(0, 1) ?? "د",
+                });
+            }
+        }
+
+        // Update doctor profile fields
+        if (user.Doctor != null)
+        {
+            if (!string.IsNullOrWhiteSpace(req.DoctorName)) user.Doctor.Name = req.DoctorName;
+            if (req.DoctorSpecialty != null) user.Doctor.Specialty = req.DoctorSpecialty;
+            if (req.DoctorColor != null) user.Doctor.Color = req.DoctorColor;
+        }
+
+        await db.SaveChangesAsync();
+
+        var newData = new { user.Username, user.Email, Role = user.Role.ToString() };
+        await auditService.LogAsync(AuditAction.Update, "users", user.Id, oldData, newData);
+
+        return Ok(new { user.Id, user.Username, Role = user.Role.ToString(), user.Email });
     }
 
     [HttpPut("{id:guid}/role")]
@@ -188,8 +360,22 @@ public class UsersController(
         if (!Enum.TryParse<UserRole>(req.Role, out var role))
             return BadRequest(new { message = "الدور غير صالح" });
 
+        // Prevent changing last admin's role
+        if (user.Role == UserRole.Admin && role != UserRole.Admin)
+        {
+            var activeAdminCount = await db.Users.CountAsync(u => u.Role == UserRole.Admin && u.IsActive);
+            if (activeAdminCount <= 1)
+                return BadRequest(new { message = "لا يمكن تغيير دور آخر مدير نشط" });
+        }
+
+        var oldRole = user.Role.ToString();
         user.Role = role;
         await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.Update, "users", user.Id,
+            oldData: new { Role = oldRole },
+            newData: new { Role = role.ToString() });
+
         return NoContent();
     }
 
@@ -199,9 +385,108 @@ public class UsersController(
         var user = await db.Users.FindAsync(id);
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
 
+        // Prevent deactivating the last active admin
+        if (user.IsActive && user.Role == UserRole.Admin)
+        {
+            var activeAdminCount = await db.Users.CountAsync(u => u.Role == UserRole.Admin && u.IsActive);
+            if (activeAdminCount <= 1)
+                return BadRequest(new { message = "لا يمكن تعطيل آخر مدير نشط" });
+        }
+
         user.IsActive = !user.IsActive;
+
+        var action = user.IsActive ? AuditAction.UserActivated : AuditAction.UserDeactivated;
         await db.SaveChangesAsync();
+
+        await auditService.LogAsync(action, "users", user.Id,
+            newData: new { IsActive = user.IsActive });
+
         return NoContent();
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+
+        // Prevent self-deletion
+        if (currentUser.UserId == id)
+            return BadRequest(new { message = "لا يمكنك حذف حسابك الخاص" });
+
+        // Prevent deleting the last active Admin
+        if (user.Role == UserRole.Admin && user.IsActive)
+        {
+            var activeAdminCount = await db.Users.CountAsync(u => u.Role == UserRole.Admin && u.IsActive);
+            if (activeAdminCount <= 1)
+                return BadRequest(new { message = "لا يمكن حذف آخر مدير نشط" });
+        }
+
+        user.IsActive = false;
+        user.DeletedAt = DateTime.UtcNow;
+        user.DeletedBy = currentUser.UserId;
+
+        await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.Delete, "users", user.Id,
+            newData: new { DeletedBy = currentUser.UserId });
+
+        return NoContent();
+    }
+
+    [HttpPost("{id:guid}/restore")]
+    public async Task<IActionResult> Restore(Guid id)
+    {
+        var user = await db.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+
+        if (user.IsActive)
+            return BadRequest(new { message = "المستخدم نشط بالفعل" });
+
+        user.IsActive = true;
+        user.DeletedAt = null;
+        user.DeletedBy = null;
+
+        await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.UserRestored, "users", user.Id);
+
+        return Ok(new { message = "تم استعادة المستخدم بنجاح", user.Id, user.Username });
+    }
+
+    [HttpPost("{id:guid}/reset-password")]
+    public async Task<IActionResult> ResetPassword(Guid id)
+    {
+        var user = await db.Users.FindAsync(id);
+        if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+
+        // Generate 12-char temporary password with uppercase+lowercase+digits+special
+        var tempPassword = GenerateTemporaryPassword();
+
+        // Hash with Argon2id + new per-user salt
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(tempPassword, salt);
+
+        user.PasswordHash = hash;
+        user.PasswordSalt = salt;
+        user.MustChangePassword = true;
+
+        // Reset login lockout
+        await loginAttemptService.ResetFailedAttemptsAsync(user.Username);
+
+        // Revoke all refresh tokens
+        await tokenService.RevokeAllRefreshTokensAsync(user.Id);
+
+        await db.SaveChangesAsync();
+
+        // Audit log: PasswordResetByAdmin — do NOT log the temp password
+        await auditService.LogAsync(AuditAction.PasswordResetByAdmin, "users", user.Id,
+            newData: new { MustChangePassword = true });
+
+        return Ok(new { message = "تم إعادة تعيين كلمة المرور بنجاح", tempPassword });
     }
 
     [HttpPost("me/change-password")]
@@ -224,8 +509,237 @@ public class UsersController(
         var newHash = AuthService.HashPassword(req.NewPassword, newSalt);
         user.PasswordHash = newHash;
         user.PasswordSalt = newSalt;
+        user.MustChangePassword = false;
 
         await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.PasswordChange, "users", user.Id);
+
         return Ok(new { message = "تم تغيير كلمة المرور بنجاح" });
+    }
+
+    // ── Password Reset Request Management ──────────────────────────────────
+
+    [HttpGet("password-reset-requests")]
+    public async Task<IActionResult> GetPasswordResetRequests()
+    {
+        var requests = await db.PasswordResetRequests
+            .Where(r => r.Status == "Pending")
+            .Include(r => r.User)
+            .OrderByDescending(r => r.RequestedAt)
+            .Select(r => new
+            {
+                r.Id,
+                r.UserId,
+                Username = r.User != null ? r.User.Username : null,
+                r.UsernameOrEmail,
+                r.RequestedAt,
+                r.Status,
+                r.Notes
+            })
+            .ToListAsync();
+
+        return Ok(requests);
+    }
+
+    [HttpPost("password-reset-requests/{id:guid}/approve")]
+    public async Task<IActionResult> ApproveResetRequest(Guid id)
+    {
+        var request = await db.PasswordResetRequests
+            .Include(r => r.User)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (request is null) return NotFound(new { message = "طلب إعادة التعيين غير موجود" });
+        if (request.Status != "Pending") return BadRequest(new { message = "الطلب ليس بحالة الانتظار" });
+
+        if (request.User is null)
+            return BadRequest(new { message = "المستخدم المرتبط بالطلب غير موجود" });
+
+        // Generate temp password
+        var tempPassword = GenerateTemporaryPassword();
+
+        // Reset user password
+        var salt = AuthService.GenerateSalt();
+        var hash = AuthService.HashPassword(tempPassword, salt);
+
+        request.User.PasswordHash = hash;
+        request.User.PasswordSalt = salt;
+        request.User.MustChangePassword = true;
+
+        // Update request status
+        request.Status = "Approved";
+        request.ApprovedByUserId = currentUser.UserId;
+        request.ApprovedAt = DateTime.UtcNow;
+
+        // Reset login lockout
+        await loginAttemptService.ResetFailedAttemptsAsync(request.User.Username);
+
+        // Revoke all refresh tokens
+        await tokenService.RevokeAllRefreshTokensAsync(request.User.Id);
+
+        await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.PasswordResetByAdmin, "users", request.User.Id,
+            newData: new { MustChangePassword = true, ResetRequestId = id });
+
+        return Ok(new { message = "تمت الموافقة على الطلب وإعادة تعيين كلمة المرور", tempPassword });
+    }
+
+    [HttpPost("password-reset-requests/{id:guid}/reject")]
+    public async Task<IActionResult> RejectResetRequest(Guid id, [FromBody] RejectResetRequest? req)
+    {
+        var request = await db.PasswordResetRequests.FindAsync(id);
+        if (request is null) return NotFound(new { message = "طلب إعادة التعيين غير موجود" });
+        if (request.Status != "Pending") return BadRequest(new { message = "الطلب ليس بحالة الانتظار" });
+
+        request.Status = "Rejected";
+        request.ApprovedByUserId = currentUser.UserId;
+        request.ApprovedAt = DateTime.UtcNow;
+        request.Notes = req?.Notes;
+
+        await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.Update, "password_reset_requests", id,
+            newData: new { Status = "Rejected", RejectedBy = currentUser.UserId });
+
+        return Ok(new { message = "تم رفض الطلب" });
+    }
+
+    // ── Permissions Management ─────────────────────────────────────────────
+
+    [HttpGet("/api/permissions")]
+    public async Task<IActionResult> GetAllPermissions()
+    {
+        var permissions = await db.RolePermissions
+            .Select(p => new
+            {
+                p.Id,
+                p.Role,
+                p.Resource,
+                p.CanView,
+                p.CanCreate,
+                p.CanEdit,
+                p.CanDelete,
+                p.CanExport,
+                p.CanApprove
+            })
+            .OrderBy(p => p.Role).ThenBy(p => p.Resource)
+            .ToListAsync();
+
+        return Ok(permissions);
+    }
+
+    [HttpGet("/api/roles/{role}/permissions")]
+    public async Task<IActionResult> GetRolePermissions(string role)
+    {
+        var permissions = await db.RolePermissions
+            .Where(p => p.Role == role)
+            .Select(p => new
+            {
+                p.Id,
+                p.Role,
+                p.Resource,
+                p.CanView,
+                p.CanCreate,
+                p.CanEdit,
+                p.CanDelete,
+                p.CanExport,
+                p.CanApprove
+            })
+            .ToListAsync();
+
+        return Ok(permissions);
+    }
+
+    [HttpPut("/api/roles/{role}/permissions")]
+    public async Task<IActionResult> UpdateRolePermissions(string role, [FromBody] List<UpdateRolePermissionsRequest> permissions)
+    {
+        // Validate role
+        if (!Enum.TryParse<UserRole>(role, out _))
+            return BadRequest(new { message = "الدور غير صالح" });
+
+        foreach (var perm in permissions)
+        {
+            var existing = await db.RolePermissions
+                .FirstOrDefaultAsync(p => p.Role == role && p.Resource == perm.Resource);
+
+            if (existing != null)
+            {
+                // Prevent removing all admin management permissions from Admin role
+                if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase)
+                    && perm.Resource == "user_management"
+                    && !perm.CanView && !perm.CanCreate && !perm.CanEdit && !perm.CanDelete)
+                {
+                    return BadRequest(new { message = "لا يمكن إزالة جميع صلاحيات إدارة المستخدمين من دور المدير" });
+                }
+
+                existing.CanView = perm.CanView;
+                existing.CanCreate = perm.CanCreate;
+                existing.CanEdit = perm.CanEdit;
+                existing.CanDelete = perm.CanDelete;
+                existing.CanExport = perm.CanExport;
+                existing.CanApprove = perm.CanApprove;
+            }
+            else
+            {
+                db.RolePermissions.Add(new RolePermission
+                {
+                    Role = role,
+                    Resource = perm.Resource,
+                    CanView = perm.CanView,
+                    CanCreate = perm.CanCreate,
+                    CanEdit = perm.CanEdit,
+                    CanDelete = perm.CanDelete,
+                    CanExport = perm.CanExport,
+                    CanApprove = perm.CanApprove
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.PermissionsChanged, "role_permissions",
+            newData: new { Role = role, Resources = permissions.Select(p => p.Resource).ToList() },
+            details: $"Updated permissions for role: {role}");
+
+        return Ok(new { message = "تم تحديث الصلاحيات بنجاح" });
+    }
+
+    // ── Helper Methods ─────────────────────────────────────────────────────
+
+    private static bool IsDoctorRole(UserRole role) =>
+        role is UserRole.Orthodontist or UserRole.GeneralDentist or UserRole.OralSurgeon;
+
+    private static string GenerateTemporaryPassword()
+    {
+        const string uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lowercase = "abcdefghjkmnpqrstuvwxyz";
+        const string digits = "23456789";
+        const string special = "!@#$%&*";
+        const string all = uppercase + lowercase + digits + special;
+
+        var bytes = RandomNumberGenerator.GetBytes(12);
+        var chars = new char[12];
+
+        // Ensure at least one of each category
+        chars[0] = uppercase[bytes[0] % uppercase.Length];
+        chars[1] = lowercase[bytes[1] % lowercase.Length];
+        chars[2] = digits[bytes[2] % digits.Length];
+        chars[3] = special[bytes[3] % special.Length];
+
+        // Fill remaining with random from all
+        for (int i = 4; i < 12; i++)
+        {
+            chars[i] = all[bytes[i] % all.Length];
+        }
+
+        // Shuffle using Fisher-Yates
+        for (int i = chars.Length - 1; i > 0; i--)
+        {
+            var j = bytes[i] % (i + 1);
+            (chars[i], chars[j]) = (chars[j], chars[i]);
+        }
+
+        return new string(chars);
     }
 }

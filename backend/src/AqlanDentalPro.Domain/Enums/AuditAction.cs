@@ -9,5 +9,18 @@ public enum AuditAction
     Export,
     Login,
     Logout,
-    Approve
+    Approve,
+    PasswordChange,
+    PasswordResetByAdmin,
+    ForgotPasswordRequested,
+    ResetTokenGenerated,
+    ResetTokenUsed,
+    ImpersonationStarted,
+    ImpersonationStopped,
+    ImpersonationDenied,
+    UserActivated,
+    UserDeactivated,
+    UserRestored,
+    PermissionsChanged,
+    UnauthorizedAttempt
 }

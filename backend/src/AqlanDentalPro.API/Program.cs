@@ -335,6 +335,19 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0 // No queue — reject immediately
             }));
 
+    // Forgot password rate limiting — 3 requests per 15 minutes per IP
+    options.AddPolicy("ForgotPasswordPolicy", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromMinutes(15),
+                SegmentsPerWindow = 3,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, IPAddress>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress ?? IPAddress.Loopback,
@@ -392,6 +405,7 @@ builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.IPatie
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
 builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHttpClient("WhatsApp", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);

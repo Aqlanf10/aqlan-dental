@@ -12,4 +12,7 @@ public class UserDto
     public string? DoctorInitials { get; set; }
     // SEC-02 FIX: Expose mustChangePassword flag so frontend can enforce password change
     public bool MustChangePassword { get; set; }
+    public string? Email { get; set; }
+    public bool IsActive { get; set; }
+    public DateTime? DeletedAt { get; set; }
 }

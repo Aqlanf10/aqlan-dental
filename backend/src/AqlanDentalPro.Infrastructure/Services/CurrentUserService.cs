@@ -42,4 +42,22 @@ public class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICur
 
     public bool IsAdmin => Role == UserRole.Admin;
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
+
+    public Guid? OriginalUserId
+    {
+        get
+        {
+            var origId = Principal?.FindFirstValue("originalUserId");
+            return Guid.TryParse(origId, out var id) ? id : null;
+        }
+    }
+
+    public bool IsImpersonating
+    {
+        get
+        {
+            var isImp = Principal?.FindFirstValue("isImpersonating");
+            return string.Equals(isImp, "true", StringComparison.OrdinalIgnoreCase);
+        }
+    }
 }

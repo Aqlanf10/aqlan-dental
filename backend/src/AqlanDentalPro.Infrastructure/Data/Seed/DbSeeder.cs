@@ -323,6 +323,18 @@ public static class DbSeeder
                 ["general_dentist"]= (true, true, false, false, false, false),
                 ["oral_surgeon"]   = (true, true, false, false, false, false),
             },
+            ["user_management"] = new()
+            {
+                ["admin"] = (true, true, true, true, false, true),
+            },
+            ["password_reset_requests"] = new()
+            {
+                ["admin"] = (true, false, true, false, false, true),
+            },
+            ["impersonation"] = new()
+            {
+                ["admin"] = (true, true, false, false, false, false),
+            },
         };
 
         foreach (var (resource, roles) in matrix)

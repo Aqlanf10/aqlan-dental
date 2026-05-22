@@ -10,4 +10,6 @@ public interface ICurrentUserService
     Guid? BranchId { get; }
     bool IsAdmin { get; }
     bool IsAuthenticated { get; }
+    Guid? OriginalUserId { get; }  // null if not impersonating
+    bool IsImpersonating { get; }
 }

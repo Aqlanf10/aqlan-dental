@@ -976,6 +976,135 @@ catch (Exception ex)
     svcLogger2.LogError(ex, "HOTFIX: Failed to ensure ClinicServices/ClinicRooms schema. Services and Commission endpoints may return 500!");
 }
 
+// ── CRITICAL: Ensure PasswordResetTokens and PasswordResetRequests tables exist ──
+// HOTFIX: PR #165 added password reset system entities. If ENABLE_STARTUP_DB_MAINTENANCE
+// is false, MigrateAsync() is skipped and these tables will be missing. Without them,
+// the forgot-password endpoint returns 500 for existing users. This block runs
+// UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var prsScope = app.Services.CreateScope();
+    var prsDb     = prsScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var prsLogger = prsScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await prsDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- PasswordResetTokens table
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'PasswordResetTokens'
+            ) THEN
+                CREATE TABLE "PasswordResetTokens" (
+                    "Id"        uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "UserId"    uuid                     NOT NULL,
+                    "TokenHash" character varying(200)   NOT NULL,
+                    "ExpiresAt" timestamp with time zone NOT NULL,
+                    "IsUsed"    boolean                  NOT NULL DEFAULT false,
+                    "UsedAt"    timestamp with time zone  NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                    CONSTRAINT "PK_PasswordResetTokens" PRIMARY KEY ("Id")
+                );
+            END IF;
+
+            -- Index on TokenHash (unique)
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'PasswordResetTokens' AND indexname = 'IX_PasswordResetTokens_TokenHash'
+            ) THEN
+                CREATE UNIQUE INDEX "IX_PasswordResetTokens_TokenHash" ON "PasswordResetTokens" ("TokenHash");
+            END IF;
+
+            -- Index on UserId
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'PasswordResetTokens' AND indexname = 'IX_PasswordResetTokens_UserId'
+            ) THEN
+                CREATE INDEX "IX_PasswordResetTokens_UserId" ON "PasswordResetTokens" ("UserId");
+            END IF;
+
+            -- FK: PasswordResetTokens → Users
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_PasswordResetTokens_Users_UserId'
+            ) THEN
+                ALTER TABLE "PasswordResetTokens"
+                    ADD CONSTRAINT "FK_PasswordResetTokens_Users_UserId"
+                    FOREIGN KEY ("UserId") REFERENCES "Users"("Id") ON DELETE CASCADE;
+            END IF;
+
+            -- PasswordResetRequests table
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'PasswordResetRequests'
+            ) THEN
+                CREATE TABLE "PasswordResetRequests" (
+                    "Id"                uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "UserId"            uuid                     NULL,
+                    "UsernameOrEmail"   character varying(200)   NOT NULL,
+                    "RequestedAt"       timestamp with time zone NOT NULL,
+                    "Status"            character varying(20)    NOT NULL DEFAULT 'Pending',
+                    "RequestedIpHash"   character varying(200)   NULL,
+                    "UserAgent"         character varying(500)   NULL,
+                    "ApprovedByUserId"  uuid                     NULL,
+                    "ApprovedAt"        timestamp with time zone  NULL,
+                    "Notes"             character varying(500)   NULL,
+                    "CreatedAt"         timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"         timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"          boolean                  NOT NULL DEFAULT true,
+                    CONSTRAINT "PK_PasswordResetRequests" PRIMARY KEY ("Id")
+                );
+            END IF;
+
+            -- Index on Status
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'PasswordResetRequests' AND indexname = 'IX_PasswordResetRequests_Status'
+            ) THEN
+                CREATE INDEX "IX_PasswordResetRequests_Status" ON "PasswordResetRequests" ("Status");
+            END IF;
+
+            -- Index on UserId
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'PasswordResetRequests' AND indexname = 'IX_PasswordResetRequests_UserId'
+            ) THEN
+                CREATE INDEX "IX_PasswordResetRequests_UserId" ON "PasswordResetRequests" ("UserId");
+            END IF;
+
+            -- FK: PasswordResetRequests → Users (UserId)
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_PasswordResetRequests_Users_UserId'
+            ) THEN
+                ALTER TABLE "PasswordResetRequests"
+                    ADD CONSTRAINT "FK_PasswordResetRequests_Users_UserId"
+                    FOREIGN KEY ("UserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
+            END IF;
+
+            -- FK: PasswordResetRequests → Users (ApprovedByUserId)
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_PasswordResetRequests_Users_ApprovedByUserId'
+            ) THEN
+                ALTER TABLE "PasswordResetRequests"
+                    ADD CONSTRAINT "FK_PasswordResetRequests_Users_ApprovedByUserId"
+                    FOREIGN KEY ("ApprovedByUserId") REFERENCES "Users"("Id") ON DELETE SET NULL;
+            END IF;
+
+            -- Users.EmailConfirmed column (for admin email verification)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Users') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'EmailConfirmed') THEN
+                    ALTER TABLE "Users" ADD COLUMN "EmailConfirmed" boolean NOT NULL DEFAULT false;
+                END IF;
+            END IF;
+        END $$;
+    """);
+
+    prsLogger.LogInformation("HOTFIX: PasswordResetTokens/PasswordResetRequests tables schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var prsLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    prsLogger2.LogError(ex, "HOTFIX: Failed to ensure PasswordReset tables schema. Forgot-password endpoint may return 500!");
+}
+
 // ── CRITICAL: Ensure Invoices and InvoiceLineItems tables exist ─────────────
 // HOTFIX: Migration history reconciliation failed in previous deployments,
 // causing MigrateAsync() to skip creating the Invoices and InvoiceLineItems

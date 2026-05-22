@@ -340,11 +340,20 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
                     AppointmentId = item.AppointmentId,
                     VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
                     DoctorId = item.DoctorId ?? item.Appointment?.DoctorId,
-                    Specialty = item.Appointment?.Specialty
+                    Specialty = item.Appointment?.Specialty,
+                    ServiceId = item.ServiceId ?? item.Appointment?.ServiceId
                 };
 
                 db.Visits.Add(visit);
-                await db.SaveChangesAsync(); // Save to get the ID
+                try
+                {
+                    await db.SaveChangesAsync(); // Save to get the ID
+                }
+                catch (DbUpdateException ex)
+                {
+                    logger.LogError(ex, "Failed to create visit for queue item {QueueItemId}. Inner: {InnerMessage}", id, ex.InnerException?.Message);
+                    throw;
+                }
                 item.VisitId = visit.Id;
             }
 

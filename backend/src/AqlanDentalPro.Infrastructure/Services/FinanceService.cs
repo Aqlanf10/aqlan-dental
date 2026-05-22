@@ -537,14 +537,43 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId)
     {
+        // ── Contract-based financials (legacy/ortho contracts) ───────────────
         var contracts = await db.Contracts
             .Include(c => c.Payments)
             .Where(c => c.PatientId == patientId)
             .ToListAsync();
 
-        var totalCost    = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
-        var totalPaid    = contracts.Sum(c => c.Payments.Sum(p => p.Amount));
-        var outstanding  = totalCost - totalPaid;
+        var contractCost    = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
+        var contractPaid    = contracts.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+
+        // ── Invoice-based financials (new invoice system) ───────────────────
+        var invoices = await db.Invoices
+            .Include(i => i.Payments)
+            .Where(i => i.PatientId == patientId
+                     && i.Status != InvoiceStatus.Cancelled
+                     && i.IsActive)
+            .ToListAsync();
+
+        var invoiceCost = invoices.Sum(i => i.TotalAmount);
+        var invoicePaid = invoices.Sum(i => i.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+
+        // ── Orphan payments (no ContractId and no InvoiceId) ────────────────
+        // Payments created before invoice linkage or without either FK are
+        // invisible to the contract/invoice sums above. Count them separately.
+        var invoiceIds = invoices.Select(i => i.Id).ToHashSet();
+        var contractIds = contracts.Select(c => c.Id).ToHashSet();
+
+        var orphanPaid = await db.Payments
+            .Where(p => p.PatientId == patientId
+                     && p.IsActive
+                     && (p.InvoiceId == null || !invoiceIds.Contains(p.InvoiceId.Value))
+                     && (p.ContractId == null || !contractIds.Contains(p.ContractId.Value)))
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+        // ── Combined totals ─────────────────────────────────────────────────
+        var totalCost      = contractCost + invoiceCost;
+        var totalPaid      = contractPaid + invoicePaid + orphanPaid;
+        var outstanding    = totalCost - totalPaid;
 
         var today          = DateOnly.FromDateTime(DateTime.Today);
         var overdueAmount  = 0m;
@@ -563,7 +592,13 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
 
-        var status = contracts.Count == 0 ? "no_plan"
+        var totalPaymentsCount = contracts.Sum(c => c.Payments.Count(p => p.IsActive))
+                               + invoices.Sum(i => i.Payments.Count(p => p.IsActive))
+                               + (orphanPaid > 0 ? await db.Payments.CountAsync(p => p.PatientId == patientId && p.IsActive
+                                   && (p.InvoiceId == null || !invoiceIds.Contains(p.InvoiceId.Value))
+                                   && (p.ContractId == null || !contractIds.Contains(p.ContractId.Value))) : 0);
+
+        var status = totalCost == 0 ? "no_plan"
             : outstanding <= 0 ? "paid"
             : overdueAmount > 0 ? "overdue"
             : "on_track";
@@ -577,7 +612,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             LatestPayment        = latestPayment == null ? null : MapPayment(latestPayment),
             FinancialStatus      = status,
             ActiveContractsCount = contracts.Count(c => c.Status == ContractStatus.Active),
-            TotalPaymentsCount   = contracts.Sum(c => c.Payments.Count)
+            TotalPaymentsCount   = totalPaymentsCount
         };
     }
 

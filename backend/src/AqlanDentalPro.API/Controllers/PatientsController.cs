@@ -308,10 +308,31 @@ public class PatientsController(PatientService service, AppDbContext db, IPatien
             .Take(50)
             .ToListAsync();
 
+        // Referral events — show referrals sent/received for this patient
+        var referralEvents = await db.InternalReferrals
+            .Where(r => r.PatientId == id && r.IsActive)
+            .Include(r => r.FromDoctor)
+            .Include(r => r.ToDoctor)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new
+            {
+                type = "referral",
+                id = r.Id,
+                date = r.CreatedAt.ToString("yyyy-MM-dd"),
+                title = r.Status == "pending" ? "إحالة جديدة" : r.Status == "accepted" ? "إحالة مقبولة" : "إحالة مكتملة",
+                description = r.FromDoctor != null && r.ToDoctor != null
+                    ? $"من {r.FromDoctor.Name} إلى {r.ToDoctor.Name}"
+                    : "إحالة داخلية",
+                status = r.Status
+            })
+            .Take(50)
+            .ToListAsync();
+
         // Merge and sort by date descending
         var allEvents = appointmentEvents
             .Cast<object>()
             .Concat(visitEvents)
+            .Concat(referralEvents)
             .OrderByDescending(e => ((dynamic)e).date)
             .Take(50)
             .ToList();

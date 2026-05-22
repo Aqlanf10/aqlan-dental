@@ -78,10 +78,14 @@ export default function CommissionsPage() {
   const rows    = report?.rows ?? [];
 
   function applyFilters() {
+    const effectiveDoctorId = isAdmin
+      ? (doctorId || undefined)
+      : (user?.doctorId || undefined); // Non-admin: auto-use their doctor ID
+
     setApplied({
       from,
       to,
-      doctorId:         doctorId || undefined,
+      doctorId: effectiveDoctorId,
       commissionStatus: commissionStatus || undefined,
     });
   }

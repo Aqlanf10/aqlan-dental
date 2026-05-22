@@ -105,6 +105,7 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
         Role = user.Role.ToString(),
         BranchId = user.BranchId,
         DoctorName = user.Doctor?.Name,
+        DoctorId = user.Doctor?.Id,
         DoctorColor = user.Doctor?.Color,
         DoctorInitials = user.Doctor?.AvatarInitials,
         MustChangePassword = user.MustChangePassword // SEC-02 FIX: Expose to frontend

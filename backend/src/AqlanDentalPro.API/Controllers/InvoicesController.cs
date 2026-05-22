@@ -80,6 +80,13 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             // Add line items if provided
             if (req.LineItems != null && req.LineItems.Count > 0)
             {
+                // Validate all DoctorIds upfront before any DB writes
+                var doctorIds = req.LineItems.Where(li => li.DoctorId.HasValue).Select(li => li.DoctorId!.Value).Distinct().ToList();
+                var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
+                var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
+                if (invalidDoctorId != Guid.Empty)
+                    return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
+
                 var sortOrder = 0;
                 foreach (var itemReq in req.LineItems)
                 {
@@ -246,7 +253,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to load invoice {InvoiceId}. Inner: {InnerMessage}", id, ex.InnerException?.Message ?? ex.Message);
-            return StatusCode(500, new { message = "فشل تحميل الفاتورة", detail = ex.InnerException?.Message ?? ex.Message });
+            return StatusCode(500, new { message = "فشل تحميل الفاتورة — يرجى المحاولة مرة أخرى" });
         }
 
         if (invoice == null)
@@ -379,6 +386,16 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
         // Replace line items if provided
         if (req.LineItems != null && req.LineItems.Count > 0)
         {
+            // Validate all DoctorIds upfront before any DB writes
+            var doctorIds = req.LineItems.Where(li => li.DoctorId.HasValue).Select(li => li.DoctorId!.Value).Distinct().ToList();
+            if (doctorIds.Count > 0)
+            {
+                var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
+                var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
+                if (invalidDoctorId != Guid.Empty)
+                    return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
+            }
+
             // Remove existing line items
             db.InvoiceLineItems.RemoveRange(invoice.LineItems);
 

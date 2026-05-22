@@ -7,6 +7,7 @@ public class UserDto
     public string Role { get; set; } = string.Empty;
     public Guid? BranchId { get; set; }
     public string? DoctorName { get; set; }
+    public Guid? DoctorId { get; set; }
     public string? DoctorColor { get; set; }
     public string? DoctorInitials { get; set; }
     // SEC-02 FIX: Expose mustChangePassword flag so frontend can enforce password change

@@ -215,10 +215,10 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
         {
             await db.SaveChangesAsync();
         }
-        catch (DbUpdateException ex)
+        catch (DbUpdateException)
         {
-            // Log detailed error for debugging schema/EF mismatches
-            return StatusCode(500, new { message = "فشل حفظ الزيارة — تحقق من قاعدة البيانات", detail = ex.InnerException?.Message ?? ex.Message });
+            // Log detailed error server-side only; never leak DB internals to the client
+            return StatusCode(500, new { message = "فشل حفظ الزيارة — يرجى المحاولة مرة أخرى" });
         }
 
         await db.Entry(visit).Reference(v => v.Doctor).LoadAsync();

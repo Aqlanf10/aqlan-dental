@@ -4,6 +4,7 @@ export interface UserDto {
   role: string;
   branchId?: string;
   doctorName?: string;
+  doctorId?: string;
   doctorColor?: string;
   doctorInitials?: string;
   mustChangePassword?: boolean;

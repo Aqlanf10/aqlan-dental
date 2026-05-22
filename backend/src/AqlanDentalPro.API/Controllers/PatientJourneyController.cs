@@ -349,6 +349,16 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
 
         db.Visits.Add(visit);
 
+        try
+        {
+            await db.SaveChangesAsync(); // Save to get the visit ID
+        }
+        catch (DbUpdateException ex)
+        {
+            logger.LogError(ex, "Failed to create visit for appointment {AppointmentId}. Inner: {InnerMessage}", appointmentId, ex.InnerException?.Message ?? ex.Message);
+            return StatusCode(500, new { message = "فشل إنشاء الزيارة — يرجى المحاولة مرة أخرى" });
+        }
+
         // Update queue item
         queueItem.VisitId = visit.Id;
         queueItem.Status = ClinicQueueStatus.InProgress;

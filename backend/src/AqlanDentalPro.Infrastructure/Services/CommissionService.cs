@@ -372,6 +372,12 @@ public class CommissionService(
             var doctor = await db.Doctors.FindAsync(item.DoctorId.Value);
             if (doctor?.DefaultCommissionPercentage.HasValue == true)
                 item.DoctorCommissionPercentage = doctor.DefaultCommissionPercentage.Value;
+            else
+                item.DoctorCommissionPercentage = 40m; // Sensible fallback: 40% when neither service nor doctor has a default
+        }
+        else
+        {
+            item.DoctorCommissionPercentage = 40m; // Sensible fallback: 40% when no doctor assigned and no service default
         }
 
         // If linked lab order exists, pull actual lab cost

@@ -113,6 +113,32 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
         return Ok(new { message = "تم تغيير كلمة المرور بنجاح", accessToken = newAccessToken });
     }
 
+    /// <summary>
+    /// Unlocks a locked-out account. Accessible without authentication but requires
+    /// the server-side ADMIN_UNLOCK_SECRET environment variable. This allows a
+    /// sysadmin to unlock any account (including the admin account) when locked out
+    /// due to too many failed login attempts.
+    /// </summary>
+    [HttpPost("unlock-account")]
+    [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
+    public async Task<IActionResult> UnlockAccount([FromBody] UnlockAccountRequest request)
+    {
+        // Validate the unlock secret from environment variables
+        var unlockSecret = Environment.GetEnvironmentVariable("ADMIN_UNLOCK_SECRET");
+        if (string.IsNullOrWhiteSpace(unlockSecret))
+            return StatusCode(403, new { message = "إلغاء القفل غير مفعّل — لم يتم تعيين المفتاح السري" });
+
+        if (request.Secret != unlockSecret)
+            return BadRequest(new { message = "المفتاح السري غير صحيح" });
+
+        if (string.IsNullOrWhiteSpace(request.Username))
+            return BadRequest(new { message = "اسم المستخدم مطلوب" });
+
+        await loginAttempts.ResetFailedAttemptsAsync(request.Username);
+        return Ok(new { message = $"تم إلغاء قفل الحساب '{request.Username}' بنجاح" });
+    }
+
     private void SetRefreshTokenCookie(string token)
     {
         var opts = new CookieOptions

@@ -1,14 +1,45 @@
 using AqlanDentalPro.Application.DTOs.Auth;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Application.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace AqlanDentalPro.API.Controllers;
 
+public sealed class ForgotPasswordRequest
+{
+    public string UsernameOrEmail { get; init; } = string.Empty;
+}
+
+public sealed class ResetPasswordRequest
+{
+    public string Token { get; init; } = string.Empty;
+    public string NewPassword { get; init; } = string.Empty;
+    public string ConfirmPassword { get; init; } = string.Empty;
+}
+
+public sealed class ImpersonateRequest
+{
+    public string Reason { get; init; } = string.Empty;
+}
+
 [ApiController]
 [Route("api/auth")]
-public class AuthController(IAuthService authService, ICurrentUserService currentUser, ITokenService tokenService, ILoginAttemptService loginAttempts) : ControllerBase
+public class AuthController(
+    IAuthService authService,
+    ICurrentUserService currentUser,
+    ITokenService tokenService,
+    ILoginAttemptService loginAttempts,
+    IAuditService auditService,
+    IEmailService emailService,
+    AppDbContext db) : ControllerBase
 {
     private const string RefreshTokenCookie = "refresh_token";
 
@@ -110,6 +141,8 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
         if (newAccessToken == null)
             return BadRequest(new { message = "كلمة المرور الحالية غير صحيحة" });
 
+        await auditService.LogAsync(AuditAction.PasswordChange, "users", userId.Value);
+
         return Ok(new { message = "تم تغيير كلمة المرور بنجاح", accessToken = newAccessToken });
     }
 
@@ -139,6 +172,235 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
         return Ok(new { message = $"تم إلغاء قفل الحساب '{request.Username}' بنجاح" });
     }
 
+    // ── Forgot Password ─────────────────────────────────────────────────────
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("ForgotPasswordPolicy")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        // Always return the same message — never reveal if account exists
+        var genericMessage = "إذا كان الحساب موجوداً، سيتم إرسال تعليمات استعادة كلمة المرور";
+
+        // Find user by username or email
+        var user = await db.Users
+            .FirstOrDefaultAsync(u => u.Username == request.UsernameOrEmail || u.Email == request.UsernameOrEmail);
+
+        if (user is null || !user.IsActive)
+        {
+            // User not found — just return generic message, no audit
+            return Ok(new { message = genericMessage });
+        }
+
+        var smtpConfigured = await emailService.IsConfiguredAsync();
+
+        if (!string.IsNullOrWhiteSpace(user.Email) && smtpConfigured)
+        {
+            // Generate secure random token (64 bytes, Base64)
+            var tokenBytes = RandomNumberGenerator.GetBytes(64);
+            var rawToken = Convert.ToBase64String(tokenBytes);
+
+            // Hash token for storage (SHA256)
+            var tokenHash = HashToken(rawToken);
+
+            // Store hashed token with 30min expiry
+            db.PasswordResetTokens.Add(new PasswordResetToken
+            {
+                UserId = user.Id,
+                TokenHash = tokenHash,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(30)
+            });
+
+            await db.SaveChangesAsync();
+
+            // Send email with reset link
+            await emailService.SendPasswordResetEmailAsync(user.Email, rawToken, "reset-password");
+
+            await auditService.LogAsync(AuditAction.ForgotPasswordRequested, "users", user.Id);
+            await auditService.LogAsync(AuditAction.ResetTokenGenerated, "password_reset_tokens", user.Id);
+        }
+        else
+        {
+            // No email or SMTP not configured — create a PasswordResetRequest for admin
+            db.PasswordResetRequests.Add(new PasswordResetRequest
+            {
+                UserId = user.Id,
+                UsernameOrEmail = request.UsernameOrEmail,
+                Status = "Pending",
+                RequestedAt = DateTime.UtcNow
+            });
+
+            await db.SaveChangesAsync();
+
+            await auditService.LogAsync(AuditAction.ForgotPasswordRequested, "users", user.Id);
+        }
+
+        return Ok(new { message = genericMessage });
+    }
+
+    // ── Reset Password with Token ───────────────────────────────────────────
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    [EnableRateLimiting("PortalPasswordResetPolicy")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        // Validate passwords match
+        if (request.NewPassword != request.ConfirmPassword)
+            return BadRequest(new { message = "كلمة المرور الجديدة وتأكيدها غير متطابقين" });
+
+        // Validate password strength (min 8 chars)
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
+            return BadRequest(new { message = "كلمة المرور يجب أن تكون 8 أحرف على الأقل" });
+
+        // Hash provided token, look up in PasswordResetTokens
+        var tokenHash = HashToken(request.Token);
+        var resetToken = await db.PasswordResetTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
+
+        // Validate: exists, not expired, not used
+        if (resetToken is null)
+            return BadRequest(new { message = "رابط إعادة التعيين غير صالح" });
+
+        if (resetToken.IsUsed)
+            return BadRequest(new { message = "رابط إعادة التعيين مستخدم بالفعل" });
+
+        if (resetToken.ExpiresAt < DateTime.UtcNow)
+            return BadRequest(new { message = "انتهت صلاحية رابط إعادة التعيين" });
+
+        // Get user
+        var user = await db.Users.FindAsync(resetToken.UserId);
+        if (user is null)
+            return BadRequest(new { message = "المستخدم غير موجود" });
+
+        // Update user password hash/salt
+        var newSalt = AuthService.GenerateSalt();
+        var newHash = AuthService.HashPassword(request.NewPassword, newSalt);
+        user.PasswordHash = newHash;
+        user.PasswordSalt = newSalt;
+        user.MustChangePassword = false;
+
+        // Mark token as used
+        resetToken.IsUsed = true;
+        resetToken.UsedAt = DateTime.UtcNow;
+
+        // Reset login lockout
+        await loginAttempts.ResetFailedAttemptsAsync(user.Username);
+
+        // Revoke all refresh tokens
+        await tokenService.RevokeAllRefreshTokensAsync(user.Id);
+
+        await db.SaveChangesAsync();
+
+        await auditService.LogAsync(AuditAction.ResetTokenUsed, "users", user.Id);
+
+        return Ok(new { message = "تم إعادة تعيين كلمة المرور بنجاح" });
+    }
+
+    // ── Impersonation ───────────────────────────────────────────────────────
+
+    [HttpPost("impersonate/{userId:guid}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> Impersonate(Guid userId, [FromBody] ImpersonateRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return BadRequest(new { message = "يجب تحديد سبب الانتحال" });
+
+        // Target user must exist and be active (not deleted)
+        var targetUser = await db.Users
+            .Include(u => u.Doctor)
+            .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+
+        if (targetUser is null)
+            return NotFound(new { message = "المستخدم المستهدف غير موجود أو غير نشط" });
+
+        // Normal admin cannot impersonate another admin
+        if (targetUser.Role == UserRole.Admin)
+        {
+            await auditService.LogAsync(AuditAction.ImpersonationDenied, "users", userId,
+                details: $"Admin {currentUser.Username} attempted to impersonate another admin {targetUser.Username}");
+            return Forbid("لا يمكن الانتحال بحساب مدير آخر");
+        }
+
+        var originalUserId = currentUser.OriginalUserId ?? currentUser.UserId;
+        var originalRole = currentUser.Role?.ToString();
+
+        // Generate access token with impersonation claims
+        var accessToken = tokenService.GenerateAccessToken(targetUser, originalUserId, originalRole);
+        var refreshToken = tokenService.GenerateRefreshToken();
+        await tokenService.StoreRefreshTokenAsync(targetUser.Id, refreshToken);
+
+        SetRefreshTokenCookie(refreshToken);
+
+        await auditService.LogAsync(AuditAction.ImpersonationStarted, "users", userId,
+            details: $"Admin {currentUser.Username} started impersonating {targetUser.Username}. Reason: {request.Reason}");
+
+        var userDto = new UserDto
+        {
+            Id = targetUser.Id,
+            Username = targetUser.Username,
+            Role = targetUser.Role.ToString(),
+            BranchId = targetUser.BranchId,
+            DoctorName = targetUser.Doctor?.Name,
+            DoctorId = targetUser.Doctor?.Id,
+            DoctorColor = targetUser.Doctor?.Color,
+            DoctorInitials = targetUser.Doctor?.AvatarInitials,
+            MustChangePassword = targetUser.MustChangePassword,
+            Email = targetUser.Email,
+            IsActive = targetUser.IsActive
+        };
+
+        return Ok(new { accessToken, user = userDto, isImpersonating = true });
+    }
+
+    [HttpPost("stop-impersonation")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> StopImpersonation()
+    {
+        // Must be currently impersonating
+        if (!currentUser.IsImpersonating || !currentUser.OriginalUserId.HasValue)
+            return BadRequest(new { message = "أنت لا تنتحل حالياً" });
+
+        var originalUserId = currentUser.OriginalUserId.Value;
+
+        // Get original user
+        var originalUser = await db.Users
+            .Include(u => u.Doctor)
+            .FirstOrDefaultAsync(u => u.Id == originalUserId);
+
+        if (originalUser is null)
+            return NotFound(new { message = "المستخدم الأصلي غير موجود" });
+
+        // Generate new access token for original user (without impersonation claims)
+        var accessToken = tokenService.GenerateAccessToken(originalUser);
+        var refreshToken = tokenService.GenerateRefreshToken();
+        await tokenService.StoreRefreshTokenAsync(originalUser.Id, refreshToken);
+
+        SetRefreshTokenCookie(refreshToken);
+
+        await auditService.LogAsync(AuditAction.ImpersonationStopped, "users", originalUserId,
+            details: $"Stopped impersonation, returned to user {originalUser.Username}");
+
+        var userDto = new UserDto
+        {
+            Id = originalUser.Id,
+            Username = originalUser.Username,
+            Role = originalUser.Role.ToString(),
+            BranchId = originalUser.BranchId,
+            DoctorName = originalUser.Doctor?.Name,
+            DoctorId = originalUser.Doctor?.Id,
+            DoctorColor = originalUser.Doctor?.Color,
+            DoctorInitials = originalUser.Doctor?.AvatarInitials,
+            MustChangePassword = originalUser.MustChangePassword,
+            Email = originalUser.Email,
+            IsActive = originalUser.IsActive
+        };
+
+        return Ok(new { accessToken, user = userDto, isImpersonating = false });
+    }
+
+    // ── Helper Methods ─────────────────────────────────────────────────────
+
     private void SetRefreshTokenCookie(string token)
     {
         var opts = new CookieOptions
@@ -149,5 +411,11 @@ public class AuthController(IAuthService authService, ICurrentUserService curren
             Expires = DateTimeOffset.UtcNow.AddDays(7)
         };
         Response.Cookies.Append(RefreshTokenCookie, token, opts);
+    }
+
+    private static string HashToken(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }

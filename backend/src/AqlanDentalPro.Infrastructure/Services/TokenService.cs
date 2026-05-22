@@ -41,6 +41,11 @@ public class TokenService : ITokenService
 
     public string GenerateAccessToken(User user)
     {
+        return GenerateAccessToken(user, null, null);
+    }
+
+    public string GenerateAccessToken(User user, Guid? originalUserId = null, string? originalRole = null)
+    {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:SecretKey"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expiry = DateTime.UtcNow.AddMinutes(int.Parse(_config["Jwt:AccessTokenExpiryMinutes"] ?? "15"));
@@ -55,6 +60,17 @@ public class TokenService : ITokenService
             // SEC-02 FIX: Include mustChangePassword claim so middleware can enforce password change
             new("mustChangePassword", user.MustChangePassword.ToString().ToLowerInvariant()),
         };
+
+        // Impersonation claims
+        if (originalUserId.HasValue)
+        {
+            claims.Add(new Claim("originalUserId", originalUserId.Value.ToString()));
+            claims.Add(new Claim("isImpersonating", "true"));
+            if (!string.IsNullOrEmpty(originalRole))
+            {
+                claims.Add(new Claim("originalRole", originalRole));
+            }
+        }
 
         var token = new JwtSecurityToken(
             issuer: _config["Jwt:Issuer"],

@@ -1,9 +1,36 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Settings, Users, Shield, Save, Plus, X, UserCheck, UserX, FileSearch, Globe, Stethoscope, DoorOpen } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import {
+  Settings, Users, Shield, Save, Plus, X, UserCheck, UserX,
+  FileSearch, Globe, Stethoscope, DoorOpen, Search, Filter,
+  Trash2, RotateCcw, KeyRound, Eye, EyeOff, Copy, AlertTriangle,
+  UserCog, Loader2, ShieldAlert, CheckCircle2, XCircle, MessageSquare,
+} from "lucide-react";
 import Link from "next/link";
-import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useAuthStore } from "@/stores/authStore";
+import api from "@/lib/api";
+import {
+  useUsers,
+  usePasswordResetRequests,
+  usePermissions,
+  useCreateUser,
+  useEditUser,
+  useToggleUserStatus,
+  useDeleteUser,
+  useRestoreUser,
+  useResetUserPassword,
+  useApproveResetRequest,
+  useRejectResetRequest,
+  useUpdateRolePermissions,
+  type UserDetailDto,
+  type PasswordResetRequestDto,
+  type PermissionDto,
+  type CreateUserRequest,
+  type EditUserRequest,
+} from "@/hooks/useUsers";
+import type { ImpersonateResponse } from "@/types/auth";
 
 type Tab = "clinic" | "users" | "roles";
 
@@ -21,16 +48,6 @@ interface ClinicSettings {
   [key: string]: string | undefined;
 }
 
-interface UserRow {
-  id: string;
-  username: string;
-  email?: string;
-  role: string;
-  isActive: boolean;
-  lastLoginAt?: string;
-  doctorName?: string;
-}
-
 const ROLE_LABELS: Record<string, string> = {
   Admin: "مدير النظام",
   Orthodontist: "أخصائي تقويم",
@@ -41,6 +58,8 @@ const ROLE_LABELS: Record<string, string> = {
   Assistant: "مساعد",
   BranchManager: "مدير فرع",
 };
+
+const ALL_ROLES = ["Admin","Orthodontist","GeneralDentist","OralSurgeon","Reception","Accountant","Assistant","BranchManager"] as const;
 
 const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
 
@@ -139,87 +158,638 @@ function ClinicTab() {
   );
 }
 
-const ALL_ROLES = ["Admin","Orthodontist","GeneralDentist","OralSurgeon","Reception","Accountant","Assistant","BranchManager"] as const;
-
-// ─── Users Tab ────────────────────────────────────────────────────────────────
+// ─── Users Tab (Complete Rewrite) ────────────────────────────────────────────
 function UsersTab() {
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [formError, setFormError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#2563EB" });
+  const { data: users, isLoading: usersLoading } = useUsers();
+  const { data: resetRequests, isLoading: requestsLoading } = usePasswordResetRequests();
 
-  const load = () => {
-    setLoading(true);
-    api.get<UserRow[]>("/api/users")
-      .then((r) => setUsers(r.data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  // Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "deleted">("all");
+
+  // Dialogs
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserDetailDto | null>(null);
+  const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false);
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<string>("");
+  const [tempPassword, setTempPassword] = useState<string>("");
+  const [showImpersonateDialog, setShowImpersonateDialog] = useState(false);
+  const [impersonateUserId, setImpersonateUserId] = useState<string>("");
+  const [impersonateReason, setImpersonateReason] = useState("");
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    variant?: "danger" | "warning";
+    onConfirm: () => void;
+  }>({ open: false, title: "", message: "", onConfirm: () => {} });
+
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // Mutations
+  const createUser = useCreateUser();
+  const editUser = useEditUser();
+  const toggleStatus = useToggleUserStatus();
+  const deleteUser = useDeleteUser();
+  const restoreUser = useRestoreUser();
+  const resetPassword = useResetUserPassword();
+  const approveRequest = useApproveResetRequest();
+  const rejectRequest = useRejectResetRequest();
+  const authStore = useAuthStore();
+
+  // Filtered users
+  const filteredUsers = (users ?? []).filter((u) => {
+    const matchesSearch = !searchQuery ||
+      u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (u.email?.toLowerCase() ?? "").includes(searchQuery.toLowerCase()) ||
+      (u.doctorName?.includes(searchQuery) ?? false);
+
+    const matchesRole = roleFilter === "all" || u.role === roleFilter;
+
+    const isDeleted = !!u.deletedAt;
+    let matchesStatus = true;
+    if (statusFilter === "active") matchesStatus = u.isActive && !isDeleted;
+    else if (statusFilter === "inactive") matchesStatus = !u.isActive && !isDeleted;
+    else if (statusFilter === "deleted") matchesStatus = isDeleted;
+
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  // Handlers
+  const handleToggleStatus = (user: UserDetailDto) => {
+    setConfirmDialog({
+      open: true,
+      title: user.isActive ? "تعطيل المستخدم" : "تفعيل المستخدم",
+      message: user.isActive
+        ? `هل أنت متأكد من تعطيل المستخدم "${user.username}"؟`
+        : `هل أنت متأكد من تفعيل المستخدم "${user.username}"؟`,
+      variant: "warning",
+      onConfirm: () => {
+        toggleStatus.mutate(user.id, {
+          onSuccess: () => showToast(user.isActive ? "تم تعطيل المستخدم" : "تم تفعيل المستخدم"),
+          onError: () => showToast("حدث خطأ أثناء تغيير الحالة", "error"),
+        });
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+      },
+    });
   };
 
-  useEffect(load, []);
+  const handleDelete = (user: UserDetailDto) => {
+    setConfirmDialog({
+      open: true,
+      title: "حذف المستخدم",
+      message: "هل أنت متأكد من حذف هذا المستخدم؟",
+      variant: "danger",
+      onConfirm: () => {
+        deleteUser.mutate(user.id, {
+          onSuccess: () => showToast("تم حذف المستخدم"),
+          onError: () => showToast("حدث خطأ أثناء الحذف", "error"),
+        });
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+      },
+    });
+  };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.username || !form.password) { setFormError("اسم المستخدم وكلمة المرور مطلوبان"); return; }
-    setSaving(true); setFormError("");
+  const handleRestore = (user: UserDetailDto) => {
+    restoreUser.mutate(user.id, {
+      onSuccess: () => showToast("تم استعادة المستخدم"),
+      onError: () => showToast("حدث خطأ أثناء الاستعادة", "error"),
+    });
+  };
+
+  const handleResetPassword = (userId: string) => {
+    setResetPasswordUserId(userId);
+    setTempPassword("");
+    setShowResetPasswordDialog(true);
+  };
+
+  const confirmResetPassword = () => {
+    resetPassword.mutate(resetPasswordUserId, {
+      onSuccess: (data) => {
+        setTempPassword(data.temporaryPassword);
+      },
+      onError: () => {
+        showToast("حدث خطأ أثناء إعادة تعيين كلمة المرور", "error");
+        setShowResetPasswordDialog(false);
+      },
+    });
+  };
+
+  const handleImpersonate = (userId: string) => {
+    setImpersonateUserId(userId);
+    setImpersonateReason("");
+    setShowImpersonateDialog(true);
+  };
+
+  const confirmImpersonate = async () => {
+    if (!impersonateReason.trim()) return;
     try {
-      await api.post("/api/users", {
-        username: form.username,
-        password: form.password,
-        role: form.role,
-        email: form.email || undefined,
-        doctorName: form.doctorName || undefined,
-        doctorColor: form.doctorName ? form.doctorColor : undefined,
+      const { data } = await api.post<ImpersonateResponse>(`/api/auth/impersonate/${impersonateUserId}`, {
+        reason: impersonateReason.trim(),
       });
-      setShowForm(false);
-      setForm({ username: "", password: "", role: "Reception", email: "", doctorName: "", doctorColor: "#2563EB" });
-      load();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setFormError(msg ?? "حدث خطأ");
-    } finally {
-      setSaving(false);
+      authStore.startImpersonation(data.accessToken, data.user);
+      setShowImpersonateDialog(false);
+      showToast("تم الدخول كحساب آخر بنجاح");
+    } catch {
+      showToast("حدث خطأ أثناء الدخول كحساب آخر", "error");
     }
   };
 
-  const handleToggleStatus = async (id: string) => {
-    await api.put(`/api/users/${id}/status`, {}).catch(() => {});
-    load();
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast("تم نسخ كلمة المرور");
+    });
   };
 
-  if (loading) {
+  const handleApproveRequest = (requestId: string) => {
+    approveRequest.mutate(requestId, {
+      onSuccess: (data) => {
+        showToast(`تم الموافقة — كلمة المرور المؤقتة: ${data.temporaryPassword}`);
+      },
+      onError: () => showToast("حدث خطأ", "error"),
+    });
+  };
+
+  const handleRejectRequest = (requestId: string) => {
+    setConfirmDialog({
+      open: true,
+      title: "رفض طلب إعادة التعيين",
+      message: "هل أنت متأكد من رفض هذا الطلب؟",
+      variant: "danger",
+      onConfirm: () => {
+        rejectRequest.mutate({ id: requestId }, {
+          onSuccess: () => showToast("تم رفض الطلب"),
+          onError: () => showToast("حدث خطأ", "error"),
+        });
+        setConfirmDialog((prev) => ({ ...prev, open: false }));
+      },
+    });
+  };
+
+  if (usersLoading) {
     return <div className="animate-pulse space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}</div>;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Toast */}
+      {toast && (
+        <div
+          className={cn(
+            "fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 animate-in fade-in",
+            toast.type === "success" ? "bg-green-600 text-white" : "bg-red-600 text-white"
+          )}
+        >
+          {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+          {toast.message}
+        </div>
+      )}
+
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">{users.length} مستخدم</p>
+        <p className="text-sm text-gray-500">{(users ?? []).length} مستخدم</p>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => setShowCreateDialog(true)}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
-          {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-          {showForm ? "إلغاء" : "مستخدم جديد"}
+          <Plus className="w-4 h-4" />
+          مستخدم جديد
         </button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleCreate} className="bg-gray-50 rounded-xl border border-gray-200 p-4 space-y-3">
-          <p className="text-sm font-semibold text-gray-800">إضافة مستخدم جديد</p>
-          {formError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{formError}</p>}
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="بحث باسم المستخدم أو البريد..."
+            className="w-full pr-9 pl-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-gray-400" />
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+          >
+            <option value="all">جميع الأدوار</option>
+            {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            className="px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue"
+          >
+            <option value="all">جميع الحالات</option>
+            <option value="active">نشط</option>
+            <option value="inactive">معطّل</option>
+            <option value="deleted">محذوف</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Users Table */}
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              {["اسم المستخدم", "البريد", "الاسم الكامل", "الدور", "الحالة", "إجراءات"].map((h) => (
+                <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                  لا يوجد مستخدمون مطابقون للبحث
+                </td>
+              </tr>
+            ) : (
+              filteredUsers.map((u) => {
+                const isDeleted = !!u.deletedAt;
+                return (
+                  <tr key={u.id} className={cn("hover:bg-gray-50 transition", isDeleted && "opacity-50")}>
+                    <td className="px-4 py-3 font-mono font-medium text-gray-900">{u.username}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs" dir="ltr">{u.email || "—"}</td>
+                    <td className="px-4 py-3 text-gray-700">{u.doctorName || "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                        {ROLE_LABELS[u.role] ?? u.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {isDeleted ? (
+                        <span className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full font-medium">محذوف</span>
+                      ) : u.isActive ? (
+                        <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">نشط</span>
+                      ) : (
+                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">معطّل</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        {isDeleted ? (
+                          <button
+                            onClick={() => handleRestore(u)}
+                            title="استعادة المستخدم"
+                            className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => setEditingUser(u)}
+                              title="تعديل المستخدم"
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-clinic-blue hover:bg-blue-50 transition"
+                            >
+                              <UserCog className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleToggleStatus(u)}
+                              title={u.isActive ? "تعطيل" : "تفعيل"}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+                            >
+                              {u.isActive ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4 text-green-600" />}
+                            </button>
+                            <button
+                              onClick={() => handleResetPassword(u.id)}
+                              title="إعادة تعيين كلمة المرور"
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition"
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleImpersonate(u.id)}
+                              title="الدخول كحساب هذا المستخدم"
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition"
+                            >
+                              <ShieldAlert className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(u)}
+                              title="حذف المستخدم"
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Password Reset Requests Section */}
+      {resetRequests && resetRequests.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-clinic-orange" />
+            طلبات إعادة تعيين كلمة المرور
+          </h3>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {["المستخدم", "السبب", "التاريخ", "إجراءات"].map((h) => (
+                    <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {resetRequests.map((req) => (
+                  <tr key={req.id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 font-mono font-medium text-gray-900">{req.username}</td>
+                    <td className="px-4 py-3 text-gray-600">{req.reason}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">
+                      {new Date(req.createdAt).toLocaleDateString("ar-YE", { year: "numeric", month: "short", day: "numeric" })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleApproveRequest(req.id)}
+                          className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition"
+                          title="موافقة"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleRejectRequest(req.id)}
+                          className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition"
+                          title="رفض"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Create User Dialog */}
+      {showCreateDialog && (
+        <CreateUserDialog
+          onClose={() => setShowCreateDialog(false)}
+          onSubmit={async (data) => {
+            createUser.mutate(data, {
+              onSuccess: () => {
+                setShowCreateDialog(false);
+                showToast("تم إنشاء المستخدم بنجاح");
+              },
+              onError: (err) => {
+                const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                showToast(msg ?? "حدث خطأ أثناء إنشاء المستخدم", "error");
+              },
+            });
+          }}
+          saving={createUser.isPending}
+        />
+      )}
+
+      {/* Edit User Dialog */}
+      {editingUser && (
+        <EditUserDialog
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSubmit={async (data) => {
+            editUser.mutate({ id: editingUser.id, ...data }, {
+              onSuccess: () => {
+                setEditingUser(null);
+                showToast("تم تحديث المستخدم بنجاح");
+              },
+              onError: (err) => {
+                const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+                showToast(msg ?? "حدث خطأ أثناء التحديث", "error");
+              },
+            });
+          }}
+          saving={editUser.isPending}
+        />
+      )}
+
+      {/* Reset Password Dialog */}
+      {showResetPasswordDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !tempPassword && setShowResetPasswordDialog(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-orange-100">
+                <KeyRound className="w-5 h-5 text-orange-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-gray-900">إعادة تعيين كلمة المرور</h3>
+                {tempPassword ? (
+                  <div className="mt-3 space-y-3">
+                    <div
+                      className="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 flex items-start gap-2"
+                    >
+                      <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span>لن تظهر كلمة المرور مرة أخرى. تأكد من نسخها الآن.</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 px-3 py-2.5 bg-gray-100 rounded-lg font-mono text-sm text-gray-900 text-left" dir="ltr">
+                        {tempPassword}
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(tempPassword)}
+                        className="p-2.5 rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+                        title="نسخ"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setShowResetPasswordDialog(false)}
+                      className="w-full py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                    >
+                      إغلاق
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600 mt-1">سيتم إنشاء كلمة مرور مؤقتة لهذا المستخدم.</p>
+                    <div className="flex items-center justify-end gap-3 pt-4">
+                      <button
+                        onClick={() => setShowResetPasswordDialog(false)}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                      >
+                        إلغاء
+                      </button>
+                      <button
+                        onClick={confirmResetPassword}
+                        disabled={resetPassword.isPending}
+                        className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 disabled:opacity-60 transition flex items-center gap-2"
+                      >
+                        {resetPassword.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                        إعادة تعيين
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Impersonate Dialog */}
+      {showImpersonateDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowImpersonateDialog(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-purple-100">
+                <ShieldAlert className="w-5 h-5 text-purple-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-gray-900">الدخول كحساب آخر</h3>
+                <p className="text-sm text-gray-600 mt-1">سيتم تسجيل خروجك المؤقت والدخول بحساب هذا المستخدم.</p>
+                <div
+                  className="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 mt-2 flex items-start gap-2"
+                >
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>هذا الإجراء حساس ويتم تسجيله في سجل التدقيق.</span>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">سبب الدخول <span className="text-red-500">*</span></label>
+                  <textarea
+                    value={impersonateReason}
+                    onChange={(e) => setImpersonateReason(e.target.value)}
+                    placeholder="أدخل سبب الدخول كحساب هذا المستخدم..."
+                    rows={3}
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue resize-none"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => setShowImpersonateDialog(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    onClick={confirmImpersonate}
+                    disabled={!impersonateReason.trim()}
+                    className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:opacity-60 transition"
+                  >
+                    تأكيد الدخول
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        variant={confirmDialog.variant}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+      />
+    </div>
+  );
+}
+
+// ─── Create User Dialog ──────────────────────────────────────────────────────
+function CreateUserDialog({
+  onClose,
+  onSubmit,
+  saving,
+}: {
+  onClose: () => void;
+  onSubmit: (data: CreateUserRequest) => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState<CreateUserRequest>({
+    username: "",
+    password: "",
+    role: "Reception",
+    email: "",
+    doctorName: "",
+    doctorSpecialty: "",
+    doctorColor: "#3d7ab5",
+  });
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.username || !form.password) {
+      setError("اسم المستخدم وكلمة المرور مطلوبان");
+      return;
+    }
+    setError("");
+    onSubmit({
+      ...form,
+      email: form.email || undefined,
+      doctorName: form.doctorName || undefined,
+      doctorSpecialty: form.doctorSpecialty || undefined,
+      doctorColor: form.doctorName ? form.doctorColor : undefined,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+            <Plus className="w-5 h-5 text-clinic-blue" />
+            إضافة مستخدم جديد
+          </h3>
+          <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">اسم المستخدم <span className="text-red-500">*</span></label>
-              <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })}
-                className={inputCls} placeholder="username" dir="ltr" autoComplete="off" />
+              <input
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                className={inputCls}
+                placeholder="username"
+                dir="ltr"
+                autoComplete="off"
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">كلمة المرور <span className="text-red-500">*</span></label>
-              <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
-                type="password" className={inputCls} autoComplete="new-password" />
+              <input
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                type="password"
+                className={inputCls}
+                autoComplete="new-password"
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">الدور</label>
@@ -229,149 +799,430 @@ function UsersTab() {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">البريد الإلكتروني</label>
-              <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
-                type="email" className={inputCls} dir="ltr" />
+              <input
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                type="email"
+                className={inputCls}
+                dir="ltr"
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">اسم الطبيب (اختياري)</label>
-              <input value={form.doctorName} onChange={(e) => setForm({ ...form, doctorName: e.target.value })}
-                className={inputCls} placeholder="د. محمد أحمد" />
+              <input
+                value={form.doctorName}
+                onChange={(e) => setForm({ ...form, doctorName: e.target.value })}
+                className={inputCls}
+                placeholder="د. محمد أحمد"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">تخصص الطبيب</label>
+              <input
+                value={form.doctorSpecialty ?? ""}
+                onChange={(e) => setForm({ ...form, doctorSpecialty: e.target.value })}
+                className={inputCls}
+                placeholder="أخصائي تقويم"
+              />
             </div>
             {form.doctorName && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">لون الطبيب</label>
-                <input value={form.doctorColor} onChange={(e) => setForm({ ...form, doctorColor: e.target.value })}
-                  type="color" className="h-9 w-full rounded-lg border border-gray-300 cursor-pointer" />
+                <input
+                  value={form.doctorColor}
+                  onChange={(e) => setForm({ ...form, doctorColor: e.target.value })}
+                  type="color"
+                  className="h-9 w-full rounded-lg border border-gray-300 cursor-pointer"
+                />
               </div>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <button type="submit" disabled={saving}
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
             >
-              <Save className="w-4 h-4" />
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {saving ? "جارٍ الحفظ..." : "إضافة المستخدم"}
             </button>
           </div>
         </form>
-      )}
-
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {["اسم المستخدم", "الاسم الكامل", "الدور", "آخر دخول", "الحالة", ""].map((h) => (
-                <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {users.map((u) => (
-              <tr key={u.id} className="hover:bg-gray-50 transition">
-                <td className="px-4 py-3 font-mono font-medium text-gray-900">{u.username}</td>
-                <td className="px-4 py-3 text-gray-700">{u.doctorName ?? "—"}</td>
-                <td className="px-4 py-3">
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                    {ROLE_LABELS[u.role] ?? u.role}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-gray-500 text-xs">
-                  {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString("ar-YE") : "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={cn(
-                    "text-xs px-2 py-0.5 rounded-full font-medium",
-                    u.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
-                  )}>
-                    {u.isActive ? "نشط" : "معطّل"}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => handleToggleStatus(u.id)}
-                    title={u.isActive ? "تعطيل المستخدم" : "تفعيل المستخدم"}
-                    className="text-gray-400 hover:text-gray-700 transition"
-                  >
-                    {u.isActive
-                      ? <UserX className="w-4 h-4" />
-                      : <UserCheck className="w-4 h-4 text-green-600" />
-                    }
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
 }
 
-// ─── Roles Tab ────────────────────────────────────────────────────────────────
-function RolesTab() {
-  const ROLES = ["Admin", "Orthodontist", "GeneralDentist", "OralSurgeon", "Reception", "Accountant"];
-  const PERMISSIONS = [
-    { key: "patients.view",        label: "عرض المرضى" },
-    { key: "patients.create",      label: "إضافة مريض" },
-    { key: "patients.edit",        label: "تعديل مريض" },
-    { key: "appointments.view",    label: "عرض المواعيد" },
-    { key: "appointments.create",  label: "إضافة موعد" },
-    { key: "ortho.view",           label: "عرض التقويم" },
-    { key: "ortho.create",         label: "إنشاء حالة تقويمية" },
-    { key: "finance.view",         label: "عرض المالية" },
-    { key: "finance.create",       label: "تسجيل دفعة" },
-    { key: "reports.view",         label: "عرض التقارير" },
-    { key: "settings.view",        label: "عرض الإعدادات" },
-    { key: "settings.edit",        label: "تعديل الإعدادات" },
-  ];
+// ─── Edit User Dialog ────────────────────────────────────────────────────────
+function EditUserDialog({
+  user,
+  onClose,
+  onSubmit,
+  saving,
+}: {
+  user: UserDetailDto;
+  onClose: () => void;
+  onSubmit: (data: EditUserRequest) => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState<EditUserRequest>({
+    username: user.username,
+    email: user.email ?? "",
+    role: user.role,
+    doctorName: user.doctorName ?? "",
+    doctorSpecialty: user.doctorSpecialty ?? "",
+    doctorColor: user.doctorColor ?? "#3d7ab5",
+  });
 
-  // Admin has all, define defaults for others
-  const ROLE_DEFAULTS: Record<string, string[]> = {
-    Admin: PERMISSIONS.map(p => p.key),
-    Orthodontist: ["patients.view", "patients.edit", "appointments.view", "appointments.create", "ortho.view", "ortho.create"],
-    GeneralDentist: ["patients.view", "patients.edit", "appointments.view", "appointments.create"],
-    OralSurgeon: ["patients.view", "patients.edit", "appointments.view", "appointments.create"],
-    Reception: ["patients.view", "patients.create", "appointments.view", "appointments.create"],
-    Accountant: ["patients.view", "finance.view", "finance.create", "reports.view"],
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit({
+      ...form,
+      email: form.email || undefined,
+      doctorName: form.doctorName || undefined,
+      doctorSpecialty: form.doctorSpecialty || undefined,
+      doctorColor: form.doctorName ? form.doctorColor : undefined,
+    });
   };
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="w-full text-xs">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            <th className="text-start px-4 py-3 font-semibold text-gray-700 min-w-[160px]">الصلاحية</th>
-            {ROLES.map((r) => (
-              <th key={r} className="px-3 py-3 font-semibold text-gray-600 text-center whitespace-nowrap">
-                {ROLE_LABELS[r]}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {PERMISSIONS.map(({ key, label }) => (
-            <tr key={key} className="hover:bg-gray-50 transition">
-              <td className="px-4 py-2.5 text-gray-700 font-medium">{label}</td>
-              {ROLES.map((role) => {
-                const has = (ROLE_DEFAULTS[role] ?? []).includes(key);
-                return (
-                  <td key={role} className="px-3 py-2.5 text-center">
-                    <span className={cn(
-                      "inline-block w-5 h-5 rounded text-center leading-5 font-bold text-xs",
-                      has ? "text-green-600" : "text-gray-300"
-                    )}>
-                      {has ? "✓" : "✕"}
-                    </span>
-                  </td>
-                );
-              })}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+            <UserCog className="w-5 h-5 text-clinic-blue" />
+            تعديل المستخدم: {user.username}
+          </h3>
+          <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">اسم المستخدم</label>
+              <input
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                className={inputCls}
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">البريد الإلكتروني</label>
+              <input
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                type="email"
+                className={inputCls}
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">الدور</label>
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
+                {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">اسم الطبيب (اختياري)</label>
+              <input
+                value={form.doctorName}
+                onChange={(e) => setForm({ ...form, doctorName: e.target.value })}
+                className={inputCls}
+                placeholder="د. محمد أحمد"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">تخصص الطبيب</label>
+              <input
+                value={form.doctorSpecialty ?? ""}
+                onChange={(e) => setForm({ ...form, doctorSpecialty: e.target.value })}
+                className={inputCls}
+                placeholder="أخصائي تقويم"
+              />
+            </div>
+            {form.doctorName && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">لون الطبيب</label>
+                <input
+                  value={form.doctorColor}
+                  onChange={(e) => setForm({ ...form, doctorColor: e.target.value })}
+                  type="color"
+                  className="h-9 w-full rounded-lg border border-gray-300 cursor-pointer"
+                />
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? "جارٍ الحفظ..." : "حفظ التعديلات"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Roles Tab (Complete Rewrite) ────────────────────────────────────────────
+function RolesTab() {
+  const { data: permissions, isLoading: permissionsLoading } = usePermissions();
+  const [selectedRole, setSelectedRole] = useState<string>("Admin");
+  const [rolePermissionsMap, setRolePermissionsMap] = useState<Record<string, Set<string>>>({});
+  const [loadingRoles, setLoadingRoles] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [showAdminWarning, setShowAdminWarning] = useState(false);
+
+  const updateRolePermissions = useUpdateRolePermissions();
+
+  // Load permissions for all roles
+  useEffect(() => {
+    const loadRolePermissions = async () => {
+      const roles = ALL_ROLES;
+      for (const role of roles) {
+        setLoadingRoles((prev) => new Set(prev).add(role));
+        try {
+          const { data } = await api.get<{ role: string; permissions: string[] }>(`/api/roles/${role}/permissions`);
+          setRolePermissionsMap((prev) => ({ ...prev, [role]: new Set(data.permissions) }));
+        } catch {
+          setRolePermissionsMap((prev) => ({ ...prev, [role]: new Set() }));
+        } finally {
+          setLoadingRoles((prev) => {
+            const next = new Set(prev);
+            next.delete(role);
+            return next;
+          });
+        }
+      }
+    };
+    loadRolePermissions();
+  }, []);
+
+  const togglePermission = (role: string, permissionKey: string) => {
+    setRolePermissionsMap((prev) => {
+      const current = new Set(prev[role] ?? []);
+      if (current.has(permissionKey)) {
+        current.delete(permissionKey);
+      } else {
+        current.add(permissionKey);
+      }
+      return { ...prev, [role]: current };
+    });
+  };
+
+  const handleSave = async () => {
+    if (selectedRole === "Admin") {
+      setShowAdminWarning(true);
+      return;
+    }
+    await savePermissions(selectedRole);
+  };
+
+  const savePermissions = async (role: string) => {
+    const permissions = Array.from(rolePermissionsMap[role] ?? []);
+    setSaving(true);
+    updateRolePermissions.mutate(
+      { role, permissions },
+      {
+        onSuccess: () => {
+          setToast({ message: "تم حفظ الصلاحيات بنجاح", type: "success" });
+          setTimeout(() => setToast(null), 3000);
+        },
+        onError: () => {
+          setToast({ message: "حدث خطأ أثناء الحفظ", type: "error" });
+          setTimeout(() => setToast(null), 3000);
+        },
+        onSettled: () => setSaving(false),
+      }
+    );
+  };
+
+  if (permissionsLoading || loadingRoles.size > 0) {
+    return <div className="animate-pulse space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-10 bg-gray-100 rounded-lg" />)}</div>;
+  }
+
+  // Group permissions by resource
+  const permList = permissions ?? [];
+  const groupedPermissions = permList.reduce<Record<string, PermissionDto[]>>((acc, p) => {
+    if (!acc[p.resource]) acc[p.resource] = [];
+    acc[p.resource].push(p);
+    return acc;
+  }, {});
+
+  const RESOURCE_LABELS: Record<string, string> = {
+    Patients: "المرضى",
+    Appointments: "المواعيد",
+    Ortho: "التقويم",
+    Finance: "المالية",
+    Reports: "التقارير",
+    Settings: "الإعدادات",
+    Users: "المستخدمون",
+    Doctors: "الأطباء",
+  };
+
+  const ACTION_LABELS: Record<string, string> = {
+    View: "عرض",
+    Create: "إنشاء",
+    Edit: "تعديل",
+    Delete: "حذف",
+    Export: "تصدير",
+    Approve: "موافقة",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Toast */}
+      {toast && (
+        <div
+          className={cn(
+            "fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 animate-in fade-in",
+            toast.type === "success" ? "bg-green-600 text-white" : "bg-red-600 text-white"
+          )}
+        >
+          {toast.type === "success" ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+          {toast.message}
+        </div>
+      )}
+
+      {/* Role selector */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {ALL_ROLES.map((role) => (
+          <button
+            key={role}
+            onClick={() => setSelectedRole(role)}
+            className={cn(
+              "px-3 py-1.5 text-sm font-medium rounded-lg border transition",
+              selectedRole === role
+                ? "bg-clinic-blue text-white border-clinic-blue"
+                : "bg-white text-gray-700 border-gray-300 hover:border-clinic-blue"
+            )}
+          >
+            {ROLE_LABELS[role] ?? role}
+          </button>
+        ))}
+      </div>
+
+      {/* Admin warning */}
+      {selectedRole === "Admin" && (
+        <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>مدير النظام يمتلك جميع الصلاحيات ولا يمكن تعديلها.</span>
+        </div>
+      )}
+
+      {/* Permission Matrix */}
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-xs">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-start px-4 py-3 font-semibold text-gray-700 min-w-[120px]">المورد</th>
+              <th className="text-start px-4 py-3 font-semibold text-gray-700 min-w-[80px]">الإجراء</th>
+              <th className="text-center px-4 py-3 font-semibold text-gray-600">الصلاحية</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="text-xs text-gray-400 p-3 border-t border-gray-100">
-        * يتم إدارة الصلاحيات من قاعدة البيانات (role_permissions) — هذا العرض للمرجع
-      </p>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {Object.entries(groupedPermissions).map(([resource, perms]) =>
+              (perms ?? []).map((p, idx) => {
+                const isChecked = rolePermissionsMap[selectedRole]?.has(p.key) ?? false;
+                const isAdmin = selectedRole === "Admin";
+                return (
+                  <tr key={p.key} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-2.5 text-gray-700 font-medium">
+                      {idx === 0 ? (RESOURCE_LABELS[resource] ?? resource) : ""}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600">
+                      {ACTION_LABELS[p.action] ?? p.action}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isAdmin || isChecked}
+                        disabled={isAdmin}
+                        onChange={() => togglePermission(selectedRole, p.key)}
+                        className="w-4 h-4 rounded border-gray-300 text-clinic-blue focus:ring-clinic-blue cursor-pointer disabled:cursor-not-allowed"
+                      />
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Save button */}
+      {selectedRole !== "Admin" && (
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? "جارٍ الحفظ..." : "حفظ الصلاحيات"}
+          </button>
+        </div>
+      )}
+
+      {/* Admin warning dialog */}
+      {showAdminWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowAdminWarning(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-amber-100">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900">تحذير: تعديل صلاحيات المدير</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  تعديل صلاحيات مدير النظام قد يؤثر على قدرة المدير على إدارة النظام. هل أنت متأكد؟
+                </p>
+                <div className="flex items-center justify-end gap-3 pt-4">
+                  <button
+                    onClick={() => setShowAdminWarning(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setShowAdminWarning(false);
+                      await savePermissions("Admin");
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition"
+                  >
+                    متابعة بالحفظ
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

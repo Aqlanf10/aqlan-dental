@@ -29,6 +29,8 @@ public class MustChangePasswordMiddleware
         "/api/auth/logout",         // SEC-02 HOTFIX: Must allow logout or user gets stuck
         "/api/auth/refresh-token",  // SEC-02 HOTFIX: Actual route is refresh-token not refresh
         "/api/auth/me",
+        "/api/auth/forgot-password",
+        "/api/auth/reset-password",
     };
 
     // Path prefixes that are always allowed (public endpoints)

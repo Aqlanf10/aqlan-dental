@@ -2,6 +2,7 @@
 
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
@@ -59,6 +60,9 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#eef3f9", direction: "rtl" }}>
+      {/* Impersonation Banner — fixed at top */}
+      <ImpersonationBanner />
+
       {/* Sidebar — fixed, right side in RTL */}
       <Sidebar />
 

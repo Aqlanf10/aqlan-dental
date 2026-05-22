@@ -11,6 +11,26 @@ public class AuditService(AppDbContext db, ICurrentUserService currentUser) : IA
     public async Task LogAsync(AuditAction action, string resource, Guid? resourceId = null,
         object? oldData = null, object? newData = null)
     {
+        await LogAsync(action, resource, resourceId, oldData, newData, details: null);
+    }
+
+    public async Task LogAsync(AuditAction action, string resource, Guid? resourceId = null,
+        object? oldData = null, object? newData = null, string? details = null)
+    {
+        object? finalNewData = newData;
+        if (details != null && newData == null)
+        {
+            finalNewData = new { _details = details };
+        }
+        else if (details != null && newData != null)
+        {
+            // Merge details into newData as a _details property
+            var newDataDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                JsonSerializer.Serialize(newData)) ?? new();
+            newDataDict["_details"] = JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(details));
+            finalNewData = newDataDict;
+        }
+
         var log = new AuditLog
         {
             UserId = currentUser.UserId,
@@ -19,8 +39,8 @@ public class AuditService(AppDbContext db, ICurrentUserService currentUser) : IA
             ResourceId = resourceId,
             OldData = oldData != null
                 ? JsonDocument.Parse(JsonSerializer.Serialize(oldData)) : null,
-            NewData = newData != null
-                ? JsonDocument.Parse(JsonSerializer.Serialize(newData)) : null
+            NewData = finalNewData != null
+                ? JsonDocument.Parse(JsonSerializer.Serialize(finalNewData)) : null
         };
         db.AuditLogs.Add(log);
         await db.SaveChangesAsync();

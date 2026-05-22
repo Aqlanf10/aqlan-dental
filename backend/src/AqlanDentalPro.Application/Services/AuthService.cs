@@ -104,11 +104,14 @@ public class AuthService(IUserRepository userRepo, ITokenService tokenService, I
         Username = user.Username,
         Role = user.Role.ToString(),
         BranchId = user.BranchId,
+        Email = user.Email,                    // HOTFIX PR165: Was missing — all auth responses showed email: null
+        IsActive = user.IsActive,              // HOTFIX PR165: Was missing — all auth responses showed isActive: false
+        DeletedAt = user.DeletedAt,            // HOTFIX PR165: Was missing — needed for frontend deleted-user handling
         DoctorName = user.Doctor?.Name,
         DoctorId = user.Doctor?.Id,
         DoctorColor = user.Doctor?.Color,
         DoctorInitials = user.Doctor?.AvatarInitials,
-        MustChangePassword = user.MustChangePassword // SEC-02 FIX: Expose to frontend
+        MustChangePassword = user.MustChangePassword
     };
 
     /// <summary>

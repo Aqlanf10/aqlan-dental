@@ -137,8 +137,8 @@ public class CommissionService(
             .Include(i => i.Doctor)
             .Where(i => i.IsActive
                      && i.Invoice.IsActive
-                     && i.Invoice.CreatedAt.Date >= from.ToDateTime(TimeOnly.MinValue).Date
-                     && i.Invoice.CreatedAt.Date <= to.ToDateTime(TimeOnly.MaxValue).Date);
+                     && i.Invoice.CreatedAt >= DateTime.SpecifyKind(from.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)
+                     && i.Invoice.CreatedAt <= DateTime.SpecifyKind(to.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc));
 
         if (doctorId.HasValue)
             query = query.Where(i => i.DoctorId == doctorId.Value);
@@ -152,8 +152,8 @@ public class CommissionService(
         // Aggregate doctor-level payments for the same date range so the summary
         // reflects ACTUAL paid commission, not just status flags.
         var doctorIds = items.Where(i => i.DoctorId.HasValue).Select(i => i.DoctorId!.Value).Distinct().ToList();
-        var fromUtc = from.ToDateTime(TimeOnly.MinValue);
-        var toUtc   = to.ToDateTime(TimeOnly.MaxValue);
+        var fromUtc = DateTime.SpecifyKind(from.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var toUtc   = DateTime.SpecifyKind(to.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
         var paidByDoctor = await db.DoctorCommissionPayments
             .Where(p => p.IsActive
                      && doctorIds.Contains(p.DoctorId)
@@ -372,6 +372,12 @@ public class CommissionService(
             var doctor = await db.Doctors.FindAsync(item.DoctorId.Value);
             if (doctor?.DefaultCommissionPercentage.HasValue == true)
                 item.DoctorCommissionPercentage = doctor.DefaultCommissionPercentage.Value;
+            else
+                item.DoctorCommissionPercentage = 40m; // Sensible fallback: 40% when neither service nor doctor has a default
+        }
+        else
+        {
+            item.DoctorCommissionPercentage = 40m; // Sensible fallback: 40% when no doctor assigned and no service default
         }
 
         // If linked lab order exists, pull actual lab cost
@@ -514,8 +520,8 @@ public class CommissionService(
             .Include(i => i.Doctor)
             .Where(i => i.IsActive
                      && i.Invoice.IsActive
-                     && i.Invoice.CreatedAt.Date >= from.ToDateTime(TimeOnly.MinValue).Date
-                     && i.Invoice.CreatedAt.Date <= to.ToDateTime(TimeOnly.MaxValue).Date
+                     && i.Invoice.CreatedAt >= DateTime.SpecifyKind(from.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc)
+                     && i.Invoice.CreatedAt <= DateTime.SpecifyKind(to.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc)
                      && i.CommissionStatus == CommissionStatus.Pending);
 
         if (doctorId.HasValue)

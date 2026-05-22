@@ -34,14 +34,13 @@ jobs:
           --no-restore --no-build --configuration Release
           --verbosity normal
           --logger "trx;LogFileName=test-results.trx"
-          --results-directory TestResults
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-results
-          path: backend/TestResults/test-results.trx
+          path: backend/tests/AqlanDentalPro.UnitTests/TestResults/**/*.trx
           retention-days: 7
 
   frontend:

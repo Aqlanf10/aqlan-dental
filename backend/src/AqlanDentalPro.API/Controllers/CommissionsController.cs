@@ -48,6 +48,10 @@ public class CommissionsController(
             var result = await commissionService.UpdateCostsAsync(lineItemId, req, userId.Value);
             return result == null ? NotFound() : Ok(result);
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { message = ex.Message });

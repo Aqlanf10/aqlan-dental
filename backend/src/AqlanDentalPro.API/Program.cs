@@ -29,8 +29,8 @@ var builder = WebApplication.CreateBuilder(args);
 // ── Fail-Fast: رفض الإقلاع بإعدادات افتراضية في الإنتاج ──────────────────────
 if (builder.Environment.IsProduction())
 {
-    var jwtKey = builder.Configuration["Jwt:SecretKey"] ?? "";
-    if (jwtKey.Contains("CHANGE_ME") || jwtKey.Length < 32)
+    var prodJwtKey = builder.Configuration["Jwt:SecretKey"] ?? "";
+    if (prodJwtKey.Contains("CHANGE_ME") || prodJwtKey.Length < 32)
         throw new InvalidOperationException(
             "SEC: مفتاح JWT غير آمن في الإنتاج. يجب ضبط Jwt:SecretKey بقيمة عشوائية لا تقل عن 32 حرفاً.");
 
@@ -671,6 +671,513 @@ catch (Exception ex)
     msgSchemaLogger2.LogError(ex, "HOTFIX: Failed to ensure messaging tables BaseEntity columns. Messaging may return 500!");
 }
 
+// ── CRITICAL: Ensure Doctor Commission tables/columns exist ─────────────────
+// HOTFIX: PR #157 added the Doctor Commission module. If ENABLE_STARTUP_DB_MAINTENANCE
+// is false, MigrateAsync() is skipped and the DoctorCommissionPayments table +
+// InvoiceLineItems commission columns will be missing. Without this guard,
+// CommissionsController returns 404 (controller can't resolve dependencies) or 500
+// (missing columns). This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var commScope = app.Services.CreateScope();
+    var commDb     = commScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var commLogger = commScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await commDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- DoctorCommissionPayments table (migration 20260606000000)
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'DoctorCommissionPayments'
+            ) THEN
+                CREATE TABLE "DoctorCommissionPayments" (
+                    "Id"            uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "DoctorId"      uuid                     NOT NULL,
+                    "Amount"        numeric                  NOT NULL,
+                    "PaymentDate"   date                     NOT NULL,
+                    "PaymentMethod" character varying(50)    NULL,
+                    "ReferenceNumber" character varying(100)  NULL,
+                    "Notes"         character varying(500)    NULL,
+                    "PaidBy"        uuid                     NULL,
+                    "CreatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"      boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"     timestamp with time zone  NULL,
+                    "DeletedBy"     uuid                     NULL,
+                    CONSTRAINT "PK_DoctorCommissionPayments" PRIMARY KEY ("Id")
+                );
+            END IF;
+
+            -- FK: DoctorCommissionPayments → Doctors
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'FK_DoctorCommissionPayments_Doctors_DoctorId'
+            ) THEN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'Doctors'
+                ) THEN
+                    ALTER TABLE "DoctorCommissionPayments"
+                        ADD CONSTRAINT "FK_DoctorCommissionPayments_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId")
+                        REFERENCES "Doctors"("Id")
+                        ON DELETE RESTRICT;
+                END IF;
+            END IF;
+
+            -- Indexes on DoctorCommissionPayments
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'DoctorCommissionPayments' AND indexname = 'IX_DoctorCommissionPayments_DoctorId'
+            ) THEN
+                CREATE INDEX "IX_DoctorCommissionPayments_DoctorId" ON "DoctorCommissionPayments" ("DoctorId");
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public' AND tablename = 'DoctorCommissionPayments' AND indexname = 'IX_DoctorCommissionPayments_PaymentDate'
+            ) THEN
+                CREATE INDEX "IX_DoctorCommissionPayments_PaymentDate" ON "DoctorCommissionPayments" ("PaymentDate");
+            END IF;
+
+            -- InvoiceLineItems: commission columns (migration 20260606000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'InvoiceLineItems') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorId') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "DoctorId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LineDiscountAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "LineDiscountAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'MaterialCost') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "MaterialCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LabCost') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "LabCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'OtherDirectCost') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "OtherDirectCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionBaseRule') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionBaseRule" integer NOT NULL DEFAULT 2;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionPercentage') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "DoctorCommissionPercentage" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'NetCommissionableAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "NetCommissionableAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "DoctorCommissionAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CenterShareAmount') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CenterShareAmount" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionStatus') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionStatus" integer NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionNotes') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionNotes" text NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LabOrderId') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "LabOrderId" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionApprovedBy') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionApprovedBy" uuid NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'CommissionApprovedAt') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD COLUMN "CommissionApprovedAt" timestamp with time zone NULL;
+                END IF;
+            END IF;
+
+            -- ClinicServices: commission defaults columns (migration 20260606000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCostType') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCostType" integer NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultLabCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultLabCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultDoctorCommissionPercentage') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultDoctorCommissionPercentage" numeric NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionBaseRule') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionBaseRule" integer NOT NULL DEFAULT 2;
+                END IF;
+            END IF;
+
+            -- ClinicServices: CommissionRecognitionMode column (migration 20260607000000)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 0;
+                END IF;
+            END IF;
+
+            -- FK: InvoiceLineItems → Doctors
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_Doctors_DoctorId'
+            ) THEN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorId') THEN
+                    ALTER TABLE "InvoiceLineItems"
+                        ADD CONSTRAINT "FK_InvoiceLineItems_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
+                END IF;
+            END IF;
+
+            -- FK: InvoiceLineItems → LabOrders
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'FK_InvoiceLineItems_LabOrders_LabOrderId'
+            ) THEN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LabOrderId') THEN
+                    ALTER TABLE "InvoiceLineItems"
+                        ADD CONSTRAINT "FK_InvoiceLineItems_LabOrders_LabOrderId"
+                        FOREIGN KEY ("LabOrderId") REFERENCES "LabOrders"("Id") ON DELETE SET NULL;
+                END IF;
+            END IF;
+
+            -- Indexes on InvoiceLineItems commission columns (only if table exists)
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'InvoiceLineItems') THEN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_DoctorId'
+                ) THEN
+                    CREATE INDEX "IX_InvoiceLineItems_DoctorId" ON "InvoiceLineItems" ("DoctorId");
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname = 'public' AND tablename = 'InvoiceLineItems' AND indexname = 'IX_InvoiceLineItems_LabOrderId'
+                ) THEN
+                    CREATE INDEX "IX_InvoiceLineItems_LabOrderId" ON "InvoiceLineItems" ("LabOrderId");
+                END IF;
+            END IF;
+        END $$;
+    """);
+
+    commLogger.LogInformation("HOTFIX: Doctor Commission tables/columns schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var commLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    commLogger2.LogError(ex, "HOTFIX: Failed to ensure Doctor Commission schema. Commission endpoints may return 404/500!");
+}
+
+// ── CRITICAL: Ensure ClinicServices and ClinicRooms tables exist ─────────────
+// HOTFIX: The ClinicServices table is created by migration 20260528000000_AddClinicServicesAndRooms,
+// but that migration only runs when ENABLE_STARTUP_DB_MAINTENANCE=true. On deployments where
+// this flag is false, the table never gets created, causing 500 errors on ALL endpoints that
+// reference ClinicServices (services/active, commissions/report, invoices/{id}, etc.).
+// This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var svcScope = app.Services.CreateScope();
+    var svcDb     = svcScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var svcLogger = svcScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await svcDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── Create ClinicServices table if not exists ───────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ClinicServices') THEN
+                CREATE TABLE "ClinicServices" (
+                    "Id"                              uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "ArabicName"                      character varying(200)   NOT NULL,
+                    "EnglishName"                     character varying(200)   NULL,
+                    "Code"                            character varying(50)    NOT NULL,
+                    "Department"                      character varying(100)   NULL,
+                    "Category"                        character varying(30)    NOT NULL DEFAULT 'Other',
+                    "Description"                     character varying(1000)  NULL,
+                    "DefaultDurationMinutes"          integer                  NOT NULL DEFAULT 30,
+                    "DefaultPrice"                    numeric(12,2)            NOT NULL DEFAULT 0,
+                    "RequiresDoctor"                  boolean                  NOT NULL DEFAULT true,
+                    "RequiresConsultationFee"         boolean                  NOT NULL DEFAULT false,
+                    "ShowInBooking"                   boolean                  NOT NULL DEFAULT true,
+                    "ShowInReception"                 boolean                  NOT NULL DEFAULT true,
+                    "ShowInTreatmentPlan"             boolean                  NOT NULL DEFAULT true,
+                    "SortOrder"                       integer                  NOT NULL DEFAULT 0,
+                    "DefaultMaterialCost"             numeric                  NOT NULL DEFAULT 0,
+                    "DefaultMaterialCostType"         integer                  NOT NULL DEFAULT 0,
+                    "DefaultLabCost"                  numeric                  NOT NULL DEFAULT 0,
+                    "DefaultDoctorCommissionPercentage" numeric                NULL,
+                    "CommissionBaseRule"              integer                  NOT NULL DEFAULT 2,
+                    "CommissionRecognitionMode"       integer                  NOT NULL DEFAULT 0,
+                    "IsActive"                        boolean                  NOT NULL DEFAULT true,
+                    "CreatedAt"                       timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"                       timestamp with time zone  NOT NULL DEFAULT now(),
+                    "DeletedAt"                       timestamp with time zone  NULL,
+                    "DeletedBy"                       uuid                     NULL,
+                    CONSTRAINT "PK_ClinicServices" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX "IX_ClinicServices_Code" ON "ClinicServices" ("Code");
+            END IF;
+
+            -- ── Add commission columns if table exists but columns are missing ──
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultMaterialCostType') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultMaterialCostType" integer NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultLabCost') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultLabCost" numeric NOT NULL DEFAULT 0;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'DefaultDoctorCommissionPercentage') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "DefaultDoctorCommissionPercentage" numeric NULL;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionBaseRule') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionBaseRule" integer NOT NULL DEFAULT 2;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode') THEN
+                    ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 0;
+                END IF;
+            END IF;
+
+            -- ── Create ClinicRooms table if not exists ──────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'ClinicRooms') THEN
+                CREATE TABLE "ClinicRooms" (
+                    "Id"            uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "ArabicName"    character varying(200)   NOT NULL,
+                    "EnglishName"   character varying(200)   NULL,
+                    "Code"          character varying(50)    NOT NULL,
+                    "RoomType"      character varying(30)    NOT NULL DEFAULT 'Treatment',
+                    "SortOrder"     integer                  NOT NULL DEFAULT 0,
+                    "IsActive"      boolean                  NOT NULL DEFAULT true,
+                    "CreatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "DeletedAt"     timestamp with time zone  NULL,
+                    "DeletedBy"     uuid                     NULL,
+                    CONSTRAINT "PK_ClinicRooms" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX "IX_ClinicRooms_Code" ON "ClinicRooms" ("Code");
+                CREATE INDEX "IX_ClinicRooms_RoomType" ON "ClinicRooms" ("RoomType");
+            END IF;
+        END $$;
+    """);
+
+    svcLogger.LogInformation("HOTFIX: ClinicServices and ClinicRooms tables schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var svcLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    svcLogger2.LogError(ex, "HOTFIX: Failed to ensure ClinicServices/ClinicRooms schema. Services and Commission endpoints may return 500!");
+}
+
+// ── CRITICAL: Ensure Invoices and InvoiceLineItems tables exist ─────────────
+// HOTFIX: Migration history reconciliation failed in previous deployments,
+// causing MigrateAsync() to skip creating the Invoices and InvoiceLineItems
+// tables. Without these tables, ALL invoice/payment/commission endpoints
+// return 500. This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var invScope = app.Services.CreateScope();
+    var invDb     = invScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var invLogger = invScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await invDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── Create Invoices table if not exists ──────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Invoices') THEN
+                CREATE TABLE "Invoices" (
+                    "Id"            uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "PatientId"     uuid                     NOT NULL,
+                    "VisitId"       uuid                     NULL,
+                    "AppointmentId" uuid                     NULL,
+                    "InvoiceNumber" character varying(50)    NOT NULL,
+                    "Status"        character varying(20)    NOT NULL,
+                    "Subtotal"      numeric(12,2)            NOT NULL DEFAULT 0,
+                    "DiscountAmount" numeric(12,2)           NULL,
+                    "TaxAmount"     numeric(12,2)            NULL,
+                    "TotalAmount"   numeric(12,2)            NOT NULL DEFAULT 0,
+                    "Notes"         text                     NULL,
+                    "CreatedBy"     uuid                     NULL,
+                    "UpdatedBy"     uuid                     NULL,
+                    "CreatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"      boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"     timestamp with time zone  NULL,
+                    "DeletedBy"     uuid                     NULL,
+                    CONSTRAINT "PK_Invoices" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_Invoices_PatientId" ON "Invoices" ("PatientId");
+                CREATE INDEX "IX_Invoices_VisitId" ON "Invoices" ("VisitId");
+                CREATE INDEX "IX_Invoices_AppointmentId" ON "Invoices" ("AppointmentId");
+                CREATE INDEX "IX_Invoices_Status" ON "Invoices" ("Status");
+                CREATE UNIQUE INDEX "IX_Invoices_InvoiceNumber" ON "Invoices" ("InvoiceNumber");
+
+                -- FK: Invoices → Patients
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Invoices_Patients_PatientId') THEN
+                    ALTER TABLE "Invoices" ADD CONSTRAINT "FK_Invoices_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT;
+                END IF;
+            END IF;
+
+            -- ── Create InvoiceLineItems table if not exists ────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'InvoiceLineItems') THEN
+                CREATE TABLE "InvoiceLineItems" (
+                    "Id"                          uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "InvoiceId"                   uuid                     NOT NULL,
+                    "ServiceId"                   uuid                     NULL,
+                    "ServiceNameSnapshot"         character varying(200)   NOT NULL DEFAULT '',
+                    "Description"                 character varying(500)   NOT NULL DEFAULT '',
+                    "Quantity"                    integer                  NOT NULL DEFAULT 1,
+                    "UnitPrice"                   numeric(12,2)            NOT NULL DEFAULT 0,
+                    "TotalPrice"                  numeric(12,2)            NOT NULL DEFAULT 0,
+                    "RelatedTreatmentPlanStepId"  uuid                     NULL,
+                    "RelatedVisitId"              uuid                     NULL,
+                    "SortOrder"                   integer                  NOT NULL DEFAULT 0,
+                    "DoctorId"                    uuid                     NULL,
+                    "LineDiscountAmount"          numeric                  NOT NULL DEFAULT 0,
+                    "MaterialCost"                numeric                  NOT NULL DEFAULT 0,
+                    "LabCost"                     numeric                  NOT NULL DEFAULT 0,
+                    "OtherDirectCost"             numeric                  NOT NULL DEFAULT 0,
+                    "CommissionBaseRule"           integer                  NOT NULL DEFAULT 2,
+                    "DoctorCommissionPercentage"  numeric                  NOT NULL DEFAULT 0,
+                    "NetCommissionableAmount"     numeric                  NOT NULL DEFAULT 0,
+                    "DoctorCommissionAmount"      numeric                  NOT NULL DEFAULT 0,
+                    "CenterShareAmount"           numeric                  NOT NULL DEFAULT 0,
+                    "CommissionStatus"            integer                  NOT NULL DEFAULT 0,
+                    "CommissionNotes"             text                     NULL,
+                    "LabOrderId"                  uuid                     NULL,
+                    "CommissionApprovedBy"        uuid                     NULL,
+                    "CommissionApprovedAt"        timestamp with time zone  NULL,
+                    "CreatedAt"                   timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"                   timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"                    boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"                   timestamp with time zone  NULL,
+                    "DeletedBy"                   uuid                     NULL,
+                    CONSTRAINT "PK_InvoiceLineItems" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_InvoiceLineItems_InvoiceId" ON "InvoiceLineItems" ("InvoiceId");
+                CREATE INDEX "IX_InvoiceLineItems_ServiceId" ON "InvoiceLineItems" ("ServiceId");
+                CREATE INDEX "IX_InvoiceLineItems_DoctorId" ON "InvoiceLineItems" ("DoctorId");
+                CREATE INDEX "IX_InvoiceLineItems_LabOrderId" ON "InvoiceLineItems" ("LabOrderId");
+
+                -- FK: InvoiceLineItems → Invoices
+                ALTER TABLE "InvoiceLineItems" ADD CONSTRAINT "FK_InvoiceLineItems_Invoices_InvoiceId"
+                    FOREIGN KEY ("InvoiceId") REFERENCES "Invoices"("Id") ON DELETE CASCADE;
+                -- FK: InvoiceLineItems → ClinicServices
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD CONSTRAINT "FK_InvoiceLineItems_ClinicServices_ServiceId"
+                        FOREIGN KEY ("ServiceId") REFERENCES "ClinicServices"("Id") ON DELETE SET NULL;
+                END IF;
+                -- FK: InvoiceLineItems → Doctors
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Doctors') THEN
+                    ALTER TABLE "InvoiceLineItems" ADD CONSTRAINT "FK_InvoiceLineItems_Doctors_DoctorId"
+                        FOREIGN KEY ("DoctorId") REFERENCES "Doctors"("Id") ON DELETE SET NULL;
+                END IF;
+            END IF;
+
+            -- ── Add InvoiceId to Payments if missing ───────────────────
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Payments') THEN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId') THEN
+                    ALTER TABLE "Payments" ADD COLUMN "InvoiceId" uuid NULL;
+                    CREATE INDEX "IX_Payments_InvoiceId" ON "Payments" ("InvoiceId");
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Payments_Invoices_InvoiceId') THEN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId') THEN
+                        ALTER TABLE "Payments" ADD CONSTRAINT "FK_Payments_Invoices_InvoiceId"
+                            FOREIGN KEY ("InvoiceId") REFERENCES "Invoices"("Id") ON DELETE SET NULL;
+                    END IF;
+                END IF;
+            END IF;
+
+            -- ── Fix __EFMigrationsHistory ──────────────────────────────
+            -- Comprehensive cleanup: delete records for migrations whose schema doesn't exist,
+            -- then insert records for schema that does exist.
+            -- This fixes the problem where a previous reconciliation inserted ALL migration
+            -- records, causing MigrateAsync() to skip creating missing tables like ClinicServices.
+
+            -- DELETE records where primary schema element doesn't exist
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430221624_AddConversationPatientAndType'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501000000_AddNormalizedPhoneFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'PatientId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501020000_AddSoftDeleteToMessagingTables'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedAt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502000000_AddVisitsDocumentsFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Visits');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502010000_AddSecurePatientPortalPasswordAuth'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'RecipientType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260508052207_AddBookingRequest'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260511000000_AddDoctorIdToBookingRequest'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'BookingRequests' AND column_name = 'DoctorId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260512000000_AddRadiographFileMetadata'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicalPhotos' AND column_name = 'FileType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicQueueItems');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledAt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520202816_SyncAuditPhase2Configurations'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'AuditLogs');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260521000000_AddPasswordSaltAndPatientPhoneIndexes'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'PasswordSalt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260522000000_AddSoftDeleteColumnsToLegacyTables'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedAt');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260524000000_AddConversationPatientBranchFieldsAndIndexes'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525000000_AddMissingFKIndexesAndUserMustChangePassword'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'MustChangePassword');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260528000000_AddClinicServicesAndRooms'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260529000000_AddPatientJourneyFields'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'ReferralSource');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TreatmentPlanSteps');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260602000000_AddMessageAttachments'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MessageAttachments');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260603000000_AddOrthoDiagnosisRetentionPhotos'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'OrthoDiagnoses' AND column_name = 'RetentionPhotoLeft');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260604000000_AddSuppliersAndPurchases'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Suppliers');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionPercentage');
+            DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260607000000_AddCommissionRecognitionMode'
+                AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode');
+
+            -- INSERT records for schema that DOES exist (created by HOTFIX blocks)
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430221624_AddConversationPatientAndType') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260430221624_AddConversationPatientAndType', '8.0');
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260531000000_AddInvoicesAndInvoiceLineItems', '8.0');
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260601000000_AddInvoicePaymentLink', '8.0');
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'DoctorCommissionPayments')
+                AND NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem') THEN
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260606000000_AddDoctorCommissionSystem', '8.0');
+            END IF;
+        END $$;
+    """);
+    invLogger.LogInformation("HOTFIX: Invoices/InvoiceLineItems/Payments schema ensured and migration history reconciled (idempotent)");
+}
+catch (Exception ex)
+{
+    var invLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    invLogger2.LogError(ex, "HOTFIX: Failed to ensure Invoices/InvoiceLineItems schema. Invoice and commission endpoints may return 500!");
+}
+
 // ── One-time Admin Password Reset ─────────────────────────────────
 // SEC-03 FIX: Admin password reset only from environment variables.
 // In production: ADMIN_DEFAULT_PASSWORD is REQUIRED. No fallback.
@@ -1046,6 +1553,251 @@ if (enableStartupDbMaintenance)
     // They have been consolidated into this gated maintenance block with advisory lock.
     // The remaining pre-migration blocks above already ensure all required columns.
 
+    // ── Migration History Reconciliation ────────────────────────────────────
+    // HOTFIX: Previous deployments used raw SQL blocks to create tables/columns
+    // that are also defined in EF Core migrations. When MigrateAsync() runs, it
+    // sees these migrations as "not applied" (missing from __EFMigrationsHistory)
+    // but the schema already exists, causing "already exists" errors that block
+    // ALL subsequent migrations (including Invoices, Commission, etc.).
+    //
+    // Additionally, a previous reconciliation attempt incorrectly inserted migration
+    // records for ALL detected schema, even when the underlying tables/columns were
+    // only partially present. This caused MigrateAsync() to report "No migrations applied"
+    // while critical tables like Invoices and InvoiceLineItems were missing.
+    //
+    // This block:
+    // 1. Removes migration records for tables/columns that DON'T actually exist
+    // 2. Inserts migration records for tables/columns that DO exist but aren't recorded
+    // This ensures MigrateAsync() only applies truly missing migrations.
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                -- Ensure __EFMigrationsHistory table exists
+                CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                    "MigrationId" character varying(150) NOT NULL PRIMARY KEY,
+                    "ProductVersion" character varying(32) NOT NULL
+                );
+
+                -- ═══ STEP 1: Remove migration records for non-existent schema ═══
+                -- These were incorrectly inserted by the previous reconciliation.
+                -- We remove them so MigrateAsync() can re-apply them properly.
+
+                -- 20260531000000 requires Invoices table
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260531000000_AddInvoicesAndInvoiceLineItems'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Invoices');
+
+                -- 20260601000000 requires InvoiceId on Payments
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260601000000_AddInvoicePaymentLink'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Payments' AND column_name = 'InvoiceId');
+
+                -- 20260606000000 requires commission columns on InvoiceLineItems
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260606000000_AddDoctorCommissionSystem'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'DoctorCommissionPercentage');
+
+                -- 20260607000000 requires CommissionRecognitionMode on ClinicServices
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260607000000_AddCommissionRecognitionMode'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode');
+
+                -- Also remove any migration record where the PRIMARY table doesn't exist
+                -- This catches cases where a HOTFIX created a partial schema
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430221624_AddConversationPatientAndType'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501000000_AddNormalizedPhoneFields'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'PatientId');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501020000_AddSoftDeleteToMessagingTables'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedAt');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502000000_AddVisitsDocumentsFields'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Visits');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502010000_AddSecurePatientPortalPasswordAuth'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'RecipientType');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260508052207_AddBookingRequest'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260511000000_AddDoctorIdToBookingRequest'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'BookingRequests' AND column_name = 'DoctorId');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260512000000_AddRadiographFileMetadata'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicalPhotos' AND column_name = 'FileType');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicQueueItems');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledAt');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520202816_SyncAuditPhase2Configurations'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'AuditLogs');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260521000000_AddPasswordSaltAndPatientPhoneIndexes'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'PasswordSalt');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260522000000_AddSoftDeleteColumnsToLegacyTables'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedAt');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260523000000_AddPatientNormalizedPhoneFieldsAndIndexes'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260524000000_AddConversationPatientBranchFieldsAndIndexes'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'BranchId');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525000000_AddMissingFKIndexesAndUserMustChangePassword'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'MustChangePassword');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260528000000_AddClinicServicesAndRooms'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260530000000_AddPatientTreatmentPlanSteps'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'TreatmentPlanSteps');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260602000000_AddMessageAttachments'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MessageAttachments');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260603000000_AddOrthoDiagnosisRetentionPhotos'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'OrthoDiagnoses' AND column_name = 'RetentionPhotoLeft');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260604000000_AddSuppliersAndPurchases'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Suppliers');
+
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260605000000_AddClinicQueueItemServiceAndRoom'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'ServiceId');
+
+                -- ═══ STEP 2: Insert missing records for existing schema ═══
+                -- These were created by HOTFIX blocks but not recorded in __EFMigrationsHistory.
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260430221624_AddConversationPatientAndType')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260430221624_AddConversationPatientAndType', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501000000_AddNormalizedPhoneFields')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Patients' AND column_name = 'NormalizedPhone') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260501000000_AddNormalizedPhoneFields', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501010000_AddPatientConversationSupport')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'PatientId') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260501010000_AddPatientConversationSupport', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260501020000_AddSoftDeleteToMessagingTables')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedAt') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260501020000_AddSoftDeleteToMessagingTables', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502000000_AddVisitsDocumentsFields')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Visits') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260502000000_AddVisitsDocumentsFields', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260502010000_AddSecurePatientPortalPasswordAuth')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'PatientAccounts' AND column_name = 'PasswordHash') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260502010000_AddSecurePatientPortalPasswordAuth', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260503000000_AddConversationRecipientType')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'RecipientType') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260503000000_AddConversationRecipientType', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260507000000_AddBookingRequests')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260507000000_AddBookingRequests', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260508052207_AddBookingRequest')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'BookingRequests') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260508052207_AddBookingRequest', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260510000000_AddMessageEditFields')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'IsEdited') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260510000000_AddMessageEditFields', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260511000000_AddDoctorIdToBookingRequest')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'BookingRequests' AND column_name = 'DoctorId') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260511000000_AddDoctorIdToBookingRequest', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260513000000_AddDoctorCompensationFields')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Doctors' AND column_name = 'CompensationType') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260513000000_AddDoctorCompensationFields', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260514000000_AddClinicQueueItem')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicQueueItems') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260514000000_AddClinicQueueItem', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520000000_AddClinicQueueItemTrackingFields')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledAt') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260520000000_AddClinicQueueItemTrackingFields', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260520202816_SyncAuditPhase2Configurations')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'AuditLogs') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260520202816_SyncAuditPhase2Configurations', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260521000000_AddPasswordSaltAndPatientPhoneIndexes')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'PasswordSalt') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260521000000_AddPasswordSaltAndPatientPhoneIndexes', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260522000000_AddSoftDeleteColumnsToLegacyTables')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'DeletedAt') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260522000000_AddSoftDeleteColumnsToLegacyTables', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525000000_AddMissingFKIndexesAndUserMustChangePassword')
+                   AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Users' AND column_name = 'MustChangePassword') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260525000000_AddMissingFKIndexesAndUserMustChangePassword', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260528000000_AddClinicServicesAndRooms')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260528000000_AddClinicServicesAndRooms', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260602000000_AddMessageAttachments')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'MessageAttachments') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260602000000_AddMessageAttachments', '8.0');
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260604000000_AddSuppliersAndPurchases')
+                   AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Suppliers') THEN
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260604000000_AddSuppliersAndPurchases', '8.0');
+                END IF;
+            END $$;
+        """);
+        logger.LogInformation("Migration history reconciliation completed — cleaned incorrect records and inserted verified records");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Migration history reconciliation failed (non-fatal) — MigrateAsync may encounter errors");
+    }
+
     try
     {
         await db.Database.MigrateAsync();
@@ -1285,7 +2037,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.21-ruleforeach-fix" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.22-pr157-commission-live" }));
 
 // Serve uploaded files — resolve writable uploads directory
 // Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback

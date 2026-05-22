@@ -29,6 +29,7 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             ServiceException sex          => ((HttpStatusCode)sex.StatusCode, "خطأ في الطلب"),
             UnauthorizedAccessException  => (HttpStatusCode.Unauthorized, "غير مصرح"),
             KeyNotFoundException         => (HttpStatusCode.NotFound, "العنصر غير موجود"),
+            ArgumentException            => (HttpStatusCode.BadRequest, "بيانات غير صالحة"),
             InvalidOperationException    => (HttpStatusCode.BadRequest, "عملية غير صالحة"),
             // ERR-02 FIX: Handle concurrency conflicts with 409 Conflict
             DbUpdateConcurrencyException => (HttpStatusCode.Conflict, "تعارض في التحديث"),
@@ -41,6 +42,7 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             ServiceException => ex.Message, // Business-rule messages are safe to expose
             UnauthorizedAccessException => ex.Message, // Safe to expose auth errors
             KeyNotFoundException => ex.Message,         // Safe to expose not-found errors
+            ArgumentException => ex.Message,            // Validation messages are safe to expose
             DbUpdateConcurrencyException => "تم تعديل البيانات بواسطة مستخدم آخر. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
             _ => context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true
                 ? "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً."

@@ -19,6 +19,7 @@ public class CreateInvoiceLineItemRequest
     public string? Description { get; set; }
     public int Quantity { get; set; } = 1;
     public decimal UnitPrice { get; set; }
+    public Guid? DoctorId { get; set; }
     public Guid? RelatedTreatmentPlanStepId { get; set; }
     public Guid? RelatedVisitId { get; set; }
 }
@@ -38,6 +39,7 @@ public class UpdateInvoiceLineItemRequest
     public string? Description { get; set; }
     public int Quantity { get; set; } = 1;
     public decimal UnitPrice { get; set; }
+    public Guid? DoctorId { get; set; }
     public Guid? RelatedTreatmentPlanStepId { get; set; }
     public Guid? RelatedVisitId { get; set; }
 }

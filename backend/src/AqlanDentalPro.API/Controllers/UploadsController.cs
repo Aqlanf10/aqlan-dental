@@ -24,7 +24,7 @@ public class UploadsController(ILogger<UploadsController> logger) : ControllerBa
 
     // Resolved once at first use — same logic as Program.cs static files config
     private static string? _resolvedPath;
-    private static readonly Lock _pathLock = new();
+    private static readonly object _pathLock = new();
 
     private string ResolveUploadsDirectory()
     {

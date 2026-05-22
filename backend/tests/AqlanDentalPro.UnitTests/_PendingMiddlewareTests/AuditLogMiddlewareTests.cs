@@ -103,7 +103,7 @@ public class AuditLogMiddlewareTests
         auditLogs[0].UserId.Should().Be(staffUserId);
         auditLogs[0].Action.Should().Be(AuditAction.Create);
         auditLogs[0].Resource.Should().Be("patients");
-        auditLogs[0].NewData.Should().BeNull(); // Staff users don't get metadata in NewData
+        auditLogs[0].NewData.Should().NotBeNull(); // Middleware now stores metadata (statusCode) in NewData
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public class AuditLogMiddlewareTests
         var auditLog = await db.AuditLogs.FirstAsync();
         auditLog.UserId.Should().Be(adminUserId);
         auditLog.Action.Should().Be(AuditAction.Update);
-        auditLog.NewData.Should().BeNull(); // No metadata for staff users
+        auditLog.NewData.Should().NotBeNull(); // Middleware now stores metadata (statusCode) in NewData
     }
 
     [Fact]

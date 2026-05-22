@@ -36,6 +36,11 @@ public static class DbSeeder
             // Always run: reset admin password if ADMIN_RESET_PASSWORD env var is set.
             await EnsureAdminPasswordResetAsync(context, logger);
 
+            // HOTFIX: One-time admin password force-reset to recover from lockout.
+            // This runs only once (tracked by a Setting row) and resets the admin
+            // password back to the default seed value, ensuring the account is active.
+            await ForceAdminPasswordResetOnceAsync(context, logger);
+
             if (!await context.RolePermissions.AnyAsync())
                 await SeedPermissionsAsync(context);
 
@@ -60,6 +65,62 @@ public static class DbSeeder
         {
             logger.LogError(ex, "Database seeding failed, but app will continue running.");
             // Don't rethrow - let the app start even if seeding partially fails
+        }
+    }
+
+    /// <summary>
+    /// HOTFIX: One-time admin password force-reset to recover from lockout.
+    /// Uses a Setting row as a sentinel to ensure this only runs once.
+    /// Resets admin password to the default seed value and activates the account.
+    /// </summary>
+    private static async Task ForceAdminPasswordResetOnceAsync(AppDbContext context, ILogger logger)
+    {
+        const string sentinelKey = "system.admin_force_reset_v1";
+
+        try
+        {
+            var alreadyDone = await context.Settings.AnyAsync(s => s.Key == sentinelKey);
+            if (alreadyDone) return;
+
+            var admin = await context.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Username == "admin");
+
+            if (admin is null)
+            {
+                logger.LogWarning("HOTFIX: Admin user not found, skipping force reset.");
+                return;
+            }
+
+            var defaultPassword = "AqlanDental2024!";
+            var salt = GenerateSalt();
+            var hash = HashPassword(defaultPassword, salt);
+
+            admin.PasswordHash = hash;
+            admin.PasswordSalt = salt;
+            admin.IsActive = true;
+            admin.MustChangePassword = false;
+            admin.UpdatedAt = DateTime.UtcNow;
+
+            // Write sentinel so this never runs again
+            context.Settings.Add(new Setting
+            {
+                Key = sentinelKey,
+                Value = DateTime.UtcNow.ToString("O"),
+                Category = "system"
+            });
+
+            await context.SaveChangesAsync();
+
+            logger.LogWarning(
+                "HOTFIX: Admin password was force-reset to default value. " +
+                "Account activated. Sentinel key={Key} written to prevent re-run.",
+                sentinelKey);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "HOTFIX: Failed to force-reset admin password. Will retry on next startup.");
+            // Don't write sentinel on failure — this allows retry on next startup
         }
     }
 

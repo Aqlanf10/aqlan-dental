@@ -318,6 +318,7 @@ export function PatientTable() {
                               className="absolute left-0 top-8 z-30 bg-white rounded-xl py-1 min-w-44 text-sm"
                               dir="rtl"
                               style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12)", border: "1px solid #e8f0f9" }}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <Link
                                 href={`/patients/${p.id}`}

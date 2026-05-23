@@ -137,7 +137,7 @@ public class AppointmentReminderJob : BackgroundService
                         var appointmentTime = appt.StartTime.ToString("HH:mm");
                         var clinicService = appt.Service?.ArabicName;
 
-                        var subject = $"تذكير بموعدكم في مركز د. عقلان الكامل — {appointmentDate}";
+                        var subject = $"تذكير بموعد مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الاسنان — {appointmentDate}";
                         var htmlBody = EmailService.BuildAppointmentReminderHtml(
                             patientName, doctorName, appointmentDate,
                             appointmentTime, clinicService, appt.Notes);

@@ -454,7 +454,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         var timeStr = appointment.StartTime.ToString("HH:mm");
         var clinicService = appointment.Service?.ArabicName;
 
-        var subject = $"تذكير بموعدك في مركز عقلان الكامل";
+        var subject = $"تذكير بموعد مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الاسنان";
         var htmlBody = EmailService.BuildAppointmentReminderHtml(
             patientName, doctorName, dateStr, timeStr, clinicService, appointment.Notes);
 

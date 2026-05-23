@@ -87,6 +87,10 @@ public sealed class PatientProfileUpdateDtoValidator : AbstractValidator<Patient
             .Matches(@"^[\d+\-\(\)\s]*$").WithMessage("رقم الهاتف يحتوي على أحرف غير صالحة")
             .When(x => !string.IsNullOrWhiteSpace(x.Phone));
 
+        RuleFor(x => x.Email)
+            .EmailAddress().WithMessage("البريد الإلكتروني غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.Email));
+
         RuleFor(x => x.WhatsApp)
             .MaximumLength(20).WithMessage("رقم الواتساب يجب ألا يتجاوز 20 رقماً")
             .Matches(@"^[\d+\-\(\)\s]*$").WithMessage("رقم الواتساب يحتوي على أحرف غير صالحة")

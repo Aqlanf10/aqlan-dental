@@ -13,6 +13,18 @@ public static class DbSeeder
 {
     public static async Task SeedAsync(AppDbContext context, ILogger logger)
     {
+        // ── Critical admin operations: always run first, independently of migration status ──
+        // These must succeed even if MigrateAsync fails, otherwise the admin can be locked out
+        // with no email and no way to recover.
+        try { await EnsureAdminPasswordResetAsync(context, logger); }
+        catch (Exception ex) { logger.LogWarning(ex, "EnsureAdminPasswordResetAsync failed, continuing."); }
+
+        try { await EnsureAdminEmailAsync(context, logger); }
+        catch (Exception ex) { logger.LogWarning(ex, "EnsureAdminEmailAsync failed, continuing."); }
+
+        try { await ForceAdminPasswordResetOnceAsync(context, logger); }
+        catch (Exception ex) { logger.LogWarning(ex, "ForceAdminPasswordResetOnceAsync failed, continuing."); }
+
         try
         {
             // TD-020 Phase B2: The following 4 pre-MigrateAsync ExecuteSqlRaw calls
@@ -32,17 +44,6 @@ public static class DbSeeder
                 await SeedUsersAndDoctorsAsync(context);
             else
                 await MigrateUserPasswordsAsync(context);
-
-            // Always run: reset admin password if ADMIN_RESET_PASSWORD env var is set.
-            await EnsureAdminPasswordResetAsync(context, logger);
-
-            // Always run: set admin email if ADMIN_EMAIL env var is set (needed for forgot-password).
-            await EnsureAdminEmailAsync(context, logger);
-
-            // HOTFIX: One-time admin password force-reset to recover from lockout.
-            // This runs only once (tracked by a Setting row) and resets the admin
-            // password back to the default seed value, ensuring the account is active.
-            await ForceAdminPasswordResetOnceAsync(context, logger);
 
             // Additive seeding: only add missing (Role, Resource) combinations
             await SeedPermissionsAsync(context);

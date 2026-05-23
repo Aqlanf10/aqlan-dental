@@ -302,9 +302,21 @@ public class AuthController(
         if (request.NewPassword != request.ConfirmPassword)
             return BadRequest(new { message = "كلمة المرور الجديدة وتأكيدها غير متطابقين" });
 
-        // Validate password strength (min 8 chars)
+        // Validate password strength (matches ChangePasswordRequestValidator rules)
         if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
             return BadRequest(new { message = "كلمة المرور يجب أن تكون 8 أحرف على الأقل" });
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[A-Z]"))
+            return BadRequest(new { message = "كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل" });
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[a-z]"))
+            return BadRequest(new { message = "كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل" });
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[0-9]"))
+            return BadRequest(new { message = "كلمة المرور يجب أن تحتوي على رقم واحد على الأقل" });
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, @"[^A-Za-z0-9]"))
+            return BadRequest(new { message = "كلمة المرور يجب أن تحتوي على رمز خاص واحد على الأقل" });
 
         // Hash provided token, look up in PasswordResetTokens
         var tokenHash = HashToken(request.Token);

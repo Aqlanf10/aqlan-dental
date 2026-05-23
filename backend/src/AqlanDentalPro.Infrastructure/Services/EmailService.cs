@@ -22,6 +22,13 @@ public class EmailService : IEmailService
     {
         var host = _config["SMTP_HOST"] ?? _config["Smtp:Host"] ?? "";
         var isConfigured = !string.IsNullOrWhiteSpace(host);
+        if (!isConfigured)
+        {
+            _logger.LogDebug(
+                "SMTP not configured. Set SMTP_HOST (and SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD) " +
+                "environment variables to enable email-based password reset. " +
+                "Without SMTP, forgot-password falls back to admin-managed PasswordResetRequest.");
+        }
         return Task.FromResult(isConfigured);
     }
 

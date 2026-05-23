@@ -58,7 +58,7 @@ public record BookingAvailabilityResponseDto(
 );
 
 public record ConvertBookingRequestToAppointmentDto(
-    [Required] Guid PatientId,
+    Guid PatientId,
     [Required] Guid DoctorId,
     [Required] DateOnly AppointmentDate,
     [Required] TimeOnly StartTime,

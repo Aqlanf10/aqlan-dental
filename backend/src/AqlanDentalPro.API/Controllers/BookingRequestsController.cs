@@ -175,7 +175,14 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
     public async Task<IActionResult> ConvertToAppointment(Guid id, [FromBody] ConvertBookingRequestToAppointmentDto dto)
     {
         if (!ModelState.IsValid)
-            return BadRequest(ModelState);
+        {
+            var errors = ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage)
+                .Where(m => !string.IsNullOrWhiteSpace(m));
+            var message = string.Join(" | ", errors);
+            return BadRequest(new { message = string.IsNullOrWhiteSpace(message) ? "بيانات غير صالحة" : message });
+        }
 
         var userId = currentUser.UserId;
         if (userId == null) return Unauthorized();
@@ -192,6 +199,11 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
         {
             logger.LogWarning(ex, "Invalid argument converting booking request {BookingRequestId} to appointment", id);
             return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error converting booking request {BookingRequestId} to appointment", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "حدث خطأ غير متوقع أثناء تحويل الطلب إلى موعد" });
         }
     }
 

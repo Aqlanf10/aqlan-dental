@@ -654,17 +654,19 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// <summary>
     /// H9 FIX: Generates a unique receipt number using advisory lock + sequential pattern.
     /// Format: RCP-yyyyMMdd-NNN (sequential, not random).
-    /// CON FIX: Now wrapped in advisory lock + retry loop to prevent race conditions
-    /// when multiple payments are created concurrently.
+    /// CON FIX: Uses pg_advisory_xact_lock inside an explicit transaction to prevent
+    /// race conditions when multiple payments are created concurrently.
+    /// Transaction-level lock is automatically released on commit/rollback — safe with
+    /// connection pooling (no risk of stuck locks if the connection is returned to the pool).
     /// </summary>
     private async Task<string> GenerateReceiptNumberAsync()
     {
-        // Use session-level advisory lock instead of transaction-level to ensure
-        // the lock spans the full scope including the caller's SaveChangesAsync.
         var lockKey = Math.Abs("ReceiptNumber".GetHashCode()) % 100000;
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
+        await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
             var today = DateTime.UtcNow;
             var datePart = today.ToString("yyyyMMdd");
             var prefix = $"RCP-{datePart}-";
@@ -684,27 +686,31 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                     nextSeq = lastSeq + 1;
             }
 
+            await tx.CommitAsync();
             return $"{prefix}{nextSeq:D3}";
         }
-        finally
+        catch
         {
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey);
+            await tx.RollbackAsync();
+            throw;
         }
     }
 
     /// <summary>
     /// H9 FIX: Generates a unique refund receipt number.
     /// Format: REF-yyyyMMdd-NNN (sequential).
-    /// CON FIX: Now uses advisory lock to prevent race conditions.
+    /// CON FIX: Uses pg_advisory_xact_lock inside an explicit transaction to prevent
+    /// race conditions. Transaction-level lock is automatically released on commit/rollback
+    /// — safe with connection pooling (no risk of stuck locks).
     /// </summary>
     private async Task<string> GenerateRefundReceiptNumberAsync()
     {
-        // Use session-level advisory lock instead of transaction-level to ensure
-        // the lock spans the full scope including the caller's SaveChangesAsync.
         var lockKey = Math.Abs("RefundReceiptNumber".GetHashCode()) % 100000;
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
+        await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
             var today = DateTime.UtcNow;
             var datePart = today.ToString("yyyyMMdd");
             var prefix = $"REF-{datePart}-";
@@ -714,7 +720,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
                 .OrderByDescending(p => p.ReceiptNumber)
                 .Select(p => p.ReceiptNumber)
-            .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync();
 
             var nextSeq = 1;
             if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
@@ -724,11 +730,13 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                     nextSeq = lastSeq + 1;
             }
 
+            await tx.CommitAsync();
             return $"{prefix}{nextSeq:D3}";
         }
-        finally
+        catch
         {
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey);
+            await tx.RollbackAsync();
+            throw;
         }
     }
 

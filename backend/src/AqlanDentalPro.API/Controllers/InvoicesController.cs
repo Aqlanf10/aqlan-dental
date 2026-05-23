@@ -442,7 +442,6 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             }
 
             // Soft-delete existing line items (preserve audit trail and commission links)
-            var userId = GetCurrentUserId();
             foreach (var existingItem in invoice.LineItems.Where(l => l.IsActive))
             {
                 existingItem.IsActive = false;
@@ -491,7 +490,12 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             }
         }
 
-        // Recalculate totals
+        // Persist soft-deleted items and new items before recalculating totals.
+        // Without this, the ChangeTracker can return stale data (soft-deleted items
+        // still visible via identity resolution, new items not yet in DB).
+        await db.SaveChangesAsync();
+
+        // Recalculate totals from the now-consistent database state
         var allLineItems = await db.InvoiceLineItems
             .Where(l => l.InvoiceId == invoice.Id && l.IsActive)
             .ToListAsync();

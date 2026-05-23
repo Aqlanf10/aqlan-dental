@@ -3,8 +3,8 @@ import { useEffect, useState, useCallback } from "react";
 import {
   Settings, Users, Shield, Save, Plus, X, UserCheck, UserX,
   FileSearch, Globe, Stethoscope, DoorOpen, Search, Filter,
-  Trash2, RotateCcw, KeyRound, Eye, EyeOff, Copy, AlertTriangle,
-  UserCog, Loader2, ShieldAlert, CheckCircle2, XCircle, MessageSquare,
+  Trash2, RotateCcw, KeyRound, Copy, AlertTriangle,
+  UserCog, Loader2, ShieldAlert, CheckCircle2, XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import { useAuthStore } from "@/stores/authStore";
 import api from "@/lib/api";
 import {
   useUsers,
+  usePatientPortalAccounts,
   usePasswordResetRequests,
   usePermissions,
   useCreateUser,
@@ -25,7 +26,6 @@ import {
   useRejectResetRequest,
   useUpdateRolePermissions,
   type UserDetailDto,
-  type PasswordResetRequestDto,
   type PermissionDto,
   type CreateUserRequest,
   type EditUserRequest,
@@ -62,6 +62,20 @@ const ROLE_LABELS: Record<string, string> = {
 const ALL_ROLES = ["Admin","Orthodontist","GeneralDentist","OralSurgeon","Reception","Accountant","Assistant","BranchManager"] as const;
 
 const inputCls = "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue";
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const response = error as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+  const message = response.response?.data?.message;
+  if (message) return message;
+
+  const errors = response.response?.data?.errors;
+  if (errors) {
+    const firstError = Object.values(errors).flat()[0];
+    if (firstError) return firstError;
+  }
+
+  return fallback;
+}
 
 // ─── Clinic Info Tab ──────────────────────────────────────────────────────────
 function ClinicTab() {
@@ -161,7 +175,9 @@ function ClinicTab() {
 // ─── Users Tab (Complete Rewrite) ────────────────────────────────────────────
 function UsersTab() {
   const { data: users, isLoading: usersLoading } = useUsers();
-  const { data: resetRequests, isLoading: requestsLoading } = usePasswordResetRequests();
+  const { data: patientPortalAccounts, isLoading: portalAccountsLoading } = usePatientPortalAccounts();
+  const { data: resetRequests } = usePasswordResetRequests();
+  const [accountView, setAccountView] = useState<"staff" | "patients">("staff");
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -333,7 +349,7 @@ function UsersTab() {
     });
   };
 
-  if (usersLoading) {
+  if (usersLoading && accountView === "staff") {
     return <div className="animate-pulse space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}</div>;
   }
 
@@ -352,6 +368,102 @@ function UsersTab() {
         </div>
       )}
 
+      {/* Account type tabs */}
+      <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+        <button
+          type="button"
+          onClick={() => setAccountView("staff")}
+          className={cn(
+            "px-3 py-1.5 text-sm font-medium rounded-md transition",
+            accountView === "staff" ? "bg-white text-clinic-blue shadow-sm" : "text-gray-600 hover:text-gray-900"
+          )}
+        >
+          حسابات الطاقم
+        </button>
+        <button
+          type="button"
+          onClick={() => setAccountView("patients")}
+          className={cn(
+            "px-3 py-1.5 text-sm font-medium rounded-md transition",
+            accountView === "patients" ? "bg-white text-clinic-blue shadow-sm" : "text-gray-600 hover:text-gray-900"
+          )}
+        >
+          حسابات بوابة المرضى
+        </button>
+      </div>
+
+      {accountView === "patients" ? (
+        <div className="space-y-4">
+          {portalAccountsLoading ? (
+            <div className="animate-pulse space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-100 rounded-lg" />)}
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">{(patientPortalAccounts ?? []).length} حساب مريض</p>
+                <p className="text-xs text-gray-400">تدار كلمات المرور من ملف المريض فقط</p>
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {["المريض", "رقم الملف", "اسم الدخول", "الهاتف", "الحالة", "آخر دخول", "ملف المريض"].map((h) => (
+                        <th key={h} className="text-start px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(patientPortalAccounts ?? []).length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                          لا توجد حسابات بوابة مرضى
+                        </td>
+                      </tr>
+                    ) : (
+                      (patientPortalAccounts ?? []).map((account) => (
+                        <tr key={account.patientId} className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-3 font-medium text-gray-900">{account.patientName || "—"}</td>
+                          <td className="px-4 py-3 font-mono text-gray-700" dir="ltr">{account.patientNumber}</td>
+                          <td className="px-4 py-3 font-mono text-gray-700" dir="ltr">{account.username}</td>
+                          <td className="px-4 py-3 text-gray-500" dir="ltr">{account.phone || "—"}</td>
+                          <td className="px-4 py-3">
+                            <span className={cn(
+                              "text-xs px-2 py-0.5 rounded-full font-medium",
+                              account.accountActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"
+                            )}>
+                              {account.accountActive ? "نشط" : "معطل"}
+                            </span>
+                            {account.mustChangePassword && (
+                              <span className="me-1 text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+                                تغيير كلمة المرور مطلوب
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">
+                            {account.lastLogin
+                              ? new Date(account.lastLogin).toLocaleDateString("ar-YE", { year: "numeric", month: "short", day: "numeric" })
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Link
+                              href={`/patients/${account.patientId}`}
+                              className="text-clinic-blue hover:underline text-xs font-medium"
+                            >
+                              فتح الملف
+                            </Link>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+      <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{(users ?? []).length} مستخدم</p>
@@ -557,10 +669,7 @@ function UsersTab() {
                 setShowCreateDialog(false);
                 showToast("تم إنشاء المستخدم بنجاح");
               },
-              onError: (err) => {
-                const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-                showToast(msg ?? "حدث خطأ أثناء إنشاء المستخدم", "error");
-              },
+              onError: (err) => showToast(getApiErrorMessage(err, "حدث خطأ أثناء إنشاء المستخدم"), "error"),
             });
           }}
           saving={createUser.isPending}
@@ -578,10 +687,7 @@ function UsersTab() {
                 setEditingUser(null);
                 showToast("تم تحديث المستخدم بنجاح");
               },
-              onError: (err) => {
-                const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-                showToast(msg ?? "حدث خطأ أثناء التحديث", "error");
-              },
+              onError: (err) => showToast(getApiErrorMessage(err, "حدث خطأ أثناء التحديث"), "error"),
             });
           }}
           saving={editUser.isPending}
@@ -711,6 +817,8 @@ function UsersTab() {
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
       />
+      </>
+      )}
     </div>
   );
 }
@@ -1051,8 +1159,8 @@ function RolesTab() {
           setToast({ message: "تم حفظ الصلاحيات بنجاح", type: "success" });
           setTimeout(() => setToast(null), 3000);
         },
-        onError: () => {
-          setToast({ message: "حدث خطأ أثناء الحفظ", type: "error" });
+        onError: (err) => {
+          setToast({ message: getApiErrorMessage(err, "حدث خطأ أثناء الحفظ"), type: "error" });
           setTimeout(() => setToast(null), 3000);
         },
         onSettled: () => setSaving(false),

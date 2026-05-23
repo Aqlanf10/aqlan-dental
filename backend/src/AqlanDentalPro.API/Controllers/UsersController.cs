@@ -136,6 +136,19 @@ public sealed class PermissionDefinitionDto
     public string Label { get; init; } = string.Empty;
 }
 
+public sealed class PatientPortalAccountListItemDto
+{
+    public Guid PatientId { get; init; }
+    public string PatientNumber { get; init; } = string.Empty;
+    public string PatientName { get; init; } = string.Empty;
+    public string? Phone { get; init; }
+    public string Username { get; init; } = string.Empty;
+    public bool AccountActive { get; init; }
+    public bool MustChangePassword { get; init; }
+    public DateTime? LastLogin { get; init; }
+    public Guid? LinkedUserId { get; init; }
+}
+
 [ApiController]
 [Route("api/users")]
 [Authorize(Policy = "AdminOnly")]
@@ -150,7 +163,8 @@ public class UsersController(
     public async Task<IActionResult> GetAll()
     {
         // N+1 FIX: Single query with LeftJoin instead of correlated subquery per user
-        var users = await (from u in db.Users
+        var users = await (from u in db.Users.IgnoreQueryFilters()
+                           where u.Role != UserRole.Patient
                            join d in db.Doctors on u.Id equals d.UserId into dj
                            from doctor in dj.DefaultIfEmpty()
                            orderby u.Username
@@ -169,6 +183,32 @@ public class UsersController(
                           .ToListAsync();
 
         return Ok(users);
+    }
+
+    [HttpGet("patient-portal-accounts")]
+    public async Task<ActionResult<List<PatientPortalAccountListItemDto>>> GetPatientPortalAccounts()
+    {
+        var accounts = await db.PatientAccounts
+            .IgnoreQueryFilters()
+            .Include(a => a.Patient)
+            .OrderBy(a => a.Patient.PatientNumber)
+            .Select(a => new PatientPortalAccountListItemDto
+            {
+                PatientId = a.PatientId,
+                PatientNumber = a.Patient.PatientNumber,
+                PatientName = (a.Patient.FirstName + " " +
+                               (a.Patient.MiddleName ?? "") + " " +
+                               a.Patient.LastName).Replace("  ", " ").Trim(),
+                Phone = a.Patient.Phone ?? a.PhoneNumber,
+                Username = a.Username ?? a.Patient.PatientNumber,
+                AccountActive = a.IsActive && a.PortalAccountActive,
+                MustChangePassword = a.MustChangePassword,
+                LastLogin = a.LastLogin,
+                LinkedUserId = a.LinkedUserId
+            })
+            .ToListAsync();
+
+        return Ok(accounts);
     }
 
     /// <summary>قائمة المستخدمين للرسائل — متاح لجميع الأدوار مع تصفية حسب الصلاحيات</summary>
@@ -217,7 +257,7 @@ public class UsersController(
         var user = await (from u in db.Users
                           join d in db.Doctors on u.Id equals d.UserId into dj
                           from doctor in dj.DefaultIfEmpty()
-                          where u.Id == id
+                          where u.Id == id && u.Role != UserRole.Patient
                           select new
                           {
                               u.Id,
@@ -244,11 +284,14 @@ public class UsersController(
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest req)
     {
-        if (await db.Users.AnyAsync(u => u.Username == req.Username))
+        if (await db.Users.IgnoreQueryFilters().AnyAsync(u => u.Username == req.Username))
             return Conflict(new { message = "اسم المستخدم مستخدم بالفعل" });
 
         if (!Enum.TryParse<UserRole>(req.Role, out var role))
             return BadRequest(new { message = "الدور غير صالح" });
+
+        if (role == UserRole.Patient)
+            return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
 
         // Generate unique salt for each user
         var salt = AuthService.GenerateSalt();
@@ -264,15 +307,16 @@ public class UsersController(
         };
         db.Users.Add(user);
 
-        if (!string.IsNullOrWhiteSpace(req.DoctorName))
+        if (IsDoctorRole(role))
         {
+            var doctorName = string.IsNullOrWhiteSpace(req.DoctorName) ? req.Username : req.DoctorName.Trim();
             db.Doctors.Add(new Doctor
             {
                 UserId = user.Id,
-                Name = req.DoctorName,
+                Name = doctorName,
                 Specialty = req.DoctorSpecialty,
                 Color = req.DoctorColor ?? "#0E7490",
-                AvatarInitials = req.DoctorName.Split(' ').FirstOrDefault()?.Substring(0, 1) ?? "د",
+                AvatarInitials = doctorName.Split(' ').FirstOrDefault()?.Substring(0, 1) ?? "د",
             });
         }
 
@@ -287,17 +331,20 @@ public class UsersController(
     public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserRequest req)
     {
         var user = await db.Users
+            .IgnoreQueryFilters()
             .Include(u => u.Doctor)
             .FirstOrDefaultAsync(u => u.Id == id);
 
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user.Role == UserRole.Patient)
+            return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
 
         var oldData = new { user.Username, user.Email, Role = user.Role.ToString() };
 
         // Validate unique username (excluding self)
         if (!string.IsNullOrWhiteSpace(req.Username) && req.Username != user.Username)
         {
-            if (await db.Users.AnyAsync(u => u.Username == req.Username))
+            if (await db.Users.IgnoreQueryFilters().AnyAsync(u => u.Username == req.Username))
                 return Conflict(new { message = "اسم المستخدم مستخدم بالفعل" });
             user.Username = req.Username;
         }
@@ -324,6 +371,9 @@ public class UsersController(
         // Handle role change
         if (!string.IsNullOrWhiteSpace(req.Role) && Enum.TryParse<UserRole>(req.Role, out var newRole) && newRole != user.Role)
         {
+            if (newRole == UserRole.Patient)
+                return BadRequest(new { message = "لا يمكن تحويل مستخدم طاقم إلى حساب مريض من هذه الشاشة" });
+
             // Prevent editing the last active admin's role to non-admin
             if (user.Role == UserRole.Admin && newRole != UserRole.Admin)
             {
@@ -374,11 +424,15 @@ public class UsersController(
     [HttpPut("{id:guid}/role")]
     public async Task<IActionResult> UpdateRole(Guid id, [FromBody] UpdateUserRoleRequest req)
     {
-        var user = await db.Users.FindAsync(id);
+        var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user.Role == UserRole.Patient)
+            return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
 
         if (!Enum.TryParse<UserRole>(req.Role, out var role))
             return BadRequest(new { message = "الدور غير صالح" });
+        if (role == UserRole.Patient)
+            return BadRequest(new { message = "لا يمكن تحويل مستخدم طاقم إلى حساب مريض من هذه الشاشة" });
 
         // Prevent changing last admin's role
         if (user.Role == UserRole.Admin && role != UserRole.Admin)
@@ -402,8 +456,10 @@ public class UsersController(
     [HttpPut("{id:guid}/status")]
     public async Task<IActionResult> ToggleStatus(Guid id)
     {
-        var user = await db.Users.FindAsync(id);
+        var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user.Role == UserRole.Patient)
+            return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
 
         // Prevent deactivating the last active admin
         if (user.IsActive && user.Role == UserRole.Admin)
@@ -427,8 +483,10 @@ public class UsersController(
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var user = await db.Users.FindAsync(id);
+        var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user.Role == UserRole.Patient)
+            return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
 
         // Prevent self-deletion
         if (currentUser.UserId == id)
@@ -462,6 +520,8 @@ public class UsersController(
             .FirstOrDefaultAsync(u => u.Id == id);
 
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user.Role == UserRole.Patient)
+            return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
 
         if (user.IsActive)
             return BadRequest(new { message = "المستخدم نشط بالفعل" });
@@ -480,8 +540,10 @@ public class UsersController(
     [HttpPost("{id:guid}/reset-password")]
     public async Task<IActionResult> ResetPassword(Guid id)
     {
-        var user = await db.Users.FindAsync(id);
+        var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
         if (user is null) return NotFound(new { message = "المستخدم غير موجود" });
+        if (user.Role == UserRole.Patient)
+            return BadRequest(new { message = "حسابات المرضى تدار من تبويب حسابات بوابة المرضى وليس من مستخدمي الطاقم" });
 
         // Generate 12-char temporary password with uppercase+lowercase+digits+special
         var tempPassword = GenerateTemporaryPassword();

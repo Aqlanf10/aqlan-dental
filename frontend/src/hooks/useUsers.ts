@@ -61,6 +61,18 @@ export interface RolePermissionDto {
   permissions: string[];
 }
 
+export interface PatientPortalAccountListItem {
+  patientId: string;
+  patientNumber: string;
+  patientName: string;
+  phone?: string;
+  username: string;
+  accountActive: boolean;
+  mustChangePassword: boolean;
+  lastLogin?: string | null;
+  linkedUserId?: string | null;
+}
+
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 /** Hook: Fetch all users */
@@ -69,6 +81,18 @@ export function useUsers() {
     queryKey: ["users"],
     queryFn: async () => {
       const { data } = await api.get<UserDetailDto[]>("/api/users");
+      return data;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** Hook: Fetch patient portal accounts separately from staff users */
+export function usePatientPortalAccounts() {
+  return useQuery({
+    queryKey: ["patient-portal-accounts"],
+    queryFn: async () => {
+      const { data } = await api.get<PatientPortalAccountListItem[]>("/api/users/patient-portal-accounts");
       return data;
     },
     staleTime: 30_000,
@@ -218,8 +242,8 @@ export function useResetUserPassword() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { data } = await api.post<{ temporaryPassword: string }>(`/api/users/${id}/reset-password`);
-      return data;
+      const { data } = await api.post<{ temporaryPassword?: string; tempPassword?: string }>(`/api/users/${id}/reset-password`);
+      return { temporaryPassword: data.temporaryPassword ?? data.tempPassword ?? "" };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -232,8 +256,8 @@ export function useApproveResetRequest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { data } = await api.post<{ temporaryPassword: string }>(`/api/users/password-reset-requests/${id}/approve`);
-      return data;
+      const { data } = await api.post<{ temporaryPassword?: string; tempPassword?: string }>(`/api/users/password-reset-requests/${id}/approve`);
+      return { temporaryPassword: data.temporaryPassword ?? data.tempPassword ?? "" };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["password-reset-requests"] });

@@ -12,6 +12,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
+import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 /* ─── Brand constants ───────────────────────────────────────────────────────── */
 const NAVY = "#1a3a5c";
@@ -280,6 +281,20 @@ export default function DailyOperationsPage() {
           لوحة التحكم
         </Link>
       </div>
+
+      {/* ── Workflow Navigation ─────────────────────────────────────────── */}
+      <WorkflowNav
+        links={[
+          WORKFLOW_LINKS.bookingRequests(),
+          WORKFLOW_LINKS.appointments(),
+          WORKFLOW_LINKS.newAppointment(),
+          WORKFLOW_LINKS.clinicQueue(),
+          WORKFLOW_LINKS.patientJourney(),
+          WORKFLOW_LINKS.checkout(),
+          WORKFLOW_LINKS.payments(),
+        ]}
+        currentPage="/daily-operations"
+      />
 
       {/* ── Empty state when no sections visible ───────────────────────────── */}
       {visibleSections.length === 0 && (

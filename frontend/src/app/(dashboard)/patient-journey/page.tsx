@@ -155,6 +155,9 @@ export default function PatientJourneyPage() {
   const [checkoutNextService, setCheckoutNextService] = useState("");
   const [checkoutNotes, setCheckoutNotes] = useState("");
 
+  // Checkout success state
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+
   // Draft invoice creation
   const [draftInvoiceLoading, setDraftInvoiceLoading] = useState(false);
   const [draftInvoiceResult, setDraftInvoiceResult] = useState<{ invoiceId: string; invoiceNumber: string } | null>(null);
@@ -246,6 +249,7 @@ export default function PatientJourneyPage() {
       setCheckoutNotes("");
       setDraftInvoiceLoading(false);
       setDraftInvoiceResult(null);
+      setCheckoutSuccess(false);
       setDialogError("");
       setShowCheckout(true);
       return;
@@ -305,19 +309,15 @@ export default function PatientJourneyPage() {
     setActionLoading(true);
     setDialogError("");
     try {
-      const res = await api.post(`/api/patient-journey/${selectedItem.appointmentId}/checkout`, {
+      await api.post(`/api/patient-journey/${selectedItem.appointmentId}/checkout`, {
         paymentAmount: checkoutAmount > 0 ? checkoutAmount : null,
         paymentMethod: checkoutPayment,
         nextAppointmentDate: checkoutNextDate || null,
         nextServiceId: checkoutNextService || null,
         notes: checkoutNotes || null,
       });
-      setShowCheckout(false);
+      setCheckoutSuccess(true);
       loadJourney();
-      // If payment is needed, guide user to Payments page
-      if (checkoutAmount > 0 && res.data?.nextActions?.some((a: string) => a.includes("المالية"))) {
-        router.push(`/finance?patientId=${selectedItem.patientId}`);
-      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       setDialogError(msg);
@@ -687,12 +687,11 @@ export default function PatientJourneyPage() {
       {/* ─── Checkout Dialog ───────────────────────────────────────────── */}
       {showCheckout && selectedItem && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <form
-            onSubmit={handleCheckoutSubmit}
-            className="bg-white rounded-2xl shadow-xl w-full max-w-lg space-y-4 p-6"
-          >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg space-y-4 p-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">إنهاء الحساب</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                {checkoutSuccess ? "تم إنهاء الحساب بنجاح" : "إنهاء الحساب"}
+              </h2>
               <button
                 type="button"
                 onClick={() => setShowCheckout(false)}
@@ -710,146 +709,201 @@ export default function PatientJourneyPage() {
               <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{dialogError}</p>
             )}
 
-            {/* Info banner — checkout is workflow-status only */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
-              إنهاء الحساب هنا يغيّر حالة الزيارة فقط. لتسجيل الدّفع الفعلي، انتقل إلى صفحة المالية بعد الإنهاء.
-            </div>
+            {/* ── Success State ── */}
+            {checkoutSuccess && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <span className="text-sm font-medium text-green-800">
+                    تم إنهاء حساب الزيارة بنجاح
+                  </span>
+                </div>
 
-            {/* Create Draft Invoice */}
-            {selectedItem.checkoutStatus === "ReadyForCheckout" && !draftInvoiceResult && (
-              <div className="border border-[#3d7ab5]/20 bg-[#f7fafd] rounded-lg p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-medium text-[#0d2137]">
-                    <FileText className="w-4 h-4 text-[#3d7ab5]" />
-                    إنشاء فاتورة مسودة
+                {/* Draft invoice link */}
+                {draftInvoiceResult && (
+                  <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-1">
+                    <p className="text-sm font-medium text-green-800">
+                      الفاتورة: <span className="font-mono">{draftInvoiceResult.invoiceNumber}</span>
+                    </p>
+                    <Link
+                      href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                      className="text-sm text-[#3d7ab5] hover:underline flex items-center gap-1"
+                    >
+                      <FileText className="w-4 h-4" />
+                      عرض الفاتورة
+                    </Link>
                   </div>
+                )}
+
+                {/* Payments link */}
+                <div className="border border-blue-200 bg-blue-50 rounded-lg p-3 space-y-1">
+                  <p className="text-sm font-medium text-blue-800">تسجيل الدفع الفعلي</p>
+                  <Link
+                    href={`/finance/payments?patientId=${selectedItem.patientId}`}
+                    className="text-sm text-[#3d7ab5] hover:underline flex items-center gap-1"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    الانتقال إلى صفحة المدفوعات
+                  </Link>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
-                    disabled={draftInvoiceLoading}
-                    onClick={async () => {
-                      if (!selectedItem.visitId) {
-                        toast.error("لا يوجد زيارة مرتبطة لإنشاء فاتورة");
-                        return;
-                      }
-                      setDraftInvoiceLoading(true);
-                      try {
-                        const res = await api.post<{ id: string; invoiceNumber: string }>(
-                          `/api/patient-journey/${selectedItem.visitId}/create-draft-invoice`
-                        );
-                        setDraftInvoiceResult({
-                          invoiceId: res.data.id,
-                          invoiceNumber: res.data.invoiceNumber,
-                        });
-                        toast.success(`تم إنشاء الفاتورة ${res.data.invoiceNumber}`);
-                      } catch {
-                        toast.error("فشل إنشاء الفاتورة المسودة");
-                      } finally {
-                        setDraftInvoiceLoading(false);
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-[#3d7ab5] text-white hover:opacity-90 disabled:opacity-50 transition"
+                    onClick={() => setShowCheckout(false)}
+                    className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700"
                   >
-                    <FileText className="w-3.5 h-3.5" />
-                    {draftInvoiceLoading ? "جارٍ الإنشاء..." : "إنشاء فاتورة مسودة"}
+                    إغلاق
                   </button>
                 </div>
-                <p className="text-xs text-[#94a3b8]">الدفع يتم عبر صفحة المالية</p>
               </div>
             )}
 
-            {/* Draft invoice result */}
-            {draftInvoiceResult && (
-              <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-1">
-                <p className="text-sm font-medium text-green-800">
-                  تم إنشاء الفاتورة: <span className="font-mono">{draftInvoiceResult.invoiceNumber}</span>
-                </p>
-                <Link
-                  href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
-                  className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
-                >
-                  <FileText className="w-3 h-3" />
-                  عرض الفاتورة
-                </Link>
-                <p className="text-xs text-[#94a3b8]">الدفع يتم عبر صفحة المالية</p>
-              </div>
+            {/* ── Pre-Checkout Form ── */}
+            {!checkoutSuccess && (
+              <form onSubmit={handleCheckoutSubmit} className="space-y-4">
+                {/* Info banner — checkout is workflow-status only */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                  إنهاء الحساب هنا يغيّر حالة الزيارة فقط. لتسجيل الدّفع الفعلي، انتقل إلى صفحة المالية بعد الإنهاء.
+                </div>
+
+                {/* Create Draft Invoice */}
+                {selectedItem.checkoutStatus === "ReadyForCheckout" && !draftInvoiceResult && (
+                  <div className="border border-[#3d7ab5]/20 bg-[#f7fafd] rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-medium text-[#0d2137]">
+                        <FileText className="w-4 h-4 text-[#3d7ab5]" />
+                        إنشاء فاتورة مسودة
+                      </div>
+                      <button
+                        type="button"
+                        disabled={draftInvoiceLoading}
+                        onClick={async () => {
+                          if (!selectedItem.visitId) {
+                            toast.error("لا يوجد زيارة مرتبطة لإنشاء فاتورة");
+                            return;
+                          }
+                          setDraftInvoiceLoading(true);
+                          try {
+                            const res = await api.post<{ id: string; invoiceNumber: string }>(
+                              `/api/patient-journey/${selectedItem.visitId}/create-draft-invoice`
+                            );
+                            setDraftInvoiceResult({
+                              invoiceId: res.data.id,
+                              invoiceNumber: res.data.invoiceNumber,
+                            });
+                            toast.success(`تم إنشاء الفاتورة ${res.data.invoiceNumber}`);
+                          } catch {
+                            toast.error("فشل إنشاء الفاتورة المسودة");
+                          } finally {
+                            setDraftInvoiceLoading(false);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-[#3d7ab5] text-white hover:opacity-90 disabled:opacity-50 transition"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        {draftInvoiceLoading ? "جارٍ الإنشاء..." : "إنشاء فاتورة مسودة"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-[#94a3b8]">الدفع يتم عبر صفحة المالية</p>
+                  </div>
+                )}
+
+                {/* Draft invoice result */}
+                {draftInvoiceResult && (
+                  <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-1">
+                    <p className="text-sm font-medium text-green-800">
+                      تم إنشاء الفاتورة: <span className="font-mono">{draftInvoiceResult.invoiceNumber}</span>
+                    </p>
+                    <Link
+                      href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                      className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
+                    >
+                      <FileText className="w-3 h-3" />
+                      عرض الفاتورة
+                    </Link>
+                    <p className="text-xs text-[#94a3b8]">الدفع يتم عبر صفحة المالية</p>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">المبلغ المطلوب (مرجعي)</label>
+                    <input
+                      type="number"
+                      value={checkoutAmount}
+                      onChange={(e) => setCheckoutAmount(parseInt(e.target.value) || 0)}
+                      className={inputCls}
+                      dir="ltr"
+                      min={0}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">طريقة الدفع (مرجعية)</label>
+                    <select
+                      value={checkoutPayment}
+                      onChange={(e) => setCheckoutPayment(e.target.value)}
+                      className={inputCls}
+                    >
+                      {PAYMENT_METHODS.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">حجز موعد قادم</label>
+                    <input
+                      type="date"
+                      value={checkoutNextDate}
+                      onChange={(e) => setCheckoutNextDate(e.target.value)}
+                      className={inputCls}
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">الخدمة القادمة</label>
+                    <select
+                      value={checkoutNextService}
+                      onChange={(e) => setCheckoutNextService(e.target.value)}
+                      className={inputCls}
+                    >
+                      <option value="">— اختر خدمة —</option>
+                      {services.map((s) => (
+                        <option key={s.id} value={s.id}>{s.arabicName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">ملاحظات</label>
+                    <textarea
+                      value={checkoutNotes}
+                      onChange={(e) => setCheckoutNotes(e.target.value)}
+                      className={cn(inputCls, "h-20 resize-none")}
+                      placeholder="ملاحظات إضافية"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCheckout(false)}
+                    className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    {actionLoading ? "جارٍ الإنهاء..." : "إنهاء الحساب"}
+                  </button>
+                </div>
+              </form>
             )}
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">المبلغ المطلوب (مرجعي)</label>
-                <input
-                  type="number"
-                  value={checkoutAmount}
-                  onChange={(e) => setCheckoutAmount(parseInt(e.target.value) || 0)}
-                  className={inputCls}
-                  dir="ltr"
-                  min={0}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">طريقة الدفع (مرجعية)</label>
-                <select
-                  value={checkoutPayment}
-                  onChange={(e) => setCheckoutPayment(e.target.value)}
-                  className={inputCls}
-                >
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">حجز موعد قادم</label>
-                <input
-                  type="date"
-                  value={checkoutNextDate}
-                  onChange={(e) => setCheckoutNextDate(e.target.value)}
-                  className={inputCls}
-                  dir="ltr"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">الخدمة القادمة</label>
-                <select
-                  value={checkoutNextService}
-                  onChange={(e) => setCheckoutNextService(e.target.value)}
-                  className={inputCls}
-                >
-                  <option value="">— اختر خدمة —</option>
-                  {services.map((s) => (
-                    <option key={s.id} value={s.id}>{s.arabicName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">ملاحظات</label>
-                <textarea
-                  value={checkoutNotes}
-                  onChange={(e) => setCheckoutNotes(e.target.value)}
-                  className={cn(inputCls, "h-20 resize-none")}
-                  placeholder="ملاحظات إضافية"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowCheckout(false)}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                إلغاء
-              </button>
-              <button
-                type="submit"
-                disabled={actionLoading}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
-              >
-                <CreditCard className="w-4 h-4" />
-                {actionLoading ? "جارٍ الإنهاء..." : "إنهاء الحساب"}
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       )}
     </div>

@@ -21,10 +21,12 @@ import {
   ArrowRightLeft,
   AlertTriangle,
   ExternalLink,
+  Route,
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
+import Link from "next/link";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ClinicQueueItem {
@@ -687,6 +689,15 @@ function QueueCard({
                 فتح الزيارة
               </button>
             )}
+            {item.appointmentId && !isTerminal && (
+              <Link
+                href="/patient-journey"
+                className="flex items-center gap-1 text-[#22c55e] hover:underline font-medium"
+              >
+                <Route className="w-3 h-3" />
+                فتح رحلة المرضى
+              </Link>
+            )}
           </div>
         </div>
 
@@ -715,14 +726,14 @@ function QueueCard({
         <div className="flex gap-2 mt-3 flex-wrap">
           {item.status === "Waiting" && (
             <>
-              <ActionButton label="نداء" onClick={onCall} loading={isLoading} color="#3d7ab5" icon={<PhoneCall className="w-3 h-3" />} />
+              <ActionButton label="نداء المريض" onClick={onCall} loading={isLoading} color="#3d7ab5" icon={<PhoneCall className="w-3 h-3" />} />
               <ActionButton label="تغيير الغرفة" onClick={onChangeRoom} loading={isLoading} color="#64748b" icon={<ArrowRightLeft className="w-3 h-3" />} />
               <ActionButton label="إلغاء" onClick={onCancel} loading={isLoading} color="#ef4444" icon={<XCircle className="w-3 h-3" />} />
             </>
           )}
           {item.status === "Called" && (
             <>
-              <ActionButton label="إدخال الغرفة" onClick={onEnterRoom} loading={isLoading} color="#7c3aed" icon={<DoorOpen className="w-3 h-3" />} />
+              <ActionButton label="إدخال إلى الغرفة" onClick={onEnterRoom} loading={isLoading} color="#7c3aed" icon={<DoorOpen className="w-3 h-3" />} />
               <ActionButton label="تغيير الغرفة" onClick={onChangeRoom} loading={isLoading} color="#64748b" icon={<ArrowRightLeft className="w-3 h-3" />} />
               <ActionButton label="إلغاء" onClick={onCancel} loading={isLoading} color="#ef4444" icon={<XCircle className="w-3 h-3" />} />
             </>

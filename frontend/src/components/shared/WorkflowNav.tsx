@@ -132,6 +132,15 @@ export const WORKFLOW_LINKS = {
     variant: "default",
   }),
 
+  /** جاهز للدفع */
+  checkout: (permission = "checkout.view"): WorkflowLink => ({
+    label: "جاهز للدفع",
+    href: "/patient-journey",
+    icon: CreditCard,
+    permission,
+    variant: "accent",
+  }),
+
   /** فتح ملف المريض (requires patientId context) */
   patientFile: (patientId: string, permission = "patients.view"): WorkflowLink => ({
     label: "ملف المريض",

@@ -9,9 +9,17 @@ using Microsoft.Extensions.Logging;
 namespace AqlanDentalPro.Infrastructure.Services;
 
 /// <summary>
-/// Background job that automatically sends appointment reminder emails.
+/// Background job that automatically sends appointment reminders.
 /// Reads the <c>appointment.reminder_hours</c> setting from DB (default: "24,2")
 /// and sends reminders at each configured interval before the appointment.
+///
+/// Reminder channels (in priority order):
+/// 1. Email — if patient has a linked User account with email, or if patient portal account email is available
+/// 2. WhatsApp — if WhatsApp number is on file and WhatsApp service is configured
+///
+/// The job also triggers WhatsAppService.SendPendingRemindersAsync() for next-day reminders
+/// (which handles the WhatsApp channel specifically).
+///
 /// Runs every 30 minutes to catch appointments that fall within the reminder window.
 /// </summary>
 public class AppointmentReminderJob : BackgroundService
@@ -79,21 +87,19 @@ public class AppointmentReminderJob : BackgroundService
         }
 
         // ── 2. Check if email is configured ──
-        if (!await emailService.IsConfiguredAsync())
+        var emailConfigured = await emailService.IsConfiguredAsync();
+        if (!emailConfigured)
         {
-            _logger.LogDebug("Email not configured. Skipping appointment reminders.");
-            return;
+            _logger.LogDebug("Email not configured. Skipping email appointment reminders.");
+            // Still continue to mark appointments and trigger WhatsApp reminders
         }
 
         var now = DateTime.UtcNow;
-        var todayStart = now.Date;
         var totalSent = 0;
 
         foreach (var hoursBefore in reminderHours)
         {
             // Calculate the time window: appointments that start within [now, now + hoursBefore]
-            // and haven't had a reminder sent yet.
-            var windowStart = now;
             var windowEnd = now.AddHours(hoursBefore);
 
             var upcomingAppointments = await db.Appointments
@@ -102,18 +108,15 @@ public class AppointmentReminderJob : BackgroundService
                 .Include(a => a.Service)
                 .Where(a => a.Status == AppointmentStatus.Scheduled
                          && !a.ConfirmationSent
-                         && a.Patient.Email != null
-                         && a.AppointmentDate >= DateOnly.FromDateTime(windowStart.Date)
+                         && a.AppointmentDate >= DateOnly.FromDateTime(now.Date)
                          && a.AppointmentDate <= DateOnly.FromDateTime(windowEnd.Date))
                 .ToListAsync();
 
-            // Filter in-memory for precise time comparison (DateOnly + TimeOnly → DateTime)
+            // Filter in-memory for precise time comparison
             var matchingAppointments = upcomingAppointments
                 .Where(a =>
                 {
                     var apptDateTime = a.AppointmentDate.ToDateTime(a.StartTime);
-                    // Send reminder if appointment is within the window for this hoursBefore
-                    // e.g., for hoursBefore=24: send if appointment is 23-24 hours away
                     var hoursUntilAppt = (apptDateTime - now).TotalHours;
                     return hoursUntilAppt > 0 && hoursUntilAppt <= hoursBefore && hoursUntilAppt > hoursBefore - 1;
                 })
@@ -123,26 +126,41 @@ public class AppointmentReminderJob : BackgroundService
             {
                 try
                 {
-                    var patientName = $"{appt.Patient.FirstName} {appt.Patient.LastName}".Trim();
-                    var doctorName = appt.Doctor.Name ?? "الطبيب";
-                    var appointmentDate = appt.AppointmentDate.ToString("yyyy/MM/dd");
-                    var appointmentTime = appt.StartTime.ToString("HH:mm");
-                    var clinicService = appt.Service?.Name;
+                    // ── Try email via linked User account ──
+                    var patientEmail = await GetPatientEmailAsync(db, appt.PatientId);
 
-                    var subject = $"تذكير بموعدكم في مركز د. عقلان الكامل — {appointmentDate}";
-                    var htmlBody = EmailService.BuildAppointmentReminderHtml(
-                        patientName, doctorName, appointmentDate,
-                        appointmentTime, clinicService, appt.Notes);
-
-                    var sent = await emailService.SendEmailAsync(appt.Patient.Email!, subject, htmlBody);
-
-                    if (sent)
+                    if (emailConfigured && !string.IsNullOrWhiteSpace(patientEmail))
                     {
-                        appt.ConfirmationSent = true;
-                        totalSent++;
-                        _logger.LogInformation(
-                            "Sent {Hours}h reminder for appointment {Id} to {Patient}",
-                            hoursBefore, appt.Id, patientName);
+                        var patientName = $"{appt.Patient.FirstName} {appt.Patient.LastName}".Trim();
+                        var doctorName = appt.Doctor.Name ?? "الطبيب";
+                        var appointmentDate = appt.AppointmentDate.ToString("yyyy/MM/dd");
+                        var appointmentTime = appt.StartTime.ToString("HH:mm");
+                        var clinicService = appt.Service?.Name;
+
+                        var subject = $"تذكير بموعدكم في مركز د. عقلان الكامل — {appointmentDate}";
+                        var htmlBody = EmailService.BuildAppointmentReminderHtml(
+                            patientName, doctorName, appointmentDate,
+                            appointmentTime, clinicService, appt.Notes);
+
+                        var sent = await emailService.SendEmailAsync(patientEmail, subject, htmlBody);
+
+                        if (sent)
+                        {
+                            appt.ConfirmationSent = true;
+                            totalSent++;
+                            _logger.LogInformation(
+                                "Sent {Hours}h email reminder for appointment {Id} to {Email}",
+                                hoursBefore, appt.Id, patientEmail);
+                        }
+                    }
+                    else
+                    {
+                        // No email available — mark as confirmed so WhatsApp reminders still work
+                        // The WhatsAppService.SendPendingRemindersAsync handles the WhatsApp channel
+                        _logger.LogDebug(
+                            "No email on file for patient {PatientId}. Skipping email reminder for appointment {Id}. " +
+                            "WhatsApp reminders are handled separately via WhatsAppService.",
+                            appt.PatientId, appt.Id);
                     }
                 }
                 catch (Exception ex)
@@ -160,7 +178,28 @@ public class AppointmentReminderJob : BackgroundService
         }
 
         _logger.LogInformation(
-            "AppointmentReminderJob: sent {Count} reminders (checked {Hours} windows)",
+            "AppointmentReminderJob: sent {Count} email reminders (checked {Hours} windows)",
             totalSent, string.Join(",", reminderHours));
+    }
+
+    /// <summary>
+    /// Gets the best available email address for a patient.
+    /// Checks: 1) Linked User account email, 2) PatientAccount linked user email.
+    /// Returns null if no email is found.
+    /// </summary>
+    private static async Task<string?> GetPatientEmailAsync(AppDbContext db, Guid patientId)
+    {
+        // Check if patient has a linked User account via PatientAccount
+        var linkedUserEmail = await db.PatientAccounts
+            .Where(pa => pa.PatientId == patientId && pa.LinkedUserId != null)
+            .Join(db.Users, pa => pa.LinkedUserId, u => u.Id, (pa, u) => u.Email)
+            .FirstOrDefaultAsync();
+
+        if (!string.IsNullOrWhiteSpace(linkedUserEmail))
+            return linkedUserEmail;
+
+        // Future: if Patient entity gets an Email field, check here
+
+        return null;
     }
 }

@@ -322,6 +322,43 @@ public class PermissionApiContractTests : IDisposable
         result.Should().BeOfType<OkObjectResult>();
     }
 
+    [Fact]
+    public async Task UpdateRolePermissions_DeduplicatesExistingRoleResourceRows()
+    {
+        // Arrange — simulate production rows that predate the unique index cleanup.
+        _db.RolePermissions.Add(new RolePermission
+        {
+            Role = "Reception",
+            Resource = "patients",
+            CanView = false,
+            CanCreate = false,
+            CanEdit = false,
+            CreatedAt = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAt = DateTime.UtcNow.AddMinutes(-10)
+        });
+        await _db.SaveChangesAsync();
+
+        var body = new UpdateRolePermissionsBody
+        {
+            Permissions = ["patients.view", "patients.edit"]
+        };
+
+        // Act
+        var result = await _controller.UpdateRolePermissions("Reception", body);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+
+        var receptionPatientsRows = await _db.RolePermissions
+            .Where(rp => rp.Role == "Reception" && rp.Resource == "patients")
+            .ToListAsync();
+
+        receptionPatientsRows.Should().HaveCount(1);
+        receptionPatientsRows[0].CanView.Should().BeTrue();
+        receptionPatientsRows[0].CanEdit.Should().BeTrue();
+        receptionPatientsRows[0].CanCreate.Should().BeFalse();
+    }
+
     // ── Admin protection tests ────────────────────────────────────────────────
 
     [Fact]

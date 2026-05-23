@@ -356,18 +356,24 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             && (a.Status == AppointmentStatus.Scheduled || a.Status == AppointmentStatus.Confirmed));
         var completedTreatments = await db.GeneralTreatments.CountAsync(t => t.PatientId == patientId);
 
-        var totalPaid = await db.Payments.Where(p => p.PatientId == patientId).SumAsync(p => (decimal?)p.Amount) ?? 0;
-        var totalOutstanding = await db.Contracts
-            .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active)
+        // FIX: Only count active payments (exclude soft-deleted/refunded).
+        var totalPaid = await db.Payments.Where(p => p.PatientId == patientId && p.IsActive).SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+        var contracts = await db.Contracts
             .Include(c => c.Payments)
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
-            .SumAsync(r => (decimal?)r) ?? 0;
-        var totalAmount = totalPaid + totalOutstanding;
+            .Where(c => c.PatientId == patientId)
+            .ToListAsync();
+
+        var totalContracted = contracts.Where(c => c.Status == ContractStatus.Active).Sum(c => c.TotalAmount);
+        var totalDiscounts = contracts.Where(c => c.Status == ContractStatus.Active).Sum(c => c.DiscountAmount);
+        var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
+        var totalAmount = totalContracted - totalDiscounts;
         var activeContracts = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
 
+        // FIX: Only show active payments in portal
         var recentPayments = await db.Payments
             .Include(p => p.Receipt)
-            .Where(p => p.PatientId == patientId)
+            .Where(p => p.PatientId == patientId && p.IsActive)
             .OrderByDescending(p => p.CreatedAt)
             .Take(5)
             .Select(p => new PatientPaymentDto
@@ -612,7 +618,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public async Task<PatientFinancialSummaryDto> GetFinancialSummaryAsync(Guid patientId)
     {
-        var totalPaid = await db.Payments.Where(p => p.PatientId == patientId).SumAsync(p => (decimal?)p.Amount) ?? 0;
+        // FIX: Only count active payments (exclude soft-deleted/refunded).
+        var totalPaid = await db.Payments.Where(p => p.PatientId == patientId && p.IsActive).SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         var contracts = await db.Contracts
             .Include(c => c.Payments)
@@ -620,24 +627,27 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             .ToListAsync();
 
         var activeContracts = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
-        var totalOutstanding = activeContracts
-            .Sum(c => Math.Max(0, c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)));
-        var totalAmount = contracts.Sum(c => c.TotalAmount - c.DiscountAmount);
+        var totalContracted = activeContracts.Sum(c => c.TotalAmount);
+        var totalDiscounts = activeContracts.Sum(c => c.DiscountAmount);
+        var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
+        var totalAmount = totalContracted - totalDiscounts;
 
         var contractDtos = activeContracts.Select(c => new PatientContractDto
         {
             Id = c.Id,
             Specialty = c.Specialty,
             TotalAmount = c.TotalAmount - c.DiscountAmount,
-            PaidAmount = c.Payments.Sum(p => p.Amount),
-            RemainingAmount = Math.Max(0, c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)),
+            // FIX: Per-contract paid only from linked active payments
+            PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+            RemainingAmount = Math.Max(0, c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)),
             Status = c.Status.ToString(),
             StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : null
         }).ToList();
 
+        // FIX: Only show active payments in portal
         var recentPayments = await db.Payments
             .Include(p => p.Receipt)
-            .Where(p => p.PatientId == patientId)
+            .Where(p => p.PatientId == patientId && p.IsActive)
             .OrderByDescending(p => p.CreatedAt)
             .Take(20)
             .Select(p => new PatientPaymentDto

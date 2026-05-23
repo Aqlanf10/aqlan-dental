@@ -7,6 +7,7 @@ import {
   Pencil,
   CalendarPlus,
   MessageSquare,
+  MessageCircle,
   Phone,
   Printer,
   Archive,
@@ -15,8 +16,10 @@ import {
   FileText,
   Wallet,
   ImageIcon,
+  Copy,
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
+import { formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
 
 export interface ContextMenuPosition {
   x: number;
@@ -122,11 +125,32 @@ export function PatientContextMenu({
       show: !isArchived,
     },
     {
-      icon: <Phone className="w-4 h-4" />,
+      icon: <MessageCircle className="w-4 h-4" />,
       label: "واتساب",
       action: () => {
-        const phone = patient.phone?.replace(/\D/g, "");
+        const phone = formatPhoneForWhatsApp(patient.phone);
         if (phone) window.open(`https://wa.me/${phone}`, "_blank");
+        onClose();
+      },
+      show: !!patient.phone && !isArchived,
+    },
+    {
+      icon: <Phone className="w-4 h-4" />,
+      label: "اتصال هاتفي",
+      action: () => {
+        const phone = normalizePhone(patient.phone ?? "");
+        if (phone) window.open(`tel:${phone}`, "_self");
+        onClose();
+      },
+      show: !!patient.phone && !isArchived,
+    },
+    {
+      icon: <Copy className="w-4 h-4" />,
+      label: "نسخ الرقم",
+      action: () => {
+        if (patient.phone) {
+          navigator.clipboard.writeText(patient.phone).catch(() => {});
+        }
         onClose();
       },
       show: !!patient.phone && !isArchived,

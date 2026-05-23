@@ -5,11 +5,12 @@ import Link from "next/link";
 import {
   Search, UserPlus, Eye, Pencil,
   Download, MoreVertical, Archive, RotateCcw,
+  MessageCircle, Phone, Copy, CalendarPlus, Printer,
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
-import { GENDER_LABELS } from "@/lib/utils";
+import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
@@ -338,6 +339,67 @@ export function PatientTable() {
                                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                                 >
                                   <Pencil className="w-4 h-4" style={{ color: "#64748b" }} /> تعديل البيانات
+                                </Link>
+                              )}
+                              {p.isActive && (
+                                <Link
+                                  href={`/appointments/new?patientId=${p.id}`}
+                                  className="flex items-center gap-2 px-3 py-2 transition"
+                                  style={{ color: "#0d2137" }}
+                                  onClick={() => setRowMenuId(null)}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                >
+                                  <CalendarPlus className="w-4 h-4" style={{ color: "#64748b" }} /> موعد جديد
+                                </Link>
+                              )}
+                              {p.phone && p.isActive && (
+                                <a
+                                  href={`https://wa.me/${formatPhoneForWhatsApp(p.phone)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 px-3 py-2 transition"
+                                  style={{ color: "#0d2137" }}
+                                  onClick={() => setRowMenuId(null)}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                >
+                                  <MessageCircle className="w-4 h-4" style={{ color: "#22c55e" }} /> واتساب
+                                </a>
+                              )}
+                              {p.phone && p.isActive && (
+                                <a
+                                  href={`tel:${normalizePhone(p.phone)}`}
+                                  className="flex items-center gap-2 px-3 py-2 transition"
+                                  style={{ color: "#0d2137" }}
+                                  onClick={() => setRowMenuId(null)}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                >
+                                  <Phone className="w-4 h-4" style={{ color: "#3d7ab5" }} /> اتصال هاتفي
+                                </a>
+                              )}
+                              {p.phone && p.isActive && (
+                                <button
+                                  onClick={() => { navigator.clipboard.writeText(p.phone ?? "").catch(() => {}); setRowMenuId(null); }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 transition text-start"
+                                  style={{ color: "#0d2137" }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                >
+                                  <Copy className="w-4 h-4" style={{ color: "#64748b" }} /> نسخ الرقم
+                                </button>
+                              )}
+                              {p.isActive && (
+                                <Link
+                                  href={`/patients/${p.id}/print/summary`}
+                                  className="flex items-center gap-2 px-3 py-2 transition"
+                                  style={{ color: "#0d2137" }}
+                                  onClick={() => setRowMenuId(null)}
+                                  onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                                >
+                                  <Printer className="w-4 h-4" style={{ color: "#64748b" }} /> طباعة ملف المريض
                                 </Link>
                               )}
                               {isAdmin && (

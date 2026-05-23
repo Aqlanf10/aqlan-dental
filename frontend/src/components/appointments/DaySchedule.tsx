@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus, UserX } from "lucide-react";
+import { MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus, UserX, Mail } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
@@ -284,6 +284,17 @@ function AppointmentCard({
     }
   };
 
+  const handleSendEmailReminder = async () => {
+    try {
+      const { data } = await api.post(`/api/appointments/${a.id}/send-email-reminder`);
+      toast.success(data.message ?? "تم إرسال تذكير الموعد بنجاح");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "تعذر إرسال التذكير، حاول مرة أخرى");
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirm("هل أنت متأكد من حذف هذا الموعد؟")) return;
     try {
@@ -403,7 +414,14 @@ function AppointmentCard({
               className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#f5922e]"
             >
               <Send className="w-3.5 h-3.5" />
-              إرسال تذكير
+              إرسال تذكير واتساب
+            </button>
+            <button
+              onClick={handleSendEmailReminder}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#0E7490]"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              إرسال تذكير بالإيميل
             </button>
             {canDelete && (
               <button

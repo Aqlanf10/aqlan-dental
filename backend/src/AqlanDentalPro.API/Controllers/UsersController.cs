@@ -116,6 +116,26 @@ public sealed class UpdateRolePermissionsRequest
     public bool CanApprove { get; init; }
 }
 
+/// <summary>
+/// Request body for updating role permissions using flat permission keys (e.g. "patients.view", "finance.create").
+/// </summary>
+public sealed class UpdateRolePermissionsBody
+{
+    public List<string> Permissions { get; init; } = new();
+}
+
+/// <summary>
+/// A single permission definition returned by GET /api/permissions.
+/// Describes one possible permission key (resource + action) with a human-readable label.
+/// </summary>
+public sealed class PermissionDefinitionDto
+{
+    public string Resource { get; init; } = string.Empty;
+    public string Action { get; init; } = string.Empty;
+    public string Key { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+}
+
 [ApiController]
 [Route("api/users")]
 [Authorize(Policy = "AdminOnly")]
@@ -607,99 +627,227 @@ public class UsersController(
 
     // ── Permissions Management ─────────────────────────────────────────────
 
+    private static readonly (string Action, string LabelAr)[] AllActions =
+    [
+        ("view", "عرض"),
+        ("create", "إنشاء"),
+        ("edit", "تعديل"),
+        ("delete", "حذف"),
+        ("export", "تصدير"),
+        ("approve", "اعتماد")
+    ];
+
+    private static readonly Dictionary<string, string> ResourceLabelAr = new()
+    {
+        ["patients"] = "المرضى",
+        ["ortho"] = "التقويم",
+        ["general_dentistry"] = "طب الأسنان العام",
+        ["surgery"] = "الجراحة",
+        ["appointments"] = "المواعيد",
+        ["finance"] = "المدفوعات",
+        ["reports"] = "التقارير",
+        ["users"] = "المستخدمون",
+        ["settings"] = "الإعدادات",
+        ["ai"] = "الذكاء الاصطناعي",
+        ["user_management"] = "إدارة المستخدمين",
+        ["password_reset_requests"] = "طلبات إعادة تعيين كلمة المرور",
+        ["impersonation"] = "الانتحال",
+        ["daily_operations"] = "التشغيل اليومي",
+        ["booking_requests"] = "طلبات الحجز",
+        ["clinic_queue"] = "الطابور",
+        ["clinic_display"] = "شاشة النداء",
+        ["patient_journey"] = "رحلة المرضى",
+        ["visits"] = "الزيارات",
+        ["checkout"] = "جاهز للدفع",
+        ["invoices"] = "الفواتير",
+        ["rooms"] = "الغرف / الكراسي",
+    };
+
+    /// <summary>
+    /// Returns all permission definitions (resource + action → key + label).
+    /// This is the catalog of all possible permission keys, NOT role-specific data.
+    /// </summary>
     [HttpGet("/api/permissions")]
     public async Task<IActionResult> GetAllPermissions()
     {
-        var permissions = await db.RolePermissions
-            .Select(p => new
-            {
-                p.Id,
-                p.Role,
-                p.Resource,
-                p.CanView,
-                p.CanCreate,
-                p.CanEdit,
-                p.CanDelete,
-                p.CanExport,
-                p.CanApprove
-            })
-            .OrderBy(p => p.Role).ThenBy(p => p.Resource)
+        // Get distinct resources that exist in the DB so we only list what's seeded
+        var resources = await db.RolePermissions
+            .Select(rp => rp.Resource)
+            .Distinct()
+            .OrderBy(r => r)
             .ToListAsync();
 
-        return Ok(permissions);
+        var definitions = new List<PermissionDefinitionDto>();
+        foreach (var resource in resources)
+        {
+            var resourceLabel = ResourceLabelAr.TryGetValue(resource, out var rl) ? rl : resource;
+            foreach (var (action, actionLabel) in AllActions)
+            {
+                definitions.Add(new PermissionDefinitionDto
+                {
+                    Resource = resource,
+                    Action = action,
+                    Key = $"{resource}.{action}",
+                    Label = $"{resourceLabel} - {actionLabel}"
+                });
+            }
+        }
+
+        return Ok(definitions);
     }
 
+    /// <summary>
+    /// Returns the set of enabled permission keys for a given role.
+    /// Shape: { role: string, permissions: string[] }
+    /// </summary>
     [HttpGet("/api/roles/{role}/permissions")]
     public async Task<IActionResult> GetRolePermissions(string role)
-    {
-        var permissions = await db.RolePermissions
-            .Where(p => p.Role == role)
-            .Select(p => new
-            {
-                p.Id,
-                p.Role,
-                p.Resource,
-                p.CanView,
-                p.CanCreate,
-                p.CanEdit,
-                p.CanDelete,
-                p.CanExport,
-                p.CanApprove
-            })
-            .ToListAsync();
-
-        return Ok(permissions);
-    }
-
-    [HttpPut("/api/roles/{role}/permissions")]
-    public async Task<IActionResult> UpdateRolePermissions(string role, [FromBody] List<UpdateRolePermissionsRequest> permissions)
     {
         // Validate role
         if (!Enum.TryParse<UserRole>(role, out _))
             return BadRequest(new { message = "الدور غير صالح" });
 
-        foreach (var perm in permissions)
-        {
-            var existing = await db.RolePermissions
-                .FirstOrDefaultAsync(p => p.Role == role && p.Resource == perm.Resource);
+        var rows = await db.RolePermissions
+            .Where(p => p.Role == role)
+            .ToListAsync();
 
-            if (existing != null)
+        var permissionKeys = new List<string>();
+        foreach (var perm in rows)
+        {
+            if (perm.CanView) permissionKeys.Add($"{perm.Resource}.view");
+            if (perm.CanCreate) permissionKeys.Add($"{perm.Resource}.create");
+            if (perm.CanEdit) permissionKeys.Add($"{perm.Resource}.edit");
+            if (perm.CanDelete) permissionKeys.Add($"{perm.Resource}.delete");
+            if (perm.CanExport) permissionKeys.Add($"{perm.Resource}.export");
+            if (perm.CanApprove) permissionKeys.Add($"{perm.Resource}.approve");
+        }
+
+        return Ok(new Application.DTOs.Auth.UserPermissionsDto
+        {
+            Role = role,
+            Permissions = permissionKeys
+        });
+    }
+
+    /// <summary>
+    /// Updates role permissions from a flat list of permission keys (e.g. "patients.view", "finance.create").
+    /// The backend converts these back to RolePermission entity upserts.
+    /// </summary>
+    [HttpPut("/api/roles/{role}/permissions")]
+    public async Task<IActionResult> UpdateRolePermissions(string role, [FromBody] UpdateRolePermissionsBody body)
+    {
+        // Validate role
+        if (!Enum.TryParse<UserRole>(role, out _))
+            return BadRequest(new { message = "الدور غير صالح" });
+
+        var permissionKeys = body.Permissions ?? [];
+
+        // Group permission keys by resource
+        var resourceActions = new Dictionary<string, HashSet<string>>();
+        foreach (var key in permissionKeys)
+        {
+            var lastDot = key.LastIndexOf('.');
+            if (lastDot <= 0) continue; // skip invalid keys
+            var resource = key[..lastDot];
+            var action = key[(lastDot + 1)..];
+            if (!resourceActions.TryGetValue(resource, out var actions))
             {
-                // Prevent removing all admin management permissions from Admin role
-                if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase)
-                    && perm.Resource == "user_management"
-                    && !perm.CanView && !perm.CanCreate && !perm.CanEdit && !perm.CanDelete)
+                actions = [];
+                resourceActions[resource] = actions;
+            }
+            actions.Add(action);
+        }
+
+        // Load all existing role permissions for this role
+        var existingPerms = await db.RolePermissions
+            .Where(p => p.Role == role)
+            .ToListAsync();
+
+        var existingByResource = existingPerms.ToDictionary(p => p.Resource);
+
+        // Guard: prevent removing all critical user_management permissions from Admin role.
+        // This must be checked for TWO cases:
+        //   1. user_management IS in the request but with no core actions (view/create/edit/delete)
+        //   2. user_management is OMITTED from the request — the "missing resources" loop
+        //      would set all flags to false, silently stripping Admin's user_management access.
+        var isAdmin = string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase);
+        var hasUserManagementInRequest = resourceActions.TryGetValue("user_management", out var umActions);
+
+        if (isAdmin)
+        {
+            var adminUmRow = existingByResource.GetValueOrDefault("user_management");
+
+            if (hasUserManagementInRequest)
+            {
+                // Case 1: user_management is present but all core actions disabled
+                if (!umActions!.Contains("view") && !umActions.Contains("create")
+                    && !umActions.Contains("edit") && !umActions.Contains("delete"))
                 {
                     return BadRequest(new { message = "لا يمكن إزالة جميع صلاحيات إدارة المستخدمين من دور المدير" });
                 }
+            }
+            else if (adminUmRow != null)
+            {
+                // Case 2: user_management is omitted from the request but exists in DB.
+                // Preserve the existing user_management row — do NOT set all flags to false.
+                // This prevents silently stripping Admin's critical permissions.
+                resourceActions["user_management"] = new HashSet<string>
+                {
+                    "view", "create", "edit", "delete",
+                    adminUmRow.CanExport ? "export" : null!,
+                    adminUmRow.CanApprove ? "approve" : null!
+                }.Where(a => a != null).ToHashSet();
+            }
+        }
 
-                existing.CanView = perm.CanView;
-                existing.CanCreate = perm.CanCreate;
-                existing.CanEdit = perm.CanEdit;
-                existing.CanDelete = perm.CanDelete;
-                existing.CanExport = perm.CanExport;
-                existing.CanApprove = perm.CanApprove;
+        // Update existing or add new RolePermission rows
+        foreach (var (resource, actions) in resourceActions)
+        {
+            if (existingByResource.TryGetValue(resource, out var existing))
+            {
+                existing.CanView = actions.Contains("view");
+                existing.CanCreate = actions.Contains("create");
+                existing.CanEdit = actions.Contains("edit");
+                existing.CanDelete = actions.Contains("delete");
+                existing.CanExport = actions.Contains("export");
+                existing.CanApprove = actions.Contains("approve");
             }
             else
             {
                 db.RolePermissions.Add(new RolePermission
                 {
                     Role = role,
-                    Resource = perm.Resource,
-                    CanView = perm.CanView,
-                    CanCreate = perm.CanCreate,
-                    CanEdit = perm.CanEdit,
-                    CanDelete = perm.CanDelete,
-                    CanExport = perm.CanExport,
-                    CanApprove = perm.CanApprove
+                    Resource = resource,
+                    CanView = actions.Contains("view"),
+                    CanCreate = actions.Contains("create"),
+                    CanEdit = actions.Contains("edit"),
+                    CanDelete = actions.Contains("delete"),
+                    CanExport = actions.Contains("export"),
+                    CanApprove = actions.Contains("approve")
                 });
+            }
+        }
+
+        // For resources that exist in DB but are NOT in the request, set all flags to false.
+        // NOTE: Admin's user_management is already injected into resourceActions above,
+        // so it won't reach this path.
+        foreach (var existing in existingPerms)
+        {
+            if (!resourceActions.ContainsKey(existing.Resource))
+            {
+                existing.CanView = false;
+                existing.CanCreate = false;
+                existing.CanEdit = false;
+                existing.CanDelete = false;
+                existing.CanExport = false;
+                existing.CanApprove = false;
             }
         }
 
         await db.SaveChangesAsync();
 
         await auditService.LogAsync(AuditAction.PermissionsChanged, "role_permissions",
-            newData: new { Role = role, Resources = permissions.Select(p => p.Resource).ToList() },
+            newData: new { Role = role, PermissionKeys = permissionKeys },
             details: $"Updated permissions for role: {role}");
 
         return Ok(new { message = "تم تحديث الصلاحيات بنجاح" });

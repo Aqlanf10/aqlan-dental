@@ -16,6 +16,8 @@ import { useAuthStore } from "@/stores/authStore";
 import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
 import { useUnreadCount } from "@/hooks/useMessaging";
+import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import type { UserDto } from "@/types/auth";
 
 /* ─── Brand colors ──────────────────────────────────────────────────────────── */
 const BRAND_PRIMARY       = "#1a3a5c";
@@ -28,6 +30,7 @@ type NavLeaf = {
   label: string;
   icon: React.ElementType;
   roles: string[];
+  permission?: string;
 };
 
 type NavGroup = {
@@ -35,6 +38,7 @@ type NavGroup = {
   label: string;
   icon: React.ElementType;
   roles: string[];
+  permission?: string;
   children: NavLeaf[];
 };
 
@@ -45,23 +49,24 @@ type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string }
 const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
   { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: [],                                                             section: "رئيسي" },
-  { href: "/patients",       label: "المرضى",           icon: Users,           roles: [] },
+  { href: "/patients",       label: "المرضى",           icon: Users,           roles: [], permission: PERMISSION_KEYS.PATIENTS_VIEW },
 
   // ── التشغيل اليومي ────────────────────────────────────────────────────────
   {
     kind: "group", section: "التشغيل اليومي",
     label: "التشغيل اليومي", icon: ClipboardList,
     roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist","Accountant"],
+    permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW,
     children: [
-      { href: "/daily-operations",    label: "التشغيل اليومي",   icon: ClipboardList, roles: [] },
-      { href: "/booking-requests",    label: "طلبات الحجز",     icon: Globe,         roles: ["Admin","Reception"] },
-      { href: "/appointments",        label: "المواعيد",         icon: Calendar,      roles: [] },
-      { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [] },
-      { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [] },
-      { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"] },
-      { href: "/finance/payments",    label: "المدفوعات",        icon: CreditCard,    roles: ["Admin","Reception","Accountant"] },
-      { href: "/finance/invoices",    label: "الفواتير",         icon: FileText,      roles: ["Admin","Reception","Accountant"] },
-      { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"] },
+      { href: "/daily-operations",    label: "التشغيل اليومي",   icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW },
+      { href: "/booking-requests",    label: "طلبات الحجز",     icon: Globe,         roles: ["Admin","Reception"], permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
+      { href: "/appointments",        label: "المواعيد",         icon: Calendar,      roles: [], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
+      { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
+      { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [], permission: PERMISSION_KEYS.CLINIC_DISPLAY_VIEW },
+      { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW },
+      { href: "/finance/payments",    label: "المدفوعات",        icon: CreditCard,    roles: ["Admin","Reception","Accountant"], permission: PERMISSION_KEYS.PAYMENTS_VIEW },
+      { href: "/finance/invoices",    label: "الفواتير",         icon: FileText,      roles: ["Admin","Reception","Accountant"], permission: PERMISSION_KEYS.INVOICES_VIEW },
+      { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"], permission: PERMISSION_KEYS.ROOMS_VIEW },
     ],
   },
 
@@ -181,14 +186,24 @@ function NavLink({
   );
 }
 
+/* ─── Visibility check ─────────────────────────────────────────────────────── */
+function isVisible(entry: { roles: string[]; permission?: string }, userRole: string, user: UserDto | null): boolean {
+  // If permission key is defined, use it
+  if (entry.permission) {
+    return hasPermission(user, entry.permission);
+  }
+  // Fallback to role-based check
+  return entry.roles.length === 0 || entry.roles.includes(userRole);
+}
+
 /* ─── Collapsible group ─────────────────────────────────────────────────────── */
 function NavGroupItem({
-  group, userRole, pathname,
+  group, userRole, pathname, user,
 }: {
-  group: NavGroup; userRole: string; pathname: string;
+  group: NavGroup; userRole: string; pathname: string; user: UserDto | null;
 }) {
   const visibleChildren = group.children.filter(
-    (c) => c.roles.length === 0 || c.roles.includes(userRole),
+    (c) => isVisible(c, userRole, user),
   );
   const isChildActive = visibleChildren.some((c) => pathname.startsWith(c.href));
   const [open, setOpen] = useState(isChildActive);
@@ -320,19 +335,19 @@ export function Sidebar() {
           {NAV.map((entry, idx) => {
             // Group visibility check
             if (entry.kind === "group") {
-              const visible = entry.roles.length === 0 || entry.roles.includes(userRole);
+              const visible = isVisible(entry, userRole, user);
               if (!visible) return null;
               return (
                 <div key={`group-${idx}`}>
                   {entry.section && <SectionLabel label={entry.section} />}
-                  <NavGroupItem group={entry} userRole={userRole} pathname={pathname} />
+                  <NavGroupItem group={entry} userRole={userRole} pathname={pathname} user={user} />
                 </div>
               );
             }
 
             // Leaf item
             const leaf = entry as NavItem;
-            const visible = leaf.roles.length === 0 || leaf.roles.includes(userRole);
+            const visible = isVisible(leaf, userRole, user);
             if (!visible) return null;
 
             const isCurrent = leaf.href === "/" ? pathname === "/" : pathname.startsWith(leaf.href);

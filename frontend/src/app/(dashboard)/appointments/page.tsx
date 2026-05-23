@@ -8,6 +8,7 @@ import { MonthCalendar } from "@/components/appointments/MonthCalendar";
 import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
 import { formatArabicDate, cn } from "@/lib/utils";
 import api from "@/lib/api";
+import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 interface Doctor { id: string; name: string; color?: string; specialty?: string; }
 
@@ -156,6 +157,20 @@ export default function AppointmentsPage() {
           </Link>
         </div>
       </div>
+
+      {/* Workflow Navigation */}
+      <WorkflowNav
+        links={[
+          WORKFLOW_LINKS.backToDailyOps(),
+          WORKFLOW_LINKS.bookingRequests(),
+          WORKFLOW_LINKS.newAppointment(),
+          WORKFLOW_LINKS.clinicQueue(),
+          WORKFLOW_LINKS.clinicDisplay(),
+          WORKFLOW_LINKS.patientJourney(),
+          WORKFLOW_LINKS.payments(),
+        ]}
+        currentPage="/appointments"
+      />
 
       {/* Date Navigator */}
       <div className="no-print bg-white rounded-xl border border-gray-200 shadow-sm p-4">

@@ -5,6 +5,7 @@ import { FileText, Search, Plus } from "lucide-react";
 import type { Invoice } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
+import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "مسودة",
@@ -73,6 +74,16 @@ export default function InvoicesPage() {
           فاتورة مسودة جديدة
         </Link>
       </div>
+
+      {/* Workflow Navigation */}
+      <WorkflowNav
+        links={[
+          WORKFLOW_LINKS.backToDailyOps(),
+          WORKFLOW_LINKS.patientJourney(),
+          WORKFLOW_LINKS.payments(),
+        ]}
+        currentPage="/finance/invoices"
+      />
 
       {/* Search + Status filter */}
       <div className="flex items-center gap-2 flex-wrap">

@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { PaymentForm } from "@/components/finance/PaymentForm";
+import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 function PaymentPageContent() {
   const params      = useSearchParams();
@@ -24,6 +25,18 @@ function PaymentPageContent() {
         </Link>
         <h1 className="text-2xl font-extrabold text-gray-900">تسجيل دفعة جديدة</h1>
       </div>
+
+      {/* Workflow Navigation */}
+      <WorkflowNav
+        links={[
+          WORKFLOW_LINKS.backToDailyOps(),
+          WORKFLOW_LINKS.patientJourney(),
+          WORKFLOW_LINKS.invoices(),
+          ...(patientId ? [WORKFLOW_LINKS.patientFile(patientId)] : []),
+        ]}
+        currentPage="/finance/payments"
+      />
+
       <PaymentForm defaultContractId={contractId} defaultPatientId={patientId} defaultPatientName={patientName} />
     </div>
   );

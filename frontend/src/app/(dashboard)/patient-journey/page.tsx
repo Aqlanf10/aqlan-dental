@@ -11,6 +11,7 @@ import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
+import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -345,6 +346,17 @@ export default function PatientJourneyPage() {
           تحديث
         </button>
       </div>
+
+      {/* Workflow Navigation */}
+      <WorkflowNav
+        links={[
+          WORKFLOW_LINKS.backToDailyOps(),
+          WORKFLOW_LINKS.clinicQueue(),
+          WORKFLOW_LINKS.payments(),
+          WORKFLOW_LINKS.invoices(),
+        ]}
+        currentPage="/patient-journey"
+      />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">

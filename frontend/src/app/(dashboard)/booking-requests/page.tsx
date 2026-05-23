@@ -13,6 +13,7 @@ import {
   Search, User, Stethoscope, ExternalLink, MessageCircle,
   ChevronLeft, ChevronRight, Ban, X,
 } from "lucide-react";
+import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 type BookingStatus = "Pending" | "Reviewed" | "Confirmed" | "Rejected";
 
@@ -704,6 +705,17 @@ export default function BookingRequestsPage() {
           </button>
         </div>
       </div>
+
+      {/* Workflow Navigation */}
+      <WorkflowNav
+        links={[
+          WORKFLOW_LINKS.backToDailyOps(),
+          WORKFLOW_LINKS.appointments(),
+          WORKFLOW_LINKS.newAppointment(),
+          WORKFLOW_LINKS.clinicQueue(),
+        ]}
+        currentPage="/booking-requests"
+      />
 
       {/* Search */}
       <div className="relative">

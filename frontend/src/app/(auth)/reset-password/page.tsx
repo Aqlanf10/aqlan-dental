@@ -48,8 +48,24 @@ function ResetPasswordContent() {
     e.preventDefault();
     setError("");
 
-    if (!newPassword || newPassword.length < 4) {
-      setError("كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل");
+    if (!newPassword || newPassword.length < 8) {
+      setError("كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل");
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل");
+      return;
+    }
+    if (!/[a-z]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل");
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على رقم واحد على الأقل");
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(newPassword)) {
+      setError("كلمة المرور يجب أن تحتوي على رمز خاص واحد على الأقل (مثل !@#$%)");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -185,7 +201,7 @@ function ResetPasswordContent() {
             </div>
             <h2 className="text-xl font-bold text-white">إعادة تعيين كلمة المرور</h2>
             <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.55)" }}>
-              أدخل كلمة المرور الجديدة
+              أدخل كلمة المرور الجديدة (8 أحرف على الأقل، حرف كبير + صغير + رقم + رمز خاص)
             </p>
           </div>
 
@@ -240,7 +256,7 @@ function ResetPasswordContent() {
                     type={showNewPassword ? "text" : "password"}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="4 أحرف على الأقل"
+                    placeholder="8 أحرف على الأقل - حرف كبير + صغير + رقم + رمز"
                     dir="ltr"
                     className="w-full py-2.5 px-3.5 rounded-[10px] text-white text-sm outline-none transition-colors text-left"
                     style={inputStyle(!!error)}
@@ -257,6 +273,41 @@ function ResetPasswordContent() {
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {/* Password strength indicator */}
+                {newPassword.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    <div className="flex gap-1">
+                      {[0, 1, 2, 3].map((i) => (
+                        <div
+                          key={i}
+                          className="h-1 flex-1 rounded-full transition-colors"
+                          style={{
+                            background: i < (
+                              newPassword.length >= 8 && /[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /[0-9]/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword) ? 4
+                              : newPassword.length >= 8 && ((/[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword)) || (/[0-9]/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword))) ? 3
+                              : newPassword.length >= 6 ? 2
+                              : 1
+                            ) ? (
+                              i < 1 ? "#ef4444"
+                              : i < 2 ? "#f59e0b"
+                              : i < 3 ? "#3b82f6"
+                              : "#22c55e"
+                            ) : "rgba(255,255,255,0.1)",
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                      {newPassword.length >= 8 && /[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /[0-9]/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword)
+                        ? "قوة كلمة المرور: ممتازة ✓"
+                        : newPassword.length >= 8 && ((/[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword)) || (/[0-9]/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword)))
+                        ? "قوة كلمة المرور: جيدة"
+                        : newPassword.length >= 6
+                        ? "قوة كلمة المرور: متوسطة"
+                        : "قوة كلمة المرور: ضعيفة"}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>

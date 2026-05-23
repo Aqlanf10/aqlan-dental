@@ -36,6 +36,9 @@ public static class DbSeeder
             // Always run: reset admin password if ADMIN_RESET_PASSWORD env var is set.
             await EnsureAdminPasswordResetAsync(context, logger);
 
+            // Always run: set admin email if ADMIN_EMAIL env var is set (needed for forgot-password).
+            await EnsureAdminEmailAsync(context, logger);
+
             // HOTFIX: One-time admin password force-reset to recover from lockout.
             // This runs only once (tracked by a Setting row) and resets the admin
             // password back to the default seed value, ensuring the account is active.
@@ -122,6 +125,52 @@ public static class DbSeeder
             logger.LogError(ex, "HOTFIX: Failed to force-reset admin password. Will retry on next startup.");
             // Don't write sentinel on failure — this allows retry on next startup
         }
+    }
+
+    /// <summary>
+    /// If the ADMIN_EMAIL environment variable is set and non-empty, updates the
+    /// admin user's email address. This is essential for the forgot-password flow
+    /// to work — without an email, the system cannot send a reset link and instead
+    /// creates a PasswordResetRequest that requires another admin to approve (which
+    /// is impossible if the only admin is locked out).
+    /// The email is only updated if it differs from the current value.
+    /// </summary>
+    private static async Task EnsureAdminEmailAsync(AppDbContext context, ILogger logger)
+    {
+        var adminEmail = Environment.GetEnvironmentVariable("ADMIN_EMAIL");
+        if (string.IsNullOrWhiteSpace(adminEmail))
+            return;
+
+        var admin = await context.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Username == "admin");
+
+        if (admin is null)
+        {
+            logger.LogWarning("ADMIN_EMAIL is set but no user with username 'admin' was found.");
+            return;
+        }
+
+        // Only update if the email is actually different (avoid unnecessary DB writes)
+        if (string.Equals(admin.Email, adminEmail, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        // Validate basic email format
+        if (!adminEmail.Contains('@') || !adminEmail.Contains('.'))
+        {
+            logger.LogWarning("ADMIN_EMAIL value '{Email}' does not appear to be a valid email address. Skipping.", adminEmail);
+            return;
+        }
+
+        admin.Email = adminEmail.Trim();
+        admin.UpdatedAt = DateTime.UtcNow;
+
+        await context.SaveChangesAsync();
+
+        logger.LogWarning(
+            "Admin account '{Username}' (Id: {Id}) email was set to '{Email}' via ADMIN_EMAIL env var. " +
+            "This enables the forgot-password email flow for the admin account.",
+            admin.Username, admin.Id, admin.Email);
     }
 
     /// <summary>

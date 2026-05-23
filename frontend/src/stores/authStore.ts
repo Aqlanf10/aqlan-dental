@@ -43,6 +43,15 @@ export const useAuthStore = create<AuthState>()(
           );
           localStorage.setItem("access_token", data.accessToken);
           setAuthCookie(true);
+
+          // Fetch user permissions after login
+          try {
+            const { data: permData } = await api.get<{ role: string; permissions: string[] }>("/api/auth/me/permissions");
+            data.user.permissions = permData.permissions;
+          } catch {
+            // Permissions fetch failed — continue without permissions
+          }
+
           set({ user: data.user, isAuthenticated: true, originalUser: null, isImpersonating: false });
           // Return true if user must change password so caller can redirect
           return !!(data.mustChangePassword || data.user.mustChangePassword);
@@ -70,6 +79,15 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { data } = await api.get<UserDto>("/api/auth/me");
           setAuthCookie(true);
+
+          // Fetch user permissions
+          try {
+            const { data: permData } = await api.get<{ role: string; permissions: string[] }>("/api/auth/me/permissions");
+            data.permissions = permData.permissions;
+          } catch {
+            // Permissions fetch failed — user will have limited UI but can still function
+          }
+
           set({ user: data, isAuthenticated: true });
         } catch {
           localStorage.removeItem("access_token");

@@ -130,6 +130,59 @@ public class AuthController(
         return user == null ? Unauthorized() : Ok(user);
     }
 
+    [HttpGet("me/permissions")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<ActionResult<UserPermissionsDto>> GetMyPermissions()
+    {
+        if (!currentUser.UserId.HasValue) return Unauthorized();
+
+        var user = await authService.GetMeAsync(currentUser.UserId.Value);
+        if (user == null) return Unauthorized();
+
+        // Get role permissions from database
+        var roleKey = user.Role; // e.g. "Admin", "Reception"
+
+        // Admin has all permissions implicitly
+        if (string.Equals(roleKey, "Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            var allResources = await db.RolePermissions
+                .Select(rp => rp.Resource)
+                .Distinct()
+                .ToListAsync();
+
+            var allPermissionKeys = new List<string>();
+            foreach (var resource in allResources)
+            {
+                allPermissionKeys.Add($"{resource}.view");
+                allPermissionKeys.Add($"{resource}.create");
+                allPermissionKeys.Add($"{resource}.edit");
+                allPermissionKeys.Add($"{resource}.delete");
+                allPermissionKeys.Add($"{resource}.export");
+                allPermissionKeys.Add($"{resource}.approve");
+            }
+
+            return Ok(new UserPermissionsDto { Role = roleKey, Permissions = allPermissionKeys });
+        }
+
+        // Non-admin: derive permission keys from RolePermission records
+        var permissions = await db.RolePermissions
+            .Where(rp => rp.Role == roleKey)
+            .ToListAsync();
+
+        var permissionKeys = new List<string>();
+        foreach (var perm in permissions)
+        {
+            if (perm.CanView) permissionKeys.Add($"{perm.Resource}.view");
+            if (perm.CanCreate) permissionKeys.Add($"{perm.Resource}.create");
+            if (perm.CanEdit) permissionKeys.Add($"{perm.Resource}.edit");
+            if (perm.CanDelete) permissionKeys.Add($"{perm.Resource}.delete");
+            if (perm.CanExport) permissionKeys.Add($"{perm.Resource}.export");
+            if (perm.CanApprove) permissionKeys.Add($"{perm.Resource}.approve");
+        }
+
+        return Ok(new UserPermissionsDto { Role = roleKey, Permissions = permissionKeys });
+    }
+
     [HttpPost("change-password")]
     [Authorize(Policy = "StaffOnly")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)

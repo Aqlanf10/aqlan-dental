@@ -11,6 +11,12 @@ export interface UserDto {
   email?: string;
   isActive?: boolean;
   deletedAt?: string | null;
+  permissions?: string[]; // permission keys from /api/auth/me/permissions
+}
+
+export interface UserPermissionsDto {
+  role: string;
+  permissions: string[];
 }
 
 export interface LoginRequest {

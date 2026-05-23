@@ -6,7 +6,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace AqlanDentalPro.Application.Services;
+namespace AqlanDentalPro.Infrastructure.Services;
 
 public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService)
 {
@@ -50,8 +50,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             Specialty = c.Specialty,
             TotalAmount = c.TotalAmount,
             DownPayment = c.DownPayment,
-            PaidAmount = c.Payments.Sum(p => p.Amount),
-            RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount),
+            PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+            RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
             InstallmentsCount = c.InstallmentsCount,
             InstallmentAmount = c.InstallmentAmount,
             StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
@@ -130,7 +130,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             if (monthsElapsed <= 0) continue;
 
             var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid   = c.Payments.Sum(p => p.Amount);
+            var actualPaid   = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
             var overdueAmt   = expectedPaid - actualPaid;
 
             if (overdueAmt > 0)
@@ -357,6 +357,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .ToListAsync();
 
         var recentPayments = await db.Payments
+            .Include(p => p.Patient)
             .Include(p => p.Doctor)
             .Where(p => p.PatientId == patientId)
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
@@ -370,8 +371,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             PatientNumber    = patient.PatientNumber,
             TotalContracted  = contracts.Sum(c => c.TotalAmount),
             TotalDiscounts   = contracts.Sum(c => c.DiscountAmount),
-            TotalPaid        = contracts.Sum(c => c.Payments.Sum(p => p.Amount)),
-            TotalRemaining   = contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount)),
+            TotalPaid        = contracts.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)),
+            TotalRemaining   = contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)),
             ActiveContracts  = contracts.Count(c => c.Status == ContractStatus.Active),
             CompletedContracts = contracts.Count(c => c.Status == ContractStatus.Completed),
             Contracts        = contracts.Select(c => new ContractStatementDto
@@ -380,8 +381,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 Specialty       = c.Specialty,
                 TotalAmount     = c.TotalAmount,
                 DiscountAmount  = c.DiscountAmount,
-                PaidAmount      = c.Payments.Sum(p => p.Amount),
-                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount),
+                PaidAmount      = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 StartDate       = c.StartDate?.ToString("yyyy-MM-dd"),
                 Status          = c.Status.ToString(),
                 InstallmentsCount  = c.InstallmentsCount,
@@ -389,7 +390,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             }).ToList(),
             RecentPayments = recentPayments.Select(p =>
             {
-                p.Patient = patient;
+                // Note: we deliberately do NOT mutate p.Patient to avoid ChangeTracker
+                // side-effects. MapPayment reads p.Patient?.FirstName which falls back
+                // to the already-loaded Patient navigation reference from the Include above.
                 return MapPayment(p);
             }).ToList()
         };
@@ -401,17 +404,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
         var todayCollected = await db.Payments
-            .Where(p => p.PaymentDate == today)
+            .Where(p => p.PaymentDate == today && p.IsActive)
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         var monthCollected = await db.Payments
-            .Where(p => p.PaymentDate >= monthStart)
+            .Where(p => p.PaymentDate >= monthStart && p.IsActive)
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
         var totalOutstanding = await db.Contracts
             .Include(c => c.Payments)
             .Where(c => c.Status == ContractStatus.Active)
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
+            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
 
         var activeContracts = await db.Contracts.CountAsync(c => c.Status == ContractStatus.Active);
@@ -581,7 +584,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         {
             var months   = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
             var expected = c.DownPayment + Math.Min(months, c.InstallmentsCount) * (c.InstallmentAmount ?? 0);
-            var paid     = c.Payments.Sum(p => p.Amount);
+            var paid     = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
             if (expected > paid) overdueAmount += expected - paid;
         }
 
@@ -625,8 +628,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         Specialty = c.Specialty,
         TotalAmount = c.TotalAmount,
         DownPayment = c.DownPayment,
-        PaidAmount = c.Payments.Sum(p => p.Amount),
-        RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount),
+        PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+        RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
         InstallmentsCount = c.InstallmentsCount,
         InstallmentAmount = c.InstallmentAmount,
         StartDate = c.StartDate?.ToString("yyyy-MM-dd"),
@@ -637,7 +640,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         Id = p.Id,
         PatientId = p.PatientId,
-        PatientName = p.Patient?.FirstName + " " + p.Patient?.LastName,
+        PatientName = string.Join(" ", new[] { p.Patient?.FirstName, p.Patient?.LastName }.Where(n => !string.IsNullOrEmpty(n))),
         ContractId = p.ContractId,
         InvoiceId = p.InvoiceId,
         InvoiceNumber = p.Invoice?.InvoiceNumber,

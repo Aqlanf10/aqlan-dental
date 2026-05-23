@@ -121,7 +121,7 @@ const SECTIONS: Section[] = [
         icon: CreditCard,
         color: "#16a34a",
         roles: ["Admin", "Reception", "Accountant"],
-        permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW,
+        permission: PERMISSION_KEYS.CHECKOUT_VIEW,
       },
       {
         label: "المدفوعات",

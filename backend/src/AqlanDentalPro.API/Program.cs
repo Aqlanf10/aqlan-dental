@@ -399,6 +399,7 @@ builder.Services.AddScoped<IPatientPortalService, PatientPortalService>();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<INotificationService, AqlanDentalPro.Infrastructure.Services.NotificationService>();
 builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.OverdueNotificationJob>();
+builder.Services.AddHostedService<AqlanDentalPro.Infrastructure.Services.AppointmentReminderJob>();
 builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure.Services.BookingRequestService>();
 builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.ICommissionService, AqlanDentalPro.Infrastructure.Services.CommissionService>();
 builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.IPatientAccessService, AqlanDentalPro.Infrastructure.Services.PatientAccessService>();
@@ -1103,6 +1104,58 @@ catch (Exception ex)
 {
     var prsLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
     prsLogger2.LogError(ex, "HOTFIX: Failed to ensure PasswordReset tables schema. Forgot-password endpoint may return 500!");
+}
+
+// ── CRITICAL: Ensure EmailLogs table exists ─────────────────────────────────
+// HOTFIX: The EmailLogs table tracks outgoing emails for statistics and daily
+// limit monitoring. Without this table, the AppointmentReminderJob and
+// EmailStatsController will fail. This block runs UNCONDITIONALLY and is
+// fully idempotent.
+try
+{
+    using var elScope = app.Services.CreateScope();
+    var elDb     = elScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var elLogger = elScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await elDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'EmailLogs') THEN
+                CREATE TABLE "EmailLogs" (
+                    "Id"                uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "ToEmail"           text                     NOT NULL,
+                    "Subject"           text                     NOT NULL,
+                    "Category"          character varying(50)    NOT NULL DEFAULT 'general',
+                    "Provider"          character varying(20)    NULL,
+                    "IsSent"            boolean                  NOT NULL DEFAULT false,
+                    "ErrorMessage"      text                     NULL,
+                    "ExternalId"        character varying(100)   NULL,
+                    "RelatedEntityType" character varying(50)    NULL,
+                    "RelatedEntityId"   uuid                     NULL,
+                    "CreatedAt"         timestamp with time zone NOT NULL DEFAULT now(),
+                    CONSTRAINT "PK_EmailLogs" PRIMARY KEY ("Id")
+                );
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'EmailLogs' AND indexname = 'IX_EmailLogs_IsSent_CreatedAt') THEN
+                CREATE INDEX "IX_EmailLogs_IsSent_CreatedAt" ON "EmailLogs" ("IsSent", "CreatedAt");
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'EmailLogs' AND indexname = 'IX_EmailLogs_Category_CreatedAt') THEN
+                CREATE INDEX "IX_EmailLogs_Category_CreatedAt" ON "EmailLogs" ("Category", "CreatedAt");
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'EmailLogs' AND indexname = 'IX_EmailLogs_RelatedEntity') THEN
+                CREATE INDEX "IX_EmailLogs_RelatedEntity" ON "EmailLogs" ("RelatedEntityType", "RelatedEntityId");
+            END IF;
+        END $$;
+    """);
+
+    elLogger.LogInformation("HOTFIX: EmailLogs table schema ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var elLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    elLogger2.LogError(ex, "HOTFIX: Failed to ensure EmailLogs table schema. Email statistics and reminder tracking may fail!");
 }
 
 // ── CRITICAL: Ensure Invoices and InvoiceLineItems tables exist ─────────────

@@ -294,3 +294,88 @@ export function useUpdateRolePermissions() {
     },
   });
 }
+
+// ─── Email Stats Types & Hooks ─────────────────────────────────────────────
+
+export interface EmailStatsResponse {
+  today: {
+    sent: number;
+    failed: number;
+    byCategory: { category: string; sent: number; failed: number }[];
+  };
+  yesterday: { sent: number };
+  week: { sent: number; failed: number };
+  limit: {
+    dailyLimit: number;
+    used: number;
+    remaining: number;
+    percentage: number;
+    isNearLimit: boolean;
+    isAtLimit: boolean;
+  };
+  recentEmails: {
+    id: string;
+    toEmail: string;
+    subject: string;
+    category: string;
+    provider: string | null;
+    isSent: boolean;
+    errorMessage: string | null;
+    createdAt: string;
+    relatedEntityType: string | null;
+    relatedEntityId: string | null;
+  }[];
+}
+
+export interface EmailHistoryResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  emails: {
+    id: string;
+    toEmail: string;
+    subject: string;
+    category: string;
+    provider: string | null;
+    isSent: boolean;
+    errorMessage: string | null;
+    externalId: string | null;
+    createdAt: string;
+    relatedEntityType: string | null;
+    relatedEntityId: string | null;
+  }[];
+}
+
+/** Hook: Fetch email statistics */
+export function useEmailStats() {
+  return useQuery({
+    queryKey: ["email-stats"],
+    queryFn: async () => {
+      const { data } = await api.get<EmailStatsResponse>("/api/email-stats");
+      return data;
+    },
+    staleTime: 60_000,
+  });
+}
+
+/** Hook: Fetch email history */
+export function useEmailHistory(
+  fromDate?: string,
+  toDate?: string,
+  category?: string,
+  page = 1,
+) {
+  return useQuery({
+    queryKey: ["email-history", fromDate, toDate, category, page],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.set("fromDate", fromDate);
+      if (toDate) params.set("toDate", toDate);
+      if (category) params.set("category", category);
+      params.set("page", String(page));
+      const { data } = await api.get<EmailHistoryResponse>(`/api/email-stats/history?${params}`);
+      return data;
+    },
+    staleTime: 30_000,
+  });
+}

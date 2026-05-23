@@ -23,12 +23,19 @@ public class EmailService : IEmailService
 
     public Task<bool> IsConfiguredAsync()
     {
-        var resendKey = _config["RESEND_API_KEY"] ?? "";
-        var smtpHost = _config["SMTP_HOST"] ?? _config["Smtp:Host"] ?? "";
+        var resendKey = GetConfig("RESEND_API_KEY");
+        var smtpHost = GetConfig("SMTP_HOST", "Smtp:Host");
         var isConfigured = !string.IsNullOrWhiteSpace(resendKey) || !string.IsNullOrWhiteSpace(smtpHost);
+
+        _logger.LogInformation(
+            "Email configuration check: RESEND_API_KEY={ResendSet}, SMTP_HOST={SmtpSet}, IsConfigured={IsConfigured}",
+            !string.IsNullOrWhiteSpace(resendKey) ? "(set)" : "(not set)",
+            !string.IsNullOrWhiteSpace(smtpHost) ? smtpHost : "(not set)",
+            isConfigured);
+
         if (!isConfigured)
         {
-            _logger.LogDebug(
+            _logger.LogWarning(
                 "Email not configured. Set RESEND_API_KEY (recommended) or SMTP_HOST env variables " +
                 "to enable email-based password reset. Without email, forgot-password falls back " +
                 "to admin-managed PasswordResetRequest.");
@@ -36,18 +43,46 @@ public class EmailService : IEmailService
         return Task.FromResult(isConfigured);
     }
 
+    /// <summary>
+    /// Reads a config value from IConfiguration first, then falls back to
+    /// Environment.GetEnvironmentVariable() directly. Railway and other cloud
+    /// platforms sometimes inject env vars that IConfiguration doesn't pick up.
+    /// </summary>
+    private string? GetConfig(params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            var value = _config[key];
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+        // Fallback: read directly from environment variables (works when IConfiguration
+        // doesn't see the env var — common on Railway, Render, etc.)
+        foreach (var key in keys)
+        {
+            var envKey = key.Replace(":", "__"); // .NET config uses : but env vars use __
+            var value = Environment.GetEnvironmentVariable(envKey);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                _logger.LogDebug("Config key '{Key}' not found in IConfiguration but found via Environment.GetEnvironmentVariable.", key);
+                return value;
+            }
+        }
+        return null;
+    }
+
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetToken, string resetUrl)
     {
-        var appUrl = _config["APP_PUBLIC_URL"] ?? _config["App:PublicUrl"] ?? "http://localhost:3000";
+        var appUrl = GetConfig("APP_PUBLIC_URL", "App:PublicUrl") ?? "http://localhost:3000";
         var fullResetUrl = $"{appUrl.TrimEnd('/')}/{resetUrl.TrimStart('/')}?token={Uri.EscapeDataString(resetToken)}";
 
-        var fromEmail = _config["SMTP_FROM_EMAIL"] ?? _config["Smtp:FromEmail"] ?? "noreply@aqlandental.com";
-        var fromName = _config["SMTP_FROM_NAME"] ?? _config["Smtp:FromName"] ?? "مركز د. عقلان الكامل";
+        var fromEmail = GetConfig("SMTP_FROM_EMAIL", "Smtp:FromEmail") ?? "onboarding@resend.dev";
+        var fromName = GetConfig("SMTP_FROM_NAME", "Smtp:FromName") ?? "مركز د. عقلان الكامل";
         var subject = "استعادة كلمة المرور — مركز د. عقلان الكامل";
         var htmlBody = BuildResetEmailHtml(fullResetUrl);
 
         // ── Priority 1: Resend API (HTTP-based, works from any cloud server) ──
-        var resendKey = _config["RESEND_API_KEY"] ?? "";
+        var resendKey = GetConfig("RESEND_API_KEY") ?? "";
         if (!string.IsNullOrWhiteSpace(resendKey))
         {
             var sent = await SendViaResendAsync(resendKey, toEmail, fromEmail, fromName, subject, htmlBody);
@@ -57,7 +92,7 @@ public class EmailService : IEmailService
         }
 
         // ── Priority 2: SMTP (traditional, may be blocked by cloud providers) ──
-        var smtpHost = _config["SMTP_HOST"] ?? _config["Smtp:Host"] ?? "";
+        var smtpHost = GetConfig("SMTP_HOST", "Smtp:Host") ?? "";
         if (!string.IsNullOrWhiteSpace(smtpHost))
         {
             var sent = await SendViaSmtpAsync(smtpHost, toEmail, fromEmail, fromName, subject, htmlBody);
@@ -77,9 +112,12 @@ public class EmailService : IEmailService
     {
         try
         {
+            var fromField = $"{fromName} <{fromEmail}>";
+            _logger.LogInformation("Attempting to send email via Resend API: from={From}, to={To}", fromField, toEmail);
+
             var payload = new
             {
-                from = $"{fromName} <{fromEmail}>",
+                from = fromField,
                 to = new[] { toEmail },
                 subject,
                 html = htmlBody
@@ -123,9 +161,9 @@ public class EmailService : IEmailService
     {
         try
         {
-            var port = int.Parse(_config["SMTP_PORT"] ?? _config["Smtp:Port"] ?? "587");
-            var username = _config["SMTP_USERNAME"] ?? _config["Smtp:Username"] ?? "";
-            var password = _config["SMTP_PASSWORD"] ?? _config["Smtp:Password"] ?? "";
+            var port = int.Parse(GetConfig("SMTP_PORT", "Smtp:Port") ?? "587");
+            var username = GetConfig("SMTP_USERNAME", "Smtp:Username") ?? "";
+            var password = GetConfig("SMTP_PASSWORD", "Smtp:Password") ?? "";
 
             using var client = new SmtpClient(host, port);
             client.EnableSsl = true;

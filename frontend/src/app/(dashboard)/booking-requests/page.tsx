@@ -14,6 +14,9 @@ import {
   ChevronLeft, ChevronRight, Ban, X,
 } from "lucide-react";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
+import { toast } from "@/stores/toastStore";
+import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { useAuthStore } from "@/stores/authStore";
 
 type BookingStatus = "Pending" | "Reviewed" | "Confirmed" | "Rejected";
 
@@ -177,7 +180,7 @@ function ConvertedBadge() {
   return (
     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border bg-emerald-50 border-emerald-200 text-emerald-700">
       <CheckCircle2 className="w-3.5 h-3.5" />
-      تم إنشاء موعد
+      تم التحويل إلى موعد
     </span>
   );
 }
@@ -191,6 +194,7 @@ interface DetailModalProps {
 }
 
 function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onViewAppointment }: DetailModalProps) {
+  const { user } = useAuthStore();
   const [staffNotes, setStaffNotes] = useState(item.staffNotes ?? "");
   const [loading, setLoading] = useState(false);
   const nextStatuses = NEXT_STATUSES[item.status];
@@ -345,17 +349,17 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              عرض الموعد
+              فتح الموعد
             </button>
           )}
           {/* Create Appointment — shown for confirmed & not converted */}
-          {canCreateAppointment && (
+          {canCreateAppointment && hasPermission(user, PERMISSION_KEYS.BOOKING_REQUESTS_EDIT) && (
             <button
               onClick={() => { onCreateAppointment(item); onClose(); }}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold bg-clinic-blue hover:bg-clinic-navy transition-colors"
             >
               <CalendarPlus className="w-3.5 h-3.5" />
-              إنشاء موعد
+              تحويل إلى موعد
             </button>
           )}
           {nextStatuses.map((ns) => (
@@ -379,7 +383,7 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
 interface ConvertModalProps {
   item: BookingRequest;
   onClose: () => void;
-  onConverted: () => void;
+  onConverted: (appointmentId?: string) => void;
 }
 
 function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
@@ -411,7 +415,7 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
     setConverting(true);
     setErr("");
     try {
-      await api.post(`/api/booking-requests/${item.id}/convert-to-appointment`, {
+      const res = await api.post(`/api/booking-requests/${item.id}/convert-to-appointment`, {
         patientId: "00000000-0000-0000-0000-000000000000",
         doctorId,
         appointmentDate: date,
@@ -420,7 +424,9 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
         durationMinutes: duration,
         appointmentType: item.serviceType ?? "عام",
       });
-      onConverted();
+      const convertedToAppointmentId = res.data?.convertedToAppointmentId || res.data?.appointmentId || res.data?.id;
+      toast.success("تم تحويل طلب الحجز إلى موعد بنجاح");
+      onConverted(convertedToAppointmentId);
       onClose();
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -530,6 +536,7 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
 
 export default function BookingRequestsPage() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [items, setItems] = useState<BookingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
@@ -888,16 +895,16 @@ export default function BookingRequestsPage() {
                         className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
                       >
                         <ExternalLink className="w-3 h-3" />
-                        عرض الموعد
+                        فتح الموعد
                       </button>
                     )}
-                    {!isConverted && item.status === "Confirmed" && (
+                    {!isConverted && item.status === "Confirmed" && hasPermission(user, PERMISSION_KEYS.BOOKING_REQUESTS_EDIT) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCreateAppointment(item); }}
                         className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-clinic-blue/10 text-clinic-blue hover:bg-clinic-blue/20 transition-colors"
                       >
                         <CalendarPlus className="w-3 h-3" />
-                        إنشاء موعد
+                        تحويل إلى موعد
                       </button>
                     )}
                   </div>
@@ -922,7 +929,12 @@ export default function BookingRequestsPage() {
         <ConvertModal
           item={convertItem}
           onClose={() => setConvertItem(null)}
-          onConverted={() => { fetchItems(page); }}
+          onConverted={(appointmentId?: string) => {
+            fetchItems(page);
+            if (appointmentId) {
+              toast.success("تم تحويل الطلب — يمكنك فتح الموعد الآن");
+            }
+          }}
         />
       )}
 

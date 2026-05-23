@@ -6,6 +6,8 @@ import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
+import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import { useAuthStore } from "@/stores/authStore";
 
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 8); // 8:00 – 20:00
 
@@ -187,9 +189,12 @@ function AppointmentCard({
   appointment: Appointment;
   onStatusChange: (id: string, status: string) => void;
 }) {
+  const { user } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [visitExists, setVisitExists] = useState(false);
   const [startingVisit, setStartingVisit] = useState(false);
+  const [arrivalLoading, setArrivalLoading] = useState(false);
+  const [queueLoading, setQueueLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
 
@@ -235,6 +240,38 @@ function AppointmentCard({
   // Determine if "بدء الزيارة" should be shown
   const canStartVisit = !visitExists && ["Scheduled", "Confirmed", "Arrived", "Waiting", "Called", "InRoom", "InProgress"].includes(a.status);
   const canDelete = !["InProgress", "Completed"].includes(a.status);
+
+  const canArrive = ["Scheduled", "Confirmed"].includes(a.status) && hasPermission(user, PERMISSION_KEYS.PATIENT_JOURNEY_EDIT);
+  const canSendToQueue = a.status === "Arrived" && hasPermission(user, PERMISSION_KEYS.CLINIC_QUEUE_CREATE);
+
+  const handleArrival = async () => {
+    setArrivalLoading(true);
+    try {
+      await api.post(`/api/patient-journey/${a.id}/intake`, {});
+      toast.success("تم تسجيل حضور المريض بنجاح");
+      onStatusChange(a.id, "Arrived");
+      setMenuOpen(false);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل تسجيل الحضور");
+    } finally {
+      setArrivalLoading(false);
+    }
+  };
+
+  const handleSendToQueue = async () => {
+    setQueueLoading(true);
+    try {
+      await api.post(`/api/patient-journey/${a.id}/send-to-queue`, {});
+      toast.success("تم إرسال المريض إلى الطابور");
+      onStatusChange(a.id, "Waiting");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "فشل إرسال المريض للطابور");
+    } finally {
+      setQueueLoading(false);
+    }
+  };
 
   const handleSendReminder = async () => {
     try {
@@ -305,10 +342,32 @@ function AppointmentCard({
         </div>
       </div>
 
-      {/* Status badge */}
-      <span className="text-xs px-2 py-0.5 rounded-full bg-white/60 flex-shrink-0 font-medium">
-        {APPOINTMENT_STATUS_LABELS[a.status] ?? a.status}
-      </span>
+      {/* Status badge + quick arrival action */}
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <span className="text-xs px-2 py-0.5 rounded-full bg-white/60 font-medium">
+          {APPOINTMENT_STATUS_LABELS[a.status] ?? a.status}
+        </span>
+        {canArrive && (
+          <button
+            onClick={handleArrival}
+            disabled={arrivalLoading}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 transition disabled:opacity-60"
+          >
+            {arrivalLoading ? <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : null}
+            تسجيل حضور
+          </button>
+        )}
+        {canSendToQueue && (
+          <button
+            onClick={handleSendToQueue}
+            disabled={queueLoading}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600 transition disabled:opacity-60"
+          >
+            {queueLoading ? <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : null}
+            إرسال إلى الطابور
+          </button>
+        )}
+      </div>
 
       {/* Quick actions menu */}
       <div className="relative flex-shrink-0" ref={menuRef}>

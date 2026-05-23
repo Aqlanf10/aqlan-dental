@@ -84,7 +84,7 @@ const ACTION_LABELS: Record<string, string> = {
   Intake: "تسجيل الوصول",
   SendToQueue: "إدخال للطابور",
   CallPatient: "نداء المريض",
-  EnterRoom: "إدخال الغرفة",
+  EnterRoom: "إدخال إلى الغرفة",
   StartVisit: "بدء الزيارة",
   InProgress: "عند الطبيب",
   Checkout: "إنهاء الحساب",
@@ -158,6 +158,9 @@ export default function PatientJourneyPage() {
   // Draft invoice creation
   const [draftInvoiceLoading, setDraftInvoiceLoading] = useState(false);
   const [draftInvoiceResult, setDraftInvoiceResult] = useState<{ invoiceId: string; invoiceNumber: string } | null>(null);
+
+  // Checkout complete flag
+  const [checkoutComplete, setCheckoutComplete] = useState(false);
 
   // ─── Data Loading ─────────────────────────────────────────────────────────
 
@@ -246,6 +249,7 @@ export default function PatientJourneyPage() {
       setCheckoutNotes("");
       setDraftInvoiceLoading(false);
       setDraftInvoiceResult(null);
+      setCheckoutComplete(false);
       setDialogError("");
       setShowCheckout(true);
       return;
@@ -313,6 +317,7 @@ export default function PatientJourneyPage() {
         notes: checkoutNotes || null,
       });
       setShowCheckout(false);
+      setCheckoutComplete(true);
       loadJourney();
       // If payment is needed, guide user to Payments page
       if (checkoutAmount > 0 && res.data?.nextActions?.some((a: string) => a.includes("المالية"))) {
@@ -376,6 +381,38 @@ export default function PatientJourneyPage() {
             <div>
               <p className="text-2xl font-extrabold text-gray-900">{card.count}</p>
               <p className="text-[11px] text-gray-500 whitespace-nowrap">{card.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Workflow Flow Indicator */}
+      <div className="flex items-center justify-center gap-1 sm:gap-2 flex-wrap py-2">
+        {[
+          { key: "arrived", label: "وصل", active: arrivedCount > 0, color: "#f59e0b" },
+          { key: "waiting", label: "في الطابور", active: waitingCount > 0, color: "#f97316" },
+          { key: "inRoom", label: "داخل الغرفة", active: inRoomCount > 0, color: "#06b6d4" },
+          { key: "inProgress", label: "قيد الزيارة", active: inRoomCount > 0, color: "#10b981" },
+          { key: "checkout", label: "جاهز للدفع", active: checkoutCount > 0, color: "#16a34a" },
+        ].map((step, idx) => (
+          <div key={step.key} className="flex items-center gap-1 sm:gap-2">
+            {idx > 0 && (
+              <span className="text-gray-300 text-xs">←</span>
+            )}
+            <div className="flex items-center gap-1">
+              <span
+                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                style={{
+                  backgroundColor: step.active ? step.color : "#d1d5db",
+                  boxShadow: step.active ? `0 0 6px ${step.color}60` : "none",
+                }}
+              />
+              <span
+                className="text-xs font-medium whitespace-nowrap"
+                style={{ color: step.active ? step.color : "#9ca3af" }}
+              >
+                {step.label}
+              </span>
             </div>
           </div>
         ))}
@@ -711,9 +748,34 @@ export default function PatientJourneyPage() {
             )}
 
             {/* Info banner — checkout is workflow-status only */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
-              إنهاء الحساب هنا يغيّر حالة الزيارة فقط. لتسجيل الدّفع الفعلي، انتقل إلى صفحة المالية بعد الإنهاء.
+            <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2.5 text-xs text-amber-800 font-medium">
+              ⚠️ إنهاء الحساب هنا يغيّر حالة الزيارة فقط. لتسجيل الدّفع الفعلي، انتقل إلى صفحة المالية بعد الإنهاء.
             </div>
+
+            {/* Post-checkout navigation links */}
+            {checkoutComplete && (
+              <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-2">
+                <p className="text-sm font-medium text-green-800">تم إنهاء الحساب بنجاح</p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Link
+                    href="/finance/payments"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg bg-green-600 text-white hover:bg-green-700 transition"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    تسجيل دفعة
+                  </Link>
+                  {draftInvoiceResult && (
+                    <Link
+                      href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#3d7ab5]/10 transition"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      عرض الفاتورة
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Create Draft Invoice */}
             {selectedItem.checkoutStatus === "ReadyForCheckout" && !draftInvoiceResult && (
@@ -763,13 +825,22 @@ export default function PatientJourneyPage() {
                 <p className="text-sm font-medium text-green-800">
                   تم إنشاء الفاتورة: <span className="font-mono">{draftInvoiceResult.invoiceNumber}</span>
                 </p>
-                <Link
-                  href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
-                  className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
-                >
-                  <FileText className="w-3 h-3" />
-                  عرض الفاتورة
-                </Link>
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                    className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
+                  >
+                    <FileText className="w-3 h-3" />
+                    عرض الفاتورة
+                  </Link>
+                  <Link
+                    href="/finance/payments"
+                    className="text-xs text-green-700 hover:underline flex items-center gap-1"
+                  >
+                    <CreditCard className="w-3 h-3" />
+                    تسجيل دفعة
+                  </Link>
+                </div>
                 <p className="text-xs text-[#94a3b8]">الدفع يتم عبر صفحة المالية</p>
               </div>
             )}

@@ -30,7 +30,7 @@ public class EmailService : IEmailService
         _logger.LogInformation(
             "Email configuration check: RESEND_API_KEY={ResendSet}, SMTP_HOST={SmtpSet}, IsConfigured={IsConfigured}",
             !string.IsNullOrWhiteSpace(resendKey) ? "(set)" : "(not set)",
-            !string.IsNullOrWhiteSpace(smtpHost) ? smtpHost : "(not set)",
+            !string.IsNullOrWhiteSpace(smtpHost) ? "(set)" : "(not set)",
             isConfigured);
 
         if (!isConfigured)
@@ -99,7 +99,7 @@ public class EmailService : IEmailService
             if (sent) return true;
         }
 
-        _logger.LogWarning("All email providers failed. Password reset email not sent to {Email}.", toEmail);
+        _logger.LogWarning("All email providers failed. Password reset email not sent.");
         return false;
     }
 
@@ -113,7 +113,7 @@ public class EmailService : IEmailService
         try
         {
             var fromField = $"{fromName} <{fromEmail}>";
-            _logger.LogInformation("Attempting to send email via Resend API: from={From}, to={To}", fromField, toEmail);
+            _logger.LogInformation("Attempting to send password-reset email via Resend API.");
 
             var payload = new
             {
@@ -136,19 +136,19 @@ public class EmailService : IEmailService
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("Password reset email sent successfully to {Email} via Resend API.", toEmail);
+                _logger.LogInformation("Password reset email sent successfully via Resend API.");
                 return true;
             }
 
             var responseBody = await response.Content.ReadAsStringAsync();
             _logger.LogWarning(
-                "Resend API returned {StatusCode}: {Body}. Email not sent to {Email}.",
-                (int)response.StatusCode, responseBody, toEmail);
+                "Resend API returned {StatusCode}: {Body}. Email not sent.",
+                (int)response.StatusCode, responseBody);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Resend API exception while sending to {Email}.", toEmail);
+            _logger.LogWarning(ex, "Resend API exception while sending password-reset email.");
             return false;
         }
     }
@@ -183,12 +183,12 @@ public class EmailService : IEmailService
             mailMessage.To.Add(toEmail);
 
             await client.SendMailAsync(mailMessage);
-            _logger.LogInformation("Password reset email sent successfully to {Email} via SMTP.", toEmail);
+            _logger.LogInformation("Password reset email sent successfully via SMTP.");
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "SMTP failed for {Email}. This is common from cloud servers — use Resend API instead.", toEmail);
+            _logger.LogWarning(ex, "SMTP failed. This is common from cloud servers — use Resend API instead.");
             return false;
         }
     }

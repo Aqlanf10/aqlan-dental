@@ -9,6 +9,7 @@ import {
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
   CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown, Percent,
+  CalendarClock,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -46,13 +47,27 @@ const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
   { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: [],                                                             section: "رئيسي" },
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: [] },
-  { href: "/appointments",   label: "المواعيد",         icon: Calendar,        roles: [] },
-  { href: "/patient-journey",label: "رحلة المرضى",      icon: Route,           roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"] },
+
+  // ── التشغيل اليومي ────────────────────────────────────────────────────────
+  {
+    kind: "group", section: "التشغيل اليومي",
+    label: "التشغيل اليومي", icon: ClipboardList,
+    roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist","Accountant"],
+    children: [
+      { href: "/daily-operations",    label: "التشغيل اليومي",   icon: ClipboardList, roles: [] },
+      { href: "/booking-requests",    label: "طلبات الحجز",     icon: Globe,         roles: ["Admin","Reception"] },
+      { href: "/appointments",        label: "المواعيد",         icon: Calendar,      roles: [] },
+      { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [] },
+      { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [] },
+      { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"] },
+      { href: "/finance/payments",    label: "المدفوعات",        icon: CreditCard,    roles: ["Admin","Reception","Accountant"] },
+      { href: "/finance/invoices",    label: "الفواتير",         icon: FileText,      roles: ["Admin","Reception","Accountant"] },
+      { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"] },
+    ],
+  },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
-  { href: "/clinic-queue",   label: "طابور العيادة",   icon: ClipboardList,   roles: [],                                                             section: "العيادة" },
-  { href: "/clinic-display", label: "شاشة العرض",      icon: Monitor,         roles: [] },
-  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"] },
+  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"],                                         section: "العيادة" },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
   { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: ["Admin","Orthodontist"],                                       section: "تخصصات" },
@@ -62,7 +77,6 @@ const NAV: NavEntry[] = [
 
   // ── التواصل ───────────────────────────────────────────────────────────────
   { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: [],                                                             section: "التواصل" },
-  { href: "/booking-requests",label:"طلبات الحجز",      icon: Globe,           roles: ["Admin","Reception"] },
   { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: [] },
   { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: [] },
 
@@ -73,8 +87,6 @@ const NAV: NavEntry[] = [
     roles: ["Admin","Reception","Accountant"],
     children: [
       { href: "/finance",           label: "ملخص المالية", icon: Wallet,         roles: ["Admin","Reception","Accountant"] },
-      { href: "/finance/invoices",  label: "الفواتير",     icon: FileText,       roles: ["Admin","Reception","Accountant"] },
-      { href: "/finance/payments",  label: "المدفوعات",    icon: CreditCard,     roles: ["Admin","Reception","Accountant"] },
       { href: "/finance/contracts", label: "العقود",       icon: FileCheck,      roles: ["Admin","Reception","Accountant"] },
       { href: "/finance/overdue",   label: "المتأخرات",    icon: AlertTriangle,  roles: ["Admin","Reception","Accountant"] },
     ],

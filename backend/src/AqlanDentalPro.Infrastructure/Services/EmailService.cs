@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Mail;
 using System.Text;
+using System.Text.Json;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
@@ -11,6 +12,8 @@ public class EmailService : IEmailService
 {
     private readonly IConfiguration _config;
     private readonly ILogger<EmailService> _logger;
+
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
 
     public EmailService(IConfiguration config, ILogger<EmailService> logger)
     {
@@ -20,41 +23,141 @@ public class EmailService : IEmailService
 
     public Task<bool> IsConfiguredAsync()
     {
-        var host = _config["SMTP_HOST"] ?? _config["Smtp:Host"] ?? "";
-        var isConfigured = !string.IsNullOrWhiteSpace(host);
+        var resendKey = _config["RESEND_API_KEY"] ?? "";
+        var smtpHost = _config["SMTP_HOST"] ?? _config["Smtp:Host"] ?? "";
+        var isConfigured = !string.IsNullOrWhiteSpace(resendKey) || !string.IsNullOrWhiteSpace(smtpHost);
         if (!isConfigured)
         {
             _logger.LogDebug(
-                "SMTP not configured. Set SMTP_HOST (and SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD) " +
-                "environment variables to enable email-based password reset. " +
-                "Without SMTP, forgot-password falls back to admin-managed PasswordResetRequest.");
+                "Email not configured. Set RESEND_API_KEY (recommended) or SMTP_HOST env variables " +
+                "to enable email-based password reset. Without email, forgot-password falls back " +
+                "to admin-managed PasswordResetRequest.");
         }
         return Task.FromResult(isConfigured);
     }
 
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetToken, string resetUrl)
     {
+        var appUrl = _config["APP_PUBLIC_URL"] ?? _config["App:PublicUrl"] ?? "http://localhost:3000";
+        var fullResetUrl = $"{appUrl.TrimEnd('/')}/{resetUrl.TrimStart('/')}?token={Uri.EscapeDataString(resetToken)}";
+
+        var fromEmail = _config["SMTP_FROM_EMAIL"] ?? _config["Smtp:FromEmail"] ?? "noreply@aqlandental.com";
+        var fromName = _config["SMTP_FROM_NAME"] ?? _config["Smtp:FromName"] ?? "مركز د. عقلان الكامل";
+        var subject = "استعادة كلمة المرور — مركز د. عقلان الكامل";
+        var htmlBody = BuildResetEmailHtml(fullResetUrl);
+
+        // ── Priority 1: Resend API (HTTP-based, works from any cloud server) ──
+        var resendKey = _config["RESEND_API_KEY"] ?? "";
+        if (!string.IsNullOrWhiteSpace(resendKey))
+        {
+            var sent = await SendViaResendAsync(resendKey, toEmail, fromEmail, fromName, subject, htmlBody);
+            if (sent) return true;
+
+            _logger.LogWarning("Resend API failed, falling back to SMTP if configured.");
+        }
+
+        // ── Priority 2: SMTP (traditional, may be blocked by cloud providers) ──
+        var smtpHost = _config["SMTP_HOST"] ?? _config["Smtp:Host"] ?? "";
+        if (!string.IsNullOrWhiteSpace(smtpHost))
+        {
+            var sent = await SendViaSmtpAsync(smtpHost, toEmail, fromEmail, fromName, subject, htmlBody);
+            if (sent) return true;
+        }
+
+        _logger.LogWarning("All email providers failed. Password reset email not sent to {Email}.", toEmail);
+        return false;
+    }
+
+    /// <summary>
+    /// Sends email via Resend.com HTTP API. This is the recommended method for cloud deployments
+    /// because it uses HTTPS instead of SMTP, which avoids port blocking and IP reputation issues.
+    /// Free tier: 100 emails/day, 1 custom domain. Sign up at https://resend.com
+    /// </summary>
+    private async Task<bool> SendViaResendAsync(string apiKey, string toEmail, string fromEmail, string fromName, string subject, string htmlBody)
+    {
         try
         {
-            var host = _config["SMTP_HOST"] ?? _config["Smtp:Host"] ?? "";
-            if (string.IsNullOrWhiteSpace(host))
+            var payload = new
             {
-                _logger.LogWarning("SMTP not configured — cannot send password reset email to {Email}", toEmail);
-                return false;
+                from = $"{fromName} <{fromEmail}>",
+                to = new[] { toEmail },
+                subject,
+                html = htmlBody
+            };
+
+            var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.SendAsync(request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Password reset email sent successfully to {Email} via Resend API.", toEmail);
+                return true;
             }
 
+            var responseBody = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning(
+                "Resend API returned {StatusCode}: {Body}. Email not sent to {Email}.",
+                (int)response.StatusCode, responseBody, toEmail);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Resend API exception while sending to {Email}.", toEmail);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Sends email via traditional SMTP. May fail from cloud servers (Railway, AWS, etc.)
+    /// because Gmail and other providers often block SMTP connections from cloud IP ranges.
+    /// </summary>
+    private async Task<bool> SendViaSmtpAsync(string host, string toEmail, string fromEmail, string fromName, string subject, string htmlBody)
+    {
+        try
+        {
             var port = int.Parse(_config["SMTP_PORT"] ?? _config["Smtp:Port"] ?? "587");
             var username = _config["SMTP_USERNAME"] ?? _config["Smtp:Username"] ?? "";
             var password = _config["SMTP_PASSWORD"] ?? _config["Smtp:Password"] ?? "";
-            var fromEmail = _config["SMTP_FROM_EMAIL"] ?? _config["Smtp:FromEmail"] ?? "noreply@aqlandental.com";
-            var fromName = _config["SMTP_FROM_NAME"] ?? _config["Smtp:FromName"] ?? "مركز د. عقلان الكامل";
-            var appUrl = _config["APP_PUBLIC_URL"] ?? _config["App:PublicUrl"] ?? "http://localhost:3000";
 
-            var fullResetUrl = $"{appUrl.TrimEnd('/')}/{resetUrl.TrimStart('/')}?token={Uri.EscapeDataString(resetToken)}";
+            using var client = new SmtpClient(host, port);
+            client.EnableSsl = true;
+            client.DeliveryMethod = SmtpDeliveryMethod.Network;
+            client.UseDefaultCredentials = false;
+            client.Credentials = new NetworkCredential(username, password);
 
-            var subject = "استعادة كلمة المرور — مركز د. عقلان الكامل";
+            using var mailMessage = new MailMessage
+            {
+                From = new MailAddress(fromEmail, fromName, Encoding.UTF8),
+                Subject = subject,
+                Body = htmlBody,
+                IsBodyHtml = true,
+                BodyEncoding = Encoding.UTF8,
+                SubjectEncoding = Encoding.UTF8
+            };
+            mailMessage.To.Add(toEmail);
 
-            var body = $@"
+            await client.SendMailAsync(mailMessage);
+            _logger.LogInformation("Password reset email sent successfully to {Email} via SMTP.", toEmail);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SMTP failed for {Email}. This is common from cloud servers — use Resend API instead.", toEmail);
+            return false;
+        }
+    }
+
+    private static string BuildResetEmailHtml(string fullResetUrl)
+    {
+        return $@"
 <!DOCTYPE html>
 <html dir='rtl' lang='ar'>
 <head>
@@ -74,7 +177,7 @@ public class EmailService : IEmailService
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>🦷 مركز د. عقلان الكامل</h1>
+            <h1>&#x1F9B7; مركز د. عقلان الكامل</h1>
         </div>
         <div class='content'>
             <p>السلام عليكم،</p>
@@ -85,42 +188,15 @@ public class EmailService : IEmailService
             <p>إذا لم يعمل الزر أعلاه، يمكنكم نسخ الرابط التالي ولصقه في المتصفح:</p>
             <p style='direction: ltr; text-align: left; word-break: break-all; font-size: 13px; color: #666;'>{fullResetUrl}</p>
             <div class='warning'>
-                ⚠️ هذا الرابط صالح لمدة 30 دقيقة فقط. إذا لم تطلبوا استعادة كلمة المرور، يمكنكم تجاهل هذه الرسالة بأمان.
+                &#x26A0;&#xFE0F; هذا الرابط صالح لمدة 30 دقيقة فقط. إذا لم تطلبوا استعادة كلمة المرور، يمكنكم تجاهل هذه الرسالة بأمان.
             </div>
         </div>
         <div class='footer'>
-            <p>© {DateTime.UtcNow.Year} مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
+            <p>&#x00A9; {DateTime.UtcNow.Year} مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
             <p>تعز، اليمن — شارع التحرير الأعلى</p>
         </div>
     </div>
 </body>
 </html>";
-
-            using var client = new SmtpClient(host, port);
-            client.EnableSsl = true;
-            client.DeliveryMethod = SmtpDeliveryMethod.Network;
-            client.UseDefaultCredentials = false;
-            client.Credentials = new NetworkCredential(username, password);
-
-            using var mailMessage = new MailMessage
-            {
-                From = new MailAddress(fromEmail, fromName, Encoding.UTF8),
-                Subject = subject,
-                Body = body,
-                IsBodyHtml = true,
-                BodyEncoding = Encoding.UTF8,
-                SubjectEncoding = Encoding.UTF8
-            };
-            mailMessage.To.Add(toEmail);
-
-            await client.SendMailAsync(mailMessage);
-            _logger.LogInformation("Password reset email sent successfully to {Email}", toEmail);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to send password reset email to {Email}. SMTP error — email not sent.", toEmail);
-            return false;
-        }
     }
 }

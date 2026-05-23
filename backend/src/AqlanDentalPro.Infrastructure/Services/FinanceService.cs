@@ -356,10 +356,24 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync();
 
+        // FIX: Calculate totalPaid from ALL active payments for the patient,
+        // not just contract-linked ones. Unlinked/orphan payments must still
+        // count in the overall patient summary so the balance is accurate.
+        // Each payment is counted exactly once via the direct Payments query.
+        var totalPaid = await db.Payments
+            .Where(p => p.PatientId == patientId && p.IsActive)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+        var totalContracted = contracts.Sum(c => c.TotalAmount);
+        var totalDiscounts  = contracts.Sum(c => c.DiscountAmount);
+        var totalRemaining  = totalContracted - totalDiscounts - totalPaid;
+
+        // FIX: Filter recentPayments to active only — inactive/refunded/cancelled
+        // payments should not appear in the recent list.
         var recentPayments = await db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
-            .Where(p => p.PatientId == patientId)
+            .Where(p => p.PatientId == patientId && p.IsActive)
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .Take(20)
             .ToListAsync();
@@ -369,10 +383,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             PatientId        = patientId,
             PatientName      = patient.FirstName + " " + patient.LastName,
             PatientNumber    = patient.PatientNumber,
-            TotalContracted  = contracts.Sum(c => c.TotalAmount),
-            TotalDiscounts   = contracts.Sum(c => c.DiscountAmount),
-            TotalPaid        = contracts.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)),
-            TotalRemaining   = contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount)),
+            TotalContracted  = totalContracted,
+            TotalDiscounts   = totalDiscounts,
+            TotalPaid        = totalPaid,
+            TotalRemaining   = totalRemaining,
             ActiveContracts  = contracts.Count(c => c.Status == ContractStatus.Active),
             CompletedContracts = contracts.Count(c => c.Status == ContractStatus.Completed),
             Contracts        = contracts.Select(c => new ContractStatementDto
@@ -381,6 +395,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 Specialty       = c.Specialty,
                 TotalAmount     = c.TotalAmount,
                 DiscountAmount  = c.DiscountAmount,
+                // Per-contract balance still uses only contract-linked payments
                 PaidAmount      = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 RemainingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 StartDate       = c.StartDate?.ToString("yyyy-MM-dd"),

@@ -445,7 +445,7 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
                         && a.EndTime > dto.StartTime);
 
         if (hasConflict)
-            throw new ArgumentException("يوجد تعارض في المواعيد مع هذا الطبيب في هذا الوقت");
+            throw new ArgumentException("يوجد موعد آخر في نفس الوقت لهذا الطبيب");
 
         // 5. Create the Appointment (use resolved patientId instead of dto.PatientId)
         var appointment = new Appointment

@@ -68,7 +68,11 @@ public sealed class ConvertBookingRequestToAppointmentDtoValidator : AbstractVal
 {
     public ConvertBookingRequestToAppointmentDtoValidator()
     {
-        // PatientId may be Guid.Empty — backend auto-resolves patient by phone
+        // PatientId may be Guid.Empty — backend auto-resolves patient by phone or booking request data
+        RuleFor(x => x.PatientId)
+            .Must(pid => pid == Guid.Empty || pid != Guid.Empty)
+            .WithMessage("معرف المريض غير صالح");
+
         RuleFor(x => x.DoctorId)
             .NotEmpty().WithMessage("معرف الطبيب مطلوب");
 

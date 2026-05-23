@@ -97,7 +97,7 @@ function parseTimeToISO(t: string | null): string | undefined {
     const [h, m] = t.trim().split(":");
     return `${h.padStart(2, "0")}:${m}`;
   }
-  // Arabic 12h like "9:00 ص" or "3:00 م"
+  // 12h format with AM/PM — handles "9:00 AM", "12:00 PM", "3:00 م", "12:30 ص"
   const m12 = t.match(/(\d{1,2}):(\d{2})\s*(ص|م|AM|PM)/i);
   if (m12) {
     let h = parseInt(m12[1], 10);
@@ -106,6 +106,14 @@ function parseTimeToISO(t: string | null): string | undefined {
     if (isPm && h < 12) h += 12;
     if (!isPm && h === 12) h = 0;
     return `${h.toString().padStart(2, "0")}:${min}`;
+  }
+  // Try just a number like "9" or "14"
+  const numMatch = t.match(/^(\d{1,2})$/);
+  if (numMatch) {
+    const h = parseInt(numMatch[1], 10);
+    if (h >= 0 && h <= 23) {
+      return `${h.toString().padStart(2, "0")}:00`;
+    }
   }
   return undefined;
 }
@@ -188,25 +196,42 @@ function ConvertedBadge() {
 interface DetailModalProps {
   item: BookingRequest;
   onClose: () => void;
-  onStatusChange: (item: BookingRequest, status: BookingStatus, notes: string) => Promise<void>;
+  onStatusChange: (item: BookingRequest, status: BookingStatus, notes: string) => Promise<{ success: boolean; patientId?: string }>;
   onCreateAppointment: (item: BookingRequest) => void;
   onViewAppointment: (appointmentId: string) => void;
+  onConfirmAndConvert: (item: BookingRequest, notes: string) => Promise<void>;
 }
 
-function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onViewAppointment }: DetailModalProps) {
+function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onViewAppointment, onConfirmAndConvert }: DetailModalProps) {
   const { user } = useAuthStore();
   const [staffNotes, setStaffNotes] = useState(item.staffNotes ?? "");
   const [loading, setLoading] = useState(false);
   const nextStatuses = NEXT_STATUSES[item.status];
   const isConverted = item.convertedToAppointmentId !== null;
   const canCreateAppointment = item.status === "Confirmed" && !isConverted;
+  // Show "Confirm & Convert" for Pending/Reviewed items that aren't converted yet
+  const canConfirmAndConvert = (item.status === "Pending" || item.status === "Reviewed") && !isConverted;
   // Always show staff notes for statuses that have actions or can be transitioned
   const showStaffNotes = nextStatuses.length > 0 || canCreateAppointment;
 
   async function handleStatusChange(status: BookingStatus) {
     setLoading(true);
     try {
-      await onStatusChange(item, status, staffNotes);
+      const result = await onStatusChange(item, status, staffNotes);
+      // Only close modal for non-Confirmed statuses or failed confirms
+      if (status !== "Confirmed" || !result.success) {
+        onClose();
+      }
+      // For successful Confirmed: keep modal open so user can convert
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConfirmAndConvert() {
+    setLoading(true);
+    try {
+      await onConfirmAndConvert(item, staffNotes);
       onClose();
     } finally {
       setLoading(false);
@@ -352,6 +377,17 @@ function DetailModal({ item, onClose, onStatusChange, onCreateAppointment, onVie
               فتح الموعد
             </button>
           )}
+          {/* Confirm & Convert — combined action for Pending/Reviewed */}
+          {canConfirmAndConvert && hasPermission(user, PERMISSION_KEYS.BOOKING_REQUESTS_EDIT) && (
+            <button
+              disabled={loading}
+              onClick={handleConfirmAndConvert}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold bg-gradient-to-l from-clinic-blue to-clinic-navy hover:opacity-90 transition-colors disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+              تأكيد وتحويل إلى موعد
+            </button>
+          )}
           {/* Create Appointment — shown for confirmed & not converted */}
           {canCreateAppointment && hasPermission(user, PERMISSION_KEYS.BOOKING_REQUESTS_EDIT) && (
             <button
@@ -407,6 +443,12 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
     if (!date)     { setErr("حدد تاريخ الموعد"); return; }
     if (!startTime){ setErr("حدد وقت الموعد"); return; }
 
+    // Guard: prevent double conversion
+    if (item.convertedToAppointmentId) {
+      setErr("تم تحويل هذا الطلب بالفعل إلى موعد");
+      return;
+    }
+
     const [h, m] = startTime.split(":").map(Number);
     const endTotal = h * 60 + m + duration;
     const endH = Math.floor(endTotal / 60).toString().padStart(2, "0");
@@ -429,8 +471,10 @@ function ConvertModal({ item, onClose, onConverted }: ConvertModalProps) {
       onConverted(convertedToAppointmentId);
       onClose();
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setErr(msg ?? "فشل تحويل الطلب — تحقق من عدم وجود تعارض في المواعيد");
+      const axiosErr = e as { response?: { data?: { message?: string } }; message?: string };
+      const msg = axiosErr?.response?.data?.message || axiosErr?.message;
+      // Show real backend error if available, otherwise generic message
+      setErr(msg ?? "فشل تحويل الطلب — حاول مرة أخرى");
     } finally {
       setConverting(false);
     }
@@ -602,33 +646,60 @@ export default function BookingRequestsPage() {
     return created.id;
   }
 
-  async function handleStatusChange(item: BookingRequest, status: BookingStatus, staffNotes: string) {
+  async function handleStatusChange(item: BookingRequest, status: BookingStatus, staffNotes: string): Promise<{ success: boolean; patientId?: string }> {
     if (status === "Confirmed") {
       // F2 FIX: Create/find patient file FIRST — only confirm booking if patient creation succeeds.
       // Previously, if patient creation failed, the booking was still confirmed (creating an orphan
       // confirmed booking with no patient file). Now we DO NOT confirm the booking on failure.
+      // FIX: No longer navigates away — stays on booking requests page.
       try {
         const patientId = await ensurePatientFile(item);
         // Patient file created/found successfully — now confirm the booking
         await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
-        router.push(`/patients/${patientId}`);
-        return;
+        toast.success("تم تأكيد الطلب — يمكنك الآن تحويله إلى موعد");
+        await fetchItems(page);
+        return { success: true, patientId };
       } catch (err: unknown) {
         const axiosErr = err as { response?: { data?: { message?: string } }; message?: string };
         const msg = axiosErr?.response?.data?.message || axiosErr?.message || "تعذّر إنشاء ملف المريض";
         // F2 FIX: Do NOT confirm the booking. Show error and keep in current status.
         setError(`فشل فتح ملف المريض: ${msg}. لم يتم تأكيد الطلب — حاول مرة أخرى.`);
         await fetchItems(page);
-        return;
+        return { success: false };
       }
     }
 
     await api.patch(`/api/booking-requests/${item.id}/status`, { status, staffNotes });
     await fetchItems(page);
+    return { success: true };
+  }
+
+  /** Confirm a booking request AND immediately open the convert-to-appointment modal. */
+  async function handleConfirmAndConvert(item: BookingRequest, staffNotes: string) {
+    const result = await handleStatusChange(item, "Confirmed", staffNotes);
+    if (result.success) {
+      // Refresh will update the item to Confirmed, then open convert modal
+      // Find the refreshed item (it now has Confirmed status)
+      const refreshedItem = { ...item, status: "Confirmed" as BookingStatus };
+      setConvertItem(refreshedItem);
+    }
+  }
+
+  /** Guard: prevent converting an already-converted booking request. */
+  function openConvertWithGuard(item: BookingRequest) {
+    if (item.convertedToAppointmentId) {
+      toast.info("تم تحويل هذا الطلب بالفعل إلى موعد");
+      return;
+    }
+    if (item.status !== "Confirmed") {
+      toast.info("يجب تأكيد الطلب أولاً قبل التحويل إلى موعد");
+      return;
+    }
+    setConvertItem(item);
   }
 
   function handleCreateAppointment(item: BookingRequest) {
-    setConvertItem(item);
+    openConvertWithGuard(item);
   }
 
   function handleViewAppointment(appointmentId: string) {
@@ -922,6 +993,7 @@ export default function BookingRequestsPage() {
           onStatusChange={handleStatusChange}
           onCreateAppointment={handleCreateAppointment}
           onViewAppointment={handleViewAppointment}
+          onConfirmAndConvert={handleConfirmAndConvert}
         />
       )}
 

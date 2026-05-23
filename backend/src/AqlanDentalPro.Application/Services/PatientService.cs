@@ -132,6 +132,19 @@ public class PatientService(
                     logger.LogWarning(ex, "[PatientService] Auto-create portal account failed for patient {PatientNumber}", patient.PatientNumber);
                 }
 
+                // Set email on the linked User record if provided
+                if (!string.IsNullOrWhiteSpace(req.Email))
+                {
+                    try
+                    {
+                        await portalService.SetPatientEmailAsync(patient.Id, req.Email.Trim());
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "[PatientService] Failed to set email for patient {PatientNumber}", patient.PatientNumber);
+                    }
+                }
+
                 var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
 
                 // Attach portal credentials to the result (temp password shown only once)
@@ -283,6 +296,19 @@ public class PatientService(
         // overriding the Added state of newly created child entities. Since the patient is already
         // tracked by the change tracker (loaded via GetWithHistoriesAsync), property changes above
         // are automatically detected. The new children were explicitly Added via AddChild.
+        // Set email on the linked User record if provided
+        if (req.Email != null)
+        {
+            try
+            {
+                await portalService.SetPatientEmailAsync(id, req.Email);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "[PatientService] Failed to set email for patient {PatientId}", id);
+            }
+        }
+
         patient.UpdatedAt = DateTime.UtcNow;
         await repo.SaveChangesAsync();
         return ToProfileDto(patient);

@@ -416,7 +416,8 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         if (patient == null) throw new InvalidOperationException("المريض غير موجود");
 
         var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
-        return MapProfile(patient, account);
+        var linkedUserEmail = await GetLinkedUserEmailAsync(account);
+        return MapProfile(patient, account, linkedUserEmail);
     }
 
     public async Task<(PatientPortalProfileDto? result, string? error)> UpdateProfileAsync(Guid patientId, PatientProfileUpdateDto req)
@@ -440,10 +441,25 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             patient.Address = req.Address;
         }
 
+        // Set email on the linked User record
+        if (req.Email != null)
+        {
+            var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+            if (account?.LinkedUserId != null)
+            {
+                var linkedUser = await db.Users.FindAsync(account.LinkedUserId.Value);
+                if (linkedUser != null)
+                {
+                    linkedUser.Email = string.IsNullOrWhiteSpace(req.Email) ? null : req.Email.Trim();
+                }
+            }
+        }
+
         await db.SaveChangesAsync();
 
-        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
-        return (MapProfile(patient, account), null);
+        var acct = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        var linkedUserEmail = await GetLinkedUserEmailAsync(acct);
+        return (MapProfile(patient, acct, linkedUserEmail), null);
     }
 
     public async Task<List<PatientAppointmentDto>> GetAppointmentsAsync(Guid patientId, int limit = 20)
@@ -684,6 +700,18 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         };
     }
 
+    public async Task SetPatientEmailAsync(Guid patientId, string? email)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        if (account?.LinkedUserId == null) return;
+        var linkedUser = await db.Users.FindAsync(account.LinkedUserId.Value);
+        if (linkedUser != null)
+        {
+            linkedUser.Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
+            await db.SaveChangesAsync();
+        }
+    }
+
     // ── Private Helpers ──────────────────────────────────────────────────────
 
     private static PatientAppointmentDto MapAppointment(Appointment a, DateOnly? now = null)
@@ -888,12 +916,13 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         return new string(chars);
     }
 
-    private static PatientPortalProfileDto MapProfile(Patient patient, PatientAccount? account = null) => new()
+    private static PatientPortalProfileDto MapProfile(Patient patient, PatientAccount? account = null, string? email = null) => new()
     {
         Id = patient.Id,
         PatientNumber = patient.PatientNumber,
         FullName = $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Replace("  ", " ").Trim(),
         Phone = patient.Phone,
+        Email = email,
         WhatsApp = patient.WhatsApp,
         Gender = patient.Gender?.ToString(),
         Age = patient.DateOfBirth.HasValue ? CalculateAge(patient.DateOfBirth.Value) : null,
@@ -956,6 +985,16 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         {
             logger.LogWarning(ex, "Failed to send WhatsApp OTP to {Phone}", phone);
         }
+    }
+
+    /// <summary>
+    /// Gets the email from the linked User account for a patient, if available.
+    /// </summary>
+    private async Task<string?> GetLinkedUserEmailAsync(PatientAccount? account)
+    {
+        if (account?.LinkedUserId == null) return null;
+        var linkedUser = await db.Users.FindAsync(account.LinkedUserId.Value);
+        return linkedUser?.Email;
     }
 
     private static int CalculateAge(DateOnly dob)

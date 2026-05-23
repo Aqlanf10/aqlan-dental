@@ -23,6 +23,10 @@ public sealed class CreatePatientRequestValidator : AbstractValidator<CreatePati
             .MaximumLength(20).WithMessage("رقم الهاتف يجب ألا يتجاوز 20 رقماً")
             .When(x => !string.IsNullOrWhiteSpace(x.Phone));
 
+        RuleFor(x => x.Email)
+            .EmailAddress().WithMessage("البريد الإلكتروني غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.Email));
+
         RuleFor(x => x.DateOfBirth)
             .Must(BeAValidDate).WithMessage("تاريخ الميلاد غير صالح")
             .When(x => !string.IsNullOrWhiteSpace(x.DateOfBirth));
@@ -63,6 +67,10 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
         RuleFor(x => x.Phone)
             .MaximumLength(20).WithMessage("رقم الهاتف يجب ألا يتجاوز 20 رقماً")
             .When(x => !string.IsNullOrWhiteSpace(x.Phone));
+
+        RuleFor(x => x.Email)
+            .EmailAddress().WithMessage("البريد الإلكتروني غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.Email));
 
         RuleFor(x => x.MedicalHistory)
             .SetValidator(new MedicalHistoryDtoValidator()!)

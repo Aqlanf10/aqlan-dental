@@ -266,11 +266,31 @@ public class AuthController(
 
             await db.SaveChangesAsync();
 
-            // Send email with reset link
-            await emailService.SendPasswordResetEmailAsync(user.Email, rawToken, "reset-password");
+            // Send email with reset link — may fail even when configured
+            var emailSent = await emailService.SendPasswordResetEmailAsync(user.Email, rawToken, "reset-password");
 
-            await auditService.LogAsync(AuditAction.ForgotPasswordRequested, "users", user.Id);
-            await auditService.LogAsync(AuditAction.ResetTokenGenerated, "password_reset_tokens", user.Id);
+            if (emailSent)
+            {
+                await auditService.LogAsync(AuditAction.ForgotPasswordRequested, "users", user.Id);
+                await auditService.LogAsync(AuditAction.ResetTokenGenerated, "password_reset_tokens", user.Id);
+            }
+            else
+            {
+                // Email configured but sending failed — create fallback PasswordResetRequest
+                // so the admin can still recover the account from the dashboard.
+                db.PasswordResetRequests.Add(new PasswordResetRequest
+                {
+                    UserId = user.Id,
+                    UsernameOrEmail = request.UsernameOrEmail,
+                    Status = "Pending",
+                    RequestedAt = DateTime.UtcNow,
+                    Notes = "Email delivery failed; reset token was generated but not delivered."
+                });
+
+                await db.SaveChangesAsync();
+
+                await auditService.LogAsync(AuditAction.ForgotPasswordRequested, "users", user.Id);
+            }
         }
         else
         {

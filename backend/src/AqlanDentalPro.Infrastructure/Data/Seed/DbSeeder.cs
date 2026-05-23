@@ -63,6 +63,17 @@ public static class DbSeeder
             if (!await context.Patients.AnyAsync())
                 await SeedTestDataAsync(context);
 
+            // ── Post-seeding admin rescue pass ──
+            // On a fresh database the admin user does not exist before MigrateAsync,
+            // so the pre-migration pass of EnsureAdminEmailAsync / EnsureAdminPasswordResetAsync
+            // is a no-op. Run them again now that seeding has created the admin user.
+            // Both methods are idempotent: they return early when the value is already applied.
+            try { await EnsureAdminPasswordResetAsync(context, logger); }
+            catch (Exception ex) { logger.LogWarning(ex, "Post-seeding EnsureAdminPasswordResetAsync failed, continuing."); }
+
+            try { await EnsureAdminEmailAsync(context, logger); }
+            catch (Exception ex) { logger.LogWarning(ex, "Post-seeding EnsureAdminEmailAsync failed, continuing."); }
+
             logger.LogInformation("Database seeding completed.");
         }
         catch (Exception ex)
@@ -159,7 +170,7 @@ public static class DbSeeder
         // Validate basic email format
         if (!adminEmail.Contains('@') || !adminEmail.Contains('.'))
         {
-            logger.LogWarning("ADMIN_EMAIL value '{Email}' does not appear to be a valid email address. Skipping.", adminEmail);
+            logger.LogWarning("ADMIN_EMAIL value does not appear to be a valid email address. Skipping.");
             return;
         }
 
@@ -169,9 +180,9 @@ public static class DbSeeder
         await context.SaveChangesAsync();
 
         logger.LogWarning(
-            "Admin account '{Username}' (Id: {Id}) email was set to '{Email}' via ADMIN_EMAIL env var. " +
+            "Admin account '{Username}' (Id: {Id}) email was updated via ADMIN_EMAIL env var. " +
             "This enables the forgot-password email flow for the admin account.",
-            admin.Username, admin.Id, admin.Email);
+            admin.Username, admin.Id);
     }
 
     /// <summary>

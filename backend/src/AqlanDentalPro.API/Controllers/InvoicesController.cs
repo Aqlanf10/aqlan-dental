@@ -441,8 +441,14 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
                     return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
             }
 
-            // Remove existing line items
-            db.InvoiceLineItems.RemoveRange(invoice.LineItems);
+            // Soft-delete existing line items (preserve audit trail and commission links)
+            var userId = GetCurrentUserId();
+            foreach (var existingItem in invoice.LineItems.Where(l => l.IsActive))
+            {
+                existingItem.IsActive = false;
+                existingItem.DeletedAt = DateTime.UtcNow;
+                existingItem.DeletedBy = userId;
+            }
 
             // Add new line items
             var sortOrder = 0;

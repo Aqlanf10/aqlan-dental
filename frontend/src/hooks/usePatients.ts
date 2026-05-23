@@ -10,7 +10,7 @@ interface PatientFilters {
   pageSize?: number;
   gender?: string;
   doctorId?: string;
-  isActive?: boolean;
+  status?: string;
 }
 
 /** Hook: Fetch paginated patients list */
@@ -24,7 +24,7 @@ export function usePatients(filters: PatientFilters = {}) {
       if (filters.pageSize) params.set("pageSize", String(filters.pageSize));
       if (filters.gender) params.set("gender", filters.gender);
       if (filters.doctorId) params.set("doctorId", filters.doctorId);
-      if (filters.isActive !== undefined) params.set("isActive", String(filters.isActive));
+      if (filters.status) params.set("status", filters.status);
 
       const { data } = await api.get<PaginatedResponse<PatientListItem>>(
         `/api/patients?${params.toString()}`

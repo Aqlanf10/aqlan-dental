@@ -117,10 +117,14 @@ public class PatientService(
                 await repo.AddAsync(patient);
                 await repo.SaveChangesAsync();
 
-                // Auto-create patient portal account
+                // Auto-create patient portal account and capture credentials
+                string? portalUsername = null;
+                string? portalPassword = null;
                 try
                 {
-                    await portalService.EnsurePatientAccountAsync(patient.Id, patient.PatientNumber, patient.Phone);
+                    var (username, plainPassword) = await portalService.EnsurePatientAccountAsync(patient.Id, patient.PatientNumber, patient.Phone);
+                    portalUsername = username;
+                    portalPassword = plainPassword;
                 }
                 catch (Exception ex)
                 {
@@ -131,18 +135,13 @@ public class PatientService(
                 var result = await GetByIdAsync(patient.Id) ?? ToProfileDto(patient);
 
                 // Attach portal credentials to the result (temp password shown only once)
-                try
+                if (portalUsername != null)
                 {
-                    var (username, plainPassword) = await portalService.EnsurePatientAccountAsync(patient.Id, patient.PatientNumber, patient.Phone);
-                    result.PortalUsername = username;
-                    if (!string.IsNullOrEmpty(plainPassword))
+                    result.PortalUsername = portalUsername;
+                    if (!string.IsNullOrEmpty(portalPassword))
                     {
-                        result.PortalTemporaryPassword = plainPassword;
+                        result.PortalTemporaryPassword = portalPassword;
                     }
-                }
-                catch (Exception ex)
-                {
-                    logger.LogDebug(ex, "[PatientService] Portal account creation skipped for patient");
                 }
 
                 return result;

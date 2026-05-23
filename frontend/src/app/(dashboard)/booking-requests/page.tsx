@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import api from "@/lib/api";
 import { normalizePhone } from "@/lib/utils";
 import type { CreatePatientRequest, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";

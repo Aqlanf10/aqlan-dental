@@ -659,29 +659,37 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// </summary>
     private async Task<string> GenerateReceiptNumberAsync()
     {
+        // Use session-level advisory lock instead of transaction-level to ensure
+        // the lock spans the full scope including the caller's SaveChangesAsync.
         var lockKey = Math.Abs("ReceiptNumber".GetHashCode()) % 100000;
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
-        var today = DateTime.UtcNow;
-        var datePart = today.ToString("yyyyMMdd");
-        var prefix = $"RCP-{datePart}-";
-
-        var lastReceipt = await db.Payments
-            .IgnoreQueryFilters()
-            .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-            .OrderByDescending(p => p.ReceiptNumber)
-            .Select(p => p.ReceiptNumber)
-            .FirstOrDefaultAsync();
-
-        var nextSeq = 1;
-        if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
+        try
         {
-            var seqPart = lastReceipt[prefix.Length..];
-            if (int.TryParse(seqPart, out var lastSeq))
-                nextSeq = lastSeq + 1;
-        }
+            var today = DateTime.UtcNow;
+            var datePart = today.ToString("yyyyMMdd");
+            var prefix = $"RCP-{datePart}-";
 
-        return $"{prefix}{nextSeq:D3}";
+            var lastReceipt = await db.Payments
+                .IgnoreQueryFilters()
+                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+                .OrderByDescending(p => p.ReceiptNumber)
+                .Select(p => p.ReceiptNumber)
+                .FirstOrDefaultAsync();
+
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
+            {
+                var seqPart = lastReceipt[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq))
+                    nextSeq = lastSeq + 1;
+            }
+
+            return $"{prefix}{nextSeq:D3}";
+        }
+        finally
+        {
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey);
+        }
     }
 
     /// <summary>
@@ -691,29 +699,37 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// </summary>
     private async Task<string> GenerateRefundReceiptNumberAsync()
     {
+        // Use session-level advisory lock instead of transaction-level to ensure
+        // the lock spans the full scope including the caller's SaveChangesAsync.
         var lockKey = Math.Abs("RefundReceiptNumber".GetHashCode()) % 100000;
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
+        try
+        {
+            var today = DateTime.UtcNow;
+            var datePart = today.ToString("yyyyMMdd");
+            var prefix = $"REF-{datePart}-";
 
-        var today = DateTime.UtcNow;
-        var datePart = today.ToString("yyyyMMdd");
-        var prefix = $"REF-{datePart}-";
-
-        var lastRefund = await db.Payments
-            .IgnoreQueryFilters()
-            .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-            .OrderByDescending(p => p.ReceiptNumber)
-            .Select(p => p.ReceiptNumber)
+            var lastRefund = await db.Payments
+                .IgnoreQueryFilters()
+                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+                .OrderByDescending(p => p.ReceiptNumber)
+                .Select(p => p.ReceiptNumber)
             .FirstOrDefaultAsync();
 
-        var nextSeq = 1;
-        if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
-        {
-            var seqPart = lastRefund[prefix.Length..];
-            if (int.TryParse(seqPart, out var lastSeq))
-                nextSeq = lastSeq + 1;
-        }
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
+            {
+                var seqPart = lastRefund[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq))
+                    nextSeq = lastSeq + 1;
+            }
 
-        return $"{prefix}{nextSeq:D3}";
+            return $"{prefix}{nextSeq:D3}";
+        }
+        finally
+        {
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey);
+        }
     }
 
     /// <summary>

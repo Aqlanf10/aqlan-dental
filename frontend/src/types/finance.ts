@@ -145,6 +145,17 @@ export interface InvoiceLineItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  doctorId?: string;
+  doctorName?: string;
+  lineDiscountAmount?: number;
+  materialCost?: number;
+  labCost?: number;
+  otherDirectCost?: number;
+  commissionStatus?: string;
+  doctorCommissionPercentage?: number;
+  netCommissionableAmount?: number;
+  doctorCommissionAmount?: number;
+  centerShareAmount?: number;
   relatedTreatmentPlanStepId?: string;
   relatedVisitId?: string;
   sortOrder: number;
@@ -163,6 +174,7 @@ export interface UpdateInvoiceLineItemRequest {
   description?: string;
   quantity: number;
   unitPrice: number;
+  doctorId?: string;
   relatedTreatmentPlanStepId?: string;
   relatedVisitId?: string;
 }

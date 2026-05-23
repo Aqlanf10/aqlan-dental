@@ -117,6 +117,7 @@ export default function PatientProfilePage() {
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
   // portalCreds state removed — now handled by PortalAccessTab
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const { user } = useAuthStore();
   const [confirmAction, setConfirmAction] = useState<{ type: "archive" | "restore"; id: string; name: string } | null>(null);
@@ -140,10 +141,10 @@ export default function PatientProfilePage() {
     if (!confirmAction) return;
     try {
       if (confirmAction.type === "archive") {
-        await api.delete(`/api/patients/${confirmAction.id}`);
+        await api.put(`/api/patients/${confirmAction.id}/archive`);
         toast.success(`تم أرشفة المريض ${confirmAction.name} بنجاح`);
       } else {
-        await api.post(`/api/patients/${confirmAction.id}/restore`);
+        await api.put(`/api/patients/${confirmAction.id}/restore`);
         toast.success(`تم استعادة المريض ${confirmAction.name} بنجاح`);
       }
       const { data: updated } = await api.get<PatientProfile>(`/api/patients/${id}`);
@@ -159,9 +160,13 @@ export default function PatientProfilePage() {
   // ─── Data Fetching ──────────────────────────────────────────────────────────
 
   useEffect(() => {
+    setError(null);
     api.get<PatientProfile>(`/api/patients/${id}`)
       .then((r) => setPatient(r.data))
-      .catch(() => {})
+      .catch((err) => {
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+        setError(msg ?? "فشل تحميل بيانات المريض");
+      })
       .finally(() => setLoading(false));
     api.get<PatientSummary>(`/api/patients/${id}/summary`)
       .then((r) => setSummary(r.data))
@@ -199,8 +204,20 @@ export default function PatientProfilePage() {
 
   if (!patient) {
     return (
-      <div className="text-center py-20 text-gray-400">
-        المريض غير موجود
+      <div className="text-center py-20">
+        {error ? (
+          <>
+            <div className="text-red-400 mb-4">{error}</div>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+            >
+              إعادة المحاولة
+            </button>
+          </>
+        ) : (
+          <span className="text-gray-400">المريض غير موجود</span>
+        )}
       </div>
     );
   }

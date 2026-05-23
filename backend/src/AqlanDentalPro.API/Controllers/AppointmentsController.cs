@@ -119,12 +119,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPost]
     public async Task<ActionResult<AppointmentDto>> Create([FromBody] CreateAppointmentRequest req)
     {
-        var (result, error) = await service.CreateAsync(req);
-        if (error != null)
-            return Conflict(new { message = error });
-
-        // Check room conflict if ClinicRoomId is provided
-        if (req.ClinicRoomId.HasValue && result != null)
+        // Check room conflict BEFORE creating the appointment to avoid ghost appointments
+        if (req.ClinicRoomId.HasValue)
         {
             var date = DateOnly.Parse(req.AppointmentDate);
             var start = TimeOnly.Parse(req.StartTime);
@@ -137,12 +133,15 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
                             && a.EndTime > start
                             && a.IsActive
                             && a.Status != AppointmentStatus.Cancelled
-                            && a.Status != AppointmentStatus.NoShow
-                            && a.Id != result.Id);
+                            && a.Status != AppointmentStatus.NoShow);
 
             if (roomConflict)
                 return Conflict(new { message = "الغرفة محجوزة في هذا الوقت" });
         }
+
+        var (result, error) = await service.CreateAsync(req);
+        if (error != null)
+            return Conflict(new { message = error });
 
         return CreatedAtAction(nameof(GetById), new { id = result!.Id }, result);
     }
@@ -150,12 +149,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<AppointmentDto>> Update(Guid id, [FromBody] CreateAppointmentRequest req)
     {
-        var (result, error) = await service.UpdateAsync(id, req);
-        if (error != null)
-            return error.Contains("تعارض") ? Conflict(new { message = error }) : NotFound(new { message = error });
-
-        // Check room conflict if ClinicRoomId is provided
-        if (req.ClinicRoomId.HasValue && result != null)
+        // Check room conflict BEFORE updating the appointment to avoid ghost state
+        if (req.ClinicRoomId.HasValue)
         {
             var date = DateOnly.Parse(req.AppointmentDate);
             var start = TimeOnly.Parse(req.StartTime);
@@ -174,6 +169,10 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             if (roomConflict)
                 return Conflict(new { message = "الغرفة محجوزة في هذا الوقت" });
         }
+
+        var (result, error) = await service.UpdateAsync(id, req);
+        if (error != null)
+            return error.Contains("تعارض") ? Conflict(new { message = error }) : NotFound(new { message = error });
 
         return Ok(result);
     }

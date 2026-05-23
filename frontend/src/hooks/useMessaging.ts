@@ -29,19 +29,20 @@ export function useConversations(
         params.set("type", filter);
       }
 
+      // Send unread filter to backend for server-side pagination
+      if (filter === "unread") {
+        params.set("hasUnread", "true");
+      }
+
       const { data } = await api.get(`/api/messages/conversations?${params}`);
 
-      // Client-side filtering for "unread" (backend doesn't have unread filter yet)
-      let conversations = (data.data ?? []) as ConversationListItem[];
+      // Parse response from backend
+      const conversations = (data.data ?? []) as ConversationListItem[];
       const totalCount = data.totalCount ?? 0;
-
-      if (filter === "unread") {
-        conversations = conversations.filter((c) => c.unreadCount > 0);
-      }
 
       return {
         data: conversations,
-        totalCount: filter === "unread" ? conversations.length : totalCount,
+        totalCount: totalCount,
         page: data.page ?? page,
         pageSize: data.pageSize ?? 20,
         totalPages: data.totalPages ?? 1,

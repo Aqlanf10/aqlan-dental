@@ -135,7 +135,7 @@ public class AppointmentReminderJob : BackgroundService
                         var doctorName = appt.Doctor.Name ?? "الطبيب";
                         var appointmentDate = appt.AppointmentDate.ToString("yyyy/MM/dd");
                         var appointmentTime = appt.StartTime.ToString("HH:mm");
-                        var clinicService = appt.Service?.Name;
+                        var clinicService = appt.Service?.ArabicName;
 
                         var subject = $"تذكير بموعدكم في مركز د. عقلان الكامل — {appointmentDate}";
                         var htmlBody = EmailService.BuildAppointmentReminderHtml(

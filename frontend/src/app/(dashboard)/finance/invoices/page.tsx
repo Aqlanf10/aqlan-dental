@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText, Search, Plus } from "lucide-react";
 import type { Invoice } from "@/types/finance";
@@ -24,6 +25,7 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUS_TABS = ["", "Draft", "Issued", "Cancelled", "Paid"] as const;
 
 export default function InvoicesPage() {
+  const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -156,7 +158,7 @@ export default function InvoicesPage() {
                     key={inv.id}
                     className="hover:bg-gray-50 transition cursor-pointer"
                     onClick={() =>
-                      (window.location.href = `/finance/invoices/${inv.id}`)
+                      router.push(`/finance/invoices/${inv.id}`)
                     }
                   >
                     <td className="px-4 py-3 font-mono text-xs text-gray-700">

@@ -68,7 +68,8 @@ interface DoctorOption {
 }
 
 interface EstimatedWait {
-  averageWaitMinutes: number;
+  averageServiceTimeMinutes: number;
+  currentWaitMinutes: number;
   waitingCount: number;
 }
 
@@ -389,7 +390,7 @@ export default function ClinicQueuePage() {
             <Clock className="w-4 h-4" style={{ color: "#3b82f6" }} />
             <div className="text-sm">
               <span className="font-bold" style={{ color: "#1d4ed8" }}>
-                متوسط وقت الانتظار: {estimatedWait.averageWaitMinutes} دقيقة
+                وقت الانتظار التقريبي: {estimatedWait.currentWaitMinutes} دقيقة
               </span>
               <span className="mx-2" style={{ color: "#93c5fd" }}>|</span>
               <span style={{ color: "#3b82f6" }}>
@@ -476,6 +477,13 @@ export default function ClinicQueuePage() {
                     onEnterRoom={() => queueAction(`/api/clinic-queue/${item.id}/enter-room`)}
                     onStart={() => queueAction(`/api/clinic-queue/${item.id}/start`)}
                     onOpenVisit={() => { if (item.visitId) router.push(`/visits/${item.visitId}`); }}
+                    onHandoff={() => {
+                      if (item.visitId) {
+                        queueAction(`/api/patient-journey/${item.visitId}/handoff-to-reception`, {});
+                      } else {
+                        queueAction(`/api/clinic-queue/${item.id}/complete`);
+                      }
+                    }}
                     onComplete={() => queueAction(`/api/clinic-queue/${item.id}/complete`)}
                     onCancel={() => setCancelConfirmFor(item.id)}
                     onChangeRoom={() => setChangeRoomFor(item.id)}
@@ -501,6 +509,7 @@ export default function ClinicQueuePage() {
                     onEnterRoom={() => {}}
                     onStart={() => {}}
                     onOpenVisit={() => { if (item.visitId) router.push(`/visits/${item.visitId}`); }}
+                    onHandoff={() => {}}
                     onComplete={() => {}}
                     onCancel={() => {}}
                     onChangeRoom={() => {}}
@@ -621,6 +630,7 @@ function QueueCard({
   onEnterRoom,
   onStart,
   onOpenVisit,
+  onHandoff,
   onComplete,
   onCancel,
   onChangeRoom,
@@ -631,6 +641,7 @@ function QueueCard({
   onEnterRoom: () => void;
   onStart: () => void;
   onOpenVisit: () => void;
+  onHandoff: () => void;
   onComplete: () => void;
   onCancel: () => void;
   onChangeRoom: () => void;
@@ -748,7 +759,8 @@ function QueueCard({
           {item.status === "InProgress" && (
             <>
               <ActionButton label="فتح الزيارة" onClick={onOpenVisit} loading={isLoading} color="#3d7ab5" icon={<ExternalLink className="w-3 h-3" />} />
-              <ActionButton label="إنهاء" onClick={onComplete} loading={isLoading} color="#0d2137" icon={<Square className="w-3 h-3" />} />
+              <ActionButton label="إنهاء وتسليم للاستقبال" onClick={onHandoff} loading={isLoading} color="#059669" icon={<CheckCircle2 className="w-3 h-3" />} />
+              <ActionButton label="إنهاء مباشر" onClick={onComplete} loading={isLoading} color="#64748b" icon={<Square className="w-3 h-3" />} />
             </>
           )}
         </div>

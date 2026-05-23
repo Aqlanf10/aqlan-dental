@@ -87,6 +87,7 @@ const ACTION_LABELS: Record<string, string> = {
   EnterRoom: "إدخال الغرفة",
   StartVisit: "بدء الزيارة",
   InProgress: "عند الطبيب",
+  HandoffToReception: "تسليم للاستقبال",
   Checkout: "إنهاء الحساب",
   None: "—",
 };
@@ -98,6 +99,7 @@ const ACTION_COLORS: Record<string, string> = {
   EnterRoom: "bg-cyan-500 hover:bg-cyan-600",
   StartVisit: "bg-emerald-500 hover:bg-emerald-600",
   InProgress: "bg-gray-400",
+  HandoffToReception: "bg-teal-600 hover:bg-teal-700",
   Checkout: "bg-green-600 hover:bg-green-700",
   None: "bg-gray-300",
 };
@@ -260,11 +262,17 @@ export default function PatientJourneyPage() {
       if (item.nextAction === "SendToQueue") {
         await api.post(`/api/patient-journey/${item.appointmentId}/send-to-queue`, {});
       } else if (item.nextAction === "CallPatient") {
-        await api.post(`/api/clinic-queue/${item.queueItemId}/call`, {});
+        await api.post(`/api/clinic-queue/${item.queueItemId}/call`, { roomName: item.roomName || undefined });
       } else if (item.nextAction === "EnterRoom") {
         await api.post(`/api/clinic-queue/${item.queueItemId}/enter-room`);
       } else if (item.nextAction === "StartVisit") {
         await api.post(`/api/patient-journey/${item.appointmentId}/start-visit`);
+      } else if (item.nextAction === "HandoffToReception") {
+        if (!item.visitId) {
+          setError("لا توجد زيارة مرتبطة لتسليمها للاستقبال");
+          return;
+        }
+        await api.post(`/api/patient-journey/${item.visitId}/handoff-to-reception`, {});
       }
       loadJourney();
     } catch (err: unknown) {

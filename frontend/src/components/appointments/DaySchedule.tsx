@@ -70,10 +70,15 @@ export function DaySchedule({ date, doctorId }: Props) {
   useEffect(() => { reload(); }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (id: string, status: string) => {
-    await api.put(`/api/appointments/${id}/status`, { status }).catch(() => {});
-    setAppointments((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status } : a))
-    );
+    try {
+      await api.put(`/api/appointments/${id}/status`, { status });
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status } : a))
+      );
+    } catch {
+      toast.error("فشل تحديث حالة الموعد");
+      reload();
+    }
   };
 
   const handleNoShowAll = async () => {
@@ -237,8 +242,8 @@ function AppointmentCard({
     }
   };
 
-  // Determine if "بدء الزيارة" should be shown
-  const canStartVisit = !visitExists && ["Scheduled", "Confirmed", "Arrived", "Waiting", "Called", "InRoom", "InProgress"].includes(a.status);
+  // Determine if "بدء الزيارة" should be shown — only for InRoom/Called status per backend validation
+  const canStartVisit = !visitExists && ["Called", "InRoom"].includes(a.status);
   const canDelete = !["InProgress", "Completed"].includes(a.status);
 
   const canArrive = ["Scheduled", "Confirmed"].includes(a.status) && hasPermission(user, PERMISSION_KEYS.PATIENT_JOURNEY_EDIT);

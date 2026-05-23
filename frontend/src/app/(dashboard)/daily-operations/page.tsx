@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import type { DashboardStats } from "@/types/dashboard";
 import { useAuthStore } from "@/stores/authStore";
+import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
+import type { UserDto } from "@/types/auth";
 import api from "@/lib/api";
 
 /* ─── Brand constants ───────────────────────────────────────────────────────── */
@@ -23,19 +25,15 @@ const sectionCardStyle: React.CSSProperties = {
   border: "1px solid #e8f0f9",
 };
 
-/* ─── Role-based visibility ─────────────────────────────────────────────────── */
-/**
- * Mirrors the Sidebar's role-filtering logic.
- * Empty array = visible to ALL roles.
- * Non-empty array = only those roles can see the link.
- */
+/* ─── Permission-based visibility ───────────────────────────────────────────── */
 interface QuickLink {
   label: string;
   description: string;
   href: string;
   icon: React.ElementType;
   color: string;
-  roles: string[];
+  roles: string[];      // kept as fallback
+  permission: string;   // permission key for visibility
   countKey?: keyof Pick<DashboardStats, "appointmentsToday" | "queueWaitingCount" | "pendingBookingRequestsCount" | "todayArrivedCount">;
 }
 
@@ -55,6 +53,7 @@ const SECTIONS: Section[] = [
         icon: Globe,
         color: "#3d7ab5",
         roles: ["Admin", "Reception"],
+        permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW,
         countKey: "pendingBookingRequestsCount",
       },
       {
@@ -63,7 +62,8 @@ const SECTIONS: Section[] = [
         href: "/appointments",
         icon: Calendar,
         color: "#f5922e",
-        roles: [], // all roles
+        roles: [],
+        permission: PERMISSION_KEYS.APPOINTMENTS_VIEW,
         countKey: "appointmentsToday",
       },
       {
@@ -73,6 +73,7 @@ const SECTIONS: Section[] = [
         icon: CalendarClock,
         color: "#a855f7",
         roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon"],
+        permission: PERMISSION_KEYS.APPOINTMENTS_CREATE,
       },
     ],
   },
@@ -86,6 +87,7 @@ const SECTIONS: Section[] = [
         icon: ClipboardList,
         color: "#f5922e",
         roles: ["Admin", "Reception"],
+        permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW,
         countKey: "queueWaitingCount",
       },
       {
@@ -94,7 +96,8 @@ const SECTIONS: Section[] = [
         href: "/clinic-display",
         icon: Monitor,
         color: "#3d7ab5",
-        roles: [], // all roles
+        roles: [],
+        permission: PERMISSION_KEYS.CLINIC_DISPLAY_VIEW,
       },
       {
         label: "رحلة المرضى",
@@ -103,6 +106,7 @@ const SECTIONS: Section[] = [
         icon: Route,
         color: "#22c55e",
         roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"],
+        permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW,
         countKey: "todayArrivedCount",
       },
     ],
@@ -117,6 +121,7 @@ const SECTIONS: Section[] = [
         icon: CreditCard,
         color: "#22c55e",
         roles: ["Admin", "Reception", "Accountant"],
+        permission: PERMISSION_KEYS.PAYMENTS_VIEW,
       },
       {
         label: "الفواتير",
@@ -125,6 +130,7 @@ const SECTIONS: Section[] = [
         icon: FileText,
         color: "#3d7ab5",
         roles: ["Admin", "Reception", "Accountant"],
+        permission: PERMISSION_KEYS.INVOICES_VIEW,
       },
     ],
   },
@@ -138,6 +144,7 @@ const SECTIONS: Section[] = [
         icon: Settings,
         color: "#64748b",
         roles: ["Admin"],
+        permission: PERMISSION_KEYS.ROOMS_VIEW,
       },
       {
         label: "مريض جديد",
@@ -146,18 +153,20 @@ const SECTIONS: Section[] = [
         icon: Plus,
         color: "#3d7ab5",
         roles: ["Admin", "Reception"],
+        permission: PERMISSION_KEYS.PATIENTS_CREATE,
       },
     ],
   },
 ];
 
-/* ─── Summary strip stat — which roles can see each stat ───────────────────── */
+/* ─── Summary strip stat — with permission keys ────────────────────────────── */
 const SUMMARY_STATS: {
   icon: React.ElementType;
   label: string;
   color: string;
   countKey: keyof Pick<DashboardStats, "appointmentsToday" | "queueWaitingCount" | "pendingBookingRequestsCount" | "todayArrivedCount">;
   roles: string[];
+  permission: string;
 }[] = [
   {
     icon: Globe,
@@ -165,13 +174,15 @@ const SUMMARY_STATS: {
     color: "#3d7ab5",
     countKey: "pendingBookingRequestsCount",
     roles: ["Admin", "Reception"],
+    permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW,
   },
   {
     icon: Calendar,
     label: "مواعيد اليوم",
     color: "#f5922e",
     countKey: "appointmentsToday",
-    roles: [], // all roles
+    roles: [],
+    permission: PERMISSION_KEYS.APPOINTMENTS_VIEW,
   },
   {
     icon: ListOrdered,
@@ -179,6 +190,7 @@ const SUMMARY_STATS: {
     color: "#ef4444",
     countKey: "queueWaitingCount",
     roles: ["Admin", "Reception"],
+    permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW,
   },
   {
     icon: UserCheck,
@@ -186,15 +198,16 @@ const SUMMARY_STATS: {
     color: "#22c55e",
     countKey: "todayArrivedCount",
     roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"],
+    permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW,
   },
 ];
 
 /**
- * Same visibility logic as Sidebar:
- * empty roles array = visible to ALL; otherwise must be included.
+ * Visibility check using permissions.
+ * If a permission key is defined, use it; otherwise fall back to role-based check.
  */
-function isVisible(roles: string[], userRole: string): boolean {
-  return roles.length === 0 || roles.includes(userRole);
+function isVisible(item: { roles: string[]; permission: string }, userRole: string, user: UserDto | null): boolean {
+  return hasPermission(user, item.permission);
 }
 
 /* ─── Safe count helper ─────────────────────────────────────────────────────── */
@@ -220,20 +233,20 @@ export default function DailyOperationsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  /** Filter sections and their links based on user role */
+  /** Filter sections and their links based on user permissions */
   const visibleSections = useMemo<Section[]>(() => {
     return SECTIONS
       .map((section) => ({
         ...section,
-        links: section.links.filter((link) => isVisible(link.roles, userRole)),
+        links: section.links.filter((link) => isVisible(link, userRole, user)),
       }))
       .filter((section) => section.links.length > 0);
-  }, [userRole]);
+  }, [userRole, user]);
 
-  /** Filter summary stats based on user role */
+  /** Filter summary stats based on user permissions */
   const visibleStats = useMemo(() => {
-    return SUMMARY_STATS.filter((s) => isVisible(s.roles, userRole));
-  }, [userRole]);
+    return SUMMARY_STATS.filter((s) => isVisible(s, userRole, user));
+  }, [userRole, user]);
 
   return (
     <div className="space-y-5 page-content">
@@ -258,6 +271,15 @@ export default function DailyOperationsPage() {
           لوحة التحكم
         </Link>
       </div>
+
+      {/* ── Empty state when no sections visible ───────────────────────────── */}
+      {visibleSections.length === 0 && (
+        <div className="text-center py-16" style={{ color: "#94a3b8" }}>
+          <ClipboardList className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p className="text-base font-bold">لا توجد لديك صلاحية لعرض عناصر التشغيل اليومي</p>
+          <p className="text-sm mt-1">تواصل مع المدير للحصول على الصلاحيات اللازمة</p>
+        </div>
+      )}
 
       {/* ── Summary strip ───────────────────────────────────────────────────── */}
       {visibleStats.length > 0 && (

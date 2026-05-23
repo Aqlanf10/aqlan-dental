@@ -1073,6 +1073,29 @@ function RolesTab() {
   }, {});
 
   const RESOURCE_LABELS: Record<string, string> = {
+    patients: "المرضى",
+    ortho: "التقويم",
+    general_dentistry: "طب الأسنان العام",
+    surgery: "الجراحة",
+    appointments: "المواعيد",
+    finance: "المدفوعات",
+    reports: "التقارير",
+    users: "المستخدمون",
+    settings: "الإعدادات",
+    ai: "الذكاء الاصطناعي",
+    user_management: "إدارة المستخدمين",
+    password_reset_requests: "طلبات إعادة تعيين كلمة المرور",
+    impersonation: "الانتحال",
+    daily_operations: "التشغيل اليومي",
+    booking_requests: "طلبات الحجز",
+    clinic_queue: "الطابور",
+    clinic_display: "شاشة النداء",
+    patient_journey: "رحلة المرضى",
+    visits: "الزيارات",
+    checkout: "جاهز للدفع",
+    invoices: "الفواتير",
+    rooms: "الغرف / الكراسي",
+    // Legacy PascalCase keys (fallback)
     Patients: "المرضى",
     Appointments: "المواعيد",
     Ortho: "التقويم",
@@ -1084,6 +1107,13 @@ function RolesTab() {
   };
 
   const ACTION_LABELS: Record<string, string> = {
+    view: "عرض",
+    create: "إنشاء",
+    edit: "تعديل",
+    delete: "حذف",
+    export: "تصدير",
+    approve: "اعتماد",
+    // Legacy PascalCase keys (fallback)
     View: "عرض",
     Create: "إنشاء",
     Edit: "تعديل",
@@ -1091,6 +1121,25 @@ function RolesTab() {
     Export: "تصدير",
     Approve: "موافقة",
   };
+
+  const PERMISSION_GROUPS = [
+    {
+      title: "التشغيل اليومي",
+      resources: ["daily_operations", "booking_requests", "clinic_queue", "clinic_display", "patient_journey", "visits", "checkout", "invoices", "rooms"],
+    },
+    {
+      title: "العيادة",
+      resources: ["patients", "appointments", "finance", "reports"],
+    },
+    {
+      title: "التخصصات",
+      resources: ["ortho", "general_dentistry", "surgery"],
+    },
+    {
+      title: "النظام",
+      resources: ["users", "user_management", "settings", "ai", "password_reset_requests", "impersonation"],
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -1133,44 +1182,107 @@ function RolesTab() {
         </div>
       )}
 
-      {/* Permission Matrix */}
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="w-full text-xs">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-start px-4 py-3 font-semibold text-gray-700 min-w-[120px]">المورد</th>
-              <th className="text-start px-4 py-3 font-semibold text-gray-700 min-w-[80px]">الإجراء</th>
-              <th className="text-center px-4 py-3 font-semibold text-gray-600">الصلاحية</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {Object.entries(groupedPermissions).map(([resource, perms]) =>
-              (perms ?? []).map((p, idx) => {
-                const isChecked = rolePermissionsMap[selectedRole]?.has(p.key) ?? false;
-                const isAdmin = selectedRole === "Admin";
-                return (
-                  <tr key={p.key} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-2.5 text-gray-700 font-medium">
-                      {idx === 0 ? (RESOURCE_LABELS[resource] ?? resource) : ""}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-600">
-                      {ACTION_LABELS[p.action] ?? p.action}
-                    </td>
-                    <td className="px-4 py-2.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={isAdmin || isChecked}
-                        disabled={isAdmin}
-                        onChange={() => togglePermission(selectedRole, p.key)}
-                        className="w-4 h-4 rounded border-gray-300 text-clinic-blue focus:ring-clinic-blue cursor-pointer disabled:cursor-not-allowed"
-                      />
-                    </td>
+      {/* Permission Matrix — grouped by permission groups */}
+      <div className="space-y-4">
+        {PERMISSION_GROUPS.map((group) => {
+          // Collect permissions for this group's resources
+          const groupResources = group.resources.filter((r) => groupedPermissions[r]);
+          if (groupResources.length === 0) return null;
+
+          return (
+            <div key={group.title} className="overflow-x-auto rounded-lg border border-gray-200">
+              <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
+                <h3 className="text-sm font-bold text-gray-800">{group.title}</h3>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50/50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-start px-4 py-2.5 font-semibold text-gray-700 min-w-[120px]">المورد</th>
+                    <th className="text-start px-4 py-2.5 font-semibold text-gray-700 min-w-[80px]">الإجراء</th>
+                    <th className="text-center px-4 py-2.5 font-semibold text-gray-600">الصلاحية</th>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {groupResources.map((resource) =>
+                    (groupedPermissions[resource] ?? []).map((p, idx) => {
+                      const isChecked = rolePermissionsMap[selectedRole]?.has(p.key) ?? false;
+                      const isAdmin = selectedRole === "Admin";
+                      return (
+                        <tr key={p.key} className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-2.5 text-gray-700 font-medium">
+                            {idx === 0 ? (RESOURCE_LABELS[resource] ?? resource) : ""}
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-600">
+                            {ACTION_LABELS[p.action] ?? p.action}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isAdmin || isChecked}
+                              disabled={isAdmin}
+                              onChange={() => togglePermission(selectedRole, p.key)}
+                              className="w-4 h-4 rounded border-gray-300 text-clinic-blue focus:ring-clinic-blue cursor-pointer disabled:cursor-not-allowed"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+
+        {/* Show any ungrouped resources */}
+        {(() => {
+          const groupedResourceKeys = new Set(PERMISSION_GROUPS.flatMap((g) => g.resources));
+          const ungroupedResources = Object.keys(groupedPermissions).filter((r) => !groupedResourceKeys.has(r));
+          if (ungroupedResources.length === 0) return null;
+          return (
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
+                <h3 className="text-sm font-bold text-gray-800">أخرى</h3>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50/50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-start px-4 py-2.5 font-semibold text-gray-700 min-w-[120px]">المورد</th>
+                    <th className="text-start px-4 py-2.5 font-semibold text-gray-700 min-w-[80px]">الإجراء</th>
+                    <th className="text-center px-4 py-2.5 font-semibold text-gray-600">الصلاحية</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {ungroupedResources.map((resource) =>
+                    (groupedPermissions[resource] ?? []).map((p, idx) => {
+                      const isChecked = rolePermissionsMap[selectedRole]?.has(p.key) ?? false;
+                      const isAdmin = selectedRole === "Admin";
+                      return (
+                        <tr key={p.key} className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-2.5 text-gray-700 font-medium">
+                            {idx === 0 ? (RESOURCE_LABELS[resource] ?? resource) : ""}
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-600">
+                            {ACTION_LABELS[p.action] ?? p.action}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isAdmin || isChecked}
+                              disabled={isAdmin}
+                              onChange={() => togglePermission(selectedRole, p.key)}
+                              className="w-4 h-4 rounded border-gray-300 text-clinic-blue focus:ring-clinic-blue cursor-pointer disabled:cursor-not-allowed"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Save button */}

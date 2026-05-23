@@ -4144,6 +4144,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex(new[] { "Role", "Resource" }, "IX_RolePermissions_Role_Resource")
+                        .IsUnique();
+
                     b.ToTable("RolePermissions");
                 });
 

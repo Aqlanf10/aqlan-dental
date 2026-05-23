@@ -41,8 +41,8 @@ public static class DbSeeder
             // password back to the default seed value, ensuring the account is active.
             await ForceAdminPasswordResetOnceAsync(context, logger);
 
-            if (!await context.RolePermissions.AnyAsync())
-                await SeedPermissionsAsync(context);
+            // Additive seeding: only add missing (Role, Resource) combinations
+            await SeedPermissionsAsync(context);
 
             if (!await context.Settings.AnyAsync())
                 await SeedSettingsAsync(context);
@@ -261,101 +261,188 @@ public static class DbSeeder
 
     private static async Task SeedPermissionsAsync(AppDbContext context)
     {
-        var permissions = new List<RolePermission>();
-
+        // Role keys MUST match the UserRole enum names exactly (PascalCase)
+        // so that Enum.TryParse<UserRole>(role) succeeds in API endpoints.
         var matrix = new Dictionary<string, Dictionary<string, (bool view, bool create, bool edit, bool delete, bool export, bool approve)>>
         {
             ["patients"] = new()
             {
-                ["admin"]          = (true,  true,  true,  true,  true,  false),
-                ["orthodontist"]   = (true,  true,  true,  false, false, false),
-                ["general_dentist"]= (true,  true,  true,  false, false, false),
-                ["oral_surgeon"]   = (true,  true,  true,  false, false, false),
-                ["reception"]      = (true,  true,  false, false, false, false),
-                ["accountant"]     = (true,  false, false, false, true,  false),
+                ["Admin"]          = (true,  true,  true,  true,  true,  false),
+                ["Orthodontist"]   = (true,  true,  true,  false, false, false),
+                ["GeneralDentist"] = (true,  true,  true,  false, false, false),
+                ["OralSurgeon"]    = (true,  true,  true,  false, false, false),
+                ["Reception"]      = (true,  true,  false, false, false, false),
+                ["Accountant"]     = (true,  false, false, false, true,  false),
+                ["Assistant"]      = (true,  false, false, false, false, false),
+                ["BranchManager"]  = (true,  false, false, false, false, false),
             },
             ["ortho"] = new()
             {
-                ["admin"]        = (true, true, true, true, true, true),
-                ["orthodontist"] = (true, true, true, false, false, true),
+                ["Admin"]        = (true, true, true, true, true, true),
+                ["Orthodontist"] = (true, true, true, false, false, true),
             },
             ["general_dentistry"] = new()
             {
-                ["admin"]          = (true, true, true, true, true, false),
-                ["general_dentist"]= (true, true, true, false, false, false),
+                ["Admin"]          = (true, true, true, true, true, false),
+                ["GeneralDentist"] = (true, true, true, false, false, false),
             },
             ["surgery"] = new()
             {
-                ["admin"]       = (true, true, true, true, true, true),
-                ["oral_surgeon"]= (true, true, true, false, false, true),
+                ["Admin"]       = (true, true, true, true, true, true),
+                ["OralSurgeon"] = (true, true, true, false, false, true),
             },
             ["appointments"] = new()
             {
-                ["admin"]          = (true, true, true, true, false, false),
-                ["orthodontist"]   = (true, true, true, false, false, false),
-                ["general_dentist"]= (true, true, true, false, false, false),
-                ["oral_surgeon"]   = (true, true, true, false, false, false),
-                ["reception"]      = (true, true, true, false, false, false),
+                ["Admin"]          = (true, true, true, true, false, false),
+                ["Orthodontist"]   = (true, true, true, false, false, false),
+                ["GeneralDentist"] = (true, true, true, false, false, false),
+                ["OralSurgeon"]    = (true, true, true, false, false, false),
+                ["Reception"]      = (true, true, true, false, false, false),
+                ["Assistant"]      = (true, false, false, false, false, false),
+                ["Accountant"]     = (true, false, false, false, false, false),
             },
             ["finance"] = new()
             {
-                ["admin"]     = (true, true, true, true, true, false),
-                ["reception"] = (true, true, false, false, false, false),
-                ["accountant"]= (true, true, true, false, true,  false),
+                ["Admin"]     = (true, true, true, true, true, false),
+                ["Reception"] = (true, true, false, false, false, false),
+                ["Accountant"]= (true, true, true, false, true,  false),
             },
             ["reports"] = new()
             {
-                ["admin"]     = (true, false, false, false, true, false),
-                ["accountant"]= (true, false, false, false, true, false),
+                ["Admin"]     = (true, false, false, false, true, false),
+                ["Accountant"]= (true, false, false, false, true, false),
             },
             ["users"] = new()
             {
-                ["admin"] = (true, true, true, true, false, false),
+                ["Admin"] = (true, true, true, true, false, false),
             },
             ["settings"] = new()
             {
-                ["admin"] = (true, false, true, false, false, false),
+                ["Admin"] = (true, false, true, false, false, false),
             },
             ["ai"] = new()
             {
-                ["admin"]          = (true, true, false, false, false, true),
-                ["orthodontist"]   = (true, true, false, false, false, true),
-                ["general_dentist"]= (true, true, false, false, false, false),
-                ["oral_surgeon"]   = (true, true, false, false, false, false),
+                ["Admin"]          = (true, true, false, false, false, true),
+                ["Orthodontist"]   = (true, true, false, false, false, true),
+                ["GeneralDentist"] = (true, true, false, false, false, false),
+                ["OralSurgeon"]    = (true, true, false, false, false, false),
             },
             ["user_management"] = new()
             {
-                ["admin"] = (true, true, true, true, false, true),
+                ["Admin"] = (true, true, true, true, false, true),
             },
             ["password_reset_requests"] = new()
             {
-                ["admin"] = (true, false, true, false, false, true),
+                ["Admin"] = (true, false, true, false, false, true),
             },
             ["impersonation"] = new()
             {
-                ["admin"] = (true, true, false, false, false, false),
+                ["Admin"] = (true, true, false, false, false, false),
+            },
+            ["daily_operations"] = new()
+            {
+                ["Admin"]          = (true, false, false, false, false, false),
+                ["Reception"]      = (true, false, false, false, false, false),
+                ["Orthodontist"]   = (true, false, false, false, false, false),
+                ["GeneralDentist"] = (true, false, false, false, false, false),
+                ["OralSurgeon"]    = (true, false, false, false, false, false),
+                ["Accountant"]     = (true, false, false, false, false, false),
+                ["Assistant"]      = (true, false, false, false, false, false),
+                ["BranchManager"]  = (true, false, false, false, false, false),
+            },
+            ["booking_requests"] = new()
+            {
+                ["Admin"]     = (true, true, true, false, false, false),
+                ["Reception"] = (true, true, true, false, false, false),
+                // Accountant: NO access — intentionally omitted
+            },
+            ["clinic_queue"] = new()
+            {
+                ["Admin"]          = (true, true, true, true, false, true),
+                ["Reception"]      = (true, true, true, true, false, true),
+                ["Orthodontist"]   = (true, false, false, false, false, false),
+                ["GeneralDentist"] = (true, false, false, false, false, false),
+                ["OralSurgeon"]    = (true, false, false, false, false, false),
+                ["Assistant"]      = (true, false, false, false, false, false),
+            },
+            ["clinic_display"] = new()
+            {
+                ["Admin"]          = (true, false, false, false, false, false),
+                ["Reception"]      = (true, false, false, false, false, false),
+                ["Orthodontist"]   = (true, false, false, false, false, false),
+                ["GeneralDentist"] = (true, false, false, false, false, false),
+                ["OralSurgeon"]    = (true, false, false, false, false, false),
+                ["Assistant"]      = (true, false, false, false, false, false),
+            },
+            ["patient_journey"] = new()
+            {
+                ["Admin"]          = (true, true, true, false, false, false),
+                ["Reception"]      = (true, true, true, false, false, false),
+                ["Orthodontist"]   = (true, true, false, false, false, false),
+                ["GeneralDentist"] = (true, true, false, false, false, false),
+                ["OralSurgeon"]    = (true, true, false, false, false, false),
+            },
+            ["visits"] = new()
+            {
+                ["Admin"]          = (true, true, true, false, false, false),
+                ["Reception"]      = (true, true, true, false, false, false),
+                ["Orthodontist"]   = (true, true, false, false, false, false),
+                ["GeneralDentist"] = (true, true, false, false, false, false),
+                ["OralSurgeon"]    = (true, true, false, false, false, false),
+            },
+            ["checkout"] = new()
+            {
+                ["Admin"]     = (true, false, false, false, false, false),
+                ["Reception"] = (true, false, false, false, false, false),
+                ["Accountant"]= (true, false, false, false, false, false),
+            },
+            ["invoices"] = new()
+            {
+                ["Admin"]     = (true, true, true, false, true, false),
+                ["Reception"] = (true, true, false, false, false, false),
+                ["Accountant"]= (true, true, true, false, true, false),
+            },
+            ["rooms"] = new()
+            {
+                ["Admin"] = (true, true, true, false, false, false),
             },
         };
+
+        // Additive seeding: only insert (Role, Resource) combinations that don't already exist.
+        var existing = await context.RolePermissions
+            .Select(rp => new { rp.Role, rp.Resource })
+            .ToListAsync();
+
+        var existingSet = new HashSet<(string Role, string Resource)>(
+            existing.Select(e => (e.Role, e.Resource)));
+
+        var toAdd = new List<RolePermission>();
 
         foreach (var (resource, roles) in matrix)
         {
             foreach (var (role, (view, create, edit, delete, export, approve)) in roles)
             {
-                permissions.Add(new RolePermission
+                if (!existingSet.Contains((role, resource)))
                 {
-                    Role = role,
-                    Resource = resource,
-                    CanView = view,
-                    CanCreate = create,
-                    CanEdit = edit,
-                    CanDelete = delete,
-                    CanExport = export,
-                    CanApprove = approve
-                });
+                    toAdd.Add(new RolePermission
+                    {
+                        Role = role,
+                        Resource = resource,
+                        CanView = view,
+                        CanCreate = create,
+                        CanEdit = edit,
+                        CanDelete = delete,
+                        CanExport = export,
+                        CanApprove = approve
+                    });
+                }
             }
         }
 
-        await context.RolePermissions.AddRangeAsync(permissions);
+        if (toAdd.Count > 0)
+        {
+            await context.RolePermissions.AddRangeAsync(toAdd);
+        }
     }
 
     private static async Task SeedSettingsAsync(AppDbContext context)

@@ -17,7 +17,7 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
 
     // ─── محادثاتي ──────────────────────────────────────────────────────────────
     public async Task<PaginatedResponse<ConversationListDto>> GetMyConversationsAsync(
-        int page = 1, int pageSize = 20, string? search = null, string? type = null)
+        int page = 1, int pageSize = 20, string? search = null, string? type = null, bool? hasUnread = null)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
         // Query conversations directly (not through participants) to allow Include.
@@ -52,6 +52,19 @@ public class MessagingService(AppDbContext db, ICurrentUserService currentUser, 
                 c.Participants.Any(p => p.User.Username.Contains(search)) ||
                 (c.Patient != null && (c.Patient.FirstName + " " + c.Patient.LastName).Contains(search)) ||
                 (c.Patient != null && c.Patient.PatientNumber.Contains(search)));
+        }
+
+        // Filter by unread status — get conversation IDs with unread messages first
+        if (hasUnread == true)
+        {
+            var conversationIdsWithUnread = await db.Messages
+                .Where(m => myActiveConversationIds.Contains(m.ConversationId)
+                         && m.SenderId != UserId
+                         && !m.Reads.Any(r => r.UserId == UserId))
+                .Select(m => m.ConversationId)
+                .Distinct()
+                .ToListAsync();
+            query = query.Where(c => conversationIdsWithUnread.Contains(c.Id));
         }
 
         var total = await query.CountAsync();

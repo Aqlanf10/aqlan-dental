@@ -441,8 +441,13 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
                     return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
             }
 
-            // Remove existing line items
-            db.InvoiceLineItems.RemoveRange(invoice.LineItems);
+            // Soft-delete existing line items (preserve audit trail and commission links)
+            foreach (var existingItem in invoice.LineItems.Where(l => l.IsActive))
+            {
+                existingItem.IsActive = false;
+                existingItem.DeletedAt = DateTime.UtcNow;
+                existingItem.DeletedBy = userId;
+            }
 
             // Add new line items
             var sortOrder = 0;
@@ -485,7 +490,12 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             }
         }
 
-        // Recalculate totals
+        // Persist soft-deleted items and new items before recalculating totals.
+        // Without this, the ChangeTracker can return stale data (soft-deleted items
+        // still visible via identity resolution, new items not yet in DB).
+        await db.SaveChangesAsync();
+
+        // Recalculate totals from the now-consistent database state
         var allLineItems = await db.InvoiceLineItems
             .Where(l => l.InvoiceId == invoice.Id && l.IsActive)
             .ToListAsync();

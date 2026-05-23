@@ -654,66 +654,90 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// <summary>
     /// H9 FIX: Generates a unique receipt number using advisory lock + sequential pattern.
     /// Format: RCP-yyyyMMdd-NNN (sequential, not random).
-    /// CON FIX: Now wrapped in advisory lock + retry loop to prevent race conditions
-    /// when multiple payments are created concurrently.
+    /// CON FIX: Uses pg_advisory_xact_lock inside an explicit transaction to prevent
+    /// race conditions when multiple payments are created concurrently.
+    /// Transaction-level lock is automatically released on commit/rollback — safe with
+    /// connection pooling (no risk of stuck locks if the connection is returned to the pool).
     /// </summary>
     private async Task<string> GenerateReceiptNumberAsync()
     {
         var lockKey = Math.Abs("ReceiptNumber".GetHashCode()) % 100000;
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
-        var today = DateTime.UtcNow;
-        var datePart = today.ToString("yyyyMMdd");
-        var prefix = $"RCP-{datePart}-";
-
-        var lastReceipt = await db.Payments
-            .IgnoreQueryFilters()
-            .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-            .OrderByDescending(p => p.ReceiptNumber)
-            .Select(p => p.ReceiptNumber)
-            .FirstOrDefaultAsync();
-
-        var nextSeq = 1;
-        if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var seqPart = lastReceipt[prefix.Length..];
-            if (int.TryParse(seqPart, out var lastSeq))
-                nextSeq = lastSeq + 1;
-        }
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        return $"{prefix}{nextSeq:D3}";
+            var today = DateTime.UtcNow;
+            var datePart = today.ToString("yyyyMMdd");
+            var prefix = $"RCP-{datePart}-";
+
+            var lastReceipt = await db.Payments
+                .IgnoreQueryFilters()
+                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+                .OrderByDescending(p => p.ReceiptNumber)
+                .Select(p => p.ReceiptNumber)
+                .FirstOrDefaultAsync();
+
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
+            {
+                var seqPart = lastReceipt[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq))
+                    nextSeq = lastSeq + 1;
+            }
+
+            await tx.CommitAsync();
+            return $"{prefix}{nextSeq:D3}";
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>
     /// H9 FIX: Generates a unique refund receipt number.
     /// Format: REF-yyyyMMdd-NNN (sequential).
-    /// CON FIX: Now uses advisory lock to prevent race conditions.
+    /// CON FIX: Uses pg_advisory_xact_lock inside an explicit transaction to prevent
+    /// race conditions. Transaction-level lock is automatically released on commit/rollback
+    /// — safe with connection pooling (no risk of stuck locks).
     /// </summary>
     private async Task<string> GenerateRefundReceiptNumberAsync()
     {
         var lockKey = Math.Abs("RefundReceiptNumber".GetHashCode()) % 100000;
-        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
-        var today = DateTime.UtcNow;
-        var datePart = today.ToString("yyyyMMdd");
-        var prefix = $"REF-{datePart}-";
-
-        var lastRefund = await db.Payments
-            .IgnoreQueryFilters()
-            .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-            .OrderByDescending(p => p.ReceiptNumber)
-            .Select(p => p.ReceiptNumber)
-            .FirstOrDefaultAsync();
-
-        var nextSeq = 1;
-        if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var seqPart = lastRefund[prefix.Length..];
-            if (int.TryParse(seqPart, out var lastSeq))
-                nextSeq = lastSeq + 1;
-        }
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        return $"{prefix}{nextSeq:D3}";
+            var today = DateTime.UtcNow;
+            var datePart = today.ToString("yyyyMMdd");
+            var prefix = $"REF-{datePart}-";
+
+            var lastRefund = await db.Payments
+                .IgnoreQueryFilters()
+                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+                .OrderByDescending(p => p.ReceiptNumber)
+                .Select(p => p.ReceiptNumber)
+                .FirstOrDefaultAsync();
+
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
+            {
+                var seqPart = lastRefund[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq))
+                    nextSeq = lastSeq + 1;
+            }
+
+            await tx.CommitAsync();
+            return $"{prefix}{nextSeq:D3}";
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>

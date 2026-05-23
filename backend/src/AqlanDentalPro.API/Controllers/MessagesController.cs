@@ -45,9 +45,10 @@ public class MessagesController(IMessagingService messagingService, AppDbContext
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
-        [FromQuery] string? type = null)
+        [FromQuery] string? type = null,
+        [FromQuery] bool? hasUnread = null)
     {
-        var result = await messagingService.GetMyConversationsAsync(page, pageSize, search, type);
+        var result = await messagingService.GetMyConversationsAsync(page, pageSize, search, type, hasUnread);
         return Ok(new { result.Data, result.TotalCount, result.Page, result.PageSize, result.TotalPages, result.HasNextPage, result.HasPreviousPage });
     }
 

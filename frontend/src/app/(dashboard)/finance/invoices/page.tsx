@@ -39,10 +39,10 @@ export default function InvoicesPage() {
     });
     if (statusFilter) params.set("status", statusFilter);
     api
-      .get<{ data: Invoice[]; total: number }>(`/api/invoices?${params}`)
+      .get<{ invoices: Invoice[]; total: number; page: number; pageSize: number }>(`/api/invoices?${params}`)
       .then((r) => {
-        setInvoices(r.data.data ?? r.data as unknown as Invoice[]);
-        setTotalCount(r.data.total ?? (r.data as unknown as Invoice[]).length);
+        setInvoices(r.data.invoices ?? []);
+        setTotalCount(r.data.total ?? 0);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -66,7 +66,7 @@ export default function InvoicesPage() {
           <p className="text-sm text-gray-500 mt-0.5">إدارة فواتير المرضى والمسودات</p>
         </div>
         <Link
-          href="/patient-journey"
+          href="/finance/invoices/new"
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
         >
           <Plus className="w-4 h-4" />

@@ -27,7 +27,7 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
         var (statusCode, title) = ex switch
         {
             ServiceException sex          => ((HttpStatusCode)sex.StatusCode, "خطأ في الطلب"),
-            UnauthorizedAccessException  => (HttpStatusCode.Unauthorized, "غير مصرح"),
+            UnauthorizedAccessException  => (HttpStatusCode.Forbidden, "غير مصرح"),
             KeyNotFoundException         => (HttpStatusCode.NotFound, "العنصر غير موجود"),
             ArgumentException            => (HttpStatusCode.BadRequest, "بيانات غير صالحة"),
             InvalidOperationException    => (HttpStatusCode.BadRequest, "عملية غير صالحة"),

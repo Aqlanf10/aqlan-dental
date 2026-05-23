@@ -9,7 +9,7 @@ namespace AqlanDentalPro.Application.Interfaces.Services;
 public interface IMessagingService
 {
     Task<PaginatedResponse<ConversationListDto>> GetMyConversationsAsync(
-        int page = 1, int pageSize = 20, string? search = null, string? type = null);
+        int page = 1, int pageSize = 20, string? search = null, string? type = null, bool? hasUnread = null);
 
     Task<ConversationDetailDto?> GetConversationAsync(Guid conversationId, int page = 1, int pageSize = 50);
 

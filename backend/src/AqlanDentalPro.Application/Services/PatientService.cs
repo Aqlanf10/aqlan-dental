@@ -31,12 +31,21 @@ public class PatientService(
             ? await repo.GetLastVisitDatesAsync(patientIds)
             : new Dictionary<Guid, DateTime?>();
 
+        // Batch-load patient emails from linked User records
+        var patientEmails = new Dictionary<Guid, string?>();
+        foreach (var pid in patientIds)
+        {
+            var email = await portalService.GetPatientEmailAsync(pid);
+            patientEmails[pid] = email;
+        }
+
         return new PaginatedResponse<PatientListDto>
         {
             Data = result.Data.Select(p =>
             {
                 var dto = ToListDto(p);
                 dto.LastVisitDate = lastVisitDates.GetValueOrDefault(p.Id);
+                dto.Email = patientEmails.GetValueOrDefault(p.Id);
                 return dto;
             }),
             TotalCount = result.TotalCount,
@@ -51,7 +60,10 @@ public class PatientService(
         // If not found (may be archived and filtered by global filter), try ignoring filters
         if (patient == null)
             patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
-        return patient == null ? null : ToProfileDto(patient);
+        if (patient == null) return null;
+        var dto = ToProfileDto(patient);
+        dto.Email = await portalService.GetPatientEmailAsync(patient.Id);
+        return dto;
     }
 
     public async Task<PatientProfileDto> CreateAsync(CreatePatientRequest req)

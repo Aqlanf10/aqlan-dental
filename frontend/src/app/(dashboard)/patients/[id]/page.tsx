@@ -7,7 +7,7 @@ import {
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image as ImageIcon,
   MessageCircle, Archive, RotateCcw, ClipboardList, CreditCard,
   FileSignature, ScanLine, ArrowRightLeft, FolderOpen, FlaskConical,
-  LayoutDashboard, KeyRound, Copy, Check, ChevronDown,
+  LayoutDashboard, KeyRound, Copy, Check, ChevronDown, Mail,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
@@ -381,6 +381,12 @@ export default function PatientProfilePage() {
                     >
                       {phoneCopied ? <Check className="w-3.5 h-3.5" style={{ color: "#22c55e" }} /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
+                  </span>
+                )}
+                {patient.email && (
+                  <span className="flex items-center gap-1 font-mono" dir="ltr">
+                    <Mail className="w-3.5 h-3.5" />
+                    {patient.email}
                   </span>
                 )}
                 {patient.address && (

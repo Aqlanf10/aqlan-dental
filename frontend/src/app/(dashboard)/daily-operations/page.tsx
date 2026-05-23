@@ -1,19 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import {
   Calendar, ClipboardList, Monitor, Route, CreditCard, FileText,
-  Globe, Settings, Plus, Users, ArrowLeft, ListOrdered,
-  CalendarClock, UserCheck, Clock,
+  Globe, Settings, Plus, ArrowLeft, ListOrdered,
+  CalendarClock, UserCheck,
 } from "lucide-react";
 import type { DashboardStats } from "@/types/dashboard";
+import { useAuthStore } from "@/stores/authStore";
 import api from "@/lib/api";
 
 /* ─── Brand constants ───────────────────────────────────────────────────────── */
-const NAVY   = "#1a3a5c";
-const BLUE   = "#3d7ab5";
-const ORANGE = "#f5922e";
+const NAVY = "#1a3a5c";
 
 /* ─── Card styles ───────────────────────────────────────────────────────────── */
 const sectionCardStyle: React.CSSProperties = {
@@ -24,17 +23,28 @@ const sectionCardStyle: React.CSSProperties = {
   border: "1px solid #e8f0f9",
 };
 
-/* ─── Quick-link card data ──────────────────────────────────────────────────── */
+/* ─── Role-based visibility ─────────────────────────────────────────────────── */
+/**
+ * Mirrors the Sidebar's role-filtering logic.
+ * Empty array = visible to ALL roles.
+ * Non-empty array = only those roles can see the link.
+ */
 interface QuickLink {
   label: string;
   description: string;
   href: string;
   icon: React.ElementType;
   color: string;
+  roles: string[];
   countKey?: keyof Pick<DashboardStats, "appointmentsToday" | "queueWaitingCount" | "pendingBookingRequestsCount" | "todayArrivedCount">;
 }
 
-const SECTIONS: { title: string; links: QuickLink[] }[] = [
+interface Section {
+  title: string;
+  links: QuickLink[];
+}
+
+const SECTIONS: Section[] = [
   {
     title: "الحجز والمواعيد",
     links: [
@@ -44,6 +54,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/booking-requests",
         icon: Globe,
         color: "#3d7ab5",
+        roles: ["Admin", "Reception"],
         countKey: "pendingBookingRequestsCount",
       },
       {
@@ -52,6 +63,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/appointments",
         icon: Calendar,
         color: "#f5922e",
+        roles: [], // all roles
         countKey: "appointmentsToday",
       },
       {
@@ -60,6 +72,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/appointments/new",
         icon: CalendarClock,
         color: "#a855f7",
+        roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon"],
       },
     ],
   },
@@ -72,6 +85,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/clinic-queue",
         icon: ClipboardList,
         color: "#f5922e",
+        roles: ["Admin", "Reception"],
         countKey: "queueWaitingCount",
       },
       {
@@ -80,6 +94,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/clinic-display",
         icon: Monitor,
         color: "#3d7ab5",
+        roles: [], // all roles
       },
       {
         label: "رحلة المرضى",
@@ -87,6 +102,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/patient-journey",
         icon: Route,
         color: "#22c55e",
+        roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"],
         countKey: "todayArrivedCount",
       },
     ],
@@ -100,6 +116,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/finance/payments",
         icon: CreditCard,
         color: "#22c55e",
+        roles: ["Admin", "Reception", "Accountant"],
       },
       {
         label: "الفواتير",
@@ -107,6 +124,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/finance/invoices",
         icon: FileText,
         color: "#3d7ab5",
+        roles: ["Admin", "Reception", "Accountant"],
       },
     ],
   },
@@ -119,6 +137,7 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/settings/rooms",
         icon: Settings,
         color: "#64748b",
+        roles: ["Admin"],
       },
       {
         label: "مريض جديد",
@@ -126,15 +145,72 @@ const SECTIONS: { title: string; links: QuickLink[] }[] = [
         href: "/patients/new",
         icon: Plus,
         color: "#3d7ab5",
+        roles: ["Admin", "Reception"],
       },
     ],
   },
 ];
 
+/* ─── Summary strip stat — which roles can see each stat ───────────────────── */
+const SUMMARY_STATS: {
+  icon: React.ElementType;
+  label: string;
+  color: string;
+  countKey: keyof Pick<DashboardStats, "appointmentsToday" | "queueWaitingCount" | "pendingBookingRequestsCount" | "todayArrivedCount">;
+  roles: string[];
+}[] = [
+  {
+    icon: Globe,
+    label: "طلبات حجز معلقة",
+    color: "#3d7ab5",
+    countKey: "pendingBookingRequestsCount",
+    roles: ["Admin", "Reception"],
+  },
+  {
+    icon: Calendar,
+    label: "مواعيد اليوم",
+    color: "#f5922e",
+    countKey: "appointmentsToday",
+    roles: [], // all roles
+  },
+  {
+    icon: ListOrdered,
+    label: "عدد المنتظرين",
+    color: "#ef4444",
+    countKey: "queueWaitingCount",
+    roles: ["Admin", "Reception"],
+  },
+  {
+    icon: UserCheck,
+    label: "عدد الواصلين",
+    color: "#22c55e",
+    countKey: "todayArrivedCount",
+    roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"],
+  },
+];
+
+/**
+ * Same visibility logic as Sidebar:
+ * empty roles array = visible to ALL; otherwise must be included.
+ */
+function isVisible(roles: string[], userRole: string): boolean {
+  return roles.length === 0 || roles.includes(userRole);
+}
+
+/* ─── Safe count helper ─────────────────────────────────────────────────────── */
+/** Returns the number only when explicitly provided by backend; "—" otherwise. */
+function safeCount(value: number | null | undefined, loading: boolean): number | string {
+  if (loading) return "—";
+  if (value == null) return "—";
+  return value;
+}
+
 /* ─── Page Component ────────────────────────────────────────────────────────── */
 export default function DailyOperationsPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuthStore();
+  const userRole = user?.role ?? "";
 
   useEffect(() => {
     api
@@ -143,6 +219,21 @@ export default function DailyOperationsPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  /** Filter sections and their links based on user role */
+  const visibleSections = useMemo<Section[]>(() => {
+    return SECTIONS
+      .map((section) => ({
+        ...section,
+        links: section.links.filter((link) => isVisible(link.roles, userRole)),
+      }))
+      .filter((section) => section.links.length > 0);
+  }, [userRole]);
+
+  /** Filter summary stats based on user role */
+  const visibleStats = useMemo(() => {
+    return SUMMARY_STATS.filter((s) => isVisible(s.roles, userRole));
+  }, [userRole]);
 
   return (
     <div className="space-y-5 page-content">
@@ -169,35 +260,22 @@ export default function DailyOperationsPage() {
       </div>
 
       {/* ── Summary strip ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <MiniStat
-          icon={Globe}
-          label="طلبات حجز معلقة"
-          value={loading ? "—" : (stats?.pendingBookingRequestsCount ?? 0)}
-          color="#3d7ab5"
-        />
-        <MiniStat
-          icon={Calendar}
-          label="مواعيد اليوم"
-          value={loading ? "—" : (stats?.appointmentsToday ?? 0)}
-          color="#f5922e"
-        />
-        <MiniStat
-          icon={ListOrdered}
-          label="عدد المنتظرين"
-          value={loading ? "—" : (stats?.queueWaitingCount ?? 0)}
-          color="#ef4444"
-        />
-        <MiniStat
-          icon={UserCheck}
-          label="عدد الواصلين"
-          value={loading ? "—" : (stats?.todayArrivedCount ?? 0)}
-          color="#22c55e"
-        />
-      </div>
+      {visibleStats.length > 0 && (
+        <div className={`grid gap-3 grid-cols-2 sm:grid-cols-${Math.min(visibleStats.length, 4)}`}>
+          {visibleStats.map((stat) => (
+            <MiniStat
+              key={stat.countKey}
+              icon={stat.icon}
+              label={stat.label}
+              value={safeCount(stats?.[stat.countKey] ?? null, loading)}
+              color={stat.color}
+            />
+          ))}
+        </div>
+      )}
 
       {/* ── Section cards with quick links ──────────────────────────────────── */}
-      {SECTIONS.map((section) => (
+      {visibleSections.map((section) => (
         <div key={section.title} style={sectionCardStyle}>
           <h2 className="font-extrabold text-[15px] mb-4" style={{ color: NAVY }}>
             {section.title}

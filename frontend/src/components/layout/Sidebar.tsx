@@ -9,7 +9,6 @@ import {
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
   CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown, Percent,
-  CalendarClock,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";

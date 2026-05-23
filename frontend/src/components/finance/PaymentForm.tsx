@@ -40,6 +40,7 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
   const [serverError, setServerError] = useState("");
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [savedPayment, setSavedPayment] = useState<Payment | null>(null);
+  const [showUnlinkedWarning, setShowUnlinkedWarning] = useState(false);
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -51,6 +52,7 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
   });
 
   const selectedPatientId = watch("patientId");
+  const selectedContractId = watch("contractId");
 
   // Pre-fill patient if passed via props
   useEffect(() => {
@@ -62,10 +64,24 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
     api.get<Contract[]>(`/api/contracts?patientId=${selectedPatientId}&status=active`)
       .then((r) => {
         setContracts(r.data);
-        if (defaultContractId) setValue("contractId", defaultContractId);
+        // FIX: Auto-select the single active contract if no contract was pre-selected
+        if (!defaultContractId && r.data.length === 1) {
+          setValue("contractId", r.data[0].id);
+        } else if (defaultContractId) {
+          setValue("contractId", defaultContractId);
+        }
       })
       .catch(() => {});
   }, [selectedPatientId, defaultContractId, setValue]);
+
+  // FIX: Show warning when patient has active contracts but user leaves contract unlinked
+  useEffect(() => {
+    if (contracts.length > 0 && !selectedContractId) {
+      setShowUnlinkedWarning(true);
+    } else {
+      setShowUnlinkedWarning(false);
+    }
+  }, [contracts.length, selectedContractId]);
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -147,6 +163,13 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
                 </option>
               ))}
             </select>
+            {/* FIX: Warning when patient has active contracts but payment is unlinked */}
+            {showUnlinkedWarning && (
+              <p className="mt-1.5 text-xs text-amber-600 flex items-start gap-1">
+                <span className="mt-0.5">⚠</span>
+                <span>هذه الدفعة ستُحتسب في إجمالي مدفوعات المريض لكن لن تُنسب لعقد محدد. يُنصح بربطها بعقد لضمان دقة الحساب.</span>
+              </p>
+            )}
           </div>
         )}
 

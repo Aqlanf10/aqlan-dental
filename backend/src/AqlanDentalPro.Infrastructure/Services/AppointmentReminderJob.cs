@@ -142,7 +142,7 @@ public class AppointmentReminderJob : BackgroundService
                             patientName, doctorName, appointmentDate,
                             appointmentTime, clinicService, appt.Notes);
 
-                        var sent = await emailService.SendEmailAsync(patientEmail, subject, htmlBody);
+                        var sent = await emailService.SendAppointmentReminderAsync(patientEmail, subject, htmlBody, appt.Id);
 
                         if (sent)
                         {

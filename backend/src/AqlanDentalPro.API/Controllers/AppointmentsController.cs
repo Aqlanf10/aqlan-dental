@@ -5,6 +5,7 @@ using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/appointments")]
 [Authorize(Policy = "StaffOnly")]
-public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, ILogger<AppointmentsController> logger) : ControllerBase
+public class AppointmentsController(AppointmentService service, AppDbContext db, ICurrentUserService currentUser, IWhatsAppService whatsapp, IEmailService emailService, ILogger<AppointmentsController> logger) : ControllerBase
 {
     /// <summary>Check if a time slot conflicts with existing appointments</summary>
     [HttpPost("check-conflict")]
@@ -414,6 +415,68 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         {
             logger.LogWarning(ex, "Failed to send WhatsApp reminder for appointment {AppointmentId}", id);
             return BadRequest(new { message = "فشل إرسال التذكير عبر واتساب" });
+        }
+    }
+
+    // ─── POST /api/appointments/{id}/send-email-reminder ──────────────────────
+    /// <summary>
+    /// Send an appointment reminder email to the patient.
+    /// Requires StaffOnly authorization.
+    /// Returns Arabic error if patient has no email on file.
+    /// </summary>
+    [HttpPost("{id:guid}/send-email-reminder")]
+    public async Task<IActionResult> SendEmailReminder(Guid id)
+    {
+        var appointment = await db.Appointments
+            .Include(a => a.Patient)
+            .Include(a => a.Doctor)
+            .Include(a => a.Service)
+            .FirstOrDefaultAsync(a => a.Id == id);
+
+        if (appointment is null)
+            return NotFound(new { message = "الموعد غير موجود" });
+
+        if (appointment.Patient is null)
+            return BadRequest(new { message = "بيانات المريض غير متوفرة" });
+
+        // ── Resolve patient email via PatientAccount → User (same pattern as AppointmentReminderJob) ──
+        var patientEmail = await db.PatientAccounts
+            .Where(pa => pa.PatientId == appointment.PatientId && pa.LinkedUserId != null)
+            .Join(db.Users, pa => pa.LinkedUserId, u => u.Id, (pa, u) => u.Email)
+            .FirstOrDefaultAsync();
+
+        if (string.IsNullOrWhiteSpace(patientEmail))
+            return BadRequest(new { message = "لا يوجد بريد إلكتروني مسجل لهذا المريض" });
+
+        var patientName = $"{appointment.Patient.FirstName} {appointment.Patient.LastName}".Trim();
+        var doctorName = appointment.Doctor?.Name ?? "الطبيب";
+        var dateStr = appointment.AppointmentDate.ToString("yyyy/MM/dd");
+        var timeStr = appointment.StartTime.ToString("HH:mm");
+        var clinicService = appointment.Service?.ArabicName;
+
+        var subject = $"تذكير بموعدك في مركز عقلان الكامل";
+        var htmlBody = EmailService.BuildAppointmentReminderHtml(
+            patientName, doctorName, dateStr, timeStr, clinicService, appointment.Notes);
+
+        try
+        {
+            var sent = await emailService.SendAppointmentReminderAsync(
+                patientEmail, subject, htmlBody, appointment.Id);
+
+            if (!sent)
+                return BadRequest(new { message = "تعذر إرسال التذكير، حاول مرة أخرى" });
+
+            logger.LogInformation(
+                "Manual email reminder sent for appointment {AppointmentId} to {Email}",
+                id, patientEmail);
+
+            return Ok(new { message = "تم إرسال تذكير الموعد بنجاح" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Failed to send email reminder for appointment {AppointmentId}", id);
+            return BadRequest(new { message = "تعذر إرسال التذكير، حاول مرة أخرى" });
         }
     }
 

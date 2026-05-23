@@ -81,6 +81,15 @@ public class EmailService : IEmailService
         return await SendEmailInternalAsync(toEmail, subject, htmlBody, "general", null, null);
     }
 
+    /// <summary>
+    /// Sends an appointment reminder email with proper category and entity tracking.
+    /// Logs to EmailLog with category "appointment_reminder" and links to the appointment entity.
+    /// </summary>
+    public async Task<bool> SendAppointmentReminderAsync(string toEmail, string subject, string htmlBody, Guid appointmentId)
+    {
+        return await SendEmailInternalAsync(toEmail, subject, htmlBody, "appointment_reminder", "Appointment", appointmentId);
+    }
+
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetToken, string resetUrl)
     {
         var appUrl = GetConfig("APP_PUBLIC_URL", "App:PublicUrl") ?? "http://localhost:3000";

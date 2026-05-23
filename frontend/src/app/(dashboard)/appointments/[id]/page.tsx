@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight, Calendar, Clock, User, Stethoscope,
-  FileText, Trash2, Send, Pencil, PlayCircle
+  FileText, Trash2, Send, Pencil, PlayCircle, Mail
 } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
@@ -96,6 +96,19 @@ export default function AppointmentDetailPage() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error(msg ?? "فشل إرسال التذكير");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSendEmailReminder = async () => {
+    setActionLoading("emailReminder");
+    try {
+      const { data } = await api.post(`/api/appointments/${id}/send-email-reminder`);
+      toast.success(data.message ?? "تم إرسال تذكير الموعد بنجاح");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(msg ?? "تعذر إرسال التذكير، حاول مرة أخرى");
     } finally {
       setActionLoading(null);
     }
@@ -244,7 +257,17 @@ export default function AppointmentDetailPage() {
           style={{ background: "#f5922e" }}
         >
           <Send className="w-4 h-4" />
-          {actionLoading === "reminder" ? "جارٍ الإرسال..." : "إرسال تذكير"}
+          {actionLoading === "reminder" ? "جارٍ الإرسال..." : "إرسال تذكير واتساب"}
+        </button>
+
+        <button
+          onClick={handleSendEmailReminder}
+          disabled={actionLoading === "emailReminder"}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          style={{ background: "#0E7490" }}
+        >
+          <Mail className="w-4 h-4" />
+          {actionLoading === "emailReminder" ? "جارٍ الإرسال..." : "إرسال تذكير بالإيميل"}
         </button>
 
         {canDelete && (

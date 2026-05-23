@@ -372,12 +372,22 @@ public class PatientsController(
             });
         }
 
-        var totalPaid = await db.Payments.Where(p => p.PatientId == id).SumAsync(p => (decimal?)p.Amount) ?? 0;
-        var totalOutstanding = await db.Contracts
+        // FIX: Only count active payments (exclude soft-deleted/refunded).
+        // This aligns the summary cards with the Finance tab calculation.
+        var totalPaid = await db.Payments
+            .Where(p => p.PatientId == id && p.IsActive)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+        // FIX: totalOutstanding = totalContracted - totalDiscounts - totalPaid.
+        // Previously this only summed active contracts' remaining and missed discounts
+        // and unlinked payments. Now it matches the account-statement formula.
+        var totalContracted = await db.Contracts
             .Where(c => c.PatientId == id && c.Status == ContractStatus.Active)
-            .Include(c => c.Payments)
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Sum(p => p.Amount))
-            .SumAsync(r => (decimal?)r) ?? 0;
+            .SumAsync(c => (decimal?)c.TotalAmount) ?? 0;
+        var totalDiscounts = await db.Contracts
+            .Where(c => c.PatientId == id && c.Status == ContractStatus.Active)
+            .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
+        var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
 
         // Audit: non-doctor viewed financial summary.
         await audit.LogAsync(AuditAction.View, "PatientFinanceSummary", id,

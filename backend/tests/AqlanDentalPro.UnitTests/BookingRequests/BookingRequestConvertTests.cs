@@ -355,8 +355,9 @@ public class BookingRequestConvertTests
             result!.ConvertedToAppointmentId.Should().NotBeNull();
 
             // Also verify the appointment was actually created
+            var appointmentId = result.ConvertedToAppointmentId!.Value;
             var createdAppointment = await db.Appointments
-                .FirstOrDefaultAsync(a => a.Id == result.ConvertedToAppointmentId.Value);
+                .FirstOrDefaultAsync(a => a.Id == appointmentId);
             createdAppointment.Should().NotBeNull();
             createdAppointment!.DoctorId.Should().Be(doctor.Id);
         }

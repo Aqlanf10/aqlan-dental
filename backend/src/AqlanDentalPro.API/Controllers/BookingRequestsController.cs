@@ -203,7 +203,7 @@ public class BookingRequestsController(IBookingRequestService service, ICurrentU
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error converting booking request {BookingRequestId} to appointment", id);
-            return BadRequest(new { message = "حدث خطأ غير متوقع أثناء تحويل الطلب إلى موعد" });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "حدث خطأ غير متوقع أثناء تحويل الطلب إلى موعد" });
         }
     }
 

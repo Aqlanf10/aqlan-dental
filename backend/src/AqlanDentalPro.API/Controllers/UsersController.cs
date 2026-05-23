@@ -825,7 +825,28 @@ public class UsersController(
             .Where(p => p.Role == role)
             .ToListAsync();
 
-        var existingByResource = existingPerms.ToDictionary(p => p.Resource);
+        var existingGroups = existingPerms
+            .GroupBy(p => p.Resource)
+            .ToList();
+
+        var duplicatePerms = new List<RolePermission>();
+        var existingByResource = new Dictionary<string, RolePermission>();
+        foreach (var group in existingGroups)
+        {
+            var ordered = group
+                .OrderByDescending(p => p.UpdatedAt)
+                .ThenByDescending(p => p.CreatedAt)
+                .ThenByDescending(p => p.Id)
+                .ToList();
+
+            existingByResource[group.Key] = ordered[0];
+            duplicatePerms.AddRange(ordered.Skip(1));
+        }
+
+        if (duplicatePerms.Count > 0)
+        {
+            db.RolePermissions.RemoveRange(duplicatePerms);
+        }
 
         // Guard: prevent removing all critical user_management permissions from Admin role.
         // This must be checked for TWO cases:
@@ -893,7 +914,7 @@ public class UsersController(
         // For resources that exist in DB but are NOT in the request, set all flags to false.
         // NOTE: Admin's user_management is already injected into resourceActions above,
         // so it won't reach this path.
-        foreach (var existing in existingPerms)
+        foreach (var existing in existingByResource.Values)
         {
             if (!resourceActions.ContainsKey(existing.Resource))
             {

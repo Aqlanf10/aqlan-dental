@@ -53,11 +53,11 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         if (branchId.HasValue) orthoQuery = orthoQuery.Where(o => o.BranchId == branchId);
 
         var labQuery = db.LabOrders.Where(l => l.Status == "sent" || l.Status == "manufacturing");
-        if (branchId.HasValue) labQuery = labQuery.Where(l => l.BranchId == branchId);
+        if (branchId.HasValue) labQuery = labQuery.Where(l => l.Patient != null && l.Patient.BranchId == branchId);
 
         var monthStart = new DateOnly(today.Year, today.Month, 1);
         var revenueQuery = db.Payments.Where(p => p.PaymentDate >= monthStart && p.PaymentDate <= today);
-        if (branchId.HasValue) revenueQuery = revenueQuery.Where(p => p.Contract != null && p.Contract.BranchId == branchId);
+        if (branchId.HasValue) revenueQuery = revenueQuery.Where(p => p.BranchId == branchId);
 
         // Overdue: active contracts where expected paid > actual paid
         var activeContracts = await db.Contracts

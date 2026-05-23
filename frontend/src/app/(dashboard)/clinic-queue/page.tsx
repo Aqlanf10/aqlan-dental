@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
+import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ClinicQueueItem {
@@ -324,6 +325,18 @@ export default function ClinicQueuePage() {
           </button>
         </div>
       </div>
+
+      {/* Workflow Navigation */}
+      <WorkflowNav
+        links={[
+          WORKFLOW_LINKS.backToDailyOps(),
+          WORKFLOW_LINKS.appointments(),
+          WORKFLOW_LINKS.clinicDisplay(),
+          WORKFLOW_LINKS.patientJourney(),
+          WORKFLOW_LINKS.payments(),
+        ]}
+        currentPage="/clinic-queue"
+      />
 
       {/* Success / Error messages */}
       {successMsg && (

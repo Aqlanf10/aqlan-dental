@@ -115,6 +115,15 @@ const SECTIONS: Section[] = [
     title: "المالية اليومية",
     links: [
       {
+        label: "جاهز للدفع",
+        description: "المرضى الجاهزون لإنهاء الحساب والدفع",
+        href: "/patient-journey",
+        icon: CreditCard,
+        color: "#16a34a",
+        roles: ["Admin", "Reception", "Accountant"],
+        permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW,
+      },
+      {
         label: "المدفوعات",
         description: "تسجيل ومتابعة المدفوعات اليومية",
         href: "/finance/payments",

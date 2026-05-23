@@ -394,7 +394,9 @@ public class BookingRequestService(AppDbContext db, ILogger<BookingRequestServic
         if (patientId == Guid.Empty)
         {
             // Try to find existing patient by phone number
-            var normalizedPhone = NormalizePhone(bookingRequest.PhoneNumber);
+            // Use PhoneNormalizer (adds 967 prefix for Yemen numbers) so the lookup
+            // matches the NormalizedPhone/NormalizedWhatsApp columns in the Patients table.
+            var normalizedPhone = AqlanDentalPro.Application.Services.PhoneNormalizer.Normalize(bookingRequest.PhoneNumber);
             Patient? existingPatient = null;
 
             if (!string.IsNullOrWhiteSpace(normalizedPhone))

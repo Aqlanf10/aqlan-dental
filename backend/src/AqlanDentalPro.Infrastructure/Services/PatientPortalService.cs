@@ -356,21 +356,25 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
             && (a.Status == AppointmentStatus.Scheduled || a.Status == AppointmentStatus.Confirmed));
         var completedTreatments = await db.GeneralTreatments.CountAsync(t => t.PatientId == patientId);
 
-        // FIX: Only count active payments (exclude soft-deleted/refunded).
-        var totalPaid = await db.Payments.Where(p => p.PatientId == patientId && p.IsActive).SumAsync(p => (decimal?)p.Amount) ?? 0;
-
         var contracts = await db.Contracts
             .Include(c => c.Payments)
             .Where(c => c.PatientId == patientId)
             .ToListAsync();
 
-        var totalContracted = contracts.Where(c => c.Status == ContractStatus.Active).Sum(c => c.TotalAmount);
-        var totalDiscounts = contracts.Where(c => c.Status == ContractStatus.Active).Sum(c => c.DiscountAmount);
+        var activeContractsList = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
+
+        // FIX: Only count payments linked to ACTIVE contracts so the summary
+        // cards match the per-contract breakdown. Payments for completed/
+        // cancelled contracts would distort the outstanding balance.
+        var totalPaid = activeContractsList.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+        var totalContracted = activeContractsList.Sum(c => c.TotalAmount);
+        var totalDiscounts = activeContractsList.Sum(c => c.DiscountAmount);
         var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
         var totalAmount = totalContracted - totalDiscounts;
-        var activeContracts = await db.Contracts.CountAsync(c => c.PatientId == patientId && c.Status == ContractStatus.Active);
+        var activeContracts = activeContractsList.Count;
 
-        // FIX: Only show active payments in portal
+        // FIX: Only show active payments in portal (includes payments from
+        // ALL contracts + orphan payments for full payment history)
         var recentPayments = await db.Payments
             .Include(p => p.Receipt)
             .Where(p => p.PatientId == patientId && p.IsActive)
@@ -618,15 +622,17 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
     public async Task<PatientFinancialSummaryDto> GetFinancialSummaryAsync(Guid patientId)
     {
-        // FIX: Only count active payments (exclude soft-deleted/refunded).
-        var totalPaid = await db.Payments.Where(p => p.PatientId == patientId && p.IsActive).SumAsync(p => (decimal?)p.Amount) ?? 0;
-
         var contracts = await db.Contracts
             .Include(c => c.Payments)
             .Where(c => c.PatientId == patientId)
             .ToListAsync();
 
         var activeContracts = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
+
+        // FIX: Only count payments linked to ACTIVE contracts so the summary
+        // cards match the per-contract breakdown. Payments for completed/
+        // cancelled contracts would distort the outstanding balance.
+        var totalPaid = activeContracts.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
         var totalContracted = activeContracts.Sum(c => c.TotalAmount);
         var totalDiscounts = activeContracts.Sum(c => c.DiscountAmount);
         var totalOutstanding = totalContracted - totalDiscounts - totalPaid;

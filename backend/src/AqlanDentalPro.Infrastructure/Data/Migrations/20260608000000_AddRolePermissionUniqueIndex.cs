@@ -11,26 +11,24 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // ── Safe pre-migration deduplication ──────────────────────────────
-            // If duplicate (Role, Resource) rows exist, keep the one with the
-            // latest CreatedAt and delete the rest. This must happen BEFORE the
+            // If duplicate (Role, Resource) rows exist, keep exactly one row per
+            // (Role, Resource) and delete the rest. This must happen BEFORE the
             // unique index is created, otherwise the migration will fail.
+            //
+            // Deterministic tie-breaking: prefer the row with the latest CreatedAt,
+            // then highest Id as a secondary tie-breaker (newest row wins both ways).
+            // This handles the case where duplicate rows have identical CreatedAt values,
+            // which the previous MAX(CreatedAt) approach missed.
             //
             // We use raw SQL so it runs as part of the migration transaction.
             // The DELETE only fires when duplicates exist; zero-row deletes are
-            // harmless.
+            // harmless. Non-duplicate rows are never touched.
             migrationBuilder.Sql(@"
 DELETE FROM ""RolePermissions""
-WHERE ""Id"" IN (
-    SELECT rp.""Id""
-    FROM ""RolePermissions"" rp
-    INNER JOIN (
-        SELECT ""Role"", ""Resource"", MAX(""CreatedAt"") AS MaxCreated
-        FROM ""RolePermissions""
-        GROUP BY ""Role"", ""Resource""
-        HAVING COUNT(*) > 1
-    ) dup ON rp.""Role"" = dup.""Role""
-         AND rp.""Resource"" = dup.""Resource""
-         AND rp.""CreatedAt"" < dup.""MaxCreated""
+WHERE ""Id"" NOT IN (
+    SELECT DISTINCT ON (""Role"", ""Resource"") ""Id""
+    FROM ""RolePermissions""
+    ORDER BY ""Role"", ""Resource"", ""CreatedAt"" DESC, ""Id"" DESC
 );");
 
             migrationBuilder.CreateIndex(

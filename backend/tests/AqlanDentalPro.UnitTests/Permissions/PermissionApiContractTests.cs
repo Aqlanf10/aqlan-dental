@@ -325,10 +325,12 @@ public class PermissionApiContractTests : IDisposable
     // ── Admin protection tests ────────────────────────────────────────────────
 
     [Fact]
-    public async Task UpdateRolePermissions_PreventsRemovingAllUserManagementFromAdmin()
+    public async Task UpdateRolePermissions_PreservesAdminUserManagementWhenOmitted()
     {
         // Arrange — Admin has user_management with all permissions.
-        // We try to set user_management to empty.
+        // We send a request that OMITS user_management entirely.
+        // The system must preserve Admin's critical user_management permissions
+        // instead of silently setting them all to false.
         var body = new UpdateRolePermissionsBody
         {
             Permissions = ["patients.view"] // no user_management at all
@@ -337,16 +339,47 @@ public class PermissionApiContractTests : IDisposable
         // Act
         var result = await _controller.UpdateRolePermissions("Admin", body);
 
-        // Assert — should still succeed because the guard only checks when
-        // user_management IS in the request with no view/create/edit/delete.
-        // When user_management is NOT in the request at all, the existing
-        // row's flags are set to false, which is a different code path.
-        // Actually, let's check the current behavior: the resourceActions
-        // dict won't have "user_management", so the "set all flags to false"
-        // path runs. The guard only fires when user_management IS in the
-        // request with all core actions disabled.
-        // This test verifies the guard logic for the explicit case.
+        // Assert — the request succeeds, but Admin's user_management is preserved
         result.Should().BeOfType<OkObjectResult>();
+
+        // Verify that Admin's user_management permissions were NOT cleared
+        var adminUm = await _db.RolePermissions
+            .FirstAsync(rp => rp.Role == "Admin" && rp.Resource == "user_management");
+        adminUm.CanView.Should().BeTrue("Admin must keep user_management.view");
+        adminUm.CanCreate.Should().BeTrue("Admin must keep user_management.create");
+        adminUm.CanEdit.Should().BeTrue("Admin must keep user_management.edit");
+        adminUm.CanDelete.Should().BeTrue("Admin must keep user_management.delete");
+    }
+
+    [Fact]
+    public async Task UpdateRolePermissions_AdminUserManagementNotClearedWhenOmitted()
+    {
+        // Arrange — Verify that explicitly omitting user_management from the
+        // permissions list does NOT result in Admin losing those permissions.
+        // This is the regression test for the bug where the "missing resources"
+        // loop would set all user_management flags to false for Admin.
+        var body = new UpdateRolePermissionsBody
+        {
+            Permissions = ["appointments.view", "appointments.create"]
+        };
+
+        // Act
+        var result = await _controller.UpdateRolePermissions("Admin", body);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+
+        var adminUm = await _db.RolePermissions
+            .FirstAsync(rp => rp.Role == "Admin" && rp.Resource == "user_management");
+        adminUm.CanView.Should().BeTrue();
+        adminUm.CanCreate.Should().BeTrue();
+        adminUm.CanEdit.Should().BeTrue();
+        adminUm.CanDelete.Should().BeTrue();
+
+        // Other resources not in the request should be set to all-false
+        var adminPatients = await _db.RolePermissions
+            .FirstAsync(rp => rp.Role == "Admin" && rp.Resource == "patients");
+        adminPatients.CanView.Should().BeFalse("patients was omitted and should be cleared");
     }
 
     [Fact]

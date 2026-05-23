@@ -765,13 +765,39 @@ public class UsersController(
 
         var existingByResource = existingPerms.ToDictionary(p => p.Resource);
 
-        // Guard: prevent removing all admin management permissions from Admin role
-        if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase)
-            && resourceActions.TryGetValue("user_management", out var umActions)
-            && !umActions.Contains("view") && !umActions.Contains("create")
-            && !umActions.Contains("edit") && !umActions.Contains("delete"))
+        // Guard: prevent removing all critical user_management permissions from Admin role.
+        // This must be checked for TWO cases:
+        //   1. user_management IS in the request but with no core actions (view/create/edit/delete)
+        //   2. user_management is OMITTED from the request — the "missing resources" loop
+        //      would set all flags to false, silently stripping Admin's user_management access.
+        var isAdmin = string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase);
+        var hasUserManagementInRequest = resourceActions.TryGetValue("user_management", out var umActions);
+
+        if (isAdmin)
         {
-            return BadRequest(new { message = "لا يمكن إزالة جميع صلاحيات إدارة المستخدمين من دور المدير" });
+            var adminUmRow = existingByResource.GetValueOrDefault("user_management");
+
+            if (hasUserManagementInRequest)
+            {
+                // Case 1: user_management is present but all core actions disabled
+                if (!umActions!.Contains("view") && !umActions.Contains("create")
+                    && !umActions.Contains("edit") && !umActions.Contains("delete"))
+                {
+                    return BadRequest(new { message = "لا يمكن إزالة جميع صلاحيات إدارة المستخدمين من دور المدير" });
+                }
+            }
+            else if (adminUmRow != null)
+            {
+                // Case 2: user_management is omitted from the request but exists in DB.
+                // Preserve the existing user_management row — do NOT set all flags to false.
+                // This prevents silently stripping Admin's critical permissions.
+                resourceActions["user_management"] = new HashSet<string>
+                {
+                    "view", "create", "edit", "delete",
+                    adminUmRow.CanExport ? "export" : null!,
+                    adminUmRow.CanApprove ? "approve" : null!
+                }.Where(a => a != null).ToHashSet();
+            }
         }
 
         // Update existing or add new RolePermission rows
@@ -802,7 +828,9 @@ public class UsersController(
             }
         }
 
-        // For resources that exist in DB but are NOT in the request, set all flags to false
+        // For resources that exist in DB but are NOT in the request, set all flags to false.
+        // NOTE: Admin's user_management is already injected into resourceActions above,
+        // so it won't reach this path.
         foreach (var existing in existingPerms)
         {
             if (!resourceActions.ContainsKey(existing.Resource))

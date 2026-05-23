@@ -1,5 +1,9 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Mail;
@@ -12,13 +16,18 @@ public class EmailService : IEmailService
 {
     private readonly IConfiguration _config;
     private readonly ILogger<EmailService> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
 
-    public EmailService(IConfiguration config, ILogger<EmailService> logger)
+    /// <summary>Resend free tier daily limit.</summary>
+    private const int DailyLimit = 100;
+
+    public EmailService(IConfiguration config, ILogger<EmailService> logger, IServiceScopeFactory scopeFactory)
     {
         _config = config;
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     public Task<bool> IsConfiguredAsync()
@@ -41,6 +50,146 @@ public class EmailService : IEmailService
                 "to admin-managed PasswordResetRequest.");
         }
         return Task.FromResult(isConfigured);
+    }
+
+    /// <summary>
+    /// Returns the number of emails sent today (UTC). Used for daily limit tracking.
+    /// </summary>
+    public async Task<int> GetDailyEmailCountAsync()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var todayStart = DateTime.UtcNow.Date;
+            return await db.EmailLogs
+                .CountAsync(e => e.IsSent && e.CreatedAt >= todayStart);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get daily email count from EmailLogs.");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Generic email sending method. Can be used for appointment reminders,
+    /// notifications, or any email type. Logs to EmailLog table for statistics.
+    /// </summary>
+    public async Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody, string? textBody = null)
+    {
+        return await SendEmailInternalAsync(toEmail, subject, htmlBody, "general", null, null);
+    }
+
+    public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetToken, string resetUrl)
+    {
+        var appUrl = GetConfig("APP_PUBLIC_URL", "App:PublicUrl") ?? "http://localhost:3000";
+        var fullResetUrl = $"{appUrl.TrimEnd('/')}/{resetUrl.TrimStart('/')}?token={Uri.EscapeDataString(resetToken)}";
+
+        var subject = "استعادة كلمة المرور — مركز د. عقلان الكامل";
+        var htmlBody = BuildResetEmailHtml(fullResetUrl);
+
+        return await SendEmailInternalAsync(toEmail, subject, htmlBody, "password_reset");
+    }
+
+    /// <summary>
+    /// Internal send method with logging. All email sending goes through here.
+    /// </summary>
+    private async Task<bool> SendEmailInternalAsync(
+        string toEmail, string subject, string htmlBody,
+        string category, string? relatedEntityType = null, Guid? relatedEntityId = null)
+    {
+        // ── Daily limit check ──
+        var dailyCount = await GetDailyEmailCountAsync();
+        if (dailyCount >= DailyLimit)
+        {
+            _logger.LogWarning(
+                "Daily email limit ({Limit}) reached. Skipping email to {To}. " +
+                "Upgrade Resend plan or verify domain to increase limit.",
+                DailyLimit, MaskEmail(toEmail));
+            await LogEmailAsync(toEmail, subject, category, null, false,
+                $"Daily limit ({DailyLimit}) reached", null, relatedEntityType, relatedEntityId);
+            return false;
+        }
+
+        if (dailyCount >= DailyLimit - 10)
+        {
+            _logger.LogWarning(
+                "Approaching daily email limit: {Count}/{Limit}. " +
+                "Consider upgrading Resend plan.",
+                dailyCount, DailyLimit);
+        }
+
+        var fromEmail = GetConfig("SMTP_FROM_EMAIL", "Smtp:FromEmail") ?? "onboarding@resend.dev";
+        var fromName = GetConfig("SMTP_FROM_NAME", "Smtp:FromName") ?? "مركز د. عقلان الكامل";
+
+        // ── Priority 1: Resend API (HTTP-based, works from any cloud server) ──
+        var resendKey = GetConfig("RESEND_API_KEY") ?? "";
+        if (!string.IsNullOrWhiteSpace(resendKey))
+        {
+            var (sent, externalId, error) = await SendViaResendAsync(resendKey, toEmail, fromEmail, fromName, subject, htmlBody);
+            if (sent)
+            {
+                await LogEmailAsync(toEmail, subject, category, "resend", true, null, externalId, relatedEntityType, relatedEntityId);
+                return true;
+            }
+
+            await LogEmailAsync(toEmail, subject, category, "resend", false, error, null, relatedEntityType, relatedEntityId);
+            _logger.LogWarning("Resend API failed, falling back to SMTP if configured.");
+        }
+
+        // ── Priority 2: SMTP (traditional, may be blocked by cloud providers) ──
+        var smtpHost = GetConfig("SMTP_HOST", "Smtp:Host") ?? "";
+        if (!string.IsNullOrWhiteSpace(smtpHost))
+        {
+            var (sent, error) = await SendViaSmtpAsync(smtpHost, toEmail, fromEmail, fromName, subject, htmlBody);
+            if (sent)
+            {
+                await LogEmailAsync(toEmail, subject, category, "smtp", true, null, null, relatedEntityType, relatedEntityId);
+                return true;
+            }
+
+            await LogEmailAsync(toEmail, subject, category, "smtp", false, error, null, relatedEntityType, relatedEntityId);
+        }
+
+        _logger.LogWarning("All email providers failed. Email not sent to {To}.", MaskEmail(toEmail));
+        return false;
+    }
+
+    /// <summary>
+    /// Persists an email log entry to the database.
+    /// Uses a separate scope to avoid DbContext concurrency issues from BackgroundServices.
+    /// </summary>
+    private async Task LogEmailAsync(
+        string toEmail, string subject, string category,
+        string? provider, bool isSent, string? errorMessage,
+        string? externalId, string? relatedEntityType, Guid? relatedEntityId)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            db.EmailLogs.Add(new EmailLog
+            {
+                ToEmail = toEmail,
+                Subject = subject,
+                Category = category,
+                Provider = provider,
+                IsSent = isSent,
+                ErrorMessage = errorMessage?.Length > 500 ? errorMessage[..500] : errorMessage,
+                ExternalId = externalId,
+                RelatedEntityType = relatedEntityType,
+                RelatedEntityId = relatedEntityId,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to log email to EmailLogs table.");
+        }
     }
 
     /// <summary>
@@ -71,36 +220,20 @@ public class EmailService : IEmailService
         return null;
     }
 
-    public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string resetToken, string resetUrl)
+    /// <summary>Masks email address for safe logging (e.g., "a****n@gmail.com").</summary>
+    private static string MaskEmail(string email)
     {
-        var appUrl = GetConfig("APP_PUBLIC_URL", "App:PublicUrl") ?? "http://localhost:3000";
-        var fullResetUrl = $"{appUrl.TrimEnd('/')}/{resetUrl.TrimStart('/')}?token={Uri.EscapeDataString(resetToken)}";
+        if (string.IsNullOrEmpty(email) || !email.Contains('@'))
+            return "***";
 
-        var fromEmail = GetConfig("SMTP_FROM_EMAIL", "Smtp:FromEmail") ?? "onboarding@resend.dev";
-        var fromName = GetConfig("SMTP_FROM_NAME", "Smtp:FromName") ?? "مركز د. عقلان الكامل";
-        var subject = "استعادة كلمة المرور — مركز د. عقلان الكامل";
-        var htmlBody = BuildResetEmailHtml(fullResetUrl);
+        var parts = email.Split('@');
+        var local = parts[0];
+        var domain = parts[1];
 
-        // ── Priority 1: Resend API (HTTP-based, works from any cloud server) ──
-        var resendKey = GetConfig("RESEND_API_KEY") ?? "";
-        if (!string.IsNullOrWhiteSpace(resendKey))
-        {
-            var sent = await SendViaResendAsync(resendKey, toEmail, fromEmail, fromName, subject, htmlBody);
-            if (sent) return true;
+        if (local.Length <= 2)
+            return $"**@{domain}";
 
-            _logger.LogWarning("Resend API failed, falling back to SMTP if configured.");
-        }
-
-        // ── Priority 2: SMTP (traditional, may be blocked by cloud providers) ──
-        var smtpHost = GetConfig("SMTP_HOST", "Smtp:Host") ?? "";
-        if (!string.IsNullOrWhiteSpace(smtpHost))
-        {
-            var sent = await SendViaSmtpAsync(smtpHost, toEmail, fromEmail, fromName, subject, htmlBody);
-            if (sent) return true;
-        }
-
-        _logger.LogWarning("All email providers failed. Password reset email not sent.");
-        return false;
+        return $"{local[0]}{new string('*', local.Length - 2)}{local[^1]}@{domain}";
     }
 
     /// <summary>
@@ -108,12 +241,13 @@ public class EmailService : IEmailService
     /// because it uses HTTPS instead of SMTP, which avoids port blocking and IP reputation issues.
     /// Free tier: 100 emails/day, 1 custom domain. Sign up at https://resend.com
     /// </summary>
-    private async Task<bool> SendViaResendAsync(string apiKey, string toEmail, string fromEmail, string fromName, string subject, string htmlBody)
+    private async Task<(bool success, string? externalId, string? error)> SendViaResendAsync(
+        string apiKey, string toEmail, string fromEmail, string fromName, string subject, string htmlBody)
     {
         try
         {
             var fromField = $"{fromName} <{fromEmail}>";
-            _logger.LogInformation("Attempting to send password-reset email via Resend API.");
+            _logger.LogInformation("Attempting to send email via Resend API to {To}.", MaskEmail(toEmail));
 
             var payload = new
             {
@@ -136,20 +270,29 @@ public class EmailService : IEmailService
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("Password reset email sent successfully via Resend API.");
-                return true;
+                var responseBody = await response.Content.ReadAsStringAsync();
+                string? emailId = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(responseBody);
+                    emailId = doc.RootElement.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                }
+                catch { /* non-critical */ }
+
+                _logger.LogInformation("Email sent successfully via Resend API. ExternalId={ExternalId}.", emailId ?? "N/A");
+                return (true, emailId, null);
             }
 
-            var responseBody = await response.Content.ReadAsStringAsync();
+            var errorBody = await response.Content.ReadAsStringAsync();
             _logger.LogWarning(
                 "Resend API returned {StatusCode}: {Body}. Email not sent.",
-                (int)response.StatusCode, responseBody);
-            return false;
+                (int)response.StatusCode, errorBody);
+            return (false, null, $"HTTP {(int)response.StatusCode}: {errorBody}");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Resend API exception while sending password-reset email.");
-            return false;
+            _logger.LogWarning(ex, "Resend API exception while sending email.");
+            return (false, null, ex.Message);
         }
     }
 
@@ -157,7 +300,8 @@ public class EmailService : IEmailService
     /// Sends email via traditional SMTP. May fail from cloud servers (Railway, AWS, etc.)
     /// because Gmail and other providers often block SMTP connections from cloud IP ranges.
     /// </summary>
-    private async Task<bool> SendViaSmtpAsync(string host, string toEmail, string fromEmail, string fromName, string subject, string htmlBody)
+    private async Task<(bool success, string? error)> SendViaSmtpAsync(
+        string host, string toEmail, string fromEmail, string fromName, string subject, string htmlBody)
     {
         try
         {
@@ -183,13 +327,13 @@ public class EmailService : IEmailService
             mailMessage.To.Add(toEmail);
 
             await client.SendMailAsync(mailMessage);
-            _logger.LogInformation("Password reset email sent successfully via SMTP.");
-            return true;
+            _logger.LogInformation("Email sent successfully via SMTP.");
+            return (true, null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "SMTP failed. This is common from cloud servers — use Resend API instead.");
-            return false;
+            return (false, ex.Message);
         }
     }
 
@@ -228,6 +372,63 @@ public class EmailService : IEmailService
             <div class='warning'>
                 &#x26A0;&#xFE0F; هذا الرابط صالح لمدة 30 دقيقة فقط. إذا لم تطلبوا استعادة كلمة المرور، يمكنكم تجاهل هذه الرسالة بأمان.
             </div>
+        </div>
+        <div class='footer'>
+            <p>&#x00A9; {DateTime.UtcNow.Year} مركز د. عقلان الكامل لطب وتقويم الأسنان</p>
+            <p>تعز، اليمن — شارع التحرير الأعلى</p>
+        </div>
+    </div>
+</body>
+</html>";
+    }
+
+    /// <summary>
+    /// Builds an appointment reminder email HTML body.
+    /// </summary>
+    public static string BuildAppointmentReminderHtml(
+        string patientName, string doctorName, string appointmentDate,
+        string appointmentTime, string? clinicService, string? notes)
+    {
+        var serviceLine = !string.IsNullOrWhiteSpace(clinicService)
+            ? $"<p><strong>الخدمة:</strong> {clinicService}</p>"
+            : "";
+        var notesLine = !string.IsNullOrWhiteSpace(notes)
+            ? $"<p><strong>ملاحظات:</strong> {notes}</p>"
+            : "";
+
+        return $@"
+<!DOCTYPE html>
+<html dir='rtl' lang='ar'>
+<head>
+    <meta charset='UTF-8'>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; background-color: #f5f5f5; margin: 0; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 0 auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+        .header {{ background: linear-gradient(135deg, #0E7490, #059669); padding: 30px; text-align: center; color: white; }}
+        .header h1 {{ margin: 0; font-size: 24px; }}
+        .content {{ padding: 30px; }}
+        .content p {{ font-size: 16px; line-height: 1.8; color: #333; }}
+        .info-box {{ background: #F0FDFA; border: 1px solid #99F6E4; border-radius: 8px; padding: 20px; margin: 15px 0; }}
+        .info-box p {{ margin: 5px 0; }}
+        .footer {{ background: #f9f9f9; padding: 20px; text-align: center; color: #888; font-size: 13px; border-top: 1px solid #eee; }}
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            <h1>&#x1F9B7; تذكير بموعد — مركز د. عقلان الكامل</h1>
+        </div>
+        <div class='content'>
+            <p>السلام عليكم {patientName}،</p>
+            <p>نود تذكيركم بموعدكم القادم في مركز د. عقلان الكامل لطب وتقويم الأسنان.</p>
+            <div class='info-box'>
+                <p><strong>الطبيب:</strong> {doctorName}</p>
+                <p><strong>التاريخ:</strong> {appointmentDate}</p>
+                <p><strong>الوقت:</strong> {appointmentTime}</p>
+                {serviceLine}
+                {notesLine}
+            </div>
+            <p>يرجى الحضور قبل الموعد بـ 10 دقائق. في حال الرغبة بإلغاء أو تغيير الموعد، يرجى التواصل مع المركز.</p>
         </div>
         <div class='footer'>
             <p>&#x00A9; {DateTime.UtcNow.Year} مركز د. عقلان الكامل لطب وتقويم الأسنان</p>

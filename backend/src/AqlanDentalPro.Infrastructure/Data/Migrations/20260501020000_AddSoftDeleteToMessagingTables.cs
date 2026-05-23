@@ -5,6 +5,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// <summary>
 /// إضافة أعمدة الحذف الناعم (DeletedAt, DeletedBy) لجداول المراسلة
 /// Migration 20260501020000
+/// Fixed: converted from non-standard $soft_delete_{tableName}$ dollar-quoting to standard $$.
 /// </summary>
 public partial class AddSoftDeleteToMessagingTables : Migration
 {
@@ -25,28 +26,53 @@ public partial class AddSoftDeleteToMessagingTables : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropColumn(name: "DeletedAt", table: "MessageReads");
-        migrationBuilder.DropColumn(name: "DeletedBy", table: "MessageReads");
-        migrationBuilder.DropColumn(name: "DeletedAt", table: "Messages");
-        migrationBuilder.DropColumn(name: "DeletedBy", table: "Messages");
-        migrationBuilder.DropColumn(name: "DeletedAt", table: "ConversationParticipants");
-        migrationBuilder.DropColumn(name: "DeletedBy", table: "ConversationParticipants");
-        migrationBuilder.DropColumn(name: "DeletedAt", table: "Conversations");
-        migrationBuilder.DropColumn(name: "DeletedBy", table: "Conversations");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'MessageReads' AND column_name = 'DeletedBy') THEN
+        ALTER TABLE ""MessageReads"" DROP COLUMN ""DeletedBy"";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'MessageReads' AND column_name = 'DeletedAt') THEN
+        ALTER TABLE ""MessageReads"" DROP COLUMN ""DeletedAt"";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedBy') THEN
+        ALTER TABLE ""Messages"" DROP COLUMN ""DeletedBy"";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Messages' AND column_name = 'DeletedAt') THEN
+        ALTER TABLE ""Messages"" DROP COLUMN ""DeletedAt"";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'DeletedBy') THEN
+        ALTER TABLE ""ConversationParticipants"" DROP COLUMN ""DeletedBy"";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ConversationParticipants' AND column_name = 'DeletedAt') THEN
+        ALTER TABLE ""ConversationParticipants"" DROP COLUMN ""DeletedAt"";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'DeletedBy') THEN
+        ALTER TABLE ""Conversations"" DROP COLUMN ""DeletedBy"";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'DeletedAt') THEN
+        ALTER TABLE ""Conversations"" DROP COLUMN ""DeletedAt"";
+    END IF;
+END $$;
+");
     }
 
+    /// <summary>
+    /// Adds DeletedAt and DeletedBy columns to a table using idempotent SQL.
+    /// Uses standard $$ dollar-quoting for PostgreSQL DO blocks.
+    /// </summary>
     private static void AddSoftDeleteColumns(MigrationBuilder migrationBuilder, string tableName)
     {
-        // Use raw SQL with IF NOT EXISTS to be idempotent
         migrationBuilder.Sql($@"
-            DO $soft_delete_{tableName}$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{tableName}' AND column_name = 'DeletedAt') THEN
-                    ALTER TABLE ""{tableName}"" ADD COLUMN ""DeletedAt"" timestamp with time zone NULL;
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{tableName}' AND column_name = 'DeletedBy') THEN
-                    ALTER TABLE ""{tableName}"" ADD COLUMN ""DeletedBy"" uuid NULL;
-                END IF;
-            END $soft_delete_{tableName}$;
-        ");
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{tableName}') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{tableName}' AND column_name = 'DeletedAt') THEN
+            ALTER TABLE ""{tableName}"" ADD COLUMN ""DeletedAt"" timestamp with time zone NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{tableName}' AND column_name = 'DeletedBy') THEN
+            ALTER TABLE ""{tableName}"" ADD COLUMN ""DeletedBy"" uuid NULL;
+        END IF;
+    END IF;
+END $$;
+");
     }
 }

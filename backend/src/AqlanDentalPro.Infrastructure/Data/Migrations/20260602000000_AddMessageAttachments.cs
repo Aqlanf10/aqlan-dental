@@ -4,47 +4,69 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
 /// <summary>
 /// Adds MessageAttachments table for multi-attachment support on messages.
+/// Converted to idempotent raw SQL with IF NOT EXISTS guards.
 /// Backward compatible: existing single-attachment fields on Message are retained.
 /// </summary>
 public partial class AddMessageAttachments : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.CreateTable(
-            name: "MessageAttachments",
-            columns: table => new
-            {
-                Id = table.Column<Guid>(type: "uuid", nullable: false),
-                MessageId = table.Column<Guid>(type: "uuid", nullable: false),
-                FileUrl = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
-                FileName = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                FileSize = table.Column<long>(type: "bigint", nullable: false),
-                MimeType = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                IsActive = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
-                CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
-                UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
-                DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
-            },
-            constraints: table =>
-            {
-                table.PrimaryKey("PK_MessageAttachments", x => x.Id);
-                table.ForeignKey(
-                    name: "FK_MessageAttachments_Messages_MessageId",
-                    column: x => x.MessageId,
-                    principalTable: "Messages",
-                    principalColumn: "Id",
-                    onDelete: ReferentialAction.Cascade);
-            });
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    -- Create MessageAttachments table if not present
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'MessageAttachments'
+    ) THEN
+        CREATE TABLE ""MessageAttachments"" (
+            ""Id""        uuid                     NOT NULL DEFAULT gen_random_uuid(),
+            ""MessageId"" uuid                     NOT NULL,
+            ""FileUrl""   character varying(1000)  NOT NULL,
+            ""FileName""  character varying(255)   NOT NULL,
+            ""FileSize""  bigint                   NOT NULL DEFAULT 0,
+            ""MimeType""  character varying(100)   NOT NULL,
+            ""IsActive""  boolean                  NOT NULL DEFAULT true,
+            ""CreatedAt"" timestamp with time zone NOT NULL DEFAULT now(),
+            ""UpdatedAt"" timestamp with time zone NOT NULL DEFAULT now(),
+            ""DeletedAt"" timestamp with time zone NULL,
+            ""DeletedBy"" uuid                     NULL,
+            CONSTRAINT ""PK_MessageAttachments"" PRIMARY KEY (""Id"")
+        );
+    END IF;
 
-        migrationBuilder.CreateIndex(
-            name: "IX_MessageAttachments_MessageId",
-            table: "MessageAttachments",
-            column: "MessageId");
+    -- FK: MessageAttachments → Messages
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_MessageAttachments_Messages_MessageId'
+    ) THEN
+        IF EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'Messages'
+        ) THEN
+            ALTER TABLE ""MessageAttachments""
+                ADD CONSTRAINT ""FK_MessageAttachments_Messages_MessageId""
+                FOREIGN KEY (""MessageId"")
+                REFERENCES ""Messages""(""Id"")
+                ON DELETE CASCADE;
+        END IF;
+    END IF;
+
+    -- Index on MessageId
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename  = 'MessageAttachments'
+          AND indexname  = 'IX_MessageAttachments_MessageId'
+    ) THEN
+        CREATE INDEX ""IX_MessageAttachments_MessageId""
+            ON ""MessageAttachments"" (""MessageId"");
+    END IF;
+END $$;
+");
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropTable(name: "MessageAttachments");
+        migrationBuilder.Sql(@"DROP TABLE IF EXISTS ""MessageAttachments"";");
     }
 }

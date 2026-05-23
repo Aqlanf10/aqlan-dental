@@ -1,61 +1,66 @@
-﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
-#nullable disable
+namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
-namespace AqlanDentalPro.Infrastructure.Data.Migrations
+/// <summary>
+/// Adds ConversationType and PatientId columns to Conversations.
+/// NOTE: This overlaps with migration 20260501010000_AddPatientConversationSupport.
+/// Converted to idempotent raw SQL to avoid "column already exists" errors.
+/// </summary>
+public partial class AddConversationPatientAndType : Migration
 {
-    /// <inheritdoc />
-    public partial class AddConversationPatientAndType : Migration
+    protected override void Up(MigrationBuilder migrationBuilder)
     {
-        /// <inheritdoc />
-        protected override void Up(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.AddColumn<string>(
-                name: "ConversationType",
-                table: "Conversations",
-                type: "text",
-                nullable: false,
-                defaultValue: "");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Conversations') THEN
+        -- Add ConversationType column if not exists
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
+            ALTER TABLE ""Conversations"" ADD COLUMN ""ConversationType"" text NOT NULL DEFAULT '';
+        END IF;
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "PatientId",
-                table: "Conversations",
-                type: "uuid",
-                nullable: true);
+        -- Add PatientId column if not exists
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'PatientId') THEN
+            ALTER TABLE ""Conversations"" ADD COLUMN ""PatientId"" uuid NULL;
+        END IF;
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Conversations_PatientId",
-                table: "Conversations",
-                column: "PatientId");
+        -- Index on PatientId
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'Conversations' AND indexname = 'IX_Conversations_PatientId') THEN
+            CREATE INDEX ""IX_Conversations_PatientId"" ON ""Conversations"" (""PatientId"");
+        END IF;
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_Conversations_Patients_PatientId",
-                table: "Conversations",
-                column: "PatientId",
-                principalTable: "Patients",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
-        }
+        -- FK: Conversations → Patients
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId') THEN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Patients') THEN
+                ALTER TABLE ""Conversations""
+                    ADD CONSTRAINT ""FK_Conversations_Patients_PatientId""
+                    FOREIGN KEY (""PatientId"") REFERENCES ""Patients""(""Id"") ON DELETE SET NULL;
+            END IF;
+        END IF;
+    END IF;
+END $$;
+");
+    }
 
-        /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropForeignKey(
-                name: "FK_Conversations_Patients_PatientId",
-                table: "Conversations");
-
-            migrationBuilder.DropIndex(
-                name: "IX_Conversations_PatientId",
-                table: "Conversations");
-
-            migrationBuilder.DropColumn(
-                name: "ConversationType",
-                table: "Conversations");
-
-            migrationBuilder.DropColumn(
-                name: "PatientId",
-                table: "Conversations");
-        }
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Conversations') THEN
+        IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Conversations_Patients_PatientId') THEN
+            ALTER TABLE ""Conversations"" DROP CONSTRAINT ""FK_Conversations_Patients_PatientId"";
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'Conversations' AND indexname = 'IX_Conversations_PatientId') THEN
+            DROP INDEX ""IX_Conversations_PatientId"";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'PatientId') THEN
+            ALTER TABLE ""Conversations"" DROP COLUMN ""PatientId"";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Conversations' AND column_name = 'ConversationType') THEN
+            ALTER TABLE ""Conversations"" DROP COLUMN ""ConversationType"";
+        END IF;
+    END IF;
+END $$;
+");
     }
 }

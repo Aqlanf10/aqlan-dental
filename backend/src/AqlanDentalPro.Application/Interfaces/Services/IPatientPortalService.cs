@@ -27,4 +27,5 @@ public interface IPatientPortalService
     Task<Guid?> GetPatientIdByPhoneAsync(string phoneNumber);
     Task<PatientAccountInfoDto?> GetPatientInfoForAccountCreationAsync(Guid patientId);
     Task SetPatientEmailAsync(Guid patientId, string? email);
+    Task<string?> GetPatientEmailAsync(Guid patientId);
 }

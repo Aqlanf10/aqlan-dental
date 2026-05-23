@@ -3,6 +3,7 @@ export interface PatientListItem {
   patientNumber: string;
   fullName: string;
   phone?: string;
+  email?: string;
   gender?: string;
   age?: number;
   primaryDoctorName?: string;
@@ -43,6 +44,7 @@ export interface PatientProfile {
   gender?: string;
   age?: number;
   phone?: string;
+  email?: string;
   whatsApp?: string;
   address?: string;
   occupation?: string;
@@ -69,6 +71,7 @@ export interface CreatePatientRequest {
   dateOfBirth?: string;
   gender?: string;
   phone?: string;
+  email?: string;
   whatsApp?: string;
   address?: string;
   occupation?: string;

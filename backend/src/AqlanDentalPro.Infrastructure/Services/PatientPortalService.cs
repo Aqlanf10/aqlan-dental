@@ -728,6 +728,12 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
         }
     }
 
+    public async Task<string?> GetPatientEmailAsync(Guid patientId)
+    {
+        var account = await db.PatientAccounts.FirstOrDefaultAsync(a => a.PatientId == patientId);
+        return await GetLinkedUserEmailAsync(account);
+    }
+
     // ── Private Helpers ──────────────────────────────────────────────────────
 
     private static PatientAppointmentDto MapAppointment(Appointment a, DateOnly? now = null)

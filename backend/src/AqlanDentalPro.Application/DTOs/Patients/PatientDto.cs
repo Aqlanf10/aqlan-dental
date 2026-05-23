@@ -6,6 +6,7 @@ public class PatientListDto
     public string PatientNumber { get; set; } = string.Empty;
     public string FullName { get; set; } = string.Empty;
     public string? Phone { get; set; }
+    public string? Email { get; set; }
     public string? Gender { get; set; }
     public int? Age { get; set; }
     public string? PrimaryDoctorName { get; set; }
@@ -26,6 +27,7 @@ public class PatientProfileDto
     public string? Gender { get; set; }
     public int? Age { get; set; }
     public string? Phone { get; set; }
+    public string? Email { get; set; }
     public string? WhatsApp { get; set; }
     public string? Address { get; set; }
     public string? Occupation { get; set; }

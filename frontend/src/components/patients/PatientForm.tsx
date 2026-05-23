@@ -22,6 +22,11 @@ const schema = z.object({
     .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
       message: "رقم الهاتف غير صحيح",
     }),
+  email:       z.string()
+    .optional()
+    .refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), {
+      message: "البريد الإلكتروني غير صحيح",
+    }),
   whatsApp:    z.string()
     .optional()
     .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
@@ -181,6 +186,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         firstName: data.firstName, middleName: data.middleName, lastName: data.lastName,
         dateOfBirth: data.dateOfBirth, gender: data.gender,
         phone: data.phone?.trim() || undefined,
+        email: data.email?.trim() || undefined,
         whatsApp: data.whatsApp?.trim() || undefined,
         address: data.address, occupation: data.occupation,
         referralSource: data.referralSource,
@@ -337,6 +343,9 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         </Field>
         <Field label="واتساب">
           <input {...register("whatsApp")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" onChange={(e) => { register("whatsApp").onChange(e); handleFieldChange(); }} />
+        </Field>
+        <Field label="البريد الإلكتروني" error={errors.email?.message}>
+          <input {...register("email")} type="email" className={inputCls(errors.email?.message)} placeholder="example@email.com" dir="ltr" />
         </Field>
         <Field label="العنوان">
           <input {...register("address")} className={inputCls()} placeholder="المدينة، الحي..." />

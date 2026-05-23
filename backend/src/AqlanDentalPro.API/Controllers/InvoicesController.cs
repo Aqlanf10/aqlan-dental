@@ -84,7 +84,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
                 var doctorIds = req.LineItems.Where(li => li.DoctorId.HasValue).Select(li => li.DoctorId!.Value).Distinct().ToList();
                 var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
                 var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
-                if (invalidDoctorId != Guid.Empty)
+                if (invalidDoctorId != default)
                     return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
 
                 var sortOrder = 0;
@@ -437,7 +437,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             {
                 var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
                 var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
-                if (invalidDoctorId != Guid.Empty)
+                if (invalidDoctorId != default)
                     return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
             }
 

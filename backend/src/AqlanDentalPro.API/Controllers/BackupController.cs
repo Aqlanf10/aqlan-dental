@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -10,8 +12,14 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/backup")]
 [Authorize(Policy = "AdminOnly")]
-public class BackupController(AppDbContext db) : ControllerBase
+public class BackupController(AppDbContext db, IWebHostEnvironment env) : ControllerBase
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     /// <summary>
     /// Get backup history
     /// </summary>
@@ -82,32 +90,44 @@ public class BackupController(AppDbContext db) : ControllerBase
         var photoCount = await db.ClinicalPhotos.CountAsync();
         var radiographCount = await db.Radiographs.CountAsync();
 
+        // Count total records in key tables
+        var patientCount = await db.Patients.CountAsync();
+        var appointmentCount = await db.Appointments.CountAsync();
+        var visitCount = await db.Visits.CountAsync();
+        var paymentCount = await db.Payments.CountAsync();
+
         return Ok(new
         {
-            LastBackup = lastBackup != null ? new
+            lastBackup = lastBackup != null ? new
             {
                 lastBackup.StartedAt,
                 lastBackup.CompletedAt,
-                Type = lastBackup.Type.ToString(),
-                SizeMB = lastBackup.SizeBytes.HasValue
+                type = lastBackup.Type.ToString(),
+                sizeMB = lastBackup.SizeBytes.HasValue
                     ? Math.Round(lastBackup.SizeBytes.Value / 1048576.0, 2)
                     : (double?)null,
             } : null,
-            TotalBackups = totalBackups,
-            FailedBackups = failedBackups,
-            TotalSizeMB = Math.Round(totalSize / 1048576.0, 2),
-            FilesCount = new
+            totalBackups,
+            failedBackups,
+            totalSizeMB = Math.Round(totalSize / 1048576.0, 2),
+            filesCount = new
             {
-                Photos = photoCount,
-                Radiographs = radiographCount,
-                Total = photoCount + radiographCount,
+                photos = photoCount,
+                radiographs = radiographCount,
+                total = photoCount + radiographCount,
+            },
+            recordCounts = new
+            {
+                patients = patientCount,
+                appointments = appointmentCount,
+                visits = visitCount,
+                payments = paymentCount,
             },
         });
     }
 
     /// <summary>
-    /// Trigger manual database backup
-    /// Creates a SQL export using pg_dump-style approach via raw SQL
+    /// Trigger manual database backup — exports all data as JSON and saves to file
     /// </summary>
     [HttpPost("database")]
     public async Task<IActionResult> BackupDatabase()
@@ -128,57 +148,41 @@ public class BackupController(AppDbContext db) : ControllerBase
 
         try
         {
-            // Get approximate database size using raw SQL
-            long? dbSize = null;
-            try
-            {
-                var connection = db.Database.GetDbConnection();
-                await connection.OpenAsync();
-                using var cmd = connection.CreateCommand();
-                cmd.CommandText = "SELECT pg_database_size(current_database())";
-                var result = await cmd.ExecuteScalarAsync();
-                if (result != null && result != DBNull.Value)
-                    dbSize = Convert.ToInt64(result);
-                await connection.CloseAsync();
-            }
-            catch
-            {
-                // If pg_database_size is not available, continue without size
-            }
+            var backupData = await ExportAllDataAsync();
+            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(backupData, JsonOptions);
+            var sizeBytes = jsonBytes.Length;
 
-            // Get row counts for major tables
-            var patientCount = await db.Patients.CountAsync();
-            var appointmentCount = await db.Appointments.CountAsync();
-            var paymentCount = await db.Payments.CountAsync();
+            // Save backup file to disk
+            var backupDir = Path.Combine(env.ContentRootPath, "backups");
+            Directory.CreateDirectory(backupDir);
+            var fileName = $"backup_db_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json";
+            var filePath = Path.Combine(backupDir, fileName);
+            await System.IO.File.WriteAllBytesAsync(filePath, jsonBytes);
 
             record.Status = BackupStatus.Completed;
             record.CompletedAt = DateTime.UtcNow;
-            record.SizeBytes = dbSize;
-            record.FilePath = $"backup_db_{DateTime.UtcNow:yyyyMMdd_HHmmss}.sql";
+            record.SizeBytes = sizeBytes;
+            record.FilePath = fileName;
 
             await db.SaveChangesAsync();
 
             return Ok(new
             {
                 record.Id,
-                Status = record.Status.ToString(),
+                status = record.Status.ToString(),
                 record.StartedAt,
                 record.CompletedAt,
-                SizeMB = record.SizeBytes.HasValue ? Math.Round(record.SizeBytes.Value / 1048576.0, 2) : 0,
-                Statistics = new
-                {
-                    Patients = patientCount,
-                    Appointments = appointmentCount,
-                    Payments = paymentCount,
-                },
-                message = "تم فحص قاعدة البيانات بنجاح. يُنصح بتفعيل النسخ الاحتياطي التلقائي من Railway.",
+                sizeMB = Math.Round(sizeBytes / 1048576.0, 2),
+                fileName,
+                recordCounts = backupData.TryGetValue("counts", out var c) ? c : null,
+                message = "تم إنشاء النسخة الاحتياطية بنجاح",
             });
         }
         catch (Exception ex)
         {
             record.Status = BackupStatus.Failed;
             record.CompletedAt = DateTime.UtcNow;
-            record.ErrorMessage = ex.Message;
+            record.ErrorMessage = ex.Message?.Length > 500 ? ex.Message[..500] : ex.Message;
             await db.SaveChangesAsync();
 
             return StatusCode(500, new { message = "فشل النسخ الاحتياطي", error = ex.Message });
@@ -186,53 +190,113 @@ public class BackupController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Get data export (JSON) for backup purposes
+    /// Download a backup file by ID
+    /// </summary>
+    [HttpGet("download/{id:guid}")]
+    public async Task<IActionResult> DownloadBackup(Guid id)
+    {
+        var record = await db.BackupRecords.FindAsync(id);
+        if (record is null)
+            return NotFound(new { message = "سجل النسخ الاحتياطي غير موجود" });
+
+        if (record.Status != BackupStatus.Completed || string.IsNullOrWhiteSpace(record.FilePath))
+            return BadRequest(new { message = "النسخة الاحتياطية غير متاحة للتحميل" });
+
+        var backupDir = Path.Combine(env.ContentRootPath, "backups");
+        var filePath = Path.Combine(backupDir, record.FilePath);
+
+        if (!System.IO.File.Exists(filePath))
+            return NotFound(new { message = "ملف النسخة الاحتياطية غير موجود على الخادم" });
+
+        var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+        var contentType = "application/json";
+        var downloadName = record.FilePath;
+
+        return File(fileBytes, contentType, downloadName);
+    }
+
+    /// <summary>
+    /// Validate a backup file for restore (dry-run only — no actual restore for safety)
+    /// </summary>
+    [HttpPost("validate/{id:guid}")]
+    public async Task<IActionResult> ValidateBackup(Guid id)
+    {
+        var record = await db.BackupRecords.FindAsync(id);
+        if (record is null)
+            return NotFound(new { message = "سجل النسخة الاحتياطي غير موجود" });
+
+        if (record.Status != BackupStatus.Completed || string.IsNullOrWhiteSpace(record.FilePath))
+            return BadRequest(new { message = "النسخة الاحتياطية غير متاحة" });
+
+        var backupDir = Path.Combine(env.ContentRootPath, "backups");
+        var filePath = Path.Combine(backupDir, record.FilePath);
+
+        if (!System.IO.File.Exists(filePath))
+            return NotFound(new { message = "ملف النسخة الاحتياطية غير موجود على الخادم" });
+
+        try
+        {
+            var jsonBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+            using var doc = JsonDocument.Parse(jsonBytes);
+            var root = doc.RootElement;
+
+            var tables = new List<string>();
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Array)
+                {
+                    tables.Add($"{prop.Name}: {prop.Value.GetArrayLength()} records");
+                }
+            }
+
+            return Ok(new
+            {
+                record.Id,
+                record.StartedAt,
+                record.CompletedAt,
+                sizeMB = record.SizeBytes.HasValue ? Math.Round(record.SizeBytes.Value / 1048576.0, 2) : 0,
+                tables,
+                message = "النسخة الاحتياطية صالحة. للاستعادة، تواصل مع مسؤول النظام.",
+            });
+        }
+        catch (JsonException ex)
+        {
+            return BadRequest(new { message = "ملف النسخة الاحتياطية تالف", error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get data export counts for backup purposes
     /// </summary>
     [HttpGet("export")]
     public async Task<IActionResult> ExportData([FromQuery] string? tables)
     {
-        var result = new Dictionary<string, object>();
+        var result = new Dictionary<string, int>();
 
         if (string.IsNullOrWhiteSpace(tables) || tables.Contains("patients"))
-        {
             result["Patients"] = await db.Patients.IgnoreQueryFilters().CountAsync();
-        }
         if (string.IsNullOrWhiteSpace(tables) || tables.Contains("appointments"))
-        {
             result["Appointments"] = await db.Appointments.IgnoreQueryFilters().CountAsync();
-        }
+        if (string.IsNullOrWhiteSpace(tables) || tables.Contains("visits"))
+            result["Visits"] = await db.Visits.IgnoreQueryFilters().CountAsync();
         if (string.IsNullOrWhiteSpace(tables) || tables.Contains("payments"))
-        {
             result["Payments"] = await db.Payments.IgnoreQueryFilters().CountAsync();
-        }
         if (string.IsNullOrWhiteSpace(tables) || tables.Contains("employees"))
-        {
             result["Employees"] = await db.Employees.IgnoreQueryFilters().CountAsync();
-        }
-
-        var exportRecord = new BackupRecord
-        {
-            Type = BackupType.Database,
-            Status = BackupStatus.Completed,
-            StartedAt = DateTime.UtcNow,
-            CompletedAt = DateTime.UtcNow,
-            IsAutomatic = false,
-            FilePath = $"export_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json",
-        };
-
-        db.BackupRecords.Add(exportRecord);
-        await db.SaveChangesAsync();
+        if (string.IsNullOrWhiteSpace(tables) || tables.Contains("contracts"))
+            result["Contracts"] = await db.Contracts.IgnoreQueryFilters().CountAsync();
+        if (string.IsNullOrWhiteSpace(tables) || tables.Contains("invoices"))
+            result["Invoices"] = await db.Invoices.IgnoreQueryFilters().CountAsync();
 
         return Ok(new
         {
-            ExportDate = DateTime.UtcNow,
-            RecordCounts = result,
-            message = "تم إنشاء تقرير التصدير بنجاح",
+            exportDate = DateTime.UtcNow,
+            recordCounts = result,
         });
     }
 
     /// <summary>
-    /// Delete backup record
+    /// Delete backup record and its file
     /// </summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
@@ -241,10 +305,99 @@ public class BackupController(AppDbContext db) : ControllerBase
         if (record is null)
             return NotFound(new { message = "سجل النسخ الاحتياطي غير موجود" });
 
+        // Delete the actual file from disk
+        if (!string.IsNullOrWhiteSpace(record.FilePath))
+        {
+            var backupDir = Path.Combine(env.ContentRootPath, "backups");
+            var filePath = Path.Combine(backupDir, record.FilePath);
+            if (System.IO.File.Exists(filePath))
+            {
+                try { System.IO.File.Delete(filePath); } catch { /* ignore */ }
+            }
+        }
+
         record.IsActive = false;
         record.DeletedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        return Ok(new { message = "تم حذف سجل النسخ الاحتياطي" });
+        return Ok(new { message = "تم حذف سجل النسخ الاحتياطي وملفه" });
+    }
+
+    /// <summary>
+    /// Export all data as a serializable dictionary (uses anonymous types — no dynamic)
+    /// </summary>
+    private async Task<Dictionary<string, object>> ExportAllDataAsync()
+    {
+        var data = new Dictionary<string, object>
+        {
+            ["exportDate"] = DateTime.UtcNow,
+            ["version"] = "1.0",
+        };
+
+        var counts = new Dictionary<string, int>();
+
+        // Export key tables (exclude passwords and sensitive data)
+        var patients = await db.Patients.IgnoreQueryFilters().AsNoTracking()
+            .Select(p => new { p.Id, p.PatientNumber, p.FirstName, p.MiddleName, p.LastName, p.DateOfBirth, p.Gender, p.Phone, p.WhatsApp, p.Email, p.Address, p.PrimaryDoctorId, p.BranchId, p.IsActive })
+            .ToListAsync();
+        data["patients"] = patients;
+        counts["patients"] = patients.Count;
+
+        var appointments = await db.Appointments.IgnoreQueryFilters().AsNoTracking()
+            .Select(a => new { a.Id, a.PatientId, a.DoctorId, a.BranchId, a.AppointmentDate, a.StartTime, a.EndTime, a.DurationMinutes, a.Status, a.AppointmentType, a.Specialty, a.ServiceId })
+            .ToListAsync();
+        data["appointments"] = appointments;
+        counts["appointments"] = appointments.Count;
+
+        var visits = await db.Visits.IgnoreQueryFilters().AsNoTracking()
+            .Select(v => new { v.Id, v.PatientId, v.AppointmentId, v.VisitDate, v.VisitType, v.Specialty, v.DoctorId, v.ChiefComplaint, v.ClinicalNotes, v.TreatmentDone, v.Diagnosis, v.Cost })
+            .ToListAsync();
+        data["visits"] = visits;
+        counts["visits"] = visits.Count;
+
+        var payments = await db.Payments.IgnoreQueryFilters().AsNoTracking()
+            .Select(p => new { p.Id, p.ContractId, p.PatientId, p.Amount, p.PaymentDate, p.PaymentMethod, p.Specialty, p.DoctorId, p.ReceiptNumber })
+            .ToListAsync();
+        data["payments"] = payments;
+        counts["payments"] = payments.Count;
+
+        var contracts = await db.Contracts.IgnoreQueryFilters().AsNoTracking()
+            .Select(c => new { c.Id, c.PatientId, c.Specialty, c.TotalAmount, c.DownPayment, c.InstallmentsCount, c.InstallmentAmount, c.StartDate, c.DiscountAmount, c.Status })
+            .ToListAsync();
+        data["contracts"] = contracts;
+        counts["contracts"] = contracts.Count;
+
+        var invoices = await db.Invoices.IgnoreQueryFilters().AsNoTracking()
+            .Select(i => new { i.Id, i.PatientId, i.InvoiceNumber, i.Status, i.Subtotal, i.DiscountAmount, i.TaxAmount, i.TotalAmount })
+            .ToListAsync();
+        data["invoices"] = invoices;
+        counts["invoices"] = invoices.Count;
+
+        var employees = await db.Employees.IgnoreQueryFilters().AsNoTracking()
+            .Select(e => new { e.Id, e.FullName, e.Position, e.BranchId, e.HireDate, e.BaseSalary, e.IsActive })
+            .ToListAsync();
+        data["employees"] = employees;
+        counts["employees"] = employees.Count;
+
+        var doctors = await db.Doctors.IgnoreQueryFilters().AsNoTracking()
+            .Select(d => new { d.Id, d.Name, d.Specialty, d.LicenseNumber, d.BranchId, d.CompensationType, d.DefaultCommissionPercentage, d.IsActive })
+            .ToListAsync();
+        data["doctors"] = doctors;
+        counts["doctors"] = doctors.Count;
+
+        var branches = await db.Branches.IgnoreQueryFilters().AsNoTracking()
+            .Select(b => new { b.Id, b.Name, b.Address, b.Phone, b.IsMain, b.IsActive })
+            .ToListAsync();
+        data["branches"] = branches;
+        counts["branches"] = branches.Count;
+
+        var clinicServices = await db.ClinicServices.IgnoreQueryFilters().AsNoTracking()
+            .Select(s => new { s.Id, s.Name, s.Category, s.Price, s.BranchId, s.IsActive })
+            .ToListAsync();
+        data["clinicServices"] = clinicServices;
+        counts["clinicServices"] = clinicServices.Count;
+
+        data["counts"] = counts;
+        return data;
     }
 }

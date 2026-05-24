@@ -246,10 +246,29 @@ public class LeaveController(AppDbContext db) : ControllerBase
         if (leave.Status != RequestStatus.Pending && leave.Status != RequestStatus.Approved)
             return BadRequest(new { message = "لا يمكن إلغاء هذا الطلب" });
 
+        var wasApproved = leave.Status == RequestStatus.Approved;
         leave.Status = RequestStatus.Cancelled;
+
+        // Remove auto-created attendance records when cancelling an approved leave
+        if (wasApproved)
+        {
+            var leaveAttendanceRecords = await db.Attendances
+                .Where(a => a.EmployeeId == leave.EmployeeId
+                    && a.Status == AttendanceStatus.Leave
+                    && a.Date >= leave.StartDate
+                    && a.Date <= leave.EndDate)
+                .ToListAsync();
+
+            foreach (var attendance in leaveAttendanceRecords)
+            {
+                attendance.IsActive = false;
+                attendance.DeletedAt = DateTime.UtcNow;
+            }
+        }
+
         await db.SaveChangesAsync();
 
-        return Ok(new { message = "تم إلغاء طلب الإجازة" });
+        return Ok(new { message = wasApproved ? "تم إلغاء الإجازة وحذف سجلات الحضور المرتبطة" : "تم إلغاء طلب الإجازة" });
     }
 
     /// <summary>

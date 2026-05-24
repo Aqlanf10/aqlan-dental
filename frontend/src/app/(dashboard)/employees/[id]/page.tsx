@@ -21,6 +21,11 @@ import {
   FileText,
   Shield,
   UserCog,
+  Clock,
+  CheckCircle,
+  XCircle,
+  CalendarOff,
+  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import api from "@/lib/api";
@@ -59,7 +64,7 @@ function formatDate(dateStr?: string): string {
 
 function formatSalary(salary?: number): string {
   if (salary == null) return "—";
-  return salary.toLocaleString("ar-SA") + " ر.س";
+  return salary.toLocaleString("ar-SA") + " ر.ي";
 }
 
 // ─── Page Component ─────────────────────────────────────────────────────────
@@ -405,6 +410,9 @@ export default function EmployeeDetailsPage() {
         </div>
       )}
 
+      {/* ── HR Tabs ── */}
+      <EmployeeHRTabs employeeId={employee.id} />
+
       {/* ── Confirm Dialog ── */}
       {confirmDialog?.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -492,6 +500,250 @@ function InfoRow({
       >
         {value ?? "—"}
       </span>
+    </div>
+  );
+}
+
+// ─── Employee HR Tabs ─────────────────────────────────────────────────────
+
+const ATTENDANCE_STATUS: Record<string, { label: string; color: string }> = {
+  Present: { label: "حاضر", color: "bg-emerald-100 text-emerald-700" },
+  Absent: { label: "غائب", color: "bg-red-100 text-red-700" },
+  Late: { label: "متأخر", color: "bg-amber-100 text-amber-700" },
+  HalfDay: { label: "نصف يوم", color: "bg-sky-100 text-sky-700" },
+  Leave: { label: "إجازة", color: "bg-purple-100 text-purple-700" },
+  Holiday: { label: "عطلة", color: "bg-gray-100 text-gray-700" },
+};
+
+const REQUEST_STATUS: Record<string, { label: string; color: string }> = {
+  Pending: { label: "قيد المراجعة", color: "bg-amber-100 text-amber-700" },
+  Approved: { label: "مقبول", color: "bg-emerald-100 text-emerald-700" },
+  Rejected: { label: "مرفوض", color: "bg-red-100 text-red-700" },
+  Cancelled: { label: "ملغي", color: "bg-gray-200 text-gray-500" },
+};
+
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  Annual: "سنوية", Sick: "مرضية", Emergency: "طارئة", Unpaid: "بدون راتب", Maternity: "أمومة", Hajj: "حج",
+};
+
+function EmployeeHRTabs({ employeeId }: { employeeId: string }) {
+  const [activeTab, setActiveTab] = useState<"attendance" | "salaries" | "advances" | "leaves" | "documents">("attendance");
+  const [data, setData] = useState<unknown[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const endpoints: Record<string, string> = {
+        attendance: `/api/attendance?employeeId=${employeeId}&pageSize=20`,
+        salaries: `/api/salaries?employeeId=${employeeId}&pageSize=20`,
+        advances: `/api/advances?employeeId=${employeeId}&pageSize=20`,
+        leaves: `/api/leaves?employeeId=${employeeId}&pageSize=20`,
+        documents: `/api/employee-documents?employeeId=${employeeId}&pageSize=20`,
+      };
+      const { data: res } = await api.get(endpoints[activeTab]);
+      setData(res?.data || Array.isArray(res) ? (res?.data || res) : []);
+    } catch {
+      setData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [employeeId, activeTab]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const tabs = [
+    { key: "attendance" as const, label: "الحضور", icon: <Clock className="w-4 h-4" /> },
+    { key: "salaries" as const, label: "الرواتب", icon: <Banknote className="w-4 h-4" /> },
+    { key: "advances" as const, label: "السلف", icon: <CreditCard className="w-4 h-4" /> },
+    { key: "leaves" as const, label: "الإجازات", icon: <CalendarOff className="w-4 h-4" /> },
+    { key: "documents" as const, label: "المستندات", icon: <FileText className="w-4 h-4" /> },
+  ];
+
+  const records = data as Record<string, unknown>[];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* Tab Headers */}
+      <div className="flex items-center border-b border-gray-100 overflow-x-auto">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              "flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition",
+              activeTab === tab.key
+                ? "text-[#f5922e] border-[#f5922e] bg-[#f5922e]/5"
+                : "text-gray-500 border-transparent hover:text-gray-700 hover:bg-gray-50"
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <div className="p-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm">جارٍ التحميل...</span>
+          </div>
+        ) : records.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">لا يوجد بيانات</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            {activeTab === "attendance" && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">التاريخ</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الحضور</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الانصراف</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {records.map((rec, i) => {
+                    const cfg = ATTENDANCE_STATUS[String(rec.status)] ?? { label: String(rec.status), color: "bg-gray-100 text-gray-700" };
+                    return (
+                      <tr key={i} className="hover:bg-gray-50/50">
+                        <td className="px-3 py-2 text-gray-600 text-xs">{String(rec.date ?? "—")}</td>
+                        <td className="px-3 py-2 font-mono text-xs" dir="ltr">{String(rec.checkIn ?? "—")}</td>
+                        <td className="px-3 py-2 font-mono text-xs" dir="ltr">{String(rec.checkOut ?? "—")}</td>
+                        <td className="px-3 py-2">
+                          <span className={cn("inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full", cfg.color)}>{cfg.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === "salaries" && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الشهر</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الأساسي</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الخصومات</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">السلف</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">البدلات</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الصافي</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {records.map((rec, i) => (
+                    <tr key={i} className="hover:bg-gray-50/50">
+                      <td className="px-3 py-2 text-gray-600 text-xs">{rec.year}/{rec.month}</td>
+                      <td className="px-3 py-2 text-xs" dir="ltr">{Number(rec.baseSalary).toLocaleString("ar-SA")}</td>
+                      <td className="px-3 py-2 text-xs text-red-600" dir="ltr">{Number(rec.deductions).toLocaleString("ar-SA")}</td>
+                      <td className="px-3 py-2 text-xs text-amber-600" dir="ltr">{Number(rec.advances).toLocaleString("ar-SA")}</td>
+                      <td className="px-3 py-2 text-xs text-emerald-600" dir="ltr">{Number(rec.bonuses).toLocaleString("ar-SA")}</td>
+                      <td className="px-3 py-2 text-xs font-bold" dir="ltr">{Number(rec.netSalary).toLocaleString("ar-SA")} ر.ي</td>
+                      <td className="px-3 py-2">
+                        <span className={cn("inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full",
+                          rec.paidAt ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700")}>
+                          {rec.paidAt ? "مدفوع" : "غير مدفوع"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === "advances" && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">المبلغ</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">السبب</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">تاريخ الطلب</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الخص من</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {records.map((rec, i) => {
+                    const cfg = REQUEST_STATUS[String(rec.status)] ?? { label: String(rec.status), color: "bg-gray-100 text-gray-700" };
+                    return (
+                      <tr key={i} className="hover:bg-gray-50/50">
+                        <td className="px-3 py-2 text-xs font-bold" dir="ltr">{Number(rec.amount).toLocaleString("ar-SA")} ر.ي</td>
+                        <td className="px-3 py-2 text-xs text-gray-500 max-w-[150px] truncate">{String(rec.reason ?? "—")}</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">{String(rec.requestDate ?? "—").split("T")[0]}</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">{rec.deductFromMonth ? `${rec.deductFromYear}/${rec.deductFromMonth}` : "—"}</td>
+                        <td className="px-3 py-2">
+                          <span className={cn("inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full", cfg.color)}>{cfg.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === "leaves" && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">النوع</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">من</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">إلى</th>
+                    <th className="text-center px-3 py-2.5 font-semibold text-gray-600 text-xs">الأيام</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الحالة</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {records.map((rec, i) => {
+                    const cfg = REQUEST_STATUS[String(rec.status)] ?? { label: String(rec.status), color: "bg-gray-100 text-gray-700" };
+                    return (
+                      <tr key={i} className="hover:bg-gray-50/50">
+                        <td className="px-3 py-2 text-xs font-semibold text-[#1a3a5c]">{LEAVE_TYPE_LABELS[String(rec.leaveType)] ?? String(rec.leaveType)}</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">{String(rec.startDate ?? "—")}</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">{String(rec.endDate ?? "—")}</td>
+                        <td className="px-3 py-2 text-xs text-center font-bold">{String(rec.totalDays ?? "—")}</td>
+                        <td className="px-3 py-2">
+                          <span className={cn("inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-full", cfg.color)}>{cfg.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === "documents" && (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">العنوان</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">النوع</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">الملف</th>
+                    <th className="text-right px-3 py-2.5 font-semibold text-gray-600 text-xs">التاريخ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {records.map((rec, i) => (
+                    <tr key={i} className="hover:bg-gray-50/50">
+                      <td className="px-3 py-2 text-xs font-medium text-[#0d2137]">{String(rec.title ?? "—")}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{String(rec.documentType ?? "—")}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400">{String(rec.fileName ?? "—")}</td>
+                      <td className="px-3 py-2 text-xs text-gray-400">{String(rec.createdAt ?? "—").split("T")[0]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

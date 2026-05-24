@@ -45,7 +45,7 @@ public class OrthoTreatmentPlanApprovalTests : IDisposable
         var assignedDoctorUserId = Guid.NewGuid();
         var adminUserId = Guid.NewGuid();
 
-        _db.Patients.Add(new Patient { Id = patientId, FullName = "Test Patient", IsActive = true });
+        _db.Patients.Add(new Patient { Id = patientId, FirstName = "Test", LastName = "Patient", IsActive = true });
         _db.Doctors.Add(new Doctor
         {
             Id = assignedDoctorId,
@@ -71,7 +71,7 @@ public class OrthoTreatmentPlanApprovalTests : IDisposable
             CaseNumber = "ORT-APPROVAL-001",
             IsActive = true,
         });
-        _db.TreatmentPlans.Add(new TreatmentPlan
+        _db.TreatmentPlans.Add(new AqlanDentalPro.Domain.Entities.TreatmentPlan
         {
             OrthoCaseId = orthoCaseId,
             PlanVersion = 1,

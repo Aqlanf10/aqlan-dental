@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Ortho;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
@@ -85,12 +86,30 @@ public class OrthoCasesController(
         var latestPlan = orthoCase.TreatmentPlans.OrderByDescending(p => p.CreatedAt).FirstOrDefault();
         var latestVisit = orthoCase.Visits.OrderByDescending(v => v.VisitDate).FirstOrDefault();
 
+        // Contract selection: prefer contract explicitly linked to this ortho case.
+        // Fallback: unlinked legacy ortho contracts (RelatedCaseId == null).
+        // Never select a contract linked to a different ortho case.
         var contract = await db.Contracts
             .Include(c => c.Payments)
             .Where(c => c.PatientId == orthoCase.PatientId &&
-                (c.RelatedCaseId == id || c.Specialty == "orthodontics" || c.Specialty == "ortho"))
+                c.RelatedCaseId == id)
             .OrderByDescending(c => c.CreatedAt)
             .FirstOrDefaultAsync();
+
+        if (contract is null)
+        {
+            // Legacy fallback: orthodontics contracts with no case link (pre-dating RelatedCaseId)
+            var unlinkedOrthoContracts = await db.Contracts
+                .Include(c => c.Payments)
+                .Where(c => c.PatientId == orthoCase.PatientId &&
+                    c.RelatedCaseId == null &&
+                    (c.Specialty == "orthodontics" || c.Specialty == "ortho"))
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+
+            // If multiple ambiguous unlinked contracts exist, do not silently pick the wrong one
+            contract = unlinkedOrthoContracts.Count == 1 ? unlinkedOrthoContracts[0] : null;
+        }
 
         decimal? contractTotal = null;
         decimal? contractPaid = null;
@@ -118,15 +137,30 @@ public class OrthoCasesController(
                 checklist.StudyModels, checklist.Consent, checklist.Contract,
             }.Count(b => b);
         }
-        // Auto-derive some checklist items from existing data
+        // Auto-derive checklist items from existing data using same per-item logic as GET /checklist
         if (checklist is null)
         {
-            // Derive from photos/ceph/contract without a persisted checklist
-            var hasExtraoralPhotos = orthoCase.OrthoClinicalPhotos.Any(p => p.PhotoType == "Extraoral");
-            var hasIntraoralPhotos = orthoCase.OrthoClinicalPhotos.Any(p => p.PhotoType == "Intraoral");
+            var photos = orthoCase.OrthoClinicalPhotos;
             var hasCeph = orthoCase.CephAnalyses.Count > 0;
             var hasModel = await db.ModelAnalyses.AnyAsync(m => m.OrthoCaseId == id);
-            checklistCompleted = (hasExtraoralPhotos ? 3 : 0) + (hasIntraoralPhotos ? 5 : 0) + (hasCeph ? 2 : 0) + (hasModel ? 1 : 0) + (contract is not null ? 1 : 0);
+            // Use precise per-item matching — same as GET /checklist derivation
+            checklistCompleted = new[]
+            {
+                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("frontal") == true),
+                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("profile") == true),
+                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("smile") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("frontal") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("right") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("left") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("upper") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("lower") == true),
+                photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("OPG") == true),
+                hasCeph,
+                photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("CBCT") == true),
+                hasModel,
+                false, // Consent — cannot auto-derive
+                contract is not null,
+            }.Count(b => b);
         }
 
         return Ok(new
@@ -492,6 +526,10 @@ public class OrthoCasesController(
         if (!isAssignedOrthodontist && !currentUser.IsAdmin)
             return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة.");
 
+        // Enforce single-approved-treatment-plan invariant: un-approve other plans for this case
+        var otherPlans = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id && p.Id != plan.Id).ToListAsync();
+        foreach (var op in otherPlans) { op.IsApproved = false; }
+
         Guid? approvedByDoctorId = null;
         if (isAssignedOrthodontist)
         {
@@ -511,7 +549,19 @@ public class OrthoCasesController(
         plan.ApprovedBy = approvedByDoctorId;
         await db.SaveChangesAsync();
 
-        return Ok(new { plan.Id, plan.PlanVersion, plan.PlanLabel, plan.IsApproved, ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd") });
+        // If admin approved without a linked Doctor record, approvedByDoctorId is null.
+        // The approval is still valid (recorded via ApprovedAt timestamp + audit logs),
+        // but ApprovedBy will be null — UI should display "Admin" in this case.
+        return Ok(new
+        {
+            plan.Id,
+            plan.PlanVersion,
+            plan.PlanLabel,
+            plan.IsApproved,
+            ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
+            ApprovedByDoctorId = approvedByDoctorId,
+            ApprovedByUserId = approverId,
+        });
     }
 
     [HttpPatch("{id:guid}/treatment-plans/{planId:guid}/approve")]
@@ -552,7 +602,15 @@ public class OrthoCasesController(
         plan.ApprovedBy = approvedByDoctorId;
         await db.SaveChangesAsync();
 
-        return Ok(new { plan.Id, plan.PlanLabel, plan.IsApproved, ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd") });
+        return Ok(new
+        {
+            plan.Id,
+            plan.PlanLabel,
+            plan.IsApproved,
+            ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
+            ApprovedByDoctorId = approvedByDoctorId,
+            ApprovedByUserId = approverId,
+        });
     }
 
     // ─── Extraction Decision ─────────────────────────────────────────────────────
@@ -639,10 +697,18 @@ public class OrthoCasesController(
         var photos = await db.OrthoClinicalPhotos.Where(p => p.OrthoCaseId == id).ToListAsync();
         var hasCeph = await db.CephAnalyses.AnyAsync(c => c.OrthoCaseId == id);
         var hasModel = await db.ModelAnalyses.AnyAsync(m => m.OrthoCaseId == id);
+        var patientId = await db.OrthoCases.Where(oc => oc.Id == id).Select(oc => oc.PatientId).FirstOrDefaultAsync();
         var contract = await db.Contracts
-            .Where(c => c.PatientId == db.OrthoCases.Where(oc => oc.Id == id).Select(oc => oc.PatientId).FirstOrDefault() &&
-                (c.RelatedCaseId == id || c.Specialty == "orthodontics" || c.Specialty == "ortho"))
+            .Where(c => c.PatientId == patientId && c.RelatedCaseId == id)
             .AnyAsync();
+        if (!contract && patientId != Guid.Empty)
+        {
+            var unlinkedCount = await db.Contracts
+                .Where(c => c.PatientId == patientId && c.RelatedCaseId == null &&
+                    (c.Specialty == "orthodontics" || c.Specialty == "ortho"))
+                .CountAsync();
+            contract = unlinkedCount == 1;
+        }
 
         return Ok(new
         {
@@ -861,7 +927,15 @@ public class OrthoCasesController(
         diagnosis.ApprovedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        return Ok(new { diagnosis.Id, IsApproved = true, ApprovedAt = diagnosis.ApprovedAt?.ToString("yyyy-MM-dd"), message = "تم اعتماد التشخيص" });
+        return Ok(new
+        {
+            diagnosis.Id,
+            IsApproved = true,
+            ApprovedAt = diagnosis.ApprovedAt?.ToString("yyyy-MM-dd"),
+            ApprovedByDoctorId = approvedByDoctorId,
+            ApprovedByUserId = approverId,
+            message = "تم اعتماد التشخيص",
+        });
     }
 
     // ─── Retention Records ─────────────────────────────────────────────────────

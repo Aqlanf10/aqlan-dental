@@ -31,7 +31,7 @@ public class OrthoRecordsChecklistTests : IDisposable
         var patientId = Guid.NewGuid();
         var orthoCaseId = Guid.NewGuid();
 
-        _db.Patients.Add(new Patient { Id = patientId, FullName = "Test Patient", IsActive = true });
+        _db.Patients.Add(new Patient { Id = patientId, FirstName = "Test", LastName = "Patient", IsActive = true });
         _db.OrthoCases.Add(new OrthoCase
         {
             Id = orthoCaseId,
@@ -155,7 +155,7 @@ public class OrthoMultiPlanTests : IDisposable
         var patientId = Guid.NewGuid();
         var orthoCaseId = Guid.NewGuid();
 
-        _db.Patients.Add(new Patient { Id = patientId, FullName = "Test Patient", IsActive = true });
+        _db.Patients.Add(new Patient { Id = patientId, FirstName = "Test", LastName = "Patient", IsActive = true });
         _db.OrthoCases.Add(new OrthoCase
         {
             Id = orthoCaseId,
@@ -172,8 +172,8 @@ public class OrthoMultiPlanTests : IDisposable
     {
         var orthoCaseId = await SeedOrthoCase();
 
-        _db.TreatmentPlans.Add(new TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "A", TreatmentGoals = "Align upper incisors" });
-        _db.TreatmentPlans.Add(new TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "B", TreatmentGoals = "Extraction of 4 premolars" });
+        _db.TreatmentPlans.Add(new AqlanDentalPro.Domain.Entities.TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "A", TreatmentGoals = "Align upper incisors" });
+        _db.TreatmentPlans.Add(new AqlanDentalPro.Domain.Entities.TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "B", TreatmentGoals = "Extraction of 4 premolars" });
         await _db.SaveChangesAsync();
 
         var plans = await _db.TreatmentPlans
@@ -191,8 +191,8 @@ public class OrthoMultiPlanTests : IDisposable
     {
         var orthoCaseId = await SeedOrthoCase();
 
-        var planA = new TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "A", IsApproved = true, ApprovedAt = DateTime.UtcNow };
-        var planB = new TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "B", IsApproved = false };
+        var planA = new AqlanDentalPro.Domain.Entities.TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "A", IsApproved = true, ApprovedAt = DateTime.UtcNow };
+        var planB = new AqlanDentalPro.Domain.Entities.TreatmentPlan { OrthoCaseId = orthoCaseId, PlanLabel = "B", IsApproved = false };
         _db.TreatmentPlans.AddRange(planA, planB);
         await _db.SaveChangesAsync();
 
@@ -216,7 +216,7 @@ public class OrthoMultiPlanTests : IDisposable
     {
         var orthoCaseId = await SeedOrthoCase();
 
-        var plan = new TreatmentPlan { OrthoCaseId = orthoCaseId };
+        var plan = new AqlanDentalPro.Domain.Entities.TreatmentPlan { OrthoCaseId = orthoCaseId };
         _db.TreatmentPlans.Add(plan);
         await _db.SaveChangesAsync();
 
@@ -248,7 +248,7 @@ public class OrthoDiagnosisEnhancedTests : IDisposable
         var doctorId = Guid.NewGuid();
         var doctorUserId = Guid.NewGuid();
 
-        _db.Patients.Add(new Patient { Id = patientId, FullName = "Test Patient", IsActive = true });
+        _db.Patients.Add(new Patient { Id = patientId, FirstName = "Test", LastName = "Patient", IsActive = true });
         _db.Doctors.Add(new Doctor { Id = doctorId, UserId = doctorUserId, Name = "Dr. Ortho", IsActive = true });
         _db.OrthoCases.Add(new OrthoCase
         {

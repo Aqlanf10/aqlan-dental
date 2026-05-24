@@ -32,7 +32,7 @@ public class OrthoFinanceCalculationTests : IDisposable
         var contractId = Guid.NewGuid();
         var doctorId = Guid.NewGuid();
 
-        _db.Patients.Add(new Patient { Id = patientId, FullName = "Test Patient", IsActive = true });
+        _db.Patients.Add(new Patient { Id = patientId, FirstName = "Test", LastName = "Patient", IsActive = true });
         _db.Doctors.Add(new Doctor { Id = doctorId, Name = "Dr. Test", IsActive = true });
         _db.OrthoCases.Add(new OrthoCase
         {

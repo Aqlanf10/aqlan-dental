@@ -388,7 +388,7 @@ builder.Services.AddScoped<PatientService>();
 builder.Services.AddScoped<AppointmentService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<OrthoService>();
-builder.Services.AddScoped<FinanceService>();
+builder.Services.AddScoped<IFinanceService, FinanceService>();
 builder.Services.AddScoped<GeneralService>();
 builder.Services.AddScoped<IMessagingService, MessagingService>();
 builder.Services.AddScoped<IPatientAccountLinkingService, PatientAccountLinkingService>();

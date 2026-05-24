@@ -66,7 +66,7 @@ public class OverdueNotificationJob(IServiceScopeFactory scopeFactory, ILogger<O
                                 + (today.Month - c.StartDate.Value.Month);
             var expectedPaid = c.DownPayment
                 + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid = c.Payments.Sum(p => p.Amount);
+            var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
 
             if (expectedPaid - actualPaid > 0)
             {

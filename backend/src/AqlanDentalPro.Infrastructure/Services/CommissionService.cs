@@ -384,13 +384,9 @@ public class CommissionService(
         if (item.LabOrderId.HasValue)
         {
             var labOrder = await db.LabOrders.FindAsync(item.LabOrderId.Value);
-            if (labOrder != null)
+            if (labOrder != null && labOrder.Cost.HasValue)
             {
-                var labCostProp = labOrder.GetType().GetProperty("Cost")
-                               ?? labOrder.GetType().GetProperty("TotalCost")
-                               ?? labOrder.GetType().GetProperty("Fee");
-                if (labCostProp != null && labCostProp.GetValue(labOrder) is decimal labFee)
-                    item.LabCost = labFee;
+                item.LabCost = labOrder.Cost.Value;
             }
         }
 

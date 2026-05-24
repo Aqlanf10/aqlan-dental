@@ -3,23 +3,10 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { FileText, Search, Plus } from "lucide-react";
 import type { Invoice } from "@/types/finance";
+import { INVOICE_STATUS } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
-
-const STATUS_LABELS: Record<string, string> = {
-  Draft: "مسودة",
-  Issued: "مصدرة",
-  Cancelled: "ملغاة",
-  Paid: "مدفوعة",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-blue-50 text-blue-700",
-  Issued: "bg-green-50 text-green-700",
-  Cancelled: "bg-gray-100 text-gray-500",
-  Paid: "bg-emerald-50 text-emerald-700",
-};
 
 const STATUS_TABS = ["", "Draft", "Issued", "Cancelled", "Paid"] as const;
 
@@ -108,7 +95,7 @@ export default function InvoicesPage() {
                 : "border-gray-200 text-gray-600 hover:bg-gray-50"
             )}
           >
-            {s === "" ? "الكل" : STATUS_LABELS[s]}
+            {s === "" ? "الكل" : INVOICE_STATUS[s as keyof typeof INVOICE_STATUS]?.label ?? s}
           </button>
         ))}
       </div>
@@ -171,11 +158,11 @@ export default function InvoicesPage() {
                       <span
                         className={cn(
                           "text-xs px-2 py-0.5 rounded-full font-medium",
-                          STATUS_COLORS[inv.status] ??
+                          INVOICE_STATUS[inv.status as keyof typeof INVOICE_STATUS]?.color ??
                             "bg-gray-100 text-gray-600"
                         )}
                       >
-                        {inv.statusArabic ?? STATUS_LABELS[inv.status] ?? inv.status}
+                        {inv.statusArabic ?? INVOICE_STATUS[inv.status as keyof typeof INVOICE_STATUS]?.label ?? inv.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold text-gray-900">

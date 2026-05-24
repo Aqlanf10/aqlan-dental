@@ -6,89 +6,22 @@ import { Wallet, CreditCard, FileSignature, FileText, TrendingDown, ArrowLeft } 
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
-import type { Invoice } from "@/types/finance";
-
-interface ContractStatementDto {
-  id: string;
-  specialty?: string;
-  totalAmount: number;
-  discountAmount: number;
-  paidAmount: number;
-  remainingAmount: number;
-  startDate?: string;
-  status: string;
-  installmentsCount: number;
-  installmentAmount?: number;
-}
-
-interface PaymentDto {
-  id: string;
-  amount: number;
-  paymentDate: string;
-  paymentMethod?: string;
-  serviceDescription?: string;
-  receiptNumber?: string;
-}
-
-interface AccountStatementDto {
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  totalContracted: number;
-  totalDiscounts: number;
-  totalPaid: number;
-  totalRemaining: number;
-  activeContracts: number;
-  completedContracts: number;
-  contracts: ContractStatementDto[];
-  recentPayments: PaymentDto[];
-}
+import type { Invoice, AccountStatement } from "@/types/finance";
+import { PAYMENT_METHODS as paymentMethodLabels, CONTRACT_STATUS as contractStatusConfig, INVOICE_STATUS as invoiceStatusConfig } from "@/types/finance";
 
 interface FinanceTabProps {
   patientId: string;
 }
 
-const statusLabel: Record<string, string> = {
-  active: "نشط",
-  completed: "مكتمل",
-  cancelled: "ملغى",
-};
-
-const statusClass: Record<string, string> = {
-  active: "bg-green-50 text-green-700",
-  completed: "bg-blue-50 text-blue-700",
-  cancelled: "bg-red-50 text-red-600",
-};
-
-const methodLabel: Record<string, string> = {
-  cash: "نقدي",
-  bank_transfer: "تحويل",
-  card: "بطاقة",
-};
-
-const INVOICE_STATUS_LABELS: Record<string, string> = {
-  Draft: "مسودة",
-  Issued: "مصدرة",
-  Cancelled: "ملغاة",
-  Paid: "مدفوعة",
-};
-
-const INVOICE_STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-blue-50 text-blue-700",
-  Issued: "bg-green-50 text-green-700",
-  Cancelled: "bg-gray-100 text-gray-500",
-  Paid: "bg-emerald-50 text-emerald-700",
-};
-
 export function FinanceTab({ patientId }: FinanceTabProps) {
-  const [statement, setStatement] = useState<AccountStatementDto | null>(null);
+  const [statement, setStatement] = useState<AccountStatement | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .get<AccountStatementDto>(`/api/patients/${patientId}/account-statement`)
+      .get<AccountStatement>(`/api/patients/${patientId}/account-statement`)
       .then((r) => {
         setStatement(r.data);
         setLoading(false);
@@ -171,6 +104,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
             {contracts.map((c) => {
               const effectiveTotal = c.totalAmount - c.discountAmount;
               const progress = effectiveTotal > 0 ? Math.min(100, (c.paidAmount / effectiveTotal) * 100) : 0;
+              const statusCfg = contractStatusConfig[c.status as keyof typeof contractStatusConfig];
               return (
                 <Link
                   key={c.id}
@@ -184,8 +118,8 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
                       {c.startDate && <span className="text-xs text-[#94a3b8]">{c.startDate}</span>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", statusClass[c.status] ?? "bg-[#f1f5f9] text-[#64748b]")}>
-                        {statusLabel[c.status] ?? c.status}
+                      <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium", statusCfg?.color ?? "bg-[#f1f5f9] text-[#64748b]")}>
+                        {statusCfg?.label ?? c.status}
                       </span>
                       <ArrowLeft className="w-3.5 h-3.5 text-[#94a3b8]" />
                     </div>
@@ -225,7 +159,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
                   <TrendingDown className="w-4 h-4 text-green-500" />
                   <div>
                     <p className="text-sm text-[#0d2137]">{p.serviceDescription ?? "دفعة"}</p>
-                    <p className="text-xs text-[#94a3b8]">{p.paymentDate} {p.paymentMethod ? `· ${methodLabel[p.paymentMethod] ?? p.paymentMethod}` : ""}</p>
+                    <p className="text-xs text-[#94a3b8]">{p.paymentDate} {p.paymentMethod ? `· ${paymentMethodLabels[p.paymentMethod as keyof typeof paymentMethodLabels] ?? p.paymentMethod}` : ""}</p>
                   </div>
                 </div>
                 <div className="text-left">
@@ -248,35 +182,38 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
           <p className="text-sm text-[#94a3b8]">لا توجد فواتير مسجّلة</p>
         ) : (
           <div className="space-y-2">
-            {invoices.map((inv) => (
-              <Link
-                key={inv.id}
-                href={`/finance/invoices/${inv.id}`}
-                className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9] hover:border-[#3d7ab5]/30 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-[#3d7ab5]" />
-                  <div>
-                    <p className="text-sm font-medium text-[#0d2137]">{inv.invoiceNumber}</p>
-                    <p className="text-xs text-[#94a3b8]">{new Date(inv.createdAt).toLocaleDateString("ar-YE")}</p>
+            {invoices.map((inv) => {
+              const invStatus = invoiceStatusConfig[inv.status as keyof typeof invoiceStatusConfig];
+              return (
+                <Link
+                  key={inv.id}
+                  href={`/finance/invoices/${inv.id}`}
+                  className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9] hover:border-[#3d7ab5]/30 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-[#3d7ab5]" />
+                    <div>
+                      <p className="text-sm font-medium text-[#0d2137]">{inv.invoiceNumber}</p>
+                      <p className="text-xs text-[#94a3b8]">{new Date(inv.createdAt).toLocaleDateString("ar-YE")}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      "text-xs px-2 py-0.5 rounded-full font-medium",
-                      INVOICE_STATUS_COLORS[inv.status] ?? "bg-gray-100 text-gray-600"
-                    )}
-                  >
-                    {inv.statusArabic ?? INVOICE_STATUS_LABELS[inv.status] ?? inv.status}
-                  </span>
-                  <p className="text-sm font-semibold text-[#3d7ab5]">
-                    {inv.totalAmount.toLocaleString()}
-                  </p>
-                  <ArrowLeft className="w-3.5 h-3.5 text-[#94a3b8]" />
-                </div>
-              </Link>
-            ))}
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        "text-xs px-2 py-0.5 rounded-full font-medium",
+                        invStatus?.color ?? "bg-gray-100 text-gray-600"
+                      )}
+                    >
+                      {invStatus?.label ?? inv.status}
+                    </span>
+                    <p className="text-sm font-semibold text-[#3d7ab5]">
+                      {inv.totalAmount.toLocaleString()}
+                    </p>
+                    <ArrowLeft className="w-3.5 h-3.5 text-[#94a3b8]" />
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

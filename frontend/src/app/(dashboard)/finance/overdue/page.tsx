@@ -4,25 +4,8 @@ import Link from "next/link";
 import { AlertCircle, Phone, FileText } from "lucide-react";
 import api from "@/lib/api";
 import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
-
-interface OverdueContract {
-  contractId:      string;
-  patientId:       string;
-  patientName:     string;
-  patientNumber:   string;
-  phone?:          string;
-  specialty?:      string;
-  totalAmount:     number;
-  paidAmount:      number;
-  overdueAmount:   number;
-  remainingAmount: number;
-  monthsElapsed:   number;
-  startDate?:      string;
-}
-
-const SPECIALTY_LABELS: Record<string, string> = {
-  ortho: "تقويم", general: "عام", surgery: "جراحة", other: "أخرى",
-};
+import type { OverdueContract } from "@/types/finance";
+import { SPECIALTY_OPTIONS } from "@/types/finance";
 
 export default function OverduePage() {
   const [contracts, setContracts] = useState<OverdueContract[]>([]);
@@ -109,7 +92,7 @@ export default function OverduePage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs">
-                      {SPECIALTY_LABELS[c.specialty ?? ""] ?? c.specialty ?? "—"}
+                      {SPECIALTY_OPTIONS[c.specialty as keyof typeof SPECIALTY_OPTIONS] ?? c.specialty ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs">
                       {c.startDate ? formatArabicDate(c.startDate) : "—"}

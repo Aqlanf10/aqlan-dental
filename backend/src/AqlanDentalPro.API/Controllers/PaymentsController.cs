@@ -1,7 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
-using AqlanDentalPro.Application.Services;
-using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,7 +8,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize(Policy = "FinanceAccess")]
-public class PaymentsController(FinanceService service, IPdfService pdfService, ILogger<PaymentsController> logger) : ControllerBase
+public class PaymentsController(IFinanceService service, IPdfService pdfService, ILogger<PaymentsController> logger) : ControllerBase
 {
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(

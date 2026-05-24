@@ -4,7 +4,7 @@ using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace AqlanDentalPro.Application.Services;
+namespace AqlanDentalPro.Infrastructure.Services;
 
 public record DashboardStats(
     int AppointmentsToday,
@@ -71,7 +71,7 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
                                 + (today.Month - c.StartDate.Value.Month);
             var expectedPaid = c.DownPayment
                 + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid = c.Payments.Sum(p => p.Amount);
+            var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
             return expectedPaid - actualPaid > 0;
         });
 
@@ -110,22 +110,30 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var today = DateOnly.FromDateTime(DateTime.Today);
         var thirtyDaysAgo = today.AddDays(-29);
 
+        var chartBranchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
         // Revenue by day (last 30 days) - fetch raw then format
-        var revenueRaw = await db.Payments
-            .Where(p => p.PaymentDate >= thirtyDaysAgo && p.PaymentDate <= today)
+        var revenueQuery = db.Payments
+            .Where(p => p.PaymentDate >= thirtyDaysAgo && p.PaymentDate <= today && p.IsActive);
+        if (chartBranchId.HasValue) revenueQuery = revenueQuery.Where(p => p.BranchId == chartBranchId);
+        var revenueRaw = await revenueQuery
             .GroupBy(p => p.PaymentDate)
             .Select(g => new { date = g.Key, amount = g.Sum(p => p.Amount) })
             .ToListAsync();
 
         // Appointments by day (last 30 days) - fetch raw then format
-        var apptRaw = await db.Appointments
-            .Where(a => a.AppointmentDate >= thirtyDaysAgo && a.AppointmentDate <= today)
+        var apptQuery = db.Appointments
+            .Where(a => a.AppointmentDate >= thirtyDaysAgo && a.AppointmentDate <= today && a.IsActive);
+        if (chartBranchId.HasValue) apptQuery = apptQuery.Where(a => a.BranchId == chartBranchId);
+        var apptRaw = await apptQuery
             .GroupBy(a => a.AppointmentDate)
             .Select(g => new { date = g.Key, count = g.Count() })
             .ToListAsync();
 
         // Ortho by status
-        var orthoGroups = await db.OrthoCases
+        var orthoChartQuery = db.OrthoCases.AsQueryable();
+        if (chartBranchId.HasValue) orthoChartQuery = orthoChartQuery.Where(o => o.BranchId == chartBranchId);
+        var orthoGroups = await orthoChartQuery
             .GroupBy(o => o.Status)
             .Select(g => new { status = g.Key, count = g.Count() })
             .ToListAsync();

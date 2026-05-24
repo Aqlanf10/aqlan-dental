@@ -1,6 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Finance;
-using AqlanDentalPro.Application.Services;
-using AqlanDentalPro.Infrastructure.Services;
+using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,7 +8,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/contracts")]
 [Authorize(Policy = "FinanceAccess")]
-public class ContractsController(FinanceService service) : ControllerBase
+public class ContractsController(IFinanceService service) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(

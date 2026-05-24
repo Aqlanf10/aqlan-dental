@@ -7,18 +7,21 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Save, Printer } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { Contract, CreatePaymentRequest, Payment } from "@/types/finance";
+import { PAYMENT_METHOD_OPTIONS, SPECIALTY_OPTIONS } from "@/types/finance";
 import api from "@/lib/api";
 import { cn, formatYemeniRiyal } from "@/lib/utils";
 import { ReceiptView } from "./ReceiptView";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
+import { useDoctors } from "@/hooks/useDoctors";
 
 const schema = z.object({
   patientId:          z.string().min(1, "اختر مريضاً"),
   contractId:         z.string().optional(),
   amount:             z.number().min(1, "المبلغ مطلوب"),
-  paymentMethod:      z.enum(["cash", "bank_transfer", "card"]),
+  paymentMethod:      z.enum(["cash", "bank_transfer", "card", "other"]),
   serviceDescription: z.string().optional(),
   specialty:          z.string().optional(),
+  doctorId:           z.string().optional(),
   notes:              z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
@@ -41,6 +44,9 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [savedPayment, setSavedPayment] = useState<Payment | null>(null);
   const [showUnlinkedWarning, setShowUnlinkedWarning] = useState(false);
+
+  // Doctors list for doctor assignment
+  const { data: doctors = [] } = useDoctors();
 
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -93,7 +99,8 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
         amount: data.amount,
         paymentMethod: data.paymentMethod,
         serviceDescription: data.serviceDescription,
-        specialty: data.specialty,
+        specialty: data.specialty || undefined,
+        doctorId: data.doctorId || undefined,
         notes: data.notes,
       };
       const { data: payment } = await api.post<Payment>("/api/payments", req);
@@ -184,9 +191,9 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">طريقة الدفع</label>
           <select {...register("paymentMethod")} className={inputCls()}>
-            <option value="cash">نقداً</option>
-            <option value="bank_transfer">تحويل بنكي</option>
-            <option value="card">بطاقة</option>
+            {PAYMENT_METHOD_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
           </select>
         </div>
 
@@ -194,6 +201,28 @@ export function PaymentForm({ defaultContractId, defaultPatientId, defaultPatien
         <div className="md:col-span-2">
           <label className="block text-sm font-medium text-gray-700 mb-1.5">وصف الخدمة</label>
           <input {...register("serviceDescription")} className={inputCls()} placeholder="تقويم، حشو، فحص..." />
+        </div>
+
+        {/* Specialty and Doctor */}
+        <div className="grid grid-cols-2 gap-4 md:col-span-2">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">التخصص</label>
+            <select {...register("specialty")} className={inputCls()}>
+              <option value="">— اختر —</option>
+              {Object.entries(SPECIALTY_OPTIONS).filter(([k]) => k[0] === k[0].toLowerCase()).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">الطبيب</label>
+            <select {...register("doctorId")} className={inputCls()}>
+              <option value="">— اختر —</option>
+              {doctors.filter((d) => d.isActive).map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Notes */}

@@ -12,32 +12,7 @@ import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
 import type { Payment, Contract, CreatePaymentRequest, UpdatePaymentRequest } from "@/types/finance";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  cash: "نقد", Cash: "نقد",
-  card: "بطاقة", Card: "بطاقة",
-  transfer: "تحويل", Transfer: "تحويل",
-  bank_transfer: "تحويل بنكي", BankTransfer: "تحويل بنكي",
-  other: "أخرى", Other: "أخرى",
-};
-
-const PAYMENT_METHOD_OPTIONS = [
-  { value: "cash", label: "نقد" },
-  { value: "transfer", label: "تحويل" },
-  { value: "card", label: "بطاقة" },
-  { value: "other", label: "أخرى" },
-];
-
-const SPECIALTY_LABELS: Record<string, string> = {
-  General: "طب أسنان عام",
-  Orthodontics: "تقويم أسنان",
-  OralSurgery: "جراحة فم",
-  Periodontics: "لثة",
-  Endodontics: "علاج عصب",
-  Prosthodontics: "تركيبات",
-};
+import { PAYMENT_METHODS, PAYMENT_METHOD_OPTIONS, SPECIALTY_OPTIONS } from "@/types/finance";
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -273,7 +248,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                     <span className="text-sm font-semibold text-[#0d2137]">{p.amount.toLocaleString()} ر.ي</span>
                     {p.paymentMethod && (
                       <span className="text-xs bg-[#f1f5f9] text-[#64748b] px-1.5 py-0.5 rounded font-medium">
-                        {PAYMENT_METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod}
+                        {PAYMENT_METHODS[p.paymentMethod as keyof typeof PAYMENT_METHODS] ?? p.paymentMethod}
                       </span>
                     )}
                   </div>
@@ -382,7 +357,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                         <option value="">— بدون عقد —</option>
                         {contracts.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.specialty ? `${SPECIALTY_LABELS[c.specialty] ?? c.specialty} — ` : ""}{c.totalAmount.toLocaleString()} ر.ي
+                            {c.specialty ? `${SPECIALTY_OPTIONS[c.specialty as keyof typeof SPECIALTY_OPTIONS] ?? c.specialty} — ` : ""}{c.totalAmount.toLocaleString()} ر.ي
                           </option>
                         ))}
                       </select>
@@ -412,7 +387,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                       className="w-full text-sm border border-[#e8f0f9] rounded-lg px-3 py-2 focus:outline-none focus:border-[#3d7ab5] bg-white"
                     >
                       <option value="">— اختر —</option>
-                      {Object.entries(SPECIALTY_LABELS).map(([k, v]) => (
+                      {Object.entries(SPECIALTY_OPTIONS).filter(([k]) => k[0] === k[0].toLowerCase()).map(([k, v]) => (
                         <option key={k} value={k}>{v}</option>
                       ))}
                     </select>

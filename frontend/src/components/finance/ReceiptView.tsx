@@ -1,5 +1,6 @@
 import type { Payment } from "@/types/finance";
 import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
+import { PAYMENT_METHODS } from "@/types/finance";
 
 interface Props {
   payment: Payment;
@@ -12,12 +13,6 @@ export function ReceiptView({
   clinicName = "مركز د. عقلان الكامل لطب وتقويم الأسنان",
   clinicAddress = "تعز، اليمن — شارع التحرير الأعلى",
 }: Props) {
-  const methodLabel: Record<string, string> = {
-    cash: "نقداً",
-    bank_transfer: "تحويل بنكي",
-    card: "بطاقة",
-  };
-
   return (
     <>
       {/* Print styles */}
@@ -66,7 +61,7 @@ export function ReceiptView({
           )}
           <div className="flex justify-between">
             <span className="text-gray-500">طريقة الدفع: </span>
-            <span className="font-medium">{methodLabel[payment.paymentMethod ?? "cash"] ?? payment.paymentMethod}</span>
+            <span className="font-medium">{PAYMENT_METHODS[payment.paymentMethod as keyof typeof PAYMENT_METHODS] ?? payment.paymentMethod ?? "نقداً"}</span>
           </div>
           {payment.doctorName && (
             <div className="flex justify-between">

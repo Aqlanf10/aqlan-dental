@@ -9,16 +9,18 @@ using Microsoft.Extensions.Logging;
 namespace AqlanDentalPro.Infrastructure.Services;
 
 public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService)
+    : IFinanceService
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
     {
-        var branchId = currentUser.BranchId;
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
         var query = db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
             .AsQueryable();
 
+        if (branchId.HasValue) query = query.Where(c => c.Patient.BranchId == branchId.Value);
         if (patientId.HasValue) query = query.Where(c => c.PatientId == patientId);
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ContractStatus>(status, true, out var contractStatus))
             query = query.Where(c => c.Status == contractStatus);
@@ -158,11 +160,15 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<List<PaymentDto>> GetPaymentsAsync(int page, int pageSize, Guid? patientId)
     {
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
         var query = db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
+            .Where(p => p.IsActive)
             .AsQueryable();
 
+        if (branchId.HasValue) query = query.Where(p => p.BranchId == branchId.Value);
         if (patientId.HasValue) query = query.Where(p => p.PatientId == patientId);
 
         return await query
@@ -415,28 +421,43 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<FinanceSummaryDto> GetSummaryAsync()
     {
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
-        var todayCollected = await db.Payments
-            .Where(p => p.PaymentDate == today && p.IsActive)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var todayQuery = db.Payments.Where(p => p.PaymentDate == today && p.IsActive);
+        if (branchId.HasValue) todayQuery = todayQuery.Where(p => p.BranchId == branchId);
+        var todayCollected = await todayQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
 
-        var monthCollected = await db.Payments
-            .Where(p => p.PaymentDate >= monthStart && p.IsActive)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var monthQuery = db.Payments.Where(p => p.PaymentDate >= monthStart && p.IsActive);
+        if (branchId.HasValue) monthQuery = monthQuery.Where(p => p.BranchId == branchId);
+        var monthCollected = await monthQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
 
-        var totalOutstanding = await db.Contracts
-            .Include(c => c.Payments)
-            .Where(c => c.Status == ContractStatus.Active)
+        // Contract-based outstanding
+        var contractQuery = db.Contracts.Include(c => c.Payments).Where(c => c.Status == ContractStatus.Active);
+        if (branchId.HasValue) contractQuery = contractQuery.Where(c => c.Patient.BranchId == branchId);
+        var contractOutstanding = await contractQuery
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
             .SumAsync(r => (decimal?)r) ?? 0;
 
-        var activeContracts = await db.Contracts.CountAsync(c => c.Status == ContractStatus.Active);
+        // Invoice-based outstanding (Issued invoices not fully paid)
+        var invoiceQuery = db.Invoices.Include(i => i.Payments)
+            .Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
+        if (branchId.HasValue) invoiceQuery = invoiceQuery.Where(i => i.Patient.BranchId == branchId);
+        var invoiceOutstanding = await invoiceQuery
+            .Select(i => i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
+            .SumAsync(r => (decimal?)r) ?? 0;
 
-        var recentPayments = await db.Payments
+        var activeContractsQuery = db.Contracts.Where(c => c.Status == ContractStatus.Active);
+        if (branchId.HasValue) activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == branchId);
+        var activeContracts = await activeContractsQuery.CountAsync();
+
+        var recentQuery = db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
+            .Where(p => p.IsActive);
+        if (branchId.HasValue) recentQuery = recentQuery.Where(p => p.BranchId == branchId);
+        var recentPayments = await recentQuery
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .Take(10)
             .Select(p => MapPayment(p))
@@ -446,7 +467,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         {
             TodayCollected = todayCollected,
             MonthCollected = monthCollected,
-            TotalOutstanding = totalOutstanding,
+            TotalOutstanding = contractOutstanding + invoiceOutstanding,
             ActiveContracts = activeContracts,
             RecentPayments = recentPayments
         };

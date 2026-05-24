@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TrendingUp, Wallet, AlertCircle, FileText, Plus, Printer } from "lucide-react";
 import type { FinanceSummary } from "@/types/finance";
+import { PAYMENT_METHODS } from "@/types/finance";
 import api from "@/lib/api";
 import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 
@@ -129,7 +130,7 @@ export default function FinancePage() {
                     <td className="px-4 py-3 font-mono font-semibold text-green-700">{formatYemeniRiyal(p.amount)}</td>
                     <td className="px-4 py-3 text-gray-600">{formatArabicDate(p.paymentDate)}</td>
                     <td className="px-4 py-3 text-gray-600">
-                      {p.paymentMethod === "cash" ? "نقداً" : p.paymentMethod === "bank_transfer" ? "تحويل بنكي" : p.paymentMethod ?? "—"}
+                      {PAYMENT_METHODS[p.paymentMethod as keyof typeof PAYMENT_METHODS] ?? p.paymentMethod ?? "—"}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-400">{p.receiptNumber ?? "—"}</td>
                     <td className="px-4 py-3">

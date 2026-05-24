@@ -443,7 +443,13 @@ builder.Services.AddSignalR(options =>
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
     options.MaximumReceiveMessageSize = 10 * 1024; // 10 KB
 });
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // FIX: Allow enum values as strings in JSON (e.g., "Consultation" instead of 0)
+        // Without this, frontend sends category: "Other" but backend expects integer → 400 Bad Request
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

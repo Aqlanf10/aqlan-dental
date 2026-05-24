@@ -14,9 +14,12 @@ namespace AqlanDentalPro.UnitTests.Services;
 
 /// <summary>
 /// Unit tests for PatientPortalService financial calculations.
-/// Verifies that the portal only counts payments linked to ACTIVE contracts
-/// in the summary totals, so that completed/cancelled contract payments
-/// don't distort the patient's outstanding balance.
+/// Verifies that the portal counts:
+///   - Payments linked to ACTIVE contracts ✅
+///   - Unlinked/orphan payments ✅ (they reduce what the patient owes)
+///   - Payments linked to COMPLETED/CANCELLED contracts ❌ (already settled)
+/// so that the summary totals are accurate without distortion from
+/// completed/cancelled contract payments.
 /// </summary>
 public class PortalFinanceTests
 {
@@ -78,6 +81,81 @@ public class PortalFinanceTests
     }
 
     // ─── Core Bug Fix: Scope Mismatch ──────────────────────────────────────
+
+    [Fact]
+    public async Task GetFinancialSummary_UnlinkedPayment_CountedInTotalPaid()
+    {
+        // Arrange: Active contract (500,000) + unlinked payment (50,000)
+        // The unlinked payment MUST be counted — it reduces what the patient owes.
+        await using var db = CreateContext();
+        var (patientId, contractId) = await SeedPatientWithContract(db, 500_000m);
+
+        db.Payments.Add(new Payment
+        {
+            PatientId = patientId,
+            ContractId = null, // unlinked / orphan
+            Amount = 50_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = "cash"
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        // Act
+        var result = await service.GetFinancialSummaryAsync(patientId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalPaid.Should().Be(50_000m, "unlinked payment must be counted in TotalPaid");
+        result.TotalAmount.Should().Be(500_000m);
+        result.TotalOutstanding.Should().Be(450_000m, "500,000 - 0 - 50,000");
+
+        // Per-contract: still shows 0 paid (no linked payment)
+        result.Contracts.Should().ContainSingle();
+        result.Contracts[0].PaidAmount.Should().Be(0m, "per-contract only counts linked payments");
+        result.Contracts[0].RemainingAmount.Should().Be(500_000m);
+    }
+
+    [Fact]
+    public async Task GetFinancialSummary_MixedLinkedAndUnlinked_CountedOnceOnly()
+    {
+        // Arrange: Active contract (1,000,000) with linked (200,000) + unlinked (50,000)
+        await using var db = CreateContext();
+        var (patientId, contractId) = await SeedPatientWithContract(db, 1_000_000m);
+
+        db.Payments.Add(new Payment
+        {
+            PatientId = patientId,
+            ContractId = contractId,
+            Amount = 200_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = "cash"
+        });
+        db.Payments.Add(new Payment
+        {
+            PatientId = patientId,
+            ContractId = null, // unlinked
+            Amount = 50_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = "card"
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        // Act
+        var result = await service.GetFinancialSummaryAsync(patientId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalPaid.Should().Be(250_000m, "linked + unlinked = 200,000 + 50,000");
+        result.TotalOutstanding.Should().Be(750_000m, "1,000,000 - 0 - 250,000");
+
+        // Per-contract: only linked payment counts
+        result.Contracts[0].PaidAmount.Should().Be(200_000m, "per-contract only counts linked payments");
+        result.Contracts[0].RemainingAmount.Should().Be(800_000m, "1,000,000 - 200,000");
+    }
 
     [Fact]
     public async Task GetFinancialSummary_CompletedContractPayments_NotCountedInTotalPaid()
@@ -446,6 +524,75 @@ public class PortalFinanceTests
         result.TotalOutstanding.Should().Be(0m);
         result.ActiveContracts.Should().Be(0);
         result.Contracts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetFinancialSummary_CompletedContractPlusUnlinkedPayment_OnlyCountsUnlinked()
+    {
+        // Arrange: 1 completed contract (fully paid) + 1 active contract + 1 unlinked payment
+        // The completed contract's payment should NOT be counted, but the unlinked one should.
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+
+        db.Patients.Add(new Patient
+        {
+            Id = patientId,
+            FirstName = "علي",
+            LastName = "حسين",
+            PatientNumber = "P-006"
+        });
+
+        var completedId = Guid.NewGuid();
+        var activeId = Guid.NewGuid();
+
+        db.Contracts.Add(new Contract
+        {
+            Id = completedId,
+            PatientId = patientId,
+            TotalAmount = 200_000m,
+            DiscountAmount = 0m,
+            Status = ContractStatus.Completed
+        });
+        db.Contracts.Add(new Contract
+        {
+            Id = activeId,
+            PatientId = patientId,
+            TotalAmount = 300_000m,
+            DiscountAmount = 10_000m,
+            Status = ContractStatus.Active
+        });
+
+        // Payment for completed contract — should NOT count
+        db.Payments.Add(new Payment
+        {
+            PatientId = patientId,
+            ContractId = completedId,
+            Amount = 200_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = "cash"
+        });
+        // Unlinked payment — SHOULD count
+        db.Payments.Add(new Payment
+        {
+            PatientId = patientId,
+            ContractId = null,
+            Amount = 50_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+            PaymentMethod = "card"
+        });
+
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+
+        // Act
+        var result = await service.GetFinancialSummaryAsync(patientId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.TotalPaid.Should().Be(50_000m, "unlinked counted, completed contract payment excluded");
+        result.TotalAmount.Should().Be(290_000m, "300,000 - 10,000 (only active contract)");
+        result.TotalOutstanding.Should().Be(240_000m, "290,000 - 50,000");
     }
 
     [Fact]

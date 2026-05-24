@@ -363,10 +363,17 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var activeContractsList = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
 
-        // FIX: Only count payments linked to ACTIVE contracts so the summary
-        // cards match the per-contract breakdown. Payments for completed/
-        // cancelled contracts would distort the outstanding balance.
-        var totalPaid = activeContractsList.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+        // totalPaid includes: (1) payments linked to ACTIVE contracts, plus
+        // (2) unlinked/orphan payments that reduce the patient's outstanding
+        // balance. Payments linked to COMPLETED/CANCELLED contracts are
+        // excluded because they are already settled and would make totalPaid
+        // larger than totalContracted (causing negative outstanding).
+        var activeContractIds = activeContractsList.Select(c => c.Id).ToHashSet();
+        var totalPaid = await db.Payments
+            .Where(p => p.PatientId == patientId && p.IsActive
+                && (p.ContractId == null || activeContractIds.Contains(p.ContractId.Value)))
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
         var totalContracted = activeContractsList.Sum(c => c.TotalAmount);
         var totalDiscounts = activeContractsList.Sum(c => c.DiscountAmount);
         var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
@@ -629,10 +636,17 @@ public class PatientPortalService(AppDbContext db, IConfiguration config, IHttpC
 
         var activeContracts = contracts.Where(c => c.Status == ContractStatus.Active).ToList();
 
-        // FIX: Only count payments linked to ACTIVE contracts so the summary
-        // cards match the per-contract breakdown. Payments for completed/
-        // cancelled contracts would distort the outstanding balance.
-        var totalPaid = activeContracts.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+        // totalPaid includes: (1) payments linked to ACTIVE contracts, plus
+        // (2) unlinked/orphan payments that reduce the patient's outstanding
+        // balance. Payments linked to COMPLETED/CANCELLED contracts are
+        // excluded because they are already settled and would make totalPaid
+        // larger than totalContracted (causing negative outstanding).
+        var activeContractIds = activeContracts.Select(c => c.Id).ToHashSet();
+        var totalPaid = await db.Payments
+            .Where(p => p.PatientId == patientId && p.IsActive
+                && (p.ContractId == null || activeContractIds.Contains(p.ContractId.Value)))
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
         var totalContracted = activeContracts.Sum(c => c.TotalAmount);
         var totalDiscounts = activeContracts.Sum(c => c.DiscountAmount);
         var totalOutstanding = totalContracted - totalDiscounts - totalPaid;

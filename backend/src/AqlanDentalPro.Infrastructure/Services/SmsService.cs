@@ -13,7 +13,8 @@ namespace AqlanDentalPro.Infrastructure.Services;
 /// <summary>
 /// SMS Service — Local Android SIM SMS Gateway integration.
 /// Sends SMS messages through an Android phone running an SMS Gateway API app.
-/// Follows the same patterns as WhatsAppService.
+/// Settings are stored in the DB Settings table and cached in-memory for 5 minutes.
+/// Environment variables (Sms:ApiUrl, Sms:ApiKey, Sms:SenderName) serve as fallback.
 /// </summary>
 public class SmsService : ISmsService
 {
@@ -22,9 +23,17 @@ public class SmsService : ISmsService
     private readonly IConfiguration _configuration;
     private readonly ILogger<SmsService> _logger;
 
-    private string? ApiUrl => _configuration["Sms:ApiUrl"];
-    private string? ApiKey => _configuration["Sms:ApiKey"];
-    private string? SenderName => _configuration["Sms:SenderName"];
+    // Cache for DB-stored settings (refreshed every 5 minutes)
+    private string? _cachedApiUrl;
+    private string? _cachedApiKey;
+    private string? _cachedSenderName;
+    private DateTime _cacheExpiry = DateTime.MinValue;
+    private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(5);
+
+    // DB values take priority over env vars; env vars serve as fallback
+    private string? ApiUrl => _cachedApiUrl ?? _configuration["Sms:ApiUrl"];
+    private string? ApiKey => _cachedApiKey ?? _configuration["Sms:ApiKey"];
+    private string? SenderName => _cachedSenderName ?? _configuration["Sms:SenderName"];
     private bool IsConfigured => !string.IsNullOrWhiteSpace(ApiUrl) && !string.IsNullOrWhiteSpace(ApiKey);
 
     public SmsService(
@@ -39,9 +48,28 @@ public class SmsService : ISmsService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Ensures DB-cached settings are loaded (env vars serve as fallback).
+    /// </summary>
+    private async Task EnsureSettingsCacheAsync()
+    {
+        if (DateTime.UtcNow < _cacheExpiry) return;
+
+        var urlSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.api_url");
+        var keySetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.api_key");
+        var senderSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.sender_name");
+
+        _cachedApiUrl = urlSetting?.Value;
+        _cachedApiKey = keySetting?.Value;
+        _cachedSenderName = senderSetting?.Value;
+        _cacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
+    }
+
     // ─── Send Single SMS ──────────────────────────────────────────────────
     public async Task<SmsMessageDto> SendSmsAsync(SendSmsRequest request)
     {
+        await EnsureSettingsCacheAsync();
+
         // Get patient phone
         var patient = await _db.Patients.FindAsync(request.PatientId);
         if (patient == null) throw new InvalidOperationException("المريض غير موجود");
@@ -93,6 +121,8 @@ public class SmsService : ISmsService
     // ─── Send Bulk SMS ────────────────────────────────────────────────────
     public async Task<List<SmsMessageDto>> SendBulkAsync(BulkSendSmsRequest request)
     {
+        await EnsureSettingsCacheAsync();
+
         var results = new List<SmsMessageDto>();
         var patients = await _db.Patients
             .Where(p => request.PatientIds.Contains(p.Id))
@@ -123,6 +153,8 @@ public class SmsService : ISmsService
     // ─── Send Appointment Reminder ────────────────────────────────────────
     public async Task<SmsMessageDto> SendAppointmentReminderAsync(SendSmsAppointmentReminderRequest request)
     {
+        await EnsureSettingsCacheAsync();
+
         var appointment = await _db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
@@ -167,6 +199,8 @@ public class SmsService : ISmsService
     // ─── Send Pending Reminders ───────────────────────────────────────────
     public async Task<int> SendPendingRemindersAsync()
     {
+        await EnsureSettingsCacheAsync();
+
         var settings = await GetGatewaySettingsAsync();
         if (!settings.Enabled || !settings.SendAppointmentReminders)
             return 0;
@@ -220,6 +254,8 @@ public class SmsService : ISmsService
     // ─── Dashboard ────────────────────────────────────────────────────────
     public async Task<SmsDashboardDto> GetDashboardAsync()
     {
+        await EnsureSettingsCacheAsync();
+
         var settings = await GetGatewaySettingsAsync();
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
@@ -292,6 +328,8 @@ public class SmsService : ISmsService
     // ─── Retry Failed Message ─────────────────────────────────────────────
     public async Task<SmsMessageDto> RetryFailedMessageAsync(Guid messageId)
     {
+        await EnsureSettingsCacheAsync();
+
         var message = await _db.SmsMessages
             .Include(m => m.Patient)
             .FirstOrDefaultAsync(m => m.Id == messageId && m.IsActive);
@@ -349,6 +387,8 @@ public class SmsService : ISmsService
     // ─── Gateway Settings ─────────────────────────────────────────────────
     public async Task<SmsGatewaySettingsDto> GetGatewaySettingsAsync()
     {
+        await EnsureSettingsCacheAsync();
+
         var enabledSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.enabled");
         var senderNameSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.sender_name");
         var dailyLimitSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.daily_limit");
@@ -361,7 +401,7 @@ public class SmsService : ISmsService
 
         if (enabled && IsConfigured)
         {
-            try { isConnected = await TestGatewayConnectionAsync(); }
+            try { isConnected = await TestGatewayConnectionInternalAsync(); }
             catch { isConnected = false; }
         }
 
@@ -381,7 +421,7 @@ public class SmsService : ISmsService
 
     public async Task<SmsGatewaySettingsDto> UpdateGatewaySettingsAsync(UpdateSmsGatewaySettingsRequest request)
     {
-        // Update settings in DB
+        // Update all settings in DB (including ApiUrl and ApiKey)
         await UpsertSettingAsync("sms.enabled", request.Enabled.ToString().ToLower());
         await UpsertSettingAsync("sms.sender_name", request.SenderName ?? "Aqlan Dental");
         await UpsertSettingAsync("sms.daily_limit", request.DailyLimit.ToString());
@@ -389,14 +429,33 @@ public class SmsService : ISmsService
         await UpsertSettingAsync("sms.send_payment_reminders", request.SendPaymentReminders.ToString().ToLower());
         await UpsertSettingAsync("sms.reminder_hours", request.ReminderHours ?? "24,2");
 
-        // Note: ApiUrl and ApiKey are stored in appsettings/env vars (not DB) for security
-        // They can be updated via environment variables on the server
+        // Store ApiUrl and ApiKey in DB so they persist across restarts
+        if (!string.IsNullOrWhiteSpace(request.ApiUrl))
+        {
+            await UpsertSettingAsync("sms.api_url", request.ApiUrl.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(request.ApiKey))
+        {
+            await UpsertSettingAsync("sms.api_key", request.ApiKey.Trim());
+        }
+
+        // Invalidate cache so next read picks up new values
+        _cacheExpiry = DateTime.MinValue;
 
         return await GetGatewaySettingsAsync();
     }
 
     // ─── Test Gateway Connection ──────────────────────────────────────────
     public async Task<bool> TestGatewayConnectionAsync()
+    {
+        await EnsureSettingsCacheAsync();
+        return await TestGatewayConnectionInternalAsync();
+    }
+
+    /// <summary>
+    /// Internal connection test — callers must ensure cache is loaded first.
+    /// </summary>
+    private async Task<bool> TestGatewayConnectionInternalAsync()
     {
         if (!IsConfigured) return false;
 

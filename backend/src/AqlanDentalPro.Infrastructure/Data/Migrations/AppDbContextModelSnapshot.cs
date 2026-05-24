@@ -4509,6 +4509,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("OrthoCaseId");
 
+                    b.HasIndex("OrthoCaseId", "PlanLabel")
+                        .IsUnique();
+
                     b.ToTable("TreatmentPlans");
                 });
 

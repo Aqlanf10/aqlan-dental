@@ -51,9 +51,7 @@ import {
   useSaveDiagnosis,
   useSaveExtractionDecision,
   useSaveRetention,
-  useSaveTreatmentPlan,
   useTreatmentPlans,
-  useUpdateTreatmentPlan,
 } from "@/hooks/useOrtho";
 import { toast } from "@/stores/toastStore";
 import type {
@@ -1220,7 +1218,6 @@ function TreatmentPlanPanel({ caseId }: { caseId: string }) {
   const { data: plans = [] as TreatmentPlan[] } = useTreatmentPlans(caseId);
   const createPlan = useCreateTreatmentPlan(caseId);
   const approvePlan = useApproveSpecificTreatmentPlan(caseId);
-  const updatePlan = useUpdateTreatmentPlan(caseId);
   const [showCreate, setShowCreate] = useState(false);
   const [newPlan, setNewPlan] = useState<Partial<TreatmentPlan>>({
     planLabel: "B",

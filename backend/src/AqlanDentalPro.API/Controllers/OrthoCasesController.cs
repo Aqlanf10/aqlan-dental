@@ -418,23 +418,41 @@ public class OrthoCasesController(
         });
     }
 
+    private static readonly HashSet<string> ValidPlanLabels = new(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
+
     [HttpPost("{id:guid}/treatment-plans")]
     public async Task<IActionResult> CreateTreatmentPlan(Guid id, [FromBody] CreateTreatmentPlanRequest req)
     {
         var orthoCase = await db.OrthoCases.FindAsync(id);
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
 
-        // Determine next plan label
+        // Fetch existing labels for this ortho case
         var existingLabels = await db.TreatmentPlans
             .Where(p => p.OrthoCaseId == id)
             .Select(p => p.PlanLabel)
             .ToListAsync();
-        var nextLabel = new[] { "A", "B", "C", "D", "E" }.FirstOrDefault(l => !existingLabels.Contains(l)) ?? "X";
+
+        // If caller supplied a label, validate it
+        if (req.PlanLabel is not null)
+        {
+            if (!ValidPlanLabels.Contains(req.PlanLabel))
+                return BadRequest(new { message = "تصنيف الخطة غير صالح. القيم المسموح بها: A أو B أو C فقط" });
+
+            if (existingLabels.Contains(req.PlanLabel, StringComparer.OrdinalIgnoreCase))
+                return BadRequest(new { message = $"تصنيف الخطة {req.PlanLabel} مستخدم بالفعل لهذه الحالة" });
+        }
+
+        // Auto-select next available label when caller omitted it
+        var chosenLabel = req.PlanLabel
+            ?? new[] { "A", "B", "C" }.FirstOrDefault(l => !existingLabels.Contains(l, StringComparer.OrdinalIgnoreCase));
+
+        if (chosenLabel is null)
+            return BadRequest(new { message = "تم إنشاء الخطط A و B و C بالفعل لهذه الحالة. لا يمكن إضافة خطة رابعة" });
 
         var plan = new TreatmentPlan
         {
             OrthoCaseId = id,
-            PlanLabel = req.PlanLabel ?? nextLabel,
+            PlanLabel = chosenLabel,
             ApplianceType = req.ApplianceType,
             BracketSystem = req.BracketSystem,
             InitialWire = req.InitialWire,

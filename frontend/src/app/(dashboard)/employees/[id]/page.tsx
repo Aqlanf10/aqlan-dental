@@ -641,7 +641,7 @@ function EmployeeHRTabs({ employeeId }: { employeeId: string }) {
                 <tbody className="divide-y divide-gray-50">
                   {records.map((rec, i) => (
                     <tr key={i} className="hover:bg-gray-50/50">
-                      <td className="px-3 py-2 text-gray-600 text-xs">{rec.year}/{rec.month}</td>
+                      <td className="px-3 py-2 text-gray-600 text-xs">{String(rec.year ?? "")}/{String(rec.month ?? "")}</td>
                       <td className="px-3 py-2 text-xs" dir="ltr">{Number(rec.baseSalary).toLocaleString("ar-SA")}</td>
                       <td className="px-3 py-2 text-xs text-red-600" dir="ltr">{Number(rec.deductions).toLocaleString("ar-SA")}</td>
                       <td className="px-3 py-2 text-xs text-amber-600" dir="ltr">{Number(rec.advances).toLocaleString("ar-SA")}</td>

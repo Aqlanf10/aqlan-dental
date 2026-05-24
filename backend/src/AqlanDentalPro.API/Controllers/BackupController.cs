@@ -392,7 +392,7 @@ public class BackupController(AppDbContext db, IWebHostEnvironment env) : Contro
         counts["branches"] = branches.Count;
 
         var clinicServices = await db.ClinicServices.IgnoreQueryFilters().AsNoTracking()
-            .Select(s => new { s.Id, s.Name, s.Category, s.Price, s.BranchId, s.IsActive })
+            .Select(s => new { s.Id, s.ArabicName, s.EnglishName, s.Category, s.DefaultPrice, s.IsActive })
             .ToListAsync();
         data["clinicServices"] = clinicServices;
         counts["clinicServices"] = clinicServices.Count;

@@ -151,8 +151,8 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "PatientJourney.GetToday failed: {Message}\n{StackTrace}", ex.Message, ex.StackTrace);
-            return StatusCode(500, new { message = $"خطأ في رحلة المرضى: {ex.Message}", detail = ex.InnerException?.Message });
+            logger.LogError(ex, "PatientJourney.GetToday failed for date {Date}: {Message}", queryDate, ex.Message);
+            throw; // Let ErrorHandlingMiddleware handle the response
         }
     }
 

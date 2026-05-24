@@ -73,14 +73,16 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         var appointmentIds = appointments.Select(a => a.Id).ToList();
         var queueItems = await db.ClinicQueueItems
             .IgnoreQueryFilters()
-            .Where(q => appointmentIds.Contains(q.AppointmentId ?? Guid.Empty) && q.QueueDate == queryDate && q.IsActive)
-            .ToDictionaryAsync(q => q.AppointmentId ?? Guid.Empty);
+            .Where(q => q.AppointmentId != null && appointmentIds.Contains(q.AppointmentId.Value) && q.QueueDate == queryDate && q.IsActive)
+            .GroupBy(q => q.AppointmentId!.Value)
+            .ToDictionaryAsync(g => g.Key, g => g.First()); // Handle duplicates safely
 
         // Load visits for these appointments
         var visits = await db.Visits
             .IgnoreQueryFilters()
             .Where(v => v.AppointmentId != null && appointmentIds.Contains(v.AppointmentId.Value) && v.IsActive)
-            .ToDictionaryAsync(v => v.AppointmentId!.Value);
+            .GroupBy(v => v.AppointmentId!.Value)
+            .ToDictionaryAsync(g => g.Key, g => g.First()); // Handle duplicates safely
 
         // Load service info for appointments that have ServiceId
         var serviceIds = appointments.Where(a => a.ServiceId.HasValue).Select(a => a.ServiceId!.Value).Distinct().ToList();
@@ -91,10 +93,12 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
 
         // Check consultation fee payment status for today
         var patientIds = appointments.Select(a => a.PatientId).Distinct().ToList();
-        var todayPayments = await db.Payments
-            .Where(p => patientIds.Contains(p.PatientId) && p.PaymentDate == queryDate && p.IsActive)
-            .GroupBy(p => p.PatientId)
-            .ToDictionaryAsync(g => g.Key, g => g.Sum(p => p.Amount));
+        var todayPayments = patientIds.Count > 0
+            ? await db.Payments
+                .Where(p => patientIds.Contains(p.PatientId) && p.PaymentDate == queryDate && p.IsActive)
+                .GroupBy(p => p.PatientId)
+                .ToDictionaryAsync(g => g.Key, g => g.Sum(p => p.Amount))
+            : new Dictionary<Guid, decimal>();
 
         // Build journey items
         var result = appointments.Select(a =>

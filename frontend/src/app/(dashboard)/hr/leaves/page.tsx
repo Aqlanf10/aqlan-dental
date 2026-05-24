@@ -48,12 +48,20 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 export default function LeavesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
+  const [employeeFilter, setEmployeeFilter] = useState("");
   const [page, setPage] = useState(1);
 
   const [records, setRecords] = useState<LeaveRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Leave balance
+  const [leaveBalance, setLeaveBalance] = useState<{
+    defaultAnnualLeave: number;
+    usedAnnualLeave: number;
+    remainingAnnualLeave: number;
+  } | null>(null);
 
   // New leave modal
   const [showNew, setShowNew] = useState(false);
@@ -68,12 +76,36 @@ export default function LeavesPage() {
 
   const { data: branches } = useBranches();
 
+  // Load employees on mount
+  useEffect(() => {
+    const loadEmployees = async () => {
+      try {
+        const { data } = await api.get("/api/employees?pageSize=100");
+        setEmployees((data.data || []).map((e: { id: string; fullName: string }) => ({ id: e.id, fullName: e.fullName })));
+      } catch { /* ignore */ }
+    };
+    loadEmployees();
+  }, []);
+
+  // Fetch leave balance when employeeFilter changes
+  useEffect(() => {
+    if (!employeeFilter) { setLeaveBalance(null); return; }
+    const fetchBalance = async () => {
+      try {
+        const { data } = await api.get(`/api/leaves/balance/${employeeFilter}`);
+        setLeaveBalance(data);
+      } catch { setLeaveBalance(null); }
+    };
+    fetchBalance();
+  }, [employeeFilter]);
+
   const fetchRecords = useCallback(async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
       if (statusFilter) params.set("status", statusFilter);
       if (branchFilter) params.set("branchId", branchFilter);
+      if (employeeFilter) params.set("employeeId", employeeFilter);
       params.set("page", String(page));
       params.set("pageSize", "50");
       const { data } = await api.get(`/api/leaves?${params.toString()}`);
@@ -85,7 +117,7 @@ export default function LeavesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, branchFilter, page]);
+  }, [statusFilter, branchFilter, employeeFilter, page]);
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
@@ -135,6 +167,30 @@ export default function LeavesPage() {
       setActionId(null);
       setRejectionReason("");
       fetchRecords();
+      // Refresh balance if employee filter is active
+      if (employeeFilter) {
+        try {
+          const { data: bal } = await api.get(`/api/leaves/balance/${employeeFilter}`);
+          setLeaveBalance(bal);
+        } catch { /* ignore */ }
+      }
+    } catch (err: unknown) {
+      const msg = err && typeof err === "object" && "response" in err
+        ? ((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? "حدث خطأ")
+        : "حدث خطأ";
+      toast.error(msg);
+    }
+  };
+
+  const handleCancelLeave = async (id: string) => {
+    try {
+      const { data } = await api.put(`/api/leaves/${id}/cancel`);
+      toast.success(data.message || "تم إلغاء الإجازة");
+      fetchRecords();
+      if (employeeFilter) {
+        const { data: bal } = await api.get(`/api/leaves/balance/${employeeFilter}`);
+        setLeaveBalance(bal);
+      }
     } catch (err: unknown) {
       const msg = err && typeof err === "object" && "response" in err
         ? ((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? "حدث خطأ")
@@ -171,7 +227,38 @@ export default function LeavesPage() {
           <option value="">جميع الفروع</option>
           {branches?.map((b: { id: string; name: string }) => (<option key={b.id} value={b.id}>{b.name}</option>))}
         </select>
+        <select value={employeeFilter} onChange={(e) => { setEmployeeFilter(e.target.value); setPage(1); }}
+          className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1a3a5c]/40 transition min-w-[160px]">
+          <option value="">جميع الموظفين</option>
+          {employees.map((e) => (<option key={e.id} value={e.id}>{e.fullName}</option>))}
+        </select>
       </div>
+
+      {/* Leave Balance Card */}
+      {leaveBalance && (
+        <div className="bg-gradient-to-l from-[#1a3a5c] to-[#0d2137] rounded-2xl p-5 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <CalendarOff className="w-5 h-5 opacity-80" />
+              <span className="text-sm font-medium opacity-90">رصيد الإجازات السنوية</span>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="text-center">
+                <p className="text-2xl font-bold">{leaveBalance.defaultAnnualLeave}</p>
+                <p className="text-[10px] opacity-70">المستحقة</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-amber-300">{leaveBalance.usedAnnualLeave}</p>
+                <p className="text-[10px] opacity-70">المستخدمة</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-emerald-300">{leaveBalance.remainingAnnualLeave}</p>
+                <p className="text-[10px] opacity-70">المتبقية</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       {isLoading ? (
@@ -223,6 +310,12 @@ export default function LeavesPage() {
                               <XCircle className="w-4 h-4" />
                             </button>
                           </div>
+                        )}
+                        {rec.status === "Approved" && (
+                          <button onClick={() => handleCancelLeave(rec.id)}
+                            className="text-xs text-red-500 hover:text-red-700 transition" title="إلغاء الإجازة">
+                            إلغاء
+                          </button>
                         )}
                       </td>
                     </tr>

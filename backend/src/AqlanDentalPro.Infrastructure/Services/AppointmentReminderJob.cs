@@ -252,7 +252,7 @@ public class AppointmentReminderJob : BackgroundService
     }
 
     /// <summary>Parses the JSON array of already-sent reminder window hours.</summary>
-    internal static List<int> ParseSentWindows(string? json)
+    public static List<int> ParseSentWindows(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
             return new List<int>();

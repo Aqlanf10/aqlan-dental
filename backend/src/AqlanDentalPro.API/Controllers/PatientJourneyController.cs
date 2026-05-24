@@ -25,19 +25,15 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
     public async Task<IActionResult> GetToday([FromQuery] string? date, [FromQuery] string? status,
         [FromQuery] Guid? doctorId, [FromQuery] Guid? serviceId, [FromQuery] Guid? roomId)
     {
+        // Parse date - default to today (declared before try so catch can reference it)
+        DateOnly queryDate = DateOnly.FromDateTime(DateTime.UtcNow);
         try
         {
-        // Parse date - default to today
-        DateOnly queryDate;
         if (!string.IsNullOrWhiteSpace(date))
         {
             if (!DateOnly.TryParse(date, out var parsed))
                 return BadRequest(new { message = "صيغة التاريخ غير صالحة. استخدم YYYY-MM-DD" });
             queryDate = parsed;
-        }
-        else
-        {
-            queryDate = DateOnly.FromDateTime(DateTime.UtcNow);
         }
 
         // Validate status filter if provided
@@ -151,7 +147,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "PatientJourney.GetToday failed: {Message}\n{StackTrace}", ex.Message, ex.StackTrace);
+            logger.LogError(ex, "PatientJourney.GetToday failed for date {Date}: {Message}", queryDate, ex.Message);
             return StatusCode(500, new { message = $"خطأ في رحلة المرضى: {ex.Message}", detail = ex.InnerException?.Message });
         }
     }

@@ -216,7 +216,7 @@ public class AppointmentReminderJob : BackgroundService
     /// B) Patient.Email field
     /// C) BookingRequest email (if appointment was created from a booking request)
     /// </summary>
-    internal static async Task<string?> GetPatientEmailAsync(AppDbContext db, Guid patientId, Guid? appointmentId = null)
+    public static async Task<string?> GetPatientEmailAsync(AppDbContext db, Guid patientId, Guid? appointmentId = null)
     {
         // A) PatientAccount → linked User email
         var linkedUserEmail = await db.PatientAccounts
@@ -268,7 +268,7 @@ public class AppointmentReminderJob : BackgroundService
     }
 
     /// <summary>Masks email address for safe logging (e.g., "a****n@gmail.com").</summary>
-    internal static string MaskEmail(string email)
+    public static string MaskEmail(string email)
     {
         if (string.IsNullOrEmpty(email) || !email.Contains('@'))
             return "***";

@@ -9,7 +9,7 @@ import {
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
   CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown, Percent,
-  Smartphone,
+  Smartphone, Banknote, CalendarOff, Wallet, Shield,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -117,10 +117,22 @@ const NAV: NavEntry[] = [
   // ── الإدارة ───────────────────────────────────────────────────────────────
   { href: "/doctors",        label: "الأطباء",          icon: UserRound,       roles: ["Admin"],                                                      section: "الإدارة" },
   { href: "/employees",      label: "الموظفين",         icon: UserCog,         roles: ["Admin"] },
+  {
+    kind: "group",
+    label: "الموارد البشرية", icon: UserCog,
+    roles: ["Admin"],
+    children: [
+      { href: "/hr/attendance", label: "الحضور والانصراف", icon: Clock,       roles: ["Admin"] },
+      { href: "/hr/salaries",   label: "الرواتب",         icon: Banknote,    roles: ["Admin"] },
+      { href: "/hr/advances",   label: "السلف",           icon: Wallet,      roles: ["Admin"] },
+      { href: "/hr/leaves",     label: "الإجازات",        icon: CalendarOff, roles: ["Admin"] },
+    ],
+  },
   { href: "/branches",       label: "الفروع",           icon: Building2,       roles: ["Admin"] },
 
   // ── النظام ───────────────────────────────────────────────────────────────
   { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: ["Admin"],                                                      section: "النظام" },
+  { href: "/settings/backup", label: "النسخ الاحتياطي", icon: Shield,          roles: ["Admin"] },
 ];
 
 const ROLE_LABELS: Record<string, string> = {

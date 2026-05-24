@@ -1404,9 +1404,12 @@ function QuickSendModal({ onClose }: QuickSendModalProps) {
       setSearching(true);
       try {
         const { data } = await api.get<{
-          items: { id: string; name: string; phone: string }[];
+          data: { id: string; fullName: string; phone?: string }[];
+          items?: { id: string; fullName: string; phone?: string }[];
         }>(`/api/patients?search=${encodeURIComponent(patientSearch.trim())}&pageSize=10`);
-        setPatients(data.items ?? []);
+        // API returns { data: [...] } from PaginatedResponse, but doctor access returns { items: [...] }
+        const list = data.data ?? data.items ?? [];
+        setPatients(list.map(p => ({ id: p.id, name: p.fullName, phone: p.phone ?? "" })));
       } catch {
         setPatients([]);
       } finally {

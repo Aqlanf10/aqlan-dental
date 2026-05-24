@@ -16,7 +16,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patient-journey")]
 [Authorize(Policy = "StaffOnly")]
-public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyController> logger, ICommissionService commissionService) : ControllerBase
+public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyController> logger, ICommissionService commissionService, IFinanceService financeService) : ControllerBase
 {
     // ─── 1. GET /api/patient-journey/today ────────────────────────────────────
     /// <summary>Returns today's patient journey list combining appointments,
@@ -124,7 +124,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 AppointmentId = a.Id,
                 PatientId = a.PatientId,
                 PatientName = BuildPatientDisplayName(a.Patient),
-                PatientPhone = a.Patient?.Phone,
+                PatientPhone = IsDoctorRole() ? null : a.Patient?.Phone,
                 AppointmentTime = a.StartTime.ToString("HH:mm"),
                 AppointmentStatus = a.Status.ToString(),
                 DoctorId = a.DoctorId,
@@ -272,84 +272,94 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 })
                 .FirstOrDefaultAsync();
 
-            // 5. Finance summary - check if user has finance access
-            var hasFinanceAccess = User.IsInRole("Admin") || User.IsInRole("Accountant") ||
+            // FIX-2: Finance access tiers
+            // Full:    Admin + Accountant (via FinanceAccess policy / finance.view permission)
+            // Limited: Reception (daily checkout only — outstandingBalance, overdueAmount, latestPayment, unpaidInvoicesCount, activeContract short info)
+            // None:    Doctors
+            var isAdminOrAccountant = User.IsInRole("Admin") || User.IsInRole("Accountant") ||
                 User.HasClaim("permission", "finance.view");
+            var isReception = User.IsInRole("Reception");
+            var hasFullFinanceAccess = isAdminOrAccountant;
+            var hasLimitedFinanceAccess = isReception;
+            var hasAnyFinanceAccess = hasFullFinanceAccess || hasLimitedFinanceAccess;
 
             object? financeSummary = null;
             int unpaidInvoicesCount = 0;
             object? activeContract = null;
 
-            if (hasFinanceAccess)
+            if (hasAnyFinanceAccess)
             {
-                // Total treatment cost from active contracts
-                var activeContracts = await db.Contracts
-                    .IgnoreQueryFilters()
-                    .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
-                    .ToListAsync();
+                // FIX-3: Use central FinanceService.GetPatientFinanceSummaryAsync()
+                // instead of duplicating financial calculations here.
+                // This ensures the Journey Hub and Finance module show the same numbers.
+                var centralSummary = await financeService.GetPatientFinanceSummaryAsync(patientId);
 
-                var totalTreatmentCost = activeContracts.Sum(c => c.TotalAmount);
-                var totalContractPaid = activeContracts.Sum(c => c.PaidAmount);
-
-                // Total paid from payments
-                var totalPaid = await db.Payments
-                    .Where(p => p.PatientId == patientId && p.IsActive)
-                    .SumAsync(p => p.Amount);
-
-                // Overdue from contracts
-                var overdueAmount = activeContracts
-                    .Where(c => c.PaidAmount < c.TotalAmount && c.StartDate.HasValue &&
-                        c.StartDate.Value.AddMonths(c.InstallmentsCount > 0 ? c.InstallmentsCount : 1) < today)
-                    .Sum(c => c.TotalAmount - c.PaidAmount);
-
-                var outstandingBalance = totalTreatmentCost - totalContractPaid;
-
-                // Latest payment
-                var latestPayment = await db.Payments
-                    .Where(p => p.PatientId == patientId && p.IsActive)
-                    .OrderByDescending(p => p.PaymentDate)
-                    .ThenByDescending(p => p.CreatedAt)
-                    .Select(p => new { p.Id, p.Amount, p.PaymentDate, p.PaymentMethod, p.ReceiptNumber })
-                    .FirstOrDefaultAsync();
-
-                string financialStatus = outstandingBalance <= 0 ? "paid_full" :
-                    overdueAmount > 0 ? "overdue" : "has_balance";
-                if (totalTreatmentCost == 0) financialStatus = "no_plan";
-
-                financeSummary = new
+                if (hasFullFinanceAccess)
                 {
-                    TotalTreatmentCost = totalTreatmentCost,
-                    TotalPaid = totalPaid,
-                    OutstandingBalance = outstandingBalance,
-                    OverdueAmount = overdueAmount,
-                    LatestPayment = latestPayment,
-                    FinancialStatus = financialStatus,
-                    ActiveContractsCount = activeContracts.Count,
-                    TotalPaymentsCount = 0 // Skip expensive count
-                };
+                    // Full finance summary for Admin/Accountant
+                    financeSummary = new
+                    {
+                        TotalTreatmentCost = centralSummary.TotalTreatmentCost,
+                        TotalPaid = centralSummary.TotalPaid,
+                        OutstandingBalance = centralSummary.OutstandingBalance,
+                        OverdueAmount = centralSummary.OverdueAmount,
+                        LatestPayment = centralSummary.LatestPayment != null ? new
+                        {
+                            centralSummary.LatestPayment.Id,
+                            centralSummary.LatestPayment.Amount,
+                            centralSummary.LatestPayment.PaymentDate,
+                            centralSummary.LatestPayment.PaymentMethod,
+                            centralSummary.LatestPayment.ReceiptNumber
+                        } : null,
+                        FinancialStatus = centralSummary.FinancialStatus,
+                        ActiveContractsCount = centralSummary.ActiveContractsCount,
+                        TotalPaymentsCount = centralSummary.TotalPaymentsCount
+                    };
+                }
+                else
+                {
+                    // FIX-2: Limited finance summary for Reception (daily checkout only)
+                    financeSummary = new
+                    {
+                        OutstandingBalance = centralSummary.OutstandingBalance,
+                        OverdueAmount = centralSummary.OverdueAmount,
+                        LatestPayment = centralSummary.LatestPayment != null ? new
+                        {
+                            centralSummary.LatestPayment.Id,
+                            centralSummary.LatestPayment.Amount,
+                            centralSummary.LatestPayment.PaymentDate,
+                            centralSummary.LatestPayment.PaymentMethod,
+                            centralSummary.LatestPayment.ReceiptNumber
+                        } : null,
+                        FinancialStatus = centralSummary.FinancialStatus
+                    };
+                }
 
-                // Unpaid invoices count
+                // Unpaid invoices count (both full and limited access need this for checkout)
                 unpaidInvoicesCount = await db.Invoices
                     .CountAsync(i => i.PatientId == patientId &&
                         (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Draft) && i.IsActive);
 
-                // Active contract details
-                var firstContract = activeContracts.FirstOrDefault();
-                if (firstContract != null)
-                {
-                    activeContract = new
+                // Active contract short info (both full and limited access need for checkout)
+                var firstContract = await db.Contracts
+                    .IgnoreQueryFilters()
+                    .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .Select(c => new
                     {
-                        firstContract.Id,
-                        firstContract.TotalAmount,
-                        firstContract.PaidAmount,
-                        firstContract.RemainingAmount,
-                        firstContract.InstallmentAmount,
-                        firstContract.InstallmentsCount,
-                        firstContract.Specialty,
-                        firstContract.StartDate,
-                        firstContract.Status
-                    };
-                }
+                        c.Id,
+                        c.TotalAmount,
+                        c.PaidAmount,
+                        c.RemainingAmount,
+                        c.InstallmentAmount,
+                        c.InstallmentsCount,
+                        c.Specialty,
+                        c.StartDate,
+                        c.Status
+                    })
+                    .FirstOrDefaultAsync();
+
+                activeContract = firstContract;
             }
 
             // 6. Active ortho case
@@ -431,7 +441,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 .Select(a => new { Date = a.AppointmentDate.ToString(), Type = "appointment", Title = a.AppointmentType ?? "موعد", Sub = a.Doctor != null ? a.Doctor.Name : "", a.Status })
                 .ToListAsync();
 
-            var paymentEvents = hasFinanceAccess
+            var paymentEvents = hasAnyFinanceAccess
                 ? await db.Payments
                     .Where(p => p.PatientId == patientId && p.IsActive)
                     .OrderByDescending(p => p.PaymentDate)
@@ -462,6 +472,10 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 .Select(cp => cp.ConversationId)
                 .ToListAsync();
 
+            // FIX-1: Privacy — Doctors must not see patient phone/email in API response.
+            // Only Admin, Reception, and Accountant can see contact info.
+            var isDoctor = IsDoctorRole();
+
             // Build response
             return Ok(new
             {
@@ -470,8 +484,8 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                     patient.Id,
                     patient.PatientNumber,
                     FullName = patientName,
-                    patient.Phone,
-                    patient.Email,
+                    Phone = isDoctor ? (string?)null : patient.Phone,
+                    Email = isDoctor ? (string?)null : patient.Email,
                     patient.Gender,
                     Age = age,
                     patient.BranchId,
@@ -1093,6 +1107,16 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
     }
+
+    /// <summary>
+    /// FIX-1: Determines if the current user is a doctor role.
+    /// Doctor roles: Orthodontist, GeneralDentist, OralSurgeon.
+    /// These roles must not receive patient phone/email in API responses.
+    /// </summary>
+    private bool IsDoctorRole()
+    {
+        return User.IsInRole("Orthodontist") || User.IsInRole("GeneralDentist") || User.IsInRole("OralSurgeon");
+    }
 }
 
 // ─── Request DTOs ────────────────────────────────────────────────────────────
@@ -1127,6 +1151,15 @@ public class HandoffRequest
 
 public class CheckoutRequest
 {
+    /// <summary>
+    /// FIX-4: PaymentAmount is for reference/guidance ONLY.
+    /// Checkout is workflow-status only — it does NOT create a Payment.
+    /// To record actual payment, use the Finance module (POST /api/payments)
+    /// via FinanceService.CreatePaymentAsync().
+    /// If paymentAmount is provided, the response includes a next action
+    /// reminding the user to register payment through the proper workflow.
+    /// Unlinked payments (without invoice/contract) are not created here.
+    /// </summary>
     public decimal? PaymentAmount { get; set; }
     public string? PaymentMethod { get; set; }
     public string? Notes { get; set; }

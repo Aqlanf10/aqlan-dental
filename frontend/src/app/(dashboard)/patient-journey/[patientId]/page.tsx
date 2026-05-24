@@ -100,12 +100,12 @@ const SEVERITY_STYLES: Record<string, { bg: string; border: string; text: string
 };
 
 const TIMELINE_DOT_COLORS: Record<string, string> = {
-  appointment: "bg-[#1d9e75]",
-  visit: "bg-[#1d9e75]",
+  appointment: "bg-[#3d7ab5]",
+  visit: "bg-[#3d7ab5]",
   payment: "bg-[#fac775]",
   invoice: "bg-[#185fa5]",
   document: "bg-[#d3d1c7]",
-  ortho: "bg-[#1d9e75]",
+  ortho: "bg-[#3d7ab5]",
   message: "bg-[#185fa5]",
   default: "bg-[#d3d1c7]",
 };
@@ -395,11 +395,11 @@ export default function PatientDailyJourneyHub() {
       <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
         <div className="text-center space-y-4">
           <AlertTriangle className="w-12 h-12 text-[#ba7517] mx-auto" />
-          <p className="text-lg font-bold text-[#0d2137]">فشل تحميل بيانات رحلة المريض</p>
+          <p className="text-lg font-bold text-[#1a3a5c]">فشل تحميل بيانات رحلة المريض</p>
           <p className="text-sm text-gray-500">{(error as Error)?.message ?? "حدث خطأ غير متوقع"}</p>
           <button
             onClick={() => refetch()}
-            className="px-4 py-2 text-sm font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition"
+            className="px-4 py-2 text-sm font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition"
           >
             <RefreshCw className="w-4 h-4 inline ml-1" />
             إعادة المحاولة
@@ -417,8 +417,8 @@ export default function PatientDailyJourneyHub() {
 
   const { patient, todayAppointment, queueStatus, todayVisit, financeSummary, activeContract, activeOrthoCase, medicalAlerts, recentVisits, timeline, journeyStep, nextAction, unpaidInvoicesCount } = data;
   const currentStepIdx = getStepIndex(journeyStep);
-  const payPercent = financeSummary && financeSummary.totalTreatmentCost > 0
-    ? Math.round((financeSummary.totalPaid / financeSummary.totalTreatmentCost) * 100)
+  const payPercent = financeSummary && financeSummary.totalTreatmentCost && financeSummary.totalTreatmentCost > 0
+    ? Math.round(((financeSummary.totalPaid ?? 0) / financeSummary.totalTreatmentCost) * 100)
     : 0;
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -428,9 +428,9 @@ export default function PatientDailyJourneyHub() {
       {/* ═══ SIDEBAR ═══ */}
       <aside className="w-[280px] flex-shrink-0 bg-white border-l border-[#d3d1c7] flex flex-col overflow-y-auto">
         {/* Patient Card */}
-        <div className="p-4 bg-[#0d2137]">
+        <div className="p-4 bg-[#1a3a5c]">
           <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-full bg-[#1d9e75] flex items-center justify-center text-lg font-bold text-white flex-shrink-0">
+            <div className="w-12 h-12 rounded-full bg-[#3d7ab5] flex items-center justify-center text-lg font-bold text-white flex-shrink-0">
               {getInitials(patient.fullName)}
             </div>
             <div className="flex-1 min-w-0">
@@ -497,7 +497,7 @@ export default function PatientDailyJourneyHub() {
             <span className={cn(
               "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold",
               todayAppointment.status === "Completed" ? "bg-[#eaf3de] text-[#3b6d11]" :
-              todayAppointment.status === "InProgress" || todayAppointment.status === "InRoom" ? "bg-[#9fe1cb] text-[#0f6e56]" :
+              todayAppointment.status === "InProgress" || todayAppointment.status === "InRoom" ? "bg-[#9fe1cb] text-[#2d5e8e]" :
               todayAppointment.status === "Cancelled" || todayAppointment.status === "NoShow" ? "bg-[#fcebeb] text-[#a32d2d]" :
               "bg-[#fac775]/50 text-[#633806]"
             )}>
@@ -533,17 +533,17 @@ export default function PatientDailyJourneyHub() {
                     className={cn(
                       "w-full flex items-center gap-2 px-3.5 py-2.5 text-start transition-colors border-b border-black/[0.04]",
                       activePanel === item.key
-                        ? "bg-[#e1f5ee] border-r-[3px] border-r-[#1d9e75]"
+                        ? "bg-[#e1f5ee] border-r-[3px] border-r-[#3d7ab5]"
                         : "hover:bg-[#f8f9fa]"
                     )}
                   >
                     <item.icon className={cn(
                       "w-4 h-4 flex-shrink-0",
-                      activePanel === item.key ? "text-[#0f6e56]" : "text-[#5f5e5a]"
+                      activePanel === item.key ? "text-[#2d5e8e]" : "text-[#5f5e5a]"
                     )} />
                     <span className={cn(
                       "flex-1 text-[12px]",
-                      activePanel === item.key ? "text-[#0f6e56] font-semibold" : "text-[#2c2c2a]"
+                      activePanel === item.key ? "text-[#2d5e8e] font-semibold" : "text-[#2c2c2a]"
                     )}>
                       {item.label}
                     </span>
@@ -552,7 +552,7 @@ export default function PatientDailyJourneyHub() {
                         "text-[10px] px-1.5 py-0.5 rounded-full font-bold",
                         item.badgeType === "warn" ? "bg-[#faeeda] text-[#ba7517]" :
                         item.badgeType === "danger" ? "bg-[#fcebeb] text-[#a32d2d]" :
-                        "bg-[#e1f5ee] text-[#0f6e56]"
+                        "bg-[#e1f5ee] text-[#2d5e8e]"
                       )}>
                         {item.badge}
                       </span>
@@ -568,7 +568,7 @@ export default function PatientDailyJourneyHub() {
         <div className="p-3 border-t border-[#d3d1c7] space-y-2">
           <button
             onClick={() => setActivePanel("visit")}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition"
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition"
           >
             <Plus className="w-3.5 h-3.5" />
             تسجيل زيارة جديدة
@@ -590,9 +590,9 @@ export default function PatientDailyJourneyHub() {
           <div>
             {/* Section Bar */}
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <Route className="w-5 h-5 text-[#1d9e75]" />
+              <Route className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">رحلة المريض اليوم</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">رحلة المريض اليوم</h2>
                 <p className="text-[11px] text-[#5f5e5a]">تتبع الحالة من لحظة الوصول حتى انتهاء الجلسة</p>
               </div>
               <button
@@ -608,14 +608,14 @@ export default function PatientDailyJourneyHub() {
               {/* Step Flow */}
               <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5">
-                    <CircleDot className="w-4 h-4 text-[#1d9e75]" />
+                  <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5">
+                    <CircleDot className="w-4 h-4 text-[#3d7ab5]" />
                     مسار الزيارة
                   </span>
                   <span className={cn(
                     "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold",
                     journeyStep === "Completed" ? "bg-[#eaf3de] text-[#3b6d11]" :
-                    ["InProgress", "InRoom"].includes(journeyStep) ? "bg-[#9fe1cb] text-[#0f6e56]" :
+                    ["InProgress", "InRoom"].includes(journeyStep) ? "bg-[#9fe1cb] text-[#2d5e8e]" :
                     ["Waiting", "Called"].includes(journeyStep) ? "bg-[#faeeda] text-[#633806]" :
                     "bg-[#faeeda] text-[#633806]"
                   )}>
@@ -630,15 +630,15 @@ export default function PatientDailyJourneyHub() {
                         <div className="flex flex-col items-center gap-1 min-w-[72px]">
                           <div className={cn(
                             "w-8 h-8 rounded-full flex items-center justify-center text-[14px] font-bold border-2",
-                            status === "done" && "bg-[#1d9e75] text-white border-[#1d9e75]",
-                            status === "current" && "bg-white text-[#1d9e75] border-[#1d9e75]",
+                            status === "done" && "bg-[#3d7ab5] text-white border-[#3d7ab5]",
+                            status === "current" && "bg-white text-[#3d7ab5] border-[#3d7ab5]",
                             status === "pending" && "bg-[#f1efe8] text-[#5f5e5a] border-[#d3d1c7]"
                           )}>
                             {status === "done" ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                           </div>
                           <span className={cn(
                             "text-[9px] text-center",
-                            status === "current" ? "text-[#0f6e56] font-bold" : "text-[#5f5e5a]"
+                            status === "current" ? "text-[#2d5e8e] font-bold" : "text-[#5f5e5a]"
                           )}>
                             {step.label}
                           </span>
@@ -646,7 +646,7 @@ export default function PatientDailyJourneyHub() {
                         {idx < JOURNEY_STEPS.length - 1 && (
                           <div className={cn(
                             "flex-1 h-0.5 min-w-[16px]",
-                            getStepIndex(step.key) < currentStepIdx ? "bg-[#1d9e75]" : "bg-[#d3d1c7]"
+                            getStepIndex(step.key) < currentStepIdx ? "bg-[#3d7ab5]" : "bg-[#d3d1c7]"
                           )} />
                         )}
                       </div>
@@ -659,8 +659,8 @@ export default function PatientDailyJourneyHub() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Today's Appointment Card */}
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                  <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                    <CalendarCheck className="w-4 h-4 text-[#1d9e75]" />
+                  <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                    <CalendarCheck className="w-4 h-4 text-[#3d7ab5]" />
                     موعد اليوم
                   </span>
                   {todayAppointment ? (
@@ -700,31 +700,31 @@ export default function PatientDailyJourneyHub() {
                       {canEditJourney && nextAction && nextAction !== "None" && nextAction !== "InProgress" && (
                         <div className="flex flex-wrap gap-2 pt-2 border-t border-[#d3d1c7]/50">
                           {nextAction === "Intake" && !showIntakeForm && (
-                            <button onClick={() => setShowIntakeForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition">
+                            <button onClick={() => setShowIntakeForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition">
                               <UserCheck className="w-3.5 h-3.5" />
                               تسجيل الوصول
                             </button>
                           )}
                           {nextAction === "SendToQueue" && (
-                            <button onClick={handleSendToQueue} disabled={sendToQueueMutation.isPending} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50">
+                            <button onClick={handleSendToQueue} disabled={sendToQueueMutation.isPending} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50">
                               <ArrowUpRight className="w-3.5 h-3.5" />
                               {sendToQueueMutation.isPending ? "جارٍ..." : "إضافة للطابور"}
                             </button>
                           )}
                           {nextAction === "CallPatient" && (
-                            <button onClick={handleCallPatient} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50">
+                            <button onClick={handleCallPatient} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50">
                               <Megaphone className="w-3.5 h-3.5" />
                               نداء المريض
                             </button>
                           )}
                           {nextAction === "EnterRoom" && (
-                            <button onClick={handleEnterRoom} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50">
+                            <button onClick={handleEnterRoom} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50">
                               <DoorOpen className="w-3.5 h-3.5" />
                               دخول الغرفة
                             </button>
                           )}
                           {nextAction === "StartVisit" && (
-                            <button onClick={handleStartVisit} disabled={startVisitMutation.isPending} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50">
+                            <button onClick={handleStartVisit} disabled={startVisitMutation.isPending} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50">
                               <PlayCircle className="w-3.5 h-3.5" />
                               {startVisitMutation.isPending ? "جارٍ..." : "بدء الزيارة"}
                             </button>
@@ -739,12 +739,12 @@ export default function PatientDailyJourneyHub() {
                       )}
                       {nextAction === "InProgress" && (
                         <div className="flex items-center gap-2 pt-2 border-t border-[#d3d1c7]/50">
-                          <span className="inline-flex items-center gap-1 text-[11px] text-[#0f6e56] font-semibold">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-[#2d5e8e] font-semibold">
                             <Stethoscope className="w-3.5 h-3.5" />
                             عند الطبيب
                           </span>
                           {isDoctor && todayVisit?.id && (
-                            <button onClick={() => setShowHandoffForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50 mr-auto">
+                            <button onClick={() => setShowHandoffForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50 mr-auto">
                               <ArrowUpRight className="w-3.5 h-3.5" />
                               تسليم للاستقبال
                             </button>
@@ -759,8 +759,8 @@ export default function PatientDailyJourneyHub() {
 
                 {/* Complaints & Instructions */}
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                  <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                    <Info className="w-4 h-4 text-[#1d9e75]" />
+                  <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                    <Info className="w-4 h-4 text-[#3d7ab5]" />
                     الشكوى والتعليمات
                   </span>
                   <div className="space-y-2">
@@ -812,27 +812,27 @@ export default function PatientDailyJourneyHub() {
               {/* Intake Form (Inline) */}
               {showIntakeForm && nextAction === "Intake" && (
                 <div className="bg-[#e1f5ee] rounded-xl border border-[#9fe1cb] p-4 space-y-3">
-                  <span className="text-[12px] font-bold text-[#0f6e56] flex items-center gap-1.5">
+                  <span className="text-[12px] font-bold text-[#2d5e8e] flex items-center gap-1.5">
                     <UserCheck className="w-4 h-4" />
                     تسجيل الوصول
                   </span>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-[#0f6e56]">الشكوى الرئيسية</label>
+                      <label className="text-[10px] font-bold text-[#2d5e8e]">الشكوى الرئيسية</label>
                       <input
                         value={intakeComplaint}
                         onChange={(e) => setIntakeComplaint(e.target.value)}
                         placeholder="مثل: ألم في الضرس"
-                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-[#0f6e56]">ملاحظات</label>
+                      <label className="text-[10px] font-bold text-[#2d5e8e]">ملاحظات</label>
                       <input
                         value={intakeNotes}
                         onChange={(e) => setIntakeNotes(e.target.value)}
                         placeholder="ملاحظات إضافية..."
-                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
                   </div>
@@ -840,7 +840,7 @@ export default function PatientDailyJourneyHub() {
                     <button
                       onClick={handleIntake}
                       disabled={intakeMutation.isPending}
-                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50"
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50"
                     >
                       <Save className="w-3.5 h-3.5" />
                       {intakeMutation.isPending ? "جارٍ الحفظ..." : "تسجيل الوصول وإدخال الطابور"}
@@ -855,49 +855,49 @@ export default function PatientDailyJourneyHub() {
               {/* Handoff Form (Inline) */}
               {showHandoffForm && isDoctor && todayVisit?.id && (
                 <div className="bg-[#e1f5ee] rounded-xl border border-[#9fe1cb] p-4 space-y-3">
-                  <span className="text-[12px] font-bold text-[#0f6e56] flex items-center gap-1.5">
+                  <span className="text-[12px] font-bold text-[#2d5e8e] flex items-center gap-1.5">
                     <ArrowUpRight className="w-4 h-4" />
                     تسليم المريض للاستقبال
                   </span>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-[#0f6e56]">ما تم عمله</label>
+                      <label className="text-[10px] font-bold text-[#2d5e8e]">ما تم عمله</label>
                       <textarea
                         value={handoffForm.treatmentDone}
                         onChange={(e) => setHandoffForm((f) => ({ ...f, treatmentDone: e.target.value }))}
-                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10 h-16 resize-none"
+                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10 h-16 resize-none"
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-[#0f6e56]">التشخيص</label>
+                      <label className="text-[10px] font-bold text-[#2d5e8e]">التشخيص</label>
                       <input
                         value={handoffForm.diagnosis}
                         onChange={(e) => setHandoffForm((f) => ({ ...f, diagnosis: e.target.value }))}
-                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-[#0f6e56]">تعليمات</label>
+                      <label className="text-[10px] font-bold text-[#2d5e8e]">تعليمات</label>
                       <textarea
                         value={handoffForm.instructions}
                         onChange={(e) => setHandoffForm((f) => ({ ...f, instructions: e.target.value }))}
-                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10 h-16 resize-none"
+                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10 h-16 resize-none"
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-[#0f6e56]">المبلغ المطلوب</label>
+                      <label className="text-[10px] font-bold text-[#2d5e8e]">المبلغ المطلوب</label>
                       <input
                         type="number"
                         value={handoffForm.amountDue}
                         onChange={(e) => setHandoffForm((f) => ({ ...f, amountDue: Number(e.target.value) }))}
                         dir="ltr"
                         min={0}
-                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                        className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={handleHandoff} disabled={handoffMutation.isPending} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50">
+                    <button onClick={handleHandoff} disabled={handoffMutation.isPending} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50">
                       <Save className="w-3.5 h-3.5" />
                       {handoffMutation.isPending ? "جارٍ التسليم..." : "تسليم للاستقبال"}
                     </button>
@@ -934,8 +934,8 @@ export default function PatientDailyJourneyHub() {
               {financeSummary && !isDoctor && (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5">
-                      <Wallet className="w-4 h-4 text-[#1d9e75]" />
+                    <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5">
+                      <Wallet className="w-4 h-4 text-[#3d7ab5]" />
                       الوضع المالي السريع
                     </span>
                     <button
@@ -945,7 +945,8 @@ export default function PatientDailyJourneyHub() {
                       عرض التفاصيل
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className={cn("grid gap-3", financeSummary.totalTreatmentCost != null ? "grid-cols-3" : "grid-cols-2")}>
+                    {financeSummary.totalPaid != null && (
                     <div className="text-center p-2.5 bg-[#eaf3de] rounded-lg">
                       <div className="text-[10px] text-[#3b6d11] mb-1">إجمالي المدفوع</div>
                       <div className="text-[18px] font-extrabold text-[#3b6d11]">
@@ -953,6 +954,7 @@ export default function PatientDailyJourneyHub() {
                       </div>
                       <div className="text-[9px] text-[#3b6d11]">ريال</div>
                     </div>
+                    )}
                     <div className="text-center p-2.5 bg-[#fcebeb] rounded-lg">
                       <div className="text-[10px] text-[#a32d2d] mb-1">المتبقي</div>
                       <div className="text-[18px] font-extrabold text-[#a32d2d]">
@@ -968,15 +970,17 @@ export default function PatientDailyJourneyHub() {
                       <div className="text-[9px] text-[#185fa5]">ريال</div>
                     </div>
                   </div>
+                  {financeSummary.totalTreatmentCost != null && (
                   <div className="mt-3">
                     <div className="flex justify-between text-[10px] text-[#5f5e5a] mb-1">
                       <span>نسبة السداد</span>
                       <span>{payPercent}%</span>
                     </div>
                     <div className="bg-[#f1efe8] rounded h-1.5 overflow-hidden">
-                      <div className="h-full rounded bg-[#1d9e75] transition-all duration-500" style={{ width: `${payPercent}%` }} />
+                      <div className="h-full rounded bg-[#3d7ab5] transition-all duration-500" style={{ width: `${payPercent}%` }} />
                     </div>
                   </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1005,7 +1009,7 @@ export default function PatientDailyJourneyHub() {
                 {nextAction === "Checkout" && (
                   <button
                     onClick={() => setActivePanel("payment")}
-                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition"
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     إنهاء الجلسة والحساب
@@ -1020,26 +1024,26 @@ export default function PatientDailyJourneyHub() {
         {activePanel === "visit" && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <Stethoscope className="w-5 h-5 text-[#1d9e75]" />
+              <Stethoscope className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">تسجيل الزيارة</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">تسجيل الزيارة</h2>
                 <p className="text-[11px] text-[#5f5e5a]">تفاصيل ما تم في هذه الجلسة</p>
               </div>
             </div>
             <div className="p-4 space-y-4">
               {/* Visit Form */}
               <div className="bg-[#e1f5ee] rounded-xl border border-[#9fe1cb] p-4">
-                <span className="text-[12px] font-bold text-[#0f6e56] flex items-center gap-1.5 mb-3">
+                <span className="text-[12px] font-bold text-[#2d5e8e] flex items-center gap-1.5 mb-3">
                   <Save className="w-4 h-4" />
                   بيانات الزيارة الحالية
                 </span>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-[#0f6e56]">نوع الزيارة</label>
+                    <label className="text-[10px] font-bold text-[#2d5e8e]">نوع الزيارة</label>
                     <select
                       value={visitForm.visitType}
                       onChange={(e) => setVisitForm((f) => ({ ...f, visitType: e.target.value }))}
-                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                     >
                       <option value="">اختر النوع</option>
                       <option value="استشارة">استشارة</option>
@@ -1052,7 +1056,7 @@ export default function PatientDailyJourneyHub() {
                     </select>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-[#0f6e56]">تكلفة الزيارة</label>
+                    <label className="text-[10px] font-bold text-[#2d5e8e]">تكلفة الزيارة</label>
                     <input
                       type="number"
                       value={visitForm.cost}
@@ -1060,60 +1064,60 @@ export default function PatientDailyJourneyHub() {
                       dir="ltr"
                       min={0}
                       placeholder="0"
-                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                     />
                   </div>
                 </div>
                 <div className="flex flex-col gap-1 mb-3">
-                  <label className="text-[10px] font-bold text-[#0f6e56]">الشكوى الرئيسية</label>
+                  <label className="text-[10px] font-bold text-[#2d5e8e]">الشكوى الرئيسية</label>
                   <input
                     value={visitForm.chiefComplaint}
                     onChange={(e) => setVisitForm((f) => ({ ...f, chiefComplaint: e.target.value }))}
                     placeholder="وصف الشكوى..."
-                    className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                    className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                   />
                 </div>
                 <div className="flex flex-col gap-1 mb-3">
-                  <label className="text-[10px] font-bold text-[#0f6e56]">التشخيص</label>
+                  <label className="text-[10px] font-bold text-[#2d5e8e]">التشخيص</label>
                   <input
                     value={visitForm.diagnosis}
                     onChange={(e) => setVisitForm((f) => ({ ...f, diagnosis: e.target.value }))}
                     placeholder="التشخيص..."
-                    className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                    className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                   />
                 </div>
                 <div className="flex flex-col gap-1 mb-3">
-                  <label className="text-[10px] font-bold text-[#0f6e56]">ما تم عمله</label>
+                  <label className="text-[10px] font-bold text-[#2d5e8e]">ما تم عمله</label>
                   <textarea
                     value={visitForm.treatmentDone}
                     onChange={(e) => setVisitForm((f) => ({ ...f, treatmentDone: e.target.value }))}
                     placeholder="وصف تفصيلي للإجراءات..."
-                    className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10 h-16 resize-none"
+                    className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10 h-16 resize-none"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-[#0f6e56]">التعليمات للمريض</label>
+                    <label className="text-[10px] font-bold text-[#2d5e8e]">التعليمات للمريض</label>
                     <textarea
                       value={visitForm.instructions}
                       onChange={(e) => setVisitForm((f) => ({ ...f, instructions: e.target.value }))}
                       placeholder="تعليمات ما بعد الجلسة..."
-                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10 h-16 resize-none"
+                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10 h-16 resize-none"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-[#0f6e56]">خطة الزيارة القادمة</label>
+                    <label className="text-[10px] font-bold text-[#2d5e8e]">خطة الزيارة القادمة</label>
                     <textarea
                       value={visitForm.nextVisitPlan}
                       onChange={(e) => setVisitForm((f) => ({ ...f, nextVisitPlan: e.target.value }))}
                       placeholder="ما المخطط للزيارة التالية..."
-                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10 h-16 resize-none"
+                      className="border border-[#9fe1cb] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10 h-16 resize-none"
                     />
                   </div>
                 </div>
                 <div className="flex gap-2">
                   {canEditVisits && (
-                    <button onClick={handleSaveVisit} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50">
+                    <button onClick={handleSaveVisit} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50">
                       <Save className="w-3.5 h-3.5" />
                       حفظ الزيارة
                     </button>
@@ -1133,8 +1137,8 @@ export default function PatientDailyJourneyHub() {
               {recentVisits.length > 0 && (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5">
-                      <Clock className="w-4 h-4 text-[#1d9e75]" />
+                    <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-[#3d7ab5]" />
                       آخر 3 زيارات
                     </span>
                     <button onClick={() => setActivePanel("timeline")} className="px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-[#d3d1c7] bg-white text-[#1a3a5c] hover:bg-[#f8f9fa] transition">
@@ -1156,9 +1160,9 @@ export default function PatientDailyJourneyHub() {
         {activePanel === "payment" && !isDoctor && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <CreditCard className="w-5 h-5 text-[#1d9e75]" />
+              <CreditCard className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">الدفع والحساب</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">الدفع والحساب</h2>
                 <p className="text-[11px] text-[#5f5e5a]">العقد، الدفعات، والرصيد المتبقي</p>
               </div>
             </div>
@@ -1166,8 +1170,8 @@ export default function PatientDailyJourneyHub() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Active Contract */}
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                  <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                    <Receipt className="w-4 h-4 text-[#1d9e75]" />
+                  <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                    <Receipt className="w-4 h-4 text-[#3d7ab5]" />
                     العقد الحالي
                   </span>
                   {activeContract ? (
@@ -1184,7 +1188,7 @@ export default function PatientDailyJourneyHub() {
                       )}
                       <div>
                         <span className="text-[10px] text-[#5f5e5a] font-semibold">إجمالي العقد</span>
-                        <p className="text-[18px] font-extrabold text-[#0d2137]">{fmtRial(activeContract.totalAmount)}</p>
+                        <p className="text-[18px] font-extrabold text-[#1a3a5c]">{fmtRial(activeContract.totalAmount)}</p>
                       </div>
                       <div className="h-px bg-[#d3d1c7]" />
                       <div className="flex gap-4">
@@ -1211,7 +1215,7 @@ export default function PatientDailyJourneyHub() {
                       </div>
                       <div className="bg-[#f1efe8] rounded h-1.5 overflow-hidden">
                         <div
-                          className="h-full rounded bg-[#1d9e75] transition-all duration-500"
+                          className="h-full rounded bg-[#3d7ab5] transition-all duration-500"
                           style={{ width: `${activeContract.totalAmount > 0 ? Math.round((activeContract.paidAmount / activeContract.totalAmount) * 100) : 0}%` }}
                         />
                       </div>
@@ -1226,8 +1230,8 @@ export default function PatientDailyJourneyHub() {
 
                 {/* New Payment Form */}
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                  <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                    <BadgeDollarSign className="w-4 h-4 text-[#1d9e75]" />
+                  <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                    <BadgeDollarSign className="w-4 h-4 text-[#3d7ab5]" />
                     تسجيل دفعة جديدة
                   </span>
                   <div className="space-y-2">
@@ -1240,7 +1244,7 @@ export default function PatientDailyJourneyHub() {
                         dir="ltr"
                         placeholder="0"
                         min={0}
-                        className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                        className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
                     <div className="flex flex-col gap-1">
@@ -1248,7 +1252,7 @@ export default function PatientDailyJourneyHub() {
                       <select
                         value={paymentMethod}
                         onChange={(e) => setPaymentMethod(e.target.value)}
-                        className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                        className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       >
                         <option value="cash">نقداً</option>
                         <option value="transfer">تحويل بنكي</option>
@@ -1261,7 +1265,7 @@ export default function PatientDailyJourneyHub() {
                         value={paymentNote}
                         onChange={(e) => setPaymentNote(e.target.value)}
                         placeholder="اختياري..."
-                        className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#1d9e75] focus:ring-2 focus:ring-[#1d9e75]/10"
+                        className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
                     {canCreatePayment && (
@@ -1283,7 +1287,7 @@ export default function PatientDailyJourneyHub() {
                             toast.error("فشل تسجيل الدفعة");
                           }
                         }}
-                        className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition disabled:opacity-50 w-full justify-center"
+                        className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50 w-full justify-center"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         تسجيل الدفع وإصدار إيصال
@@ -1296,8 +1300,8 @@ export default function PatientDailyJourneyHub() {
               {/* Checkout Card */}
               {canViewCheckout && todayAppointment && (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                  <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                    <CreditCard className="w-4 h-4 text-[#1d9e75]" />
+                  <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                    <CreditCard className="w-4 h-4 text-[#3d7ab5]" />
                     إنهاء الحساب والخروج
                   </span>
                   <div className="space-y-3">
@@ -1347,8 +1351,8 @@ export default function PatientDailyJourneyHub() {
               {/* Recent Payments Table */}
               {financeSummary && (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                  <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                    <FileText className="w-4 h-4 text-[#1d9e75]" />
+                  <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                    <FileText className="w-4 h-4 text-[#3d7ab5]" />
                     آخر الدفعات
                   </span>
                   {financeSummary.latestPayment ? (
@@ -1381,8 +1385,12 @@ export default function PatientDailyJourneyHub() {
                     <p className="text-[12px] text-[#5f5e5a] text-center py-4">لا توجد دفعات مسجلة</p>
                   )}
                   <div className="flex gap-2 mt-3">
-                    <span className="text-[10px] text-[#5f5e5a]">إجمالي الدفعات: <strong className="text-[#0d2137]">{financeSummary.totalPaymentsCount}</strong></span>
-                    <span className="text-[10px] text-[#5f5e5a]">العقود النشطة: <strong className="text-[#0d2137]">{financeSummary.activeContractsCount}</strong></span>
+                    {financeSummary.totalPaymentsCount != null && (
+                    <span className="text-[10px] text-[#5f5e5a]">إجمالي الدفعات: <strong className="text-[#1a3a5c]">{financeSummary.totalPaymentsCount}</strong></span>
+                    )}
+                    {financeSummary.activeContractsCount != null && (
+                    <span className="text-[10px] text-[#5f5e5a]">العقود النشطة: <strong className="text-[#1a3a5c]">{financeSummary.activeContractsCount}</strong></span>
+                    )}
                     {unpaidInvoicesCount > 0 && (
                       <span className="text-[10px] text-[#a32d2d] font-bold">فواتير غير مدفوعة: {unpaidInvoicesCount}</span>
                     )}
@@ -1397,9 +1405,9 @@ export default function PatientDailyJourneyHub() {
         {activePanel === "ortho" && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <Wrench className="w-5 h-5 text-[#1d9e75]" />
+              <Wrench className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">ملف التقويم</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">ملف التقويم</h2>
                 <p className="text-[11px] text-[#5f5e5a]">
                   {activeOrthoCase ? `${activeOrthoCase.caseNumber ?? activeOrthoCase.id.slice(0, 8)} — بدأ ${activeOrthoCase.startDate ? fmtDate(activeOrthoCase.startDate) : ""}` : "لا يوجد ملف تقويم نشط"}
                 </p>
@@ -1420,8 +1428,8 @@ export default function PatientDailyJourneyHub() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Overview */}
                     <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                      <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                        <CircleDot className="w-4 h-4 text-[#1d9e75]" />
+                      <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                        <CircleDot className="w-4 h-4 text-[#3d7ab5]" />
                         نظرة عامة
                       </span>
                       <div className="space-y-2">
@@ -1435,7 +1443,7 @@ export default function PatientDailyJourneyHub() {
                           <span className="text-[10px] text-[#5f5e5a] font-semibold">الحالة</span>
                           <span className={cn(
                             "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold mr-1",
-                            activeOrthoCase.status === "Active" ? "bg-[#9fe1cb] text-[#0f6e56]" :
+                            activeOrthoCase.status === "Active" ? "bg-[#9fe1cb] text-[#2d5e8e]" :
                             activeOrthoCase.status === "Completed" ? "bg-[#c0dd97] text-[#274f0a]" :
                             "bg-[#faeeda] text-[#633806]"
                           )}>
@@ -1466,9 +1474,9 @@ export default function PatientDailyJourneyHub() {
                         <div>
                           <div className="text-[10px] text-[#5f5e5a] mb-1">نسبة الإنجاز</div>
                           <div className="bg-[#f1efe8] rounded h-1.5 overflow-hidden">
-                            <div className="h-full rounded bg-[#1d9e75] transition-all duration-500" style={{ width: `${activeOrthoCase.status === "Completed" ? 100 : 55}%` }} />
+                            <div className="h-full rounded bg-[#3d7ab5] transition-all duration-500" style={{ width: `${activeOrthoCase.status === "Completed" ? 100 : 55}%` }} />
                           </div>
-                          <div className="text-[10px] text-[#0f6e56] font-bold mt-1">
+                          <div className="text-[10px] text-[#2d5e8e] font-bold mt-1">
                             {activeOrthoCase.status === "Completed" ? "100%" : "55%"} مكتمل
                           </div>
                         </div>
@@ -1477,15 +1485,15 @@ export default function PatientDailyJourneyHub() {
 
                     {/* Contract Info */}
                     <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                      <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                        <Receipt className="w-4 h-4 text-[#1d9e75]" />
+                      <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                        <Receipt className="w-4 h-4 text-[#3d7ab5]" />
                         العقد المرتبط
                       </span>
                       {activeContract ? (
                         <div className="space-y-2">
                           <div>
                             <span className="text-[10px] text-[#5f5e5a] font-semibold">إجمالي العقد</span>
-                            <p className="text-[18px] font-extrabold text-[#0d2137]">{fmtRial(activeContract.totalAmount)}</p>
+                            <p className="text-[18px] font-extrabold text-[#1a3a5c]">{fmtRial(activeContract.totalAmount)}</p>
                           </div>
                           <div className="flex gap-4">
                             <div className="text-center">
@@ -1503,7 +1511,7 @@ export default function PatientDailyJourneyHub() {
                           </div>
                           <div className="bg-[#f1efe8] rounded h-1.5 overflow-hidden">
                             <div
-                              className="h-full rounded bg-[#1d9e75] transition-all duration-500"
+                              className="h-full rounded bg-[#3d7ab5] transition-all duration-500"
                               style={{ width: `${activeContract.totalAmount > 0 ? Math.round((activeContract.paidAmount / activeContract.totalAmount) * 100) : 0}%` }}
                             />
                           </div>
@@ -1527,11 +1535,11 @@ export default function PatientDailyJourneyHub() {
               ) : (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-8 text-center">
                   <Wrench className="w-10 h-10 text-[#d3d1c7] mx-auto mb-3" />
-                  <p className="text-[13px] font-bold text-[#0d2137]">لا يوجد ملف تقويم نشط</p>
+                  <p className="text-[13px] font-bold text-[#1a3a5c]">لا يوجد ملف تقويم نشط</p>
                   <p className="text-[11px] text-[#5f5e5a] mt-1">لم يتم تسجيل حالة تقويم لهذا المريض بعد</p>
                   <Link
                     href={`/ortho/new?patientId=${patientId}`}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 mt-4 text-[11px] font-semibold rounded-lg bg-[#1d9e75] text-white hover:bg-[#0f6e56] transition"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 mt-4 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     إنشاء حالة تقويم جديدة
@@ -1546,9 +1554,9 @@ export default function PatientDailyJourneyHub() {
         {activePanel === "history" && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <HeartPulse className="w-5 h-5 text-[#1d9e75]" />
+              <HeartPulse className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">التاريخ الطبي والسني</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">التاريخ الطبي والسني</h2>
                 <p className="text-[11px] text-[#5f5e5a]">المعلومات الصحية الأساسية</p>
               </div>
               <Link
@@ -1580,8 +1588,8 @@ export default function PatientDailyJourneyHub() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Medical History */}
                   <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                    <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                      <HeartPulse className="w-4 h-4 text-[#1d9e75]" />
+                    <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                      <HeartPulse className="w-4 h-4 text-[#3d7ab5]" />
                       التاريخ الطبي
                     </span>
                     <div className="space-y-2">
@@ -1604,8 +1612,8 @@ export default function PatientDailyJourneyHub() {
 
                   {/* Dental Alerts */}
                   <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
-                    <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-3">
-                      <Info className="w-4 h-4 text-[#1d9e75]" />
+                    <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-3">
+                      <Info className="w-4 h-4 text-[#3d7ab5]" />
                       التنبيهات السنية
                     </span>
                     <div className="space-y-2">
@@ -1629,7 +1637,7 @@ export default function PatientDailyJourneyHub() {
               ) : (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-8 text-center">
                   <HeartPulse className="w-10 h-10 text-[#d3d1c7] mx-auto mb-3" />
-                  <p className="text-[13px] font-bold text-[#0d2137]">لا توجد تنبيهات طبية</p>
+                  <p className="text-[13px] font-bold text-[#1a3a5c]">لا توجد تنبيهات طبية</p>
                   <p className="text-[11px] text-[#5f5e5a] mt-1">لم يتم تسجيل أي حساسية أو أمراض مزمنة لهذا المريض</p>
                 </div>
               )}
@@ -1641,9 +1649,9 @@ export default function PatientDailyJourneyHub() {
         {activePanel === "timeline" && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <Clock className="w-5 h-5 text-[#1d9e75]" />
+              <Clock className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">السجل الزمني الكامل</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">السجل الزمني الكامل</h2>
                 <p className="text-[11px] text-[#5f5e5a]">كل أحداث المريض مرتبة زمنياً</p>
               </div>
             </div>
@@ -1659,7 +1667,7 @@ export default function PatientDailyJourneyHub() {
               ) : (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-8 text-center">
                   <Clock className="w-10 h-10 text-[#d3d1c7] mx-auto mb-3" />
-                  <p className="text-[13px] font-bold text-[#0d2137]">لا توجد أحداث</p>
+                  <p className="text-[13px] font-bold text-[#1a3a5c]">لا توجد أحداث</p>
                   <p className="text-[11px] text-[#5f5e5a] mt-1">لم يتم تسجيل أي أحداث بعد</p>
                 </div>
               )}
@@ -1671,28 +1679,28 @@ export default function PatientDailyJourneyHub() {
         {activePanel === "messages" && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <MessageSquare className="w-5 h-5 text-[#1d9e75]" />
+              <MessageSquare className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">الرسائل</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">الرسائل</h2>
                 <p className="text-[11px] text-[#5f5e5a]">التواصل مع المريض</p>
               </div>
             </div>
             <div className="p-4 space-y-4">
               <div className="bg-white rounded-xl border border-[#d3d1c7] p-4 space-y-3">
-                <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-2">
-                  <MessageSquare className="w-4 h-4 text-[#1d9e75]" />
+                <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-2">
+                  <MessageSquare className="w-4 h-4 text-[#3d7ab5]" />
                   الوصول السريع للرسائل
                 </span>
                 <Link
                   href={`/messages?patientId=${patientId}`}
                   className="flex items-center gap-2 p-3 rounded-lg bg-[#e1f5ee] border border-[#9fe1cb] hover:bg-[#9fe1cb]/30 transition"
                 >
-                  <MessageSquare className="w-4 h-4 text-[#0f6e56]" />
+                  <MessageSquare className="w-4 h-4 text-[#2d5e8e]" />
                   <div className="flex-1">
-                    <span className="text-[12px] font-semibold text-[#0f6e56]">فتح صفحة الرسائل</span>
+                    <span className="text-[12px] font-semibold text-[#2d5e8e]">فتح صفحة الرسائل</span>
                     <p className="text-[10px] text-[#5f5e5a]">عرض وإرسال رسائل للمريض</p>
                   </div>
-                  <ExternalLink className="w-3.5 h-3.5 text-[#0f6e56]" />
+                  <ExternalLink className="w-3.5 h-3.5 text-[#2d5e8e]" />
                 </Link>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <Link
@@ -1742,16 +1750,16 @@ export default function PatientDailyJourneyHub() {
         {activePanel === "docs" && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <FileText className="w-5 h-5 text-[#1d9e75]" />
+              <FileText className="w-5 h-5 text-[#3d7ab5]" />
               <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#0d2137]">المستندات</h2>
+                <h2 className="text-[15px] font-bold text-[#1a3a5c]">المستندات</h2>
                 <p className="text-[11px] text-[#5f5e5a]">المستندات والملفات المرتبطة بالمريض</p>
               </div>
             </div>
             <div className="p-4 space-y-4">
               <div className="bg-white rounded-xl border border-[#d3d1c7] p-4 space-y-3">
-                <span className="text-[13px] font-bold text-[#0d2137] flex items-center gap-1.5 mb-2">
-                  <FileText className="w-4 h-4 text-[#1d9e75]" />
+                <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-2">
+                  <FileText className="w-4 h-4 text-[#3d7ab5]" />
                   الوصول السريع للمستندات
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1759,12 +1767,12 @@ export default function PatientDailyJourneyHub() {
                     href={`/patients/${patientId}`}
                     className="flex items-center gap-2 p-3 rounded-lg bg-[#e1f5ee] border border-[#9fe1cb] hover:bg-[#9fe1cb]/30 transition"
                   >
-                    <FileText className="w-4 h-4 text-[#0f6e56]" />
+                    <FileText className="w-4 h-4 text-[#2d5e8e]" />
                     <div className="flex-1">
-                      <span className="text-[12px] font-semibold text-[#0f6e56]">عرض المستندات</span>
+                      <span className="text-[12px] font-semibold text-[#2d5e8e]">عرض المستندات</span>
                       <p className="text-[10px] text-[#5f5e5a]">ملفات وتقارير المريض</p>
                     </div>
-                    <ExternalLink className="w-3.5 h-3.5 text-[#0f6e56]" />
+                    <ExternalLink className="w-3.5 h-3.5 text-[#2d5e8e]" />
                   </Link>
                   <Link
                     href={`/patients/${patientId}/print/summary`}
@@ -1807,7 +1815,7 @@ function TimelineItem({ event }: { event: TimelineEvent }) {
       <div className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5", dotColor)} />
       <div className="flex-1 min-w-0">
         <div className="text-[10px] text-[#5f5e5a]">{fmtDate(event.date)}</div>
-        <div className="text-[12px] font-semibold text-[#0d2137]">{event.title}</div>
+        <div className="text-[12px] font-semibold text-[#1a3a5c]">{event.title}</div>
         {event.sub && (
           <div className="text-[11px] text-[#5f5e5a] mt-0.5">{event.sub}</div>
         )}
@@ -1830,10 +1838,10 @@ function TimelineItem({ event }: { event: TimelineEvent }) {
 function VisitTimelineItem({ visit }: { visit: DailyJourneyRecentVisit }) {
   return (
     <div className="flex gap-2.5 py-2 border-b border-[#f1efe8] last:border-b-0">
-      <div className="w-2.5 h-2.5 rounded-full bg-[#1d9e75] flex-shrink-0 mt-1.5" />
+      <div className="w-2.5 h-2.5 rounded-full bg-[#3d7ab5] flex-shrink-0 mt-1.5" />
       <div className="flex-1 min-w-0">
         <div className="text-[10px] text-[#5f5e5a]">{fmtDate(visit.visitDate)}</div>
-        <div className="text-[12px] font-semibold text-[#0d2137]">
+        <div className="text-[12px] font-semibold text-[#1a3a5c]">
           {visit.visitType ?? "زيارة"}
           {visit.chiefComplaint ? ` — ${visit.chiefComplaint}` : ""}
         </div>

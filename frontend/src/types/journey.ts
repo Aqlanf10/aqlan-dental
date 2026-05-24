@@ -81,15 +81,22 @@ export interface DailyJourneyVisit {
   appointmentId?: string;
 }
 
+/**
+ * Finance summary returned by the journey API.
+ * Full access (Admin/Accountant): all fields present.
+ * Limited access (Reception): only checkout-relevant fields —
+ *   outstandingBalance, overdueAmount, latestPayment, financialStatus.
+ *   totalTreatmentCost, totalPaid, activeContractsCount, totalPaymentsCount will be undefined.
+ */
 export interface DailyJourneyFinance {
-  totalTreatmentCost: number;
-  totalPaid: number;
+  totalTreatmentCost?: number;
+  totalPaid?: number;
   outstandingBalance: number;
   overdueAmount: number;
   latestPayment: { id: string; amount: number; paymentDate: string; paymentMethod?: string; receiptNumber?: string } | null;
   financialStatus: "no_plan" | "paid_full" | "has_balance" | "overdue";
-  activeContractsCount: number;
-  totalPaymentsCount: number;
+  activeContractsCount?: number;
+  totalPaymentsCount?: number;
 }
 
 export interface DailyJourneyContract {

@@ -773,7 +773,7 @@ export default function PatientJourneyPage() {
                 {selectedItem.checkoutStatus === "ReadyForCheckout" && !draftInvoiceResult && (
                   <div className="border border-[#3d7ab5]/20 bg-[#f7fafd] rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm font-medium text-[#0d2137]">
+                      <div className="flex items-center gap-2 text-sm font-medium text-[#1a3a5c]">
                         <FileText className="w-4 h-4 text-[#3d7ab5]" />
                         إنشاء فاتورة مسودة
                       </div>

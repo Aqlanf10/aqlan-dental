@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
@@ -14,6 +15,7 @@ namespace AqlanDentalPro.Infrastructure.Services;
 public class PatientAccessService(
     AppDbContext db,
     ICurrentUserService currentUser,
+    IConfiguration configuration,
     ILogger<PatientAccessService> logger) : IPatientAccessService
 {
     private static readonly HashSet<UserRole> DoctorRoles =
@@ -23,8 +25,13 @@ public class PatientAccessService(
         UserRole.OralSurgeon,
     ];
 
+    private bool IsDoctorPatientScopingEnabled =>
+        configuration.GetValue("Security:EnableDoctorPatientScoping", false);
+
     public bool IsDoctor =>
-        currentUser.Role.HasValue && DoctorRoles.Contains(currentUser.Role.Value);
+        IsDoctorPatientScopingEnabled &&
+        currentUser.Role.HasValue &&
+        DoctorRoles.Contains(currentUser.Role.Value);
 
     public bool HasFullAccess => !IsDoctor;
 

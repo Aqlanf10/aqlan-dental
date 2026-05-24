@@ -59,6 +59,66 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         return result == null ? NotFound(new { message = "الحالة التقويمية غير موجودة" }) : Ok(result);
     }
 
+    [HttpGet("{id:guid}/overview")]
+    public async Task<IActionResult> GetOverview(Guid id)
+    {
+        var orthoCase = await db.OrthoCases
+            .AsNoTracking()
+            .Include(c => c.TreatmentPlans)
+            .Include(c => c.Stages)
+            .Include(c => c.Visits)
+            .Include(c => c.OrthoClinicalPhotos)
+            .Include(c => c.CephAnalyses)
+            .Include(c => c.RetentionRecord)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var hasClinicalExam = await db.OrthoClinicalExams.AnyAsync(e => e.OrthoCaseId == id);
+        var problemsCount = await db.ProblemListItems.CountAsync(p => p.OrthoCaseId == id);
+        var hasDiagnosis = await db.OrthoDiagnoses.AnyAsync(d => d.OrthoCaseId == id);
+        var latestPlan = orthoCase.TreatmentPlans.OrderByDescending(p => p.CreatedAt).FirstOrDefault();
+        var latestVisit = orthoCase.Visits.OrderByDescending(v => v.VisitDate).FirstOrDefault();
+
+        var contract = await db.Contracts
+            .Include(c => c.Payments)
+            .Where(c => c.PatientId == orthoCase.PatientId &&
+                (c.RelatedCaseId == id || c.Specialty == "orthodontics" || c.Specialty == "ortho"))
+            .OrderByDescending(c => c.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        decimal? contractTotal = null;
+        decimal? contractPaid = null;
+        decimal? contractRemaining = null;
+        if (contract is not null)
+        {
+            contractTotal = contract.TotalAmount - contract.DiscountAmount;
+            contractPaid = contract.Payments.Sum(p => p.Amount);
+            contractRemaining = Math.Max(0, contractTotal.Value - contractPaid.Value);
+        }
+
+        return Ok(new
+        {
+            HasClinicalExam = hasClinicalExam,
+            ProblemsCount = problemsCount,
+            HasDiagnosis = hasDiagnosis,
+            HasTreatmentPlan = latestPlan is not null,
+            IsTreatmentPlanApproved = latestPlan?.IsApproved ?? false,
+            CompletedStages = orthoCase.Stages.Count(s => s.Status == "completed"),
+            TotalStages = orthoCase.Stages.Count,
+            VisitsCount = orthoCase.Visits.Count,
+            PhotosCount = orthoCase.OrthoClinicalPhotos.Count,
+            CephAnalysesCount = orthoCase.CephAnalyses.Count,
+            HasRetention = orthoCase.RetentionRecord is not null,
+            ContractId = contract?.Id,
+            ContractTotal = contractTotal,
+            ContractPaid = contractPaid,
+            ContractRemaining = contractRemaining,
+            LatestVisitDate = latestVisit?.VisitDate.ToString("yyyy-MM-dd"),
+            NextAppointmentDate = latestVisit?.NextAppointmentDate?.ToString("yyyy-MM-dd")
+        });
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateOrthoCaseRequest req)
     {
@@ -278,6 +338,43 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
     }
 
     // ─── Extraction Decision ─────────────────────────────────────────────────────
+
+    [HttpPatch("{id:guid}/treatment-plan/approve")]
+    public async Task<IActionResult> ApproveTreatmentPlan(Guid id)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var plan = await db.TreatmentPlans
+            .Where(p => p.OrthoCaseId == id)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
+
+        plan.IsApproved = true;
+        plan.ApprovedAt = DateTime.UtcNow;
+        plan.ApprovedBy = orthoCase.DoctorId;
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            plan.Id,
+            plan.PlanVersion,
+            plan.IsApproved,
+            plan.ApplianceType,
+            plan.BracketSystem,
+            plan.InitialWire,
+            plan.ExtractionPlan,
+            plan.AnchoragePlan,
+            plan.UseTads,
+            plan.UseElastics,
+            plan.ExpectedDurationMonths,
+            plan.RetentionPlan,
+            plan.TreatmentGoals,
+            plan.RisksLimitations,
+            ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd")
+        });
+    }
 
     [HttpGet("{id:guid}/extraction-decision")]
     public async Task<IActionResult> GetExtractionDecision(Guid id)

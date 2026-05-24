@@ -2,18 +2,22 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
 /// <summary>
 /// Determines which patients the current user may view.
-/// Doctor roles (Orthodontist / GeneralDentist / OralSurgeon) are restricted to patients
-/// they are linked to.  All other staff roles have unrestricted access.
+/// When Security:EnableDoctorPatientScoping is enabled, doctor roles
+/// (Orthodontist / GeneralDentist / OralSurgeon) are restricted to patients
+/// they are linked to. By default all staff roles have unrestricted access,
+/// matching the legacy clinic workflow.
 /// </summary>
 public class PatientAccessService(
     AppDbContext db,
     ICurrentUserService currentUser,
+    IConfiguration configuration,
     ILogger<PatientAccessService> logger) : IPatientAccessService
 {
     private static readonly HashSet<UserRole> DoctorRoles =
@@ -23,8 +27,13 @@ public class PatientAccessService(
         UserRole.OralSurgeon,
     ];
 
+    private bool IsDoctorPatientScopingEnabled =>
+        configuration.GetValue("Security:EnableDoctorPatientScoping", false);
+
     public bool IsDoctor =>
-        currentUser.Role.HasValue && DoctorRoles.Contains(currentUser.Role.Value);
+        IsDoctorPatientScopingEnabled &&
+        currentUser.Role.HasValue &&
+        DoctorRoles.Contains(currentUser.Role.Value);
 
     public bool HasFullAccess => !IsDoctor;
 

@@ -1,0 +1,241 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { orthoService } from "@/services/orthoService";
+import { toast } from "@/stores/toastStore";
+import type {
+  ClinicalExam,
+  CreateOrthoVisitRequest,
+  ExtractionDecision,
+  OrthoDiagnosis,
+  ProblemListItem,
+  RetentionRecord,
+  RetentionVisit,
+  TreatmentPlan,
+} from "@/types/ortho";
+
+export const orthoKeys = {
+  case: (caseId: string) => ["ortho-case", caseId] as const,
+  overview: (caseId: string) => ["ortho-overview", caseId] as const,
+  exam: (caseId: string) => ["ortho-exam", caseId] as const,
+  problems: (caseId: string) => ["ortho-problems", caseId] as const,
+  diagnosis: (caseId: string) => ["ortho-diagnosis", caseId] as const,
+  plan: (caseId: string) => ["ortho-plan", caseId] as const,
+  stages: (caseId: string) => ["ortho-stages", caseId] as const,
+  visits: (caseId: string) => ["ortho-visits", caseId] as const,
+  extraction: (caseId: string) => ["ortho-extraction", caseId] as const,
+  retention: (caseId: string) => ["ortho-retention", caseId] as const,
+  photos: (caseId: string) => ["ortho-photos", caseId] as const,
+};
+
+export function useOrthoCase(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.case(caseId),
+    queryFn: async () => (await orthoService.getCase(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useOrthoOverview(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.overview(caseId),
+    queryFn: async () => (await orthoService.getOverview(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useClinicalExam(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.exam(caseId),
+    queryFn: async () => (await orthoService.getClinicalExam(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useSaveClinicalExam(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<ClinicalExam>) => orthoService.saveClinicalExam(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.exam(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم حفظ الفحص السريري");
+    },
+    onError: () => toast.error("فشل حفظ الفحص السريري"),
+  });
+}
+
+export function useProblemList(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.problems(caseId),
+    queryFn: async () => (await orthoService.getProblems(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useAddProblem(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<ProblemListItem>) => orthoService.addProblem(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.problems(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تمت إضافة المشكلة");
+    },
+    onError: () => toast.error("فشل إضافة المشكلة"),
+  });
+}
+
+export function useDeleteProblem(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (problemId: string) => orthoService.deleteProblem(caseId, problemId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.problems(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم حذف المشكلة");
+    },
+  });
+}
+
+export function useDiagnosis(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.diagnosis(caseId),
+    queryFn: async () => (await orthoService.getDiagnosis(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useSaveDiagnosis(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<OrthoDiagnosis>) => orthoService.saveDiagnosis(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.diagnosis(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم حفظ التشخيص");
+    },
+    onError: () => toast.error("فشل حفظ التشخيص"),
+  });
+}
+
+export function useTreatmentPlan(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.plan(caseId),
+    queryFn: async () => (await orthoService.getTreatmentPlan(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useSaveTreatmentPlan(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<TreatmentPlan>) => orthoService.saveTreatmentPlan(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم حفظ خطة العلاج");
+    },
+    onError: () => toast.error("فشل حفظ خطة العلاج"),
+  });
+}
+
+export function useApproveTreatmentPlan(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => orthoService.approveTreatmentPlan(caseId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم اعتماد خطة العلاج");
+    },
+    onError: () => toast.error("فشل اعتماد الخطة"),
+  });
+}
+
+export function useOrthoStages(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.stages(caseId),
+    queryFn: async () => (await orthoService.getStages(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useOrthoVisits(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.visits(caseId),
+    queryFn: async () => (await orthoService.getVisits(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useAddOrthoVisit(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateOrthoVisitRequest) => orthoService.addVisit(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.visits(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.case(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم تسجيل الزيارة");
+    },
+    onError: () => toast.error("فشل تسجيل الزيارة"),
+  });
+}
+
+export function useExtractionDecision(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.extraction(caseId),
+    queryFn: async () => (await orthoService.getExtractionDecision(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useSaveExtractionDecision(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<ExtractionDecision>) => orthoService.saveExtractionDecision(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.extraction(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.case(caseId) });
+      toast.success("تم حفظ قرار الخلع");
+    },
+  });
+}
+
+export function useRetention(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.retention(caseId),
+    queryFn: async () => (await orthoService.getRetention(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useSaveRetention(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<RetentionRecord>) => orthoService.saveRetention(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.retention(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم حفظ سجل الاحتفاظ");
+    },
+  });
+}
+
+export function useAddRetentionVisit(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<RetentionVisit>) => orthoService.addRetentionVisit(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.retention(caseId) });
+      toast.success("تم تسجيل زيارة الاحتفاظ");
+    },
+  });
+}
+
+export function useOrthoPhotos(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.photos(caseId),
+    queryFn: async () => (await orthoService.getPhotos(caseId)).data,
+    enabled: !!caseId,
+  });
+}

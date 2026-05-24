@@ -14,7 +14,17 @@ public class Appointment : BaseEntity
     public string AppointmentType { get; set; } = string.Empty;
     public Specialty? Specialty { get; set; }
     public AppointmentStatus Status { get; set; } = AppointmentStatus.Scheduled;
-    public bool ConfirmationSent { get; set; } = false;
+    public bool ConfirmationSent { get; set; } = false; // Legacy — kept for backward compat
+
+    /// <summary>When the last email reminder was sent for this appointment.</summary>
+    public DateTime? EmailReminderSentAt { get; set; }
+
+    /// <summary>When the last WhatsApp reminder was sent for this appointment.</summary>
+    public DateTime? WhatsAppReminderSentAt { get; set; }
+
+    /// <summary>JSON array of reminder window hours that have already been sent (e.g. [24,2] means both 24h and 2h email reminders sent).</summary>
+    public string? EmailReminderWindowsSent { get; set; }
+
     public string? Notes { get; set; }
     public Guid? CreatedBy { get; set; }
 

@@ -118,7 +118,7 @@ public class WhatsAppService(
             Parameters = parameters
         });
 
-        appointment.ConfirmationSent = true;
+        appointment.WhatsAppReminderSentAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
         return result;
@@ -131,8 +131,9 @@ public class WhatsAppService(
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
             .Where(a => a.AppointmentDate == tomorrow
-                     && a.Status == Domain.Enums.AppointmentStatus.Scheduled
-                     && !a.ConfirmationSent)
+                     && (a.Status == Domain.Enums.AppointmentStatus.Scheduled
+                      || a.Status == Domain.Enums.AppointmentStatus.Confirmed)
+                     && a.WhatsAppReminderSentAt == null)
             .ToListAsync();
 
         var count = 0;

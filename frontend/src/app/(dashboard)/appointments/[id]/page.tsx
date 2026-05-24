@@ -65,12 +65,18 @@ export default function AppointmentDetailPage() {
   const [apt, setApt] = useState<AppointmentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [hasEmail, setHasEmail] = useState<boolean | null>(null);
 
   useEffect(() => {
     api.get<AppointmentDetail>(`/api/appointments/${id}`)
       .then((r) => setApt(r.data))
       .catch(() => toast.error("فشل تحميل بيانات الموعد"))
       .finally(() => setLoading(false));
+
+    // Check email availability for the patient
+    api.get<{ hasEmail: boolean }>(`/api/appointments/${id}/email-available`)
+      .then((r) => setHasEmail(r.data.hasEmail))
+      .catch(() => setHasEmail(false));
   }, [id]);
 
   const handleDelete = async () => {
@@ -260,15 +266,27 @@ export default function AppointmentDetailPage() {
           {actionLoading === "reminder" ? "جارٍ الإرسال..." : "إرسال تذكير واتساب"}
         </button>
 
-        <button
-          onClick={handleSendEmailReminder}
-          disabled={actionLoading === "emailReminder"}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-          style={{ background: "#0E7490" }}
-        >
-          <Mail className="w-4 h-4" />
-          {actionLoading === "emailReminder" ? "جارٍ الإرسال..." : "إرسال تذكير بالإيميل"}
-        </button>
+        {hasEmail ? (
+          <button
+            onClick={handleSendEmailReminder}
+            disabled={actionLoading === "emailReminder"}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ background: "#0E7490" }}
+          >
+            <Mail className="w-4 h-4" />
+            {actionLoading === "emailReminder" ? "جارٍ الإرسال..." : "إرسال تذكير بالإيميل"}
+          </button>
+        ) : (
+          <button
+            disabled
+            title="لا يوجد بريد إلكتروني لهذا المريض"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white opacity-50 cursor-not-allowed"
+            style={{ background: "#0E7490" }}
+          >
+            <Mail className="w-4 h-4" />
+            إرسال تذكير بالإيميل
+          </button>
+        )}
 
         {canDelete && (
           <button

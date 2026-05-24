@@ -9,6 +9,7 @@ using System.Net;
 using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
+using System.Web;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
@@ -20,8 +21,22 @@ public class EmailService : IEmailService
 
     private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
 
-    /// <summary>Resend free tier daily limit.</summary>
-    private const int DailyLimit = 100;
+    /// <summary>Daily email limit — configurable via EMAIL_DAILY_LIMIT env var. Default: 100.</summary>
+    private int DailyLimit => GetDailyLimit();
+
+    private int GetDailyLimit()
+    {
+        var envVal = Environment.GetEnvironmentVariable("EMAIL_DAILY_LIMIT");
+        if (int.TryParse(envVal, out var limit) && limit > 0)
+            return limit;
+        var cfgVal = _config["EMAIL_DAILY_LIMIT"];
+        if (int.TryParse(cfgVal, out var cfgLimit) && cfgLimit > 0)
+            return cfgLimit;
+        return 100; // Default
+    }
+
+    /// <summary>Public accessor for the configured daily limit (used by EmailStatsController).</summary>
+    public int ConfiguredDailyLimit => DailyLimit;
 
     public EmailService(IConfiguration config, ILogger<EmailService> logger, IServiceScopeFactory scopeFactory)
     {
@@ -108,25 +123,27 @@ public class EmailService : IEmailService
         string toEmail, string subject, string htmlBody,
         string category, string? relatedEntityType = null, Guid? relatedEntityId = null)
     {
+        var dailyLimit = DailyLimit;
+
         // ── Daily limit check ──
         var dailyCount = await GetDailyEmailCountAsync();
-        if (dailyCount >= DailyLimit)
+        if (dailyCount >= dailyLimit)
         {
             _logger.LogWarning(
                 "Daily email limit ({Limit}) reached. Skipping email to {To}. " +
-                "Upgrade Resend plan or verify domain to increase limit.",
-                DailyLimit, MaskEmail(toEmail));
+                "Upgrade Resend plan or set EMAIL_DAILY_LIMIT to increase limit.",
+                dailyLimit, MaskEmail(toEmail));
             await LogEmailAsync(toEmail, subject, category, null, false,
-                $"Daily limit ({DailyLimit}) reached", null, relatedEntityType, relatedEntityId);
+                $"Daily limit ({dailyLimit}) reached", null, relatedEntityType, relatedEntityId);
             return false;
         }
 
-        if (dailyCount >= DailyLimit - 10)
+        if (dailyCount >= dailyLimit - 10)
         {
             _logger.LogWarning(
                 "Approaching daily email limit: {Count}/{Limit}. " +
-                "Consider upgrading Resend plan.",
-                dailyCount, DailyLimit);
+                "Consider upgrading Resend plan or setting EMAIL_DAILY_LIMIT.",
+                dailyCount, dailyLimit);
         }
 
         var fromEmail = GetConfig("SMTP_FROM_EMAIL", "Smtp:FromEmail") ?? "onboarding@resend.dev";
@@ -230,7 +247,7 @@ public class EmailService : IEmailService
     }
 
     /// <summary>Masks email address for safe logging (e.g., "a****n@gmail.com").</summary>
-    private static string MaskEmail(string email)
+    public static string MaskEmail(string email)
     {
         if (string.IsNullOrEmpty(email) || !email.Contains('@'))
             return "***";
@@ -374,10 +391,10 @@ public class EmailService : IEmailService
             <p>السلام عليكم،</p>
             <p>تلقينا طلباً لاستعادة كلمة المرور الخاصة بحسابكم في نظام مركز د. عقلان الكامل لطب وتقويم الأسنان.</p>
             <div style='text-align: center;'>
-                <a href='{fullResetUrl}' class='btn'>إعادة تعيين كلمة المرور</a>
+                <a href='{HttpUtility.HtmlAttributeEncode(fullResetUrl)}' class='btn'>إعادة تعيين كلمة المرور</a>
             </div>
             <p>إذا لم يعمل الزر أعلاه، يمكنكم نسخ الرابط التالي ولصقه في المتصفح:</p>
-            <p style='direction: ltr; text-align: left; word-break: break-all; font-size: 13px; color: #666;'>{fullResetUrl}</p>
+            <p style='direction: ltr; text-align: left; word-break: break-all; font-size: 13px; color: #666;'>{HttpUtility.HtmlEncode(fullResetUrl)}</p>
             <div class='warning'>
                 &#x26A0;&#xFE0F; هذا الرابط صالح لمدة 30 دقيقة فقط. إذا لم تطلبوا استعادة كلمة المرور، يمكنكم تجاهل هذه الرسالة بأمان.
             </div>
@@ -393,16 +410,22 @@ public class EmailService : IEmailService
 
     /// <summary>
     /// Builds an appointment reminder email HTML body.
+    /// All dynamic user data is HTML-encoded to prevent injection.
     /// </summary>
     public static string BuildAppointmentReminderHtml(
         string patientName, string doctorName, string appointmentDate,
         string appointmentTime, string? clinicService, string? notes)
     {
-        var serviceLine = !string.IsNullOrWhiteSpace(clinicService)
-            ? $"<p><strong>الخدمة:</strong> {clinicService}</p>"
+        // HTML-encode all dynamic content to prevent XSS/injection
+        var safePatientName = HttpUtility.HtmlEncode(patientName);
+        var safeDoctorName = HttpUtility.HtmlEncode(doctorName);
+        var safeDate = HttpUtility.HtmlEncode(appointmentDate);
+        var safeTime = HttpUtility.HtmlEncode(appointmentTime);
+        var safeService = !string.IsNullOrWhiteSpace(clinicService)
+            ? $"<p><strong>الخدمة:</strong> {HttpUtility.HtmlEncode(clinicService)}</p>"
             : "";
-        var notesLine = !string.IsNullOrWhiteSpace(notes)
-            ? $"<p><strong>ملاحظات:</strong> {notes}</p>"
+        var safeNotes = !string.IsNullOrWhiteSpace(notes)
+            ? $"<p><strong>ملاحظات:</strong> {HttpUtility.HtmlEncode(notes)}</p>"
             : "";
 
         return $@"
@@ -428,14 +451,14 @@ public class EmailService : IEmailService
             <h1>&#x1F9B7; تذكير بموعد — مركز د. عقلان الكامل</h1>
         </div>
         <div class='content'>
-            <p>السلام عليكم {patientName}،</p>
+            <p>السلام عليكم {safePatientName}،</p>
             <p>نود تذكيركم بموعدكم القادم في مركز د. عقلان الكامل لطب وتقويم الأسنان.</p>
             <div class='info-box'>
-                <p><strong>الطبيب:</strong> {doctorName}</p>
-                <p><strong>التاريخ:</strong> {appointmentDate}</p>
-                <p><strong>الوقت:</strong> {appointmentTime}</p>
-                {serviceLine}
-                {notesLine}
+                <p><strong>الطبيب:</strong> {safeDoctorName}</p>
+                <p><strong>التاريخ:</strong> {safeDate}</p>
+                <p><strong>الوقت:</strong> {safeTime}</p>
+                {safeService}
+                {safeNotes}
             </div>
             <p>يرجى الحضور قبل الموعد بـ 10 دقائق. في حال الرغبة بإلغاء أو تغيير الموعد، يرجى التواصل مع المركز.</p>
         </div>

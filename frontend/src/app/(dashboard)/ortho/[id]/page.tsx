@@ -16,7 +16,6 @@ import {
   FileText,
   GitBranch,
   ListChecks,
-  Plus,
   Save,
   Scissors,
   ShieldCheck,

@@ -136,7 +136,6 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 QueueStatus = queueItem?.Status.ToString(),
                 VisitId = visit?.Id,
                 VisitStatus = visit != null ? (checkoutStatus ?? "InProgress") : null,
-                AmountDueReference = visit?.AmountDueReference,
                 ConsultationFeeRequired = consultationFeeRequired,
                 ConsultationFeePaid = consultationFeePaid,
                 CheckoutStatus = checkoutStatus,

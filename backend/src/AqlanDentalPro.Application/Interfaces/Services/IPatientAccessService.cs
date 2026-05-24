@@ -4,14 +4,13 @@ namespace AqlanDentalPro.Application.Interfaces.Services;
 
 /// <summary>
 /// Enforces per-role patient data access rules.
-/// When Security:EnableDoctorPatientScoping is enabled, doctors
-/// (Orthodontist / GeneralDentist / OralSurgeon) may only see patients linked to
-/// them via appointment, visit, treatment-plan step, or primary-doctor assignment.
-/// By default all staff roles receive full access, matching the legacy clinic workflow.
+/// Doctors (Orthodontist / GeneralDentist / OralSurgeon) may only see patients
+/// linked to them via appointment, visit, treatment-plan step, or primary-doctor assignment.
+/// All other staff roles receive full access.
 /// </summary>
 public interface IPatientAccessService
 {
-    /// <summary>True when the current user has a doctor role and patient scoping is enabled.</summary>
+    /// <summary>True when the current user has a doctor role.</summary>
     bool IsDoctor { get; }
 
     /// <summary>

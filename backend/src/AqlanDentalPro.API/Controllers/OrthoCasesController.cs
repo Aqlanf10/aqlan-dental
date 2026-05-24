@@ -37,7 +37,10 @@ public sealed class UpsertClinicalExamRequest
 [ApiController]
 [Route("api/ortho-cases")]
 [Authorize(Policy = "OrthoAccess")]
-public class OrthoCasesController(OrthoService service, AppDbContext db) : ControllerBase
+public class OrthoCasesController(
+    OrthoService service,
+    AppDbContext db,
+    ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -93,7 +96,8 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         if (contract is not null)
         {
             contractTotal = contract.TotalAmount - contract.DiscountAmount;
-            contractPaid = contract.Payments.Sum(p => p.Amount);
+            // FIX: Only count active payments — exclude soft-deleted/refunded payments
+            contractPaid = contract.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
             contractRemaining = Math.Max(0, contractTotal.Value - contractPaid.Value);
         }
 
@@ -351,9 +355,38 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
             .FirstOrDefaultAsync();
         if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
 
+        // FIX: Record the actual approving user, not the assigned orthodontist.
+        // Only the assigned orthodontist or an Admin may approve.
+        var approverId = currentUser.UserId;
+        if (approverId == null) return Unauthorized(new { message = "غير مصادق عليه" });
+
+        var isAssignedOrthodontist = orthoCase.DoctorId != null &&
+            await db.Doctors.AnyAsync(d => d.Id == orthoCase.DoctorId && d.UserId == approverId && d.IsActive);
+
+        if (!isAssignedOrthodontist && !currentUser.IsAdmin)
+            return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة.");
+
+        // Resolve the Doctor record for the approving user to set ApprovedBy (FK to Doctors)
+        // If the approver is the assigned orthodontist, use their DoctorId;
+        // If admin, try to find their linked Doctor record (if any).
+        Guid? approvedByDoctorId = null;
+        if (isAssignedOrthodontist)
+        {
+            approvedByDoctorId = orthoCase.DoctorId;
+        }
+        else if (currentUser.IsAdmin)
+        {
+            // Admin may not have a Doctor record — check for one
+            var adminDoctor = await db.Doctors
+                .Where(d => d.UserId == approverId && d.IsActive)
+                .Select(d => (Guid?)d.Id)
+                .FirstOrDefaultAsync();
+            approvedByDoctorId = adminDoctor;
+        }
+
         plan.IsApproved = true;
         plan.ApprovedAt = DateTime.UtcNow;
-        plan.ApprovedBy = orthoCase.DoctorId;
+        plan.ApprovedBy = approvedByDoctorId;
         await db.SaveChangesAsync();
 
         return Ok(new

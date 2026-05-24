@@ -1545,6 +1545,62 @@ catch (Exception ex)
     wsLogger2.LogWarning(ex, "Website settings seed hotfix failed (non-fatal)");
 }
 
+// ── CRITICAL: Ensure Patient Journey columns exist on Visits and Appointments ──
+// HOTFIX: Migration 20260529000000_AddPatientJourneyFields adds ServiceId, ClinicRoomId
+// to Appointments and ServiceId, CheckoutStatus, ReadyForCheckoutAt, AmountDueReference
+// to Visits. If ENABLE_STARTUP_DB_MAINTENANCE=false, MigrateAsync() is skipped and
+// these columns are missing, causing /api/patient-journey/today to return 500.
+// This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var pjScope = app.Services.CreateScope();
+    var pjDb     = pjScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var pjLogger = pjScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await pjDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── Appointments: add ServiceId if missing ───────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'ServiceId') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "ServiceId" uuid NULL;
+                CREATE INDEX IF NOT EXISTS "IX_Appointments_ServiceId" ON "Appointments" ("ServiceId");
+            END IF;
+
+            -- ── Appointments: add ClinicRoomId if missing ───────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'ClinicRoomId') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "ClinicRoomId" uuid NULL;
+            END IF;
+
+            -- ── Visits: add ServiceId if missing ─────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'ServiceId') THEN
+                ALTER TABLE "Visits" ADD COLUMN "ServiceId" uuid NULL;
+            END IF;
+
+            -- ── Visits: add CheckoutStatus if missing ────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'CheckoutStatus') THEN
+                ALTER TABLE "Visits" ADD COLUMN "CheckoutStatus" character varying(30) NULL;
+                CREATE INDEX IF NOT EXISTS "IX_Visits_CheckoutStatus" ON "Visits" ("CheckoutStatus");
+            END IF;
+
+            -- ── Visits: add ReadyForCheckoutAt if missing ────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'ReadyForCheckoutAt') THEN
+                ALTER TABLE "Visits" ADD COLUMN "ReadyForCheckoutAt" timestamp with time zone NULL;
+            END IF;
+
+            -- ── Visits: add AmountDueReference if missing ────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'AmountDueReference') THEN
+                ALTER TABLE "Visits" ADD COLUMN "AmountDueReference" numeric(12,2) NULL;
+            END IF;
+        END $$;
+    """);
+
+    pjLogger.LogInformation("HOTFIX: Patient Journey columns ensured on Appointments and Visits (idempotent)");
+}
+catch (Exception ex)
+{
+    var pjLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    pjLogger2.LogError(ex, "HOTFIX: Failed to ensure Patient Journey columns. Patient journey endpoint may return 500!");
+}
+
 // ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
 // TD-020: remaining raw SQL blocks — see docs/technical-debt/TD-020-raw-sql-inventory.md
 var enableStartupDbMaintenance =

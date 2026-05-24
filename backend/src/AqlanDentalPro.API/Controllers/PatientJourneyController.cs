@@ -25,6 +25,8 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
     public async Task<IActionResult> GetToday([FromQuery] string? date, [FromQuery] string? status,
         [FromQuery] Guid? doctorId, [FromQuery] Guid? serviceId, [FromQuery] Guid? roomId)
     {
+        try
+        {
         // Parse date - default to today
         DateOnly queryDate;
         if (!string.IsNullOrWhiteSpace(date))
@@ -68,6 +70,10 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         var appointments = await query
             .OrderBy(a => a.StartTime)
             .ToListAsync();
+
+        // No appointments for today — return empty list immediately
+        if (appointments.Count == 0)
+            return Ok(new List<object>());
 
         // Load related queue items for today
         var appointmentIds = appointments.Select(a => a.Id).ToList();
@@ -142,6 +148,12 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         }).ToList();
 
         return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PatientJourney.GetToday failed: {Message}\n{StackTrace}", ex.Message, ex.StackTrace);
+            return StatusCode(500, new { message = $"خطأ في رحلة المرضى: {ex.Message}", detail = ex.InnerException?.Message });
+        }
     }
 
     // ─── 2. POST /api/patient-journey/{appointmentId}/intake ────────────────

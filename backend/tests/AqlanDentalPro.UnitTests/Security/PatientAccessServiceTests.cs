@@ -5,6 +5,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -36,8 +37,19 @@ public class PatientAccessServiceTests
         return mock.Object;
     }
 
-    private static PatientAccessService Build(AppDbContext db, ICurrentUserService user) =>
-        new(db, user, NullLogger<PatientAccessService>.Instance);
+    private static IConfiguration CreateConfig(bool enableDoctorPatientScoping = true) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Security:EnableDoctorPatientScoping"] = enableDoctorPatientScoping.ToString()
+            })
+            .Build();
+
+    private static PatientAccessService Build(
+        AppDbContext db,
+        ICurrentUserService user,
+        bool enableDoctorPatientScoping = true) =>
+        new(db, user, CreateConfig(enableDoctorPatientScoping), NullLogger<PatientAccessService>.Instance);
 
     // Seed helpers
 
@@ -74,6 +86,21 @@ public class PatientAccessServiceTests
         using var db = CreateDb();
         var svc = Build(db, CreateUser(Guid.NewGuid(), role));
         svc.IsDoctor.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task DoctorPatientScoping_DisabledByDefault_AllowsLegacyFullAccess()
+    {
+        await using var db = CreateDb();
+        var svc = Build(
+            db,
+            CreateUser(Guid.NewGuid(), UserRole.Orthodontist),
+            enableDoctorPatientScoping: false);
+
+        svc.IsDoctor.Should().BeFalse();
+        svc.HasFullAccess.Should().BeTrue();
+        (await svc.CanAccessPatientAsync(Guid.NewGuid())).Should().BeTrue();
+        (await svc.GetAccessiblePatientIdsAsync()).Should().BeNull();
     }
 
     // ── HasFullAccess ─────────────────────────────────────────────────────────

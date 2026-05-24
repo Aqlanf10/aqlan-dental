@@ -31,6 +31,7 @@ interface JourneyItem {
   queueStatus?: string;
   visitId?: string;
   visitStatus?: string;
+  amountDueReference?: number;
   consultationFeeRequired: boolean;
   consultationFeePaid: boolean;
   checkoutStatus?: string;
@@ -136,6 +137,7 @@ export default function PatientJourneyPage() {
   // Dialogs
   const [showIntake, setShowIntake] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [showHandoff, setShowHandoff] = useState(false);
   const [selectedItem, setSelectedItem] = useState<JourneyItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [dialogError, setDialogError] = useState("");
@@ -147,6 +149,14 @@ export default function PatientJourneyPage() {
   const [intakeConsultFee, setIntakeConsultFee] = useState(false);
   const [intakeConsultAmount, setIntakeConsultAmount] = useState(0);
   const [intakeNotes, setIntakeNotes] = useState("");
+
+  // Doctor handoff form
+  const [handoffDiagnosis, setHandoffDiagnosis] = useState("");
+  const [handoffTreatment, setHandoffTreatment] = useState("");
+  const [handoffInstructions, setHandoffInstructions] = useState("");
+  const [handoffNextPlan, setHandoffNextPlan] = useState("");
+  const [handoffFollowUpDate, setHandoffFollowUpDate] = useState("");
+  const [handoffAmount, setHandoffAmount] = useState(0);
 
   // Checkout form
   const [checkoutAmount, setCheckoutAmount] = useState(0);
@@ -227,6 +237,19 @@ export default function PatientJourneyPage() {
   // ─── Action Handlers ──────────────────────────────────────────────────────
 
   const handleAction = async (item: JourneyItem) => {
+    if (item.nextAction === "InProgress") {
+      setSelectedItem(item);
+      setHandoffDiagnosis("");
+      setHandoffTreatment("");
+      setHandoffInstructions("");
+      setHandoffNextPlan("");
+      setHandoffFollowUpDate("");
+      setHandoffAmount(item.amountDueReference ?? 0);
+      setDialogError("");
+      setShowHandoff(true);
+      return;
+    }
+
     if (item.nextAction === "Intake") {
       setSelectedItem(item);
       setIntakeService(item.serviceId ?? "");
@@ -297,6 +320,31 @@ export default function PatientJourneyPage() {
       loadJourney();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      setDialogError(msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleHandoffSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem?.visitId) return;
+    setActionLoading(true);
+    setDialogError("");
+    try {
+      await api.post(`/api/patient-journey/${selectedItem.visitId}/handoff-to-reception`, {
+        diagnosis: handoffDiagnosis || null,
+        treatmentDone: handoffTreatment || null,
+        instructions: handoffInstructions || null,
+        nextVisitPlan: handoffNextPlan || null,
+        followUpDate: handoffFollowUpDate || null,
+        amountDue: handoffAmount > 0 ? handoffAmount : null,
+      });
+      setShowHandoff(false);
+      toast.success("تم تسليم المريض للاستقبال وجاهز للحساب");
+      loadJourney();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ أثناء تسليم المريض";
       setDialogError(msg);
     } finally {
       setActionLoading(false);
@@ -547,10 +595,14 @@ export default function PatientJourneyPage() {
                         {ACTION_LABELS[item.nextAction] ?? item.nextAction}
                       </button>
                     ) : item.nextAction === "InProgress" ? (
-                      <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                      <button
+                        onClick={() => handleAction(item)}
+                        disabled={actionLoading || !item.visitId}
+                        className="text-xs px-3 py-1.5 rounded-lg font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition disabled:opacity-60 inline-flex items-center gap-1"
+                      >
                         <Stethoscope className="w-3 h-3" />
                         عند الطبيب
-                      </span>
+                      </button>
                     ) : (
                       <span className="text-xs text-gray-400">—</span>
                     )}
@@ -685,6 +737,70 @@ export default function PatientJourneyPage() {
       )}
 
       {/* ─── Checkout Dialog ───────────────────────────────────────────── */}
+      {showHandoff && selectedItem && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleHandoffSubmit}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-2xl space-y-4 p-6"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">تسليم المريض للاستقبال</h2>
+                <p className="text-sm text-gray-500 mt-1">{selectedItem.patientName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHandoff(false)}
+                className="p-1 rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {dialogError && (
+              <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{dialogError}</div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">العلاج المنفذ</label>
+                <textarea value={handoffTreatment} onChange={(e) => setHandoffTreatment(e.target.value)} className={cn(inputCls, "h-20 resize-none")} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">التشخيص</label>
+                <textarea value={handoffDiagnosis} onChange={(e) => setHandoffDiagnosis(e.target.value)} className={cn(inputCls, "h-20 resize-none")} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">تعليمات للمريض</label>
+                <textarea value={handoffInstructions} onChange={(e) => setHandoffInstructions(e.target.value)} className={cn(inputCls, "h-20 resize-none")} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">خطة الزيارة القادمة</label>
+                <input value={handoffNextPlan} onChange={(e) => setHandoffNextPlan(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">تاريخ المتابعة</label>
+                <input type="date" value={handoffFollowUpDate} onChange={(e) => setHandoffFollowUpDate(e.target.value)} className={inputCls} dir="ltr" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">المبلغ المطلوب</label>
+                <input type="number" min={0} value={handoffAmount} onChange={(e) => setHandoffAmount(parseInt(e.target.value) || 0)} className={inputCls} dir="ltr" />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setShowHandoff(false)} className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50">
+                إلغاء
+              </button>
+              <button type="submit" disabled={actionLoading} className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60">
+                <Save className="w-4 h-4" />
+                {actionLoading ? "جارٍ التسليم..." : "جاهز للحساب"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {showCheckout && selectedItem && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg space-y-4 p-6">

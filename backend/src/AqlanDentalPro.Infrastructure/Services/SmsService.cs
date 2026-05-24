@@ -27,6 +27,7 @@ public class SmsService : ISmsService
     private string? _cachedApiUrl;
     private string? _cachedApiKey;
     private string? _cachedSenderName;
+    private string? _cachedGatewayMode;
     private DateTime _cacheExpiry = DateTime.MinValue;
     private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(5);
 
@@ -34,6 +35,9 @@ public class SmsService : ISmsService
     private string? ApiUrl => _cachedApiUrl ?? _configuration["Sms:ApiUrl"];
     private string? ApiKey => _cachedApiKey ?? _configuration["Sms:ApiKey"];
     private string? SenderName => _cachedSenderName ?? _configuration["Sms:SenderName"];
+    /// <summary>Gateway mode: "local_android" (base URL + /sms/send + /status) or "cloud_api" (full send endpoint URL).</summary>
+    private string GatewayMode => _cachedGatewayMode ?? _configuration["Sms:GatewayMode"] ?? "local_android";
+    private bool IsCloudApi => GatewayMode == "cloud_api";
     private bool IsConfigured => !string.IsNullOrWhiteSpace(ApiUrl) && !string.IsNullOrWhiteSpace(ApiKey);
 
     public SmsService(
@@ -58,10 +62,12 @@ public class SmsService : ISmsService
         var urlSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.api_url");
         var keySetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.api_key");
         var senderSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.sender_name");
+        var modeSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.gateway_mode");
 
         _cachedApiUrl = urlSetting?.Value;
         _cachedApiKey = keySetting?.Value;
         _cachedSenderName = senderSetting?.Value;
+        _cachedGatewayMode = modeSetting?.Value;
         _cacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
     }
 
@@ -395,6 +401,7 @@ public class SmsService : ISmsService
         var apptRemindersSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.send_appointment_reminders");
         var paymentRemindersSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.send_payment_reminders");
         var reminderHoursSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.reminder_hours");
+        var gatewayModeSetting = await _db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.gateway_mode");
 
         bool enabled = enabledSetting?.Value?.ToLower() == "true";
         bool isConnected = false;
@@ -410,6 +417,7 @@ public class SmsService : ISmsService
             Enabled = enabled,
             ApiUrl = ApiUrl,
             HasApiKey = !string.IsNullOrWhiteSpace(ApiKey),
+            GatewayMode = gatewayModeSetting?.Value ?? GatewayMode,
             SenderName = senderNameSetting?.Value ?? SenderName ?? "Aqlan Dental",
             DailyLimit = int.TryParse(dailyLimitSetting?.Value, out var limit) ? limit : 500,
             SendAppointmentReminders = apptRemindersSetting?.Value?.ToLower() != "false",
@@ -421,13 +429,14 @@ public class SmsService : ISmsService
 
     public async Task<SmsGatewaySettingsDto> UpdateGatewaySettingsAsync(UpdateSmsGatewaySettingsRequest request)
     {
-        // Update all settings in DB (including ApiUrl and ApiKey)
+        // Update all settings in DB (including ApiUrl, ApiKey, and GatewayMode)
         await UpsertSettingAsync("sms.enabled", request.Enabled.ToString().ToLower());
         await UpsertSettingAsync("sms.sender_name", request.SenderName ?? "Aqlan Dental");
         await UpsertSettingAsync("sms.daily_limit", request.DailyLimit.ToString());
         await UpsertSettingAsync("sms.send_appointment_reminders", request.SendAppointmentReminders.ToString().ToLower());
         await UpsertSettingAsync("sms.send_payment_reminders", request.SendPaymentReminders.ToString().ToLower());
         await UpsertSettingAsync("sms.reminder_hours", request.ReminderHours ?? "24,2");
+        await UpsertSettingAsync("sms.gateway_mode", request.GatewayMode ?? "local_android");
 
         // Store ApiUrl and ApiKey in DB so they persist across restarts
         if (!string.IsNullOrWhiteSpace(request.ApiUrl))
@@ -454,6 +463,8 @@ public class SmsService : ISmsService
 
     /// <summary>
     /// Internal connection test — callers must ensure cache is loaded first.
+    /// For local_android mode: GET {ApiUrl}/status
+    /// For cloud_api mode: POST {ApiUrl} with empty body to check if endpoint responds
     /// </summary>
     private async Task<bool> TestGatewayConnectionInternalAsync()
     {
@@ -462,8 +473,43 @@ public class SmsService : ISmsService
         try
         {
             var client = _httpClientFactory.CreateClient("Sms");
-            var response = await client.GetAsync($"{ApiUrl}/status");
-            return response.IsSuccessStatusCode;
+
+            if (IsCloudApi)
+            {
+                // Cloud API: try a GET to the base domain to verify the service is reachable
+                // (the full endpoint URL may not support GET, so we test the base)
+                try
+                {
+                    var uri = new Uri(ApiUrl!);
+                    var baseUrl = $"{uri.Scheme}://{uri.Host}";
+                    var response = await client.GetAsync(baseUrl);
+                    return response.IsSuccessStatusCode || (int)response.StatusCode < 500;
+                }
+                catch
+                {
+                    // If GET fails, try a simple POST with auth to see if gateway responds
+                    try
+                    {
+                        var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
+                        if (!string.IsNullOrWhiteSpace(ApiKey))
+                            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+                        request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+                        var response = await client.SendAsync(request);
+                        // Any response (even 400) means the server is reachable
+                        return (int)response.StatusCode < 500;
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                // Local Android gateway: check /status endpoint
+                var response = await client.GetAsync($"{ApiUrl}/status");
+                return response.IsSuccessStatusCode;
+            }
         }
         catch
         {
@@ -491,6 +537,9 @@ public class SmsService : ISmsService
         {
             var client = _httpClientFactory.CreateClient("Sms");
 
+            // Build request based on gateway mode
+            var sendUrl = IsCloudApi ? ApiUrl! : $"{ApiUrl}/sms/send";
+
             var payload = new
             {
                 to = message.PhoneNumber,
@@ -501,7 +550,7 @@ public class SmsService : ISmsService
             var json = JsonSerializer.Serialize(payload);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiUrl}/sms/send")
+            var request = new HttpRequestMessage(HttpMethod.Post, sendUrl)
             {
                 Content = content
             };
@@ -517,7 +566,10 @@ public class SmsService : ISmsService
                 var result = JsonSerializer.Deserialize<JsonElement>(responseBody);
 
                 message.Status = "sent";
-                message.ExternalId = result.TryGetProperty("id", out var idProp) ? idProp.GetString() : $"sms-{Guid.NewGuid():N}"[..20];
+                message.ExternalId = result.TryGetProperty("id", out var idProp) ? idProp.GetString()
+                    : result.TryGetProperty("messageId", out var msgIdProp) ? msgIdProp.GetString()
+                    : $"sms-{Guid.NewGuid():N}"[..20];
+                message.Gateway = IsCloudApi ? "cloud_api" : "local_android";
                 message.SentAt = DateTime.UtcNow;
                 message.UpdatedAt = DateTime.UtcNow;
             }

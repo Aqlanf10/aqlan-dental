@@ -63,6 +63,8 @@ interface SmsGatewaySettingsDto {
   enabled: boolean;
   apiUrl?: string;
   hasApiKey: boolean;
+  /** Gateway mode: "local_android" (base URL + /sms/send) or "cloud_api" (full endpoint URL) */
+  gatewayMode: string;
   senderName?: string;
   dailyLimit: number;
   sendAppointmentReminders: boolean;
@@ -964,6 +966,7 @@ function SettingsTab() {
       const payload: Record<string, unknown> = {
         enabled: settings.enabled,
         apiUrl: settings.apiUrl,
+        gatewayMode: settings.gatewayMode || "local_android",
         senderName: settings.senderName,
         dailyLimit: settings.dailyLimit,
         sendAppointmentReminders: settings.sendAppointmentReminders,
@@ -1073,6 +1076,46 @@ function SettingsTab() {
           </button>
         </div>
 
+        {/* Gateway Mode */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            نوع البوابة
+          </label>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setSettings({ ...settings, gatewayMode: "local_android" })}
+              className={cn(
+                "flex-1 px-3 py-2.5 text-xs font-medium rounded-lg border-2 transition text-center",
+                settings.gatewayMode === "local_android" || !settings.gatewayMode
+                  ? "border-clinic-blue bg-clinic-blue/5 text-clinic-blue"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+              )}
+            >
+              <Phone className="w-4 h-4 mx-auto mb-1" />
+              بوابة أندرويد محلية
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettings({ ...settings, gatewayMode: "cloud_api" })}
+              className={cn(
+                "flex-1 px-3 py-2.5 text-xs font-medium rounded-lg border-2 transition text-center",
+                settings.gatewayMode === "cloud_api"
+                  ? "border-clinic-blue bg-clinic-blue/5 text-clinic-blue"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+              )}
+            >
+              <Zap className="w-4 h-4 mx-auto mb-1" />
+              بوابة سحابية (API)
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {settings.gatewayMode === "cloud_api"
+              ? "أدخل رابط إرسال الرسائل الكامل (Full Endpoint URL)"
+              : "أدخل الرابط الأساسي للبوابة (Base URL) — سيتم إضافة /sms/send تلقائياً"}
+          </p>
+        </div>
+
         {/* Gateway URL */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -1084,9 +1127,14 @@ function SettingsTab() {
               setSettings({ ...settings, apiUrl: e.target.value })
             }
             className={inputCls}
-            placeholder="https://api.example.com/sms"
+            placeholder={settings.gatewayMode === "cloud_api" ? "https://us-central1-xxx.cloudfunctions.net/api_sms_send" : "http://192.168.1.100:8080"}
             dir="ltr"
           />
+          {settings.gatewayMode !== "cloud_api" && (
+            <p className="text-xs text-gray-400 mt-1">
+              سيتم إضافة <code className="bg-gray-100 px-1 rounded font-mono" dir="ltr">/sms/send</code> و <code className="bg-gray-100 px-1 rounded font-mono" dir="ltr">/status</code> تلقائياً
+            </p>
+          )}
         </div>
 
         {/* API Key */}

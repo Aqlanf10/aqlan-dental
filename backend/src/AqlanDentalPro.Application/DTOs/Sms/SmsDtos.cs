@@ -30,6 +30,8 @@ public class UpdateSmsGatewaySettingsRequest
     public bool Enabled { get; set; }
     public string? ApiUrl { get; set; }
     public string? ApiKey { get; set; }
+    /// <summary>Gateway mode: "local_android" (base URL + /sms/send) or "cloud_api" (full endpoint URL).</summary>
+    public string? GatewayMode { get; set; } = "local_android";
     public string? SenderName { get; set; }
     public int DailyLimit { get; set; } = 500;
     public bool SendAppointmentReminders { get; set; } = true;
@@ -93,6 +95,8 @@ public class SmsGatewaySettingsDto
     public bool Enabled { get; set; }
     public string? ApiUrl { get; set; }
     public bool HasApiKey { get; set; }
+    /// <summary>Gateway mode: "local_android" (base URL + /sms/send) or "cloud_api" (full endpoint URL).</summary>
+    public string GatewayMode { get; set; } = "local_android";
     public string? SenderName { get; set; }
     public int DailyLimit { get; set; }
     public bool SendAppointmentReminders { get; set; }

@@ -1746,6 +1746,64 @@ catch (Exception ex)
     smsLogger2.LogError(ex, "HOTFIX: Failed to ensure SMS Gateway tables. SMS endpoints may return 500!");
 }
 
+// ── Seed SMS Gateway settings (Cloud API mode) ──
+// API key is stored via environment variable Sms:ApiKey, NOT in source code.
+try
+{
+    using var smsSettingsScope = app.Services.CreateScope();
+    var smsSettingsDb = smsSettingsScope.ServiceProvider.GetRequiredService<AqlanDentalPro.Infrastructure.Data.AppDbContext>();
+
+    var smsApiUrl = builder.Configuration["Sms:ApiUrl"] ?? "";
+    var smsApiKey = builder.Configuration["Sms:ApiKey"] ?? "";
+    var smsGatewayMode = builder.Configuration["Sms:GatewayMode"] ?? "cloud_api";
+
+    var smsSettingsSeed = new Dictionary<string, (string Value, string Category)>
+    {
+        ["sms.enabled"] = ("true", "sms"),
+        ["sms.gateway_mode"] = (smsGatewayMode, "sms"),
+        ["sms.sender_name"] = ("AqlanDental", "sms"),
+        ["sms.daily_limit"] = ("500", "sms"),
+        ["sms.send_appointment_reminders"] = ("true", "sms"),
+        ["sms.send_payment_reminders"] = ("true", "sms"),
+        ["sms.reminder_hours"] = ("24,2", "sms"),
+    };
+
+    // Only seed URL and API key from env vars if they are provided
+    if (!string.IsNullOrWhiteSpace(smsApiUrl))
+        smsSettingsSeed["sms.api_url"] = (smsApiUrl, "sms");
+    if (!string.IsNullOrWhiteSpace(smsApiKey))
+        smsSettingsSeed["sms.api_key"] = (smsApiKey, "sms");
+
+    foreach (var (key, (value, category)) in smsSettingsSeed)
+    {
+        var existing = await smsSettingsDb.Settings.FirstOrDefaultAsync(s => s.Key == key);
+        if (existing == null)
+        {
+            smsSettingsDb.Settings.Add(new AqlanDentalPro.Domain.Entities.Setting
+            {
+                Key = key,
+                Value = value,
+                Category = category,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+        else if (key == "sms.gateway_mode" && existing.Value != smsGatewayMode)
+        {
+            existing.Value = value;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    await smsSettingsDb.SaveChangesAsync();
+    var smsSettingsLogger = app.Services.GetRequiredService<ILogger<Program>>();
+    smsSettingsLogger.LogInformation("SMS Gateway settings seeded (mode={Mode}, hasUrl={HasUrl}, hasKey={HasKey})", smsGatewayMode, !string.IsNullOrWhiteSpace(smsApiUrl), !string.IsNullOrWhiteSpace(smsApiKey));
+}
+catch (Exception ex)
+{
+    var smsSettingsLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    smsSettingsLogger2.LogError(ex, "Failed to seed SMS Gateway settings");
+}
+
 // ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
 // TD-020: remaining raw SQL blocks — see docs/technical-debt/TD-020-raw-sql-inventory.md
 var enableStartupDbMaintenance =

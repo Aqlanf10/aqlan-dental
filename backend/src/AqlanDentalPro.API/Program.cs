@@ -411,6 +411,11 @@ builder.Services.AddHttpClient("WhatsApp", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 });
+builder.Services.AddScoped<ISmsService, SmsService>();
+builder.Services.AddHttpClient("Sms", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
 builder.Services.AddHttpContextAccessor();
 
@@ -1619,6 +1624,82 @@ catch (Exception ex)
 {
     var pjLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
     pjLogger2.LogError(ex, "HOTFIX: Failed to ensure Patient Journey columns. Patient journey endpoint may return 500!");
+}
+
+// ── HOTFIX: Ensure SMS Gateway tables exist (Sprint: Local Android SIM SMS Gateway) ──
+try
+{
+    var smsLogger = app.Services.GetRequiredService<ILogger<Program>>();
+    using var smsScope = app.Services.CreateScope();
+    var smsDb = smsScope.ServiceProvider.GetRequiredService<AqlanDentalPro.Infrastructure.Data.AppDbContext>();
+
+    await smsDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── SmsMessages table ──────────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'SmsMessages') THEN
+                CREATE TABLE "SmsMessages" (
+                    "Id" uuid PRIMARY KEY,
+                    "PatientId" uuid NOT NULL,
+                    "PhoneNumber" character varying(20) NOT NULL,
+                    "TemplateType" character varying(50) NOT NULL DEFAULT 'custom',
+                    "MessageContent" character varying(1000) NOT NULL,
+                    "Status" character varying(20) NOT NULL DEFAULT 'pending',
+                    "ExternalId" character varying(100) NULL,
+                    "ErrorMessage" character varying(500) NULL,
+                    "RetryCount" integer NOT NULL DEFAULT 0,
+                    "SentAt" timestamp with time zone NULL,
+                    "DeliveredAt" timestamp with time zone NULL,
+                    "RelatedEntityId" uuid NULL,
+                    "RelatedEntityType" character varying(50) NULL,
+                    "Gateway" character varying(30) NOT NULL DEFAULT 'local_android',
+                    "CharacterCount" integer NOT NULL DEFAULT 0,
+                    "SegmentCount" integer NOT NULL DEFAULT 0,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL
+                );
+                CREATE INDEX "IX_SmsMessages_PatientId" ON "SmsMessages" ("PatientId");
+                CREATE INDEX "IX_SmsMessages_Status" ON "SmsMessages" ("Status");
+                CREATE INDEX "IX_SmsMessages_CreatedAt" ON "SmsMessages" ("CreatedAt");
+                CREATE INDEX "IX_SmsMessages_TemplateType" ON "SmsMessages" ("TemplateType");
+                CREATE INDEX "IX_SmsMessages_CreatedAt_Status" ON "SmsMessages" ("CreatedAt", "Status");
+            END IF;
+
+            -- ── SmsTemplates table ─────────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'SmsTemplates') THEN
+                CREATE TABLE "SmsTemplates" (
+                    "Id" uuid PRIMARY KEY,
+                    "TemplateKey" character varying(50) NOT NULL,
+                    "NameAr" character varying(100) NOT NULL,
+                    "ContentTemplate" character varying(500) NOT NULL,
+                    "IsTemplateActive" boolean NOT NULL DEFAULT true,
+                    "Category" character varying(30) NOT NULL DEFAULT 'general',
+                    "MaxLength" integer NOT NULL DEFAULT 160,
+                    "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                    "IsActive" boolean NOT NULL DEFAULT true,
+                    "DeletedAt" timestamp with time zone NULL,
+                    "DeletedBy" uuid NULL
+                );
+                CREATE UNIQUE INDEX "IX_SmsTemplates_TemplateKey" ON "SmsTemplates" ("TemplateKey");
+                CREATE INDEX "IX_SmsTemplates_Category" ON "SmsTemplates" ("Category");
+            END IF;
+
+            -- ── Appointments: add SmsReminderWindowsSent if missing ──
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'SmsReminderWindowsSent') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "SmsReminderWindowsSent" character varying(200) NULL;
+            END IF;
+        END $$;
+    """);
+
+    smsLogger.LogInformation("HOTFIX: SMS Gateway tables + SmsReminderWindowsSent column ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var smsLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    smsLogger2.LogError(ex, "HOTFIX: Failed to ensure SMS Gateway tables. SMS endpoints may return 500!");
 }
 
 // ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────

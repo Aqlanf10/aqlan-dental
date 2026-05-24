@@ -25,6 +25,9 @@ public class Appointment : BaseEntity
     /// <summary>JSON array of reminder window hours that have already been sent (e.g. [24,2] means both 24h and 2h email reminders sent).</summary>
     public string? EmailReminderWindowsSent { get; set; }
 
+    /// <summary>JSON array of SMS reminder window hours that have already been sent (e.g. [24,2]).</summary>
+    public string? SmsReminderWindowsSent { get; set; }
+
     public string? Notes { get; set; }
     public Guid? CreatedBy { get; set; }
 

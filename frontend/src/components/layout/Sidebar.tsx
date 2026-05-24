@@ -9,6 +9,7 @@ import {
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
   CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown, Percent,
+  Smartphone,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -83,6 +84,7 @@ const NAV: NavEntry[] = [
   { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: [],                                                             section: "التواصل" },
   { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: [] },
   { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: [] },
+  { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: [] },
 
   // ── عمليات ───────────────────────────────────────────────────────────────
   {

@@ -17,9 +17,10 @@ namespace AqlanDentalPro.Infrastructure.Services;
 /// Key behaviors (post reliability-sprint):
 /// - Targets Scheduled AND Confirmed appointments only.
 /// - Uses Asia/Aden (UTC+3) timezone for all timing calculations.
-/// - Tracks email and WhatsApp reminders separately (no cross-channel suppression).
+/// - Tracks email, SMS, and WhatsApp reminders separately (no cross-channel suppression).
 /// - Supports multiple reminder windows (e.g. 24h and 2h) — each window sends at most once.
 /// - Resolves patient email in priority order: PatientAccount→User, Patient.Email, BookingRequest.Email.
+/// - SMS channel via Local Android SIM SMS Gateway (if enabled).
 ///
 /// Runs every 30 minutes to catch appointments that fall within the reminder window.
 /// </summary>
@@ -95,11 +96,36 @@ public class AppointmentReminderJob : BackgroundService
             _logger.LogDebug("Email not configured. Skipping email appointment reminders.");
         }
 
-        // ── 3. Use clinic timezone (Asia/Aden, UTC+3) for all timing ──
+        // ── 3. Check if SMS is enabled and configured ──
+        ISmsService? smsService = null;
+        bool smsEnabled = false;
+        try
+        {
+            var smsSetting = await db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.enabled");
+            var smsApptReminders = await db.Settings.FirstOrDefaultAsync(s => s.Key == "sms.send_appointment_reminders");
+            smsEnabled = smsSetting?.Value?.ToLower() == "true"
+                && smsApptReminders?.Value?.ToLower() != "false";
+
+            if (smsEnabled)
+            {
+                smsService = scope.ServiceProvider.GetService<ISmsService>();
+                if (smsService == null)
+                {
+                    _logger.LogDebug("SMS service not registered in DI. Skipping SMS reminders.");
+                    smsEnabled = false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "SMS service check failed. Skipping SMS reminders.");
+        }
+
+        // ── 4. Use clinic timezone (Asia/Aden, UTC+3) for all timing ──
         var nowClinic = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ClinicTz);
         var totalSent = 0;
 
-        // ── 4. Target Scheduled AND Confirmed appointments ──
+        // ── 5. Target Scheduled AND Confirmed appointments ──
         var targetStatuses = new List<AppointmentStatus>
         {
             AppointmentStatus.Scheduled,
@@ -146,54 +172,81 @@ public class AppointmentReminderJob : BackgroundService
                     if (sentWindows.Contains(hoursBefore))
                     {
                         _logger.LogDebug(
-                            "Email reminder for {Hours}h window already sent for appointment {Id}. Skipping.",
+                            "Email reminder for {Hours}h window already sent for appointment {Id}. Skipping email.",
                             hoursBefore, appt.Id);
-                        continue;
-                    }
-
-                    // ── Resolve patient email (priority order) ──
-                    var patientEmail = await GetPatientEmailAsync(db, appt.PatientId, appt.Id);
-
-                    if (emailConfigured && !string.IsNullOrWhiteSpace(patientEmail))
-                    {
-                        var patientName = $"{appt.Patient.FirstName} {appt.Patient.LastName}".Trim();
-                        var doctorName = appt.Doctor.Name ?? "الطبيب";
-                        var appointmentDate = appt.AppointmentDate.ToString("yyyy/MM/dd");
-                        var appointmentTime = appt.StartTime.ToString("HH:mm");
-                        var clinicService = appt.Service?.ArabicName;
-
-                        var subject = $"تذكير بموعد مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الاسنان — {appointmentDate}";
-                        var htmlBody = EmailService.BuildAppointmentReminderHtml(
-                            patientName, doctorName, appointmentDate,
-                            appointmentTime, clinicService, appt.Notes);
-
-                        var sent = await emailService.SendAppointmentReminderAsync(patientEmail, subject, htmlBody, appt.Id);
-
-                        if (sent)
-                        {
-                            // Track this specific window as sent
-                            sentWindows.Add(hoursBefore);
-                            appt.EmailReminderWindowsSent = JsonSerializer.Serialize(sentWindows);
-                            appt.EmailReminderSentAt = DateTime.UtcNow;
-                            // Do NOT set ConfirmationSent — that would suppress WhatsApp
-                            totalSent++;
-                            _logger.LogInformation(
-                                "Sent {Hours}h email reminder for appointment {Id} to {Email}",
-                                hoursBefore, appt.Id, MaskEmail(patientEmail));
-                        }
                     }
                     else
                     {
-                        _logger.LogDebug(
-                            "No email on file for patient {PatientId}. Skipping email reminder for appointment {Id}. " +
-                            "WhatsApp reminders are tracked separately.",
-                            appt.PatientId, appt.Id);
+                        // ── Channel 1: Email via linked User account ──
+                        var patientEmail = await GetPatientEmailAsync(db, appt.PatientId, appt.Id);
+
+                        if (emailConfigured && !string.IsNullOrWhiteSpace(patientEmail))
+                        {
+                            var patientName = $"{appt.Patient.FirstName} {appt.Patient.LastName}".Trim();
+                            var doctorName = appt.Doctor.Name ?? "الطبيب";
+                            var appointmentDate = appt.AppointmentDate.ToString("yyyy/MM/dd");
+                            var appointmentTime = appt.StartTime.ToString("HH:mm");
+                            var clinicService = appt.Service?.ArabicName;
+
+                            var subject = $"تذكير بموعد مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الاسنان — {appointmentDate}";
+                            var htmlBody = EmailService.BuildAppointmentReminderHtml(
+                                patientName, doctorName, appointmentDate,
+                                appointmentTime, clinicService, appt.Notes);
+
+                            var sent = await emailService.SendAppointmentReminderAsync(patientEmail, subject, htmlBody, appt.Id);
+
+                            if (sent)
+                            {
+                                sentWindows.Add(hoursBefore);
+                                appt.EmailReminderWindowsSent = JsonSerializer.Serialize(sentWindows);
+                                appt.EmailReminderSentAt = DateTime.UtcNow;
+                                totalSent++;
+                                _logger.LogInformation(
+                                    "Sent {Hours}h email reminder for appointment {Id} to {Email}",
+                                    hoursBefore, appt.Id, MaskEmail(patientEmail));
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogDebug(
+                                "No email on file for patient {PatientId}. Skipping email reminder for appointment {Id}.",
+                                appt.PatientId, appt.Id);
+                        }
+                    }
+
+                    // ── Channel 2: SMS via Local Android SIM Gateway ──
+                    if (smsEnabled && smsService != null)
+                    {
+                        try
+                        {
+                            var smsSentWindows = ParseSentWindows(appt.SmsReminderWindowsSent);
+                            if (!smsSentWindows.Contains(hoursBefore))
+                            {
+                                await smsService.SendAppointmentReminderAsync(
+                                    new AqlanDentalPro.Application.DTOs.Sms.SendSmsAppointmentReminderRequest
+                                    {
+                                        AppointmentId = appt.Id,
+                                        HoursBefore = hoursBefore
+                                    });
+                                smsSentWindows.Add(hoursBefore);
+                                appt.SmsReminderWindowsSent = JsonSerializer.Serialize(smsSentWindows);
+                                totalSent++;
+                                _logger.LogInformation(
+                                    "Sent {Hours}h SMS reminder for appointment {Id}",
+                                    hoursBefore, appt.Id);
+                            }
+                        }
+                        catch (Exception smsEx)
+                        {
+                            _logger.LogWarning(smsEx,
+                                "Failed to send SMS reminder for appointment {Id}", appt.Id);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex,
-                        "Failed to send email reminder for appointment {Id}", appt.Id);
+                        "Failed to send reminder for appointment {Id}", appt.Id);
                 }
             }
         }
@@ -205,7 +258,7 @@ public class AppointmentReminderJob : BackgroundService
         }
 
         _logger.LogInformation(
-            "AppointmentReminderJob: sent {Count} email reminders (checked {Hours} windows, tz=Asia/Aden)",
+            "AppointmentReminderJob: sent {Count} reminders across all channels (checked {Hours} windows, tz=Asia/Aden)",
             totalSent, string.Join(",", reminderHours));
     }
 

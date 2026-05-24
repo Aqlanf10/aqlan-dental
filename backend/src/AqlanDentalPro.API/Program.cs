@@ -1570,6 +1570,26 @@ try
                 ALTER TABLE "Appointments" ADD COLUMN "ClinicRoomId" uuid NULL;
             END IF;
 
+            -- ── Appointments: add RoomName if missing (Sprint 4.5 queue fields) ──
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'RoomName') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "RoomName" character varying(50) NULL;
+            END IF;
+
+            -- ── Appointments: add ArrivedAt if missing ──────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'ArrivedAt') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "ArrivedAt" timestamp with time zone NULL;
+            END IF;
+
+            -- ── Appointments: add CalledAt if missing ───────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'CalledAt') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "CalledAt" timestamp with time zone NULL;
+            END IF;
+
+            -- ── Appointments: add InRoomAt if missing ───────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Appointments' AND column_name = 'InRoomAt') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "InRoomAt" timestamp with time zone NULL;
+            END IF;
+
             -- ── Visits: add ServiceId if missing ─────────────────────────
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'ServiceId') THEN
                 ALTER TABLE "Visits" ADD COLUMN "ServiceId" uuid NULL;

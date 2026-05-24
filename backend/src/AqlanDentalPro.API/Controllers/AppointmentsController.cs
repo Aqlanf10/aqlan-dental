@@ -374,6 +374,25 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         return Ok(new { message = "تم حذف الموعد بنجاح" });
     }
 
+    // ─── GET /api/appointments/{id}/email-available ────────────────────────────
+    /// <summary>
+    /// Check if the patient for this appointment has an email on file.
+    /// Used by frontend to conditionally show/disable the email reminder button.
+    /// </summary>
+    [HttpGet("{id:guid}/email-available")]
+    public async Task<IActionResult> GetEmailAvailable(Guid id)
+    {
+        var appointment = await db.Appointments
+            .FirstOrDefaultAsync(a => a.Id == id);
+
+        if (appointment is null)
+            return NotFound(new { message = "الموعد غير موجود" });
+
+        var patientEmail = await AppointmentReminderJob.GetPatientEmailAsync(db, appointment.PatientId, appointment.Id);
+
+        return Ok(new { hasEmail = !string.IsNullOrWhiteSpace(patientEmail) });
+    }
+
     // ─── POST /api/appointments/{id}/send-reminder ───────────────────────────
     [HttpPost("{id:guid}/send-reminder")]
     public async Task<IActionResult> SendReminder(Guid id)
@@ -405,7 +424,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             if (result is null)
                 return BadRequest(new { message = "فشل إرسال التذكير عبر واتساب" });
 
-            appointment.ConfirmationSent = true;
+            appointment.WhatsAppReminderSentAt = DateTime.UtcNow;
             appointment.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
@@ -423,6 +442,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     /// Send an appointment reminder email to the patient.
     /// Requires StaffOnly authorization.
     /// Returns Arabic error if patient has no email on file.
+    /// Tracks email reminder separately — does NOT mark WhatsApp reminder as sent.
     /// </summary>
     [HttpPost("{id:guid}/send-email-reminder")]
     public async Task<IActionResult> SendEmailReminder(Guid id)
@@ -439,11 +459,8 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (appointment.Patient is null)
             return BadRequest(new { message = "بيانات المريض غير متوفرة" });
 
-        // ── Resolve patient email via PatientAccount → User (same pattern as AppointmentReminderJob) ──
-        var patientEmail = await db.PatientAccounts
-            .Where(pa => pa.PatientId == appointment.PatientId && pa.LinkedUserId != null)
-            .Join(db.Users, pa => pa.LinkedUserId, u => u.Id, (pa, u) => u.Email)
-            .FirstOrDefaultAsync();
+        // ── Resolve patient email using priority order (same as AppointmentReminderJob) ──
+        var patientEmail = await AppointmentReminderJob.GetPatientEmailAsync(db, appointment.PatientId, appointment.Id);
 
         if (string.IsNullOrWhiteSpace(patientEmail))
             return BadRequest(new { message = "لا يوجد بريد إلكتروني مسجل لهذا المريض" });
@@ -466,9 +483,14 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             if (!sent)
                 return BadRequest(new { message = "تعذر إرسال التذكير، حاول مرة أخرى" });
 
+            // ── Track email reminder separately — do NOT set ConfirmationSent ──
+            appointment.EmailReminderSentAt = DateTime.UtcNow;
+            appointment.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
             logger.LogInformation(
                 "Manual email reminder sent for appointment {AppointmentId} to {Email}",
-                id, patientEmail);
+                id, AppointmentReminderJob.MaskEmail(patientEmail));
 
             return Ok(new { message = "تم إرسال تذكير الموعد بنجاح" });
         }
@@ -476,7 +498,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         {
             logger.LogWarning(ex,
                 "Failed to send email reminder for appointment {AppointmentId}", id);
-            return BadRequest(new { message = "تعذر إرسال التذكير، حاول مرة أخرى" });
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إرسال التذكير" });
         }
     }
 

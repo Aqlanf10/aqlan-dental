@@ -25,7 +25,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
     public async Task<IActionResult> GetToday([FromQuery] string? date, [FromQuery] string? status,
         [FromQuery] Guid? doctorId, [FromQuery] Guid? serviceId, [FromQuery] Guid? roomId)
     {
-        // Parse date - default to today
+        // Parse date - default to today (declared before try so catch can reference it)
         DateOnly queryDate = DateOnly.FromDateTime(DateTime.UtcNow);
         try
         {
@@ -148,7 +148,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         catch (Exception ex)
         {
             logger.LogError(ex, "PatientJourney.GetToday failed for date {Date}: {Message}", queryDate, ex.Message);
-            return StatusCode(500, new { message = "فشل تحميل بيانات رحلة المرضى" });
+            return StatusCode(500, new { message = $"خطأ في رحلة المرضى: {ex.Message}", detail = ex.InnerException?.Message });
         }
     }
 

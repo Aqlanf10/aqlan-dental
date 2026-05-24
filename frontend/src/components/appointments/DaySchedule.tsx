@@ -195,6 +195,7 @@ function AppointmentCard({
   const [startingVisit, setStartingVisit] = useState(false);
   const [arrivalLoading, setArrivalLoading] = useState(false);
   const [queueLoading, setQueueLoading] = useState(false);
+  const [hasEmail, setHasEmail] = useState<boolean | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const transitions = STATUS_TRANSITIONS[a.status] ?? [];
 
@@ -207,6 +208,13 @@ function AppointmentCard({
       })
       .catch(() => {});
   }, [a.patientId, a.id]);
+
+  // Check if patient has email for email reminder button state
+  useEffect(() => {
+    api.get<{ hasEmail: boolean }>(`/api/appointments/${a.id}/email-available`)
+      .then((r) => setHasEmail(r.data.hasEmail))
+      .catch(() => setHasEmail(false));
+  }, [a.id]);
 
   // Close menu on outside click
   useEffect(() => {
@@ -416,13 +424,24 @@ function AppointmentCard({
               <Send className="w-3.5 h-3.5" />
               إرسال تذكير واتساب
             </button>
-            <button
-              onClick={handleSendEmailReminder}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#0E7490]"
-            >
-              <Mail className="w-3.5 h-3.5" />
-              إرسال تذكير بالإيميل
-            </button>
+            {hasEmail ? (
+              <button
+                onClick={handleSendEmailReminder}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#0E7490]"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                إرسال تذكير بالإيميل
+              </button>
+            ) : (
+              <button
+                disabled
+                title="لا يوجد بريد إلكتروني لهذا المريض"
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                إرسال تذكير بالإيميل
+              </button>
+            )}
             {canDelete && (
               <button
                 onClick={handleDelete}

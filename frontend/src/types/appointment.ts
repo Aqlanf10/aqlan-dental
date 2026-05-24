@@ -23,6 +23,8 @@ export interface Appointment {
   arrivedAt?: string | null;
   calledAt?: string | null;
   inRoomAt?: string | null;
+  // Email reminder availability
+  hasEmail?: boolean;
 }
 
 export interface CreateAppointmentRequest {

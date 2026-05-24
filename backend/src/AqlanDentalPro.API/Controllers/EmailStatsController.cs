@@ -1,5 +1,6 @@
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -50,20 +51,20 @@ public class EmailStatsController : ControllerBase
         var weekSent = await _db.EmailLogs.CountAsync(e => e.IsSent && e.CreatedAt >= weekStart);
         var weekFailed = await _db.EmailLogs.CountAsync(e => !e.IsSent && e.CreatedAt >= weekStart);
 
-        // ── Resend daily limit info ──
-        var dailyLimit = 100; // Resend free tier
+        // ── Configurable daily limit ──
+        var dailyLimit = _emailService.ConfiguredDailyLimit;
         var limitPercentage = (int)Math.Round((double)todaySent / dailyLimit * 100);
         var isNearLimit = todaySent >= dailyLimit - 10;
         var isAtLimit = todaySent >= dailyLimit;
 
-        // ── Recent emails (last 20) ──
+        // ── Recent emails (last 20) — mask email addresses for privacy ──
         var recentEmails = await _db.EmailLogs
             .OrderByDescending(e => e.CreatedAt)
             .Take(20)
             .Select(e => new
             {
                 e.Id,
-                e.ToEmail,
+                ToEmail = e.ToEmail, // will mask below
                 e.Subject,
                 e.Category,
                 e.Provider,
@@ -74,6 +75,21 @@ public class EmailStatsController : ControllerBase
                 e.RelatedEntityId
             })
             .ToListAsync();
+
+        // Mask email addresses in response for safety
+        var maskedRecentEmails = recentEmails.Select(e => new
+        {
+            e.Id,
+            ToEmail = EmailService.MaskEmail(e.ToEmail),
+            e.Subject,
+            e.Category,
+            e.Provider,
+            e.IsSent,
+            e.ErrorMessage,
+            e.CreatedAt,
+            e.RelatedEntityType,
+            e.RelatedEntityId
+        }).ToList();
 
         return Ok(new
         {
@@ -94,7 +110,7 @@ public class EmailStatsController : ControllerBase
                 isNearLimit,
                 isAtLimit
             },
-            recentEmails
+            recentEmails = maskedRecentEmails
         });
     }
 
@@ -127,7 +143,7 @@ public class EmailStatsController : ControllerBase
             .Select(e => new
             {
                 e.Id,
-                e.ToEmail,
+                ToEmail = e.ToEmail, // will mask below
                 e.Subject,
                 e.Category,
                 e.Provider,
@@ -140,12 +156,28 @@ public class EmailStatsController : ControllerBase
             })
             .ToListAsync();
 
+        // Mask email addresses in response for safety
+        var maskedEmails = emails.Select(e => new
+        {
+            e.Id,
+            ToEmail = EmailService.MaskEmail(e.ToEmail),
+            e.Subject,
+            e.Category,
+            e.Provider,
+            e.IsSent,
+            e.ErrorMessage,
+            e.ExternalId,
+            e.CreatedAt,
+            e.RelatedEntityType,
+            e.RelatedEntityId
+        }).ToList();
+
         return Ok(new
         {
             total,
             page,
             pageSize,
-            emails
+            emails = maskedEmails
         });
     }
 }

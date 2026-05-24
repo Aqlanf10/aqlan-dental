@@ -7,4 +7,6 @@ public interface IEmailService
     Task<bool> SendAppointmentReminderAsync(string toEmail, string subject, string htmlBody, Guid appointmentId);
     Task<bool> IsConfiguredAsync();
     Task<int> GetDailyEmailCountAsync();
+    /// <summary>Returns the configured daily email limit (from EMAIL_DAILY_LIMIT env var or default 100).</summary>
+    int ConfiguredDailyLimit { get; }
 }

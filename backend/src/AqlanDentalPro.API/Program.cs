@@ -2561,4 +2561,168 @@ app.UseMiddleware<AuditLogMiddleware>();
 app.MapControllers();
 app.MapHub<MessagingHub>("/hubs/messaging");
 
+// ── CRITICAL: Ensure HR and Backup tables exist ─────────────────────────────
+// HOTFIX: Sprint 15 (HR) and Sprint 18 (Backup) add new tables.
+// If ENABLE_STARTUP_DB_MAINTENANCE is false, MigrateAsync() is skipped.
+// This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var hrScope = app.Services.CreateScope();
+    var hrDb     = hrScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var hrLogger = hrScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await hrDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── Attendances table ──────────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Attendances') THEN
+                CREATE TABLE "Attendances" (
+                    "Id"          uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "EmployeeId"  uuid                     NOT NULL,
+                    "Date"        date                     NOT NULL,
+                    "CheckIn"     interval                 NULL,
+                    "CheckOut"    interval                 NULL,
+                    "Status"      integer                  NOT NULL DEFAULT 0,
+                    "Notes"       character varying(500)   NULL,
+                    "CreatedAt"   timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"   timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"    boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"   timestamp with time zone NULL,
+                    "DeletedBy"   uuid                     NULL,
+                    CONSTRAINT "PK_Attendances" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX "IX_Attendances_EmployeeId_Date" ON "Attendances" ("EmployeeId", "Date");
+                CREATE INDEX "IX_Attendances_EmployeeId" ON "Attendances" ("EmployeeId");
+            END IF;
+
+            -- ── SalaryRecords table ────────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'SalaryRecords') THEN
+                CREATE TABLE "SalaryRecords" (
+                    "Id"            uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "EmployeeId"    uuid                     NOT NULL,
+                    "Year"          integer                  NOT NULL,
+                    "Month"         integer                  NOT NULL,
+                    "BaseSalary"    numeric(12,2)            NOT NULL DEFAULT 0,
+                    "Deductions"    numeric(12,2)            NOT NULL DEFAULT 0,
+                    "Advances"      numeric(12,2)            NOT NULL DEFAULT 0,
+                    "Bonuses"       numeric(12,2)            NOT NULL DEFAULT 0,
+                    "NetSalary"     numeric(12,2)            NOT NULL DEFAULT 0,
+                    "PaidAt"        timestamp with time zone NULL,
+                    "PaidBy"        uuid                     NULL,
+                    "PaymentMethod" character varying(50)    NULL,
+                    "Notes"         character varying(500)   NULL,
+                    "CreatedAt"     timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"     timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"      boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"     timestamp with time zone NULL,
+                    "DeletedBy"     uuid                     NULL,
+                    CONSTRAINT "PK_SalaryRecords" PRIMARY KEY ("Id")
+                );
+                CREATE UNIQUE INDEX "IX_SalaryRecords_EmployeeId_Year_Month" ON "SalaryRecords" ("EmployeeId", "Year", "Month");
+                CREATE INDEX "IX_SalaryRecords_EmployeeId" ON "SalaryRecords" ("EmployeeId");
+            END IF;
+
+            -- ── AdvancePayments table ──────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'AdvancePayments') THEN
+                CREATE TABLE "AdvancePayments" (
+                    "Id"              uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "EmployeeId"      uuid                     NOT NULL,
+                    "Amount"          numeric(12,2)            NOT NULL,
+                    "Reason"          character varying(500)   NULL,
+                    "RequestDate"     timestamp with time zone NOT NULL DEFAULT now(),
+                    "Status"          integer                  NOT NULL DEFAULT 0,
+                    "ApprovedBy"      uuid                     NULL,
+                    "ApprovedAt"      timestamp with time zone NULL,
+                    "RejectionReason" character varying(500)   NULL,
+                    "DeductFromMonth" integer                  NULL,
+                    "DeductFromYear"  integer                  NULL,
+                    "IsDeducted"      boolean                  NOT NULL DEFAULT false,
+                    "CreatedAt"       timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"       timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"        boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"       timestamp with time zone NULL,
+                    "DeletedBy"       uuid                     NULL,
+                    CONSTRAINT "PK_AdvancePayments" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_AdvancePayments_EmployeeId" ON "AdvancePayments" ("EmployeeId");
+            END IF;
+
+            -- ── LeaveRequests table ────────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LeaveRequests') THEN
+                CREATE TABLE "LeaveRequests" (
+                    "Id"              uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "EmployeeId"      uuid                     NOT NULL,
+                    "LeaveType"       integer                  NOT NULL DEFAULT 0,
+                    "StartDate"       date                     NOT NULL,
+                    "EndDate"         date                     NOT NULL,
+                    "TotalDays"       integer                  NOT NULL,
+                    "Reason"          character varying(500)   NULL,
+                    "Status"          integer                  NOT NULL DEFAULT 0,
+                    "ApprovedBy"      uuid                     NULL,
+                    "ApprovedAt"      timestamp with time zone NULL,
+                    "RejectionReason" character varying(500)   NULL,
+                    "CreatedAt"       timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"       timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"        boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"       timestamp with time zone NULL,
+                    "DeletedBy"       uuid                     NULL,
+                    CONSTRAINT "PK_LeaveRequests" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_LeaveRequests_EmployeeId" ON "LeaveRequests" ("EmployeeId");
+            END IF;
+
+            -- ── EmployeeDocuments table ────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'EmployeeDocuments') THEN
+                CREATE TABLE "EmployeeDocuments" (
+                    "Id"           uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "EmployeeId"   uuid                     NOT NULL,
+                    "DocumentType" character varying(100)   NOT NULL,
+                    "Title"        character varying(200)   NOT NULL,
+                    "FilePath"     character varying(500)   NOT NULL,
+                    "FileName"     character varying(300)   NULL,
+                    "ContentType"  character varying(100)   NULL,
+                    "FileSize"     bigint                   NULL,
+                    "UploadedBy"   uuid                     NOT NULL,
+                    "CreatedAt"    timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"    timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"     boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"    timestamp with time zone NULL,
+                    "DeletedBy"    uuid                     NULL,
+                    CONSTRAINT "PK_EmployeeDocuments" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_EmployeeDocuments_EmployeeId" ON "EmployeeDocuments" ("EmployeeId");
+            END IF;
+
+            -- ── BackupRecords table ────────────────────────────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'BackupRecords') THEN
+                CREATE TABLE "BackupRecords" (
+                    "Id"          uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "Type"        integer                  NOT NULL DEFAULT 0,
+                    "Status"      integer                  NOT NULL DEFAULT 0,
+                    "StartedAt"   timestamp with time zone NOT NULL,
+                    "CompletedAt" timestamp with time zone NULL,
+                    "SizeBytes"   bigint                   NULL,
+                    "FilePath"    character varying(500)   NULL,
+                    "ErrorMessage" character varying(2000) NULL,
+                    "TriggeredBy" uuid                     NULL,
+                    "IsAutomatic" boolean                  NOT NULL DEFAULT false,
+                    "CreatedAt"   timestamp with time zone NOT NULL DEFAULT now(),
+                    "UpdatedAt"   timestamp with time zone NOT NULL DEFAULT now(),
+                    "IsActive"    boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"   timestamp with time zone NULL,
+                    "DeletedBy"   uuid                     NULL,
+                    CONSTRAINT "PK_BackupRecords" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_BackupRecords_StartedAt" ON "BackupRecords" ("StartedAt");
+            END IF;
+        END $$;
+    """);
+
+    hrLogger.LogInformation("HOTFIX: HR and Backup tables ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var hrLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    hrLogger2.LogError(ex, "HOTFIX: Failed to ensure HR/Backup tables. HR and Backup endpoints may return 500!");
+}
+
 app.Run();

@@ -88,6 +88,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SmsMessage> SmsMessages => Set<SmsMessage>();
     public DbSet<SmsTemplate> SmsTemplates => Set<SmsTemplate>();
 
+    // Sprint 15 — HR Module
+    public DbSet<Attendance> Attendances => Set<Attendance>();
+    public DbSet<SalaryRecord> SalaryRecords => Set<SalaryRecord>();
+    public DbSet<AdvancePayment> AdvancePayments => Set<AdvancePayment>();
+    public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<EmployeeDocument> EmployeeDocuments => Set<EmployeeDocument>();
+
+    // Sprint 18 — Backup
+    public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

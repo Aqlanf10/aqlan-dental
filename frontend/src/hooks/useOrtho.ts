@@ -7,6 +7,7 @@ import type {
   ExtractionDecision,
   OrthoDiagnosis,
   ProblemListItem,
+  RecordsChecklist,
   RetentionRecord,
   RetentionVisit,
   TreatmentPlan,
@@ -19,11 +20,13 @@ export const orthoKeys = {
   problems: (caseId: string) => ["ortho-problems", caseId] as const,
   diagnosis: (caseId: string) => ["ortho-diagnosis", caseId] as const,
   plan: (caseId: string) => ["ortho-plan", caseId] as const,
+  plans: (caseId: string) => ["ortho-plans", caseId] as const,
   stages: (caseId: string) => ["ortho-stages", caseId] as const,
   visits: (caseId: string) => ["ortho-visits", caseId] as const,
   extraction: (caseId: string) => ["ortho-extraction", caseId] as const,
   retention: (caseId: string) => ["ortho-retention", caseId] as const,
   photos: (caseId: string) => ["ortho-photos", caseId] as const,
+  checklist: (caseId: string) => ["ortho-checklist", caseId] as const,
 };
 
 export function useOrthoCase(caseId: string) {
@@ -117,10 +120,31 @@ export function useSaveDiagnosis(caseId: string) {
   });
 }
 
+export function useApproveDiagnosis(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => orthoService.approveDiagnosis(caseId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.diagnosis(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم اعتماد التشخيص");
+    },
+    onError: () => toast.error("فشل اعتماد التشخيص"),
+  });
+}
+
 export function useTreatmentPlan(caseId: string) {
   return useQuery({
     queryKey: orthoKeys.plan(caseId),
     queryFn: async () => (await orthoService.getTreatmentPlan(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useTreatmentPlans(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.plans(caseId),
+    queryFn: async () => (await orthoService.getTreatmentPlans(caseId)).data,
     enabled: !!caseId,
   });
 }
@@ -131,10 +155,40 @@ export function useSaveTreatmentPlan(caseId: string) {
     mutationFn: (data: Partial<TreatmentPlan>) => orthoService.saveTreatmentPlan(caseId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.plans(caseId) });
       qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
       toast.success("تم حفظ خطة العلاج");
     },
     onError: () => toast.error("فشل حفظ خطة العلاج"),
+  });
+}
+
+export function useCreateTreatmentPlan(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<TreatmentPlan>) => orthoService.createTreatmentPlan(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.plans(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم إنشاء خطة علاج جديدة");
+    },
+    onError: () => toast.error("فشل إنشاء خطة العلاج"),
+  });
+}
+
+export function useUpdateTreatmentPlan(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ planId, data }: { planId: string; data: Partial<TreatmentPlan> }) =>
+      orthoService.updateTreatmentPlan(caseId, planId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.plans(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم تحديث خطة العلاج");
+    },
+    onError: () => toast.error("فشل تحديث خطة العلاج"),
   });
 }
 
@@ -144,6 +198,21 @@ export function useApproveTreatmentPlan(caseId: string) {
     mutationFn: () => orthoService.approveTreatmentPlan(caseId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.plans(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم اعتماد خطة العلاج");
+    },
+    onError: () => toast.error("فشل اعتماد الخطة"),
+  });
+}
+
+export function useApproveSpecificTreatmentPlan(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => orthoService.approveSpecificTreatmentPlan(caseId, planId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.plan(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.plans(caseId) });
       qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
       toast.success("تم اعتماد خطة العلاج");
     },
@@ -237,5 +306,26 @@ export function useOrthoPhotos(caseId: string) {
     queryKey: orthoKeys.photos(caseId),
     queryFn: async () => (await orthoService.getPhotos(caseId)).data,
     enabled: !!caseId,
+  });
+}
+
+export function useRecordsChecklist(caseId: string) {
+  return useQuery({
+    queryKey: orthoKeys.checklist(caseId),
+    queryFn: async () => (await orthoService.getChecklist(caseId)).data,
+    enabled: !!caseId,
+  });
+}
+
+export function useSaveChecklist(caseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<RecordsChecklist>) => orthoService.saveChecklist(caseId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: orthoKeys.checklist(caseId) });
+      qc.invalidateQueries({ queryKey: orthoKeys.overview(caseId) });
+      toast.success("تم تحديث قائمة السجلات");
+    },
+    onError: () => toast.error("فشل تحديث قائمة السجلات"),
   });
 }

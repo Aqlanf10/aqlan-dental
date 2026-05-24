@@ -15,6 +15,9 @@ public class TreatmentPlanConfiguration : IEntityTypeConfiguration<TreatmentPlan
         // Performance indexes
         builder.HasIndex(p => p.OrthoCaseId);
 
+        // PlanLabel for Plan A/B/C
+        builder.Property(p => p.PlanLabel).HasMaxLength(5).HasDefaultValue("A");
+
         // Relationships
         builder.HasOne(p => p.OrthoCase)
             .WithMany(c => c.TreatmentPlans)

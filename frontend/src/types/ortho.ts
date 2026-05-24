@@ -21,6 +21,7 @@ export interface OrthoVisit {
   currentOverjet?: number;
   currentOverbite?: number;
   clinicalNotes?: string;
+  patientInstructions?: string;
   nextAppointmentDate?: string;
   nextAppointmentType?: string;
   doctorName?: string;
@@ -87,6 +88,9 @@ export interface OrthoDiagnosis {
   skeletalClassification?: string;
   dentalClassification?: string;
   facialPattern?: string;
+  softTissueDiagnosis?: string;
+  functionalDiagnosis?: string;
+  etiology?: string;
   anb?: number;
   wits?: number;
   fma?: number;
@@ -94,11 +98,15 @@ export interface OrthoDiagnosis {
   snb?: number;
   impa?: number;
   summary?: string;
+  isApproved?: boolean;
+  approvedByName?: string;
+  approvedAt?: string;
 }
 
 export interface TreatmentPlan {
   id?: string;
   planVersion?: number;
+  planLabel?: string;
   isApproved?: boolean;
   applianceType?: string;
   bracketSystem?: string;
@@ -118,6 +126,8 @@ export interface TreatmentPlan {
 export interface ExtractionDecision {
   id?: string;
   decision?: string;
+  proExtraction?: Record<string, boolean> | null;
+  conExtraction?: Record<string, boolean> | null;
   doctorNotes?: string;
   aiRecommendation?: string;
   decidedByName?: string;
@@ -152,18 +162,41 @@ export interface OrthoPhoto {
   sortOrder?: number;
 }
 
+export interface RecordsChecklist {
+  id?: string | null;
+  orthoCaseId?: string;
+  extraoralFrontal: boolean;
+  extraoralProfile: boolean;
+  extraoralSmile: boolean;
+  intraoralFrontal: boolean;
+  intraoralRight: boolean;
+  intraoralLeft: boolean;
+  upperOcclusal: boolean;
+  lowerOcclusal: boolean;
+  opg: boolean;
+  lateralCeph: boolean;
+  cbct: boolean;
+  studyModels: boolean;
+  consent: boolean;
+  contract: boolean;
+}
+
 export interface OrthoOverview {
   hasClinicalExam: boolean;
   problemsCount: number;
   hasDiagnosis: boolean;
+  isDiagnosisApproved: boolean;
   hasTreatmentPlan: boolean;
   isTreatmentPlanApproved: boolean;
+  treatmentPlansCount: number;
   completedStages: number;
   totalStages: number;
   visitsCount: number;
   photosCount: number;
   cephAnalysesCount: number;
   hasRetention: boolean;
+  checklistCompleted: number;
+  checklistTotal: number;
   contractId?: string;
   contractTotal?: number;
   contractPaid?: number;
@@ -222,3 +255,31 @@ export const ORTHO_STATUS_LABELS: Record<string, string> = {
   Cancelled: "ملغاة",
   cancelled: "ملغاة",
 };
+
+export const RECORDS_CHECKLIST_ITEMS: { key: keyof RecordsChecklist; label: string; group: string }[] = [
+  { key: "extraoralFrontal", label: "صورة خارجية أمامية", group: "صور خارجية" },
+  { key: "extraoralProfile", label: "صورة خارجية جانبية", group: "صور خارجية" },
+  { key: "extraoralSmile", label: "صورة الابتسامة", group: "صور خارجية" },
+  { key: "intraoralFrontal", label: "صورة داخلية أمامية", group: "صور داخلية" },
+  { key: "intraoralRight", label: "صورة داخلية يمين", group: "صور داخلية" },
+  { key: "intraoralLeft", label: "صورة داخلية يسار", group: "صور داخلية" },
+  { key: "upperOcclusal", label: "صورة إطباقية علوية", group: "صور داخلية" },
+  { key: "lowerOcclusal", label: "صورة إطباقية سفلية", group: "صور داخلية" },
+  { key: "opg", label: "OPG — بانوراما", group: "أشعة" },
+  { key: "lateralCeph", label: "Lateral Ceph — جانبية", group: "أشعة" },
+  { key: "cbct", label: "CBCT — ثلاثي الأبعاد", group: "أشعة" },
+  { key: "studyModels", label: "Study Models / قوالب", group: "سجلات أخرى" },
+  { key: "consent", label: "نموذج موافقة", group: "مستندات" },
+  { key: "contract", label: "عقد العلاج", group: "مستندات" },
+];
+
+export const EXTRACTION_FACTORS = [
+  { key: "profileFavorable", label: "البروفايل يدعم الخلع" },
+  { key: "crowdingFavorable", label: "الاحتقان يدعم الخلع" },
+  { key: "boltonFavorable", label: "تحليل بولتون يدعم الخلع" },
+  { key: "incisorProtrusionFavorable", label: "بروز القواطع يدعم الخلع" },
+  { key: "lipStrainFavorable", label: "توتر الشفاه يدعم الخلع" },
+  { key: "cephFavorable", label: "السيفالومتري تدعم الخلع" },
+  { key: "spaceFavorable", label: "تحليل المسافات يدعم الخلع" },
+  { key: "growthFavorable", label: "نمط النمو يدعم الخلع" },
+] as const;

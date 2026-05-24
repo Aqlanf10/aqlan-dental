@@ -21,7 +21,15 @@ public class OrthoDiagnosisConfiguration : IEntityTypeConfiguration<OrthoDiagnos
         builder.Property(d => d.SNA).HasPrecision(6, 2).IsRequired(false);
         builder.Property(d => d.SNB).HasPrecision(6, 2).IsRequired(false);
         builder.Property(d => d.IMPA).HasPrecision(6, 2).IsRequired(false);
+        builder.Property(d => d.SoftTissueDiagnosis).IsRequired(false);
+        builder.Property(d => d.FunctionalDiagnosis).IsRequired(false);
+        builder.Property(d => d.Etiology).IsRequired(false);
         builder.Property(d => d.Summary).IsRequired(false);
+
+        builder.HasOne(d => d.ApprovedByDoctor)
+            .WithMany()
+            .HasForeignKey(d => d.ApprovedBy)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasIndex(d => d.OrthoCaseId).IsUnique();
 

@@ -4,6 +4,7 @@ public class TreatmentPlan : BaseEntity
 {
     public Guid OrthoCaseId { get; set; }
     public int PlanVersion { get; set; } = 1;
+    public string PlanLabel { get; set; } = "A";
     public bool IsApproved { get; set; } = false;
     public Guid? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }

@@ -9,6 +9,7 @@ import type {
   OrthoPhoto,
   OrthoVisit,
   ProblemListItem,
+  RecordsChecklist,
   RetentionRecord,
   RetentionVisit,
   TreatmentPlan,
@@ -34,12 +35,21 @@ export const orthoService = {
   getDiagnosis: (caseId: string) => api.get<OrthoDiagnosis | null>(`${BASE}/${caseId}/diagnosis`),
   saveDiagnosis: (caseId: string, data: Partial<OrthoDiagnosis>) =>
     api.put(`${BASE}/${caseId}/diagnosis`, data),
+  approveDiagnosis: (caseId: string) =>
+    api.patch(`${BASE}/${caseId}/diagnosis/approve`),
 
   getTreatmentPlan: (caseId: string) => api.get<TreatmentPlan | null>(`${BASE}/${caseId}/treatment-plan`),
+  getTreatmentPlans: (caseId: string) => api.get<TreatmentPlan[]>(`${BASE}/${caseId}/treatment-plans`),
   saveTreatmentPlan: (caseId: string, data: Partial<TreatmentPlan>) =>
     api.put(`${BASE}/${caseId}/treatment-plan`, data),
+  createTreatmentPlan: (caseId: string, data: Partial<TreatmentPlan>) =>
+    api.post<TreatmentPlan>(`${BASE}/${caseId}/treatment-plans`, data),
+  updateTreatmentPlan: (caseId: string, planId: string, data: Partial<TreatmentPlan>) =>
+    api.put(`${BASE}/${caseId}/treatment-plans/${planId}`, data),
   approveTreatmentPlan: (caseId: string) =>
     api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plan/approve`),
+  approveSpecificTreatmentPlan: (caseId: string, planId: string) =>
+    api.patch<TreatmentPlan>(`${BASE}/${caseId}/treatment-plans/${planId}/approve`),
 
   getStages: (caseId: string) => api.get<TreatmentStage[]>(`${BASE}/${caseId}/stages`),
   updateStage: (caseId: string, stageId: string, status: string) =>
@@ -65,4 +75,8 @@ export const orthoService = {
     api.post<OrthoPhoto>(`${BASE}/${caseId}/photos`, data),
   deletePhoto: (caseId: string, photoId: string) =>
     api.delete(`${BASE}/${caseId}/photos/${photoId}`),
+
+  getChecklist: (caseId: string) => api.get<RecordsChecklist>(`${BASE}/${caseId}/checklist`),
+  saveChecklist: (caseId: string, data: Partial<RecordsChecklist>) =>
+    api.put(`${BASE}/${caseId}/checklist`, data),
 };

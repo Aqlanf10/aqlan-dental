@@ -128,12 +128,23 @@ public class BackupController(AppDbContext db) : ControllerBase
 
         try
         {
-            // Get approximate database size
-            var sizeResult = await db.Database
-                .SqlRaw<long>("SELECT pg_database_size(current_database())")
-                .ToListAsync();
-
-            var dbSize = sizeResult.FirstOrDefault();
+            // Get approximate database size using raw SQL
+            long? dbSize = null;
+            try
+            {
+                var connection = db.Database.GetDbConnection();
+                await connection.OpenAsync();
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT pg_database_size(current_database())";
+                var result = await cmd.ExecuteScalarAsync();
+                if (result != null && result != DBNull.Value)
+                    dbSize = Convert.ToInt64(result);
+                await connection.CloseAsync();
+            }
+            catch
+            {
+                // If pg_database_size is not available, continue without size
+            }
 
             // Get row counts for major tables
             var patientCount = await db.Patients.CountAsync();

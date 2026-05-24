@@ -9,7 +9,7 @@ import {
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
   CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown, Percent,
-  Smartphone, Banknote, CalendarOff, Wallet, Shield,
+  Smartphone, Banknote, CalendarOff, Shield,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";

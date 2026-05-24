@@ -152,6 +152,352 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         }
     }
 
+    // ─── 1B. GET /api/patient-journey/{patientId}/daily-summary ───────────
+    /// <summary>Returns a comprehensive daily journey summary for a specific patient,
+    /// aggregating patient info, today's appointment, queue status, finance snapshot,
+    /// ortho case, medical alerts, recent visits, and timeline events.</summary>
+    [HttpGet("{patientId:guid}/daily-summary")]
+    public async Task<IActionResult> GetDailySummary(Guid patientId)
+    {
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            // 1. Patient basic info
+            var patient = await db.Patients
+                .IgnoreQueryFilters()
+                .Where(p => p.Id == patientId && p.IsActive)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.PatientNumber,
+                    p.FirstName,
+                    p.MiddleName,
+                    p.LastName,
+                    p.Phone,
+                    p.Email,
+                    p.Gender,
+                    p.DateOfBirth,
+                    p.BranchId,
+                    p.PrimaryDoctorId
+                })
+                .FirstOrDefaultAsync();
+
+            if (patient == null)
+                return NotFound(new { message = "المريض غير موجود" });
+
+            var patientName = BuildPatientDisplayName(null);
+            // Override with actual patient name
+            var nameParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(patient.FirstName)) nameParts.Add(patient.FirstName.Trim());
+            if (!string.IsNullOrWhiteSpace(patient.MiddleName)) nameParts.Add(patient.MiddleName.Trim());
+            if (!string.IsNullOrWhiteSpace(patient.LastName)) nameParts.Add(patient.LastName.Trim());
+            patientName = string.Join(" ", nameParts);
+
+            int? age = null;
+            if (patient.DateOfBirth.HasValue)
+                age = today.Year - patient.DateOfBirth.Value.Year -
+                    (today.DayOfYear < patient.DateOfBirth.Value.DayOfYear ? 1 : 0);
+
+            // 2. Today's appointment
+            var todayAppt = await db.Appointments
+                .IgnoreQueryFilters()
+                .Include(a => a.Doctor)
+                .Where(a => a.PatientId == patientId && a.AppointmentDate == today && a.IsActive)
+                .OrderBy(a => a.StartTime)
+                .Select(a => new
+                {
+                    a.Id,
+                    a.AppointmentDate,
+                    a.StartTime,
+                    a.EndTime,
+                    a.AppointmentType,
+                    a.Status,
+                    a.DoctorId,
+                    DoctorName = a.Doctor != null ? a.Doctor.Name : "",
+                    a.ServiceId,
+                    a.RoomName,
+                    a.Specialty,
+                    a.ArrivedAt,
+                    a.CalledAt,
+                    a.InRoomAt,
+                    a.Notes
+                })
+                .FirstOrDefaultAsync();
+
+            // 3. Queue status for today
+            var queueItem = await db.ClinicQueueItems
+                .IgnoreQueryFilters()
+                .Where(q => q.PatientId == patientId && q.QueueDate == today
+                    && q.Status != ClinicQueueStatus.Completed
+                    && q.Status != ClinicQueueStatus.Cancelled
+                    && q.IsActive)
+                .OrderByDescending(q => q.CreatedAt)
+                .Select(q => new
+                {
+                    q.Id,
+                    q.Status,
+                    q.RoomName,
+                    q.CalledAt,
+                    q.InRoomAt,
+                    q.StartedAt,
+                    q.DoctorId,
+                    q.ServiceId
+                })
+                .FirstOrDefaultAsync();
+
+            // 4. Today's visit
+            var todayVisit = await db.Visits
+                .IgnoreQueryFilters()
+                .Where(v => v.PatientId == patientId && v.VisitDate == today && v.IsActive)
+                .OrderByDescending(v => v.CreatedAt)
+                .Select(v => new
+                {
+                    v.Id,
+                    v.VisitType,
+                    v.Specialty,
+                    v.DoctorId,
+                    v.ChiefComplaint,
+                    v.ClinicalNotes,
+                    v.TreatmentDone,
+                    v.Diagnosis,
+                    v.Instructions,
+                    v.NextVisitPlan,
+                    v.Cost,
+                    v.NextVisitDate,
+                    v.CheckoutStatus,
+                    v.ReadyForCheckoutAt,
+                    v.AmountDueReference,
+                    v.AppointmentId
+                })
+                .FirstOrDefaultAsync();
+
+            // 5. Finance summary - check if user has finance access
+            var hasFinanceAccess = User.IsInRole("Admin") || User.IsInRole("Accountant") ||
+                User.HasClaim("permission", "finance.view");
+
+            object? financeSummary = null;
+            int unpaidInvoicesCount = 0;
+            object? activeContract = null;
+
+            if (hasFinanceAccess)
+            {
+                // Total treatment cost from active contracts
+                var activeContracts = await db.Contracts
+                    .IgnoreQueryFilters()
+                    .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
+                    .ToListAsync();
+
+                var totalTreatmentCost = activeContracts.Sum(c => c.TotalAmount);
+                var totalContractPaid = activeContracts.Sum(c => c.PaidAmount);
+
+                // Total paid from payments
+                var totalPaid = await db.Payments
+                    .Where(p => p.PatientId == patientId && p.IsActive)
+                    .SumAsync(p => p.Amount);
+
+                // Overdue from contracts
+                var overdueAmount = activeContracts
+                    .Where(c => c.PaidAmount < c.TotalAmount && c.StartDate.HasValue &&
+                        c.StartDate.Value.AddMonths(c.InstallmentsCount > 0 ? c.InstallmentsCount : 1) < today)
+                    .Sum(c => c.TotalAmount - c.PaidAmount);
+
+                var outstandingBalance = totalTreatmentCost - totalContractPaid;
+
+                // Latest payment
+                var latestPayment = await db.Payments
+                    .Where(p => p.PatientId == patientId && p.IsActive)
+                    .OrderByDescending(p => p.PaymentDate)
+                    .ThenByDescending(p => p.CreatedAt)
+                    .Select(p => new { p.Id, p.Amount, p.PaymentDate, p.PaymentMethod, p.ReceiptNumber })
+                    .FirstOrDefaultAsync();
+
+                string financialStatus = outstandingBalance <= 0 ? "paid_full" :
+                    overdueAmount > 0 ? "overdue" : "has_balance";
+                if (totalTreatmentCost == 0) financialStatus = "no_plan";
+
+                financeSummary = new
+                {
+                    TotalTreatmentCost = totalTreatmentCost,
+                    TotalPaid = totalPaid,
+                    OutstandingBalance = outstandingBalance,
+                    OverdueAmount = overdueAmount,
+                    LatestPayment = latestPayment,
+                    FinancialStatus = financialStatus,
+                    ActiveContractsCount = activeContracts.Count,
+                    TotalPaymentsCount = 0 // Skip expensive count
+                };
+
+                // Unpaid invoices count
+                unpaidInvoicesCount = await db.Invoices
+                    .CountAsync(i => i.PatientId == patientId &&
+                        (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Draft) && i.IsActive);
+
+                // Active contract details
+                var firstContract = activeContracts.FirstOrDefault();
+                if (firstContract != null)
+                {
+                    activeContract = new
+                    {
+                        firstContract.Id,
+                        firstContract.TotalAmount,
+                        firstContract.PaidAmount,
+                        firstContract.RemainingAmount,
+                        firstContract.InstallmentAmount,
+                        firstContract.InstallmentsCount,
+                        firstContract.Specialty,
+                        firstContract.StartDate,
+                        firstContract.Status
+                    };
+                }
+            }
+
+            // 6. Active ortho case
+            var activeOrthoCase = await db.OrthoCases
+                .IgnoreQueryFilters()
+                .Where(o => o.PatientId == patientId && o.IsActive)
+                .OrderByDescending(o => o.CreatedAt)
+                .Select(o => new
+                {
+                    o.Id,
+                    o.CaseNumber,
+                    o.Status,
+                    o.CaseType,
+                    o.StartDate,
+                    o.EstimatedEndDate,
+                    o.Notes,
+                    o.DoctorId
+                })
+                .FirstOrDefaultAsync();
+
+            // 7. Medical alerts
+            var medicalHistory = await db.MedicalHistories
+                .IgnoreQueryFilters()
+                .Where(m => m.PatientId == patientId && m.IsActive)
+                .Select(m => new
+                {
+                    m.ChronicDiseases,
+                    m.CurrentMedications,
+                    m.DrugAllergies,
+                    m.BleedingDisorders,
+                    m.IsPregnant,
+                    m.TmjProblems,
+                    m.PreviousSurgeries,
+                    m.Notes
+                })
+                .FirstOrDefaultAsync();
+
+            var medicalAlerts = new List<object>();
+            if (medicalHistory != null)
+            {
+                if (!string.IsNullOrWhiteSpace(medicalHistory.DrugAllergies))
+                    medicalAlerts.Add(new { Type = "allergy", Label = "حساسية دوائية", Value = medicalHistory.DrugAllergies, Severity = "danger" });
+                if (medicalHistory.BleedingDisorders)
+                    medicalAlerts.Add(new { Type = "bleeding", Label = "اضطرابات نزيف", Value = "نعم", Severity = "danger" });
+                if (!string.IsNullOrWhiteSpace(medicalHistory.ChronicDiseases) && medicalHistory.ChronicDiseases != "لا يوجد" && medicalHistory.ChronicDiseases != "لا")
+                    medicalAlerts.Add(new { Type = "chronic", Label = "أمراض مزمنة", Value = medicalHistory.ChronicDiseases, Severity = "warning" });
+                if (!string.IsNullOrWhiteSpace(medicalHistory.CurrentMedications) && medicalHistory.CurrentMedications != "لا يوجد" && medicalHistory.CurrentMedications != "لا")
+                    medicalAlerts.Add(new { Type = "medication", Label = "أدوية حالية", Value = medicalHistory.CurrentMedications, Severity = "info" });
+                if (medicalHistory.IsPregnant == "نعم" || medicalHistory.IsPregnant == "yes")
+                    medicalAlerts.Add(new { Type = "pregnancy", Label = "حمل", Value = "نعم", Severity = "warning" });
+            }
+
+            // 8. Recent visits (last 5)
+            var recentVisits = await db.Visits
+                .IgnoreQueryFilters()
+                .Where(v => v.PatientId == patientId && v.IsActive)
+                .OrderByDescending(v => v.VisitDate)
+                .ThenByDescending(v => v.CreatedAt)
+                .Take(5)
+                .Select(v => new
+                {
+                    v.Id,
+                    v.VisitDate,
+                    v.VisitType,
+                    v.ChiefComplaint,
+                    v.TreatmentDone,
+                    v.Diagnosis,
+                    v.DoctorId,
+                    v.Cost
+                })
+                .ToListAsync();
+
+            // 9. Timeline events (appointments + visits + payments, last 20)
+            var appointmentEvents = await db.Appointments
+                .IgnoreQueryFilters()
+                .Where(a => a.PatientId == patientId && a.IsActive)
+                .OrderByDescending(a => a.AppointmentDate)
+                .Take(10)
+                .Select(a => new { Date = a.AppointmentDate.ToString(), Type = "appointment", Title = a.AppointmentType ?? "موعد", Sub = a.Doctor != null ? a.Doctor.Name : "", a.Status })
+                .ToListAsync();
+
+            var paymentEvents = hasFinanceAccess
+                ? await db.Payments
+                    .Where(p => p.PatientId == patientId && p.IsActive)
+                    .OrderByDescending(p => p.PaymentDate)
+                    .Take(10)
+                    .Select(p => new { Date = p.PaymentDate.ToString(), Type = "payment", Title = "دفعة مالية", Sub = p.Amount.ToString("N0") + " ر.ي", Status = "" })
+                    .ToListAsync()
+                : new List<object>();
+
+            var timeline = appointmentEvents.Cast<object>()
+                .Concat(paymentEvents)
+                .OrderByDescending(e => ((dynamic)e).Date)
+                .Take(20)
+                .ToList();
+
+            // 10. Determine journey step
+            string journeyStep = "none";
+            string nextAction = "None";
+
+            if (todayAppt != null)
+            {
+                journeyStep = todayAppt.Status.ToString();
+                nextAction = DetermineNextAction(todayAppt.Status, queueItem?.Status, todayVisit?.CheckoutStatus);
+            }
+
+            // 11. Unread messages count
+            var conversationIds = await db.ConversationParticipants
+                .Where(cp => cp.PatientId == patientId && cp.IsActive)
+                .Select(cp => cp.ConversationId)
+                .ToListAsync();
+
+            // Build response
+            return Ok(new
+            {
+                Patient = new
+                {
+                    patient.Id,
+                    patient.PatientNumber,
+                    FullName = patientName,
+                    patient.Phone,
+                    patient.Email,
+                    patient.Gender,
+                    Age = age,
+                    patient.BranchId,
+                    patient.PrimaryDoctorId
+                },
+                TodayAppointment = todayAppt,
+                QueueStatus = queueItem,
+                TodayVisit = todayVisit,
+                FinanceSummary = financeSummary,
+                UnpaidInvoicesCount = unpaidInvoicesCount,
+                ActiveContract = activeContract,
+                ActiveOrthoCase = activeOrthoCase,
+                MedicalAlerts = medicalAlerts,
+                RecentVisits = recentVisits,
+                Timeline = timeline,
+                JourneyStep = journeyStep,
+                NextAction = nextAction
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PatientJourney.GetDailySummary failed for patient {PatientId}: {Message}", patientId, ex.Message);
+            return StatusCode(500, new { message = $"خطأ في ملخص الرحلة اليومية: {ex.Message}", detail = ex.InnerException?.Message });
+        }
+    }
+
     // ─── 2. POST /api/patient-journey/{appointmentId}/intake ────────────────
     /// <summary>Reception confirms patient arrival and records intake info.</summary>
     [HttpPost("{appointmentId:guid}/intake")]

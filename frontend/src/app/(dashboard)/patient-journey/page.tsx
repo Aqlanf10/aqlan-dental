@@ -490,7 +490,9 @@ export default function PatientJourneyPage() {
               {items.map((item) => (
                 <tr key={item.appointmentId} className="hover:bg-gray-50 transition">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{item.patientName}</div>
+                    <Link href={`/patient-journey/${item.patientId}`} className="font-medium text-[#185fa5] hover:underline">
+                      {item.patientName}
+                    </Link>
                     {item.patientPhone && (
                       <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1" dir="ltr">
                         <Phone className="w-3 h-3" />

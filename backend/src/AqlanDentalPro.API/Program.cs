@@ -1163,6 +1163,50 @@ catch (Exception ex)
     elLogger2.LogError(ex, "HOTFIX: Failed to ensure EmailLogs table schema. Email statistics and reminder tracking may fail!");
 }
 
+// ── CRITICAL: Ensure reminder tracking columns exist ──────────────────────
+// HOTFIX: Migration 20260610000000_AddSeparateReminderTrackingAndPatientEmail
+// adds EmailReminderSentAt, WhatsAppReminderSentAt, EmailReminderWindowsSent
+// to Appointments and Email to Patients. If ENABLE_STARTUP_DB_MAINTENANCE is
+// false, MigrateAsync() is skipped and these columns will be missing.
+// Without them, ALL appointment/patient queries return 500 because EF Core's
+// SELECT fails on columns that don't exist in the database.
+// This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var rtScope = app.Services.CreateScope();
+    var rtDb     = rtScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var rtLogger = rtScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await rtDb.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- Add Email column to Patients if missing
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Patients' AND column_name = 'Email') THEN
+                ALTER TABLE "Patients" ADD COLUMN "Email" text NULL;
+            END IF;
+
+            -- Add reminder tracking columns to Appointments if missing
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Appointments' AND column_name = 'EmailReminderSentAt') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "EmailReminderSentAt" timestamp with time zone NULL;
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Appointments' AND column_name = 'WhatsAppReminderSentAt') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "WhatsAppReminderSentAt" timestamp with time zone NULL;
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Appointments' AND column_name = 'EmailReminderWindowsSent') THEN
+                ALTER TABLE "Appointments" ADD COLUMN "EmailReminderWindowsSent" text NULL;
+            END IF;
+        END $$;
+    """);
+
+    rtLogger.LogInformation("HOTFIX: Reminder tracking columns ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var rtLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    rtLogger2.LogError(ex, "HOTFIX: Failed to ensure reminder tracking columns. Appointment/patient queries may return 500!");
+}
+
 // ── CRITICAL: Ensure Invoices and InvoiceLineItems tables exist ─────────────
 // HOTFIX: Migration history reconciliation failed in previous deployments,
 // causing MigrateAsync() to skip creating the Invoices and InvoiceLineItems
@@ -2035,6 +2079,10 @@ if (enableStartupDbMaintenance)
                 DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260605000000_AddClinicQueueItemServiceAndRoom'
                     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'ServiceId');
 
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260608000000_AddRolePermissionUniqueIndex';
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260609000000_AddEmailLog';
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260610000000_AddSeparateReminderTrackingAndPatientEmail';
+
                 -- ═══ STEP 2: Insert missing records for existing schema ═══
                 -- These were created by HOTFIX blocks but not recorded in __EFMigrationsHistory.
 
@@ -2142,6 +2190,11 @@ if (enableStartupDbMaintenance)
                    AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Suppliers') THEN
                     INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260604000000_AddSuppliersAndPurchases', '8.0');
                 END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260608000000_AddRolePermissionUniqueIndex')
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260608000000_AddRolePermissionUniqueIndex', '8.0');
+                IF NOT EXISTS (SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260609000000_AddEmailLog')
+                    INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion") VALUES ('20260609000000_AddEmailLog', '8.0');
             END $$;
         """);
         logger.LogInformation("Migration history reconciliation completed — cleaned incorrect records and inserted verified records");
@@ -2390,7 +2443,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.24-pr194-journey-fix" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.24-pr195-email-reminder" }));
 
 // Serve uploaded files — resolve writable uploads directory
 // Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback

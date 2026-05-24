@@ -263,11 +263,11 @@ public class SmsService : ISmsService
         await EnsureSettingsCacheAsync();
 
         var settings = await GetGatewaySettingsAsync();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var monthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+        var todayStart = DateTime.UtcNow.Date;
+        var monthStart = DateTime.SpecifyKind(new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1), DateTimeKind.Utc);
 
         var todayMessages = await _db.SmsMessages
-            .Where(m => m.CreatedAt.Date == DateTime.UtcNow.Date && m.IsActive)
+            .Where(m => m.CreatedAt >= todayStart && m.CreatedAt < todayStart.AddDays(1) && m.IsActive)
             .ToListAsync();
 
         var monthMessages = await _db.SmsMessages

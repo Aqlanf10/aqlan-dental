@@ -76,14 +76,28 @@ public class PatientsController(
                 }
                 catch (Exception ex)
                 {
+                    // Blocker-1 fix: A database/query/migration failure must NOT be hidden
+                    // as an empty list — that masks a real outage from the doctor.
+                    // Log server-side and return a generic 500 so the frontend loadError UI shows.
                     logger.LogError(ex, "GetAccessiblePatientIdsAsync failed for user {UserId}",
                         currentUser.UserId);
-                    // Return standard empty paginated response so the frontend renders a valid table
-                    return Ok(new PaginatedResponse<PatientListDto>());
+                    return StatusCode(500, new { message = "تعذر تحميل بيانات المرضى حالياً" });
                 }
 
                 if (accessible == null || accessible.Count == 0)
-                    return Ok(new PaginatedResponse<PatientListDto>());
+                {
+                    // Blocker-2 fix: Legitimate empty list must still return valid pagination
+                    // metadata. Normalize page/pageSize the same way the repository does.
+                    var normPage = Math.Max(1, page);
+                    var normPageSize = Math.Max(1, Math.Min(pageSize, 100));
+                    return Ok(new PaginatedResponse<PatientListDto>
+                    {
+                        Data = [],
+                        TotalCount = 0,
+                        Page = normPage,
+                        PageSize = normPageSize
+                    });
+                }
 
                 // Pass the full accessible set — covers primary, appointment, visit, step, referral links.
                 var result = await service.GetListAsync(search, page, pageSize, gender,

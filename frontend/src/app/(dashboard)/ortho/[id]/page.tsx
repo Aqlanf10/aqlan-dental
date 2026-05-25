@@ -75,6 +75,7 @@ import {
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
+import api from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -488,12 +489,13 @@ function RecordsPanel({ caseId }: { caseId: string }) {
     if (!photoFile) return;
     setUploading(true);
     try {
-      // Step 1: Upload file
+      // Step 1: Upload file via authenticated api client (sends to Railway backend with Bearer token)
       const formData = new FormData();
       formData.append("file", photoFile);
-      const uploadRes = await fetch("/api/uploads", { method: "POST", body: formData });
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const { url } = await uploadRes.json();
+      const uploadRes = await api.post<{ url: string }>("/api/uploads", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const url = uploadRes.data.url;
       // Step 2: Add photo to ortho case
       await (
         await import("@/services/orthoService")

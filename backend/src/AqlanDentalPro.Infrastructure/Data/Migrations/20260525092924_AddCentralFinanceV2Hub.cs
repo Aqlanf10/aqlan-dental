@@ -534,7 +534,10 @@ END $$;
             migrationBuilder.DropTable(
                 name: "CashFlowTransactions");
 
-            // Idempotent drop: EmailLogs may have already been dropped by AddEmailLog Down.
+            // Drop EmailLogs table — this migration is the schema owner for EmailLogs.
+            // Later migration AddEmailLog (20260609000000) has a no-op Down to avoid
+            // dropping a table still required by Finance V2.
+            // DROP TABLE IF EXISTS is idempotent for safety if the table was already removed.
             migrationBuilder.Sql(@"DROP TABLE IF EXISTS ""EmailLogs"";");
 
             migrationBuilder.DropTable(
@@ -558,8 +561,10 @@ END $$;
             migrationBuilder.DropTable(
                 name: "CashierSessions");
 
-            // Idempotent drops: columns may have already been dropped by
-            // AddSeparateReminderTrackingAndPatientEmail Down.
+            // Drop columns — this migration is the schema owner for these overlapping columns.
+            // Later migration AddSeparateReminderTrackingAndPatientEmail (20260610000000) has
+            // a no-op Down to avoid dropping columns still required by Finance V2.
+            // DROP COLUMN IF EXISTS is idempotent for safety if columns were already removed.
             migrationBuilder.Sql(@"
 ALTER TABLE ""Patients"" DROP COLUMN IF EXISTS ""Email"";
 ALTER TABLE ""Appointments"" DROP COLUMN IF EXISTS ""EmailReminderSentAt"";

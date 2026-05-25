@@ -466,8 +466,30 @@ public class OrthoCasesController(
             RisksLimitations = req.RisksLimitations,
         };
         db.TreatmentPlans.Add(plan);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent request won the race for this (OrthoCaseId, PlanLabel) pair.
+            // The pre-check passed but another transaction inserted the same label first.
+            return Conflict(new { message = "تصنيف الخطة مستخدم بالفعل لهذه الحالة. قم بتحديث الصفحة والمحاولة مرة أخرى." });
+        }
         return Ok(new { plan.Id, plan.PlanLabel, message = "تم إنشاء خطة العلاج" });
+    }
+
+    /// <summary>
+    /// Detects PostgreSQL unique-constraint violation (23505) from a DbUpdateException.
+    /// Used to handle concurrent PlanLabel inserts without exposing database internals.
+    /// </summary>
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        var inner = ex.InnerException;
+        if (inner is Npgsql.PostgresException pgEx)
+            return pgEx.SqlState == "23505";
+        // Fallback: check the exception message for the standard SQLSTATE pattern
+        return inner?.Message?.Contains("23505") == true;
     }
 
     [HttpPut("{id:guid}/treatment-plan")]

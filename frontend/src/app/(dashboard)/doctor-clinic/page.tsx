@@ -33,6 +33,8 @@ import {
   ExaminationModal,
   TreatmentPlanModal,
   OrthoFollowUpModal,
+  ImagesRadiographsModal,
+  LabOrderModal,
   PrescriptionModal,
   HandoffConfirmModal,
   FollowUpSuggestModal,
@@ -120,7 +122,7 @@ const ACTION_CARDS: ActionCardDef[] = [
     color: "#64748b",
     bgColor: "#f8fafc",
     requiredStatus: ["InRoom", "InProgress"],
-    description: "عرض أو رفع أشعة وصور (قريباً)",
+    description: "عرض أو رفع أشعة وصور",
   },
   {
     key: "prescription",
@@ -138,7 +140,7 @@ const ACTION_CARDS: ActionCardDef[] = [
     color: "#0891b2",
     bgColor: "#ecfeff",
     requiredStatus: ["InRoom", "InProgress"],
-    description: "إنشاء طلب مختبر أو إحالة داخلية (قريباً)",
+    description: "إنشاء طلب مختبر أو إحالة داخلية",
   },
   {
     key: "followUp",
@@ -181,6 +183,8 @@ export default function DoctorClinicPage() {
   const [orthoFollowUpModalOpen, setOrthoFollowUpModalOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
+  const [imagesModalOpen, setImagesModalOpen] = useState(false);
+  const [labOrderModalOpen, setLabOrderModalOpen] = useState(false);
   const [handoffModalOpen, setHandoffModalOpen] = useState(false);
 
   // ── Search ──
@@ -300,13 +304,13 @@ export default function DoctorClinicPage() {
         setOrthoFollowUpModalOpen(true);
         break;
       case "images":
-        toast.info("الأشعة والصور — قريباً");
+        setImagesModalOpen(true);
         break;
       case "prescription":
         setPrescriptionModalOpen(true);
         break;
       case "labOrder":
-        toast.info("طلب المختبر — قريباً");
+        setLabOrderModalOpen(true);
         break;
       case "followUp":
         setFollowUpModalOpen(true);
@@ -628,8 +632,6 @@ export default function DoctorClinicPage() {
                       const isDisabled = !selectedPatient ||
                         (!card.requiredStatus.includes(selectedPatient.appointmentStatus) &&
                          !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
-                      const isPlaceholder = card.key === "images" || card.key === "labOrder";
-
                       return (
                         <button key={card.key}
                           onClick={() => handleAction(card.key)}
@@ -651,9 +653,6 @@ export default function DoctorClinicPage() {
                           <div className="text-[9px] font-medium leading-tight" style={{ color: "#94a3b8" }}>
                             {card.description}
                           </div>
-                          {isPlaceholder && (
-                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#f1f5f9", color: "#94a3b8" }}>قريباً</span>
-                          )}
                         </button>
                       );
                     })}
@@ -723,8 +722,25 @@ export default function DoctorClinicPage() {
         onClose={() => setExaminationModalOpen(false)}
         patient={selectedPatient}
         diagnosis={clinicalNotes.diagnosis}
+        medicalAlerts={medicalAlerts}
         onSave={(data) => {
-          updateClinicalNotes({ diagnosis: data.diagnosis, treatmentDone: data.treatmentDone });
+          // Merge examination data into clinical notes for handoff
+          const diagnosisParts = [
+            data.chiefComplaint ? `الشكوى: ${data.chiefComplaint}` : "",
+            data.extraoral ? `فحص خارج الفم: ${data.extraoral}` : "",
+            data.intraoral ? `فحص داخل الفم: ${data.intraoral}` : "",
+            data.diagnosis ? `التشخيص: ${data.diagnosis}` : "",
+            data.clinicalNotes ? `ملاحظات: ${data.clinicalNotes}` : "",
+          ].filter(Boolean).join(" | ");
+
+          const treatmentParts = [
+            data.treatmentDone,
+          ].filter(Boolean).join(" + ");
+
+          updateClinicalNotes({
+            diagnosis: diagnosisParts || data.diagnosis,
+            treatmentDone: treatmentParts || clinicalNotes.treatmentDone,
+          });
           setExaminationModalOpen(false);
           toast.success("تم حفظ الفحص والتشخيص");
         }}
@@ -759,12 +775,55 @@ export default function DoctorClinicPage() {
         }}
       />
 
+      <ImagesRadiographsModal
+        open={imagesModalOpen}
+        onClose={() => setImagesModalOpen(false)}
+        patient={selectedPatient}
+        onSave={() => {
+          setImagesModalOpen(false);
+          toast.success("تم حفظ مرجع الأشعة");
+        }}
+      />
+
+      <LabOrderModal
+        open={labOrderModalOpen}
+        onClose={() => setLabOrderModalOpen(false)}
+        patient={selectedPatient}
+        onSave={(data) => {
+          // Save lab order info into treatmentDone
+          const labParts = [
+            data.labWorkType ? `طلب مختبر: ${data.labWorkType}` : "",
+            data.shade ? `اللون: ${data.shade}` : "",
+            data.deliveryDate ? `تسليم: ${data.deliveryDate}` : "",
+            data.referralDepartment ? `إحالة: ${data.referralDepartment}` : "",
+            data.labInstructions ? `تعليمات: ${data.labInstructions}` : "",
+          ].filter(Boolean).join(" | ");
+
+          if (labParts) {
+            const existing = clinicalNotes.treatmentDone;
+            updateClinicalNotes({
+              treatmentDone: existing ? `${existing} + ${labParts}` : labParts,
+            });
+          }
+          setLabOrderModalOpen(false);
+          toast.success("تم حفظ طلب المختبر");
+        }}
+      />
+
       <OrthoFollowUpModal
         open={orthoFollowUpModalOpen}
         onClose={() => setOrthoFollowUpModalOpen(false)}
         patient={selectedPatient}
         onSave={(data) => {
-          updateClinicalNotes({ treatmentDone: data.notes, nextVisitPlan: data.nextVisitPlan });
+          // Merge ortho data into clinical notes
+          const orthoTreatment = data.notes || "متابعة تقويم";
+          const orthoPlan = data.nextVisitPlan || data.nextOrthodonticPlan;
+
+          const existing = clinicalNotes.treatmentDone;
+          updateClinicalNotes({
+            treatmentDone: existing ? `${existing} + متابعة تقويم` : orthoTreatment,
+            nextVisitPlan: orthoPlan || clinicalNotes.nextVisitPlan,
+          });
           setOrthoFollowUpModalOpen(false);
           toast.success("تم حفظ متابعة التقويم");
         }}
@@ -775,7 +834,12 @@ export default function DoctorClinicPage() {
         onClose={() => setPrescriptionModalOpen(false)}
         patient={selectedPatient}
         onSave={(data) => {
-          updateClinicalNotes({ instructions: data.instructions });
+          // Merge prescription + instructions
+          const instructionParts = [
+            data.prescriptionText ? `الوصفة: ${data.prescriptionText}` : "",
+            data.instructions ? `التعليمات: ${data.instructions}` : "",
+          ].filter(Boolean).join(" | ");
+          updateClinicalNotes({ instructions: instructionParts || data.instructions });
           setPrescriptionModalOpen(false);
           toast.success("تم حفظ الوصفة والتعليمات");
         }}
@@ -787,9 +851,13 @@ export default function DoctorClinicPage() {
         patient={selectedPatient}
         services={services}
         onSave={(data) => {
-          updateClinicalNotes({ followUpDate: data.followUpDate, suggestedServiceId: data.serviceId });
+          // Just save the suggestion — do NOT create appointment
+          updateClinicalNotes({
+            followUpDate: data.followUpDate,
+            suggestedServiceId: data.serviceId,
+          });
           setFollowUpModalOpen(false);
-          toast.success("تم اقتراح موعد المتابعة");
+          toast.success("تم حفظ اقتراح موعد المتابعة");
         }}
       />
 

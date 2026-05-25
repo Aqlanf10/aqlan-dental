@@ -4,7 +4,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, Calendar, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
-  Route,
   BarChart2, Package, FlaskConical, Settings, LogOut,
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock,
   UserRound, Building2, Monitor, UserCog,
@@ -67,8 +66,7 @@ const NAV: NavEntry[] = [
       { href: "/appointments",        label: "المواعيد",         icon: Calendar,      roles: [], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
       { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
       { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [], permission: PERMISSION_KEYS.CLINIC_DISPLAY_VIEW },
-      { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW, badge: "جديد" },
-      { href: "/doctor-clinic",       label: "عيادة الطبيب",      icon: HeartPulse,    roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"], badge: "جديد" },
+      { href: "/doctor-clinic",       label: "عيادة الطبيب",      icon: HeartPulse,    roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
       { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"], permission: PERMISSION_KEYS.ROOMS_VIEW },
     ],
   },

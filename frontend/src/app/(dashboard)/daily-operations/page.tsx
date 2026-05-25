@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw, ArrowLeft,
@@ -10,6 +11,7 @@ import {
   Wallet, UserPlus, Keyboard, Bell, BellOff,
   Printer, Users, Activity, ArrowRight, Megaphone, Building2,
   X, PanelRight, ChevronLeft, Phone, MessageCircle, Monitor,
+  ExternalLink,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -107,6 +109,25 @@ const TAB_ICONS: Record<string, React.ElementType> = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   Module tab type & lazy-loaded sub-pages (rendered inline)
+   ═══════════════════════════════════════════════════════════════════════════ */
+type ModuleTab = "journey" | "booking-requests" | "appointments" | "clinic-queue" | "clinic-display" | "rooms";
+
+const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; }[] = [
+  { key: "journey",          label: "رحلة المريض",  icon: Activity },
+  { key: "booking-requests", label: "طلبات الحجز",  icon: Globe },
+  { key: "appointments",    label: "المواعيد",     icon: Calendar },
+  { key: "clinic-queue",    label: "الطابور",      icon: ClipboardList },
+  { key: "clinic-display",  label: "شاشة النداء",  icon: Monitor },
+  { key: "rooms",           label: "الغرف",        icon: Building2 },
+];
+
+const BookingRequestsView = dynamic(() => import("../booking-requests/page"), { ssr: false });
+const AppointmentsView     = dynamic(() => import("../appointments/page"),      { ssr: false });
+const ClinicQueueView      = dynamic(() => import("../clinic-queue/page"),      { ssr: false });
+const RoomsView             = dynamic(() => import("../settings/rooms/page"),    { ssr: false });
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MAIN PAGE — Microsoft Fluent Design
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function DailyOperationsPage() {
@@ -125,6 +146,7 @@ export default function DailyOperationsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
+  const [moduleTab, setModuleTab] = useState<ModuleTab>("journey");
 
   // ── Data ──
   const { data: items = [], isLoading: itemsLoading, refetch: refetchItems } = useTodayJourneyItems({
@@ -735,56 +757,66 @@ export default function DailyOperationsPage() {
         {/* ═══════════ Module Tabs Row (42px) ═══════════ */}
         <div className="h-[42px] flex-shrink-0 bg-white flex items-center px-3 gap-1"
           style={{ borderBottom: "2px solid #f1f5f9" }}>
-          {/* رحلة المريض — default active tab */}
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold relative"
-            style={{ color: NAVY, background: "#f8fafc" }}>
-            <Activity className="w-3.5 h-3.5" />
-            رحلة المريض
-            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
-              style={{ background: ORANGE, color: "#fff" }}>{items.length}</span>
-            <span className="absolute bottom-[-2px] left-2 right-2 h-[2px] rounded-full" style={{ background: ORANGE }} />
-          </button>
+          {MODULE_TABS.map(tab => {
+            const isActive = moduleTab === tab.key;
+            const isDisplayScreen = tab.key === "clinic-display";
+            const TabIcon = tab.icon;
+            const journeyCount = tab.key === "journey" ? items.length : 0;
 
-          <div className="w-px h-5 mx-1" style={{ background: "#e5e7eb" }} />
+            // "شاشة النداء" opens in a new tab since it's a full-screen display
+            if (isDisplayScreen) {
+              return (
+                <Link key={tab.key} href="/clinic-display" target="_blank"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
+                  style={{ color: "#64748b" }}>
+                  <TabIcon className="w-3.5 h-3.5" />
+                  {tab.label}
+                  <ExternalLink className="w-2.5 h-2.5 opacity-50" />
+                </Link>
+              );
+            }
 
-          {/* External navigation links — these open separate pages */}
-          <Link href="/booking-requests"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
-            style={{ color: "#64748b" }}>
-            <Globe className="w-3.5 h-3.5" />
-            طلبات الحجز
-          </Link>
-          <Link href="/appointments"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
-            style={{ color: "#64748b" }}>
-            <Calendar className="w-3.5 h-3.5" />
-            المواعيد
-          </Link>
-          <Link href="/clinic-queue"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
-            style={{ color: "#64748b" }}>
-            <ClipboardList className="w-3.5 h-3.5" />
-            الطابور
-          </Link>
-          <Link href="/clinic-display" target="_blank"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
-            style={{ color: "#64748b" }}>
-            <Monitor className="w-3.5 h-3.5" />
-            شاشة النداء
-          </Link>
-          <Link href="/settings/rooms"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
-            style={{ color: "#64748b" }}>
-            <Building2 className="w-3.5 h-3.5" />
-            الغرف
-          </Link>
+            return (
+              <button key={tab.key} onClick={() => setModuleTab(tab.key)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition relative"
+                style={{
+                  color: isActive ? NAVY : "#64748b",
+                  background: isActive ? "#f8fafc" : "transparent",
+                }}>
+                <TabIcon className="w-3.5 h-3.5" />
+                {tab.label}
+                {tab.key === "journey" && journeyCount > 0 && (
+                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                    style={{ background: isActive ? ORANGE : ORANGE + "30", color: isActive ? "#fff" : ORANGE }}>
+                    {journeyCount}
+                  </span>
+                )}
+                {isActive && (
+                  <span className="absolute bottom-[-2px] left-2 right-2 h-[2px] rounded-full" style={{ background: ORANGE }} />
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            MAIN CONTENT AREA (flex-1)
+            MAIN CONTENT AREA (flex-1) — switches based on moduleTab
             ═══════════════════════════════════════════════════════════════════ */}
         <div className="flex-1 flex overflow-hidden">
 
+        {/* ─── Inline module content (non-journey tabs) ─── */}
+        {moduleTab !== "journey" && (
+          <div className="flex-1 overflow-auto bg-[#f8fafc] p-4">
+            {moduleTab === "booking-requests" && <BookingRequestsView />}
+            {moduleTab === "appointments"    && <AppointmentsView />}
+            {moduleTab === "clinic-queue"    && <ClinicQueueView />}
+            {moduleTab === "rooms"           && <RoomsView />}
+          </div>
+        )}
+
+        {/* ─── Journey tab (default) — existing patient journey UI ─── */}
+        {moduleTab === "journey" && (
+          <>
           {/* ── Left: Tab Pills + Data Grid ── */}
           <div className="flex-1 flex flex-col min-w-0">
             {/* Tab Pills */}
@@ -947,6 +979,8 @@ export default function DailyOperationsPage() {
               </div>
             </>
           )}
+          </>
+        )}
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════

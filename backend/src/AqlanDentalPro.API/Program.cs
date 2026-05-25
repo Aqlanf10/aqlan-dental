@@ -2215,6 +2215,14 @@ if (enableStartupDbMaintenance)
                 DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260613000000_AddFinancialIntegrityAuditSprint'
                     AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'CashFlowTransactions' AND column_name = 'IsReversal');
 
+                -- Remove Treasury/VaultTransfer migration records if tables don't exist
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525115704_AddTreasuryVaultTransfers'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Treasuries');
+
+                -- Remove SupplierBills migration record if tables don't exist
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525123318_AddSupplierBillsAndApprovals'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'SupplierBills');
+
                 -- ═══ STEP 2: Insert missing records for existing schema ═══
                 -- These were created by HOTFIX blocks but not recorded in __EFMigrationsHistory.
 

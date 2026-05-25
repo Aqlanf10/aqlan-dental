@@ -3,6 +3,7 @@ using System;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AqlanDentalPro.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260525092924_AddCentralFinanceV2Hub")]
+    partial class AddCentralFinanceV2Hub
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3390,12 +3393,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasPrecision(6, 2)
                         .HasColumnType("numeric(6,2)");
 
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ApprovedBy")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -3409,9 +3406,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<string>("Etiology")
-                        .HasColumnType("text");
-
                     b.Property<decimal?>("FMA")
                         .HasPrecision(6, 2)
                         .HasColumnType("numeric(6,2)");
@@ -3419,9 +3413,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<string>("FacialPattern")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<string>("FunctionalDiagnosis")
-                        .HasColumnType("text");
 
                     b.Property<decimal?>("IMPA")
                         .HasPrecision(6, 2)
@@ -3445,9 +3436,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<string>("SoftTissueDiagnosis")
-                        .HasColumnType("text");
-
                     b.Property<string>("Summary")
                         .HasColumnType("text");
 
@@ -3459,8 +3447,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("numeric(6,2)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ApprovedBy");
 
                     b.HasIndex("OrthoCaseId")
                         .IsUnique();
@@ -3933,80 +3919,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("PatientTreatmentPlanSteps");
-                });
-
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.RecordsChecklist", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("Cbct")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("Consent")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("Contract")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("ExtraoralFrontal")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("ExtraoralProfile")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("ExtraoralSmile")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IntraoralFrontal")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IntraoralLeft")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IntraoralRight")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("LowerOcclusal")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("LateralCeph")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("Opg")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("OrthoCaseId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("StudyModels")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("UpperOcclusal")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrthoCaseId")
-                        .IsUnique();
-
-                    b.ToTable("RecordsChecklists");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Payment", b =>
@@ -5267,11 +5179,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<int>("PlanVersion")
                         .HasColumnType("integer");
 
-                    b.Property<string>("PlanLabel")
-                        .HasMaxLength(5)
-                        .HasColumnType("character varying(5)")
-                        .HasDefaultValue("A");
-
                     b.Property<string>("RetentionPlan")
                         .HasColumnType("text");
 
@@ -5295,9 +5202,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("ApprovedByDoctorId");
 
                     b.HasIndex("OrthoCaseId");
-
-                    b.HasIndex("OrthoCaseId", "PlanLabel")
-                        .IsUnique();
 
                     b.ToTable("TreatmentPlans");
                 });
@@ -6474,18 +6378,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OrthoDiagnosis", b =>
                 {
-                    b.HasOne("AqlanDentalPro.Domain.Entities.Doctor", "ApprovedByDoctor")
-                        .WithMany()
-                        .HasForeignKey("ApprovedBy")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("AqlanDentalPro.Domain.Entities.OrthoCase", "OrthoCase")
                         .WithOne("Diagnosis")
                         .HasForeignKey("AqlanDentalPro.Domain.Entities.OrthoDiagnosis", "OrthoCaseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("ApprovedByDoctor");
 
                     b.Navigation("OrthoCase");
                 });
@@ -6606,17 +6503,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("ResponsibleDoctor");
 
                     b.Navigation("Service");
-                });
-
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.RecordsChecklist", b =>
-                {
-                    b.HasOne("AqlanDentalPro.Domain.Entities.OrthoCase", "OrthoCase")
-                        .WithOne("RecordsChecklist")
-                        .HasForeignKey("AqlanDentalPro.Domain.Entities.RecordsChecklist", "OrthoCaseId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("OrthoCase");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Payment", b =>
@@ -7060,8 +6946,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Photos");
 
                     b.Navigation("ProblemList");
-
-                    b.Navigation("RecordsChecklist");
 
                     b.Navigation("RetentionRecord");
 

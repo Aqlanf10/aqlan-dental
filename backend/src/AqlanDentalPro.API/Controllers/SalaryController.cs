@@ -265,10 +265,35 @@ public class SalaryController(AppDbContext db) : ControllerBase
             return BadRequest(new { message = "تم صرف هذا الراتب مسبقاً" });
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var paidByUid = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
+
         salary.PaidAt = DateTime.UtcNow;
-        salary.PaidBy = Guid.TryParse(userId, out var uid) ? uid : null;
+        salary.PaidBy = paidByUid == Guid.Empty ? null : paidByUid;
         salary.PaymentMethod = req.PaymentMethod?.Trim();
         salary.Notes = req.Notes?.Trim();
+
+        // Fetch employee details to log the branch and name
+        var employee = await db.Employees.FindAsync(salary.EmployeeId);
+        var branchId = employee?.BranchId ?? Guid.Empty;
+
+        // Auto-create central ledger cashflow transaction (Outflow / Salary)
+        var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+        var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.SalaryPayment) + 1;
+        var cashflow = new CashFlowTransaction
+        {
+            TransactionNumber = $"TX-{datePart}-SAL-{nextSeq:D3}",
+            Type = TransactionType.Outflow,
+            Category = FinancialCategory.SalaryPayment,
+            Amount = salary.NetSalary,
+            PaymentMethod = req.PaymentMethod?.Trim() ?? "cash",
+            TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+            ReferenceId = salary.Id,
+            ReferenceNumber = $"SAL-{salary.Year}{salary.Month:D2}",
+            Description = $"صرف راتب الموظف: {employee?.FullName ?? "موظف"} لشهر {salary.Month}/{salary.Year}",
+            PerformedBy = paidByUid,
+            BranchId = branchId
+        };
+        db.CashFlowTransactions.Add(cashflow);
 
         await db.SaveChangesAsync();
 

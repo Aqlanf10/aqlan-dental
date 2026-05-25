@@ -181,6 +181,13 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     public async Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req)
     {
+        // Require active open cashier session
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var activeSession = await db.CashierSessions
+            .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+        if (activeSession == null)
+            throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات.");
+
         // H9 FIX: Generate receipt number using advisory lock + sequential pattern
         // instead of random 4-digit (which had ~50% collision probability at 95 payments/day).
         var receiptNumber = await GenerateReceiptNumberAsync();
@@ -235,6 +242,25 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ReceiptNumber = receiptNumber,
             PrintedBy = currentUser.UserId
         });
+
+        // Auto-create central ledger cashflow transaction (Inflow)
+        var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+        var cashflow = new CashFlowTransaction
+        {
+            TransactionNumber = $"TX-{datePart}-IN-{payment.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
+            Type = TransactionType.Inflow,
+            Category = FinancialCategory.PatientPayment,
+            Amount = payment.Amount,
+            PaymentMethod = payment.PaymentMethod ?? "cash",
+            TransactionDate = payment.PaymentDate,
+            ReferenceId = payment.Id,
+            ReferenceNumber = payment.ReceiptNumber,
+            Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
+            PerformedBy = userId,
+            BranchId = currentUser.BranchId ?? Guid.Empty,
+            CashierSessionId = activeSession.Id
+        };
+        db.CashFlowTransactions.Add(cashflow);
 
         await db.SaveChangesAsync();
 
@@ -549,8 +575,22 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var invoiceId  = payment.InvoiceId;  // H3: capture before deactivation
         var contractId = payment.ContractId; // capture before deactivation
 
+        var userId = currentUser.UserId;
+
         payment.IsActive  = false;
         payment.DeletedAt = DateTime.UtcNow;
+        payment.DeletedBy = userId;
+
+        // Soft-delete the linked cashflow ledger transaction
+        var cashflow = await db.CashFlowTransactions
+            .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
+        if (cashflow != null)
+        {
+            cashflow.IsActive = false;
+            cashflow.DeletedAt = DateTime.UtcNow;
+            cashflow.DeletedBy = userId;
+        }
+
         await db.SaveChangesAsync();
 
         // H3 FIX: Re-evaluate invoice status after deleting a payment.
@@ -578,6 +618,13 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var payment = await db.Payments.FindAsync(id);
         if (payment == null || !payment.IsActive) return null;
 
+        // Require active open cashier session for refund payouts
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var activeSession = await db.CashierSessions
+            .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+        if (activeSession == null)
+            throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل إجراء أي عمليات استرداد للدفعة.");
+
         var refund = new Payment
         {
             PatientId          = payment.PatientId,
@@ -591,11 +638,31 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             DoctorId           = payment.DoctorId,
             BranchId           = payment.BranchId,
             ReceivedBy         = currentUser.UserId,
-            ReceiptNumber      = await GenerateRefundReceiptNumberAsync(),
+            ReceiptNumber = await GenerateRefundReceiptNumberAsync(),
             Notes              = reason
         };
 
         db.Payments.Add(refund);
+
+        // Auto-create central ledger cashflow transaction (Outflow / Refund)
+        var refundDatePart = DateTime.UtcNow.ToString("yyyyMMdd");
+        var refundCashflow = new CashFlowTransaction
+        {
+            TransactionNumber = $"TX-{refundDatePart}-REF-{refund.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
+            Type = TransactionType.Outflow,
+            Category = FinancialCategory.Refund,
+            Amount = payment.Amount, // original payment positive amount represents the outflow cost
+            PaymentMethod = refund.PaymentMethod ?? "cash",
+            TransactionDate = refund.PaymentDate,
+            ReferenceId = refund.Id,
+            ReferenceNumber = refund.ReceiptNumber,
+            Description = $"استرداد دفعة مريض - سند قبض {refund.ReceiptNumber}",
+            PerformedBy = userId,
+            BranchId = currentUser.BranchId ?? Guid.Empty,
+            CashierSessionId = activeSession.Id
+        };
+        db.CashFlowTransactions.Add(refundCashflow);
+
         await db.SaveChangesAsync();
 
         // H3 FIX: Re-evaluate invoice status after creating a refund.

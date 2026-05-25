@@ -99,6 +99,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Sprint 18 — Backup
     public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
 
+    // Sprint 20 — Finance V2 Comprehensive Hub
+    public DbSet<CashierSession> CashierSessions => Set<CashierSession>();
+    public DbSet<OperationalExpense> OperationalExpenses => Set<OperationalExpense>();
+    public DbSet<CashFlowTransaction> CashFlowTransactions => Set<CashFlowTransaction>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

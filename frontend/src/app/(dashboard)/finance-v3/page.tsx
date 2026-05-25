@@ -15,12 +15,13 @@ import {
   ClipboardCheck,
   AlertTriangle,
   Construction,
+  ShieldX,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 
 /* ─── Brand constants ───────────────────────────────────────────────────────── */
 const BRAND_PRIMARY = "#1a3a5c";
-const BRAND_ORANGE = "#f5922e";
 const BRAND_BG = "#f8f9fb";
 
 /* ─── Financial domain definition ──────────────────────────────────────────── */
@@ -132,11 +133,54 @@ const FINANCE_DOMAINS: FinanceDomain[] = [
   },
 ];
 
+/* ─── Access Denied State ──────────────────────────────────────────────────── */
+function AccessDenied() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ backgroundColor: BRAND_BG, direction: "rtl" }}
+    >
+      <div
+        className="rounded-2xl border p-8 max-w-md text-center"
+        style={{
+          backgroundColor: "#fff",
+          borderColor: "#fecaca",
+        }}
+      >
+        <div
+          className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+          style={{ backgroundColor: "#fef2f2" }}
+        >
+          <ShieldX className="w-8 h-8" style={{ color: "#dc2626" }} />
+        </div>
+        <h2
+          className="text-xl font-bold mb-2"
+          style={{ color: BRAND_PRIMARY }}
+        >
+          غير مصرح بالوصول
+        </h2>
+        <p className="text-sm" style={{ color: "#6b7280" }}>
+          هذه الشاشة متاحة فقط للمسؤول والمحاسب. إذا كنت تحتاج الوصول إلى
+          تسجيل التحصيل، يرجى استخدام شاشة التشغيل اليومي.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Finance V3 Landing Page ──────────────────────────────────────────────── */
 export default function FinanceV3Page() {
   const { user } = useAuthStore();
-  const isAdminOrAccountant =
-    user?.role === "Admin" || user?.role === "Accountant";
+
+  // Enforce Admin/Accountant access or finance.view permission
+  const isAuthorized =
+    user?.role === "Admin" ||
+    user?.role === "Accountant" ||
+    hasPermission(user, PERMISSION_KEYS.PAYMENTS_VIEW);
+
+  if (!isAuthorized) {
+    return <AccessDenied />;
+  }
 
   return (
     <div
@@ -163,7 +207,7 @@ export default function FinanceV3Page() {
                 المالية الجديدة
               </h1>
               <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>
-                وحدة مالية متكاملة — قيد إعادة البناء
+                وحدة المحاسبة والمراجعة المالية — قيد إعادة البناء
               </p>
             </div>
           </div>
@@ -186,12 +230,12 @@ export default function FinanceV3Page() {
             />
             <div>
               <p className="font-bold text-sm" style={{ color: "#92400e" }}>
-                الوحدة المالية قيد إعادة البناء والمراجعة
+                تجري إعادة بناء وحدة المحاسبة والمراجعة المالية
               </p>
               <p className="text-sm mt-1" style={{ color: "#a16207" }}>
-                لا تستخدم لإدخال قيود مالية فعلية حتى اكتمال الاعتماد. النظام
-                المالي الحالي قيد إعادة هيكلة كاملة لضمان دقة البيانات
-                والمحاسبة السليمة.
+                يستمر تسجيل تحصيل المرضى من شاشة التشغيل اليومي وفق سير العمل
+                المعتمد، بينما لا تستخدم هذه الشاشة الجديدة لإدخال أو تعديل
+                قيود مالية مباشرة حتى اكتمال الاعتماد.
               </p>
             </div>
           </div>
@@ -298,56 +342,60 @@ export default function FinanceV3Page() {
       </div>
 
       {/* ── Admin Info Section ─────────────────────────────────────────────── */}
-      {isAdminOrAccountant && (
-        <div className="px-6 pb-6">
-          <div className="max-w-6xl mx-auto">
-            <div
-              className="rounded-xl border p-5"
-              style={{
-                backgroundColor: "#fff",
-                borderColor: "#e5e7eb",
-              }}
+      <div className="px-6 pb-6">
+        <div className="max-w-6xl mx-auto">
+          <div
+            className="rounded-xl border p-5"
+            style={{
+              backgroundColor: "#fff",
+              borderColor: "#e5e7eb",
+            }}
+          >
+            <h3
+              className="font-bold text-sm mb-3"
+              style={{ color: BRAND_PRIMARY }}
             >
-              <h3
-                className="font-bold text-sm mb-3"
-                style={{ color: BRAND_PRIMARY }}
-              >
-                معلومات للمسؤول والمحاسب
-              </h3>
-              <div className="space-y-2 text-xs" style={{ color: "#4b5563" }}>
-                <p>
-                  • النظام المالي الحالي (V1 + V2) يحتوي على عيوب هيكلية تم
-                  توثيقها في مواصفات Finance V3 Foundation.
-                </p>
-                <p>
-                  • بيانات المالية الحالية هي بيانات تجريبية فقط وسيتم تنظيفها
-                  بعد اعتماد النظام الجديد.
-                </p>
-                <p>
-                  • يتم إعادة بناء الوحدة المالية بالكامل لضمان سلامة دفتر
-                  الأستاذ وحماية البيانات المالية.
-                </p>
-                <p>
-                  • الشاشات المالية القديمة (/finance و /finance-v2) تم إخفاؤها
-                  من القائمة الجانبية مؤقتاً.
-                </p>
-                <p>
-                  • للاطلاع على تفاصيل المواصفات:
-                  <code
-                    className="px-1.5 py-0.5 rounded text-[11px] mx-1"
-                    style={{
-                      backgroundColor: "#f1f5f9",
-                      color: "#475569",
-                    }}
-                  >
-                    docs/finance-v3/FINANCE-V3-FOUNDATION.md
-                  </code>
-                </p>
-              </div>
+              معلومات للمسؤول والمحاسب
+            </h3>
+            <div className="space-y-2 text-xs" style={{ color: "#4b5563" }}>
+              <p>
+                • النظام المالي الحالي (V1 + V2) يحتوي على عيوب هيكلية تم
+                توثيقها في مواصفات Finance V3 Foundation.
+              </p>
+              <p>
+                • بيانات المالية الحالية هي بيانات تجريبية فقط وسيتم تنظيفها
+                بعد اعتماد النظام الجديد.
+              </p>
+              <p>
+                • يتم إعادة بناء الوحدة المالية بالكامل لضمان سلامة دفتر
+                الأستاذ وحماية البيانات المالية.
+              </p>
+              <p>
+                • الشاشات المالية القديمة (/finance و /finance-v2) تم إخفاؤها
+                من القائمة الجانبية مؤقتاً، لكن المسارات المباشرة وواجهات API لا
+                تزال تعمل لضمان استمرار التشغيل اليومي.
+              </p>
+              <p>
+                • تسجيل تحصيل المرضى يستمر من شاشة التشغيل اليومي
+                (/daily-operations) وفق سير العمل المعتمد ولا يتأثر بإعادة
+                البناء.
+              </p>
+              <p>
+                • للاطلاع على تفاصيل المواصفات:
+                <code
+                  className="px-1.5 py-0.5 rounded text-[11px] mx-1"
+                  style={{
+                    backgroundColor: "#f1f5f9",
+                    color: "#475569",
+                  }}
+                >
+                  docs/finance-v3/FINANCE-V3-FOUNDATION.md
+                </code>
+              </p>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

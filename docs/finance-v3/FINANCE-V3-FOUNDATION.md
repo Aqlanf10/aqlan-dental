@@ -13,11 +13,12 @@
 2. [Accounting Source of Truth](#2-accounting-source-of-truth)
 3. [Core Objects](#3-core-objects)
 4. [Required Formulas](#4-required-formulas)
-5. [Roles and Permissions](#5-roles-and-permissions)
-6. [Confirmed Defects in Current Implementation](#6-confirmed-defects-in-current-implementation)
-7. [Legacy Inventory](#7-legacy-inventory)
-8. [Migration / Reset Plan](#8-migration--reset-plan)
-9. [Phase Roadmap](#9-phase-roadmap)
+5. [Reception Checkout Integration](#5-reception-checkout-integration)
+6. [Roles and Permissions](#6-roles-and-permissions)
+7. [Confirmed Defects in Current Implementation](#7-confirmed-defects-in-current-implementation)
+8. [Legacy Inventory](#8-legacy-inventory)
+9. [Migration / Reset Plan](#9-migration--reset-plan)
+10. [Phase Roadmap](#10-phase-roadmap)
 
 ---
 
@@ -476,61 +477,117 @@ Center Share = Commissionable Amount − Doctor Share
 
 ---
 
-## 5. Roles and Permissions
+## 5. Reception Checkout Integration
 
-### 5.1 Role Definitions
+### 5.1 Workflow Architecture
+
+Reception does NOT use Finance V3 screens for daily collection. Reception works from **one primary operational screen only**: `/daily-operations`. This is a fundamental architectural decision that separates the operational collection layer from the accounting and supervisory layer.
+
+**Patient checkout flow:**
+
+```
+Booking / Appointment
+  → Arrival (check-in)
+    → Queue (clinic queue)
+      → Visit (doctor sees patient)
+        → Ready for Checkout (visit complete)
+          → Reception registers payment in /daily-operations
+            → Payment posts to Finance V3 ledger
+              → Receipt prints from Daily Operations
+                → Accountant reviews/reconciles in Finance V3
+```
+
+### 5.2 Rules
+
+1. **`/daily-operations` is the only normal reception payment-entry interface.** Reception must not be expected to navigate into Finance V3 for normal daily collection. Finance V3 is the accounting and supervisory module for Admin and Accountant.
+
+2. **Reception may create a collection only through the approved checkout workflow.** The checkout step is embedded inside the Daily Operations patient handoff. Reception does not create standalone payments outside this flow.
+
+3. **Payment posting must eventually be atomic.** A single checkout transaction must create all of the following as one atomic unit:
+   - Payment record
+   - Receipt record
+   - CashFlowTransaction (ledger entry)
+   - Cashier Session link
+   - Treasury link
+   - Invoice/Contract allocation (if applicable)
+
+4. **No unlinked payment in the final design.** Every payment must be linked to either an invoice, a contract, or a patient checkout event. If invoice/contract allocation is not yet known at checkout time, this is documented as a Phase 3 design problem — no logic should be invented in Phase 1.
+
+5. **Finance V3 is the accounting and supervisory module.** It is for Admin and Accountant to review balances, reconcile cashier sessions, manage invoices, approve expenses, manage suppliers, run reports, and audit financial operations. It is not a data-entry interface for reception.
+
+6. **Daily Operations continues to use `/api/payments` and the existing cashier session flow** until the Finance V3 posting flow is fully implemented and tested. This API must not be disabled during the rebuild.
+
+### 5.3 Permission for Checkout Collection
+
+Reception users who are permitted to collect payments at checkout will be granted an explicit permission such as `checkout.collect` or `finance.create` (the existing `PAYMENTS_CREATE` permission key maps to `finance.create` in the current permissions system). This permission authorizes payment creation **only** within the Daily Operations checkout flow, not direct financial posting through Finance V3.
+
+### 5.4 Current State (Phase 1)
+
+- Daily Operations already has a checkout/payment workflow using `/api/payments`.
+- This workflow is **not disabled** and continues to function normally.
+- Finance V3 does not yet provide an alternative payment-entry path.
+- The sidebar navigation for `/finance-v2` has been replaced with `/finance-v3` (Admin/Accountant only), but the old `/finance-v2` route and all payment APIs remain active.
+- Direct old routes and APIs are **not disabled** in Phase 1.
+
+---
+
+## 6. Roles and Permissions
+
+### 6.1 Role Definitions
 
 | Role | Arabic | Description |
 |------|--------|-------------|
-| Admin | مدير النظام | Full access to all financial operations and data |
-| Accountant | محاسب | Financial reporting, reconciliation, approvals |
-| Reception | استقبال/كاشير | Cashier operations, payment collection, patient billing |
-| Doctor | طبيب | View own commissions only |
+| Admin | مدير النظام | Full access to Finance V3: all financial operations, reporting, audit, and configuration |
+| Accountant | محاسب | Full Finance V3 operational and review access: reporting, reconciliation, approvals, invoice management |
+| Reception | استقبال/كاشير | Payment collection only through `/daily-operations` checkout; no Finance V3 dashboard access by default |
+| Doctor | طبيب | No financial entry; clinically necessary limited status view only if approved by Admin |
 
-### 5.2 Permission Matrix
+### 6.2 Permission Matrix
 
 | Operation | Admin | Accountant | Reception | Doctor |
 |-----------|-------|------------|-----------|--------|
-| **View** |
-| Finance dashboard | ✅ | ✅ | ✅ (own branch) | ❌ |
-| Patient account statement | ✅ | ✅ | ✅ (own branch) | ❌ |
-| Invoices (all) | ✅ | ✅ | ✅ (own branch) | ❌ |
-| Payments (all) | ✅ | ✅ | ✅ (own branch) | ❌ |
-| Contracts (all) | ✅ | ✅ | ✅ (own branch) | ❌ |
+| **Finance V3 Access** |
+| Finance V3 dashboard (/finance-v3) | ✅ | ✅ | ❌ | ❌ |
+| Patient account statement | ✅ | ✅ | ❌ | ❌ |
+| Invoices (all) | ✅ | ✅ | ❌ | ❌ |
+| Payments (all — review) | ✅ | ✅ | ❌ | ❌ |
+| Contracts (all) | ✅ | ✅ | ❌ | ❌ |
 | Expenses (all) | ✅ | ✅ | ❌ | ❌ |
-| Treasuries | ✅ | ✅ | ✅ (view only) | ❌ |
+| Treasuries | ✅ | ✅ | ❌ | ❌ |
 | Supplier bills | ✅ | ✅ | ❌ | ❌ |
 | Own commissions | ✅ | ✅ | ❌ | ✅ |
 | All commissions | ✅ | ✅ | ❌ | ❌ |
 | Salary records | ✅ | ✅ | ❌ | ❌ |
 | P&L reports | ✅ | ✅ | ❌ | ❌ |
-| Daily cash summary | ✅ | ✅ | ✅ (own sessions) | ❌ |
+| Daily cash summary | ✅ | ✅ | ❌ | ❌ |
 | Audit log | ✅ | ✅ | ❌ | ❌ |
-| **Create** |
-| Open cashier session | ✅ | ❌ | ✅ | ❌ |
-| Record payment | ✅ | ❌ | ✅ | ❌ |
+| **Daily Operations Checkout** |
+| Register payment at checkout | ✅ | ❌ | ✅ (via `finance.create`) | ❌ |
+| Print receipt at checkout | ✅ | ❌ | ✅ | ❌ |
+| Open/close cashier session | ✅ | ❌ | ✅ | ❌ |
+| **Finance V3 — Create** |
 | Create invoice | ✅ | ✅ | ❌ | ❌ |
 | Create contract | ✅ | ✅ | ❌ | ❌ |
 | Create expense | ✅ | ✅ | ❌ | ❌ |
 | Create supplier bill | ✅ | ✅ | ❌ | ❌ |
-| **Edit** |
+| **Finance V3 — Edit** |
 | Edit draft invoice | ✅ | ✅ | ❌ | ❌ |
 | Edit contract terms | ✅ | ✅ | ❌ | ❌ |
 | Edit commission costs | ✅ | ❌ | ❌ | ❌ |
-| **Post** |
+| **Finance V3 — Post** |
 | Issue invoice | ✅ | ✅ | ❌ | ❌ |
 | Approve expense | ✅ | ✅ | ❌ | ❌ |
 | Approve advance | ✅ | ❌ | ❌ | ❌ |
 | Approve commission | ✅ | ❌ | ❌ | ❌ |
 | Pay salary | ✅ | ❌ | ❌ | ❌ |
 | Pay commission | ✅ | ✅ | ❌ | ❌ |
-| **Reverse** |
+| **Finance V3 — Reverse** |
 | Refund payment | ✅ | ❌ | ❌ | ❌ |
 | Cancel invoice | ✅ | ✅ | ❌ | ❌ |
 | Cancel contract | ✅ | ✅ | ❌ | ❌ |
 | Delete payment | ✅ | ❌ | ❌ | ❌ |
 | Reverse expense | ✅ | ❌ | ❌ | ❌ |
-| **Reconcile** |
+| **Finance V3 — Reconcile** |
 | Close cashier session | ✅ | ❌ | ✅ | ❌ |
 | Reconcile session | ✅ | ✅ | ❌ | ❌ |
 | Recalculate treasury | ✅ | ❌ | ❌ | ❌ |
@@ -541,15 +598,22 @@ Center Share = Commissionable Amount − Doctor Share
 | Apply discount | ✅ | ❌ | ❌ | ❌ |
 | View audit log | ✅ | ✅ | ❌ | ❌ |
 
-### 5.3 Branch Isolation
+### 6.3 Branch Isolation
 
 - Non-Admin users can only see financial data from their own branch (`BranchId`).
 - Admin can see all branches.
 - **Critical rule:** `BranchId` must NEVER be `Guid.Empty`. If a user's `BranchId` is null, the financial operation must be **rejected**, not silently default to `Guid.Empty`.
 
+### 6.4 Current Limitation (Phase 1)
+
+- The sidebar hides the old finance entry for normal navigation.
+- Direct old routes (`/finance`, `/finance-v2`) and all payment APIs are **not disabled** in Phase 1.
+- Daily Operations intentionally still uses the current payment API (`/api/payments`) until the Finance V3 posting flow is implemented.
+- This is documented as a limitation and rollout risk: during the transition period, payments created from Daily Operations are posted using the existing (defective) logic, not the Finance V3 canonical ledger.
+
 ---
 
-## 6. Confirmed Defects in Current Implementation
+## 7. Confirmed Defects in Current Implementation
 
 ### Defect #1: Operational Expense Deletion Soft-Deletes CashFlowTransaction
 
@@ -613,9 +677,9 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 
 ---
 
-## 7. Legacy Inventory
+## 8. Legacy Inventory
 
-### 7.1 Frontend Finance Routes
+### 8.1 Frontend Finance Routes
 
 | Route | Purpose | Status |
 |-------|---------|--------|
@@ -637,7 +701,7 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 | `/patients/[id]/print/financial` | Patient financial statement | **PRIMARY** — patient-scoped |
 | `/portal/finance` | Portal patient finance | **PRIMARY** — portal-scoped |
 
-### 7.2 Backend Finance API Endpoints
+### 8.2 Backend Finance API Endpoints
 
 | Controller | Route Prefix | Endpoints | Auth Policy |
 |-----------|--------------|-----------|-------------|
@@ -653,7 +717,7 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 | AdvancePaymentController | `/api/advances` | 4 | ReportsAccess |
 | PurchaseOrdersController | `/api/purchase-orders` | 7 | AdminOnly |
 
-### 7.3 Finance Database Tables
+### 8.3 Finance Database Tables
 
 | Table | Entity | Migrations |
 |-------|--------|------------|
@@ -676,7 +740,7 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 | PurchaseOrderLineItems | PurchaseOrderLineItem | AddSuppliersAndPurchases |
 | PatientAccounts | PatientAccount | Initial (NOT finance — portal auth) |
 
-### 7.4 Finance Services
+### 8.4 Finance Services
 
 | Service | Interface | Key Methods |
 |---------|-----------|-------------|
@@ -686,19 +750,21 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 
 ---
 
-## 8. Migration / Reset Plan
+## 9. Migration / Reset Plan
 
 > **⚠️ This plan is for FUTURE execution only. It must NOT be executed in Phase 1.  
 > It will be separately approved and deployed after the new Finance V3 structure is reviewed.**
 
-### 8.1 Owner Confirmation
+### 9.1 Owner Confirmation
 
 The clinic owner confirms that the current finance records are experimental/test data only and are not real production accounting records.
 
-### 8.2 Finance Tables That May Be Cleared/Rebuilt
+### 9.2 Finance Transaction Test Candidates
 
-| Table | Action | Justification |
-|-------|--------|---------------|
+The following tables contain finance transaction data that **may** be candidates for cleanup after independent verification and explicit approval. Each table must be reviewed for row count and content before any action is taken.
+
+| Table | Candidate Action | Justification |
+|-------|-----------------|---------------|
 | CashFlowTransactions | TRUNCATE (after backup) | Test ledger entries only |
 | CashierSessions | TRUNCATE (after backup) | Test sessions only |
 | OperationalExpenses | TRUNCATE (after backup) | Test expenses only |
@@ -714,13 +780,25 @@ The clinic owner confirms that the current finance records are experimental/test
 | DoctorCommissionPayments | TRUNCATE (after backup) | Test commission payments |
 | SalaryRecords | TRUNCATE (after backup) | Test salary records |
 | AdvancePayments | TRUNCATE (after backup) | Test advances only |
-| PurchaseOrders | TRUNCATE (after backup) | Test POs only |
-| PurchaseOrderLineItems | TRUNCATE (after backup) | Linked to POs |
-| FinancialAuditLogs | TRUNCATE (after backup) | Test audit entries |
 
-### 8.3 Tables That Must Be Preserved
+### 9.3 Preserve Unless Independently Verified and Explicitly Approved
 
-The following tables contain real operational data and must **NEVER** be truncated or deleted:
+The following tables are **NOT** finance test data candidates. They contain operational, inventory, supplier, employee, or audit records that must be preserved unless separately verified and explicitly approved for cleanup.
+
+| Table | Reason for Preservation |
+|-------|----------------------|
+| **Suppliers** | Supplier contacts are operational reference data, not test finance transactions. Must be preserved. |
+| **PurchaseOrders** | May contain operational/inventory procurement history, not merely finance test data. Preserve unless independently verified. |
+| **PurchaseOrderLineItems** | Linked to PurchaseOrders. Preserve unless PurchaseOrders are verified and explicitly approved for cleanup. |
+| **InventoryItems** | Inventory data is operational, not finance test data. Must be preserved. |
+| **LabOrders** | Lab work orders are clinical/operational records. Must be preserved. |
+| **Employees** | Employee records are HR data, not finance test data. Must be preserved. |
+| **AuditLogs** | Audit logs must **NEVER** be deleted. They are the compliance trail. |
+| **FinancialAuditLogs** | Finance-specific audit logs must **NEVER** be deleted. They are the compliance trail for financial operations. |
+
+### 9.4 Always Preserve — No Exceptions
+
+The following tables must **NEVER** be truncated or deleted under any circumstances:
 
 | Table | Reason |
 |-------|--------|
@@ -736,7 +814,6 @@ The following tables contain real operational data and must **NEVER** be truncat
 | PerioAssessments | Clinical periodontal data |
 | Radiographs | Uploaded medical images |
 | PatientDocuments | Uploaded documents |
-| LabOrders | Lab work orders |
 | Prescriptions | Prescription records |
 | Referrals | Referral records |
 | Messages | Messaging data |
@@ -745,38 +822,39 @@ The following tables contain real operational data and must **NEVER** be truncat
 | ClinicSettings | System configuration |
 | ClinicRooms | Room configuration |
 | ClinicServices | Service catalog |
-| InventoryItems | Inventory data |
-| Suppliers | Supplier contacts (may need review) |
-| Employees | Employee records |
 | BookingRequests | Patient booking data |
 | SmsMessages / SmsTemplates | Communication records |
 | EmailLogs | Communication logs |
-| AuditLogs | General audit trail |
 
-### 8.4 Reset Procedure (Future)
+### 9.5 Reset Procedure (Future)
 
 1. Create a full database backup.
 2. Verify the backup is restorable.
-3. Run the truncation in a transaction for each finance table.
-4. Re-seed treasuries with correct starting balances.
-5. Verify all non-finance data is intact.
-6. Deploy the new Finance V3 schema (Phase 2).
-7. Verify the new schema works with empty tables.
-8. Announce the system ready for production financial entry.
+3. Run a **read-only row-count and content review** on all candidate tables (Section 9.2).
+4. Obtain explicit owner approval for each table to be cleaned.
+5. Run the truncation in a transaction for each approved finance table.
+6. Re-seed treasuries with correct starting balances.
+7. Verify all non-finance data is intact.
+8. Deploy the new Finance V3 schema (Phase 2).
+9. Verify the new schema works with empty tables.
+10. Announce the system ready for production financial entry.
 
 ---
 
-## 9. Phase Roadmap
+## 10. Phase Roadmap
 
 ### Phase 1: Audit & Foundation (Current PR)
 - [x] Inventory all finance routes, APIs, entities, tables
 - [x] Document confirmed defects
 - [x] Create this specification document
 - [x] Create Finance V3 landing screen (/finance-v3)
-- [x] Hide legacy finance navigation
+- [x] Hide legacy finance navigation (Admin/Accountant only)
+- [x] Document Reception Checkout Integration workflow
+- [x] Protect /finance-v3 route for Admin/Accountant only
 - [ ] **NO** code changes to backend logic
 - [ ] **NO** database migrations
 - [ ] **NO** data deletion
+- [ ] **NO** disabling of /api/payments (Daily Operations depends on it)
 
 ### Phase 2: Canonical Immutable Ledger & Database Model
 - Redesign `CashFlowTransaction` entity with all required fields
@@ -789,9 +867,11 @@ The following tables contain real operational data and must **NEVER** be truncat
 ### Phase 3: Patient Invoices, Receipts, Discounts, Refunds, and Balances
 - Rebuild invoice lifecycle (Draft → Issued → Paid/Cancelled)
 - Rebuild payment collection with proper cashier session integration
+- Implement Daily Operations checkout → Finance V3 atomic posting
 - Implement discount/adjustment system
 - Implement refund with proper reversal entries
 - Patient balance calculation
+- Handle invoice/contract allocation at checkout (design decision needed)
 
 ### Phase 4: Cashier Shifts, Treasury, Expenses, Suppliers, Salary, and Commissions
 - Rebuild cashier session open/close/reconcile
@@ -805,7 +885,7 @@ The following tables contain real operational data and must **NEVER** be truncat
 - Rebuild P&L report with correct double-counting prevention
 - Rebuild daily cash summary
 - Rebuild audit log viewer
-- Execute finance data reset (Section 8)
+- Execute finance data reset (Section 9) — read-only review + explicit approval required
 - End-to-end testing with real clinic workflows
 - Staff training
 - Production rollout

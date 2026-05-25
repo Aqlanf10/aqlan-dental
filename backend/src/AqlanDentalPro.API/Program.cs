@@ -2223,6 +2223,14 @@ if (enableStartupDbMaintenance)
                 DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525123318_AddSupplierBillsAndApprovals'
                     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'SupplierBills');
 
+                -- Remove CashFlowTransactions migration records if table doesn't exist
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260525092924_AddCentralFinanceV2Hub'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CashFlowTransactions');
+
+                -- Remove OperationalExpenses migration if table doesn't exist
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" LIKE '2026052%'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'OperationalExpenses');
+
                 -- ═══ STEP 2: Insert missing records for existing schema ═══
                 -- These were created by HOTFIX blocks but not recorded in __EFMigrationsHistory.
 

@@ -579,11 +579,24 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsReversal")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("ReversalOfTransactionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ReversedByTransactionId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BranchId");
 
                     b.HasIndex("CashierSessionId");
+
+                    b.HasIndex("ReversalOfTransactionId");
+
+                    b.HasIndex("ReversedByTransactionId");
 
                     b.ToTable("CashFlowTransactions");
                 });
@@ -5402,9 +5415,17 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<byte[]?>("Version")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasDefaultValue(new byte[] {});
+
                     b.HasKey("Id");
 
                     b.HasIndex("BranchId");
+
+                    b.HasIndex("BranchId", "Type");
 
                     b.ToTable("Treasuries");
                 });
@@ -6022,9 +6043,23 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .WithMany("Transactions")
                         .HasForeignKey("CashierSessionId");
 
+                    b.HasOne("AqlanDentalPro.Domain.Entities.CashFlowTransaction", "ReversalOfTransaction")
+                        .WithMany()
+                        .HasForeignKey("ReversalOfTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.CashFlowTransaction", "ReversedByTransaction")
+                        .WithMany()
+                        .HasForeignKey("ReversedByTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Branch");
 
                     b.Navigation("CashierSession");
+
+                    b.Navigation("ReversalOfTransaction");
+
+                    b.Navigation("ReversedByTransaction");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CashierSession", b =>

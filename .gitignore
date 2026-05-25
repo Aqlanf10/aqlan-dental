@@ -94,3 +94,4 @@ public/uploads/
 .railway/
 agent-ctx/
 frontend/bun.lock
+backend/tools/

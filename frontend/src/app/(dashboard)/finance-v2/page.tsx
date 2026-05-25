@@ -12,7 +12,7 @@ import {
   TrendingUp, Wallet, AlertCircle, FileText, Printer,
   RefreshCw, CheckCircle2, Search, Percent,
   Settings, ChevronRight, Ban, Building, Coins, ShieldAlert,
-  Calendar, Landmark, X
+  Calendar, Landmark, X, ShoppingCart, ClipboardCheck
 } from "lucide-react";
 
 // --- Types ---
@@ -235,6 +235,387 @@ export default function FinanceV2Page() {
 
   const { data: doctors } = useDoctors();
 
+  // Treasuries & Vault Transfers States
+  interface TreasuryDto {
+    id: string;
+    name: string;
+    type: string;
+    typeArabic: string;
+    balance: number;
+    branchId: string;
+  }
+  interface VaultTransferDto {
+    id: string;
+    transferNumber: string;
+    sourceTreasuryId?: string;
+    sourceTreasuryName: string;
+    destinationTreasuryId: string;
+    destinationTreasuryName: string;
+    amount: number;
+    transferDate: string;
+    performedBy: string;
+    approvedBy?: string;
+    approvalDate?: string;
+    status: string;
+    statusArabic: string;
+    notes?: string;
+  }
+  const [treasuries, setTreasuries] = useState<TreasuryDto[]>([]);
+  const [vaultTransfers, setVaultTransfers] = useState<VaultTransferDto[]>([]);
+  const [loadingTreasuries, setLoadingTreasuries] = useState(false);
+  const [loadingTransfers, setLoadingTransfers] = useState(false);
+  const [showNewTransferModal, setShowNewTransferModal] = useState(false);
+  const [showNewTreasuryModal, setShowNewTreasuryModal] = useState(false);
+
+  // New Transfer Form State
+  const [transferSourceId, setTransferSourceId] = useState("");
+  const [transferDestId, setTransferDestId] = useState("");
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferNotes, setTransferNotes] = useState("");
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+
+  // New Treasury Form State (Admin Only)
+  const [newTreasuryName, setNewTreasuryName] = useState("");
+  const [newTreasuryType, setNewTreasuryType] = useState("Vault");
+  const [newTreasuryOpeningBalance, setNewTreasuryOpeningBalance] = useState("");
+  const [isSubmittingTreasury, setIsSubmittingTreasury] = useState(false);
+
+  // Reject Modal Form State
+  const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [showRejectModal, setShowRejectModal] = useState(false);
+
+  // ─── Sprint 4: Supplier Bills (Accounts Payable) ───
+  interface SupplierBillDto {
+    id: string;
+    billNumber: string;
+    supplierName: string;
+    supplierId: string;
+    description: string;
+    totalAmount: number;
+    paidAmount: number;
+    remainingAmount: number;
+    status: string;
+    statusArabic: string;
+    billDate: string;
+    dueDate?: string;
+    isOverdue: boolean;
+    paymentsCount: number;
+    notes?: string;
+  }
+  interface SupplierItem {
+    id: string;
+    name: string;
+    phone?: string;
+  }
+  const [supplierBills, setSupplierBills] = useState<SupplierBillDto[]>([]);
+  const [loadingBills, setLoadingBills] = useState(false);
+  const [billsTotalUnpaid, setBillsTotalUnpaid] = useState(0);
+  const [billsOverdueCount, setBillsOverdueCount] = useState(0);
+  const [suppliersList, setSuppliersList] = useState<SupplierItem[]>([]);
+  const [showNewBillModal, setShowNewBillModal] = useState(false);
+  const [showPayBillModal, setShowPayBillModal] = useState(false);
+  const [selectedBill, setSelectedBill] = useState<SupplierBillDto | null>(null);
+
+  // New Bill Form
+  const [billSupplierId, setBillSupplierId] = useState("");
+  const [billDescription, setBillDescription] = useState("");
+  const [billTotal, setBillTotal] = useState("");
+  const [billDate, setBillDate] = useState("");
+  const [billDueDate, setBillDueDate] = useState("");
+  const [billNotes, setBillNotes] = useState("");
+  const [isSubmittingBill, setIsSubmittingBill] = useState(false);
+
+  // Pay Installment Form
+  const [payInstallmentAmount, setPayInstallmentAmount] = useState("");
+  const [payInstallmentMethod, setPayInstallmentMethod] = useState("cash");
+  const [payInstallmentDate, setPayInstallmentDate] = useState("");
+  const [payInstallmentRef, setPayInstallmentRef] = useState("");
+  const [isSubmittingInstallment, setIsSubmittingInstallment] = useState(false);
+
+  // ─── Sprint 5: Expenditure Approvals ───
+  interface PendingExpenseItem {
+    id: string;
+    expenseNumber: string;
+    title: string;
+    category: string;
+    categoryArabic: string;
+    amount: number;
+    expenseDate: string;
+    paymentMethod: string;
+    supplierName?: string;
+    notes?: string;
+    createdAt: string;
+  }
+  const [pendingExpenses, setPendingExpenses] = useState<PendingExpenseItem[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showRejectExpenseModal, setShowRejectExpenseModal] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState<PendingExpenseItem | null>(null);
+  const [expenseApprovalNotes, setExpenseApprovalNotes] = useState("");
+  const [expenseRejectReason, setExpenseRejectReason] = useState("");
+  const [isProcessingExpense, setIsProcessingExpense] = useState(false);
+
+  const fetchTreasuries = async () => {
+    setLoadingTreasuries(true);
+    try {
+      const res = await api.get<TreasuryDto[]>("/api/treasuries");
+      setTreasuries(res.data ?? []);
+    } catch (err) {
+      console.error("Failed to fetch treasuries", err);
+      toast.error("خطأ أثناء تحميل أرصدة الخزائن");
+    } finally {
+      setLoadingTreasuries(false);
+    }
+  };
+
+  const fetchVaultTransfers = async () => {
+    setLoadingTransfers(true);
+    try {
+      const res = await api.get<{ data: VaultTransferDto[] }>("/api/vault-transfers");
+      setVaultTransfers(res.data?.data ?? []);
+    } catch (err) {
+      console.error("Failed to fetch transfers", err);
+      toast.error("خطأ أثناء تحميل كشف تحويلات السيولة");
+    } finally {
+      setLoadingTransfers(false);
+    }
+  };
+
+  const fetchSupplierBills = async () => {
+    setLoadingBills(true);
+    try {
+      const res = await api.get<{ data: SupplierBillDto[]; totalUnpaid: number; overdueCount: number }>("/api/supplier-bills?pageSize=50");
+      setSupplierBills(res.data?.data ?? []);
+      setBillsTotalUnpaid(res.data?.totalUnpaid ?? 0);
+      setBillsOverdueCount(res.data?.overdueCount ?? 0);
+    } catch (err) {
+      console.error("Failed to fetch supplier bills", err);
+      toast.error("خطأ أثناء تحميل فواتير الموردين");
+    } finally {
+      setLoadingBills(false);
+    }
+  };
+
+  const fetchSuppliers = async () => {
+    try {
+      const res = await api.get<SupplierItem[]>("/api/suppliers?pageSize=100");
+      setSuppliersList(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Failed to fetch suppliers", err);
+    }
+  };
+
+  const fetchPendingExpenses = async () => {
+    setLoadingPending(true);
+    try {
+      const res = await api.get<PendingExpenseItem[]>("/api/expenses/pending");
+      setPendingExpenses(res.data ?? []);
+    } catch (err) {
+      console.error("Failed to fetch pending expenses", err);
+      toast.error("خطأ أثناء تحميل المصروفات قيد الاعتماد");
+    } finally {
+      setLoadingPending(false);
+    }
+  };
+
+  const handleCreateBill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!billSupplierId) { toast.error("يرجى اختيار المورد"); return; }
+    const totalNum = parseFloat(billTotal);
+    if (isNaN(totalNum) || totalNum <= 0) { toast.error("يجب إدخال إجمالي فاتورة صحيح أكبر من الصفر"); return; }
+    if (!billDescription.trim()) { toast.error("وصف الفاتورة مطلوب"); return; }
+    try {
+      setIsSubmittingBill(true);
+      await api.post("/api/supplier-bills", {
+        supplierId: billSupplierId,
+        description: billDescription.trim(),
+        totalAmount: totalNum,
+        billDate: billDate || undefined,
+        dueDate: billDueDate || undefined,
+        notes: billNotes.trim() || undefined
+      });
+      toast.success("تم تسجيل فاتورة المورد بنجاح في نظام الذمم الدائنة");
+      setShowNewBillModal(false);
+      fetchSupplierBills();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل تسجيل فاتورة المورد");
+    } finally {
+      setIsSubmittingBill(false);
+    }
+  };
+
+  const handlePayInstallment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBill) return;
+    const amountNum = parseFloat(payInstallmentAmount);
+    if (isNaN(amountNum) || amountNum <= 0) { toast.error("يجب إدخال مبلغ دفعة صحيح أكبر من الصفر"); return; }
+    try {
+      setIsSubmittingInstallment(true);
+      const res = await api.post<{ message: string; statusArabic: string }>(`/api/supplier-bills/${selectedBill.id}/pay`, {
+        amount: amountNum,
+        paymentMethod: payInstallmentMethod,
+        paymentDate: payInstallmentDate || undefined,
+        referenceNumber: payInstallmentRef.trim() || undefined
+      });
+      toast.success(res.data.message ?? "تم تسجيل الدفعة بنجاح");
+      setShowPayBillModal(false);
+      setSelectedBill(null);
+      fetchSupplierBills();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل تسجيل الدفعة");
+    } finally {
+      setIsSubmittingInstallment(false);
+    }
+  };
+
+  const handleApproveExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedExpense) return;
+    try {
+      setIsProcessingExpense(true);
+      await api.post(`/api/expenses/${selectedExpense.id}/approve`, { notes: expenseApprovalNotes.trim() || undefined });
+      toast.success(`تم اعتماد مصروف "${selectedExpense.title}" وترحيله للأستاذ العام بنجاح`);
+      setShowApproveModal(false);
+      setSelectedExpense(null);
+      fetchPendingExpenses();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل اعتماد المصروف");
+    } finally {
+      setIsProcessingExpense(false);
+    }
+  };
+
+  const handleRejectExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedExpense) return;
+    if (!expenseRejectReason.trim()) { toast.error("يجب إدخال سبب الرفض"); return; }
+    try {
+      setIsProcessingExpense(true);
+      await api.post(`/api/expenses/${selectedExpense.id}/reject`, { reason: expenseRejectReason.trim() });
+      toast.success(`تم رفض وإلغاء مصروف "${selectedExpense.title}" بنجاح`);
+      setShowRejectExpenseModal(false);
+      setSelectedExpense(null);
+      fetchPendingExpenses();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل رفض المصروف");
+    } finally {
+      setIsProcessingExpense(false);
+    }
+  };
+
+  const handleApproveTransfer = async (id: string) => {
+
+    if (!window.confirm("هل أنت متأكد من تأكيد الاستلام الفعلي لهذا المبلغ وضمه للخزنة المستهدفة؟")) return;
+    try {
+      toast.info("جاري تأكيد الاستلام وتحديث الأرصدة...");
+      await api.post(`/api/vault-transfers/${id}/approve`);
+      toast.success("تم تأكيد الاستلام المادي وتحديث الأرصدة بنجاح");
+      await fetchTreasuries();
+      await fetchVaultTransfers();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل تأكيد استلام التحويل المالي");
+    }
+  };
+
+  const handleRejectTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTransferId) return;
+    if (!rejectNotes.trim()) {
+      toast.error("يجب إدخال سبب الرفض لتسوية العجز");
+      return;
+    }
+    try {
+      setIsSubmittingTransfer(true);
+      await api.post(`/api/vault-transfers/${selectedTransferId}/reject`, {
+        notes: rejectNotes.trim()
+      });
+      toast.success("تم رفض طلب التحويل وإرجاع السيولة للخزنة المصدر بنجاح");
+      setShowRejectModal(false);
+      setSelectedTransferId(null);
+      await fetchTreasuries();
+      await fetchVaultTransfers();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل رفض التحويل المالي");
+    } finally {
+      setIsSubmittingTransfer(false);
+    }
+  };
+
+  const handleCreateTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferDestId) {
+      toast.error("يرجى اختيار الخزنة أو الحساب المستهدف");
+      return;
+    }
+    const amountNum = parseFloat(transferAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      toast.error("يجب إدخال مبلغ تحويل صحيح أكبر من الصفر");
+      return;
+    }
+    try {
+      setIsSubmittingTransfer(true);
+      await api.post("/api/vault-transfers", {
+        sourceTreasuryId: transferSourceId ? transferSourceId : null,
+        destinationTreasuryId: transferDestId,
+        amount: amountNum,
+        notes: transferNotes.trim()
+      });
+      toast.success("تم تقديم طلب الترحيل بنجاح وهو قيد العد والاستلام المادي");
+      setShowNewTransferModal(false);
+      await fetchTreasuries();
+      await fetchVaultTransfers();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل تقديم طلب ترحيل السيولة");
+    } finally {
+      setIsSubmittingTransfer(false);
+    }
+  };
+
+  const handleCreateTreasury = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTreasuryName.trim()) {
+      toast.error("يرجى إدخال اسم الخزنة/الحساب المالي");
+      return;
+    }
+    const balanceNum = parseFloat(newTreasuryOpeningBalance || "0");
+    if (isNaN(balanceNum) || balanceNum < 0) {
+      toast.error("يجب إدخال رصيد افتتاح صحيح أكبر من أو يساوي الصفر");
+      return;
+    }
+    try {
+      setIsSubmittingTreasury(true);
+      await api.post("/api/treasuries", {
+        name: newTreasuryName.trim(),
+        type: newTreasuryType,
+        openingBalance: balanceNum
+      });
+      toast.success("تم إنشاء الحساب/الخزنة بنجاح بنظام الأستاذ العام");
+      setShowNewTreasuryModal(false);
+      await fetchTreasuries();
+    } catch (err) {
+      console.error(err);
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message ?? "فشل إنشاء الخزنة/الحساب المالي");
+    } finally {
+      setIsSubmittingTreasury(false);
+    }
+  };
+
   // Deny Doctor Access immediately
   useEffect(() => {
     if (isDoctor) {
@@ -431,6 +812,14 @@ export default function FinanceV2Page() {
           fetchExpenses();
         } else if (activeTab === "reports") {
           fetchPLReport();
+        } else if (activeTab === "treasuries") {
+          await fetchTreasuries();
+          await fetchVaultTransfers();
+        } else if (activeTab === "supplier-bills") {
+          fetchSupplierBills();
+          fetchSuppliers();
+        } else if (activeTab === "approvals") {
+          fetchPendingExpenses();
         }
       } catch (err) {
         console.error("Failed to fetch listings", err);
@@ -673,6 +1062,18 @@ export default function FinanceV2Page() {
             صندوق اليوم (الكاشير)
           </button>
 
+          <button
+            onClick={() => setActiveTab("treasuries")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              activeTab === "treasuries"
+                ? "bg-clinic-blue/10 text-clinic-blue border-r-4 border-clinic-blue"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <Building className="w-4 h-4" />
+            الخزائن والتحويلات المالية
+          </button>
+
           {!isReception && (
             <>
               <button
@@ -745,6 +1146,42 @@ export default function FinanceV2Page() {
               >
                 <Landmark className="w-4 h-4" />
                 المصروفات التشغيلية
+              </button>
+
+              <button
+                id="tab-supplier-bills"
+                onClick={() => setActiveTab("supplier-bills")}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "supplier-bills"
+                    ? "bg-amber-50 text-amber-700 border-r-4 border-amber-500"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                فواتير الموردين (ذمم دائنة)
+                {billsTotalUnpaid > 0 && (
+                  <span className="mr-auto bg-amber-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">
+                    {billsOverdueCount > 0 ? `${billsOverdueCount} متأخر` : "!"}
+                  </span>
+                )}
+              </button>
+
+              <button
+                id="tab-approvals"
+                onClick={() => setActiveTab("approvals")}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "approvals"
+                    ? "bg-red-50 text-red-700 border-r-4 border-red-500"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                اعتماد المصروفات
+                {pendingExpenses.length > 0 && (
+                  <span className="mr-auto bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">
+                    {pendingExpenses.length}
+                  </span>
+                )}
               </button>
 
               <button
@@ -1943,6 +2380,336 @@ export default function FinanceV2Page() {
             </div>
           )}
 
+          {/* TAB 10: TREASURIES & LIQUIDITY TRANSFERS */}
+          {activeTab === "treasuries" && (
+            <div className="space-y-6">
+              {/* Header with quick statistics and seed button */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+                <div className="text-right space-y-1">
+                  <h3 className="font-extrabold text-sm text-gray-900">إدارة الخزائن والحسابات البنكية</h3>
+                  <p className="text-[10px] text-gray-400">مراقبة الأرصدة الحية وحركات ترحيل السيولة النقدية بين الصناديق</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        setNewTreasuryName("");
+                        setNewTreasuryOpeningBalance("");
+                        setNewTreasuryType("Vault");
+                        setShowNewTreasuryModal(true);
+                      }}
+                      className="bg-clinic-blue text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-clinic-blue/90 transition flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Building className="w-4 h-4" />
+                      إنشاء حساب/خزنة جديدة
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setTransferAmount("");
+                      setTransferSourceId("");
+                      setTransferDestId("");
+                      setTransferNotes("");
+                      setShowNewTransferModal(true);
+                    }}
+                    className="bg-green-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-green-700 transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    طلب ترحيل سيولة
+                  </button>
+                </div>
+              </div>
+
+              {/* Live Vault & Bank Balances Card Grid */}
+              {loadingTreasuries ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-pulse">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="h-28 bg-gray-50 rounded-2xl border border-gray-100" />
+                  ))}
+                </div>
+              ) : !treasuries.length ? (
+                <div className="bg-white border border-gray-100 rounded-2xl p-8 text-center text-gray-400 text-xs">
+                  لا توجد حسابات أو خزائن مسجلة لهذا الفرع حالياً.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {treasuries.map((t) => (
+                    <div
+                      key={t.id}
+                      className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4 hover:shadow-md transition relative overflow-hidden group"
+                    >
+                      <div className="absolute top-0 right-0 w-2 h-full bg-clinic-blue" />
+                      <div className="flex items-center justify-between text-right">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-400 font-bold block">{t.typeArabic}</span>
+                          <h4 className="font-extrabold text-xs text-gray-800">{t.name}</h4>
+                        </div>
+                        <div className="p-2.5 bg-clinic-blue/5 rounded-xl text-clinic-blue group-hover:bg-clinic-blue/10 transition">
+                          <Building className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-gray-50 flex items-baseline justify-between text-left">
+                        <span className="text-[10px] text-gray-400 font-bold">الرصيد المتوفر</span>
+                        <span className="text-sm font-mono font-black text-clinic-blue">
+                          {formatYemeniRiyal(t.balance)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Liquidity Transfers List Table */}
+              <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
+                <h3 className="font-extrabold text-sm text-gray-900">سجل طلبات وحركات ترحيل السيولة</h3>
+
+                {loadingTransfers ? (
+                  <div className="space-y-3 animate-pulse">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="h-12 bg-gray-50 rounded-xl" />
+                    ))}
+                  </div>
+                ) : !vaultTransfers.length ? (
+                  <p className="text-xs text-gray-400 text-center py-12">لا توجد طلبات ترحيل سيولة مسجلة.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-right">
+                      <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+                        <tr>
+                          <th className="px-4 py-3">رقم الحركة</th>
+                          <th className="px-4 py-3">الخزنة المصدر</th>
+                          <th className="px-4 py-3">الخزنة المستهدفة</th>
+                          <th className="px-4 py-3">المبلغ المرحل</th>
+                          <th className="px-4 py-3">تاريخ الطلب</th>
+                          <th className="px-4 py-3">بواسطة</th>
+                          <th className="px-4 py-3">حالة الطلب</th>
+                          <th className="px-4 py-3">ملاحظات</th>
+                          <th className="px-4 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 font-medium text-gray-700">
+                        {vaultTransfers.map((vt) => (
+                          <tr key={vt.id} className="hover:bg-gray-50/50 transition">
+                            <td className="px-4 py-3 font-mono font-bold text-gray-900">{vt.transferNumber}</td>
+                            <td className="px-4 py-3">{vt.sourceTreasuryName}</td>
+                            <td className="px-4 py-3">{vt.destinationTreasuryName}</td>
+                            <td className="px-4 py-3 font-mono font-bold text-blue-600">{formatYemeniRiyal(vt.amount)}</td>
+                            <td className="px-4 py-3">{formatArabicDate(vt.transferDate)}</td>
+                            <td className="px-4 py-3 text-gray-500">{vt.performedBy}</td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`inline-flex px-2 py-1 rounded-full text-[10px] font-bold ${
+                                  vt.status === "Approved"
+                                    ? "bg-green-50 text-green-700 border border-green-200"
+                                    : vt.status === "Rejected"
+                                    ? "bg-red-50 text-red-700 border border-red-200"
+                                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                                }`}
+                              >
+                                {vt.statusArabic}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-400 truncate max-w-[120px]" title={vt.notes ?? ""}>
+                              {vt.notes ?? "—"}
+                            </td>
+                            <td className="px-4 py-3 text-left">
+                              {vt.status === "Pending" && (isAdmin || userRole === "Accountant") && (
+                                <div className="flex items-center gap-1.5 justify-end">
+                                  <button
+                                    onClick={() => handleApproveTransfer(vt.id)}
+                                    className="bg-green-600 hover:bg-green-700 text-white font-bold text-[10px] px-2.5 py-1.5 rounded-lg transition animate-pulse"
+                                  >
+                                    تأكيد الاستلام
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedTransferId(vt.id);
+                                      setRejectNotes("");
+                                      setShowRejectModal(true);
+                                    }}
+                                    className="bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] px-2.5 py-1.5 rounded-lg transition"
+                                  >
+                                    رفض
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 9: SUPPLIER BILLS (Accounts Payable) */}
+          {activeTab === "supplier-bills" && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+                <div className="space-y-1">
+                  <h3 className="font-extrabold text-sm text-gray-900">فواتير الموردين — الذمم الدائنة</h3>
+                  <p className="text-[10px] text-gray-400">تتبع فواتير الموردين والمختبرات وسداد الدفعات الجزئية</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {billsTotalUnpaid > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-right">
+                      <p className="text-[9px] text-amber-600 font-bold">إجمالي الذمم المستحقة</p>
+                      <p className="text-sm font-black text-amber-700 font-mono">{formatYemeniRiyal(billsTotalUnpaid)}</p>
+                    </div>
+                  )}
+                  <button
+                    id="btn-new-supplier-bill"
+                    onClick={() => {
+                      setBillSupplierId(""); setBillDescription(""); setBillTotal("");
+                      setBillDate(""); setBillDueDate(""); setBillNotes("");
+                      setShowNewBillModal(true);
+                    }}
+                    className="bg-amber-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-amber-700 transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <ShoppingCart className="w-4 h-4" />
+                    تسجيل فاتورة مورد
+                  </button>
+                </div>
+              </div>
+
+              {/* Bills Table */}
+              {loadingBills ? (
+                <div className="animate-pulse space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-12 bg-gray-50 rounded-xl" />)}</div>
+              ) : !supplierBills.length ? (
+                <div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-400 text-xs">
+                  <ShoppingCart className="w-8 h-8 mx-auto mb-3 text-gray-200" />
+                  لا توجد فواتير موردين مسجلة حالياً.
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100">
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">رقم الفاتورة</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">المورد</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">الوصف</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">الإجمالي</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">المدفوع</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">المتبقي</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">الحالة</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">تاريخ الاستحقاق</th>
+                          <th className="px-4 py-3 text-[10px] font-bold text-gray-500">إجراء</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {supplierBills.map((bill) => (
+                          <tr key={bill.id} className={`hover:bg-gray-50/50 transition ${bill.isOverdue ? 'bg-red-50/30' : ''}`}>
+                            <td className="px-4 py-3 font-mono font-bold text-gray-900">{bill.billNumber}</td>
+                            <td className="px-4 py-3 text-gray-700">{bill.supplierName}</td>
+                            <td className="px-4 py-3 text-gray-500 max-w-[180px] truncate">{bill.description}</td>
+                            <td className="px-4 py-3 font-bold font-mono text-gray-900">{formatYemeniRiyal(bill.totalAmount)}</td>
+                            <td className="px-4 py-3 font-mono text-green-700">{formatYemeniRiyal(bill.paidAmount)}</td>
+                            <td className="px-4 py-3 font-bold font-mono text-amber-700">{formatYemeniRiyal(bill.remainingAmount)}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                bill.status === 'FullyPaid' ? 'bg-green-100 text-green-700' :
+                                bill.status === 'PartiallyPaid' ? 'bg-blue-100 text-blue-700' :
+                                bill.status === 'Cancelled' ? 'bg-gray-100 text-gray-500' :
+                                'bg-amber-100 text-amber-700'
+                              }`}>{bill.statusArabic}</span>
+                              {bill.isOverdue && <span className="mr-1 px-1.5 py-0.5 bg-red-100 text-red-600 rounded-full text-[9px] font-bold">متأخر!</span>}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500">{bill.dueDate ?? "—"}</td>
+                            <td className="px-4 py-3">
+                              {bill.status !== 'FullyPaid' && bill.status !== 'Cancelled' && (
+                                <button
+                                  onClick={() => { setSelectedBill(bill); setPayInstallmentAmount(""); setPayInstallmentMethod("cash"); setPayInstallmentDate(""); setPayInstallmentRef(""); setShowPayBillModal(true); }}
+                                  className="text-[10px] font-bold text-white bg-green-600 hover:bg-green-700 px-2.5 py-1 rounded-lg transition"
+                                >
+                                  سداد دفعة
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 10: EXPENDITURE APPROVALS */}
+          {activeTab === "approvals" && isAdmin && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+                <div className="space-y-1">
+                  <h3 className="font-extrabold text-sm text-gray-900">اعتماد المصروفات — لوحة الرقابة المالية</h3>
+                  <p className="text-[10px] text-gray-400">المصروفات التي تتجاوز 50,000 ريال تتطلب اعتماداً إدارياً قبل الترحيل للأستاذ العام</p>
+                </div>
+                <button
+                  onClick={fetchPendingExpenses}
+                  disabled={loadingPending}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition disabled:opacity-60"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingPending ? 'animate-spin' : ''}`} />
+                  تحديث
+                </button>
+              </div>
+
+              {loadingPending ? (
+                <div className="animate-pulse space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 bg-gray-50 rounded-xl" />)}</div>
+              ) : !pendingExpenses.length ? (
+                <div className="bg-white border border-gray-100 rounded-2xl p-10 text-center">
+                  <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400" />
+                  <p className="text-sm font-bold text-gray-600">لا توجد مصروفات قيد الاعتماد</p>
+                  <p className="text-[10px] text-gray-400 mt-1">جميع المصروفات تمت مراجعتها واعتمادها أو لا تتجاوز الحد المالي.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingExpenses.map((exp) => (
+                    <div key={exp.id} className="bg-white border border-amber-200 rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="space-y-1 text-right flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="bg-amber-100 text-amber-700 text-[9px] font-black px-2 py-0.5 rounded-full">قيد الاعتماد</span>
+                          <span className="font-mono text-[10px] text-gray-400">{exp.expenseNumber}</span>
+                        </div>
+                        <p className="font-bold text-sm text-gray-900">{exp.title}</p>
+                        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                          <span>{exp.categoryArabic}</span>
+                          <span>•</span>
+                          <span className="font-black text-red-600 font-mono text-sm">{formatYemeniRiyal(exp.amount)}</span>
+                          <span>•</span>
+                          <span>{exp.expenseDate}</span>
+                          {exp.supplierName && <><span>•</span><span>{exp.supplierName}</span></>}
+                        </div>
+                        {exp.notes && <p className="text-[10px] text-gray-400 italic">ملاحظة: {exp.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          id={`btn-approve-exp-${exp.id}`}
+                          onClick={() => { setSelectedExpense(exp); setExpenseApprovalNotes(""); setShowApproveModal(true); }}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white text-xs font-bold rounded-xl hover:bg-green-700 transition"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          اعتماد
+                        </button>
+                        <button
+                          id={`btn-reject-exp-${exp.id}`}
+                          onClick={() => { setSelectedExpense(exp); setExpenseRejectReason(""); setShowRejectExpenseModal(true); }}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          رفض
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 9: SETTINGS */}
           {activeTab === "settings" && isAdmin && (
             <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
@@ -1962,8 +2729,430 @@ export default function FinanceV2Page() {
         </div>
       </div>
 
+      {/* New Treasury Modal (Admin Only) */}
+      {showNewTreasuryModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-sm text-gray-900">إنشاء حساب مالي أو خزنة فرعية</h3>
+              <button onClick={() => setShowNewTreasuryModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateTreasury} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  اسم الخزنة / الحساب المالي: <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: الخزنة الحديدية الكبرى، حساب بنك الكريمي..."
+                  value={newTreasuryName}
+                  onChange={(e) => setNewTreasuryName(e.target.value)}
+                  className="w-full text-xs font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  نوع الحساب: <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={newTreasuryType}
+                  onChange={(e) => setNewTreasuryType(e.target.value)}
+                  className="w-full text-xs font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none bg-white"
+                >
+                  <option value="Vault">خزنة مادية (كاش)</option>
+                  <option value="Bank">حساب بنكي (شيكات / حوالات)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  الرصيد الافتتاحي المبدئي (YER):
+                </label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={newTreasuryOpeningBalance}
+                  onChange={(e) => setNewTreasuryOpeningBalance(e.target.value)}
+                  className="w-full text-xs font-mono font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                  min="0"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowNewTreasuryModal(false)}
+                  className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTreasury}
+                  className="px-4 py-2 bg-clinic-blue text-white text-xs font-bold rounded-xl transition hover:bg-clinic-blue/90 disabled:opacity-60"
+                >
+                  {isSubmittingTreasury ? "جاري الإنشاء والتقييد..." : "إنشاء الحساب"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* New Transfer Modal */}
+      {showNewTransferModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-sm text-gray-900">إنشاء طلب ترحيل سيولة نقدية</h3>
+              <button onClick={() => setShowNewTransferModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateTransfer} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  الخزنة المصدر (التي يخصم منها المبلغ):
+                </label>
+                <select
+                  value={transferSourceId}
+                  onChange={(e) => setTransferSourceId(e.target.value)}
+                  className="w-full text-xs font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none bg-white"
+                >
+                  <option value="">إيداع خارجي مباشر (بدون خصم من درج داخلي)</option>
+                  {treasuries.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} (المتوفر: {formatYemeniRiyal(t.balance)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  الخزنة المستهدفة (التي تستلم وتودع فيها السيولة): <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={transferDestId}
+                  onChange={(e) => setTransferDestId(e.target.value)}
+                  className="w-full text-xs font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none bg-white"
+                  required
+                >
+                  <option value="">-- اختر الخزنة/الحساب المستهدف --</option>
+                  {treasuries.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  المبلغ المطلوب ترحيله (YER): <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  placeholder="أدخل مبلغ التحويل بالريال اليمني..."
+                  value={transferAmount}
+                  onChange={(e) => setTransferAmount(e.target.value)}
+                  className="w-full text-xs font-mono font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                  required
+                  min="1"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  ملاحظات أو تفاصيل التسليم (اختياري):
+                </label>
+                <textarea
+                  placeholder="اكتب أي ملاحظات كاسم المسلم أو تفاصيل إضافية..."
+                  value={transferNotes}
+                  onChange={(e) => setTransferNotes(e.target.value)}
+                  rows={2}
+                  className="w-full text-xs px-3 py-2 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-start gap-2 text-blue-800">
+                <AlertCircle className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-[10px] leading-relaxed">
+                  <strong>معلومة أمان</strong>: عند إرسال الطلب، سيتم فوراً تجميد وخصم المبلغ من رصيد الخزنة المصدر لضمان دقة العهدة النقدية اليومية، ولن يتم إضافته للخزنة المستهدفة إلا بعد مطابقة وعد المحاسب الفعلي والقبول.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowNewTransferModal(false)}
+                  className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTransfer}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition disabled:opacity-60"
+                >
+                  {isSubmittingTransfer ? "جاري إرسال الطلب..." : "تقديم طلب الترحيل"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal Dialog */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-sm text-gray-900 text-red-600">رفض استلام وتأكيد عهدة التحويل</h3>
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setSelectedTransferId(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleRejectTransfer} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                  سبب الرفض وتفاصيل العجز المكتشف: <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  placeholder="يرجى كتابة سبب رفض الاستلام أو تفاصيل العجز بدقة..."
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  rows={3}
+                  className="w-full text-xs px-3 py-2 border border-red-200 rounded-xl focus:border-red-500 focus:outline-none resize-none"
+                  required
+                />
+              </div>
+
+              <div className="bg-red-50 border border-red-200 p-3 rounded-xl flex items-start gap-2 text-red-800">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-[10px] leading-relaxed">
+                  <strong>تنبيه الإرجاع</strong>: بمجرد رفض طلب الاستلام، سيتم تلقائياً فك قفل وتجميد المبلغ وإعادته بالكامل إلى رصيد الخزنة المصدر لتصحيح القيود ومراجعة أمين الصندوق.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRejectModal(false);
+                    setSelectedTransferId(null);
+                  }}
+                  className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTransfer}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition disabled:opacity-60"
+                >
+                  {isSubmittingTransfer ? "جاري الرفض والإرجاع..." : "تأكيد الرفض والإرجاع"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ────── MODAL: New Supplier Bill ────── */}
+      {showNewBillModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-lg w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-sm text-gray-900">تسجيل فاتورة مورد جديدة</h3>
+              <button onClick={() => setShowNewBillModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <form onSubmit={handleCreateBill} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">المورد <span className="text-red-500">*</span></label>
+                <select value={billSupplierId} onChange={e => setBillSupplierId(e.target.value)} required
+                  className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-amber-400 focus:outline-none bg-white">
+                  <option value="">— اختر المورد —</option>
+                  {suppliersList.map(s => <option key={s.id} value={s.id}>{s.name}{s.phone ? ` (${s.phone})` : ""}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">وصف الفاتورة / البضاعة <span className="text-red-500">*</span></label>
+                <input type="text" value={billDescription} onChange={e => setBillDescription(e.target.value)} required placeholder="مثال: مواد حشو كمبوزيت - دفعة مايو 2026"
+                  className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-amber-400 focus:outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">إجمالي الفاتورة (YER) <span className="text-red-500">*</span></label>
+                  <input type="number" value={billTotal} onChange={e => setBillTotal(e.target.value)} required min="1" placeholder="0"
+                    className="w-full text-xs font-mono text-center font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-amber-400 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">تاريخ الفاتورة</label>
+                  <input type="date" value={billDate} onChange={e => setBillDate(e.target.value)}
+                    className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-amber-400 focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">تاريخ استحقاق السداد (اختياري)</label>
+                <input type="date" value={billDueDate} onChange={e => setBillDueDate(e.target.value)}
+                  className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-amber-400 focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">ملاحظات (اختياري)</label>
+                <textarea value={billNotes} onChange={e => setBillNotes(e.target.value)} rows={2} placeholder="أي ملاحظات إضافية..."
+                  className="w-full text-xs px-3 py-2 border border-gray-200 rounded-xl focus:border-amber-400 focus:outline-none resize-none" />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button type="button" onClick={() => setShowNewBillModal(false)} className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition">إلغاء</button>
+                <button type="submit" disabled={isSubmittingBill} className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition disabled:opacity-60">
+                  {isSubmittingBill ? "جاري التسجيل..." : "تسجيل الفاتورة في نظام الذمم"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ────── MODAL: Pay Installment ────── */}
+      {showPayBillModal && selectedBill && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-sm text-gray-900">تسجيل دفعة على فاتورة</h3>
+              <button onClick={() => setShowPayBillModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+              <p className="text-[10px] font-bold text-amber-700">فاتورة: {selectedBill.billNumber} — {selectedBill.supplierName}</p>
+              <div className="flex items-center gap-4 text-[10px] text-amber-600">
+                <span>الإجمالي: <strong className="font-mono">{formatYemeniRiyal(selectedBill.totalAmount)}</strong></span>
+                <span>|</span>
+                <span>المدفوع: <strong className="font-mono">{formatYemeniRiyal(selectedBill.paidAmount)}</strong></span>
+                <span>|</span>
+                <span className="font-black text-red-600">المتبقي: <strong className="font-mono">{formatYemeniRiyal(selectedBill.remainingAmount)}</strong></span>
+              </div>
+            </div>
+            <form onSubmit={handlePayInstallment} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">مبلغ الدفعة (YER) <span className="text-red-500">*</span></label>
+                <input type="number" value={payInstallmentAmount} onChange={e => setPayInstallmentAmount(e.target.value)} required min="1" max={selectedBill.remainingAmount}
+                  placeholder={`أقصى مبلغ: ${formatYemeniRiyal(selectedBill.remainingAmount)}`}
+                  className="w-full text-xs font-mono text-center font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-green-400 focus:outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">طريقة الدفع</label>
+                  <select value={payInstallmentMethod} onChange={e => setPayInstallmentMethod(e.target.value)}
+                    className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-green-400 focus:outline-none bg-white">
+                    <option value="cash">نقداً</option>
+                    <option value="card">بطاقة بنكية</option>
+                    <option value="bank_transfer">تحويل بنكي</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 mb-1">تاريخ الدفع</label>
+                  <input type="date" value={payInstallmentDate} onChange={e => setPayInstallmentDate(e.target.value)}
+                    className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-green-400 focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">رقم المرجع / الإيصال البنكي (اختياري)</label>
+                <input type="text" value={payInstallmentRef} onChange={e => setPayInstallmentRef(e.target.value)} placeholder="مثال: TRF-20260525-001"
+                  className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-green-400 focus:outline-none" />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button type="button" onClick={() => setShowPayBillModal(false)} className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition">إلغاء</button>
+                <button type="submit" disabled={isSubmittingInstallment} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition disabled:opacity-60">
+                  {isSubmittingInstallment ? "جاري تسجيل الدفعة..." : "تأكيد الدفعة والترحيل للأستاذ العام"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ────── MODAL: Approve Expense ────── */}
+      {showApproveModal && selectedExpense && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-sm text-green-700">اعتماد مصروف</h3>
+              <button onClick={() => setShowApproveModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+              <p className="font-bold text-sm text-gray-900">{selectedExpense.title}</p>
+              <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                <span className="font-black text-green-700 font-mono text-base">{formatYemeniRiyal(selectedExpense.amount)}</span>
+                <span>•</span><span>{selectedExpense.categoryArabic}</span>
+                <span>•</span><span>{selectedExpense.expenseDate}</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-600">بتأكيدك الاعتماد، سيتم ترحيل هذا المصروف فوراً للأستاذ العام وخصمه من رصيد السيولة.</p>
+            <form onSubmit={handleApproveExpense} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">ملاحظات الاعتماد (اختياري)</label>
+                <textarea value={expenseApprovalNotes} onChange={e => setExpenseApprovalNotes(e.target.value)} rows={2}
+                  placeholder="أي ملاحظات على قرار الاعتماد..."
+                  className="w-full text-xs px-3 py-2 border border-gray-200 rounded-xl focus:border-green-400 focus:outline-none resize-none" />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button type="button" onClick={() => setShowApproveModal(false)} className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition">إلغاء</button>
+                <button type="submit" disabled={isProcessingExpense} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition disabled:opacity-60">
+                  {isProcessingExpense ? "جاري الاعتماد..." : "✓ اعتماد وترحيل للأستاذ العام"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ────── MODAL: Reject Expense ────── */}
+      {showRejectExpenseModal && selectedExpense && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-sm text-red-700">رفض مصروف</h3>
+              <button onClick={() => setShowRejectExpenseModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1">
+              <p className="font-bold text-sm text-gray-900">{selectedExpense.title}</p>
+              <p className="font-black text-red-600 font-mono">{formatYemeniRiyal(selectedExpense.amount)}</p>
+            </div>
+            <p className="text-[11px] text-gray-600">بتأكيد الرفض، سيتم إلغاء هذا المصروف نهائياً ولن يُرحَّل للأستاذ العام.</p>
+            <form onSubmit={handleRejectExpense} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 mb-1">سبب الرفض <span className="text-red-500">*</span></label>
+                <textarea value={expenseRejectReason} onChange={e => setExpenseRejectReason(e.target.value)} required rows={3}
+                  placeholder="اكتب سبباً واضحاً لرفض هذا المصروف..."
+                  className="w-full text-xs px-3 py-2 border border-red-200 rounded-xl focus:border-red-400 focus:outline-none resize-none" />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button type="button" onClick={() => setShowRejectExpenseModal(false)} className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition">إلغاء</button>
+                <button type="submit" disabled={isProcessingExpense} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition disabled:opacity-60">
+                  {isProcessingExpense ? "جاري الرفض..." : "✗ رفض وإلغاء المصروف"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Close Day Box Dialog Preview (Active in Sprint 2) */}
       {showCloseBoxDialog && (
+
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
             <div className="flex items-center justify-between border-b pb-3">

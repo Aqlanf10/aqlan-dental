@@ -21,11 +21,27 @@ public sealed class CreateExpenseRequest
     public string? ReceiptAttachmentUrl { get; init; }
 }
 
+public sealed class ApproveExpenseRequest
+{
+    public string? Notes { get; init; }
+}
+
+public sealed class RejectExpenseRequest
+{
+    public string Reason { get; init; } = string.Empty;
+}
+
 [ApiController]
 [Route("api/expenses")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
 public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
+    /// <summary>
+    /// Approval threshold in YER: expenses above this amount require managerial approval.
+    /// Can be made configurable via Settings table in future.
+    /// </summary>
+    private const decimal ApprovalThreshold = 50_000m;
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateExpenseRequest req)
     {
@@ -61,15 +77,22 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 return BadRequest(new { message = "أمر المختبر المحدد غير موجود" });
         }
 
-        // Generate sequential EXP number using advisory lock
+        // Determine approval status based on amount threshold
+        var needsApproval = req.Amount > ApprovalThreshold;
+        var approvalStatus = needsApproval ? ApprovalStatus.Pending : ApprovalStatus.NotRequired;
+
+        // Generate sequential EXP number using advisory lock (relational only)
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = Math.Abs("ExpenseNumber".GetHashCode()) % 100000;
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
             var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
             var prefix = $"EXP-{datePart}-";
+
+            if (db.Database.IsRelational())
+            {
+                var lockKey = Math.Abs("ExpenseNumber".GetHashCode()) % 100000;
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
 
             var lastExpense = await db.OperationalExpenses
                 .IgnoreQueryFilters()
@@ -101,37 +124,26 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 Notes = req.Notes?.Trim(),
                 ReceiptAttachmentUrl = req.ReceiptAttachmentUrl,
                 PaidBy = userId,
-                BranchId = branchId
+                BranchId = branchId,
+                ApprovalStatus = approvalStatus,
+                IsPostedToLedger = false
             };
 
             db.OperationalExpenses.Add(expense);
 
-            // Auto-create central ledger cashflow transaction (Outflow)
-            var cashflow = new CashFlowTransaction
+            // Auto-post to ledger ONLY if no approval is needed
+            if (!needsApproval)
             {
-                TransactionNumber = $"TX-{datePart}-OUT-{nextSeq:D3}",
-                Type = TransactionType.Outflow,
-                Category = FinancialCategory.OperationalExpense,
-                Amount = req.Amount,
-                PaymentMethod = req.PaymentMethod,
-                TransactionDate = date,
-                ReferenceId = expense.Id,
-                ReferenceNumber = expenseNumber,
-                Description = $"قيد مصروف تشغيلي: {expense.Title} ({GetCategoryArabic(category)})",
-                PerformedBy = userId,
-                BranchId = branchId
-            };
+                await PostToLedgerAsync(db, expense, nextSeq, datePart, userId, branchId);
+                expense.IsPostedToLedger = true;
+            }
 
-            db.CashFlowTransactions.Add(cashflow);
-
-            // If linked to lab order, update lab order status to "paid" or custom notes
+            // If linked to lab order, update lab order status to "paid"
             if (req.LabOrderId.HasValue)
             {
                 var labOrder = await db.LabOrders.FindAsync(req.LabOrderId.Value);
                 if (labOrder != null)
-                {
                     labOrder.Status = "paid";
-                }
             }
 
             await db.SaveChangesAsync();
@@ -148,7 +160,11 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 ExpenseDate = expense.ExpenseDate.ToString("yyyy-MM-dd"),
                 expense.PaymentMethod,
                 expense.Notes,
-                message = "تم تسجيل المصروف والترحيل المالي بنجاح"
+                ApprovalStatus = expense.ApprovalStatus.ToString(),
+                expense.IsPostedToLedger,
+                message = needsApproval
+                    ? $"تم تسجيل المصروف بنجاح. المبلغ ({req.Amount:N0} ريال) يتجاوز حد الاعتماد — في انتظار موافقة الإدارة قبل الترحيل."
+                    : "تم تسجيل المصروف والترحيل المالي بنجاح"
             });
         }
         catch
@@ -164,7 +180,8 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         [FromQuery] int pageSize = 20,
         [FromQuery] string? category = null,
         [FromQuery] string? fromDate = null,
-        [FromQuery] string? toDate = null)
+        [FromQuery] string? toDate = null,
+        [FromQuery] string? approvalStatus = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
@@ -172,6 +189,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         var query = db.OperationalExpenses
             .Include(e => e.Supplier)
             .Include(e => e.LabOrder)
+            .Include(e => e.ApprovedBy)
             .Where(e => e.IsActive)
             .AsQueryable();
 
@@ -186,6 +204,11 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             query = query.Where(e => e.Category == catFilter);
         }
 
+        if (!string.IsNullOrWhiteSpace(approvalStatus) && Enum.TryParse<ApprovalStatus>(approvalStatus, true, out var statusFilter))
+        {
+            query = query.Where(e => e.ApprovalStatus == statusFilter);
+        }
+
         if (!string.IsNullOrWhiteSpace(fromDate) && DateOnly.TryParse(fromDate, out var from))
         {
             query = query.Where(e => e.ExpenseDate >= from);
@@ -197,6 +220,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         }
 
         var total = await query.CountAsync();
+        var pendingCount = await db.OperationalExpenses
+            .Where(e => e.IsActive && e.ApprovalStatus == ApprovalStatus.Pending)
+            .CountAsync();
 
         var expenses = await query
             .OrderByDescending(e => e.ExpenseDate)
@@ -217,11 +243,131 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 LabOrderNumber = e.LabOrder != null ? e.LabOrder.OrderNumber : null,
                 e.Notes,
                 e.ReceiptAttachmentUrl,
+                ApprovalStatus = e.ApprovalStatus.ToString(),
+                e.IsPostedToLedger,
+                e.ApprovalNotes,
+                ApprovedByName = e.ApprovedBy != null ? e.ApprovedBy.Username : null,
+                ApprovedAt = e.ApprovedAt.HasValue ? e.ApprovedAt.Value.ToString("yyyy-MM-dd HH:mm") : null,
                 e.CreatedAt
             })
             .ToListAsync();
 
-        return Ok(new { data = expenses, total, page, pageSize });
+        return Ok(new { data = expenses, total, page, pageSize, pendingCount });
+    }
+
+    /// <summary>GET /api/expenses/pending — Returns all expenses awaiting approval.</summary>
+    [HttpGet("pending")]
+    public async Task<IActionResult> GetPending()
+    {
+        var expenses = await db.OperationalExpenses
+            .Include(e => e.Supplier)
+            .Where(e => e.IsActive && e.ApprovalStatus == ApprovalStatus.Pending)
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => new
+            {
+                e.Id,
+                e.ExpenseNumber,
+                e.Title,
+                Category = e.Category.ToString(),
+                CategoryArabic = GetCategoryArabic(e.Category),
+                e.Amount,
+                ExpenseDate = e.ExpenseDate.ToString("yyyy-MM-dd"),
+                e.PaymentMethod,
+                SupplierName = e.Supplier != null ? e.Supplier.Name : null,
+                e.Notes,
+                e.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(expenses);
+    }
+
+    /// <summary>POST /api/expenses/{id}/approve — Approve a pending expense and post to GL.</summary>
+    [HttpPost("{id:guid}/approve")]
+    [Authorize(Policy = "AdminAccess")]
+    public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveExpenseRequest req)
+    {
+        var expense = await db.OperationalExpenses.FindAsync(id);
+        if (expense == null || !expense.IsActive)
+            return NotFound(new { message = "المصروف غير موجود" });
+
+        if (expense.ApprovalStatus != ApprovalStatus.Pending)
+            return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var branchId = expense.BranchId;
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            expense.ApprovalStatus = ApprovalStatus.Approved;
+            expense.ApprovedById = userId;
+            expense.ApprovedAt = DateTime.UtcNow;
+            expense.ApprovalNotes = req.Notes?.Trim();
+
+            // Post to GL now that it's approved
+            var datePart = expense.ExpenseDate.ToString("yyyyMMdd");
+            var seqSuffix = expense.ExpenseNumber.Split('-').LastOrDefault() ?? "001";
+            if (!int.TryParse(seqSuffix, out var seq)) seq = 1;
+
+            var cashflow = await PostToLedgerAsync(db, expense, seq, datePart, userId, branchId);
+            expense.IsPostedToLedger = true;
+            expense.CashFlowTransactionId = cashflow.Id;
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                message = "تم اعتماد المصروف وترحيله للأستاذ العام بنجاح",
+                expense.Id,
+                expense.ExpenseNumber,
+                ApprovalStatus = expense.ApprovalStatus.ToString()
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    /// <summary>POST /api/expenses/{id}/reject — Reject a pending expense (does NOT post to GL).</summary>
+    [HttpPost("{id:guid}/reject")]
+    [Authorize(Policy = "AdminAccess")]
+    public async Task<IActionResult> Reject(Guid id, [FromBody] RejectExpenseRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Reason))
+            return BadRequest(new { message = "سبب الرفض مطلوب" });
+
+        var expense = await db.OperationalExpenses.FindAsync(id);
+        if (expense == null || !expense.IsActive)
+            return NotFound(new { message = "المصروف غير موجود" });
+
+        if (expense.ApprovalStatus != ApprovalStatus.Pending)
+            return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+
+        expense.ApprovalStatus = ApprovalStatus.Rejected;
+        expense.ApprovedById = userId;
+        expense.ApprovedAt = DateTime.UtcNow;
+        expense.ApprovalNotes = req.Reason.Trim();
+
+        // Soft-delete the expense since it's rejected
+        expense.IsActive = false;
+        expense.DeletedAt = DateTime.UtcNow;
+        expense.DeletedBy = userId;
+
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "تم رفض المصروف وإلغاؤه بنجاح",
+            expense.Id,
+            expense.ExpenseNumber,
+            ApprovalStatus = expense.ApprovalStatus.ToString()
+        });
     }
 
     [HttpDelete("{id:guid}")]
@@ -231,20 +377,41 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         if (expense == null || !expense.IsActive)
             return NotFound(new { message = "المصروف غير موجود" });
 
+        if (expense.ApprovalStatus == ApprovalStatus.Approved && expense.IsPostedToLedger)
+        {
+            // Only admin can delete posted expenses
+            if (!currentUser.IsAdmin)
+                return Forbid();
+        }
+
         var userId = currentUser.UserId;
 
         expense.IsActive = false;
         expense.DeletedAt = DateTime.UtcNow;
         expense.DeletedBy = userId;
 
-        // Deactive the linked cashflow ledger outflow transaction
-        var cashflow = await db.CashFlowTransactions
-            .FirstOrDefaultAsync(t => t.ReferenceId == expense.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
-        if (cashflow != null)
+        // Deactivate the linked cashflow ledger outflow transaction (if posted)
+        if (expense.CashFlowTransactionId.HasValue)
         {
-            cashflow.IsActive = false;
-            cashflow.DeletedAt = DateTime.UtcNow;
-            cashflow.DeletedBy = userId;
+            var cashflow = await db.CashFlowTransactions.FindAsync(expense.CashFlowTransactionId.Value);
+            if (cashflow != null)
+            {
+                cashflow.IsActive = false;
+                cashflow.DeletedAt = DateTime.UtcNow;
+                cashflow.DeletedBy = userId;
+            }
+        }
+        else
+        {
+            // Fallback: search by reference
+            var cashflow = await db.CashFlowTransactions
+                .FirstOrDefaultAsync(t => t.ReferenceId == expense.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
+            if (cashflow != null)
+            {
+                cashflow.IsActive = false;
+                cashflow.DeletedAt = DateTime.UtcNow;
+                cashflow.DeletedBy = userId;
+            }
         }
 
         // If linked to lab order, restore lab order status back to "received"
@@ -252,14 +419,35 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         {
             var labOrder = await db.LabOrders.FindAsync(expense.LabOrderId.Value);
             if (labOrder != null)
-            {
                 labOrder.Status = "received";
-            }
         }
 
         await db.SaveChangesAsync();
 
         return Ok(new { message = "تم حذف قيد المصروف وإلغاء الترحيل المالي بنجاح" });
+    }
+
+    // --------------- Helpers ---------------
+
+    private static async Task<CashFlowTransaction> PostToLedgerAsync(
+        AppDbContext db, OperationalExpense expense, int seq, string datePart, Guid userId, Guid branchId)
+    {
+        var cashflow = new CashFlowTransaction
+        {
+            TransactionNumber = $"TX-{datePart}-OUT-{seq:D3}",
+            Type = TransactionType.Outflow,
+            Category = FinancialCategory.OperationalExpense,
+            Amount = expense.Amount,
+            PaymentMethod = expense.PaymentMethod,
+            TransactionDate = expense.ExpenseDate,
+            ReferenceId = expense.Id,
+            ReferenceNumber = expense.ExpenseNumber,
+            Description = $"قيد مصروف تشغيلي: {expense.Title} ({GetCategoryArabic(expense.Category)})",
+            PerformedBy = userId,
+            BranchId = branchId
+        };
+        db.CashFlowTransactions.Add(cashflow);
+        return cashflow;
     }
 
     private static string GetCategoryArabic(ExpenseCategory category) => category switch

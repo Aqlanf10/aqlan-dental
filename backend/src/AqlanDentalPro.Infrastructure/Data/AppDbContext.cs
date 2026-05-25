@@ -104,6 +104,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<OperationalExpense> OperationalExpenses => Set<OperationalExpense>();
     public DbSet<CashFlowTransaction> CashFlowTransactions => Set<CashFlowTransaction>();
 
+    // Sprint 21 — Treasuries & Vault Transfers
+    public DbSet<Treasury> Treasuries => Set<Treasury>();
+    public DbSet<VaultTransfer> VaultTransfers => Set<VaultTransfer>();
+
+    // Sprint 22 — Accounts Payable (Supplier Bills)
+    public DbSet<SupplierBill> SupplierBills => Set<SupplierBill>();
+    public DbSet<SupplierBillPayment> SupplierBillPayments => Set<SupplierBillPayment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

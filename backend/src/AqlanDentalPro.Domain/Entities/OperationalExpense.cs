@@ -44,4 +44,32 @@ public class OperationalExpense : BaseEntity
     /// <summary>ID of the branch responsible for this expense.</summary>
     public Guid BranchId { get; set; }
     public Branch? Branch { get; set; }
+
+    // --- Sprint 22: Tiered Expenditure Approval ---
+
+    /// <summary>
+    /// Approval status. Expenses above the configured threshold (default: 50,000 YER)
+    /// are auto-placed in Pending until a manager/admin approves.
+    /// </summary>
+    public ApprovalStatus ApprovalStatus { get; set; } = ApprovalStatus.NotRequired;
+
+    /// <summary>ID of the manager/admin who approved or rejected this expense.</summary>
+    public Guid? ApprovedById { get; set; }
+    public User? ApprovedBy { get; set; }
+
+    /// <summary>Timestamp when the approval/rejection decision was made.</summary>
+    public DateTime? ApprovedAt { get; set; }
+
+    /// <summary>Reason for rejection if the expense was rejected by management.</summary>
+    public string? ApprovalNotes { get; set; }
+
+    /// <summary>
+    /// Whether this expense has been posted to the central CashFlow ledger (GL).
+    /// Only approved or NotRequired expenses are posted.
+    /// </summary>
+    public bool IsPostedToLedger { get; set; } = false;
+
+    /// <summary>FK to the resulting CashFlowTransaction ledger entry (null until posted).</summary>
+    public Guid? CashFlowTransactionId { get; set; }
+    public CashFlowTransaction? CashFlowTransaction { get; set; }
 }

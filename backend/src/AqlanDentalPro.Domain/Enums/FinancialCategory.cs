@@ -11,5 +11,6 @@ public enum FinancialCategory
     DoctorCommission,   // صرف عمولة طبيب
     OperationalExpense, // مصروف تشغيلي (إيجار، منافع، إلخ)
     Refund,             // استرداد دفعة مريض
-    GeneralCost         // تكاليف عامة
+    GeneralCost,        // تكاليف عامة
+    InternalTransfer    // تحويل سيولة داخلي بين الخزائن
 }

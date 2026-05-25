@@ -449,3 +449,46 @@ export function useFinanceSummary() {
     refetchInterval: 60_000,
   });
 }
+
+// ─── Tomorrow's Appointments (for bulk SMS reminders) ──────────────────────
+export function useTomorrowAppointments(doctorId?: string) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split("T")[0];
+
+  return useQuery<TodayJourneyItem[]>({
+    queryKey: ["daily-ops", "tomorrow", tomorrowStr, doctorId],
+    queryFn: async () => {
+      const qs = new URLSearchParams();
+      qs.set("date", tomorrowStr);
+      if (doctorId) qs.set("doctorId", doctorId);
+      const { data } = await api.get(`/api/patient-journey/today?${qs.toString()}`);
+      return data;
+    },
+    staleTime: 60_000,
+    enabled: false, // Only fetch on demand
+  });
+}
+
+// ─── Send Bulk SMS Reminders ───────────────────────────────────────────────
+export function useSendBulkSmsReminders() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      appointmentIds: string[];
+    }) => {
+      // Send reminders for each appointment
+      const results = await Promise.allSettled(
+        params.appointmentIds.map(id =>
+          api.post(`/api/appointments/${id}/send-reminder`)
+        )
+      );
+      const succeeded = results.filter(r => r.status === "fulfilled").length;
+      const failed = results.filter(r => r.status === "rejected").length;
+      return { succeeded, failed };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+    },
+  });
+}

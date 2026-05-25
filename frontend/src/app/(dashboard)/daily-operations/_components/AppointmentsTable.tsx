@@ -11,11 +11,12 @@ import {
   Calendar, UserCheck, ClipboardList, DoorOpen, CheckCircle,
   CreditCard, CalendarPlus, MessageCircle, XCircle,
   UserX, MoreHorizontal, Eye, Phone, Clock,
-  Building2, PanelRight, Timer,
+  Building2, PanelRight, Timer, AlertCircle, Heart,
 } from "lucide-react";
 import {
   APPT_STATUS_LABELS, STATUS_COLORS, ACTION_LABELS,
   fmtTime, normalizePhone, ORANGE, NAVY,
+  isAppointmentOverdue, fmtOverdueMinutes, fmtSessionDuration,
   type TodayJourneyItem,
 } from "../_lib/constants";
 
@@ -81,6 +82,50 @@ function WaitTimeChip({ minutes }: { minutes?: number }) {
       style={{ background: "#fff7ed", color: ORANGE }}>
       <Timer className="w-2.5 h-2.5" />
       ~{minutes < 60 ? `${minutes}د` : `${Math.floor(minutes / 60)}س ${minutes % 60}د`}
+    </span>
+  );
+}
+
+/* ─── Medical Alert Badge ──────────────────────────────────────────────────── */
+function MedicalAlertBadge() {
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold"
+      style={{ background: "#fef2f2", color: "#dc2626" }}>
+      <Heart className="w-2.5 h-2.5" />
+    </span>
+  );
+}
+
+/* ─── Overdue Badge ─────────────────────────────────────────────────────────── */
+function OverdueBadge({ text }: { text: string }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold animate-pulse"
+      style={{ background: "#fef2f2", color: "#ef4444" }}>
+      <AlertCircle className="w-2.5 h-2.5" />
+      {text}
+    </span>
+  );
+}
+
+/* ─── Session Duration Chip ─────────────────────────────────────────────────── */
+function SessionDurationChip({ since }: { since?: string }) {
+  const text = fmtSessionDuration(since);
+  if (!text) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold"
+      style={{ background: "#faf5ff", color: "#9333ea" }}>
+      <Clock className="w-2.5 h-2.5" />
+      {text}
+    </span>
+  );
+}
+
+/* ─── New Patient Badge ─────────────────────────────────────────────────────── */
+function NewPatientBadge() {
+  return (
+    <span className="inline-flex items-center px-1 py-0.5 rounded text-[8px] font-extrabold"
+      style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}>
+      جديد
     </span>
   );
 }
@@ -240,15 +285,26 @@ function AppointmentRow({
   item: TodayJourneyItem; isDoctor: boolean; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
+  const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
 
   return (
-    <tr className="border-b hover:bg-[#f8fafc] transition-colors" style={{ borderColor: "#f1f5f9" }}>
-      <td className="py-2.5 px-2 text-sm font-bold" style={{ color: NAVY }}>{fmtTime(item.appointmentTime)}</td>
+    <tr className="border-b hover:bg-[#f8fafc] transition-colors" style={{
+      borderColor: "#f1f5f9",
+      background: overdueText ? "#fef2f208" : undefined,
+    }}>
+      <td className="py-2.5 px-2 text-sm font-bold" style={{ color: NAVY }}>
+        {fmtTime(item.appointmentTime)}
+        {overdueText && <OverdueBadge text={overdueText} />}
+      </td>
       <td className="py-2.5 px-2">
-        <button onClick={() => onOpenSidePanel(item)} className="text-sm font-semibold hover:underline flex items-center gap-1.5" style={{ color: "#3d7ab5" }}>
-          {item.patientName}
-          <PanelRight className="w-3 h-3 opacity-40" />
-        </button>
+        <div className="flex items-center gap-1">
+          {item.hasMedicalAlerts && <MedicalAlertBadge />}
+          <button onClick={() => onOpenSidePanel(item)} className="text-sm font-semibold hover:underline flex items-center gap-1.5" style={{ color: "#3d7ab5" }}>
+            {item.patientName}
+            <PanelRight className="w-3 h-3 opacity-40" />
+          </button>
+          {item.visitCount != null && item.visitCount <= 1 && <NewPatientBadge />}
+        </div>
       </td>
       {!isDoctor && (
         <td className="py-2.5 px-2">
@@ -272,6 +328,9 @@ function AppointmentRow({
             {item.roomName}
           </span>
         ) : "—"}
+        {(item.appointmentStatus === "InRoom" || item.appointmentStatus === "InProgress") && item.inRoomSince && (
+          <SessionDurationChip since={item.inRoomSince} />
+        )}
       </td>
       <td className="py-2.5 px-2">
         <div className="flex items-center gap-1.5">
@@ -338,24 +397,34 @@ function MobileCard({
   item: TodayJourneyItem; isDoctor: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
+  const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
 
   return (
-    <div className="rounded-xl border p-3" style={{ borderColor: "#e8f0f9", background: "#fff" }}>
+    <div className="rounded-xl border p-3" style={{
+      borderColor: overdueText ? "#fecaca" : "#e8f0f9",
+      background: overdueText ? "#fef2f208" : "#fff",
+    }}>
       <div className="flex items-center gap-2">
         <span className="text-sm font-bold" style={{ color: NAVY }}>{fmtTime(item.appointmentTime)}</span>
         <StatusBadge status={item.appointmentStatus} />
         {queueWaitMinutes && <WaitTimeChip minutes={queueWaitMinutes} />}
+        {overdueText && <OverdueBadge text={overdueText} />}
         <div className="flex-1" />
         <button onClick={onToggle} className="p-1 rounded-lg hover:bg-gray-50">
           <MoreHorizontal className="w-4 h-4 text-gray-400" />
         </button>
       </div>
       <div className="mt-1.5 flex items-center gap-2">
+        {item.hasMedicalAlerts && <MedicalAlertBadge />}
         <button onClick={() => onOpenSidePanel(item)} className="text-sm font-semibold" style={{ color: "#3d7ab5" }}>
           {item.patientName}
         </button>
+        {item.visitCount != null && item.visitCount <= 1 && <NewPatientBadge />}
         <span className="text-xs" style={{ color: "#64748b" }}>{item.doctorName}</span>
         <NextActionBadge action={item.nextAction} />
+        {(item.appointmentStatus === "InRoom" || item.appointmentStatus === "InProgress") && item.inRoomSince && (
+          <SessionDurationChip since={item.inRoomSince} />
+        )}
       </div>
 
       {expanded && (

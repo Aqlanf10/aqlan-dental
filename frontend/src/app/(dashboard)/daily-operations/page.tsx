@@ -8,6 +8,7 @@ import {
   Stethoscope, AlertTriangle, Search, RefreshCw, ArrowLeft,
   UserCheck, Globe, Plus, CalendarClock, Route,
   Wallet, UserPlus, Keyboard, Bell, BellOff,
+  Printer, Users, Activity, ArrowRight, Megaphone, Building2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
@@ -18,8 +19,9 @@ import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 import {
   NAVY, BLUE, ORANGE,
   TABS,
-  fmtDate, getTodayStr, fmtRial,
+  fmtDate, getTodayStr, fmtRial, fmtTime,
   computeDayStats, filterByTab,
+  computeRoomOccupancy, computeDoctorWorkload, getNextPatient,
   isDoctorRole,
   type TodayJourneyItem, type TabKey, type UndoAction,
 } from "./_lib/constants";
@@ -48,6 +50,8 @@ import {
   useCompleteVisit,
   useWalkInPatient,
   useQueueWaitTime,
+  useTomorrowAppointments,
+  useSendBulkSmsReminders,
 } from "./_lib/hooks";
 
 import AppointmentsTable from "./_components/AppointmentsTable";
@@ -62,6 +66,7 @@ import {
   UndoToast,
   PatientSidePanel,
   KeyboardShortcutsHelp,
+  BulkSmsModal,
 } from "./_components/Modals";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -140,6 +145,10 @@ export default function DailyOperationsPage() {
   // ── Improvement 2: Queue wait time ──
   const { data: queueWaitTime } = useQueueWaitTime();
 
+  // ── Tomorrow's appointments for bulk SMS ──
+  const { data: tomorrowItems = [], refetch: refetchTomorrow } = useTomorrowAppointments();
+  const bulkSmsMutation = useSendBulkSmsReminders();
+
   // ── Mutations ──
   const intakeMutation = useIntake();
   const sendToQueueMutation = useSendToQueue();
@@ -178,6 +187,9 @@ export default function DailyOperationsPage() {
   // ── Improvement 7: Keyboard shortcuts help ──
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
+  // ── Bulk SMS modal ──
+  const [bulkSmsModalOpen, setBulkSmsModalOpen] = useState(false);
+
   // ── Sound toggle ──
   const [soundEnabled, setSoundEnabled] = useState(true);
 
@@ -187,6 +199,15 @@ export default function DailyOperationsPage() {
 
   // ── Computed ──
   const dayStats = useMemo(() => computeDayStats(items, financeSummary), [items, financeSummary]);
+
+  // ── Room occupancy ──
+  const roomOccupancy = useMemo(() => computeRoomOccupancy(rooms, items), [rooms, items]);
+
+  // ── Doctor workload ──
+  const doctorWorkload = useMemo(() => computeDoctorWorkload(items), [items]);
+
+  // ── Next patient to call ──
+  const nextPatient = useMemo(() => getNextPatient(items), [items]);
 
   const filteredItems = useMemo(() => {
     let result = filterByTab(items, activeTab);
@@ -562,6 +583,19 @@ export default function DailyOperationsPage() {
     }
   }, [walkInMutation]);
 
+  // ── Bulk SMS reminders ──
+  const handleBulkSms = useCallback(async () => {
+    try {
+      const result = await bulkSmsMutation.mutateAsync({
+        appointmentIds: tomorrowItems.map(i => i.appointmentId),
+      });
+      toast.success(`تم إرسال ${result.succeeded} تذكير${result.failed > 0 ? ` (فشل ${result.failed})` : ""}`);
+      setBulkSmsModalOpen(false);
+    } catch {
+      toast.error("فشل إرسال التذكيرات");
+    }
+  }, [bulkSmsMutation, tomorrowItems]);
+
   // ── Visible quick links ──
   const visibleQuickLinks = useMemo(() =>
     QUICK_LINKS.filter(l => hasPermission(user, l.perm)),
@@ -593,6 +627,10 @@ export default function DailyOperationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Last updated */}
+          <span className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>
+            آخر تحديث: {new Date().toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}
+          </span>
           {/* SignalR indicator */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
             style={{ background: signalrConnected ? "#f0fdf4" : "#fef2f2", color: signalrConnected ? "#16a34a" : "#ef4444",
@@ -627,6 +665,24 @@ export default function DailyOperationsPage() {
             title="مريض مشي (Ctrl+N)">
             <UserPlus className="w-4 h-4" />
             مريض مشي
+          </button>
+          {/* Bulk SMS reminders */}
+          {!isDoctor && (
+            <button onClick={() => { refetchTomorrow(); setBulkSmsModalOpen(true); }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-bold transition"
+              style={{ background: "#3d7ab50d", color: "#3d7ab5", border: "1px solid #3d7ab520" }}
+              title="إرسال تذكيرات لمواعيد الغد">
+              <Megaphone className="w-4 h-4" />
+              تذكيرات الغد
+            </button>
+          )}
+          {/* Print schedule */}
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition"
+            style={{ background: NAVY + "0d", color: NAVY, border: `1px solid ${NAVY}20` }}
+            title="طباعة جدول اليوم">
+            <Printer className="w-4 h-4" />
+            طباعة
           </button>
           <Link href="/"
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition"
@@ -712,7 +768,7 @@ export default function DailyOperationsPage() {
       </div>
 
       {/* ═══ Summary Cards ═══ */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2.5">
         <SummaryCard icon={Calendar} label="مواعيد اليوم" value={dayStats.totalAppointments} color={ORANGE} />
         <SummaryCard icon={UserCheck} label="حضروا" value={dayStats.arrived} color="#16a34a" />
         <SummaryCard icon={Clock} label="في الانتظار" value={dayStats.waiting} color="#d97706" />
@@ -726,6 +782,125 @@ export default function DailyOperationsPage() {
           value={fmtRial(dayStats.overdueAmount)}
           color="#ef4444"
           subValue={financeSummary?.overdueAmount ? "يحتاج متابعة" : undefined} />
+        <SummaryCard icon={AlertTriangle} label="معدل عدم الحضور"
+          value={`${dayStats.noShowRate}%`}
+          color={dayStats.noShowRate > 20 ? "#ef4444" : "#f5922e"}
+          subValue={dayStats.noShowRate > 20 ? "يحتاج متابعة" : undefined} />
+        <SummaryCard icon={Clock} label="مواعيد متأخرة"
+          value={dayStats.overdueAppointments}
+          color={dayStats.overdueAppointments > 0 ? "#ef4444" : "#94a3b8"}
+          subValue={dayStats.overdueAppointments > 0 ? "لم يحضروا بعد" : undefined} />
+      </div>
+
+      {/* ═══ Next Patient Card (Doctor view) ═══ */}
+      {nextPatient && (
+        <div className="rounded-xl border p-4" style={{ borderColor: "#e8f0f9", background: "linear-gradient(135deg, #1a3a5c08, #3d7ab508)" }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: NAVY }}>
+                <Activity className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <div className="text-xs font-bold" style={{ color: "#64748b" }}>المريض القادم</div>
+                <div className="text-lg font-extrabold" style={{ color: NAVY }}>{nextPatient.patientName}</div>
+                <div className="text-xs" style={{ color: "#94a3b8" }}>
+                  {nextPatient.doctorName} — {nextPatient.serviceName ?? "—"} — {fmtTime(nextPatient.appointmentTime)}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {nextPatient.hasMedicalAlerts && (
+                <span className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: "#fef2f2", color: "#dc2626" }}>
+                  ⚠ تنبيه طبي
+                </span>
+              )}
+              {nextPatient.nextAction === "CallPatient" && (
+                <button onClick={() => handleCallPatient(nextPatient)}
+                  className="px-4 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-1.5"
+                  style={{ background: ORANGE }}>
+                  نداء المريض <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+              {nextPatient.nextAction === "EnterRoom" && (
+                <button onClick={() => handleEnterRoom(nextPatient)}
+                  className="px-4 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-1.5"
+                  style={{ background: "#9333ea" }}>
+                  دخول الغرفة <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+              {(nextPatient.nextAction === "Intake" || nextPatient.nextAction === "SendToQueue") && (
+                <button onClick={() => handleIntake(nextPatient)}
+                  className="px-4 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-1.5"
+                  style={{ background: "#16a34a" }}>
+                  تسجيل حضور <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Room Status & Doctor Workload ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Room Status */}
+        {roomOccupancy.length > 0 && (
+          <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e8f0f9" }}>
+            <h3 className="text-xs font-bold mb-3 flex items-center gap-1.5" style={{ color: NAVY }}>
+              <Building2 className="w-3.5 h-3.5" /> حالة الغرف
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {roomOccupancy.map(room => (
+                <div key={room.roomId}
+                  className="px-3 py-2.5 rounded-lg text-center"
+                  style={{
+                    background: room.isOccupied ? "#faf5ff" : "#f0fdf4",
+                    border: `1px solid ${room.isOccupied ? "#e9d5ff" : "#bbf7d0"}`,
+                  }}>
+                  <div className="text-[11px] font-bold" style={{ color: room.isOccupied ? "#9333ea" : "#16a34a" }}>
+                    {room.roomName}
+                  </div>
+                  {room.isOccupied ? (
+                    <div className="text-[9px] mt-0.5" style={{ color: "#64748b" }}>
+                      {room.patientName}
+                    </div>
+                  ) : (
+                    <div className="text-[9px] mt-0.5" style={{ color: "#94a3b8" }}>فارغة</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Doctor Workload */}
+        {doctorWorkload.length > 0 && !isDoctor && (
+          <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e8f0f9" }}>
+            <h3 className="text-xs font-bold mb-3 flex items-center gap-1.5" style={{ color: NAVY }}>
+              <Users className="w-3.5 h-3.5" /> عبء الأطباء اليوم
+            </h3>
+            <div className="space-y-2">
+              {doctorWorkload.map(dw => (
+                <div key={dw.doctorId} className="flex items-center gap-2">
+                  <div className="text-xs font-bold flex-shrink-0 w-24 truncate" style={{ color: NAVY }}>{dw.doctorName}</div>
+                  <div className="flex-1 h-5 rounded-full overflow-hidden" style={{ background: "#f1f5f9" }}>
+                    <div className="h-full rounded-full flex items-center justify-end px-2 transition-all"
+                      style={{
+                        width: `${Math.min(100, (dw.totalPatients / Math.max(dayStats.totalAppointments, 1)) * 100)}%`,
+                        background: dw.inClinic > 0 ? "#9333ea" : dw.waiting > 0 ? ORANGE : "#16a34a",
+                      }}>
+                      <span className="text-[9px] font-extrabold text-white">{dw.totalPatients}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 text-[9px] font-bold flex-shrink-0">
+                    <span style={{ color: "#16a34a" }}>✓{dw.completed}</span>
+                    <span style={{ color: "#9333ea" }}>🏥{dw.inClinic}</span>
+                    <span style={{ color: ORANGE }}>⏳{dw.waiting}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ═══ Tabs ═══ */}
@@ -895,6 +1070,15 @@ export default function DailyOperationsPage() {
       <KeyboardShortcutsHelp
         open={shortcutsHelpOpen}
         onClose={() => setShortcutsHelpOpen(false)}
+      />
+
+      {/* Bulk SMS Modal */}
+      <BulkSmsModal
+        open={bulkSmsModalOpen}
+        onClose={() => setBulkSmsModalOpen(false)}
+        tomorrowItems={tomorrowItems}
+        isPending={bulkSmsMutation.isPending}
+        onConfirm={handleBulkSms}
       />
     </div>
   );

@@ -21,6 +21,7 @@ export interface TodayJourneyItem {
   serviceId?: string;
   serviceName?: string;
   roomName?: string;
+  roomId?: string;
   queueItemId?: string;
   queueStatus?: string;
   visitId?: string;
@@ -29,6 +30,9 @@ export interface TodayJourneyItem {
   consultationFeePaid?: boolean;
   checkoutStatus?: string;
   nextAction: string;
+  hasMedicalAlerts?: boolean;
+  visitCount?: number;
+  inRoomSince?: string; // ISO timestamp when patient entered room
 }
 
 // ─── Summary stats for cards ─────────────────────────────────────────────────
@@ -41,6 +45,28 @@ export interface DayStats {
   noShow: number;
   todayPayments: number;
   overdueAmount: number;
+  noShowRate: number; // percentage
+  overdueAppointments: number; // appointments past their time without arrival
+}
+
+// ─── Room occupancy info ──────────────────────────────────────────────────────
+export interface RoomOccupancy {
+  roomId: string;
+  roomName: string;
+  isOccupied: boolean;
+  patientName?: string;
+  doctorName?: string;
+  since?: string;
+}
+
+// ─── Doctor workload ──────────────────────────────────────────────────────────
+export interface DoctorWorkload {
+  doctorId: string;
+  doctorName: string;
+  totalPatients: number;
+  completed: number;
+  inClinic: number;
+  waiting: number;
 }
 
 // ─── Doctor option ───────────────────────────────────────────────────────────
@@ -292,16 +318,110 @@ export function inputCls(hasError = false): string {
 
 // ─── Compute DayStats from journey items + finance summary ────────────────────
 export function computeDayStats(items: TodayJourneyItem[], financeSummary?: FinanceSummaryData | null): DayStats {
+  const totalAppointments = items.length;
+  const noShow = items.filter(i => i.appointmentStatus === "NoShow").length;
+  const now = new Date();
+  const overdueAppointments = items.filter(i => {
+    if (i.appointmentStatus !== "Scheduled" && i.appointmentStatus !== "Confirmed") return false;
+    // Parse appointment time — format can be "HH:mm" or ISO
+    const timeStr = i.appointmentTime;
+    if (!timeStr) return false;
+    let aptDate: Date;
+    if (timeStr.length === 5) {
+      const [h, m] = timeStr.split(":").map(Number);
+      aptDate = new Date();
+      aptDate.setHours(h, m, 0, 0);
+    } else {
+      aptDate = new Date(timeStr);
+    }
+    // Overdue if appointment time is more than 15 minutes in the past
+    return now.getTime() - aptDate.getTime() > 15 * 60 * 1000;
+  }).length;
+
   return {
-    totalAppointments: items.length,
+    totalAppointments,
     arrived: items.filter(i => i.appointmentStatus === "Arrived").length,
     waiting: items.filter(i => i.queueStatus === "Waiting" || i.queueStatus === "Called").length,
     inClinic: items.filter(i => ["InRoom", "InProgress"].includes(i.appointmentStatus)).length,
     completed: items.filter(i => i.appointmentStatus === "Completed").length,
-    noShow: items.filter(i => i.appointmentStatus === "NoShow").length,
+    noShow,
     todayPayments: financeSummary?.todayCollected ?? 0,
     overdueAmount: financeSummary?.overdueAmount ?? 0,
+    noShowRate: totalAppointments > 0 ? Math.round((noShow / totalAppointments) * 100) : 0,
+    overdueAppointments,
   };
+}
+
+// ─── Compute room occupancy ──────────────────────────────────────────────────
+export function computeRoomOccupancy(
+  rooms: RoomOption[],
+  items: TodayJourneyItem[]
+): RoomOccupancy[] {
+  return rooms.map(room => {
+    const occupant = items.find(i =>
+      i.roomId === room.id &&
+      (i.appointmentStatus === "InRoom" || i.appointmentStatus === "InProgress" ||
+       i.queueStatus === "InRoom" || i.queueStatus === "InProgress")
+    );
+    return {
+      roomId: room.id,
+      roomName: room.arabicName,
+      isOccupied: !!occupant,
+      patientName: occupant?.patientName,
+      doctorName: occupant?.doctorName,
+      since: occupant?.inRoomSince,
+    };
+  });
+}
+
+// ─── Compute doctor workload ─────────────────────────────────────────────────
+export function computeDoctorWorkload(items: TodayJourneyItem[]): DoctorWorkload[] {
+  const map = new Map<string, DoctorWorkload>();
+  for (const item of items) {
+    let entry = map.get(item.doctorId);
+    if (!entry) {
+      entry = { doctorId: item.doctorId, doctorName: item.doctorName, totalPatients: 0, completed: 0, inClinic: 0, waiting: 0 };
+      map.set(item.doctorId, entry);
+    }
+    entry.totalPatients++;
+    if (item.appointmentStatus === "Completed") entry.completed++;
+    if (["InRoom", "InProgress"].includes(item.appointmentStatus)) entry.inClinic++;
+    if (item.queueStatus === "Waiting" || item.queueStatus === "Called" || item.appointmentStatus === "Waiting") entry.waiting++;
+  }
+  return Array.from(map.values());
+}
+
+// ─── Get next patient to be called/entered ────────────────────────────────────
+export function getNextPatient(items: TodayJourneyItem[]): TodayJourneyItem | null {
+  // Priority: first patient in queue waiting to be called
+  const waitingToCall = items.find(i =>
+    i.queueStatus === "Waiting" && i.nextAction === "CallPatient"
+  );
+  if (waitingToCall) return waitingToCall;
+  // Then: patient called and waiting to enter room
+  const waitingToEnter = items.find(i =>
+    i.queueStatus === "Called" && i.nextAction === "EnterRoom"
+  );
+  if (waitingToEnter) return waitingToEnter;
+  // Then: scheduled patient who needs intake
+  const needsIntake = items.find(i =>
+    (i.appointmentStatus === "Scheduled" || i.appointmentStatus === "Confirmed" || i.appointmentStatus === "Arrived") &&
+    (i.nextAction === "Intake" || i.nextAction === "SendToQueue")
+  );
+  return needsIntake ?? null;
+}
+
+// ─── Format session duration ─────────────────────────────────────────────────
+export function fmtSessionDuration(sinceIso?: string): string {
+  if (!sinceIso) return "";
+  const start = new Date(sinceIso).getTime();
+  const diffMs = Date.now() - start;
+  if (diffMs < 0) return "";
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `${mins} د`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hrs}س ${remMins}د` : `${hrs}س`;
 }
 
 // ─── Filter items by tab ─────────────────────────────────────────────────────
@@ -348,4 +468,39 @@ export function isReceptionRole(role: string): boolean {
 
 export function isAccountantRole(role: string): boolean {
   return role === "Accountant";
+}
+
+// ─── Check if appointment is overdue (past time + 15 min, still Scheduled/Confirmed) ──
+export function isAppointmentOverdue(item: TodayJourneyItem): boolean {
+  if (item.appointmentStatus !== "Scheduled" && item.appointmentStatus !== "Confirmed") return false;
+  const timeStr = item.appointmentTime;
+  if (!timeStr) return false;
+  const now = new Date();
+  let aptDate: Date;
+  if (timeStr.length === 5) {
+    const [h, m] = timeStr.split(":").map(Number);
+    aptDate = new Date();
+    aptDate.setHours(h, m, 0, 0);
+  } else {
+    aptDate = new Date(timeStr);
+  }
+  return now.getTime() - aptDate.getTime() > 15 * 60 * 1000;
+}
+
+// ─── Format overdue minutes ──────────────────────────────────────────────────
+export function fmtOverdueMinutes(item: TodayJourneyItem): string {
+  const timeStr = item.appointmentTime;
+  if (!timeStr) return "";
+  let aptDate: Date;
+  if (timeStr.length === 5) {
+    const [h, m] = timeStr.split(":").map(Number);
+    aptDate = new Date();
+    aptDate.setHours(h, m, 0, 0);
+  } else {
+    aptDate = new Date(timeStr);
+  }
+  const diffMs = Date.now() - aptDate.getTime();
+  if (diffMs <= 15 * 60 * 1000) return "";
+  const overdueMins = Math.floor((diffMs - 15 * 60 * 1000) / 60000);
+  return overdueMins < 60 ? `متأخر ${overdueMins} د` : `متأخر ${Math.floor(overdueMins / 60)}س ${overdueMins % 60}د`;
 }

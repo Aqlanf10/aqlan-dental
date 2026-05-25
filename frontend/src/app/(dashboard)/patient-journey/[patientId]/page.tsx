@@ -7,10 +7,11 @@ import {
   Route, Stethoscope, CreditCard, Wrench, HeartPulse, Clock,
   MessageSquare, FileText, RefreshCw, CalendarCheck, UserCheck,
   Megaphone, DoorOpen, PlayCircle, AlertTriangle,
-  CheckCircle2,
-  Calendar, Printer,
-  Plus, Save, ArrowUpRight, CircleDot, Info,
-  Receipt, ExternalLink,
+  CheckCircle2, UserX, Ban,
+  Calendar, Printer, Send, Mail, MessageCircle, Camera,
+  Plus, Save, ArrowUpRight, CircleDot, Info, ShieldAlert,
+  BadgeDollarSign, Receipt, FileSpreadsheet, ExternalLink,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -1437,7 +1438,7 @@ export default function PatientDailyJourneyHub() {
                             <span className="text-[10px] text-[#5f5e5a] font-semibold">نوع الجهاز</span>
                             <p className="text-[12px] text-[#2c2c2a] font-medium">{activeOrthoCase.applianceType}</p>
                           </div>
-                        )
+                        )}
                         <div>
                           <span className="text-[10px] text-[#5f5e5a] font-semibold">الحالة</span>
                           <span className={cn(

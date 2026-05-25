@@ -84,6 +84,17 @@ export interface FinanceSummaryData {
   recentInvoices?: { id: string; invoiceNumber: string; totalAmount: number; status: string }[];
 }
 
+// ─── Undo Action type ────────────────────────────────────────────────────────
+export interface UndoAction {
+  id: string;
+  type: "Cancel" | "NoShow" | "CancelQueue";
+  appointmentId: string;
+  previousStatus: string;
+  queueItemId?: string;
+  patientName: string;
+  timestamp: number;
+}
+
 // ─── Status Labels ───────────────────────────────────────────────────────────
 export const APPT_STATUS_LABELS: Record<string, string> = {
   Scheduled: "مجدول",
@@ -159,15 +170,16 @@ export interface TabDef {
   label: string;
   icon: string;
   color: string;
+  shortcut: string;
 }
 
 export const TABS: TabDef[] = [
-  { key: "appointments", label: "مواعيد اليوم",  icon: "Calendar",       color: BLUE },
-  { key: "queue",        label: "قائمة الانتظار", icon: "Clock",          color: ORANGE },
-  { key: "inClinic",     label: "داخل العيادة",  icon: "Stethoscope",    color: "#9333ea" },
-  { key: "completed",    label: "مكتمل اليوم",   icon: "CheckCircle",    color: "#16a34a" },
-  { key: "payments",     label: "المدفوعات السريعة", icon: "CreditCard",  color: "#22c55e" },
-  { key: "overdue",      label: "المتأخرات",     icon: "AlertTriangle",  color: "#ef4444" },
+  { key: "appointments", label: "مواعيد اليوم",  icon: "Calendar",       color: BLUE,       shortcut: "1" },
+  { key: "queue",        label: "قائمة الانتظار", icon: "Clock",          color: ORANGE,     shortcut: "2" },
+  { key: "inClinic",     label: "داخل العيادة",  icon: "Stethoscope",    color: "#9333ea",  shortcut: "3" },
+  { key: "completed",    label: "مكتمل اليوم",   icon: "CheckCircle",    color: "#16a34a",  shortcut: "4" },
+  { key: "payments",     label: "المدفوعات السريعة", icon: "CreditCard",  color: "#22c55e",  shortcut: "5" },
+  { key: "overdue",      label: "المتأخرات",     icon: "AlertTriangle",  color: "#ef4444",  shortcut: "6" },
 ];
 
 // ─── WhatsApp Templates ──────────────────────────────────────────────────────
@@ -210,6 +222,15 @@ export const WHATSAPP_TEMPLATES: WhatsAppTemplate[] = [
   },
 ];
 
+// ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
+export const KEYBOARD_SHORTCUTS = [
+  { keys: "Ctrl + R",     description: "تحديث البيانات" },
+  { keys: "Ctrl + F",     description: "التركيز على البحث" },
+  { keys: "1 – 6",        description: "تبديل التبويبات" },
+  { keys: "Escape",        description: "إغلاق النافذة المفتوحة" },
+  { keys: "Ctrl + N",     description: "مريض مشي جديد" },
+];
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 export function fmtRial(n: number | undefined | null): string {
   if (n == null) return "—";
@@ -234,6 +255,14 @@ export function fmtTime(t: string | undefined): string {
   }
   const dt = new Date(t);
   return dt.toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" });
+}
+
+export function fmtWaitMinutes(minutes: number | undefined | null): string {
+  if (minutes == null || minutes <= 0) return "—";
+  if (minutes < 60) return `~${minutes} دقيقة`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `~${hours} ساعة ${mins} دقيقة` : `~${hours} ساعة`;
 }
 
 export function getTodayStr(): string {

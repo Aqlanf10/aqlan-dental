@@ -1,18 +1,19 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw, ArrowLeft,
   UserCheck, Globe, Plus, CalendarClock, Route,
-  Wallet,
+  Wallet, UserPlus, Keyboard, Bell, BellOff,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { toast } from "@/stores/toastStore";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
+import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 
 import {
   NAVY, BLUE, ORANGE,
@@ -20,7 +21,7 @@ import {
   fmtDate, getTodayStr, fmtRial,
   computeDayStats, filterByTab,
   isDoctorRole,
-  type TodayJourneyItem, type TabKey,
+  type TodayJourneyItem, type TabKey, type UndoAction,
 } from "./_lib/constants";
 
 import {
@@ -45,6 +46,8 @@ import {
   useChangeRoom,
   useCreateAppointment,
   useCompleteVisit,
+  useWalkInPatient,
+  useQueueWaitTime,
 } from "./_lib/hooks";
 
 import AppointmentsTable from "./_components/AppointmentsTable";
@@ -55,6 +58,10 @@ import {
   ConfirmDialog,
   WhatsAppMenu,
   ChangeRoomModal,
+  WalkInModal,
+  UndoToast,
+  PatientSidePanel,
+  KeyboardShortcutsHelp,
 } from "./_components/Modals";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -100,9 +107,11 @@ function SummaryCard({
 export default function DailyOperationsPage() {
   const router = useRouter();
   const { user } = useAuthStore();
-  // toast is imported directly from the store
   const userRole = user?.role ?? "";
   const isDoctor = isDoctorRole(userRole);
+
+  // ── Improvement 1: SignalR real-time updates ──
+  const { isConnected: signalrConnected } = useSignalRClinicQueue();
 
   // ── Filters ──
   const [filterDate, setFilterDate] = useState(getTodayStr());
@@ -128,6 +137,9 @@ export default function DailyOperationsPage() {
   const { data: financeSummary } = useFinanceSummary();
   const clinicName = clinicSettings?.clinicName ?? "مركز الدكتور عقلان";
 
+  // ── Improvement 2: Queue wait time ──
+  const { data: queueWaitTime } = useQueueWaitTime();
+
   // ── Mutations ──
   const intakeMutation = useIntake();
   const sendToQueueMutation = useSendToQueue();
@@ -141,6 +153,7 @@ export default function DailyOperationsPage() {
   const changeRoomMutation = useChangeRoom();
   const createAppointmentMutation = useCreateAppointment();
   const completeVisitMutation = useCompleteVisit();
+  const walkInMutation = useWalkInPatient();
 
   // ── Modal state ──
   const [selectedItem, setSelectedItem] = useState<TodayJourneyItem | null>(null);
@@ -152,8 +165,25 @@ export default function DailyOperationsPage() {
   const [whatsAppMenuOpen, setWhatsAppMenuOpen] = useState(false);
   const [changeRoomModalOpen, setChangeRoomModalOpen] = useState(false);
 
-  // ── Selected patient summary ──
-  const { data: selectedSummary } = usePatientSummary(selectedItem?.patientId ?? null);
+  // ── Improvement 4: Walk-in modal ──
+  const [walkInModalOpen, setWalkInModalOpen] = useState(false);
+
+  // ── Improvement 5: Undo state ──
+  const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
+
+  // ── Improvement 6: Side panel ──
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const [sidePanelItem, setSidePanelItem] = useState<TodayJourneyItem | null>(null);
+
+  // ── Improvement 7: Keyboard shortcuts help ──
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+
+  // ── Sound toggle ──
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // ── Selected patient summary (for side panel + modals) ──
+  const activePatientId = sidePanelItem?.patientId ?? selectedItem?.patientId ?? null;
+  const { data: selectedSummary } = usePatientSummary(activePatientId);
 
   // ── Computed ──
   const dayStats = useMemo(() => computeDayStats(items, financeSummary), [items, financeSummary]);
@@ -181,6 +211,74 @@ export default function DailyOperationsPage() {
     payments: items.filter(i => i.checkoutStatus === "ReadyForCheckout" || i.nextAction === "Checkout" || i.appointmentStatus === "Completed").length,
     overdue: items.filter(i => i.appointmentStatus === "NoShow" || i.appointmentStatus === "Cancelled").length,
   }), [items]);
+
+  // ── Search input ref for keyboard shortcut ──
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Improvement 7: Keyboard shortcuts ──
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing in inputs
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+
+      // Escape: close any open modal
+      if (e.key === "Escape") {
+        if (paymentModalOpen) { setPaymentModalOpen(false); return; }
+        if (completeVisitModalOpen) { setCompleteVisitModalOpen(false); return; }
+        if (bookAppointmentModalOpen) { setBookAppointmentModalOpen(false); return; }
+        if (confirmDialogOpen) { setConfirmDialogOpen(false); return; }
+        if (whatsAppMenuOpen) { setWhatsAppMenuOpen(false); return; }
+        if (changeRoomModalOpen) { setChangeRoomModalOpen(false); return; }
+        if (walkInModalOpen) { setWalkInModalOpen(false); return; }
+        if (sidePanelOpen) { setSidePanelOpen(false); return; }
+        if (shortcutsHelpOpen) { setShortcutsHelpOpen(false); return; }
+      }
+
+      // Ctrl+R: refresh (prevent browser default)
+      if (e.ctrlKey && e.key === "r") {
+        e.preventDefault();
+        refetchItems();
+        return;
+      }
+
+      // Ctrl+F: focus search
+      if (e.ctrlKey && e.key === "f") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      // Ctrl+N: walk-in patient
+      if (e.ctrlKey && e.key === "n") {
+        e.preventDefault();
+        setWalkInModalOpen(true);
+        return;
+      }
+
+      // Number keys 1-6: switch tabs (only when not in input)
+      if (!isInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const tabKeys: TabKey[] = ["appointments", "queue", "inClinic", "completed", "payments", "overdue"];
+        const num = parseInt(e.key, 10);
+        if (num >= 1 && num <= 6) {
+          setActiveTab(tabKeys[num - 1]);
+          return;
+        }
+        // ? key: show shortcuts help
+        if (e.key === "?") {
+          setShortcutsHelpOpen(true);
+          return;
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    paymentModalOpen, completeVisitModalOpen, bookAppointmentModalOpen,
+    confirmDialogOpen, whatsAppMenuOpen, changeRoomModalOpen,
+    walkInModalOpen, sidePanelOpen, shortcutsHelpOpen, refetchItems,
+  ]);
 
   // ── Action handlers ──
   const handleIntake = useCallback((item: TodayJourneyItem) => {
@@ -249,20 +347,81 @@ export default function DailyOperationsPage() {
     router.push(`/patients/${item.patientId}`);
   }, [router]);
 
-  // ── Confirm action ──
+  // ── Improvement 6: Side panel trigger ──
+  const handleOpenSidePanel = useCallback((item: TodayJourneyItem) => {
+    setSidePanelItem(item);
+    setSidePanelOpen(true);
+  }, []);
+
+  // ── Improvement 5: Undo helper ──
+  const pushUndoAction = useCallback((action: UndoAction) => {
+    // Clear any previous undo
+    if (undoAction) setUndoAction(null);
+    setUndoAction(action);
+  }, [undoAction]);
+
+  const handleUndo = useCallback(async () => {
+    if (!undoAction) return;
+    try {
+      // Revert the action by restoring previous status
+      if (undoAction.type === "NoShow" || undoAction.type === "Cancel") {
+        await updateStatusMutation.mutateAsync({
+          appointmentId: undoAction.appointmentId,
+          status: undoAction.previousStatus,
+        });
+        toast.success("تم التراجع عن الإجراء");
+      } else if (undoAction.type === "CancelQueue" && undoAction.queueItemId) {
+        // Re-add to queue by sending to queue again
+        await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
+        toast.success("تم التراجع — أعيد المريض للطابور");
+      }
+    } catch {
+      toast.error("فشل التراجع");
+    }
+    setUndoAction(null);
+  }, [undoAction, updateStatusMutation, sendToQueueMutation]);
+
+  // ── Confirm action (with Undo) ──
   const handleConfirmAction = useCallback(async () => {
     if (!selectedItem) return;
     try {
       if (confirmDialogType === "NoShow") {
+        const prevStatus = selectedItem.appointmentStatus;
         await updateStatusMutation.mutateAsync({ appointmentId: selectedItem.appointmentId, status: "NoShow" });
         toast.success("تم تسجيل عدم الحضور");
+        pushUndoAction({
+          id: crypto.randomUUID(),
+          type: "NoShow",
+          appointmentId: selectedItem.appointmentId,
+          previousStatus: prevStatus,
+          patientName: selectedItem.patientName,
+          timestamp: Date.now(),
+        });
       } else if (confirmDialogType === "Cancel") {
+        const prevStatus = selectedItem.appointmentStatus;
         await updateStatusMutation.mutateAsync({ appointmentId: selectedItem.appointmentId, status: "Cancelled" });
         toast.success("تم إلغاء الموعد");
+        pushUndoAction({
+          id: crypto.randomUUID(),
+          type: "Cancel",
+          appointmentId: selectedItem.appointmentId,
+          previousStatus: prevStatus,
+          patientName: selectedItem.patientName,
+          timestamp: Date.now(),
+        });
       } else if (confirmDialogType === "CancelQueue") {
         if (!selectedItem.queueItemId) return;
         await cancelQueueMutation.mutateAsync(selectedItem.queueItemId);
         toast.success("تم إلغاء المريض من الطابور");
+        pushUndoAction({
+          id: crypto.randomUUID(),
+          type: "CancelQueue",
+          appointmentId: selectedItem.appointmentId,
+          previousStatus: selectedItem.appointmentStatus,
+          queueItemId: selectedItem.queueItemId,
+          patientName: selectedItem.patientName,
+          timestamp: Date.now(),
+        });
       } else if (confirmDialogType === "Complete") {
         if (!selectedItem.queueItemId) return;
         await completeVisitMutation.mutateAsync({ queueItemId: selectedItem.queueItemId });
@@ -272,13 +431,13 @@ export default function DailyOperationsPage() {
       toast.error("فشل تنفيذ الإجراء");
     }
     setConfirmDialogOpen(false);
-  }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation]);
+  }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, pushUndoAction]);
 
-  // ── Payment confirm ──
+  // ── Payment confirm (with PDF receipt) ──
   const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string) => {
     if (!selectedItem) return;
     try {
-      await createPaymentMutation.mutateAsync({
+      const result = await createPaymentMutation.mutateAsync({
         patientId: selectedItem.patientId,
         amount,
         paymentMethod: method,
@@ -288,6 +447,23 @@ export default function DailyOperationsPage() {
       });
       toast.success("تم تسجيل الدفعة بنجاح");
       setPaymentModalOpen(false);
+
+      // Auto-download PDF receipt
+      if (result?.id) {
+        try {
+          const { data } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, {
+            responseType: "blob",
+          }));
+          const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `receipt-${result.receiptNumber || result.id}.pdf`;
+          link.click();
+          window.URL.revokeObjectURL(url);
+        } catch {
+          // PDF download failed, user can still download manually
+        }
+      }
     } catch {
       toast.error("فشل تسجيل الدفعة");
     }
@@ -301,7 +477,6 @@ export default function DailyOperationsPage() {
   }) => {
     if (!selectedItem) return;
     try {
-      // If handoff available (visit exists)
       if (selectedItem.visitId) {
         await handoffMutation.mutateAsync({
           visitId: selectedItem.visitId,
@@ -315,7 +490,6 @@ export default function DailyOperationsPage() {
           },
         });
       }
-      // Then checkout
       await checkoutMutation.mutateAsync({
         appointmentId: selectedItem.appointmentId,
         body: {
@@ -374,6 +548,20 @@ export default function DailyOperationsPage() {
     }
   }, [selectedItem, createAppointmentMutation]);
 
+  // ── Walk-in confirm ──
+  const handleWalkInConfirm = useCallback(async (data: {
+    patientName: string; patientPhone: string; doctorId: string;
+    serviceId: string; branchId: string; notes: string;
+  }) => {
+    try {
+      await walkInMutation.mutateAsync(data);
+      toast.success("تم تسجيل المريض المشي وإضافته للطابور");
+      setWalkInModalOpen(false);
+    } catch {
+      toast.error("فشل تسجيل المريض المشي");
+    }
+  }, [walkInMutation]);
+
   // ── Visible quick links ──
   const visibleQuickLinks = useMemo(() =>
     QUICK_LINKS.filter(l => hasPermission(user, l.perm)),
@@ -405,11 +593,40 @@ export default function DailyOperationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* SignalR indicator */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
+            style={{ background: signalrConnected ? "#f0fdf4" : "#fef2f2", color: signalrConnected ? "#16a34a" : "#ef4444",
+              border: `1px solid ${signalrConnected ? "#bbf7d0" : "#fecaca"}` }}>
+            <span className="w-2 h-2 rounded-full" style={{ background: signalrConnected ? "#16a34a" : "#ef4444" }} />
+            {signalrConnected ? "مباشر" : "غير متصل"}
+          </div>
+          {/* Sound toggle */}
+          <button onClick={() => setSoundEnabled(!soundEnabled)}
+            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
+            style={{ border: "1px solid #e2e8f0" }}
+            title={soundEnabled ? "إيقاف صوت التنبيه" : "تشغيل صوت التنبيه"}>
+            {soundEnabled ? <Bell className="w-4 h-4" style={{ color: NAVY }} /> : <BellOff className="w-4 h-4" style={{ color: "#94a3b8" }} />}
+          </button>
+          {/* Shortcuts help */}
+          <button onClick={() => setShortcutsHelpOpen(true)}
+            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
+            style={{ border: "1px solid #e2e8f0" }}
+            title="اختصارات لوحة المفاتيح">
+            <Keyboard className="w-4 h-4" style={{ color: NAVY }} />
+          </button>
           <button onClick={() => refetchItems()}
             className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
             style={{ border: "1px solid #e2e8f0" }}
-            title="تحديث">
+            title="تحديث (Ctrl+R)">
             <RefreshCw className="w-4 h-4" style={{ color: NAVY }} />
+          </button>
+          {/* Walk-in button */}
+          <button onClick={() => setWalkInModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-bold text-white transition"
+            style={{ background: ORANGE }}
+            title="مريض مشي (Ctrl+N)">
+            <UserPlus className="w-4 h-4" />
+            مريض مشي
           </button>
           <Link href="/"
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition"
@@ -478,10 +695,11 @@ export default function DailyOperationsPage() {
         <div className="flex-1 min-w-[200px] relative">
           <Search className="w-4 h-4 absolute top-1/2 right-3 -translate-y-1/2" style={{ color: "#94a3b8" }} />
           <input
+            ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="بحث باسم المريض / رقم الهاتف / الطبيب..."
+            placeholder="بحث باسم المريض / رقم الهاتف / الطبيب... (Ctrl+F)"
             className="w-full text-sm rounded-lg border pl-3 pr-9 py-1.5 outline-none focus:border-[#3d7ab5]"
             style={{ borderColor: "#e2e8f0" }}
           />
@@ -531,6 +749,8 @@ export default function DailyOperationsPage() {
                     {count}
                   </span>
                 )}
+                {/* Shortcut hint */}
+                <span className="text-[9px] font-mono opacity-40">{tab.shortcut}</span>
               </button>
             );
           })}
@@ -542,6 +762,7 @@ export default function DailyOperationsPage() {
             items={filteredItems}
             loading={itemsLoading}
             isDoctor={isDoctor}
+            queueWaitTime={queueWaitTime}
             onIntake={handleIntake}
             onSendToQueue={handleSendToQueue}
             onCallPatient={handleCallPatient}
@@ -553,6 +774,7 @@ export default function DailyOperationsPage() {
             onCancel={handleCancel}
             onViewPatient={handleViewPatient}
             onCompleteVisit={handleCompleteVisit}
+            onOpenSidePanel={handleOpenSidePanel}
           />
         </div>
       </div>
@@ -638,6 +860,41 @@ export default function DailyOperationsPage() {
             toast.error("فشل تغيير الغرفة");
           }
         }}
+      />
+
+      {/* Improvement 4: Walk-in Modal */}
+      <WalkInModal
+        open={walkInModalOpen}
+        onClose={() => setWalkInModalOpen(false)}
+        doctors={doctors}
+        services={services}
+        branches={branches}
+        isPending={walkInMutation.isPending}
+        onConfirm={handleWalkInConfirm}
+      />
+
+      {/* Improvement 5: Undo Toast */}
+      {undoAction && (
+        <UndoToast
+          action={undoAction}
+          onUndo={handleUndo}
+          onDismiss={() => setUndoAction(null)}
+        />
+      )}
+
+      {/* Improvement 6: Patient Side Panel */}
+      <PatientSidePanel
+        open={sidePanelOpen}
+        onClose={() => setSidePanelOpen(false)}
+        item={sidePanelItem}
+        summary={selectedSummary ?? null}
+        waitTime={queueWaitTime}
+      />
+
+      {/* Improvement 7: Keyboard Shortcuts Help */}
+      <KeyboardShortcutsHelp
+        open={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
       />
     </div>
   );

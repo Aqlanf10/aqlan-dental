@@ -1,21 +1,27 @@
 /**
  * All modal components for Daily Operations page.
- * QuickPayment, CompleteVisit, BookAppointment, ConfirmDialog, WhatsAppMenu, ChangeRoomModal.
+ * QuickPayment, CompleteVisit, BookAppointment, ConfirmDialog, WhatsAppMenu,
+ * ChangeRoomModal, WalkInModal, UndoToast, PatientSidePanel, KeyboardShortcutsHelp.
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   X, CreditCard, CheckCircle, CalendarPlus, AlertTriangle,
   MessageCircle, Loader2, Send, Printer, Building2,
+  UserPlus, Undo2, Keyboard, Clock, ChevronLeft,
+  AlertCircle, Wallet, FileText, Stethoscope,
 } from "lucide-react";
 import {
   PAYMENT_METHODS, APPOINTMENT_TYPES, inputCls, fmtRial,
   WHATSAPP_TEMPLATES, normalizePhone, fmtDate, fmtTime,
+  fmtWaitMinutes, NAVY, BLUE, ORANGE, KEYBOARD_SHORTCUTS,
+  type UndoAction,
 } from "../_lib/constants";
-import type { TodayJourneyItem, DoctorOption, ServiceOption } from "../_lib/constants";
+import type { TodayJourneyItem, DoctorOption, ServiceOption, RoomOption, BranchOption } from "../_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
+import api from "@/lib/api";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Shared overlay wrapper
@@ -51,7 +57,7 @@ function ModalShell({ open, onClose, title, icon: Icon, iconColor, children, wid
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Quick Payment Modal
+   Quick Payment Modal — with PDF receipt download
    ═══════════════════════════════════════════════════════════════════════════ */
 export function QuickPaymentModal({
   open, onClose, item, summary, isPending, onConfirm,
@@ -66,6 +72,7 @@ export function QuickPaymentModal({
   const [method, setMethod] = useState("Cash");
   const [desc, setDesc] = useState("");
   const [notes, setNotes] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const outstanding = summary?.financeSummary?.outstandingBalance ?? 0;
   const overdue = summary?.financeSummary?.overdueAmount ?? 0;
@@ -79,8 +86,24 @@ export function QuickPaymentModal({
     setAmount(""); setMethod("Cash"); setDesc(""); setNotes("");
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
+  const handleDownloadReceipt = async () => {
+    if (!latestPayment?.id) return;
+    setDownloadingPdf(true);
+    try {
+      const { data } = await api.get(`/api/payments/${latestPayment.id}/pdf`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `receipt-${latestPayment.receiptNumber || latestPayment.id}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      // Fallback to print
+      window.print();
+    }
+    setDownloadingPdf(false);
   };
 
   return (
@@ -164,11 +187,13 @@ export function QuickPaymentModal({
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
           تسجيل الدفع
         </button>
-        <button onClick={handlePrintReceipt} title="طباعة إيصال"
-          className="w-10 py-2.5 rounded-xl flex items-center justify-center"
-          style={{ background: "#3d7ab515", color: "#3d7ab5", border: "1px solid #3d7ab530" }}>
-          <Printer className="w-4 h-4" />
-        </button>
+        {latestPayment?.id && (
+          <button onClick={handleDownloadReceipt} disabled={downloadingPdf} title="تحميل إيصال PDF"
+            className="w-10 py-2.5 rounded-xl flex items-center justify-center"
+            style={{ background: "#3d7ab515", color: "#3d7ab5", border: "1px solid #3d7ab530" }}>
+            {downloadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+          </button>
+        )}
       </div>
     </ModalShell>
   );
@@ -430,6 +455,111 @@ export function BookAppointmentModal({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   Walk-In Patient Modal — Quick registration + auto-intake + queue
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function WalkInModal({
+  open, onClose, doctors, services, branches, isPending, onConfirm,
+}: {
+  open: boolean; onClose: () => void;
+  doctors: DoctorOption[];
+  services: ServiceOption[];
+  branches: BranchOption[];
+  isPending: boolean;
+  onConfirm: (data: {
+    patientName: string; patientPhone: string; doctorId: string;
+    serviceId: string; branchId: string; notes: string;
+  }) => void;
+}) {
+  const [patientName, setPatientName] = useState("");
+  const [patientPhone, setPatientPhone] = useState("");
+  const [doctorId, setDoctorId] = useState("");
+  const [serviceId, setServiceId] = useState("");
+  const [branchId, setBranchId] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const handleSubmit = () => {
+    if (!patientName.trim() || !doctorId) return;
+    onConfirm({
+      patientName: patientName.trim(),
+      patientPhone: patientPhone.trim(),
+      doctorId,
+      serviceId,
+      branchId,
+      notes: notes.trim(),
+    });
+    setPatientName(""); setPatientPhone(""); setDoctorId("");
+    setServiceId(""); setBranchId(""); setNotes("");
+  };
+
+  return (
+    <ModalShell open={open} onClose={onClose} title="مريض مشي (Walk-in)" icon={UserPlus} iconColor={ORANGE}>
+      <div className="mb-3 p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#fff7ed" }}>
+        <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
+        <span className="text-xs font-medium" style={{ color: "#92400e" }}>
+          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة للطابور تلقائياً
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>اسم المريض *</label>
+            <input value={patientName} onChange={e => setPatientName(e.target.value)}
+              placeholder="الاسم الكامل" className={inputCls()} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>رقم الهاتف</label>
+            <input value={patientPhone} onChange={e => setPatientPhone(e.target.value)}
+              placeholder="7XXXXXXXX" className={inputCls()} dir="ltr" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الطبيب *</label>
+            <select value={doctorId} onChange={e => setDoctorId(e.target.value)} className={inputCls()}>
+              <option value="">اختر الطبيب</option>
+              {doctors.map(d => <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` (${d.specialty})` : ""}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الخدمة</label>
+            <select value={serviceId} onChange={e => setServiceId(e.target.value)} className={inputCls()}>
+              <option value="">اختر الخدمة</option>
+              {services.map(s => <option key={s.id} value={s.id}>{s.arabicName}{s.defaultPrice ? ` — ${s.defaultPrice} ر.ي` : ""}</option>)}
+            </select>
+          </div>
+        </div>
+        {branches.length > 1 && (
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الفرع</label>
+            <select value={branchId} onChange={e => setBranchId(e.target.value)} className={inputCls()}>
+              <option value="">الفرع الرئيسي</option>
+              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+        )}
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>ملاحظات</label>
+          <input value={notes} onChange={e => setNotes(e.target.value)}
+            placeholder="الشكوى الرئيسية..." className={inputCls()} />
+        </div>
+      </div>
+
+      <div className="flex gap-2 mt-5">
+        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+          style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
+        <button onClick={handleSubmit} disabled={!patientName.trim() || !doctorId || isPending}
+          className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+          style={{ background: ORANGE, opacity: !patientName.trim() || !doctorId || isPending ? 0.5 : 1 }}>
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+          تسجيل وإضافة للطابور
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Confirm Dialog
    ═══════════════════════════════════════════════════════════════════════════ */
 export function ConfirmDialog({
@@ -475,7 +605,7 @@ export function ChangeRoomModal({
   open, onClose, rooms, isPending, onConfirm,
 }: {
   open: boolean; onClose: () => void;
-  rooms: { id: string; arabicName: string }[];
+  rooms: RoomOption[];
   isPending: boolean;
   onConfirm: (roomId: string) => void;
 }) {
@@ -574,6 +704,292 @@ export function WhatsAppMenu({
           <p className="text-[10px] text-center" style={{ color: "#94a3b8" }}>
             سيتم فتح واتساب ويب لإرسال الرسالة
           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Undo Toast — Appears for 5 seconds after Cancel/NoShow/CancelQueue
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function UndoToast({
+  action, onUndo, onDismiss,
+}: {
+  action: UndoAction;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  const [secondsLeft, setSecondsLeft] = useState(5);
+  const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      setSecondsLeft(prev => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          onDismiss();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [onDismiss]);
+
+  const actionLabels: Record<string, string> = {
+    Cancel: "إلغاء الموعد",
+    NoShow: "لم يحضر",
+    CancelQueue: "إلغاء من الطابور",
+  };
+
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl border"
+      style={{ background: "#fff", borderColor: "#e8f0f9", minWidth: 320 }}>
+      <Undo2 className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
+      <div className="flex-1">
+        <div className="text-xs font-bold" style={{ color: NAVY }}>
+          {actionLabels[action.type] ?? "إجراء"} — {action.patientName}
+        </div>
+        <div className="text-[10px]" style={{ color: "#94a3b8" }}>
+          تراجع خلال {secondsLeft} ثانية
+        </div>
+      </div>
+      <button onClick={onUndo}
+        className="px-3 py-1.5 rounded-lg text-xs font-bold"
+        style={{ background: `${ORANGE}15`, color: ORANGE, border: `1px solid ${ORANGE}30` }}>
+        تراجع
+      </button>
+      <button onClick={onDismiss} className="p-1 rounded hover:bg-gray-100">
+        <X className="w-3 h-3 text-gray-400" />
+      </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Patient Side Panel — Slide-in summary without leaving the page
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function PatientSidePanel({
+  open, onClose, item, summary, waitTime,
+}: {
+  open: boolean; onClose: () => void;
+  item: TodayJourneyItem | null;
+  summary: DailyJourneySummary | null;
+  waitTime?: { estimatedMinutes: number; patientsAhead: number } | null;
+}) {
+  if (!open || !item) return null;
+
+  const finance = summary?.financeSummary;
+  const medicalAlerts = summary?.medicalAlerts ?? [];
+  const activeContract = summary?.activeContract;
+  const activeOrtho = summary?.activeOrthoCase;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      {/* Overlay */}
+      <div className="flex-1 bg-black/20" />
+      {/* Panel */}
+      <div className="w-full max-w-md bg-white shadow-2xl overflow-y-auto"
+        onClick={e => e.stopPropagation()} style={{ borderRight: "none" }}>
+        {/* Header */}
+        <div className="sticky top-0 bg-white z-10 px-5 py-4 border-b flex items-center gap-3"
+          style={{ borderColor: "#e8f0f9" }}>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100">
+            <ChevronLeft className="w-5 h-5" style={{ color: NAVY }} />
+          </button>
+          <div className="flex-1">
+            <h3 className="font-extrabold text-sm" style={{ color: NAVY }}>{item.patientName}</h3>
+            <p className="text-[11px]" style={{ color: "#64748b" }}>
+              {item.doctorName} — {item.serviceName ?? "—"}
+            </p>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Medical Alerts */}
+          {medicalAlerts.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: "#ef4444" }}>
+                <AlertCircle className="w-3.5 h-3.5" /> تنبيهات طبية
+              </h4>
+              <div className="space-y-1.5">
+                {medicalAlerts.map((alert, i) => (
+                  <div key={i} className="px-3 py-2 rounded-lg text-xs font-medium"
+                    style={{
+                      background: alert.severity === "danger" ? "#fef2f2" : alert.severity === "warning" ? "#fff7ed" : "#f0f5fb",
+                      color: alert.severity === "danger" ? "#dc2626" : alert.severity === "warning" ? "#d97706" : "#3d7ab5",
+                      border: `1px solid ${alert.severity === "danger" ? "#fecaca" : alert.severity === "warning" ? "#fde8d0" : "#dce8f5"}`,
+                    }}>
+                    {alert.label}: {alert.value}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Finance Summary */}
+          {finance && (
+            <div>
+              <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: NAVY }}>
+                <Wallet className="w-3.5 h-3.5" /> الوضع المالي
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2.5 rounded-lg" style={{ background: "#fff7ed" }}>
+                  <div className="text-[10px] font-medium" style={{ color: ORANGE }}>المستحق</div>
+                  <div className="text-sm font-bold" style={{ color: NAVY }}>{fmtRial(finance.outstandingBalance)}</div>
+                </div>
+                <div className="p-2.5 rounded-lg" style={{ background: finance.overdueAmount > 0 ? "#fef2f2" : "#f0fdf4" }}>
+                  <div className="text-[10px] font-medium" style={{ color: finance.overdueAmount > 0 ? "#ef4444" : "#16a34a" }}>متأخرات</div>
+                  <div className="text-sm font-bold" style={{ color: NAVY }}>{fmtRial(finance.overdueAmount)}</div>
+                </div>
+                {finance.totalPaid != null && (
+                  <div className="p-2.5 rounded-lg" style={{ background: "#f0fdf4" }}>
+                    <div className="text-[10px] font-medium" style={{ color: "#16a34a" }}>المدفوع</div>
+                    <div className="text-sm font-bold" style={{ color: NAVY }}>{fmtRial(finance.totalPaid)}</div>
+                  </div>
+                )}
+                <div className="p-2.5 rounded-lg" style={{ background: "#f5f5f5" }}>
+                  <div className="text-[10px] font-medium" style={{ color: "#64748b" }}>الحالة</div>
+                  <div className="text-xs font-bold" style={{ color: NAVY }}>
+                    {finance.financialStatus === "paid_full" ? "مكتمل" :
+                     finance.financialStatus === "has_balance" ? "عليه رصيد" :
+                     finance.financialStatus === "overdue" ? "متأخر" : "لا خطة"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Active Contract */}
+          {activeContract && (
+            <div>
+              <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: NAVY }}>
+                <FileText className="w-3.5 h-3.5" /> عقد نشط
+              </h4>
+              <div className="p-3 rounded-lg" style={{ background: "#f0f5fb", border: "1px solid #dce8f5" }}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-bold" style={{ color: NAVY }}>
+                    {activeContract.specialty ?? "عقد"} — {activeContract.status}
+                  </span>
+                  <span className="text-[10px] font-bold" style={{ color: BLUE }}>
+                    {activeContract.installmentsCount} قسط
+                  </span>
+                </div>
+                <div className="w-full rounded-full h-1.5 bg-gray-200 mt-1.5">
+                  <div className="h-1.5 rounded-full" style={{
+                    width: `${Math.min(100, (activeContract.paidAmount / activeContract.totalAmount) * 100)}%`,
+                    background: BLUE,
+                  }} />
+                </div>
+                <div className="flex justify-between mt-1.5 text-[10px]">
+                  <span style={{ color: "#16a34a" }}>مدفوع: {fmtRial(activeContract.paidAmount)}</span>
+                  <span style={{ color: ORANGE }}>متبقي: {fmtRial(activeContract.remainingAmount)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Active Ortho Case */}
+          {activeOrtho && (
+            <div>
+              <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: NAVY }}>
+                <Stethoscope className="w-3.5 h-3.5" /> حالة تقويم
+              </h4>
+              <div className="p-3 rounded-lg" style={{ background: "#faf5ff", border: "1px solid #e9d5ff" }}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-bold" style={{ color: "#9333ea" }}>
+                    {activeOrtho.applianceType ?? "تقويم"} — {activeOrtho.status}
+                  </span>
+                  <span className="text-[10px] font-bold" style={{ color: "#9333ea" }}>
+                    {activeOrtho.stagePercentage ?? 0}%
+                  </span>
+                </div>
+                <div className="w-full rounded-full h-1.5 bg-gray-200 mt-1.5">
+                  <div className="h-1.5 rounded-full" style={{
+                    width: `${activeOrtho.stagePercentage ?? 0}%`,
+                    background: "#9333ea",
+                  }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Queue Wait Time */}
+          {waitTime && waitTime.estimatedMinutes > 0 && (
+            <div>
+              <h4 className="text-xs font-bold mb-2 flex items-center gap-1.5" style={{ color: NAVY }}>
+                <Clock className="w-3.5 h-3.5" /> وقت الانتظار المتوقع
+              </h4>
+              <div className="p-3 rounded-lg flex items-center gap-3"
+                style={{ background: "#fff7ed", border: "1px solid #fde8d0" }}>
+                <Clock className="w-5 h-5" style={{ color: ORANGE }} />
+                <div>
+                  <div className="text-sm font-bold" style={{ color: NAVY }}>
+                    {fmtWaitMinutes(waitTime.estimatedMinutes)}
+                  </div>
+                  <div className="text-[10px]" style={{ color: "#94a3b8" }}>
+                    {waitTime.patientsAhead} مرضى قبله
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Recent Visits */}
+          {summary?.recentVisits && summary.recentVisits.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold mb-2" style={{ color: NAVY }}>آخر الزيارات</h4>
+              <div className="space-y-1.5">
+                {summary.recentVisits.slice(0, 3).map((v, i) => (
+                  <div key={i} className="px-3 py-2 rounded-lg text-xs"
+                    style={{ background: "#f8fafc", border: "1px solid #f1f5f9" }}>
+                    <div className="font-semibold" style={{ color: NAVY }}>
+                      {v.treatmentDone || v.chiefComplaint || "زيارة"}
+                    </div>
+                    <div className="text-[10px] mt-0.5" style={{ color: "#94a3b8" }}>
+                      {fmtDate(v.visitDate)} {v.cost ? `— ${fmtRial(v.cost)}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Keyboard Shortcuts Help — Popup showing available shortcuts
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function KeyboardShortcutsHelp({ open, onClose }: {
+  open: boolean; onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-[#e8f0f9]">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${BLUE}15` }}>
+            <Keyboard className="w-4.5 h-4.5" style={{ color: BLUE }} />
+          </div>
+          <h3 className="flex-1 font-extrabold text-[15px]" style={{ color: NAVY }}>اختصارات لوحة المفاتيح</h3>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100">
+            <X className="w-4 h-4 text-gray-400" />
+          </button>
+        </div>
+        <div className="p-4 space-y-2">
+          {KEYBOARD_SHORTCUTS.map(s => (
+            <div key={s.keys} className="flex items-center justify-between py-1.5">
+              <span className="text-xs font-medium" style={{ color: "#475569" }}>{s.description}</span>
+              <kbd className="px-2 py-1 rounded text-[11px] font-bold"
+                style={{ background: "#f1f5f9", color: NAVY, border: "1px solid #e2e8f0" }}>
+                {s.keys}
+              </kbd>
+            </div>
+          ))}
         </div>
       </div>
     </div>

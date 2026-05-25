@@ -1,6 +1,7 @@
 /**
  * Appointments Table with quick action buttons for each row.
  * Supports desktop table and mobile card views.
+ * Includes: wait time display, side panel trigger.
  */
 
 "use client";
@@ -9,12 +10,12 @@ import { useState } from "react";
 import {
   Calendar, UserCheck, ClipboardList, DoorOpen, CheckCircle,
   CreditCard, CalendarPlus, MessageCircle, XCircle,
-  UserX, MoreHorizontal, Eye, Phone,
-  Building2,
+  UserX, MoreHorizontal, Eye, Phone, Clock,
+  Building2, PanelRight, Timer,
 } from "lucide-react";
 import {
   APPT_STATUS_LABELS, STATUS_COLORS, ACTION_LABELS,
-  fmtTime, normalizePhone,
+  fmtTime, normalizePhone, ORANGE, NAVY,
   type TodayJourneyItem,
 } from "../_lib/constants";
 
@@ -72,6 +73,18 @@ function NextActionBadge({ action }: { action: string }) {
   );
 }
 
+/* ─── Wait Time Chip ──────────────────────────────────────────────────────── */
+function WaitTimeChip({ minutes }: { minutes?: number }) {
+  if (!minutes || minutes <= 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+      style={{ background: "#fff7ed", color: ORANGE }}>
+      <Timer className="w-2.5 h-2.5" />
+      ~{minutes < 60 ? `${minutes}د` : `${Math.floor(minutes / 60)}س ${minutes % 60}د`}
+    </span>
+  );
+}
+
 /* ─── Props ───────────────────────────────────────────────────────────────── */
 interface AppointmentsTableProps {
   items: TodayJourneyItem[];
@@ -79,6 +92,7 @@ interface AppointmentsTableProps {
   isDoctor: boolean;
   isReception: boolean;
   isAccountant: boolean;
+  queueWaitTime?: { estimatedMinutes: number; patientsAhead: number } | null;
   // Callbacks
   onIntake: (item: TodayJourneyItem) => void;
   onSendToQueue: (item: TodayJourneyItem) => void;
@@ -91,13 +105,14 @@ interface AppointmentsTableProps {
   onCancel: (item: TodayJourneyItem) => void;
   onViewPatient: (item: TodayJourneyItem) => void;
   onCompleteVisit: (item: TodayJourneyItem) => void;
+  onOpenSidePanel: (item: TodayJourneyItem) => void;
 }
 
 export default function AppointmentsTable({
-  items, loading, isDoctor,
+  items, loading, isDoctor, queueWaitTime,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onBookAppointment, onWhatsApp,
-  onNoShow, onCancel, onViewPatient, onCompleteVisit,
+  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: Omit<AppointmentsTableProps, "isReception" | "isAccountant">) {
   // Mobile: expanded row
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -123,6 +138,22 @@ export default function AppointmentsTable({
 
   return (
     <div className="overflow-x-auto">
+      {/* Queue Wait Banner */}
+      {queueWaitTime && queueWaitTime.estimatedMinutes > 0 && (
+        <div className="mb-3 p-2.5 rounded-lg flex items-center gap-2"
+          style={{ background: "#fff7ed", border: "1px solid #fde8d0" }}>
+          <Clock className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
+          <span className="text-xs font-bold" style={{ color: NAVY }}>
+            وقت الانتظار المتوقع في الطابور: ~{queueWaitTime.estimatedMinutes < 60
+              ? `${queueWaitTime.estimatedMinutes} دقيقة`
+              : `${Math.floor(queueWaitTime.estimatedMinutes / 60)} ساعة ${queueWaitTime.estimatedMinutes % 60} دقيقة`}
+          </span>
+          <span className="text-[10px]" style={{ color: "#94a3b8" }}>
+            ({queueWaitTime.patientsAhead} مرضى في الانتظار)
+          </span>
+        </div>
+      )}
+
       {/* Desktop table */}
       <table className="w-full hidden lg:table">
         <thead>
@@ -144,6 +175,11 @@ export default function AppointmentsTable({
               key={item.appointmentId}
               item={item}
               isDoctor={isDoctor}
+              queueWaitMinutes={
+                (item.queueStatus === "Waiting" || item.queueStatus === "Called")
+                  ? queueWaitTime?.estimatedMinutes
+                  : undefined
+              }
               onIntake={onIntake}
               onSendToQueue={onSendToQueue}
               onCallPatient={onCallPatient}
@@ -155,6 +191,7 @@ export default function AppointmentsTable({
               onCancel={onCancel}
               onViewPatient={onViewPatient}
               onCompleteVisit={onCompleteVisit}
+              onOpenSidePanel={onOpenSidePanel}
             />
           ))}
         </tbody>
@@ -169,6 +206,11 @@ export default function AppointmentsTable({
             isDoctor={isDoctor}
             expanded={expandedId === item.appointmentId}
             onToggle={() => setExpandedId(expandedId === item.appointmentId ? null : item.appointmentId)}
+            queueWaitMinutes={
+              (item.queueStatus === "Waiting" || item.queueStatus === "Called")
+                ? queueWaitTime?.estimatedMinutes
+                : undefined
+            }
             onIntake={onIntake}
             onSendToQueue={onSendToQueue}
             onCallPatient={onCallPatient}
@@ -180,6 +222,7 @@ export default function AppointmentsTable({
             onCancel={onCancel}
             onViewPatient={onViewPatient}
             onCompleteVisit={onCompleteVisit}
+            onOpenSidePanel={onOpenSidePanel}
           />
         ))}
       </div>
@@ -189,21 +232,22 @@ export default function AppointmentsTable({
 
 /* ─── Desktop row ──────────────────────────────────────────────────────────── */
 function AppointmentRow({
-  item, isDoctor,
+  item, isDoctor, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onBookAppointment, onWhatsApp,
-  onNoShow, onCancel, onViewPatient, onCompleteVisit,
+  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: {
-  item: TodayJourneyItem; isDoctor: boolean;
-} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception">) {
+  item: TodayJourneyItem; isDoctor: boolean; queueWaitMinutes?: number;
+} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
 
   return (
     <tr className="border-b hover:bg-[#f8fafc] transition-colors" style={{ borderColor: "#f1f5f9" }}>
-      <td className="py-2.5 px-2 text-sm font-bold" style={{ color: "#1a3a5c" }}>{fmtTime(item.appointmentTime)}</td>
+      <td className="py-2.5 px-2 text-sm font-bold" style={{ color: NAVY }}>{fmtTime(item.appointmentTime)}</td>
       <td className="py-2.5 px-2">
-        <button onClick={() => onViewPatient(item)} className="text-sm font-semibold hover:underline" style={{ color: "#3d7ab5" }}>
+        <button onClick={() => onOpenSidePanel(item)} className="text-sm font-semibold hover:underline flex items-center gap-1.5" style={{ color: "#3d7ab5" }}>
           {item.patientName}
+          <PanelRight className="w-3 h-3 opacity-40" />
         </button>
       </td>
       {!isDoctor && (
@@ -229,7 +273,12 @@ function AppointmentRow({
           </span>
         ) : "—"}
       </td>
-      <td className="py-2.5 px-2"><StatusBadge status={item.appointmentStatus} /></td>
+      <td className="py-2.5 px-2">
+        <div className="flex items-center gap-1.5">
+          <StatusBadge status={item.appointmentStatus} />
+          {queueWaitMinutes && <WaitTimeChip minutes={queueWaitMinutes} />}
+        </div>
+      </td>
       <td className="py-2.5 px-2"><NextActionBadge action={item.nextAction} /></td>
       <td className="py-2.5 px-2">
         <div className="flex items-center gap-1 flex-wrap">
@@ -281,27 +330,28 @@ function AppointmentRow({
 
 /* ─── Mobile card ──────────────────────────────────────────────────────────── */
 function MobileCard({
-  item, isDoctor, expanded, onToggle,
+  item, isDoctor, expanded, onToggle, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onBookAppointment, onWhatsApp,
-  onNoShow, onCancel, onViewPatient, onCompleteVisit,
+  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: {
-  item: TodayJourneyItem; isDoctor: boolean; expanded: boolean; onToggle: () => void;
-} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception">) {
+  item: TodayJourneyItem; isDoctor: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
+} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
 
   return (
     <div className="rounded-xl border p-3" style={{ borderColor: "#e8f0f9", background: "#fff" }}>
       <div className="flex items-center gap-2">
-        <span className="text-sm font-bold" style={{ color: "#1a3a5c" }}>{fmtTime(item.appointmentTime)}</span>
+        <span className="text-sm font-bold" style={{ color: NAVY }}>{fmtTime(item.appointmentTime)}</span>
         <StatusBadge status={item.appointmentStatus} />
+        {queueWaitMinutes && <WaitTimeChip minutes={queueWaitMinutes} />}
         <div className="flex-1" />
         <button onClick={onToggle} className="p-1 rounded-lg hover:bg-gray-50">
           <MoreHorizontal className="w-4 h-4 text-gray-400" />
         </button>
       </div>
       <div className="mt-1.5 flex items-center gap-2">
-        <button onClick={() => onViewPatient(item)} className="text-sm font-semibold" style={{ color: "#3d7ab5" }}>
+        <button onClick={() => onOpenSidePanel(item)} className="text-sm font-semibold" style={{ color: "#3d7ab5" }}>
           {item.patientName}
         </button>
         <span className="text-xs" style={{ color: "#64748b" }}>{item.doctorName}</span>

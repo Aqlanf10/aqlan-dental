@@ -129,6 +129,35 @@ export function useClinicSettings() {
   });
 }
 
+// ─── Estimated Wait Time ─────────────────────────────────────────────────────
+export function useEstimatedWait(queueItemId?: string) {
+  return useQuery<{ estimatedMinutes: number; patientsAhead: number }>({
+    queryKey: ["daily-ops", "estimated-wait", queueItemId],
+    queryFn: async () => {
+      const qs = new URLSearchParams();
+      if (queueItemId) qs.set("queueItemId", queueItemId);
+      const { data } = await api.get(`/api/clinic-queue/estimated-wait?${qs.toString()}`);
+      return data;
+    },
+    enabled: !!queueItemId,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
+// ─── General Queue Wait Time (no specific patient) ───────────────────────────
+export function useQueueWaitTime() {
+  return useQuery<{ estimatedMinutes: number; patientsAhead: number }>({
+    queryKey: ["daily-ops", "queue-wait"],
+    queryFn: async () => {
+      const { data } = await api.get("/api/clinic-queue/estimated-wait");
+      return data;
+    },
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
 // ─── Mutations ───────────────────────────────────────────────────────────────
 
 
@@ -343,6 +372,67 @@ export function useCompleteVisit() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
       queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+    },
+  });
+}
+
+// ─── Walk-in: Quick Patient + Appointment + Intake ──────────────────────────
+export function useWalkInPatient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      patientName: string;
+      patientPhone: string;
+      doctorId: string;
+      serviceId?: string;
+      branchId?: string;
+      notes?: string;
+    }) => {
+      // Step 1: Create patient
+      const patientRes = await api.post("/api/patients", {
+        fullName: params.patientName,
+        phone: params.patientPhone,
+        branchId: params.branchId || undefined,
+      });
+      const patientId = patientRes.data?.id;
+
+      if (!patientId) throw new Error("فشل إنشاء المريض");
+
+      // Step 2: Create appointment for today
+      const today = new Date().toISOString().split("T")[0];
+      const now = new Date();
+      const startTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const endMinutes = now.getMinutes() + 30;
+      const endHour = now.getHours() + Math.floor(endMinutes / 60);
+      const endTime = `${String(endHour).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+
+      const apptRes = await api.post("/api/appointments", {
+        patientId,
+        doctorId: params.doctorId,
+        appointmentDate: today,
+        startTime,
+        endTime,
+        serviceId: params.serviceId || undefined,
+        appointmentType: "Consultation",
+        notes: params.notes || "مريض مشي (Walk-in)",
+      });
+      const appointmentId = apptRes.data?.id;
+
+      if (!appointmentId) throw new Error("فشل إنشاء الموعد");
+
+      // Step 3: Intake (register arrival + send to queue)
+      await api.post(`/api/patient-journey/${appointmentId}/intake`, {
+        chiefComplaint: params.notes || undefined,
+      });
+
+      return { patientId, appointmentId };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["patients"] });
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
     },
   });
 }

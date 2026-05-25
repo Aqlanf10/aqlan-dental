@@ -2338,6 +2338,26 @@ if (enableStartupDbMaintenance)
 
     try
     {
+        // Pre-migration: ensure Financial Integrity Sprint columns exist before EF Core tries to use them
+        // This is needed because the migration SQL might fail silently on some PostgreSQL versions
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "IsReversal" boolean NOT NULL DEFAULT false;
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "ReversalOfTransactionId" uuid NULL;
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "ReversedByTransactionId" uuid NULL;
+                CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_ReversalOfTransactionId" ON "CashFlowTransactions" ("ReversalOfTransactionId");
+                CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_ReversedByTransactionId" ON "CashFlowTransactions" ("ReversedByTransactionId");
+                CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId" ON "Treasuries" ("BranchId");
+                CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type" ON "Treasuries" ("BranchId", "Type");
+            """);
+            logger.LogInformation("Financial Integrity Sprint columns verified/created pre-migration");
+        }
+        catch (Exception exPre)
+        {
+            logger.LogWarning(exPre, "Pre-migration column check failed (non-fatal)");
+        }
+
         await db.Database.MigrateAsync();
     }
     catch (Exception ex)

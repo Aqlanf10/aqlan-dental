@@ -1,5 +1,4 @@
 using AqlanDentalPro.Application.Interfaces.Services;
-using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
@@ -16,7 +15,12 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/patient-journey")]
 [Authorize(Policy = "StaffOnly")]
-public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyController> logger, ICommissionService commissionService, IFinanceService financeService) : ControllerBase
+public class PatientJourneyController(
+    AppDbContext db,
+    ILogger<PatientJourneyController> logger,
+    ICommissionService commissionService,
+    IFinanceService financeService,
+    IPatientAccessService patientAccessService) : ControllerBase
 {
     // ─── 1. GET /api/patient-journey/today ────────────────────────────────────
     /// <summary>Returns today's patient journey list combining appointments,
@@ -52,6 +56,14 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
             .Include(a => a.Doctor)
             .Where(a => a.AppointmentDate == queryDate && a.IsActive)
             .AsQueryable();
+
+        // Doctor access control: only show appointments for patients they can access
+        if (patientAccessService.IsDoctor)
+        {
+            var accessibleIds = await patientAccessService.GetAccessiblePatientIdsAsync();
+            if (accessibleIds != null)
+                query = query.Where(a => accessibleIds.Contains(a.PatientId));
+        }
 
         // Apply filters
         if (statusFilter.HasValue)
@@ -102,6 +114,9 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 .ToDictionaryAsync(g => g.Key, g => g.Sum(p => p.Amount))
             : new Dictionary<Guid, decimal>();
 
+        // Privacy: Doctors must not see patient phone numbers
+        var isDoctor = patientAccessService.IsDoctor;
+
         // Build journey items
         var result = appointments.Select(a =>
         {
@@ -124,7 +139,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 AppointmentId = a.Id,
                 PatientId = a.PatientId,
                 PatientName = BuildPatientDisplayName(a.Patient),
-                PatientPhone = IsDoctorRole() ? null : a.Patient?.Phone,
+                PatientPhone = isDoctor ? null : a.Patient?.Phone,
                 AppointmentTime = a.StartTime.ToString("HH:mm"),
                 AppointmentStatus = a.Status.ToString(),
                 DoctorId = a.DoctorId,
@@ -147,8 +162,8 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "PatientJourney.GetToday failed for date {Date}: {Message}", queryDate, ex.Message);
-            return StatusCode(500, new { message = $"خطأ في رحلة المرضى: {ex.Message}", detail = ex.InnerException?.Message });
+            logger.LogError(ex, "PatientJourney.GetToday failed for date {Date}", queryDate);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل رحلة المرضى" });
         }
     }
 
@@ -161,6 +176,16 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
     {
         try
         {
+            // ── Doctor access enforcement ──
+            // Doctors can only access patients they are assigned to.
+            // Admin, Reception, Accountant have full access per existing policies.
+            if (patientAccessService.IsDoctor)
+            {
+                var canAccess = await patientAccessService.CanAccessPatientAsync(patientId);
+                if (!canAccess)
+                    return StatusCode(403, new { message = "ليس لديك صلاحية الوصول لبيانات هذا المريض" });
+            }
+
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
             // 1. Patient basic info
@@ -186,13 +211,11 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
             if (patient == null)
                 return NotFound(new { message = "المريض غير موجود" });
 
-            var patientName = BuildPatientDisplayName(null);
-            // Override with actual patient name
             var nameParts = new List<string>();
             if (!string.IsNullOrWhiteSpace(patient.FirstName)) nameParts.Add(patient.FirstName.Trim());
             if (!string.IsNullOrWhiteSpace(patient.MiddleName)) nameParts.Add(patient.MiddleName.Trim());
             if (!string.IsNullOrWhiteSpace(patient.LastName)) nameParts.Add(patient.LastName.Trim());
-            patientName = string.Join(" ", nameParts);
+            var patientName = string.Join(" ", nameParts);
 
             int? age = null;
             if (patient.DateOfBirth.HasValue)
@@ -274,7 +297,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
 
             // FIX-2: Finance access tiers
             // Full:    Admin + Accountant (via FinanceAccess policy / finance.view permission)
-            // Limited: Reception (daily checkout only — outstandingBalance, overdueAmount, latestPayment, unpaidInvoicesCount, activeContract short info)
+            // Limited: Reception (daily checkout only — outstandingBalance, overdueAmount, latestPayment, financialStatus)
             // None:    Doctors
             var isAdminOrAccountant = User.IsInRole("Admin") || User.IsInRole("Accountant") ||
                 User.HasClaim("permission", "finance.view");
@@ -291,7 +314,6 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
             {
                 // FIX-3: Use central FinanceService.GetPatientFinanceSummaryAsync()
                 // instead of duplicating financial calculations here.
-                // This ensures the Journey Hub and Finance module show the same numbers.
                 var centralSummary = await financeService.GetPatientFinanceSummaryAsync(patientId);
 
                 if (hasFullFinanceAccess)
@@ -340,29 +362,37 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                     .CountAsync(i => i.PatientId == patientId &&
                         (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Draft) && i.IsActive);
 
-                // Active contract short info (both full and limited access need for checkout)
-                var firstContract = await db.Contracts
+                // Active contract short info — compute PaidAmount/RemainingAmount from Payments
+                // since Contract entity does not store these directly.
+                var firstContractEntity = await db.Contracts
                     .IgnoreQueryFilters()
+                    .Include(c => c.Payments)
                     .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
                     .OrderByDescending(c => c.CreatedAt)
-                    .Select(c => new
-                    {
-                        c.Id,
-                        c.TotalAmount,
-                        c.PaidAmount,
-                        c.RemainingAmount,
-                        c.InstallmentAmount,
-                        c.InstallmentsCount,
-                        c.Specialty,
-                        c.StartDate,
-                        c.Status
-                    })
                     .FirstOrDefaultAsync();
 
-                activeContract = firstContract;
+                if (firstContractEntity != null)
+                {
+                    var contractPaid = firstContractEntity.Payments
+                        .Where(p => p.IsActive)
+                        .Sum(p => p.Amount);
+                    var contractNetTotal = firstContractEntity.TotalAmount - firstContractEntity.DiscountAmount;
+                    activeContract = new
+                    {
+                        firstContractEntity.Id,
+                        firstContractEntity.TotalAmount,
+                        PaidAmount = contractPaid,
+                        RemainingAmount = contractNetTotal - contractPaid,
+                        firstContractEntity.InstallmentAmount,
+                        firstContractEntity.InstallmentsCount,
+                        firstContractEntity.Specialty,
+                        firstContractEntity.StartDate,
+                        firstContractEntity.Status
+                    };
+                }
             }
 
-            // 6. Active ortho case
+            // 6. Active ortho case — use actual OrthoCase entity fields only
             var activeOrthoCase = await db.OrthoCases
                 .IgnoreQueryFilters()
                 .Where(o => o.PatientId == patientId && o.IsActive)
@@ -372,11 +402,13 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                     o.Id,
                     o.CaseNumber,
                     o.Status,
-                    o.CaseType,
+                    ApplianceType = o.ApplianceType,       // replaces CaseType (does not exist)
                     o.StartDate,
-                    o.EstimatedEndDate,
-                    o.Notes,
-                    o.DoctorId
+                    ExpectedDurationMonths = o.ExpectedDurationMonths, // replaces EstimatedEndDate
+                    CurrentStage = o.CurrentStage,          // clinical info instead of Notes
+                    o.DoctorId,
+                    o.TotalFee,
+                    StagePercentage = o.StagePercentage
                 })
                 .FirstOrDefaultAsync();
 
@@ -432,26 +464,29 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 })
                 .ToListAsync();
 
-            // 9. Timeline events (appointments + visits + payments, last 20)
+            // 9. Timeline events (appointments + payments if finance access, last 20)
             var appointmentEvents = await db.Appointments
                 .IgnoreQueryFilters()
                 .Where(a => a.PatientId == patientId && a.IsActive)
                 .OrderByDescending(a => a.AppointmentDate)
                 .Take(10)
-                .Select(a => new { Date = a.AppointmentDate.ToString(), Type = "appointment", Title = a.AppointmentType ?? "موعد", Sub = a.Doctor != null ? a.Doctor.Name : "", a.Status })
+                .Select(a => new { Date = a.AppointmentDate.ToString(), Type = "appointment", Title = a.AppointmentType ?? "موعد", Sub = a.Doctor != null ? a.Doctor.Name : "", Status = a.Status.ToString() })
+                .Cast<object>()
                 .ToListAsync();
 
-            var paymentEvents = hasAnyFinanceAccess
-                ? await db.Payments
+            if (hasAnyFinanceAccess)
+            {
+                var pEvents = await db.Payments
                     .Where(p => p.PatientId == patientId && p.IsActive)
                     .OrderByDescending(p => p.PaymentDate)
                     .Take(10)
                     .Select(p => new { Date = p.PaymentDate.ToString(), Type = "payment", Title = "دفعة مالية", Sub = p.Amount.ToString("N0") + " ر.ي", Status = "" })
-                    .ToListAsync()
-                : new List<object>();
+                    .Cast<object>()
+                    .ToListAsync();
+                appointmentEvents.AddRange(pEvents);
+            }
 
-            var timeline = appointmentEvents.Cast<object>()
-                .Concat(paymentEvents)
+            var timeline = appointmentEvents
                 .OrderByDescending(e => ((dynamic)e).Date)
                 .Take(20)
                 .ToList();
@@ -466,15 +501,17 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 nextAction = DetermineNextAction(todayAppt.Status, queueItem?.Status, todayVisit?.CheckoutStatus);
             }
 
-            // 11. Unread messages count
-            var conversationIds = await db.ConversationParticipants
-                .Where(cp => cp.PatientId == patientId && cp.IsActive)
-                .Select(cp => cp.ConversationId)
+            // 11. Unread messages count — join through Conversation.PatientId
+            var conversationIds = await db.Conversations
+                .Where(c => c.PatientId == patientId && c.IsActive)
+                .Select(c => c.Id)
                 .ToListAsync();
 
-            // FIX-1: Privacy — Doctors must not see patient phone/email in API response.
-            // Only Admin, Reception, and Accountant can see contact info.
-            var isDoctor = IsDoctorRole();
+            // Privacy: Doctors must not see patient phone/email in API response.
+            var isDoctor = patientAccessService.IsDoctor;
+
+            // Doctors: hide finance, active contract, and detailed medical info beyond alerts
+            // FinanceSummary and ActiveContract already null for doctors (hasAnyFinanceAccess is false)
 
             // Build response
             return Ok(new
@@ -507,8 +544,8 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "PatientJourney.GetDailySummary failed for patient {PatientId}: {Message}", patientId, ex.Message);
-            return StatusCode(500, new { message = $"خطأ في ملخص الرحلة اليومية: {ex.Message}", detail = ex.InnerException?.Message });
+            logger.LogError(ex, "PatientJourney.GetDailySummary failed for patient {PatientId}", patientId);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل ملخص الرحلة اليومية" });
         }
     }
 
@@ -727,7 +764,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         }
         catch (DbUpdateException ex)
         {
-            logger.LogError(ex, "Failed to create visit for appointment {AppointmentId}. Inner: {InnerMessage}", appointmentId, ex.InnerException?.Message ?? ex.Message);
+            logger.LogError(ex, "Failed to create visit for appointment {AppointmentId}", appointmentId);
             return StatusCode(500, new { message = "فشل إنشاء الزيارة — يرجى المحاولة مرة أخرى" });
         }
 
@@ -844,8 +881,6 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
         // Actual payment processing should be done via the existing Payments module
         // (FinanceService.CreatePaymentAsync) to ensure receipt generation, notifications,
         // contract linking, and audit trail are handled correctly.
-        // PaymentAmount/PaymentMethod are stored as reference in the response for
-        // the frontend to guide the user to the Payments page.
 
         // Mark visit as checked out
         visit.CheckoutStatus = "CheckedOut";
@@ -884,9 +919,7 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
     /// <summary>Creates a Draft Invoice from a visit that is ready for checkout.
     /// Uses Visit.AmountDueReference and linked ServiceId for line item pricing.
     /// Does NOT create a Payment. Does NOT alter Contract or Patient balance.
-    /// If a Draft invoice already exists for this Visit, returns the existing one.
-    /// Uses advisory lock + unique constraint retry to prevent race condition on
-    /// invoice number generation (same pattern as LabOrdersController).</summary>
+    /// If a Draft invoice already exists for this Visit, returns the existing one.</summary>
     [HttpPost("{visitId:guid}/create-draft-invoice")]
     [Authorize(Policy = "FinanceAccess")]
     public async Task<IActionResult> CreateDraftInvoice(Guid visitId)
@@ -911,211 +944,128 @@ public class PatientJourneyController(AppDbContext db, ILogger<PatientJourneyCon
                 existingDraft.Id,
                 existingDraft.InvoiceNumber,
                 Status = existingDraft.Status.ToString(),
-                StatusArabic = "مسودة",
+                LineItemCount = existingDraft.LineItems.Count,
                 existingDraft.TotalAmount,
-                IsExisting = true,
-                message = "توجد فاتورة مسودة لهذه الزيارة بالفعل"
+                message = "فاتورة مسودة موجودة مسبقاً"
             });
         }
 
-        // CON-02: Advisory lock + unique constraint retry to prevent race condition
-        // on invoice number generation. Strategy mirrors LabOrdersController.
+        // Determine amounts
+        var lineAmount = visit.AmountDueReference ?? visit.Cost ?? 0;
+        if (lineAmount <= 0)
+            return BadRequest(new { message = "لا يمكن إنشاء فاتورة بمبلغ صفر — حدد المبلغ المستحق أولاً" });
+
+        // Get service name for line item description
+        string lineDescription = "زيارة طبية";
+        if (visit.ServiceId.HasValue)
+        {
+            var svc = await db.ClinicServices.FindAsync(visit.ServiceId.Value);
+            if (svc != null)
+                lineDescription = svc.ArabicName ?? svc.Code ?? lineDescription;
+        }
+
+        // Generate invoice number
+        var invoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(100, 999)}";
+
         var userId = GetCurrentUserId();
 
-        // Determine service and price (outside transaction — read-only lookup)
-        ClinicService? service = null;
-        var serviceId = visit.ServiceId ?? visit.Appointment?.ServiceId;
-        if (serviceId.HasValue)
+        var invoice = new Invoice
         {
-            service = await db.ClinicServices.FindAsync(serviceId.Value);
-        }
-
-        string serviceName = service?.ArabicName ?? "خدمة علاجية";
-        decimal unitPrice = visit.AmountDueReference
-            ?? service?.DefaultPrice
-            ?? 0;
-
-        const int maxRetries = 3;
-
-        for (var attempt = 0; attempt < maxRetries; attempt++)
-        {
-            await using var tx = await db.Database.BeginTransactionAsync();
-            try
+            InvoiceNumber = invoiceNumber,
+            PatientId = visit.PatientId,
+            VisitId = visitId,
+            AppointmentId = visit.AppointmentId,
+            Status = InvoiceStatus.Draft,
+            IssueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            DueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            TotalAmount = lineAmount,
+            Notes = $"فاتورة مسودة من زيارة يوم {visit.VisitDate:yyyy-MM-dd}",
+            CreatedBy = userId,
+            LineItems = new List<InvoiceLineItem>
             {
-                // Acquire advisory lock for invoice number generation
-                var lockKey = Math.Abs("InvoiceNumber".GetHashCode()) % 100000;
-                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
-                // Re-check for existing draft inside transaction (prevents TOCTOU race)
-                var txExistingDraft = await db.Invoices
-                    .FirstOrDefaultAsync(i => i.VisitId == visitId && i.Status == InvoiceStatus.Draft && i.IsActive);
-
-                if (txExistingDraft != null)
+                new()
                 {
-                    await tx.RollbackAsync();
-                    return Ok(new
-                    {
-                        txExistingDraft.Id,
-                        txExistingDraft.InvoiceNumber,
-                        Status = txExistingDraft.Status.ToString(),
-                        StatusArabic = "مسودة",
-                        txExistingDraft.TotalAmount,
-                        IsExisting = true,
-                        message = "توجد فاتورة مسودة لهذه الزيارة بالفعل"
-                    });
-                }
-
-                var invoiceNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
-
-                var lineItem = new InvoiceLineItem
-                {
-                    ServiceId = service?.Id,
-                    ServiceNameSnapshot = serviceName,
-                    Description = serviceName,
+                    Description = lineDescription,
                     Quantity = 1,
-                    UnitPrice = unitPrice,
-                    TotalPrice = unitPrice,
-                    RelatedVisitId = visitId,
-                    SortOrder = 0
-                };
-
-                var invoice = new Invoice
-                {
-                    PatientId = visit.PatientId,
-                    VisitId = visitId,
-                    AppointmentId = visit.AppointmentId,
-                    InvoiceNumber = invoiceNumber,
-                    Status = InvoiceStatus.Draft,
-                    Subtotal = unitPrice,
-                    TotalAmount = unitPrice,
-                    CreatedBy = userId,
-                    UpdatedBy = userId,
-                    LineItems = [lineItem]
-                };
-
-                db.Invoices.Add(invoice);
-
-                // IMPORTANT: No Payment is created. No Contract is changed.
-                // No patient balance is altered. Payments module remains source of truth.
-
-                try
-                {
-                    await db.SaveChangesAsync();
-                    await tx.CommitAsync();
+                    UnitPrice = lineAmount,
+                    TotalPrice = lineAmount,
+                    ServiceId = visit.ServiceId
                 }
-                catch (DbUpdateException ex) when (IsUniqueViolation(ex))
-                {
-                    // Unique constraint on InvoiceNumber caught a duplicate.
-                    // Roll back and retry with a fresh number.
-                    await tx.RollbackAsync();
-                    logger.LogWarning("CON-02: Invoice number collision on attempt {Attempt}, retrying", attempt + 1);
-                    continue;
-                }
+            }
+        };
 
-                // Auto-fill commission defaults from service catalog
-                if (lineItem.ServiceId.HasValue)
-                {
-                    try { await commissionService.AutoFillFromServiceAsync(lineItem.Id); }
-                    catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", lineItem.Id); }
-                }
+        db.Invoices.Add(invoice);
 
-                return Ok(new
-                {
-                    invoice.Id,
-                    invoice.InvoiceNumber,
-                    Status = invoice.Status.ToString(),
-                    StatusArabic = "مسودة",
-                    invoice.Subtotal,
-                    invoice.TotalAmount,
-                    LineItemCount = invoice.LineItems.Count,
-                    IsExisting = false,
-                    message = "تم إنشاء الفاتورة المسودة بنجاح"
-                });
-            }
-            catch (DbUpdateException)
-            {
-                // Re-throw if not a unique violation (already handled above)
-                await tx.RollbackAsync();
-                throw;
-            }
-            catch
-            {
-                await tx.RollbackAsync();
-                throw;
-            }
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Concurrent invoice number collision — retry once
+            logger.LogWarning(ex, "Invoice number collision for visit {VisitId}, retrying", visitId);
+            invoice.InvoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(100, 999)}";
+            await db.SaveChangesAsync();
         }
 
-        // All retries exhausted — this should never happen with advisory lock + unique index
-        logger.LogError("CON-02: Failed to generate unique invoice number after {MaxRetries} attempts", maxRetries);
-        return StatusCode(500, new { message = "فشل إنشاء رقم فاتورة فريد بعد عدة محاولات. يرجى المحاولة مرة أخرى." });
+        return Ok(new
+        {
+            invoice.Id,
+            invoice.InvoiceNumber,
+            Status = invoice.Status.ToString(),
+            invoice.TotalAmount,
+            LineItemCount = invoice.LineItems.Count,
+            message = "تم إنشاء الفاتورة المسودة بنجاح"
+        });
     }
 
-    /// <summary>
-    /// CON-02 FIX: Checks if a DbUpdateException is a PostgreSQL unique constraint violation (error code 23505).
-    /// </summary>
+    // ─── Helper Methods ─────────────────────────────────────────────────────
+
     private static bool IsUniqueViolation(DbUpdateException ex)
     {
         var inner = ex.InnerException;
-        while (inner != null)
-        {
-            if (inner.Message.Contains("23505") || inner.Message.Contains("duplicate key") ||
-                inner.Message.Contains("unique constraint") || inner.Message.Contains("InvoiceNumber"))
-                return true;
-            inner = inner.InnerException;
-        }
-        return false;
+        if (inner == null) return false;
+        var msg = inner.Message.ToLowerInvariant();
+        return msg.Contains("unique") || msg.Contains("duplicate") || msg.Contains("23505");
     }
-
-    // ─── Private helpers ─────────────────────────────────────────────────────
 
     private static string DetermineNextAction(AppointmentStatus apptStatus, ClinicQueueStatus? queueStatus, string? checkoutStatus)
     {
-        // Checkout flow takes priority
-        if (checkoutStatus == "ReadyForCheckout")
-            return "Checkout";
-        if (checkoutStatus == "CheckedOut")
-            return "None";
-
         return apptStatus switch
         {
-            AppointmentStatus.Scheduled => "Intake",
-            AppointmentStatus.Confirmed => "Intake",
+            AppointmentStatus.Scheduled or AppointmentStatus.Confirmed => "Intake",
             AppointmentStatus.Arrived => "SendToQueue",
-            AppointmentStatus.Waiting => "CallPatient",
+            AppointmentStatus.Waiting => queueStatus == ClinicQueueStatus.Waiting ? "CallPatient" : "EnterRoom",
             AppointmentStatus.Called => "EnterRoom",
             AppointmentStatus.InRoom => "StartVisit",
+            AppointmentStatus.InProgress when checkoutStatus == "ReadyForCheckout" => "Checkout",
             AppointmentStatus.InProgress => "InProgress",
             AppointmentStatus.Completed => "None",
-            AppointmentStatus.Cancelled => "None",
-            AppointmentStatus.NoShow => "None",
             _ => "None"
         };
     }
 
     private static string BuildPatientDisplayName(Patient? patient)
     {
-        if (patient == null) return "";
+        if (patient == null) return "—";
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(patient.FirstName)) parts.Add(patient.FirstName.Trim());
         if (!string.IsNullOrWhiteSpace(patient.MiddleName)) parts.Add(patient.MiddleName.Trim());
         if (!string.IsNullOrWhiteSpace(patient.LastName)) parts.Add(patient.LastName.Trim());
-        return string.Join(" ", parts);
+        return parts.Count > 0 ? string.Join(" ", parts) : "—";
     }
 
     private Guid? GetCurrentUserId()
     {
-        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
+        var claim = User.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == "userId");
+        if (claim != null && Guid.TryParse(claim.Value, out var uid))
+            return uid;
+        return null;
     }
 
-    /// <summary>
-    /// FIX-1: Determines if the current user is a doctor role.
-    /// Doctor roles: Orthodontist, GeneralDentist, OralSurgeon.
-    /// These roles must not receive patient phone/email in API responses.
-    /// </summary>
     private bool IsDoctorRole()
     {
-        return User.IsInRole("Orthodontist") || User.IsInRole("GeneralDentist") || User.IsInRole("OralSurgeon");
+        return patientAccessService.IsDoctor;
     }
 }
 
@@ -1152,13 +1102,10 @@ public class HandoffRequest
 public class CheckoutRequest
 {
     /// <summary>
-    /// FIX-4: PaymentAmount is for reference/guidance ONLY.
+    /// PaymentAmount is for reference/guidance ONLY.
     /// Checkout is workflow-status only — it does NOT create a Payment.
     /// To record actual payment, use the Finance module (POST /api/payments)
     /// via FinanceService.CreatePaymentAsync().
-    /// If paymentAmount is provided, the response includes a next action
-    /// reminding the user to register payment through the proper workflow.
-    /// Unlinked payments (without invoice/contract) are not created here.
     /// </summary>
     public decimal? PaymentAmount { get; set; }
     public string? PaymentMethod { get; set; }

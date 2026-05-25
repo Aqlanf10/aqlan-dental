@@ -6,11 +6,11 @@ import Link from "next/link";
 import {
   Route, Stethoscope, CreditCard, Wrench, HeartPulse, Clock,
   MessageSquare, FileText, RefreshCw, CalendarCheck, UserCheck,
-  Megaphone, DoorOpen, PlayCircle, AlertTriangle, Wallet,
-  CheckCircle2, UserX, Ban,
-  Calendar, Printer, Send, Mail, MessageCircle, Camera,
-  Plus, Save, ArrowUpRight, CircleDot, Info, ShieldAlert,
-  BadgeDollarSign, Receipt, FileSpreadsheet, ExternalLink,
+  Megaphone, DoorOpen, PlayCircle, AlertTriangle,
+  CheckCircle2,
+  Calendar, Printer,
+  Plus, Save, ArrowUpRight, CircleDot, Info,
+  Receipt, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
@@ -188,7 +188,6 @@ export default function PatientDailyJourneyHub() {
   const canViewPatients = useHasPermission(PERMISSION_KEYS.PATIENTS_VIEW);
 
   const isDoctor = userRole === "Orthodontist" || userRole === "GeneralDentist" || userRole === "OralSurgeon";
-  const isAdmin = userRole === "Admin";
 
   // ─── Action Handlers ────────────────────────────────────────────────────────
 
@@ -351,9 +350,9 @@ export default function PatientDailyJourneyHub() {
 
   const sidebarNav = useMemo(() => {
     const items: { key: PanelKey; label: string; icon: React.ElementType; section: string; badge?: string; badgeType?: string; hidden?: boolean }[] = [
-      { key: "journey", label: "رحلة المريض", icon: Route, section: "رحلة اليوم", badge: data?.nextAction && data.nextAction !== "None" ? NEXT_ACTION_ARABIC[data.nextAction] ?? undefined : undefined, badgeType: "teal" },
-      { key: "visit", label: "تسجيل الزيارة", icon: Stethoscope, section: "رحلة اليوم", hidden: isDoctor ? false : !canViewVisits },
-      { key: "payment", label: "الدفع والحساب", icon: CreditCard, section: "رحلة اليوم", badge: data?.financeSummary?.outstandingBalance ? data.financeSummary.outstandingBalance.toLocaleString("ar-SA") : undefined, badgeType: "warn", hidden: isDoctor },
+      { key: "journey", label: "رحلة المريض", icon: Route, section: "رحلة اليوم", hidden: !canViewJourney, badge: data?.nextAction && data.nextAction !== "None" ? NEXT_ACTION_ARABIC[data.nextAction] ?? undefined : undefined, badgeType: "teal" },
+      { key: "visit", label: "تسجيل الزيارة", icon: Stethoscope, section: "رحلة اليوم", hidden: !canViewVisits },
+      { key: "payment", label: "الدفع والحساب", icon: CreditCard, section: "رحلة اليوم", badge: data?.financeSummary?.outstandingBalance ? data.financeSummary.outstandingBalance.toLocaleString("ar-SA") : undefined, badgeType: "warn", hidden: !(canViewFinance || canViewCheckout) },
       { key: "ortho", label: "ملف التقويم", icon: Wrench, section: "الملف السريري", badge: data?.activeOrthoCase ? "نشط" : undefined, badgeType: "teal" },
       { key: "history", label: "التاريخ الطبي", icon: HeartPulse, section: "الملف السريري" },
       { key: "timeline", label: "السجل الزمني", icon: Clock, section: "الملف السريري", badge: data?.timeline?.length ? data.timeline.length.toLocaleString("ar-SA") : undefined },
@@ -361,7 +360,7 @@ export default function PatientDailyJourneyHub() {
       { key: "docs", label: "المستندات", icon: FileText, section: "التواصل والمستندات" },
     ];
     return items.filter((i) => !i.hidden);
-  }, [data, isDoctor, canViewVisits]);
+  }, [data, canViewVisits, canViewFinance, canViewCheckout]);
 
   // ─── Render: Loading State ──────────────────────────────────────────────────
 
@@ -1433,12 +1432,12 @@ export default function PatientDailyJourneyHub() {
                         نظرة عامة
                       </span>
                       <div className="space-y-2">
-                        {activeOrthoCase.caseType && (
+                        {activeOrthoCase.applianceType && (
                           <div>
                             <span className="text-[10px] text-[#5f5e5a] font-semibold">نوع الجهاز</span>
-                            <p className="text-[12px] text-[#2c2c2a] font-medium">{activeOrthoCase.caseType}</p>
+                            <p className="text-[12px] text-[#2c2c2a] font-medium">{activeOrthoCase.applianceType}</p>
                           </div>
-                        )}
+                        )
                         <div>
                           <span className="text-[10px] text-[#5f5e5a] font-semibold">الحالة</span>
                           <span className={cn(
@@ -1458,26 +1457,26 @@ export default function PatientDailyJourneyHub() {
                             <p className="text-[12px] text-[#2c2c2a] font-medium">{fmtDate(activeOrthoCase.startDate)}</p>
                           </div>
                         )}
-                        {activeOrthoCase.estimatedEndDate && (
+                        {activeOrthoCase.expectedDurationMonths && (
                           <div>
-                            <span className="text-[10px] text-[#5f5e5a] font-semibold">الانتهاء المتوقع</span>
-                            <p className="text-[12px] text-[#2c2c2a] font-medium">{fmtDate(activeOrthoCase.estimatedEndDate)}</p>
+                            <span className="text-[10px] text-[#5f5e5a] font-semibold">المدة المتوقعة</span>
+                            <p className="text-[12px] text-[#2c2c2a] font-medium">{activeOrthoCase.expectedDurationMonths} شهر</p>
                           </div>
                         )}
-                        {activeOrthoCase.notes && (
+                        {activeOrthoCase.currentStage && (
                           <div>
-                            <span className="text-[10px] text-[#5f5e5a] font-semibold">ملاحظات</span>
-                            <p className="text-[12px] text-[#2c2c2a] font-medium">{activeOrthoCase.notes}</p>
+                            <span className="text-[10px] text-[#5f5e5a] font-semibold">المرحلة الحالية</span>
+                            <p className="text-[12px] text-[#2c2c2a] font-medium">{activeOrthoCase.currentStage}</p>
                           </div>
                         )}
                         <div className="h-px bg-[#d3d1c7]" />
                         <div>
                           <div className="text-[10px] text-[#5f5e5a] mb-1">نسبة الإنجاز</div>
                           <div className="bg-[#f1efe8] rounded h-1.5 overflow-hidden">
-                            <div className="h-full rounded bg-[#3d7ab5] transition-all duration-500" style={{ width: `${activeOrthoCase.status === "Completed" ? 100 : 55}%` }} />
+                            <div className="h-full rounded bg-[#3d7ab5] transition-all duration-500" style={{ width: `${activeOrthoCase.stagePercentage ?? (activeOrthoCase.status === "Completed" ? 100 : 0)}%` }} />
                           </div>
                           <div className="text-[10px] text-[#2d5e8e] font-bold mt-1">
-                            {activeOrthoCase.status === "Completed" ? "100%" : "55%"} مكتمل
+                            {activeOrthoCase.stagePercentage ?? (activeOrthoCase.status === "Completed" ? 100 : 0)}% مكتمل
                           </div>
                         </div>
                       </div>

@@ -111,15 +111,23 @@ export interface DailyJourneyContract {
   status: string;
 }
 
+/**
+ * Ortho case summary from backend.
+ * Matches actual OrthoCase entity fields:
+ *   ApplianceType (not CaseType), ExpectedDurationMonths (not EstimatedEndDate),
+ *   CurrentStage (not Notes), plus TotalFee and StagePercentage.
+ */
 export interface DailyJourneyOrtho {
   id: string;
   caseNumber?: string;
   status: string;
-  caseType?: string;
+  applianceType?: string;            // was caseType — OrthoCase has ApplianceType
   startDate?: string;
-  estimatedEndDate?: string;
-  notes?: string;
+  expectedDurationMonths?: number;   // was estimatedEndDate — compute on frontend if needed
+  currentStage?: string;             // was notes — OrthoCase has CurrentStage
   doctorId?: string;
+  totalFee?: number;
+  stagePercentage?: number;
 }
 
 export interface MedicalAlert {

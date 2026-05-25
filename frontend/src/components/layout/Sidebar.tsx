@@ -8,7 +8,7 @@ import {
   BarChart2, Package, FlaskConical, Settings, LogOut,
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock, FileText,
   UserRound, Building2, Monitor, UserCog,
-  CreditCard, Truck, ShoppingCart, ChevronDown,
+  CreditCard, FileCheck, AlertTriangle, Truck, ShoppingCart, ChevronDown, Percent,
   Smartphone, Banknote, CalendarOff, Shield,
 } from "lucide-react";
 import Image from "next/image";
@@ -67,6 +67,8 @@ const NAV: NavEntry[] = [
       { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
       { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [], permission: PERMISSION_KEYS.CLINIC_DISPLAY_VIEW },
       { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW, badge: "جديد" },
+      { href: "/finance/payments",    label: "المدفوعات",        icon: CreditCard,    roles: ["Admin","Reception","Accountant"], permission: PERMISSION_KEYS.PAYMENTS_VIEW },
+      { href: "/finance/invoices",    label: "الفواتير",         icon: FileText,      roles: ["Admin","Reception","Accountant"], permission: PERMISSION_KEYS.INVOICES_VIEW },
       { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"], permission: PERMISSION_KEYS.ROOMS_VIEW },
     ],
   },
@@ -86,8 +88,18 @@ const NAV: NavEntry[] = [
   { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: [] },
   { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: [] },
 
-  // ── المالية ───────────────────────────────────────────────────────────────
-  { href: "/finance-v2",  label: "المالية",  icon: Wallet,  roles: ["Admin","Reception","Accountant"],  section: "المالية", badge: "شاشة موحدة" },
+  // ── عمليات ───────────────────────────────────────────────────────────────
+  {
+    kind: "group", section: "عمليات",
+    label: "المالية", icon: Wallet,
+    roles: ["Admin","Reception","Accountant"],
+    children: [
+      { href: "/finance-v2",        label: "الإدارة المالية V2", icon: Wallet,         roles: ["Admin","Reception","Accountant"], badge: "جديد" },
+      { href: "/finance",           label: "ملخص المالية", icon: Wallet,         roles: ["Admin","Reception","Accountant"] },
+      { href: "/finance/contracts", label: "العقود",       icon: FileCheck,      roles: ["Admin","Reception","Accountant"] },
+      { href: "/finance/overdue",   label: "المتأخرات",    icon: AlertTriangle,  roles: ["Admin","Reception","Accountant"] },
+    ],
+  },
   {
     kind: "group",
     label: "المخزون", icon: Package,
@@ -103,6 +115,7 @@ const NAV: NavEntry[] = [
 
   // ── تقارير ───────────────────────────────────────────────────────────────
   { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: ["Admin","Accountant"],                                         section: "تقارير" },
+  { href: "/commissions",    label: "عمولات الأطباء",   icon: Percent,         roles: ["Admin","Accountant","Orthodontist","GeneralDentist","OralSurgeon"] },
 
   // ── الإدارة ───────────────────────────────────────────────────────────────
   { href: "/doctors",        label: "الأطباء",          icon: UserRound,       roles: ["Admin"],                                                      section: "الإدارة" },

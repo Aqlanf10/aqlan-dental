@@ -11,7 +11,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = "ReportsAccess")]
-public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<ReportsController> logger) : ControllerBase
+public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<ReportsController> logger, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet("center-summary")]
     public async Task<IActionResult> GetCenterSummary([FromQuery] string? from, [FromQuery] string? to)
@@ -1081,5 +1081,92 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             logger.LogWarning(ex, "Financial statement PDF generation failed for patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
+    }
+
+    // ─── GET /api/reports/profit-loss — Consolidated P&L Statement ──────────
+    [HttpGet("profit-loss")]
+    [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
+    public async Task<IActionResult> GetProfitLossReport([FromQuery] string? from, [FromQuery] string? to)
+    {
+        var (fromDate, fromErr) = DateParsingHelper.TryParseDateOrDefault(from, DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), "تاريخ البداية");
+        if (fromErr != null) return fromErr;
+        var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
+        if (toErr != null) return toErr;
+
+        var query = db.CashFlowTransactions.Where(t => t.IsActive && t.TransactionDate >= fromDate && t.TransactionDate <= toDate);
+        
+        // Branch filtering if applicable
+        if (currentUser.BranchId.HasValue && !currentUser.IsAdmin)
+        {
+            query = query.Where(t => t.BranchId == currentUser.BranchId.Value);
+        }
+
+        var transactions = await query.ToListAsync();
+
+        // Calculate Revenue Inflows
+        var grossRevenue = transactions.Where(t => t.Type == TransactionType.Inflow && t.Category == FinancialCategory.PatientPayment).Sum(t => t.Amount);
+        var totalRefunds = transactions.Where(t => t.Type == TransactionType.Outflow && t.Category == FinancialCategory.Refund).Sum(t => t.Amount);
+        var netRevenue = grossRevenue - totalRefunds;
+
+        // Calculate Direct Costs (COGS)
+        var expenseIds = transactions
+            .Where(t => t.Category == FinancialCategory.OperationalExpense && t.ReferenceId.HasValue)
+            .Select(t => t.ReferenceId!.Value)
+            .ToHashSet();
+
+        var expenses = await db.OperationalExpenses
+            .Where(e => expenseIds.Contains(e.Id) && e.IsActive)
+            .ToListAsync();
+
+        var labFees = expenses.Where(e => e.Category == ExpenseCategory.LabFees).Sum(e => e.Amount);
+        var clinicSupplies = expenses.Where(e => e.Category == ExpenseCategory.ClinicSupplies).Sum(e => e.Amount);
+        var totalDirectCosts = labFees + clinicSupplies;
+
+        var grossProfit = netRevenue - totalDirectCosts;
+
+        // Calculate Operating Expenses (OPEX)
+        var salariesPaid = transactions.Where(t => t.Category == FinancialCategory.SalaryPayment).Sum(t => t.Amount);
+        var commissionsPaid = transactions.Where(t => t.Category == FinancialCategory.DoctorCommission).Sum(t => t.Amount);
+        
+        var rent = expenses.Where(e => e.Category == ExpenseCategory.Rent).Sum(e => e.Amount);
+        var utilities = expenses.Where(e => e.Category == ExpenseCategory.Utilities).Sum(e => e.Amount);
+        var marketing = expenses.Where(e => e.Category == ExpenseCategory.Marketing).Sum(e => e.Amount);
+        var maintenance = expenses.Where(e => e.Category == ExpenseCategory.Maintenance).Sum(e => e.Amount);
+        var taxes = expenses.Where(e => e.Category == ExpenseCategory.Taxes).Sum(e => e.Amount);
+        var opexMiscellaneous = expenses.Where(e => e.Category == ExpenseCategory.Miscellaneous).Sum(e => e.Amount);
+
+        var totalOpex = salariesPaid + commissionsPaid + rent + utilities + marketing + maintenance + taxes + opexMiscellaneous;
+        var netProfit = grossProfit - totalOpex;
+
+        return Ok(new
+        {
+            fromDate = fromDate.ToString("yyyy-MM-dd"),
+            toDate = toDate.ToString("yyyy-MM-dd"),
+            
+            // Revenues
+            grossRevenue,
+            totalRefunds,
+            netRevenue,
+
+            // Direct Costs
+            labFees,
+            clinicSupplies,
+            totalDirectCosts,
+            grossProfit,
+
+            // Operating Expenses (OPEX)
+            salariesPaid,
+            commissionsPaid,
+            rent,
+            utilities,
+            marketing,
+            maintenance,
+            taxes,
+            opexMiscellaneous,
+            totalOpex,
+
+            // Net Bottom Line
+            netProfit
+        });
     }
 }

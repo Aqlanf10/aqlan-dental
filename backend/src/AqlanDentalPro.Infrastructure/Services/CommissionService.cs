@@ -243,13 +243,26 @@ public class CommissionService(
             PaidBy          = recordedBy,
         };
 
-        // NOTE: DoctorCommissionPayment is a doctor-level lump-sum disbursement.
-        // It is NOT allocated to individual line items automatically — the LineItemIds
-        // parameter optionally marks specific items as Paid for tracking, but the
-        // payment amount is not split or reconciled per line.
-        // TODO: add a DoctorCommissionPaymentLine allocation table if per-line-item
-        //       payout reconciliation is required in the future.
         db.DoctorCommissionPayments.Add(payment);
+
+        // Auto-create central ledger cashflow transaction (Outflow / Doctor Commission)
+        var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+        var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.DoctorCommission) + 1;
+        var cashflow = new CashFlowTransaction
+        {
+            TransactionNumber = $"TX-{datePart}-COM-{nextSeq:D3}",
+            Type = TransactionType.Outflow,
+            Category = FinancialCategory.DoctorCommission,
+            Amount = req.Amount,
+            PaymentMethod = req.PaymentMethod ?? "cash",
+            TransactionDate = req.PaymentDate,
+            ReferenceId = payment.Id,
+            ReferenceNumber = req.ReferenceNumber ?? $"COM-{doctor.Id.ToString()[..4]}",
+            Description = $"صرف عمولة الطبيب: {doctor.Name}",
+            PerformedBy = recordedBy,
+            BranchId = Guid.Empty
+        };
+        db.CashFlowTransactions.Add(cashflow);
 
         // Mark specified line items as Paid
         if (req.LineItemIds is { Count: > 0 })

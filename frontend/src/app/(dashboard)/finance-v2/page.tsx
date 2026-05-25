@@ -12,10 +12,8 @@ import {
   TrendingUp, Wallet, AlertCircle, FileText, Printer,
   RefreshCw, CheckCircle2, Search, Percent,
   Settings, ChevronRight, Ban, Building, Coins, ShieldAlert,
-  Calendar, Landmark, X, Download, History
+  Calendar, Landmark, X
 } from "lucide-react";
-import { useCommissionReport, useRecordCommissionPayment, useCommissionPayments } from "@/hooks/useCommissions";
-import type { CommissionStatus } from "@/types/commission";
 
 // --- Types ---
 interface RecentInvoice {
@@ -111,399 +109,6 @@ interface PatientFinanceDetails {
   financialStatus: string;
 }
 
-// ─── Commission Helpers ──────────────────────────────────────────────────
-function fmt(n: number) {
-  return n.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
-function todayStr() { return new Date().toISOString().slice(0, 10); }
-function firstOfMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
-const COMMISSION_STATUS_MAP: Record<string, { label: string; color: string }> = {
-  Pending:    { label: "قيد الانتظار", color: "bg-gray-100 text-gray-600" },
-  Calculated: { label: "محسوبة",        color: "bg-blue-100 text-blue-700" },
-  Approved:   { label: "معتمدة",        color: "bg-green-100 text-green-700" },
-  Paid:       { label: "مدفوعة",        color: "bg-emerald-100 text-emerald-700" },
-};
-
-// ─── Commission Report Tab (inline) ────────────────────────────────────────
-function CommissionReportTab({
-  summary,
-  user,
-  doctors,
-}: {
-  summary: FinanceV2Summary | null;
-  user: { role: string; doctorId?: string; doctorName?: string } | null;
-  doctors: { id: string; name: string; isActive?: boolean }[] | undefined;
-}) {
-  const isAdmin = user?.role === "Admin" || user?.role === "Accountant";
-  const [from, setFrom] = useState(firstOfMonth());
-  const [to, setTo] = useState(todayStr());
-  const [doctorId, setDoctorId] = useState("");
-  const [commissionStatus, setStatus] = useState("");
-  const [applied, setApplied] = useState<{ from: string; to: string; doctorId?: string; commissionStatus?: string } | null>(null);
-
-  // Payment dialog
-  const [showPayDialog, setShowPayDialog] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [payDoctorId, setPayDoctorId] = useState("");
-  const [payAmount, setPayAmount] = useState<number>(0);
-  const [payMethod, setPayMethod] = useState("cash");
-  const [payRef, setPayRef] = useState("");
-  const [payNotes, setPayNotes] = useState("");
-  const [payErr, setPayErr] = useState("");
-
-  const { data: report, isLoading, error } = useCommissionReport(applied);
-  const recordPayment = useRecordCommissionPayment();
-  const { data: payments, refetch: refetchPayments } = useCommissionPayments();
-
-  const reportSummary = report?.summary;
-  const rows = report?.rows ?? [];
-
-  function applyFilters() {
-    const effectiveDoctorId = isAdmin
-      ? (doctorId || undefined)
-      : (user?.doctorId || undefined);
-    setApplied({
-      from,
-      to,
-      doctorId: effectiveDoctorId,
-      commissionStatus: commissionStatus || undefined,
-    });
-  }
-
-  async function handleRecordPayment() {
-    if (!payDoctorId || payAmount <= 0) {
-      setPayErr("يرجى اختيار الطبيب وإدخال مبلغ صحيح");
-      return;
-    }
-    setPayErr("");
-    try {
-      await recordPayment.mutateAsync({
-        doctorId: payDoctorId,
-        amount: payAmount,
-        paymentDate: todayStr(),
-        paymentMethod: payMethod || undefined,
-        referenceNumber: payRef || undefined,
-        notes: payNotes || undefined,
-      });
-      setShowPayDialog(false);
-      setPayDoctorId(""); setPayAmount(0); setPayRef(""); setPayNotes("");
-      refetchPayments();
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setPayErr(msg ?? "فشل تسجيل الدفعة");
-    }
-  }
-
-  function exportCsv() {
-    if (!rows.length) return;
-    const headers = [
-      "التاريخ","المريض","رقم الفاتورة","الخدمة","الطبيب",
-      "الإجمالي","الخصم","تكلفة المواد","أجور المعمل","تكاليف أخرى",
-      "الصافي الخاضع","نسبة الطبيب","عمولة الطبيب","المدفوع","المتبقي","الحالة",
-    ];
-    const csv = [
-      headers.join(","),
-      ...rows.map(r => [
-        r.date.slice(0,10), r.patientName, r.invoiceNumber, r.serviceName,
-        r.doctorName ?? "", r.grossAmount, r.discount, r.materialCost,
-        r.labCost, r.otherCosts, r.netCommissionableAmount, r.doctorPercentage,
-        r.doctorCommission, r.paidCommission, r.remainingCommission, r.status,
-      ].join(","))
-    ].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `commissions-${from}-${to}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* Quick Summary */}
-      <div className="bg-green-50/50 p-5 rounded-2xl border border-green-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <span className="text-[10px] text-green-700 font-bold block">إجمالي العمولات المستحقة للأطباء (غير المدفوعة)</span>
-          <h4 className="text-2xl font-black font-mono text-green-700 mt-2">
-            {summary ? formatYemeniRiyal(summary.pendingCommissionsAmount) : "YER 0.00"}
-          </h4>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setShowHistory((v) => !v); if (!showHistory) refetchPayments(); }}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50"
-          >
-            <History className="w-3.5 h-3.5" /> سجل الدفعات
-          </button>
-          <button
-            onClick={() => setShowPayDialog(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition"
-          >
-            <Landmark className="w-3.5 h-3.5" /> دفع عمولات
-          </button>
-          <button
-            onClick={exportCsv}
-            disabled={!rows.length}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-          >
-            <Download className="w-3.5 h-3.5" /> تصدير CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <Search className="w-4 h-4 text-gray-400" />
-          <span className="text-xs font-bold text-gray-700">فلاتر تقرير العمولات</span>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div>
-            <label className="block text-[10px] font-bold text-gray-500 mb-1">من تاريخ</label>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-              className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-clinic-blue" />
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-gray-500 mb-1">إلى تاريخ</label>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)}
-              className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-clinic-blue" />
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-gray-500 mb-1">الطبيب</label>
-            {!isAdmin ? (
-              <select disabled className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 bg-gray-50 cursor-not-allowed">
-                <option>{user?.doctorName ?? "الطبيب الحالي"}</option>
-              </select>
-            ) : (
-              <select value={doctorId} onChange={e => setDoctorId(e.target.value)}
-                className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-clinic-blue bg-white">
-                <option value="">كل الأطباء</option>
-                {doctors?.filter(d => d.isActive !== false).map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-gray-500 mb-1">حالة العمولة</label>
-            <select value={commissionStatus} onChange={e => setStatus(e.target.value)}
-              className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-clinic-blue bg-white">
-              <option value="">كل الحالات</option>
-              <option value="Pending">قيد الانتظار</option>
-              <option value="Calculated">محسوبة</option>
-              <option value="Approved">معتمدة</option>
-              <option value="Paid">مدفوعة</option>
-            </select>
-          </div>
-        </div>
-        <div className="mt-3 flex justify-end">
-          <button onClick={applyFilters}
-            className="flex items-center gap-1.5 px-4 py-2 bg-clinic-blue text-white text-xs font-bold rounded-xl hover:opacity-90">
-            <RefreshCw className="w-3.5 h-3.5" /> عرض التقرير
-          </button>
-        </div>
-      </div>
-
-      {/* Report Summary Cards */}
-      {reportSummary && (
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-          {[
-            { label: "إجمالي العلاجات", value: fmt(reportSummary.totalGross), color: "bg-white border-gray-100 text-gray-800" },
-            { label: "إجمالي التكاليف", value: fmt(reportSummary.totalMaterialCost + reportSummary.totalLabCost + reportSummary.totalOtherCosts), color: "bg-red-50 border-red-100 text-red-800" },
-            { label: "الصافي الخاضع", value: fmt(reportSummary.totalNet), color: "bg-blue-50 border-blue-100 text-blue-800" },
-            { label: "مستحق الأطباء", value: fmt(reportSummary.totalDoctorCommission), color: "bg-purple-50 border-purple-100 text-purple-800" },
-            { label: "تم الدفع", value: fmt(reportSummary.totalPaid), color: "bg-green-50 border-green-100 text-green-800" },
-            { label: "المتبقي", value: fmt(reportSummary.totalRemaining), color: "bg-amber-50 border-amber-100 text-amber-800" },
-          ].map((card, i) => (
-            <div key={i} className={`rounded-xl p-3 border ${card.color}`}>
-              <p className="text-[10px] font-bold opacity-70 mb-1">{card.label}</p>
-              <p className="text-sm font-extrabold">{card.value} ر.ي</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Table */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        {isLoading && (
-          <div className="flex items-center justify-center py-12 text-gray-400 text-xs">
-            <RefreshCw className="w-4 h-4 animate-spin ml-2" /> جاري التحميل…
-          </div>
-        )}
-        {error && (
-          <div className="flex items-center justify-center py-12 text-red-500 text-xs">
-            <AlertCircle className="w-4 h-4 ml-2" /> تعذّر تحميل التقرير
-          </div>
-        )}
-        {!isLoading && !error && !applied && (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-            <Percent className="w-8 h-8 mb-3 opacity-40" />
-            <p className="text-xs">اختر الفلاتر واضغط &quot;عرض التقرير&quot;</p>
-          </div>
-        )}
-        {!isLoading && applied && rows.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-            <CheckCircle2 className="w-8 h-8 mb-3 opacity-40" />
-            <p className="text-xs">لا توجد بيانات للفترة المحددة</p>
-          </div>
-        )}
-        {!isLoading && rows.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-right">
-              <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
-                <tr>
-                  {["التاريخ","المريض","الفاتورة","الخدمة","الطبيب","الإجمالي","الخصم","تكلفة المواد","أجور المعمل","تكاليف أخرى","الصافي","النسبة","عمولة الطبيب","المدفوع","المتبقي","الحالة"].map(h => (
-                    <th key={h} className="px-3 py-3 text-right font-bold whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 font-medium text-gray-700">
-                {rows.map((row, i) => {
-                  const st = COMMISSION_STATUS_MAP[row.status as CommissionStatus] ?? COMMISSION_STATUS_MAP.Pending;
-                  return (
-                    <tr key={i} className="hover:bg-gray-50/50 transition">
-                      <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{row.date.slice(0,10)}</td>
-                      <td className="px-3 py-2.5 font-bold text-gray-900 whitespace-nowrap">{row.patientName}</td>
-                      <td className="px-3 py-2.5 text-gray-500 font-mono">{row.invoiceNumber}</td>
-                      <td className="px-3 py-2.5 text-gray-700 max-w-[120px] truncate">{row.serviceName}</td>
-                      <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{row.doctorName ?? "—"}</td>
-                      <td className="px-3 py-2.5 font-medium text-gray-800 whitespace-nowrap">{fmt(row.grossAmount)}</td>
-                      <td className="px-3 py-2.5 text-red-600 whitespace-nowrap">{row.discount > 0 ? `(${fmt(row.discount)})` : "—"}</td>
-                      <td className="px-3 py-2.5 text-red-600 whitespace-nowrap">{row.materialCost > 0 ? `(${fmt(row.materialCost)})` : "—"}</td>
-                      <td className="px-3 py-2.5 text-red-600 whitespace-nowrap">{row.labCost > 0 ? `(${fmt(row.labCost)})` : "—"}</td>
-                      <td className="px-3 py-2.5 text-red-600 whitespace-nowrap">{row.otherCosts > 0 ? `(${fmt(row.otherCosts)})` : "—"}</td>
-                      <td className="px-3 py-2.5 font-bold text-blue-700 whitespace-nowrap">{fmt(row.netCommissionableAmount)}</td>
-                      <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{row.doctorPercentage}%</td>
-                      <td className="px-3 py-2.5 font-bold text-purple-700 whitespace-nowrap">{fmt(row.doctorCommission)}</td>
-                      <td className="px-3 py-2.5 text-green-700 whitespace-nowrap">{fmt(row.paidCommission)}</td>
-                      <td className="px-3 py-2.5 text-amber-700 whitespace-nowrap">{fmt(row.remainingCommission)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${st.color}`}>
-                          {st.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Payment History */}
-      {showHistory && (
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-            <History className="w-4 h-4 text-gray-500" />
-            <h3 className="font-extrabold text-xs text-gray-900">سجل دفعات العمولات</h3>
-            <span className="text-[10px] text-gray-400 mr-auto">{payments?.length ?? 0} دفعة</span>
-          </div>
-          {!payments?.length ? (
-            <div className="flex items-center justify-center py-10 text-gray-400 text-xs">لا توجد دفعات مسجلة</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-right">
-                <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
-                  <tr>
-                    {["التاريخ","الطبيب","المبلغ","طريقة الدفع","المرجع","ملاحظات"].map(h => (
-                      <th key={h} className="px-4 py-3 text-right font-bold whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50 font-medium text-gray-700">
-                  {payments.map((p) => (
-                    <tr key={p.id} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{p.paymentDate?.slice(0,10) ?? "—"}</td>
-                      <td className="px-4 py-2.5 font-bold text-gray-900">{p.doctorName ?? "—"}</td>
-                      <td className="px-4 py-2.5 font-bold text-green-600 whitespace-nowrap">{fmt(p.amount)} ر.ي</td>
-                      <td className="px-4 py-2.5 text-gray-600">
-                        {p.paymentMethod === "cash" ? "نقدي" : p.paymentMethod === "card" ? "بطاقة" : p.paymentMethod === "bank_transfer" ? "تحويل بنكي" : p.paymentMethod ?? "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-500 font-mono">{p.referenceNumber ?? "—"}</td>
-                      <td className="px-4 py-2.5 text-gray-400 max-w-[140px] truncate">{p.notes ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Pay Commissions Dialog */}
-      {showPayDialog && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-extrabold text-sm text-gray-900">تسجيل دفعة عمولة</h3>
-              <button onClick={() => setShowPayDialog(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 mb-1">الطبيب <span className="text-red-500">*</span></label>
-                <select value={payDoctorId} onChange={(e) => setPayDoctorId(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 bg-white px-3 py-2.5 outline-none focus:border-clinic-blue">
-                  <option value="">اختر الطبيب</option>
-                  {doctors?.filter(d => d.isActive !== false).map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 mb-1">المبلغ (ر.ي) <span className="text-red-500">*</span></label>
-                <input type="number" min={0.01} step={0.01} value={payAmount || ""}
-                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2.5 outline-none focus:border-clinic-blue font-mono"
-                  dir="ltr" placeholder="0.00" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 mb-1">طريقة الدفع</label>
-                <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 bg-white px-3 py-2.5 outline-none focus:border-clinic-blue">
-                  <option value="cash">نقدي</option>
-                  <option value="card">بطاقة</option>
-                  <option value="bank_transfer">تحويل بنكي</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 mb-1">رقم المرجع</label>
-                <input type="text" value={payRef} onChange={(e) => setPayRef(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2.5 outline-none focus:border-clinic-blue font-mono"
-                  placeholder="REF-001" dir="ltr" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-gray-500 mb-1">ملاحظات</label>
-                <input type="text" value={payNotes} onChange={(e) => setPayNotes(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2.5 outline-none focus:border-clinic-blue"
-                  placeholder="ملاحظات اختيارية" />
-              </div>
-              {payErr && <p className="text-[10px] text-red-600 bg-red-50 rounded-lg px-3 py-2">{payErr}</p>}
-            </div>
-            <div className="flex items-center gap-2 pt-2">
-              <button onClick={handleRecordPayment}
-                disabled={recordPayment.isPending || !payDoctorId || payAmount <= 0}
-                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
-                <Landmark className="w-3.5 h-3.5" />
-                {recordPayment.isPending ? "جاري التسجيل…" : "تسجيل الدفعة"}
-              </button>
-              <button onClick={() => setShowPayDialog(false)}
-                className="px-4 py-2.5 text-xs font-bold rounded-xl border border-gray-200 hover:bg-gray-50">
-                إلغاء
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function FinanceV2Page() {
   const { user } = useAuthStore();
   const router = useRouter();
@@ -556,6 +161,78 @@ export default function FinanceV2Page() {
   // Close Day Box UI
   const [showCloseBoxDialog, setShowCloseBoxDialog] = useState(false);
 
+  // Active Cashier Session States
+  interface CashierSession {
+    id: string;
+    sessionNumber: string;
+    openingTime: string;
+    openingBalance: number;
+    status: string;
+  }
+  const [activeSession, setActiveSession] = useState<CashierSession | null>(null);
+  const [loadingSession, setLoadingSession] = useState(false);
+  const [openingBalance, setOpeningBalance] = useState("");
+  const [isOpeningSession, setIsOpeningSession] = useState(false);
+
+  // Closing Session Form State
+  const [actualClosingCash, setActualClosingCash] = useState("");
+  const [actualClosingCard, setActualClosingCard] = useState("");
+  const [actualClosingBank, setActualClosingBank] = useState("");
+  const [closeSessionNotes, setCloseSessionNotes] = useState("");
+  const [isClosingSession, setIsClosingSession] = useState(false);
+
+  // Expenses Tab States
+  interface ExpenseItem {
+    id: string;
+    expenseNumber: string;
+    title: string;
+    category: string;
+    categoryArabic: string;
+    amount: number;
+    expenseDate: string;
+    paymentMethod: string;
+    supplierName?: string;
+    labOrderNumber?: string;
+    notes?: string;
+    receiptAttachmentUrl?: string;
+  }
+  const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
+  const [loadingExpenses, setLoadingExpenses] = useState(false);
+  const [expenseTitle, setExpenseTitle] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("Rent");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expensePaymentMethod, setExpensePaymentMethod] = useState("cash");
+  const [expenseDate, setExpenseDate] = useState("");
+  const [expenseNotes, setExpenseNotes] = useState("");
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+
+  // Profit & Loss Report States
+  interface ProfitLossReport {
+    fromDate: string;
+    toDate: string;
+    grossRevenue: number;
+    totalRefunds: number;
+    netRevenue: number;
+    labFees: number;
+    clinicSupplies: number;
+    totalDirectCosts: number;
+    grossProfit: number;
+    salariesPaid: number;
+    commissionsPaid: number;
+    rent: number;
+    utilities: number;
+    marketing: number;
+    maintenance: number;
+    taxes: number;
+    opexMiscellaneous: number;
+    totalOpex: number;
+    netProfit: number;
+  }
+  const [plReport, setPlReport] = useState<ProfitLossReport | null>(null);
+  const [loadingPLReport, setLoadingPLReport] = useState(false);
+  const [plFromDate, setPlFromDate] = useState("");
+  const [plToDate, setPlToDate] = useState("");
+
   const { data: doctors } = useDoctors();
 
   // Deny Doctor Access immediately
@@ -582,8 +259,154 @@ export default function FinanceV2Page() {
     }
   };
 
+  const fetchActiveSession = async () => {
+    setLoadingSession(true);
+    try {
+      const res = await api.get<CashierSession>("/api/cashier-sessions/active");
+      setActiveSession(res.data);
+    } catch (err) {
+      console.warn("No active cashier session found.");
+      setActiveSession(null);
+    } finally {
+      setLoadingSession(false);
+    }
+  };
+
+  const handleOpenSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const balanceNum = parseFloat(openingBalance);
+    if (isNaN(balanceNum) || balanceNum < 0) {
+      toast.error("الرجاء إدخال عهدة افتتاحية صحيحة.", "مبلغ غير صالح");
+      return;
+    }
+    setIsOpeningSession(true);
+    try {
+      const res = await api.post<{ sessionNumber: string; id: string }>("/api/cashier-sessions/open", {
+        openingBalance: balanceNum,
+        notes: "افتتاح الصندوق اليومي"
+      });
+      toast.success(`تم فتح صندوق الاستقبال بنجاح. رقم الوردية: ${res.data.sessionNumber}`, "الخزنة مفتوحة");
+      setOpeningBalance("");
+      fetchActiveSession();
+    } catch (err) {
+      console.error(err);
+      toast.error("تعذر فتح وردية الصندوق اليومي.", "فشل الإجراء");
+    } finally {
+      setIsOpeningSession(false);
+    }
+  };
+
+  const handleCloseSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cashNum = parseFloat(actualClosingCash) || 0;
+    const cardNum = parseFloat(actualClosingCard) || 0;
+    const bankNum = parseFloat(actualClosingBank) || 0;
+
+    setIsClosingSession(true);
+    try {
+      const res = await api.post<{ shortageOrSurplus: number; sessionNumber: string }>("/api/cashier-sessions/close", {
+        actualClosingCash: cashNum,
+        actualClosingCard: cardNum,
+        actualClosingBank: bankNum,
+        notes: closeSessionNotes.trim() || null
+      });
+
+      const shortage = res.data.shortageOrSurplus;
+      if (shortage === 0) {
+        toast.success(`تم إقفال الوردية ${res.data.sessionNumber} بنجاح ومطابقتها 100%!`, "تم الإقفال والمطابقة");
+      } else if (shortage < 0) {
+        toast.info(`تم إقفال الوردية ${res.data.sessionNumber} بنجاح مع وجود عجز قدره ${Math.abs(shortage).toLocaleString()} ر.ي`, "تم الإقفال مع عجز");
+      } else {
+        toast.success(`تم إقفال الوردية ${res.data.sessionNumber} بنجاح مع وجود فائض قدره ${shortage.toLocaleString()} ر.ي`, "تم الإقفال مع فائض");
+      }
+
+      setActualClosingCash("");
+      setActualClosingCard("");
+      setActualClosingBank("");
+      setCloseSessionNotes("");
+      setShowCloseBoxDialog(false);
+      setActiveSession(null);
+      fetchSummary();
+    } catch (err) {
+      console.error(err);
+      toast.error("تعذر إقفال وردية الصندوق.", "فشل الإجراء");
+    } finally {
+      setIsClosingSession(false);
+    }
+  };
+
+  const fetchExpenses = async () => {
+    setLoadingExpenses(true);
+    try {
+      const res = await api.get<{ data: ExpenseItem[] }>("/api/expenses?pageSize=50");
+      setExpensesList(res.data.data ?? []);
+    } catch (err) {
+      console.error("Failed to load expenses list", err);
+    } finally {
+      setLoadingExpenses(false);
+    }
+  };
+
+  const handleRegisterExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amtNum = parseFloat(expenseAmount);
+    if (isNaN(amtNum) || amtNum <= 0) {
+      toast.error("الرجاء إدخال مبلغ مصروف صحيح.", "مبلغ غير صالح");
+      return;
+    }
+    setIsSubmittingExpense(true);
+    try {
+      await api.post("/api/expenses", {
+        title: expenseTitle.trim(),
+        category: expenseCategory,
+        amount: amtNum,
+        expenseDate: expenseDate || null,
+        paymentMethod: expensePaymentMethod,
+        notes: expenseNotes.trim() || null
+      });
+      toast.success("تم قيد المصروف والترحيل المالي للمركز بنجاح", "تم قيد المصروف");
+      setExpenseTitle("");
+      setExpenseAmount("");
+      setExpenseNotes("");
+      fetchExpenses();
+      fetchSummary();
+    } catch (err) {
+      console.error(err);
+      toast.error("تعذر قيد المصروف التشغيلي.", "فشل قيد المصروف");
+    } finally {
+      setIsSubmittingExpense(false);
+    }
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    if (!confirm("هل أنت متأكد من رغبتك في حذف قيد هذا المصروف وإلغاء ترحيله المالي بالكامل؟")) return;
+    try {
+      await api.delete(`/api/expenses/${id}`);
+      toast.success("تم حذف قيد المصروف وإلغاء خصمه المالي بنجاح", "تم الحذف");
+      fetchExpenses();
+      fetchSummary();
+    } catch (err) {
+      console.error(err);
+      toast.error("تعذر حذف قيد المصروف.", "فشل الحذف");
+    }
+  };
+
+  const fetchPLReport = async () => {
+    setLoadingPLReport(true);
+    try {
+      const url = `/api/reports/profit-loss${plFromDate || plToDate ? `?from=${plFromDate}&to=${plToDate}` : ""}`;
+      const res = await api.get<ProfitLossReport>(url);
+      setPlReport(res.data);
+    } catch (err) {
+      console.error("Failed to fetch P&L report", err);
+    } finally {
+      setLoadingPLReport(false);
+    }
+  };
+
   useEffect(() => {
     fetchSummary();
+    fetchActiveSession();
   }, []);
 
   // Fetch Listing tabs when active tab changes
@@ -604,6 +427,10 @@ export default function FinanceV2Page() {
         } else if (activeTab === "overdue") {
           const res = await api.get<OverdueContractListItem[]>("/api/finance/overdue");
           setOverdueContracts(res.data ?? []);
+        } else if (activeTab === "expenses") {
+          fetchExpenses();
+        } else if (activeTab === "reports") {
+          fetchPLReport();
         }
       } catch (err) {
         console.error("Failed to fetch listings", err);
@@ -777,7 +604,7 @@ export default function FinanceV2Page() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 bg-white border border-red-100 rounded-2xl shadow-sm">
         <Ban className="w-16 h-16 text-red-500 mb-4 animate-bounce" />
         <h2 className="text-xl font-bold text-gray-900 mb-2">غير مصرح بالدخول</h2>
-        <p className="text-gray-500 max-w-md">لا يمتلك حساب الطبيب صلاحيات استعراض الشاشة المالية أو تسجيل المدفوعات.</p>
+        <p className="text-gray-500 max-w-md">لا يمتلك حساب الطبيب صلاحيات استعراض الإدارة المالية V2 أو تسجيل المدفوعات.</p>
       </div>
     );
   }
@@ -788,7 +615,8 @@ export default function FinanceV2Page() {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-gray-900">المالية</h1>
+            <h1 className="text-2xl font-black text-gray-900">الإدارة المالية</h1>
+            <span className="bg-clinic-blue/10 text-clinic-blue text-[10px] font-bold px-2 py-0.5 rounded-full border border-clinic-blue/20">V2 جديد</span>
           </div>
           <p className="text-xs text-gray-500 mt-1">مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان</p>
         </div>
@@ -904,7 +732,19 @@ export default function FinanceV2Page() {
                 }`}
               >
                 <Percent className="w-4 h-4" />
-                العمولات
+                عمولات الأطباء
+              </button>
+
+              <button
+                onClick={() => setActiveTab("expenses")}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "expenses"
+                    ? "bg-clinic-blue/10 text-clinic-blue border-r-4 border-clinic-blue"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <Landmark className="w-4 h-4" />
+                المصروفات التشغيلية
               </button>
 
               <button
@@ -1117,8 +957,56 @@ export default function FinanceV2Page() {
           {/* TAB 2: CASHIER / DAY BOX */}
           {activeTab === "cashier" && (
             <div className="space-y-6">
-              {/* Patient Selector Workspace */}
-              <div className="bg-white border border-gray-100 p-5 rounded-2xl shadow-sm space-y-4">
+              {loadingSession ? (
+                <div className="bg-white border border-gray-100 p-8 rounded-2xl shadow-sm text-center animate-pulse">
+                  <RefreshCw className="w-8 h-8 text-clinic-blue mx-auto animate-spin" />
+                  <p className="text-xs text-gray-500 mt-3 font-bold">جاري مراجعة حالة الصندوق...</p>
+                </div>
+              ) : !activeSession ? (
+                // 🔹 Session Opening Form
+                <div className="bg-white border border-gray-100 p-8 rounded-2xl shadow-sm space-y-6 text-center max-w-xl mx-auto my-8">
+                  <ShieldAlert className="w-14 h-14 text-amber-500 mx-auto animate-bounce" />
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-black text-[#1a3a5c]">صندوق الاستقبال (الخزنة اليومية) مغلق</h3>
+                    <p className="text-xs text-gray-500 max-w-md mx-auto leading-relaxed">
+                      لحماية السيولة وضبط القيود المحاسبية، يرجى تأكيد العهدة الافتتاحية وفتح صندوق اليوم للبدء بتحصيل فواتير وأقساط المرضى وطباعة سندات القبض.
+                    </p>
+                  </div>
+                  
+                  <form onSubmit={handleOpenSession} className="space-y-4 text-right max-w-xs mx-auto">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 mb-1.5">مبلغ العهدة الافتتاحية بالدرج (ريال يمني):</label>
+                      <input
+                        type="number"
+                        placeholder="أدخل مبلغ العهدة بالدرج (مثلاً 10,000)..."
+                        value={openingBalance}
+                        onChange={(e) => setOpeningBalance(e.target.value)}
+                        className="w-full text-xs font-mono text-center font-bold px-3 py-3 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                        required
+                        min="0"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isOpeningSession}
+                      className="w-full py-3 text-xs font-bold text-white bg-clinic-blue rounded-xl hover:opacity-90 transition disabled:opacity-60"
+                    >
+                      {isOpeningSession ? "جاري فتح الصندوق..." : "تأكيد وفتح الصندوق لليوم"}
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-green-50 border border-green-200 p-4 rounded-xl flex items-center justify-between text-green-800 text-xs">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                      <span>الصندوق اليومي مفتوح بنجاح. رقم الوردية: <strong className="font-extrabold">{activeSession.sessionNumber}</strong>. تم الفتح في {new Date(activeSession.openingTime).toLocaleTimeString('ar-YE', {hour: '2-digit', minute: '2-digit'})}</span>
+                    </div>
+                    <span className="bg-green-600 text-white text-[9px] px-2 py-0.5 rounded-full font-bold">نشط</span>
+                  </div>
+
+                  {/* Patient Selector Workspace */}
+                  <div className="bg-white border border-gray-100 p-5 rounded-2xl shadow-sm space-y-4">
                 <h3 className="font-extrabold text-sm text-gray-900">البحث المالي وسداد المرضى</h3>
                 
                 <div className="relative">
@@ -1475,19 +1363,15 @@ export default function FinanceV2Page() {
 
                 </div>
               )}
+                </>
+              )}
             </div>
           )}
 
           {/* TAB 3: INVOICES LIST */}
           {activeTab === "invoices" && (
             <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-extrabold text-sm text-gray-900">سجل الفواتير الصادرة والمسودات</h3>
-                <Link href="/finance/invoices/new" className="flex items-center gap-1.5 px-4 py-2 bg-[#1a3a5c] hover:bg-[#244b73] text-white text-xs font-bold rounded-xl transition">
-                  <FileText className="w-3.5 h-3.5" />
-                  فاتورة جديدة
-                </Link>
-              </div>
+              <h3 className="font-extrabold text-sm text-gray-900">سجل الفواتير الصادرة والمسودات</h3>
               
               {loadingListings ? (
                 <div className="space-y-3 animate-pulse">
@@ -1588,13 +1472,7 @@ export default function FinanceV2Page() {
           {/* TAB 5: CONTRACTS LIST */}
           {activeTab === "contracts" && (
             <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-extrabold text-sm text-gray-900">عقود المرضى والأقساط المستمرة</h3>
-                <Link href="/finance/contracts/new" className="flex items-center gap-1.5 px-4 py-2 bg-[#1a3a5c] hover:bg-[#244b73] text-white text-xs font-bold rounded-xl transition">
-                  <Calendar className="w-3.5 h-3.5" />
-                  عقد جديد
-                </Link>
-              </div>
+              <h3 className="font-extrabold text-sm text-gray-900">عقود المرضى والأقساط المستمرة</h3>
               
               {loadingListings ? (
                 <div className="space-y-3 animate-pulse">
@@ -1701,34 +1579,365 @@ export default function FinanceV2Page() {
 
           {/* TAB 7: DOCTOR COMMISSIONS */}
           {activeTab === "commissions" && (
-            <CommissionReportTab
-              summary={summary}
-              user={user}
-              doctors={doctors}
-            />
+            <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
+              <h3 className="font-extrabold text-sm text-gray-900">عمولات الأطباء المعلقة</h3>
+              <p className="text-xs text-gray-500">
+                يتم احتساب عمولات الأطباء تلقائياً بناءً على سياسة التعرف المقررة لكل خدمة علاجية عند استلام الدفعات.
+              </p>
+              
+              <div className="bg-green-50/50 p-6 rounded-2xl border border-green-100 flex items-center justify-between gap-4">
+                <div>
+                  <span className="text-[10px] text-green-700 font-bold block">إجمالي العمولات المستحقة للأطباء (غير المدفوعة)</span>
+                  <h4 className="text-2xl font-black font-mono text-green-700 mt-2">
+                    {summary ? formatYemeniRiyal(summary.pendingCommissionsAmount) : "YER 0.00"}
+                  </h4>
+                </div>
+                <Link
+                  href="/commissions"
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition"
+                >
+                  إدارة العمولات والصرف
+                </Link>
+              </div>
+            </div>
           )}
 
-          {/* TAB 8: REPORTS */}
+          {/* TAB 7.5: OPERATIONAL EXPENSES */}
+          {activeTab === "expenses" && (
+            <div className="space-y-6">
+              {/* Add Expense Form */}
+              <div className="bg-white border border-gray-100 p-5 rounded-2xl shadow-sm space-y-4">
+                <h3 className="font-extrabold text-sm text-gray-900">تسجيل مصروف تشغيلي جديد</h3>
+                
+                <form onSubmit={handleRegisterExpense} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-right">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5">بيان المصروف (العنوان):</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: سداد كهرباء المركز، إيجار العيادة..."
+                      value={expenseTitle}
+                      onChange={(e) => setExpenseTitle(e.target.value)}
+                      className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none font-semibold text-gray-800"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5">صنف المصروف:</label>
+                    <select
+                      value={expenseCategory}
+                      onChange={(e) => setExpenseCategory(e.target.value)}
+                      className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none font-semibold text-gray-700 bg-white"
+                    >
+                      <option value="Rent">إيجارات وفروع</option>
+                      <option value="Utilities">خدمات ومنافع (كهرباء/مياه/إنترنت)</option>
+                      <option value="LabFees">تكاليف مختبرات الأسنان</option>
+                      <option value="Marketing">إعلانات وتسويق</option>
+                      <option value="ClinicSupplies">مواد ومستلزمات عيادات</option>
+                      <option value="Maintenance">صيانة أدوات ومعدات</option>
+                      <option value="Salaries">رواتب موظفين</option>
+                      <option value="Commissions">عمولات أطباء</option>
+                      <option value="Taxes">ضرائب ورسوم حكومية</option>
+                      <option value="Miscellaneous">نثريات ومصاريف متنوعة</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5">مبلغ المصروف (ريال يمني):</label>
+                    <input
+                      type="number"
+                      placeholder="المبلغ بالريال..."
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value)}
+                      className="w-full text-xs font-mono font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                      required
+                      min="1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5">طريقة الدفع:</label>
+                    <select
+                      value={expensePaymentMethod}
+                      onChange={(e) => setExpensePaymentMethod(e.target.value)}
+                      className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none font-semibold text-gray-700 bg-white"
+                    >
+                      <option value="cash">نقداً (من الخزنة اليومية)</option>
+                      <option value="card">بطاقة / POS</option>
+                      <option value="bank_transfer">تحويل بنكي / حساب المركز</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5">تاريخ الصرف (اختياري - افتراضياً اليوم):</label>
+                    <input
+                      type="date"
+                      value={expenseDate}
+                      onChange={(e) => setExpenseDate(e.target.value)}
+                      className="w-full text-xs px-3 py-2 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none font-semibold text-gray-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5">ملاحظات إضافية:</label>
+                    <input
+                      type="text"
+                      placeholder="أي تفاصيل أو مرجع سداد..."
+                      value={expenseNotes}
+                      onChange={(e) => setExpenseNotes(e.target.value)}
+                      className="w-full text-xs px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none text-gray-700"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3 flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSubmittingExpense}
+                      className="px-6 py-2.5 text-xs font-bold text-white bg-clinic-blue rounded-xl hover:opacity-90 transition disabled:opacity-60"
+                    >
+                      {isSubmittingExpense ? "جاري تقييد المصروف..." : "حفظ وتقييد المصروف فوراً"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Expenses List Grid */}
+              <div className="bg-white border border-gray-100 p-5 rounded-2xl shadow-sm space-y-4">
+                <h3 className="font-extrabold text-sm text-gray-900">سجل المصروفات المقيّدة</h3>
+                
+                {loadingExpenses ? (
+                  <div className="space-y-3 animate-pulse">
+                    {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 bg-gray-50 rounded-xl" />)}
+                  </div>
+                ) : !expensesList.length ? (
+                  <p className="text-xs text-gray-400 text-center py-8">لا توجد مصروفات مقيّدة مؤخراً في هذا الفرع.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-right">
+                      <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+                        <tr>
+                          <th className="px-4 py-3">رقم السند</th>
+                          <th className="px-4 py-3">البيان</th>
+                          <th className="px-4 py-3">الصنف</th>
+                          <th className="px-4 py-3">طريقة السداد</th>
+                          <th className="px-4 py-3">التاريخ</th>
+                          <th className="px-4 py-3">المبلغ الصافي</th>
+                          <th className="px-4 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 font-medium text-gray-700">
+                        {expensesList.map((e) => (
+                          <tr key={e.id} className="hover:bg-gray-50/50 transition">
+                            <td className="px-4 py-3 font-mono font-bold text-[#1a3a5c]">{e.expenseNumber}</td>
+                            <td className="px-4 py-3">
+                              <span className="font-bold block text-gray-900">{e.title}</span>
+                              {e.notes && <span className="text-[10px] text-gray-400 block">{e.notes}</span>}
+                            </td>
+                            <td className="px-4 py-3 font-bold text-clinic-blue">{e.categoryArabic}</td>
+                            <td className="px-4 py-3">
+                              {e.paymentMethod === 'cash' ? 'نقدي (الدرج)' : e.paymentMethod === 'card' ? 'بطاقة POS' : 'تحويل بنكي'}
+                            </td>
+                            <td className="px-4 py-3">{formatArabicDate(e.expenseDate)}</td>
+                            <td className="px-4 py-3 font-mono font-bold text-red-600">{formatYemeniRiyal(e.amount)}</td>
+                            <td className="px-4 py-3 text-left">
+                              <button
+                                onClick={() => handleDeleteExpense(e.id)}
+                                className="text-red-500 hover:text-red-700 font-bold hover:underline"
+                              >
+                                حذف القيد
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: REPORTS & CONSOLIDATED P&L SHEET */}
           {activeTab === "reports" && (
             <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-6">
-              <h3 className="font-extrabold text-sm text-gray-900">مركز كشوفات الحساب والتقارير المالية</h3>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
+                <div>
+                  <h3 className="font-extrabold text-sm text-gray-900">قائمة الأرباح والخسائر الموحدة (Consolidated P&L)</h3>
+                  <p className="text-[10px] text-gray-500 mt-1">كشف تدفقات حقيقي يربط الإيرادات والمصروفات والرواتب وعمولات الفروع بالتاريخ</p>
+                </div>
+                
+                {/* Date range filter */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={plFromDate}
+                    onChange={(e) => setPlFromDate(e.target.value)}
+                    className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-700 font-semibold"
+                  />
+                  <span className="text-xs text-gray-400">إلى</span>
+                  <input
+                    type="date"
+                    value={plToDate}
+                    onChange={(e) => setPlToDate(e.target.value)}
+                    className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-700 font-semibold"
+                  />
+                  <button
+                    onClick={fetchPLReport}
+                    className="px-3 py-1.5 bg-[#1a3a5c] text-white text-xs font-bold rounded-lg hover:opacity-90 transition shrink-0"
+                  >
+                    تطبيق الفلترة
+                  </button>
+                </div>
+              </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 border border-gray-100 rounded-xl space-y-3">
-                  <Landmark className="w-8 h-8 text-clinic-blue" />
+              {loadingPLReport ? (
+                <div className="space-y-4 animate-pulse">
+                  <div className="h-24 bg-gray-50 rounded-2xl" />
+                  <div className="h-48 bg-gray-50 rounded-2xl" />
+                </div>
+              ) : plReport ? (
+                <div className="space-y-6">
+                  {/* Top Margins Glass Card */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gradient-to-br from-green-50 to-green-100/50 p-5 rounded-2xl border border-green-200/50 text-right space-y-2">
+                      <span className="text-[10px] font-bold text-green-700 block">صافي الإيرادات التشغيلية (Revenue)</span>
+                      <h4 className="text-2xl font-black font-mono text-green-700">
+                        {formatYemeniRiyal(plReport.netRevenue)}
+                      </h4>
+                      <p className="text-[9px] text-green-600">إجمالي المقبوضات مخصوم منها المرتجعات</p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-red-50 to-red-100/50 p-5 rounded-2xl border border-red-200/50 text-right space-y-2">
+                      <span className="text-[10px] font-bold text-red-700 block">إجمالي تكاليف التشغيل المباشرة (COGS)</span>
+                      <h4 className="text-2xl font-black font-mono text-red-700">
+                        {formatYemeniRiyal(plReport.totalDirectCosts)}
+                      </h4>
+                      <p className="text-[9px] text-red-600">تسويات المعامل ومواد العيادات الطبية</p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-clinic-blue/5 to-clinic-blue/10 p-5 rounded-2xl border border-clinic-blue/20 text-right space-y-2">
+                      <span className="text-[10px] font-bold text-clinic-blue block">مجمل أرباح الفترة (Gross Profit)</span>
+                      <h4 className="text-2xl font-black font-mono text-[#1a3a5c]">
+                        {formatYemeniRiyal(plReport.grossProfit)}
+                      </h4>
+                      <p className="text-[9px] text-clinic-blue/80">هامش الربح التشغيلي الأولي للمركز</p>
+                    </div>
+                  </div>
+
+                  {/* P&L Detailed Ledger Breakdown */}
+                  <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 font-bold text-xs text-gray-900">
+                      تفاصيل قائمة الإيرادات والرواتب والمصروفات
+                    </div>
+                    
+                    <div className="divide-y divide-gray-50 font-semibold text-xs text-gray-700 bg-white">
+                      {/* Row 1 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-950 font-bold">إجمالي مقبوضات علاج المرضى (+)</span>
+                        <span className="font-mono text-green-600 font-bold">{formatYemeniRiyal(plReport.grossRevenue)}</span>
+                      </div>
+                      
+                      {/* Row 2 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-500">مبالغ مستردة للجمهور (مرتجعات) (-)</span>
+                        <span className="font-mono text-red-600 font-bold">({formatYemeniRiyal(plReport.totalRefunds)})</span>
+                      </div>
+
+                      {/* Row 3 */}
+                      <div className="px-5 py-3 flex justify-between items-center bg-gray-50/50">
+                        <span className="text-gray-950 font-bold">تكاليف المعامل الخارجية والمختبرات (-)</span>
+                        <span className="font-mono text-gray-800">{formatYemeniRiyal(plReport.labFees)}</span>
+                      </div>
+
+                      {/* Row 4 */}
+                      <div className="px-5 py-3 flex justify-between items-center bg-gray-50/50">
+                        <span className="text-gray-950 font-bold">مستلزمات ومواد طبية وأدوات العيادات (-)</span>
+                        <span className="font-mono text-gray-800">{formatYemeniRiyal(plReport.clinicSupplies)}</span>
+                      </div>
+
+                      {/* Row 5 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-950 font-bold">رواتب وأجور الموظفين المنصرفة فعلياً (-)</span>
+                        <span className="font-mono text-gray-800">{formatYemeniRiyal(plReport.salariesPaid)}</span>
+                      </div>
+
+                      {/* Row 6 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-950 font-bold">عمولات الأطباء المنصرفة فعلياً (-)</span>
+                        <span className="font-mono text-gray-800">{formatYemeniRiyal(plReport.commissionsPaid)}</span>
+                      </div>
+
+                      {/* Row 7 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-500">إيجار الفروع والمباني (-)</span>
+                        <span className="font-mono text-gray-600">{formatYemeniRiyal(plReport.rent)}</span>
+                      </div>
+
+                      {/* Row 8 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-500">منافع وخدمات عادية (كهرباء/مياه/إنترنت) (-)</span>
+                        <span className="font-mono text-gray-600">{formatYemeniRiyal(plReport.utilities)}</span>
+                      </div>
+
+                      {/* Row 9 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-500">إعلانات وتسويق المركز (-)</span>
+                        <span className="font-mono text-gray-600">{formatYemeniRiyal(plReport.marketing)}</span>
+                      </div>
+
+                      {/* Row 10 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-500">صيانة المعدات والأجهزة الطبية (-)</span>
+                        <span className="font-mono text-gray-600">{formatYemeniRiyal(plReport.maintenance)}</span>
+                      </div>
+
+                      {/* Row 11 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-500">رسوم ومصاريف ضرائب حكومية (-)</span>
+                        <span className="font-mono text-gray-600">{formatYemeniRiyal(plReport.taxes)}</span>
+                      </div>
+
+                      {/* Row 12 */}
+                      <div className="px-5 py-3 flex justify-between items-center">
+                        <span className="text-gray-500">نثريات ومصاريف أخرى متنوعة (-)</span>
+                        <span className="font-mono text-gray-600">{formatYemeniRiyal(plReport.opexMiscellaneous)}</span>
+                      </div>
+
+                      {/* Bottom Line Row */}
+                      <div className="px-5 py-4 flex justify-between items-center bg-gradient-to-l from-[#1a3a5c]/5 to-[#1a3a5c]/10 text-[#1a3a5c]">
+                        <div className="space-y-1">
+                          <span className="text-sm font-black block">صافي أرباح الفترة النهائية (Net Profit)</span>
+                          <span className="text-[9px] text-gray-500">بعد خصم التكاليف المباشرة والرواتب وعمولات الأطباء وكافة المصروفات العمومية</span>
+                        </div>
+                        <div className="text-left space-y-1">
+                          <span className={`text-xl font-extrabold font-mono block ${plReport.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatYemeniRiyal(plReport.netProfit)}
+                          </span>
+                          <span className={`text-[8px] px-2 py-0.5 rounded-full inline-block font-bold text-white ${plReport.netProfit >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>
+                            {plReport.netProfit >= 0 ? 'أداء إيرادي إيجابي' : 'تجاوز المصروفات'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Print patient statement reference links */}
+              <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 border border-gray-100 rounded-xl space-y-2 text-right">
                   <h4 className="text-xs font-bold text-gray-900">طباعة كشوفات حساب المرضى الموحدة</h4>
                   <p className="text-[10px] text-gray-500">
-                    أدخل ملف المريض من علامة تبويب &quot;صندوق اليوم&quot; لطباعة كشف حساب مالي RTL موحد ومفصل يشمل العلاجات، التكاليف، والأقساط.
+                    لطباعة كشف مالي موحد (RTL PDF) شامل تفاصيل الأقساط والمدفوعات لأي مريض، يرجى البحث عن المريض من تبويب &quot;صندوق اليوم&quot; والضغط على زر الطباعة.
                   </p>
                 </div>
                 
-                <div className="p-4 border border-gray-100 rounded-xl space-y-3">
-                  <Coins className="w-8 h-8 text-[#f5922e]" />
-                  <h4 className="text-xs font-bold text-gray-900">تقارير الإيرادات والتسويات التفصيلية</h4>
+                <div className="p-4 border border-gray-100 rounded-xl space-y-2 text-right">
+                  <h4 className="text-xs font-bold text-gray-900">الإيرادات الحركية وتوزيع الفروع</h4>
                   <p className="text-[10px] text-gray-500">
-                    لمراجعة تقارير الإيرادات اليومية وتوزيع الإيرادات والأطباء، يرجى الانتقال إلى وحدة التقارير الرئيسية.
+                    لمراجعة تقارير التحليلات المتقدمة لتطور إيرادات الأطباء ونشاط حجز المواعيد، يرجى الانتقال إلى صفحة التقارير العامة.
                   </p>
-                  <Link href="/reports" className="text-[10px] text-clinic-blue font-bold hover:underline block">الانتقال إلى التقارير الرئيسية ←</Link>
+                  <Link href="/reports" className="text-[10px] text-[#1a3a5c] font-black hover:underline block">الانتقال للتقارير الرئيسية ←</Link>
                 </div>
               </div>
             </div>
@@ -1753,52 +1962,129 @@ export default function FinanceV2Page() {
         </div>
       </div>
 
-      {/* Close Day Box Dialog Preview (disabled backend preview in Sprint 1) */}
+      {/* Close Day Box Dialog Preview (Active in Sprint 2) */}
       {showCloseBoxDialog && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white max-w-md w-full rounded-2xl p-6 shadow-xl space-y-4 text-right">
             <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-extrabold text-sm text-gray-900">إغلاق الصندوق المالي لليوم</h3>
+              <h3 className="font-extrabold text-sm text-gray-900">إغلاق الصندوق المالي (قفل الوردية اليومية)</h3>
               <button onClick={() => setShowCloseBoxDialog(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-4 h-4" />
               </button>
             </div>
             
-            <div className="space-y-3">
-              <p className="text-xs text-gray-600">
-                يقوم هذا الإجراء باحتساب كافة المبالغ المقبوضة اليوم وتوزيعها حسب طرق الدفع لإغلاق الصندوق المالي وإرسال تقرير الإغلاق المالي للإدارة.
-              </p>
-              
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2">
-                <span className="text-[10px] text-gray-400">إجمالي مقبوضات صندوق اليوم المقدرة:</span>
-                <h4 className="text-xl font-black font-mono text-[#1a3a5c]">
-                  {summary ? formatYemeniRiyal(summary.todayCollected) : "YER 0"}
-                </h4>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-start gap-2.5 text-amber-800 text-xs">
-                <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-[10px]">
-                  <strong>مقترح المرحلة 2 (Sprint 2)</strong>: 
-                  ميزة إقفال الصناديق اليومية وإرسال تقارير التسوية عبر الواتساب لا تزال مغلقة ومجدولة للمرحلة القادمة لمنع التعديلات العشوائية على الحسابات دون ترحيل.
+            {!activeSession ? (
+              <div className="space-y-4 py-4 text-center">
+                <AlertCircle className="w-12 h-12 text-amber-500 mx-auto animate-pulse" />
+                <h4 className="text-xs font-bold text-gray-800">لا توجد وردية صندوق مفتوحة حالياً</h4>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  يجب أن تكون هناك وردية نشطة للتمكن من إغلاقها. يرجى الذهاب إلى تبويب &quot;صندوق اليوم&quot; لفتح الصندوق أولاً.
                 </p>
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={() => setShowCloseBoxDialog(false)}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl transition"
+                  >
+                    إغلاق النافذة
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <form onSubmit={handleCloseSession} className="space-y-4">
+                <p className="text-xs text-gray-600">
+                  يرجى عد المبالغ الفعلية المتوفرة في درج الصندوق ونقاط البيع والتحويلات وإدخالها بدقة لتسوية الوردية رقم <span className="font-extrabold text-clinic-blue">#{activeSession.sessionNumber}</span>.
+                </p>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowCloseBoxDialog(false)}
-                className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition"
-              >
-                رجوع
-              </button>
-              <button
-                disabled
-                className="px-4 py-2 bg-gray-100 text-gray-400 text-xs font-bold rounded-xl cursor-not-allowed"
-              >
-                ترحيل وإغلاق (مغلق حالياً)
-              </button>
-            </div>
+                <div className="bg-clinic-blue/5 p-3.5 rounded-xl border border-clinic-blue/10 space-y-1">
+                  <span className="text-[10px] text-gray-500 block">رصيد العهدة الافتتاحية للوردية:</span>
+                  <span className="text-xs font-bold text-gray-900 font-mono">
+                    {formatYemeniRiyal(activeSession.openingBalance)}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                      النقد الفعلي بالدرج - كاش (YER): <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="أدخل إجمالي النقد الفعلي بالريال اليمني..."
+                      value={actualClosingCash}
+                      onChange={(e) => setActualClosingCash(e.target.value)}
+                      className="w-full text-xs font-mono text-center font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                      required
+                      min="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                      مقبوضات البطاقة / نقاط البيع الفعلية (YER):
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="أدخل إجمالي مقبوضات الشبكة..."
+                      value={actualClosingCard}
+                      onChange={(e) => setActualClosingCard(e.target.value)}
+                      className="w-full text-xs font-mono text-center font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                      min="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                      مقبوضات التحويلات البنكية الفعلية (YER):
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="أدخل إجمالي الحوالات البنكية..."
+                      value={actualClosingBank}
+                      onChange={(e) => setActualClosingBank(e.target.value)}
+                      className="w-full text-xs font-mono text-center font-bold px-3 py-2.5 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none"
+                      min="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">
+                      ملاحظات وتفاصيل التسوية (اختياري):
+                    </label>
+                    <textarea
+                      placeholder="اكتب أي ملاحظات أو أسباب وجود فوارق بالصندوق إن وجدت..."
+                      value={closeSessionNotes}
+                      onChange={(e) => setCloseSessionNotes(e.target.value)}
+                      rows={2}
+                      className="w-full text-xs px-3 py-2 border border-gray-200 rounded-xl focus:border-clinic-blue focus:outline-none resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-start gap-2 text-amber-800">
+                  <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[10px] leading-relaxed">
+                    <strong>تنبيه هام</strong>: بمجرد تأكيد الإقفال، سيتم قفل وتأمين جميع مدفوعات هذه الوردية تلقائياً لمنع التعديل أو الحذف العشوائي، وسيتم إخطار الإدارة المالية بأي عجز أو فائض فوراً.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setShowCloseBoxDialog(false)}
+                    className="px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isClosingSession}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition disabled:opacity-60"
+                  >
+                    {isClosingSession ? "جاري إقفال وترحيل الصندوق..." : "تأكيد الترحيل وإقفال الصندوق"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -149,6 +149,8 @@ export default function FinanceV2Page() {
   const [notes, setNotes] = useState<string>("");
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>("");
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  // Tracks the maximum payable amount for the selected invoice (for overpayment guard)
+  const [invoiceRemainingAmount, setInvoiceRemainingAmount] = useState<number | null>(null);
   
   // Currency planning placeholders (no DB migrations in Sprint 1)
   const [currency, setCurrency] = useState<string>("YER");
@@ -301,14 +303,17 @@ export default function FinanceV2Page() {
   const handleSelectInvoiceToPay = (inv: InvoiceListItem) => {
     setSelectedInvoice(inv);
     setSelectedContract(null);
-    // Find the remaining amount for the invoice (invoice total minus already paid)
-    // We'll call the invoice detail endpoint to obtain the precise remaining balance
+    setInvoiceRemainingAmount(null); // reset while fetching
+    // Fetch the precise remaining balance from the invoice detail endpoint
     api.get<{ remainingAmount?: number }>(`/api/invoices/${inv.id}`).then((res) => {
       const remaining = res.data.remainingAmount ?? inv.totalAmount;
+      setInvoiceRemainingAmount(remaining);
       setPaymentAmount(String(remaining));
       setServiceDescription(`سداد فاتورة رقم ${inv.invoiceNumber}`);
     }).catch(() => {
-      setPaymentAmount(String(inv.totalAmount));
+      const fallback = inv.totalAmount;
+      setInvoiceRemainingAmount(fallback);
+      setPaymentAmount(String(fallback));
       setServiceDescription(`سداد فاتورة رقم ${inv.invoiceNumber}`);
     });
   };
@@ -316,9 +321,12 @@ export default function FinanceV2Page() {
   const handleSelectContractToPay = (con: ContractListItem) => {
     setSelectedContract(con);
     setSelectedInvoice(null);
+    setInvoiceRemainingAmount(null);
     setPaymentAmount(String(con.remainingAmount));
     setServiceDescription(`سداد قسط من عقد علاج ${con.specialty === "ortho" ? "تقويم" : "أسنان"}`);
   };
+
+
 
   // Register Payment
   const handleRegisterPayment = async (e: React.FormEvent) => {
@@ -330,9 +338,15 @@ export default function FinanceV2Page() {
       return;
     }
 
-    // Require selection of invoice or contract for Receptionist
-    if (isReception && !selectedInvoice && !selectedContract) {
-      toast.error("يجب اختيار فاتورة غير مسددة أو عقد لربط الدفعة بها لموظفي الاستقبال.", "ربط مستند إلزامي");
+    // Issue 2: Require selection of invoice or contract for ALL roles — no unlinked payments.
+    if (!selectedInvoice && !selectedContract) {
+      toast.error("يجب ربط الدفعة بفاتورة مستحقة أو عقد نشط. الدفعات الحرة غير مسموح بها في هذه الواجهة.", "ربط مستند إلزامي");
+      return;
+    }
+
+    // Issue 3: Client-side overpayment guard for invoice payments.
+    if (selectedInvoice && invoiceRemainingAmount !== null && amountNum > invoiceRemainingAmount) {
+      toast.error(`المبلغ المدخل (${amountNum.toLocaleString('ar-YE')} ر.ي) يتجاوز الرصيد المتبقي للفاتورة (${invoiceRemainingAmount.toLocaleString('ar-YE')} ر.ي). الرجاء تعديل المبلغ.`, "تجاوز الرصيد المتاح");
       return;
     }
 
@@ -853,15 +867,27 @@ export default function FinanceV2Page() {
                           <h4 className="font-extrabold text-xs text-gray-900 mb-4">تسجيل الدفعة النقدية</h4>
                           <form onSubmit={handleRegisterPayment} className="space-y-4">
                             
-                            {/* Warnings for unlinked payments */}
+                            {/* Warnings for unlinked payments — blocked for ALL roles in Finance V2 */}
                             {!selectedInvoice && !selectedContract && (
                               <div className="bg-red-50 border border-red-200 p-3 rounded-xl flex items-start gap-2.5 text-red-800">
                                 <ShieldAlert className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                                 <div className="text-xs">
-                                  <p className="font-bold">تنبيه دفعة غير مرتبطة بمستند</p>
+                                  <p className="font-bold">يجب اختيار فاتورة أو عقد للمتابعة</p>
                                   <p className="text-[10px] mt-0.5 text-gray-600">
-                                    أنت الآن تقوم بتسجيل دفعة حرة دون ربطها بفاتورة أو عقد. 
-                                    {isReception ? " لا يُسمح لموظفي الاستقبال بإنشاء دفعات حرة لضمان سلامة محاسبة الفواتير." : " سيتم تسجيل هذا المبلغ كرصيد للمريض وسيتطلب لاحقاً تسوية محاسبية مرتفعة."}
+                                    لا يُسمح بتسجيل دفعة حرة غير مرتبطة بمستند مالي في هذه الواجهة. الرجاء اختيار فاتورة مستحقة أو عقد نشط من القائمة أعلاه قبل المتابعة.
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Overpayment warning for invoice payments */}
+                            {selectedInvoice && invoiceRemainingAmount !== null && parseFloat(paymentAmount) > invoiceRemainingAmount && (
+                              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex items-start gap-2.5 text-amber-800">
+                                <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                                <div className="text-xs">
+                                  <p className="font-bold">المبلغ يتجاوز الرصيد المتبقي للفاتورة</p>
+                                  <p className="text-[10px] mt-0.5">
+                                    الحد الأقصى المسموح: {invoiceRemainingAmount.toLocaleString('ar-YE')} ر.ي. لا يمكن دفع أكثر من الرصيد المتبقي.
                                   </p>
                                 </div>
                               </div>
@@ -984,8 +1010,14 @@ export default function FinanceV2Page() {
 
                             <button
                               type="submit"
-                              disabled={isSubmittingPayment || (isReception && !selectedInvoice && !selectedContract)}
-                              className="w-full py-3 bg-[#1a3a5c] hover:bg-[#244b73] text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50"
+                              disabled={
+                                isSubmittingPayment ||
+                                // Issue 2: block ALL roles when no document linked
+                                (!selectedInvoice && !selectedContract) ||
+                                // Issue 3: block when overpaying the invoice remaining
+                                !!(selectedInvoice && invoiceRemainingAmount !== null && parseFloat(paymentAmount) > invoiceRemainingAmount)
+                              }
+                              className="w-full py-3 bg-[#1a3a5c] hover:bg-[#244b73] text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {isSubmittingPayment ? "جاري المعالجة وإصدار السند..." : "تأكيد الدفع وطباعة سند القبض"}
                             </button>

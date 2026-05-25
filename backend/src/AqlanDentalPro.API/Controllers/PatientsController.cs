@@ -63,6 +63,8 @@ public class PatientsController(
         [FromQuery] Guid? doctorId = null,
         [FromQuery] string? status = "active")
     {
+        try
+        {
         // Doctors see only the patients they are linked to (all 5 link types).
         if (patientAccess.IsDoctor)
         {
@@ -94,6 +96,19 @@ public class PatientsController(
 
         var fullResult = await service.GetListAsync(search, page, pageSize, gender, doctorId, status);
         return Ok(fullResult);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PatientsController.GetList FAILED: {Type}: {Message}\n{Stack}",
+                ex.GetType().Name, ex.Message, ex.StackTrace);
+            return StatusCode(500, new
+            {
+                errorType = ex.GetType().Name,
+                message = ex.Message,
+                innerMessage = ex.InnerException?.Message,
+                stackTrace = ex.StackTrace?.Split('\n').Take(5)
+            });
+        }
     }
 
     // ── Single patient ────────────────────────────────────────────────────────
@@ -101,6 +116,8 @@ public class PatientsController(
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        try
+        {
         var denied = await DenyIfDoctorCannotAccess(id);
         if (denied != null) return denied;
 
@@ -116,6 +133,19 @@ public class PatientsController(
             newData: new { role = currentUser.Role?.ToString() });
 
         return Ok(patient);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PatientsController.GetById FAILED: {Type}: {Message}\n{Stack}",
+                ex.GetType().Name, ex.Message, ex.StackTrace);
+            return StatusCode(500, new
+            {
+                errorType = ex.GetType().Name,
+                message = ex.Message,
+                innerMessage = ex.InnerException?.Message,
+                stackTrace = ex.StackTrace?.Split('\n').Take(5)
+            });
+        }
     }
 
     // ── Create ────────────────────────────────────────────────────────────────

@@ -819,6 +819,34 @@ export default function DailyOperationsPage() {
               )}
             </div>
 
+            {/* ReadyForCheckout Banner — Prominent for Reception */}
+            {!isDoctor && tabCounts.payments > 0 && (
+              <div className="flex-shrink-0 mx-3 mt-2 mb-1 p-2.5 rounded-xl flex items-center gap-3"
+                style={{
+                  background: "linear-gradient(135deg, #fff7ed, #fef3c7)",
+                  border: "1.5px solid #f5922e40",
+                  boxShadow: "0 2px 8px rgba(245,146,46,0.1)",
+                }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: ORANGE + "20" }}>
+                  <CreditCard className="w-4 h-4" style={{ color: ORANGE }} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-extrabold" style={{ color: NAVY }}>
+                    جاهزون للدفع من الطبيب
+                  </div>
+                  <div className="text-[10px] font-medium" style={{ color: "#92400e" }}>
+                    {tabCounts.payments} مريض بحاجة لتحصيل وخروج
+                  </div>
+                </div>
+                <button onClick={() => setActiveTab("payments")}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center gap-1.5"
+                  style={{ background: ORANGE }}>
+                  <CreditCard className="w-3.5 h-3.5" />
+                  عرض الكل
+                </button>
+              </div>
+            )}
+
             {/* Data Grid Area */}
             <div className="flex-1 overflow-auto bg-white">
               <AppointmentsTable

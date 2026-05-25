@@ -492,3 +492,19 @@ export function useSendBulkSmsReminders() {
     },
   });
 }
+
+// ─── Create Draft Invoice (for reception checkout from doctor handoff) ────
+export function useCreateDraftInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (visitId: string) => {
+      const { data } = await api.post(`/api/patient-journey/${visitId}/create-draft-invoice`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["finance"] });
+    },
+  });
+}

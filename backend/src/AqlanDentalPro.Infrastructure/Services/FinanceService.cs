@@ -192,6 +192,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
             throw new ArgumentException("عذراً، يجب تحديد الفرع قبل تسجيل أي مدفوعات.");
 
+        // Phase 0B: Validate payment amount is positive
+        if (req.Amount <= 0)
+            throw new ArgumentException("يجب أن يكون مبلغ الدفعة أكبر من الصفر.");
+
         // H9 FIX: Generate receipt number using advisory lock + sequential pattern
         // instead of random 4-digit (which had ~50% collision probability at 95 payments/day).
         var receiptNumber = await GenerateReceiptNumberAsync();
@@ -319,6 +323,15 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var contract = await db.Contracts.FindAsync(id);
         if (contract == null) return null;
 
+        // Phase 0B: Validate that TotalAmount is not reduced below what's already been paid
+        {
+            var alreadyPaid = await db.Payments
+                .Where(p => p.ContractId == id && p.IsActive)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+            if (req.TotalAmount < alreadyPaid)
+                throw new ArgumentException($"لا يمكن تقليل إجمالي العقد ({req.TotalAmount:N0} ر.ي) إلى أقل من المبلغ المدفوع فعلياً ({alreadyPaid:N0} ر.ي).");
+        }
+
         contract.Specialty        = req.Specialty;
         contract.TotalAmount      = req.TotalAmount;
         contract.InstallmentsCount = req.InstallmentsCount;
@@ -356,6 +369,21 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             {
                 payment.IsActive = false;
                 payment.DeletedAt = DateTime.UtcNow;
+            }
+
+            // Phase 0B: Soft-delete linked CashFlowTransactions and reverse Treasury
+            foreach (var payment in activePayments)
+            {
+                var linkedCashflow = await db.CashFlowTransactions
+                    .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
+                if (linkedCashflow != null)
+                {
+                    linkedCashflow.IsActive = false;
+                    linkedCashflow.DeletedAt = DateTime.UtcNow;
+                    linkedCashflow.DeletedBy = currentUser.UserId;
+                }
+                // Reverse treasury balance
+                await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
             }
 
             // H8 FIX: Re-evaluate linked invoice statuses after cancelling payments
@@ -555,15 +583,24 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         var payment = await db.Payments.FindAsync(id);
         if (payment == null) return null;
+        if (!payment.IsActive)
+            throw new ArgumentException("لا يمكن تعديل دفعة محذوفة");
 
-        if (req.Amount.HasValue)       payment.Amount             = req.Amount.Value;
-        if (req.PaymentMethod != null) payment.PaymentMethod      = req.PaymentMethod;
+        // Phase 0B: Financial integrity — Amount, PaymentMethod, and PaymentDate
+        // are locked after creation because they affect CashFlowTransaction, Treasury,
+        // and CashierSession reconciliation. Changing them would corrupt the ledger.
+        if (req.Amount.HasValue && req.Amount.Value != payment.Amount)
+            throw new ArgumentException("لا يمكن تعديل مبلغ الدفعة بعد إنشائها. احذف الدفعة وأنشئ واحدة جديدة.");
+        if (req.PaymentMethod != null && !string.Equals(req.PaymentMethod, payment.PaymentMethod, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("لا يمكن تغيير طريقة الدفع بعد إنشاء الدفعة. احذف الدفعة وأنشئ واحدة جديدة.");
+        if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var pd) && pd != payment.PaymentDate)
+            throw new ArgumentException("لا يمكن تغيير تاريخ الدفعة بعد إنشائها. احذف الدفعة وأنشئ واحدة جديدة.");
+
+        // Safe to update: metadata fields only
         if (req.ServiceDescription != null) payment.ServiceDescription = req.ServiceDescription;
         if (req.Specialty != null)     payment.Specialty          = req.Specialty;
         if (req.DoctorId.HasValue)     payment.DoctorId           = req.DoctorId;
         if (req.Notes != null)         payment.Notes              = req.Notes;
-        if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var pd))
-            payment.PaymentDate = pd;
 
         payment.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
@@ -583,18 +620,29 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var userId = currentUser.UserId;
 
+        // Phase 0B: Guard — do not corrupt a closed or reconciled session by removing
+        // a payment whose cashflow was part of its reconciliation calculation.
+        var linkedCashflow = await db.CashFlowTransactions
+            .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
+        if (linkedCashflow?.CashierSessionId != null)
+        {
+            var linkedSession = await db.CashierSessions.FindAsync(linkedCashflow.CashierSessionId.Value);
+            if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
+            {
+                throw new ArgumentException("لا يمكن حذف دفعة مرتبطة بوردية مقفلة أو مطابقة. تواصل مع المحاسب.");
+            }
+        }
+
         payment.IsActive  = false;
         payment.DeletedAt = DateTime.UtcNow;
         payment.DeletedBy = userId;
 
-        // Soft-delete the linked cashflow ledger transaction
-        var cashflow = await db.CashFlowTransactions
-            .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
-        if (cashflow != null)
+        // Soft-delete the linked cashflow ledger transaction (already found in guard above)
+        if (linkedCashflow != null)
         {
-            cashflow.IsActive = false;
-            cashflow.DeletedAt = DateTime.UtcNow;
-            cashflow.DeletedBy = userId;
+            linkedCashflow.IsActive = false;
+            linkedCashflow.DeletedAt = DateTime.UtcNow;
+            linkedCashflow.DeletedBy = userId;
         }
 
         await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
@@ -625,6 +673,18 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         var payment = await db.Payments.FindAsync(id);
         if (payment == null || !payment.IsActive) return null;
+
+        // Phase 0B: Prevent double-refund — check if a refund already exists for this payment
+        var existingRefund = await db.Payments
+            .AnyAsync(p => p.IsActive && p.Amount < 0
+                && p.ServiceDescription != null
+                && p.ServiceDescription.StartsWith("استرداد:")
+                && p.ContractId == payment.ContractId
+                && p.InvoiceId == payment.InvoiceId
+                && p.PatientId == payment.PatientId
+                && p.Amount == -payment.Amount);
+        if (existingRefund)
+            throw new ArgumentException("تم استرداد هذه الدفعة مسبقاً. لا يمكن استرداد نفس الدفعة مرتين.");
 
         // Require active open cashier session for refund payouts
         var userId = currentUser.UserId ?? Guid.Empty;
@@ -1038,8 +1098,27 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 IsActive = true
             };
             db.Treasuries.Add(treasury);
+            // Save first so the treasury row exists before the atomic update
+            await db.SaveChangesAsync();
         }
         
-        treasury.Balance += amount;
+        // Phase 0B: Use raw SQL for atomic balance update to prevent race conditions
+        // under concurrent requests. The previous read-modify-write pattern could
+        // lose updates when two payments are processed simultaneously.
+        if (db.Database.IsRelational())
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                @"UPDATE ""Treasuries"" SET ""Balance"" = ""Balance"" + {0} WHERE ""Id"" = {1}",
+                amount, treasury.Id);
+            
+            // Refresh the entity to get the latest balance from DB
+            await db.Entry(treasury).ReloadAsync();
+        }
+        else
+        {
+            // Fallback for InMemory provider (used in tests) — read-modify-write is
+            // safe in single-threaded test scenarios.
+            treasury.Balance += amount;
+        }
     }
 }

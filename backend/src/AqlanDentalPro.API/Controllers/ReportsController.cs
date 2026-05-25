@@ -128,7 +128,37 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
 
         var totalCollected = payments.Sum(p => p.total);
 
-        return Ok(new { fromDate = fromDate.ToString("yyyy-MM-dd"), toDate = toDate.ToString("yyyy-MM-dd"), totalCollected, daily = payments, bySpecialty, byMethod });
+        // Phase 0B: Include CashFlowTransaction-based expenses, refunds, and supplier payments
+        // for a complete financial picture (not just patient payments)
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        
+        var totalExpenses = await db.CashFlowTransactions
+            .Where(t => t.Type == TransactionType.Outflow && t.IsActive
+                && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
+                && t.Category == FinancialCategory.OperationalExpense)
+            .SumAsync(t => (decimal?)t.Amount) ?? 0;
+            
+        var totalRefunds = await db.CashFlowTransactions
+            .Where(t => t.Type == TransactionType.Outflow && t.IsActive
+                && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
+                && t.Category == FinancialCategory.Refund)
+            .SumAsync(t => (decimal?)t.Amount) ?? 0;
+            
+        var totalSupplierPayments = await db.CashFlowTransactions
+            .Where(t => t.Type == TransactionType.Outflow && t.IsActive
+                && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
+                && t.Category == FinancialCategory.SupplierPayment)
+            .SumAsync(t => (decimal?)t.Amount) ?? 0;
+            
+        var totalSalaryAdvances = await db.CashFlowTransactions
+            .Where(t => t.Type == TransactionType.Outflow && t.IsActive
+                && t.TransactionDate >= fromDate && t.TransactionDate <= toDate
+                && t.Category == FinancialCategory.SalaryAdvance)
+            .SumAsync(t => (decimal?)t.Amount) ?? 0;
+
+        var netProfit = totalCollected - totalExpenses - totalRefunds - totalSupplierPayments - totalSalaryAdvances;
+
+        return Ok(new { fromDate = fromDate.ToString("yyyy-MM-dd"), toDate = toDate.ToString("yyyy-MM-dd"), totalCollected, totalExpenses, totalRefunds, totalSupplierPayments, totalSalaryAdvances, netProfit, daily = payments, bySpecialty, byMethod });
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -338,9 +368,26 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             var remaining = c.TotalAmount - paid;
             if (remaining <= 0) continue;
 
-            // Days overdue: based on contract start date + expected duration
-            var daysOverdue = c.StartDate.HasValue ? (today.DayNumber - c.StartDate.Value.DayNumber) : 0;
-            if (daysOverdue < 0) daysOverdue = 0;
+            // Phase 0B: Calculate days overdue based on expected installment schedule.
+            // A contract is "overdue" if the expected payments exceed actual payments,
+            // and the overdue period starts from when the expected payment was due.
+            var daysOverdue = 0;
+            if (c.StartDate.HasValue && c.InstallmentAmount > 0)
+            {
+                var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
+                if (monthsElapsed > 0)
+                {
+                    var expectedPaid = c.DownPayment + Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0);
+                    if (expectedPaid > paid)
+                    {
+                        // The overdue starts from when the first missed installment was due
+                        var monthsPaidOnSchedule = Math.Max(0, (int)Math.Floor((paid - c.DownPayment) / (c.InstallmentAmount ?? 1)));
+                        var firstOverdueMonth = monthsPaidOnSchedule + 1;
+                        var dueDateOfFirstOverdue = c.StartDate.Value.AddMonths(firstOverdueMonth);
+                        daysOverdue = Math.Max(0, today.DayNumber - dueDateOfFirstOverdue.DayNumber);
+                    }
+                }
+            }
 
             overdueList.Add(new
             {
@@ -1127,6 +1174,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         // Calculate Operating Expenses (OPEX)
         var salariesPaid = transactions.Where(t => t.Category == FinancialCategory.SalaryPayment).Sum(t => t.Amount);
         var commissionsPaid = transactions.Where(t => t.Category == FinancialCategory.DoctorCommission).Sum(t => t.Amount);
+        var salaryAdvances = transactions.Where(t => t.Category == FinancialCategory.SalaryAdvance).Sum(t => t.Amount);
+        var supplierPayments = transactions.Where(t => t.Category == FinancialCategory.SupplierPayment).Sum(t => t.Amount);
         
         var rent = expenses.Where(e => e.Category == ExpenseCategory.Rent).Sum(e => e.Amount);
         var utilities = expenses.Where(e => e.Category == ExpenseCategory.Utilities).Sum(e => e.Amount);
@@ -1135,7 +1184,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var taxes = expenses.Where(e => e.Category == ExpenseCategory.Taxes).Sum(e => e.Amount);
         var opexMiscellaneous = expenses.Where(e => e.Category == ExpenseCategory.Miscellaneous).Sum(e => e.Amount);
 
-        var totalOpex = salariesPaid + commissionsPaid + rent + utilities + marketing + maintenance + taxes + opexMiscellaneous;
+        var totalOpex = salariesPaid + commissionsPaid + salaryAdvances + supplierPayments + rent + utilities + marketing + maintenance + taxes + opexMiscellaneous;
         var netProfit = grossProfit - totalOpex;
 
         return Ok(new
@@ -1157,6 +1206,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             // Operating Expenses (OPEX)
             salariesPaid,
             commissionsPaid,
+            salaryAdvances,
+            supplierPayments,
             rent,
             utilities,
             marketing,

@@ -331,6 +331,17 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         var userId = currentUser.UserId ?? Guid.Empty;
         var branchId = bill.BranchId;
 
+        // Phase 0B: Cash bill payments require an open cashier session so they are
+        // tracked in the drawer reconciliation. Non-cash payments don't need one.
+        CashierSession? activeSession = null;
+        if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        {
+            activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل سداد فواتير المورد النقدية." });
+        }
+
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -347,7 +358,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 ReferenceNumber = bill.BillNumber,
                 Description = $"دفعة على فاتورة مورد {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
                 PerformedBy = userId,
-                BranchId = branchId
+                BranchId = branchId,
+                // Phase 0B: Link to cashier session for cash payments
+                CashierSessionId = activeSession?.Id
             };
             db.CashFlowTransactions.Add(cashflow);
 

@@ -1,6 +1,7 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -24,8 +25,8 @@ public sealed class ApproveAdvanceRequest
 
 [ApiController]
 [Route("api/advances")]
-[Authorize]
-public class AdvancePaymentController(AppDbContext db) : ControllerBase
+[Authorize(Policy = "ReportsAccess")]
+public class AdvancePaymentController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     /// <summary>
     /// Get advance payment records with filters
@@ -144,6 +145,34 @@ public class AdvancePaymentController(AppDbContext db) : ControllerBase
             advance.Status = RequestStatus.Approved;
             advance.ApprovedBy = Guid.TryParse(userId, out var uid) ? uid : null;
             advance.ApprovedAt = DateTime.UtcNow;
+
+            // Phase 0B: Create CashFlowTransaction (Outflow) for the advance payment
+            // so it's reflected in the central ledger and P&L reports
+            var employee = await db.Employees.FindAsync(advance.EmployeeId);
+            var branchId = employee?.BranchId ?? Guid.Empty;
+            var userIdGuid = Guid.TryParse(userId, out var uid2) ? uid2 : Guid.Empty;
+            
+            // Find active cashier session for cash advances
+            CashierSession? activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == userIdGuid && s.Status == SessionStatus.Open && s.IsActive);
+            var cashflowPaymentMethod = "cash"; // Advances are typically cash
+            
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-ADV-{advance.Id.ToString()[..8]}",
+                Type = TransactionType.Outflow,
+                Category = FinancialCategory.SalaryAdvance,
+                Amount = advance.Amount,
+                PaymentMethod = cashflowPaymentMethod,
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = advance.Id,
+                ReferenceNumber = $"ADV-{advance.Id.ToString()[..8]}",
+                Description = $"سلفة موظف: {employee?.FullName ?? "غير معروف"}",
+                PerformedBy = userIdGuid,
+                BranchId = branchId,
+                CashierSessionId = activeSession?.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
         }
         else
         {

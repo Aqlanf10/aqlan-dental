@@ -28,6 +28,8 @@ public class InvoiceLineItemConfiguration : IEntityTypeConfiguration<InvoiceLine
         // Indexes
         builder.HasIndex(l => l.InvoiceId);
         builder.HasIndex(l => l.ServiceId);
+        builder.HasIndex(l => l.DoctorId);
+        builder.HasIndex(l => l.CommissionStatus);
 
         // Relationships
         builder.HasOne(l => l.Service)

@@ -25,7 +25,7 @@ public sealed class CloseSessionRequest
 [ApiController]
 [Route("api/cashier-sessions")]
 [Authorize(Policy = "FinanceAccess")] // Admin, Accountant, Reception
-public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, ILogger<CashierSessionsController> logger) : ControllerBase
 {
     [HttpPost("open")]
     public async Task<IActionResult> OpenSession([FromBody] OpenSessionRequest req)
@@ -188,6 +188,13 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         foreach (var t in unlinkedTransactions)
         {
             t.CashierSessionId = session.Id;
+            // Phase 0B: Log warning for heuristically-linked transactions.
+            // This linking is based on PerformedBy + CreatedAt matching, which is
+            // imprecise — transactions created by another user on behalf of this
+            // cashier, or system-generated transactions, may be missed or incorrectly linked.
+            logger.LogWarning("Phase 0B: Heuristically linking unlinked CashFlowTransaction {TxId} to session {SessionId}. " +
+                "This transaction was not linked at creation time — investigate if this occurs frequently.",
+                t.Id, session.Id);
         }
 
         await db.SaveChangesAsync();

@@ -227,6 +227,28 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         };
         db.CashFlowTransactions.Add(cashflow);
 
+        // Phase 0B: Create paired Outflow CashFlowTransaction for the source treasury
+        // to complete the audit trail. Money leaving the source must be recorded.
+        if (transfer.SourceTreasury != null)
+        {
+            var sourceCashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-TR-OUT-{transfer.TransferNumber[3..]}",
+                Type = TransactionType.Outflow,
+                Category = FinancialCategory.InternalTransfer,
+                Amount = transfer.Amount,
+                PaymentMethod = transfer.SourceTreasury.Type == TreasuryType.Bank ? "bank" : "cash",
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = transfer.Id,
+                ReferenceNumber = transfer.TransferNumber,
+                Description = $"تحويل سيولة خارجية: من {sourceName} إلى {destName}",
+                PerformedBy = transfer.PerformedBy,
+                BranchId = transfer.SourceTreasury.BranchId,
+                CashierSessionId = transfer.CashierSessionId
+            };
+            db.CashFlowTransactions.Add(sourceCashflow);
+        }
+
         await db.SaveChangesAsync();
 
         return Ok(new

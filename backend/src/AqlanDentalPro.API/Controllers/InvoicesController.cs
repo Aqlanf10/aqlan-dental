@@ -17,7 +17,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/invoices")]
 [Authorize(Policy = "FinanceAccess")]
-public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger<InvoicesController> logger, ICommissionService commissionService) : ControllerBase
+public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger<InvoicesController> logger, ICommissionService commissionService, ICurrentUserService currentUser) : ControllerBase
 {
     // ─── F5: POST /api/invoices — Create standalone invoice ──────────────────
     /// <summary>
@@ -194,6 +194,12 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             .Include(i => i.Patient)
             .Include(i => i.LineItems)
             .AsQueryable();
+
+        // Phase 0B: Branch isolation — non-admin users only see invoices for their branch
+        if (currentUser.BranchId.HasValue && !currentUser.IsAdmin)
+        {
+            query = query.Where(i => i.Patient.BranchId == currentUser.BranchId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<InvoiceStatus>(status, true, out var statusFilter))
             query = query.Where(i => i.Status == statusFilter);
@@ -558,18 +564,26 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
         });
     }
 
-    // ─── 6. PATCH /api/invoices/{id}/cancel — Cancel draft invoice ────────
-    /// <summary>Changes invoice status to Cancelled. Only Draft can be cancelled.</summary>
+    // ─── 6. PATCH /api/invoices/{id}/cancel — Cancel invoice ────────
+    /// <summary>Changes invoice status to Cancelled. Draft and Issued invoices can be cancelled. Paid invoices cannot.</summary>
     [HttpPatch("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelInvoiceRequest? req = null)
     {
-        var invoice = await db.Invoices.FindAsync(id);
+        var invoice = await db.Invoices
+            .Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.Id == id);
+            
         if (invoice == null)
             return NotFound(new { message = "الفاتورة غير موجودة" });
         if (!invoice.IsActive)
             return BadRequest(new { message = "الفاتورة محذوفة" });
-        if (invoice.Status != InvoiceStatus.Draft)
-            return BadRequest(new { message = "يمكن إلغاء الفواتير المسودة فقط" });
+
+        // Phase 0B: Allow cancelling Draft invoices (simple cancel) and Issued invoices (void).
+        // Paid invoices cannot be cancelled — payments must be refunded first.
+        if (invoice.Status == InvoiceStatus.Paid)
+            return BadRequest(new { message = "لا يمكن إلغاء فاتورة مدفوعة. يجب استرداد المدفوعات أولاً." });
+        if (invoice.Status == InvoiceStatus.Cancelled)
+            return BadRequest(new { message = "الفاتورة ملغاة بالفعل" });
 
         var userId = GetCurrentUserId();
         invoice.Status = InvoiceStatus.Cancelled;
@@ -579,9 +593,6 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
             invoice.Notes = string.IsNullOrWhiteSpace(invoice.Notes)
                 ? $"[إلغاء] {req.Notes}"
                 : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
-
-        // IMPORTANT: No Payment is created or reversed. No Contract is changed.
-        // No patient balance is altered.
 
         await db.SaveChangesAsync();
 

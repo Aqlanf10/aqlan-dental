@@ -9,6 +9,7 @@ import {
   UserCheck, Globe, Plus, CalendarClock, Route,
   Wallet, UserPlus, Keyboard, Bell, BellOff,
   Printer, Users, Activity, ArrowRight, Megaphone, Building2,
+  X, PanelRight, ChevronLeft, Phone, MessageCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
@@ -23,8 +24,11 @@ import {
   computeDayStats, filterByTab,
   computeRoomOccupancy, computeDoctorWorkload, getNextPatient,
   isDoctorRole,
+  APPT_STATUS_LABELS, STATUS_COLORS, ACTION_LABELS,
+  normalizePhone, isAppointmentOverdue, fmtOverdueMinutes, fmtSessionDuration,
   type TodayJourneyItem, type TabKey, type UndoAction,
 } from "./_lib/constants";
+import type { DailyJourneySummary } from "@/types/journey";
 
 import {
   useTodayJourneyItems,
@@ -70,6 +74,27 @@ import {
 } from "./_components/Modals";
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   Inline styles for animations
+   ═══════════════════════════════════════════════════════════════════════════ */
+const animationStyles = `
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fadeInUp {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes panelSlideIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right { animation: slideInRight 0.25s ease-out; }
+.animate-fade-in-up { animation: fadeInUp 0.2s ease-out; }
+.animate-panel-slide { animation: panelSlideIn 0.25s ease-out; }
+`;
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Quick Link items for sidebar-style navigation at bottom
    ═══════════════════════════════════════════════════════════════════════════ */
 const QUICK_LINKS = [
@@ -82,32 +107,19 @@ const QUICK_LINKS = [
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Summary Card
+   Tab icon mapping
    ═══════════════════════════════════════════════════════════════════════════ */
-function SummaryCard({
-  icon: Icon, label, value, color, subValue,
-}: {
-  icon: React.ElementType; label: string; value: number | string;
-  color: string; subValue?: string;
-}) {
-  return (
-    <div className="rounded-xl p-3.5 flex items-center gap-3 transition-shadow hover:shadow-md"
-      style={{ background: color + "08", border: `1.5px solid ${color}20` }}>
-      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ background: color + "15" }}>
-        <Icon className="w-5 h-5" style={{ color }} />
-      </div>
-      <div>
-        <div className="text-xl font-extrabold leading-tight" style={{ color }}>{value}</div>
-        <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>{label}</div>
-        {subValue && <div className="text-[10px] font-semibold mt-0.5" style={{ color: "#94a3b8" }}>{subValue}</div>}
-      </div>
-    </div>
-  );
-}
+const TAB_ICONS: Record<string, React.ElementType> = {
+  appointments: Calendar,
+  queue: Clock,
+  inClinic: Stethoscope,
+  completed: CheckCircle,
+  payments: CreditCard,
+  overdue: AlertTriangle,
+};
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MAIN PAGE
+   MAIN PAGE — Microsoft Fluent Design
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function DailyOperationsPage() {
   const router = useRouter();
@@ -115,7 +127,7 @@ export default function DailyOperationsPage() {
   const userRole = user?.role ?? "";
   const isDoctor = isDoctorRole(userRole);
 
-  // ── Improvement 1: SignalR real-time updates ──
+  // ── SignalR real-time updates ──
   const { isConnected: signalrConnected } = useSignalRClinicQueue();
 
   // ── Filters ──
@@ -142,7 +154,7 @@ export default function DailyOperationsPage() {
   const { data: financeSummary } = useFinanceSummary();
   const clinicName = clinicSettings?.clinicName ?? "مركز الدكتور عقلان";
 
-  // ── Improvement 2: Queue wait time ──
+  // ── Queue wait time ──
   const { data: queueWaitTime } = useQueueWaitTime();
 
   // ── Tomorrow's appointments for bulk SMS ──
@@ -174,17 +186,17 @@ export default function DailyOperationsPage() {
   const [whatsAppMenuOpen, setWhatsAppMenuOpen] = useState(false);
   const [changeRoomModalOpen, setChangeRoomModalOpen] = useState(false);
 
-  // ── Improvement 4: Walk-in modal ──
+  // ── Walk-in modal ──
   const [walkInModalOpen, setWalkInModalOpen] = useState(false);
 
-  // ── Improvement 5: Undo state ──
+  // ── Undo state ──
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
 
-  // ── Improvement 6: Side panel ──
+  // ── Side panel ──
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [sidePanelItem, setSidePanelItem] = useState<TodayJourneyItem | null>(null);
 
-  // ── Improvement 7: Keyboard shortcuts help ──
+  // ── Keyboard shortcuts help ──
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
 
   // ── Bulk SMS modal ──
@@ -236,14 +248,12 @@ export default function DailyOperationsPage() {
   // ── Search input ref for keyboard shortcut ──
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Improvement 7: Keyboard shortcuts ──
+  // ── Keyboard shortcuts ──
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs
       const target = e.target as HTMLElement;
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
 
-      // Escape: close any open modal
       if (e.key === "Escape") {
         if (paymentModalOpen) { setPaymentModalOpen(false); return; }
         if (completeVisitModalOpen) { setCompleteVisitModalOpen(false); return; }
@@ -256,28 +266,24 @@ export default function DailyOperationsPage() {
         if (shortcutsHelpOpen) { setShortcutsHelpOpen(false); return; }
       }
 
-      // Ctrl+R: refresh (prevent browser default)
       if (e.ctrlKey && e.key === "r") {
         e.preventDefault();
         refetchItems();
         return;
       }
 
-      // Ctrl+F: focus search
       if (e.ctrlKey && e.key === "f") {
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
       }
 
-      // Ctrl+N: walk-in patient
       if (e.ctrlKey && e.key === "n") {
         e.preventDefault();
         setWalkInModalOpen(true);
         return;
       }
 
-      // Number keys 1-6: switch tabs (only when not in input)
       if (!isInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
         const tabKeys: TabKey[] = ["appointments", "queue", "inClinic", "completed", "payments", "overdue"];
         const num = parseInt(e.key, 10);
@@ -285,7 +291,6 @@ export default function DailyOperationsPage() {
           setActiveTab(tabKeys[num - 1]);
           return;
         }
-        // ? key: show shortcuts help
         if (e.key === "?") {
           setShortcutsHelpOpen(true);
           return;
@@ -368,15 +373,12 @@ export default function DailyOperationsPage() {
     router.push(`/patients/${item.patientId}`);
   }, [router]);
 
-  // ── Improvement 6: Side panel trigger ──
   const handleOpenSidePanel = useCallback((item: TodayJourneyItem) => {
     setSidePanelItem(item);
     setSidePanelOpen(true);
   }, []);
 
-  // ── Improvement 5: Undo helper ──
   const pushUndoAction = useCallback((action: UndoAction) => {
-    // Clear any previous undo
     if (undoAction) setUndoAction(null);
     setUndoAction(action);
   }, [undoAction]);
@@ -384,7 +386,6 @@ export default function DailyOperationsPage() {
   const handleUndo = useCallback(async () => {
     if (!undoAction) return;
     try {
-      // Revert the action by restoring previous status
       if (undoAction.type === "NoShow" || undoAction.type === "Cancel") {
         await updateStatusMutation.mutateAsync({
           appointmentId: undoAction.appointmentId,
@@ -392,7 +393,6 @@ export default function DailyOperationsPage() {
         });
         toast.success("تم التراجع عن الإجراء");
       } else if (undoAction.type === "CancelQueue" && undoAction.queueItemId) {
-        // Re-add to queue by sending to queue again
         await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
         toast.success("تم التراجع — أعيد المريض للطابور");
       }
@@ -402,7 +402,6 @@ export default function DailyOperationsPage() {
     setUndoAction(null);
   }, [undoAction, updateStatusMutation, sendToQueueMutation]);
 
-  // ── Confirm action (with Undo) ──
   const handleConfirmAction = useCallback(async () => {
     if (!selectedItem) return;
     try {
@@ -454,7 +453,6 @@ export default function DailyOperationsPage() {
     setConfirmDialogOpen(false);
   }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, pushUndoAction]);
 
-  // ── Payment confirm (with PDF receipt) ──
   const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string) => {
     if (!selectedItem) return;
     try {
@@ -469,7 +467,6 @@ export default function DailyOperationsPage() {
       toast.success("تم تسجيل الدفعة بنجاح");
       setPaymentModalOpen(false);
 
-      // Auto-download PDF receipt
       if (result?.id) {
         try {
           const { data } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, {
@@ -490,7 +487,6 @@ export default function DailyOperationsPage() {
     }
   }, [selectedItem, createPaymentMutation]);
 
-  // ── Complete visit confirm ──
   const handleCompleteVisitConfirm = useCallback(async (data: {
     serviceDesc: string; amountDue: number; isPaid: boolean;
     needsFollowUp: boolean; nextDate: string; notes: string;
@@ -527,7 +523,6 @@ export default function DailyOperationsPage() {
     }
   }, [selectedItem, handoffMutation, checkoutMutation]);
 
-  // ── Checkout shortcut ──
   const handleCheckoutConfirm = useCallback(async (data: {
     paymentAmount: number; paymentMethod: string; notes: string;
     nextDate?: string; nextServiceId?: string;
@@ -545,7 +540,6 @@ export default function DailyOperationsPage() {
     }
   }, [selectedItem, checkoutMutation]);
 
-  // ── Book appointment confirm ──
   const handleBookConfirm = useCallback(async (data: {
     doctorId: string; date: string; startTime: string; endTime: string;
     serviceId: string; type: string; notes: string;
@@ -569,7 +563,6 @@ export default function DailyOperationsPage() {
     }
   }, [selectedItem, createAppointmentMutation]);
 
-  // ── Walk-in confirm ──
   const handleWalkInConfirm = useCallback(async (data: {
     patientName: string; patientPhone: string; doctorId: string;
     serviceId: string; branchId: string; notes: string;
@@ -583,7 +576,6 @@ export default function DailyOperationsPage() {
     }
   }, [walkInMutation]);
 
-  // ── Bulk SMS reminders ──
   const handleBulkSms = useCallback(async () => {
     try {
       const result = await bulkSmsMutation.mutateAsync({
@@ -615,365 +607,344 @@ export default function DailyOperationsPage() {
     { value: "Cancelled", label: "ملغى" },
   ];
 
+  // ── Patient initials helper ──
+  const getInitials = (name: string) => {
+    const parts = name.split(" ").filter(Boolean);
+    if (parts.length >= 2) return parts[0][0] + parts[1][0];
+    return parts[0]?.[0] ?? "?";
+  };
+
+  // ── Side panel data ──
+  const panelFinance = selectedSummary?.financeSummary;
+  const panelMedicalAlerts = selectedSummary?.medicalAlerts ?? [];
+  const panelActiveContract = selectedSummary?.activeContract;
+  const panelActiveOrtho = selectedSummary?.activeOrthoCase;
+
   // ── Render ──
   return (
-    <div className="space-y-4 page-content">
-      {/* ═══ Header ═══ */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold" style={{ color: NAVY }}>التشغيل اليومي</h1>
-          <p className="text-sm mt-1" style={{ color: "#64748b" }}>
-            رحلة الاستقبال اليومية — من الموعد حتى الدفع والمتابعة
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Last updated */}
-          <span className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>
-            آخر تحديث: {new Date().toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}
-          </span>
-          {/* SignalR indicator */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
-            style={{ background: signalrConnected ? "#f0fdf4" : "#fef2f2", color: signalrConnected ? "#16a34a" : "#ef4444",
-              border: `1px solid ${signalrConnected ? "#bbf7d0" : "#fecaca"}` }}>
-            <span className="w-2 h-2 rounded-full" style={{ background: signalrConnected ? "#16a34a" : "#ef4444" }} />
-            {signalrConnected ? "مباشر" : "غير متصل"}
+    <>
+      <style dangerouslySetInnerHTML={{ __html: animationStyles }} />
+
+      <div className="h-screen flex flex-col bg-[#f8fafc] overflow-hidden">
+        {/* ═══════════════════════════════════════════════════════════════════
+            COMMAND BAR (52px)
+            ═══════════════════════════════════════════════════════════════════ */}
+        <div className="h-[52px] flex-shrink-0 bg-white flex items-center px-3 gap-2"
+          style={{ borderBottom: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+
+          {/* Left: Icon + Title */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: NAVY }}>
+              <Activity className="w-4 h-4 text-white" />
+            </div>
+            <div className="leading-tight">
+              <div className="text-sm font-extrabold" style={{ color: NAVY }}>التشغيل اليومي</div>
+              <div className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>رحلة الاستقبال</div>
+            </div>
           </div>
+
+          {/* Divider */}
+          <div className="w-px h-7 mx-1" style={{ background: "#e5e7eb" }} />
+
+          {/* Center: Search */}
+          <div className="flex-1 max-w-md relative">
+            <Search className="w-4 h-4 absolute top-1/2 right-3 -translate-y-1/2" style={{ color: "#94a3b8" }} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="بحث باسم المريض أو الهاتف..."
+              className="w-full text-sm rounded-full border-0 pl-16 pr-9 py-1.5 outline-none focus:ring-2 focus:ring-[#3d7ab5]/20"
+              style={{ background: "#f5f7fa", color: NAVY }}
+            />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-medium px-1.5 py-0.5 rounded"
+              style={{ background: "#e5e7eb", color: "#94a3b8" }}>
+              Ctrl+F
+            </span>
+          </div>
+
+          {/* Inline Filters (compact, no labels) */}
+          {/* Date picker */}
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+            style={{ background: "#f5f7fa", color: NAVY }}>
+            <Calendar className="w-3.5 h-3.5" />
+            <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
+              className="bg-transparent text-xs font-semibold outline-none border-0 w-[110px]"
+              style={{ color: NAVY }} />
+          </div>
+
+          {/* Doctor filter */}
+          {!isDoctor && (
+            <select value={filterDoctor} onChange={e => setFilterDoctor(e.target.value)}
+              className="text-xs font-semibold rounded-lg px-2 py-1.5 outline-none border-0 focus:ring-2 focus:ring-[#3d7ab5]/20"
+              style={{ background: "#f5f7fa", color: NAVY, maxWidth: 120 }}>
+              <option value="">👨‍⚕️ كل الأطباء</option>
+              {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          )}
+
+          {/* Status filter */}
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="text-xs font-semibold rounded-lg px-2 py-1.5 outline-none border-0 focus:ring-2 focus:ring-[#3d7ab5]/20"
+            style={{ background: "#f5f7fa", color: NAVY, maxWidth: 110 }}>
+            {statusFilters.map(s => <option key={s.value} value={s.value}>📊 {s.label}</option>)}
+          </select>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Right Actions */}
+          {/* Walk-in (PRIMARY - Orange with text) */}
+          <button onClick={() => setWalkInModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90"
+            style={{ background: ORANGE }}
+            title="مريض مشي (Ctrl+N)">
+            <UserPlus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">مريض مشي</span>
+          </button>
+
+          {/* SMS Reminders (blue outline) */}
+          {!isDoctor && (
+            <button onClick={() => { refetchTomorrow(); setBulkSmsModalOpen(true); }}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-[#3d7ab508]"
+              style={{ border: "1px solid #3d7ab530" }}
+              title="إرسال تذكيرات لمواعيد الغد">
+              <Megaphone className="w-4 h-4" style={{ color: BLUE }} />
+            </button>
+          )}
+
+          {/* Print */}
+          <button onClick={() => window.print()}
+            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
+            title="طباعة جدول اليوم">
+            <Printer className="w-4 h-4" style={{ color: "#64748b" }} />
+          </button>
+
+          {/* Refresh */}
+          <button onClick={() => refetchItems()}
+            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
+            title="تحديث (Ctrl+R)">
+            <RefreshCw className="w-4 h-4" style={{ color: "#64748b" }} />
+          </button>
+
           {/* Sound toggle */}
           <button onClick={() => setSoundEnabled(!soundEnabled)}
             className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-            style={{ border: "1px solid #e2e8f0" }}
             title={soundEnabled ? "إيقاف صوت التنبيه" : "تشغيل صوت التنبيه"}>
-            {soundEnabled ? <Bell className="w-4 h-4" style={{ color: NAVY }} /> : <BellOff className="w-4 h-4" style={{ color: "#94a3b8" }} />}
+            {soundEnabled ? <Bell className="w-4 h-4" style={{ color: "#64748b" }} /> : <BellOff className="w-4 h-4" style={{ color: "#94a3b8" }} />}
           </button>
+
           {/* Shortcuts help */}
           <button onClick={() => setShortcutsHelpOpen(true)}
             className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-            style={{ border: "1px solid #e2e8f0" }}
             title="اختصارات لوحة المفاتيح">
-            <Keyboard className="w-4 h-4" style={{ color: NAVY }} />
+            <Keyboard className="w-4 h-4" style={{ color: "#64748b" }} />
           </button>
-          <button onClick={() => refetchItems()}
-            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-            style={{ border: "1px solid #e2e8f0" }}
-            title="تحديث (Ctrl+R)">
-            <RefreshCw className="w-4 h-4" style={{ color: NAVY }} />
-          </button>
-          {/* Walk-in button */}
-          <button onClick={() => setWalkInModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-bold text-white transition"
-            style={{ background: ORANGE }}
-            title="مريض مشي (Ctrl+N)">
-            <UserPlus className="w-4 h-4" />
-            مريض مشي
-          </button>
-          {/* Bulk SMS reminders */}
-          {!isDoctor && (
-            <button onClick={() => { refetchTomorrow(); setBulkSmsModalOpen(true); }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-bold transition"
-              style={{ background: "#3d7ab50d", color: "#3d7ab5", border: "1px solid #3d7ab520" }}
-              title="إرسال تذكيرات لمواعيد الغد">
-              <Megaphone className="w-4 h-4" />
-              تذكيرات الغد
-            </button>
-          )}
-          {/* Print schedule */}
-          <button onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition"
-            style={{ background: NAVY + "0d", color: NAVY, border: `1px solid ${NAVY}20` }}
-            title="طباعة جدول اليوم">
-            <Printer className="w-4 h-4" />
-            طباعة
-          </button>
-          <Link href="/"
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold transition"
-            style={{ background: NAVY + "0d", color: NAVY, border: `1px solid ${NAVY}20` }}
-            onMouseEnter={e => (e.currentTarget.style.background = NAVY + "1a")}
-            onMouseLeave={e => (e.currentTarget.style.background = NAVY + "0d")}>
-            <ArrowLeft className="w-4 h-4" />
-            لوحة التحكم
-          </Link>
-        </div>
-      </div>
 
-      {/* ═══ Workflow Nav ═══ */}
-      <WorkflowNav
-        links={[
-          WORKFLOW_LINKS.bookingRequests(),
-          WORKFLOW_LINKS.appointments(),
-          WORKFLOW_LINKS.newAppointment(),
-          WORKFLOW_LINKS.clinicQueue(),
-          WORKFLOW_LINKS.patientJourney(),
-          WORKFLOW_LINKS.checkout(),
-          WORKFLOW_LINKS.payments(),
-        ]}
-        currentPage="/daily-operations"
-      />
-
-      {/* ═══ Top Bar: Date + Filters ═══ */}
-      <div className="bg-white rounded-xl border p-4 flex flex-wrap items-center gap-3"
-        style={{ borderColor: "#e8f0f9" }}>
-        {/* Date */}
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4" style={{ color: NAVY }} />
-          <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
-            className="text-sm font-semibold rounded-lg border px-2.5 py-1.5 outline-none focus:border-[#3d7ab5]"
-            style={{ borderColor: "#e2e8f0", color: NAVY }} />
-        </div>
-
-        {/* Branch filter */}
-        {!isDoctor && branches.length > 1 && (
-          <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}
-            className="text-sm rounded-lg border px-2.5 py-1.5 outline-none focus:border-[#3d7ab5]"
-            style={{ borderColor: "#e2e8f0", color: NAVY }}>
-            <option value="">كل الفروع</option>
-            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        )}
-
-        {/* Doctor filter */}
-        {!isDoctor && (
-          <select value={filterDoctor} onChange={e => setFilterDoctor(e.target.value)}
-            className="text-sm rounded-lg border px-2.5 py-1.5 outline-none focus:border-[#3d7ab5]"
-            style={{ borderColor: "#e2e8f0", color: NAVY }}>
-            <option value="">كل الأطباء</option>
-            {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        )}
-
-        {/* Status filter */}
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="text-sm rounded-lg border px-2.5 py-1.5 outline-none focus:border-[#3d7ab5]"
-          style={{ borderColor: "#e2e8f0", color: NAVY }}>
-          {statusFilters.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-
-        {/* Search */}
-        <div className="flex-1 min-w-[200px] relative">
-          <Search className="w-4 h-4 absolute top-1/2 right-3 -translate-y-1/2" style={{ color: "#94a3b8" }} />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="بحث باسم المريض / رقم الهاتف / الطبيب... (Ctrl+F)"
-            className="w-full text-sm rounded-lg border pl-3 pr-9 py-1.5 outline-none focus:border-[#3d7ab5]"
-            style={{ borderColor: "#e2e8f0" }}
-          />
-        </div>
-
-        {/* Date display */}
-        <div className="text-sm font-bold" style={{ color: NAVY }}>
-          {fmtDate(filterDate)}
-        </div>
-      </div>
-
-      {/* ═══ Summary Cards ═══ */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2.5">
-        <SummaryCard icon={Calendar} label="مواعيد اليوم" value={dayStats.totalAppointments} color={ORANGE} />
-        <SummaryCard icon={UserCheck} label="حضروا" value={dayStats.arrived} color="#16a34a" />
-        <SummaryCard icon={Clock} label="في الانتظار" value={dayStats.waiting} color="#d97706" />
-        <SummaryCard icon={Stethoscope} label="داخل العيادة" value={dayStats.inClinic} color="#9333ea" />
-        <SummaryCard icon={CheckCircle} label="مكتمل" value={dayStats.completed} color="#22c55e" />
-        <SummaryCard icon={AlertTriangle} label="لم يحضر" value={dayStats.noShow} color="#ef4444" />
-        <SummaryCard icon={CreditCard} label="مدفوعات اليوم"
-          value={fmtRial(dayStats.todayPayments)}
-          color="#22c55e" />
-        <SummaryCard icon={Wallet} label="المستحقات المتأخرة"
-          value={fmtRial(dayStats.overdueAmount)}
-          color="#ef4444"
-          subValue={financeSummary?.overdueAmount ? "يحتاج متابعة" : undefined} />
-        <SummaryCard icon={AlertTriangle} label="معدل عدم الحضور"
-          value={`${dayStats.noShowRate}%`}
-          color={dayStats.noShowRate > 20 ? "#ef4444" : "#f5922e"}
-          subValue={dayStats.noShowRate > 20 ? "يحتاج متابعة" : undefined} />
-        <SummaryCard icon={Clock} label="مواعيد متأخرة"
-          value={dayStats.overdueAppointments}
-          color={dayStats.overdueAppointments > 0 ? "#ef4444" : "#94a3b8"}
-          subValue={dayStats.overdueAppointments > 0 ? "لم يحضروا بعد" : undefined} />
-      </div>
-
-      {/* ═══ Next Patient Card (Doctor view) ═══ */}
-      {nextPatient && (
-        <div className="rounded-xl border p-4" style={{ borderColor: "#e8f0f9", background: "linear-gradient(135deg, #1a3a5c08, #3d7ab508)" }}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: NAVY }}>
-                <Activity className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <div className="text-xs font-bold" style={{ color: "#64748b" }}>المريض القادم</div>
-                <div className="text-lg font-extrabold" style={{ color: NAVY }}>{nextPatient.patientName}</div>
-                <div className="text-xs" style={{ color: "#94a3b8" }}>
-                  {nextPatient.doctorName} — {nextPatient.serviceName ?? "—"} — {fmtTime(nextPatient.appointmentTime)}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {nextPatient.hasMedicalAlerts && (
-                <span className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: "#fef2f2", color: "#dc2626" }}>
-                  ⚠ تنبيه طبي
-                </span>
-              )}
-              {nextPatient.nextAction === "CallPatient" && (
-                <button onClick={() => handleCallPatient(nextPatient)}
-                  className="px-4 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-1.5"
-                  style={{ background: ORANGE }}>
-                  نداء المريض <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
-              {nextPatient.nextAction === "EnterRoom" && (
-                <button onClick={() => handleEnterRoom(nextPatient)}
-                  className="px-4 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-1.5"
-                  style={{ background: "#9333ea" }}>
-                  دخول الغرفة <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
-              {(nextPatient.nextAction === "Intake" || nextPatient.nextAction === "SendToQueue") && (
-                <button onClick={() => handleIntake(nextPatient)}
-                  className="px-4 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-1.5"
-                  style={{ background: "#16a34a" }}>
-                  تسجيل حضور <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+          {/* SignalR indicator */}
+          <div className="flex items-center gap-1 w-9 h-9 rounded-lg justify-center" title={signalrConnected ? "متصل مباشر" : "غير متصل"}>
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: signalrConnected ? "#16a34a" : "#ef4444" }} />
           </div>
         </div>
-      )}
 
-      {/* ═══ Room Status & Doctor Workload ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {/* Room Status */}
-        {roomOccupancy.length > 0 && (
-          <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e8f0f9" }}>
-            <h3 className="text-xs font-bold mb-3 flex items-center gap-1.5" style={{ color: NAVY }}>
-              <Building2 className="w-3.5 h-3.5" /> حالة الغرف
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {roomOccupancy.map(room => (
-                <div key={room.roomId}
-                  className="px-3 py-2.5 rounded-lg text-center"
-                  style={{
-                    background: room.isOccupied ? "#faf5ff" : "#f0fdf4",
-                    border: `1px solid ${room.isOccupied ? "#e9d5ff" : "#bbf7d0"}`,
-                  }}>
-                  <div className="text-[11px] font-bold" style={{ color: room.isOccupied ? "#9333ea" : "#16a34a" }}>
-                    {room.roomName}
-                  </div>
-                  {room.isOccupied ? (
-                    <div className="text-[9px] mt-0.5" style={{ color: "#64748b" }}>
-                      {room.patientName}
-                    </div>
-                  ) : (
-                    <div className="text-[9px] mt-0.5" style={{ color: "#94a3b8" }}>فارغة</div>
+        {/* ═══════════════════════════════════════════════════════════════════
+            MAIN CONTENT AREA (flex-1)
+            ═══════════════════════════════════════════════════════════════════ */}
+        <div className="flex-1 flex overflow-hidden">
+
+          {/* ── Left: Tab Pills + Data Grid ── */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Tab Pills */}
+            <div className="flex-shrink-0 bg-white px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
+              style={{ borderBottom: "1px solid #f1f5f9" }}>
+              {TABS.map(tab => {
+                const count = tabCounts[tab.key];
+                const isActive = activeTab === tab.key;
+                const TabIcon = TAB_ICONS[tab.key];
+                return (
+                  <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all"
+                    style={{
+                      background: isActive ? tab.color : "#f5f7fa",
+                      color: isActive ? "#fff" : "#64748b",
+                      boxShadow: isActive ? `0 1px 3px ${tab.color}30` : "none",
+                    }}>
+                    {TabIcon && <TabIcon className="w-3.5 h-3.5" />}
+                    <span>{tab.label}</span>
+                    {count > 0 && (
+                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                        style={{
+                          background: isActive ? "rgba(255,255,255,0.25)" : tab.color + "15",
+                          color: isActive ? "#fff" : tab.color,
+                        }}>
+                        {count}
+                      </span>
+                    )}
+                    {tab.key === "queue" && queueWaitTime && queueWaitTime.estimatedMinutes > 0 && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded"
+                        style={{ background: "rgba(255,255,255,0.2)", color: isActive ? "#fff" : ORANGE }}>
+                        ~{queueWaitTime.estimatedMinutes}د
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* Next patient chip (inline) */}
+              {nextPatient && (
+                <div className="flex items-center gap-1.5 mr-auto px-2.5 py-1 rounded-lg text-xs font-bold"
+                  style={{ background: "linear-gradient(135deg, #f0f7ff, #faf5ff)", border: "1px solid #e0e7ff", color: NAVY }}>
+                  <Activity className="w-3 h-3" style={{ color: BLUE }} />
+                  <span>التالي: {nextPatient.patientName}</span>
+                  {nextPatient.nextAction === "CallPatient" && (
+                    <button onClick={() => handleCallPatient(nextPatient)}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ORANGE }}>
+                      نداء
+                    </button>
+                  )}
+                  {nextPatient.nextAction === "EnterRoom" && (
+                    <button onClick={() => handleEnterRoom(nextPatient)}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#9333ea" }}>
+                      دخول
+                    </button>
+                  )}
+                  {(nextPatient.nextAction === "Intake" || nextPatient.nextAction === "SendToQueue") && (
+                    <button onClick={() => handleIntake(nextPatient)}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#16a34a" }}>
+                      تسجيل
+                    </button>
                   )}
                 </div>
-              ))}
+              )}
+            </div>
+
+            {/* Data Grid Area */}
+            <div className="flex-1 overflow-auto bg-white">
+              <AppointmentsTable
+                items={filteredItems}
+                loading={itemsLoading}
+                isDoctor={isDoctor}
+                queueWaitTime={queueWaitTime}
+                onIntake={handleIntake}
+                onSendToQueue={handleSendToQueue}
+                onCallPatient={handleCallPatient}
+                onEnterRoom={handleEnterRoom}
+                onQuickPayment={handleQuickPayment}
+                onBookAppointment={handleBookAppointment}
+                onWhatsApp={handleWhatsApp}
+                onNoShow={handleNoShow}
+                onCancel={handleCancel}
+                onViewPatient={handleViewPatient}
+                onCompleteVisit={handleCompleteVisit}
+                onOpenSidePanel={handleOpenSidePanel}
+                selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
+              />
             </div>
           </div>
-        )}
 
-        {/* Doctor Workload */}
-        {doctorWorkload.length > 0 && !isDoctor && (
-          <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e8f0f9" }}>
-            <h3 className="text-xs font-bold mb-3 flex items-center gap-1.5" style={{ color: NAVY }}>
-              <Users className="w-3.5 h-3.5" /> عبء الأطباء اليوم
-            </h3>
-            <div className="space-y-2">
-              {doctorWorkload.map(dw => (
-                <div key={dw.doctorId} className="flex items-center gap-2">
-                  <div className="text-xs font-bold flex-shrink-0 w-24 truncate" style={{ color: NAVY }}>{dw.doctorName}</div>
-                  <div className="flex-1 h-5 rounded-full overflow-hidden" style={{ background: "#f1f5f9" }}>
-                    <div className="h-full rounded-full flex items-center justify-end px-2 transition-all"
-                      style={{
-                        width: `${Math.min(100, (dw.totalPatients / Math.max(dayStats.totalAppointments, 1)) * 100)}%`,
-                        background: dw.inClinic > 0 ? "#9333ea" : dw.waiting > 0 ? ORANGE : "#16a34a",
-                      }}>
-                      <span className="text-[9px] font-extrabold text-white">{dw.totalPatients}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-1.5 text-[9px] font-bold flex-shrink-0">
-                    <span style={{ color: "#16a34a" }}>✓{dw.completed}</span>
-                    <span style={{ color: "#9333ea" }}>🏥{dw.inClinic}</span>
-                    <span style={{ color: ORANGE }}>⏳{dw.waiting}</span>
-                  </div>
+          {/* ── Right: Patient Detail Panel (380px) ── */}
+          {sidePanelOpen && sidePanelItem && (
+            <>
+              {/* Desktop: inline panel */}
+              <div className="hidden lg:flex w-[380px] flex-shrink-0 flex-col bg-white animate-panel-slide overflow-hidden"
+                style={{ borderRight: "1px solid #e5e7eb" }}>
+                <PatientDetailPanel
+                  item={sidePanelItem}
+                  summary={selectedSummary ?? null}
+                  waitTime={queueWaitTime}
+                  onClose={() => setSidePanelOpen(false)}
+                  onQuickPayment={handleQuickPayment}
+                  onBookAppointment={handleBookAppointment}
+                  onWhatsApp={handleWhatsApp}
+                  onViewPatient={handleViewPatient}
+                  medicalAlerts={panelMedicalAlerts}
+                  finance={panelFinance}
+                  activeContract={panelActiveContract}
+                  activeOrtho={panelActiveOrtho}
+                />
+              </div>
+
+              {/* Mobile: full-screen overlay */}
+              <div className="lg:hidden fixed inset-0 z-50 flex">
+                <div className="flex-1 bg-black/30" onClick={() => setSidePanelOpen(false)} />
+                <div className="w-full max-w-md bg-white overflow-y-auto animate-slide-in-right">
+                  <PatientDetailPanel
+                    item={sidePanelItem}
+                    summary={selectedSummary ?? null}
+                    waitTime={queueWaitTime}
+                    onClose={() => setSidePanelOpen(false)}
+                    onQuickPayment={handleQuickPayment}
+                    onBookAppointment={handleBookAppointment}
+                    onWhatsApp={handleWhatsApp}
+                    onViewPatient={handleViewPatient}
+                    medicalAlerts={panelMedicalAlerts}
+                    finance={panelFinance}
+                    activeContract={panelActiveContract}
+                    activeOrtho={panelActiveOrtho}
+                  />
                 </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            STATUS BAR (32px)
+            ═══════════════════════════════════════════════════════════════════ */}
+        <div className="h-8 flex-shrink-0 flex items-center px-3 gap-4 text-[11px] font-medium text-white select-none"
+          style={{ background: NAVY }}>
+          {/* SignalR */}
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ background: signalrConnected ? "#4ade80" : "#f87171" }} />
+            <span>{signalrConnected ? "مباشر" : "غير متصل"}</span>
+          </div>
+
+          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
+
+          {/* Stats */}
+          <span>{dayStats.totalAppointments} موعد</span>
+          <span>{dayStats.waiting} انتظار</span>
+          <span>{dayStats.inClinic} عيادة</span>
+          <span>{dayStats.completed} مكتمل</span>
+          {dayStats.noShow > 0 && <span>{dayStats.noShow} لم يحضر</span>}
+
+          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
+
+          {/* Finance */}
+          <span>💰 {fmtRial(dayStats.todayPayments)}</span>
+          {dayStats.overdueAmount > 0 && <span>⚠ {fmtRial(dayStats.overdueAmount)} متأخر</span>}
+
+          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
+
+          {/* Rooms */}
+          {roomOccupancy.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span>🏥</span>
+              {roomOccupancy.slice(0, 4).map(room => (
+                <span key={room.roomId} className="px-1.5 py-0.5 rounded text-[10px]"
+                  style={{ background: room.isOccupied ? "rgba(147,51,234,0.3)" : "rgba(34,197,94,0.3)" }}>
+                  {room.roomName}:{room.isOccupied ? room.patientName : "فارغة"}
+                </span>
               ))}
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* ═══ Tabs ═══ */}
-      <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "#e8f0f9" }}>
-        {/* Tab headers */}
-        <div className="flex overflow-x-auto border-b" style={{ borderColor: "#e8f0f9" }}>
-          {TABS.map(tab => {
-            const count = tabCounts[tab.key];
-            const isActive = activeTab === tab.key;
-            return (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                className="flex items-center gap-1.5 px-4 py-3 text-sm font-bold whitespace-nowrap transition-colors relative"
-                style={{
-                  color: isActive ? tab.color : "#64748b",
-                  borderBottom: isActive ? `2.5px solid ${tab.color}` : "2.5px solid transparent",
-                }}>
-                <span>{tab.label}</span>
-                {count > 0 && (
-                  <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full"
-                    style={{ background: tab.color + "15", color: tab.color }}>
-                    {count}
-                  </span>
-                )}
-                {/* Shortcut hint */}
-                <span className="text-[9px] font-mono opacity-40">{tab.shortcut}</span>
-              </button>
-            );
-          })}
-        </div>
+          <div className="flex-1" />
 
-        {/* Tab content */}
-        <div className="p-4">
-          <AppointmentsTable
-            items={filteredItems}
-            loading={itemsLoading}
-            isDoctor={isDoctor}
-            queueWaitTime={queueWaitTime}
-            onIntake={handleIntake}
-            onSendToQueue={handleSendToQueue}
-            onCallPatient={handleCallPatient}
-            onEnterRoom={handleEnterRoom}
-            onQuickPayment={handleQuickPayment}
-            onBookAppointment={handleBookAppointment}
-            onWhatsApp={handleWhatsApp}
-            onNoShow={handleNoShow}
-            onCancel={handleCancel}
-            onViewPatient={handleViewPatient}
-            onCompleteVisit={handleCompleteVisit}
-            onOpenSidePanel={handleOpenSidePanel}
-          />
+          {/* Date + Time */}
+          <span>{fmtDate(filterDate)}</span>
+          <span>{new Date().toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}</span>
+
+          <div className="w-px h-4" style={{ background: "rgba(255,255,255,0.2)" }} />
+
+          <span>⌨ ?</span>
         </div>
       </div>
 
-      {/* ═══ Quick Links Bar ═══ */}
-      {visibleQuickLinks.length > 0 && (
-        <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e8f0f9" }}>
-          <h3 className="text-xs font-bold mb-3" style={{ color: "#64748b" }}>روابط سريعة</h3>
-          <div className="flex flex-wrap gap-2">
-            {visibleQuickLinks.map(link => (
-              <Link key={link.href} href={link.href}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition"
-                style={{ background: link.color + "0d", color: link.color, border: `1px solid ${link.color}20` }}
-                onMouseEnter={e => { e.currentTarget.style.background = link.color + "18"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = link.color + "0d"; }}>
-                <link.icon className="w-3.5 h-3.5" />
-                {link.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ Modals ═══ */}
+      {/* ═══════════════════════════════════════════════════════════════════
+          MODALS (exactly as before)
+          ═══════════════════════════════════════════════════════════════════ */}
       <QuickPaymentModal
         open={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}
@@ -1037,7 +1008,6 @@ export default function DailyOperationsPage() {
         }}
       />
 
-      {/* Improvement 4: Walk-in Modal */}
       <WalkInModal
         open={walkInModalOpen}
         onClose={() => setWalkInModalOpen(false)}
@@ -1048,7 +1018,6 @@ export default function DailyOperationsPage() {
         onConfirm={handleWalkInConfirm}
       />
 
-      {/* Improvement 5: Undo Toast */}
       {undoAction && (
         <UndoToast
           action={undoAction}
@@ -1057,22 +1026,11 @@ export default function DailyOperationsPage() {
         />
       )}
 
-      {/* Improvement 6: Patient Side Panel */}
-      <PatientSidePanel
-        open={sidePanelOpen}
-        onClose={() => setSidePanelOpen(false)}
-        item={sidePanelItem}
-        summary={selectedSummary ?? null}
-        waitTime={queueWaitTime}
-      />
-
-      {/* Improvement 7: Keyboard Shortcuts Help */}
       <KeyboardShortcutsHelp
         open={shortcutsHelpOpen}
         onClose={() => setShortcutsHelpOpen(false)}
       />
 
-      {/* Bulk SMS Modal */}
       <BulkSmsModal
         open={bulkSmsModalOpen}
         onClose={() => setBulkSmsModalOpen(false)}
@@ -1080,6 +1038,220 @@ export default function DailyOperationsPage() {
         isPending={bulkSmsMutation.isPending}
         onConfirm={handleBulkSms}
       />
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Patient Detail Panel — Inline component for the right panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+function PatientDetailPanel({
+  item, summary, waitTime, onClose,
+  onQuickPayment, onBookAppointment, onWhatsApp, onViewPatient,
+  medicalAlerts, finance, activeContract, activeOrtho,
+}: {
+  item: TodayJourneyItem;
+  summary: DailyJourneySummary | null;
+  waitTime?: { estimatedMinutes: number; patientsAhead: number } | null;
+  onClose: () => void;
+  onQuickPayment: (item: TodayJourneyItem) => void;
+  onBookAppointment: (item: TodayJourneyItem) => void;
+  onWhatsApp: (item: TodayJourneyItem) => void;
+  onViewPatient: (item: TodayJourneyItem) => void;
+  medicalAlerts: DailyJourneySummary["medicalAlerts"];
+  finance: DailyJourneySummary["financeSummary"] | undefined;
+  activeContract: DailyJourneySummary["activeContract"] | undefined;
+  activeOrtho: DailyJourneySummary["activeOrthoCase"] | undefined;
+}) {
+  const getInitials = (name: string) => {
+    const parts = name.split(" ").filter(Boolean);
+    if (parts.length >= 2) return parts[0][0] + parts[1][0];
+    return parts[0]?.[0] ?? "?";
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex-shrink-0 px-4 py-3 flex items-start gap-3"
+        style={{ borderBottom: "1px solid #e5e7eb" }}>
+        <button onClick={onClose}
+          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-gray-100 transition flex-shrink-0 mt-0.5">
+          <X className="w-4 h-4" style={{ color: "#64748b" }} />
+        </button>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* Avatar */}
+          <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold text-white"
+            style={{ background: NAVY }}>
+            {getInitials(item.patientName)}
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-extrabold truncate" style={{ color: NAVY }}>{item.patientName}</div>
+            {item.patientPhone && (
+              <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>
+                <Phone className="w-3 h-3 inline ml-1" />
+                {item.patientPhone}
+              </div>
+            )}
+            <div className="text-[11px]" style={{ color: "#94a3b8" }}>
+              {item.doctorName} — {item.serviceName ?? "—"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Medical Alerts */}
+        {medicalAlerts && medicalAlerts.length > 0 && (
+          <div>
+            <div className="text-[11px] font-bold mb-1.5 flex items-center gap-1" style={{ color: "#ef4444" }}>
+              <AlertTriangle className="w-3 h-3" /> تنبيهات طبية
+            </div>
+            <div className="space-y-1">
+              {medicalAlerts.map((alert, i) => (
+                <div key={i} className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium"
+                  style={{
+                    background: alert.severity === "danger" ? "#fef2f2" : alert.severity === "warning" ? "#fff7ed" : "#f0f5fb",
+                    color: alert.severity === "danger" ? "#dc2626" : alert.severity === "warning" ? "#d97706" : NAVY,
+                    border: `1px solid ${alert.severity === "danger" ? "#fecaca" : alert.severity === "warning" ? "#fde8d0" : "#dce8f5"}`,
+                  }}>
+                  {alert.label ?? alert.type ?? "تنبيه"}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Quick Status */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
+            style={{
+              background: STATUS_COLORS[item.appointmentStatus]?.bg ?? "#f5f5f5",
+              color: STATUS_COLORS[item.appointmentStatus]?.text ?? "#6b7280",
+              border: `1px solid ${STATUS_COLORS[item.appointmentStatus]?.border ?? "#e5e7eb"}`,
+            }}>
+            {APPT_STATUS_LABELS[item.appointmentStatus] ?? item.appointmentStatus}
+          </span>
+          {item.nextAction && item.nextAction !== "None" && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold"
+              style={{ background: ORANGE + "12", color: ORANGE }}>
+              {ACTION_LABELS[item.nextAction] ?? item.nextAction}
+            </span>
+          )}
+          {waitTime && waitTime.estimatedMinutes > 0 && (
+            <span className="text-[10px] font-bold" style={{ color: ORANGE }}>
+              ~{waitTime.estimatedMinutes}د انتظار
+            </span>
+          )}
+        </div>
+
+        {/* Financial Summary */}
+        {finance && (
+          <div>
+            <div className="text-[11px] font-bold mb-1.5" style={{ color: NAVY }}>💰 الملخص المالي</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <div className="p-2 rounded-lg text-center" style={{ background: "#fff7ed" }}>
+                <div className="text-[9px] font-medium" style={{ color: ORANGE }}>المستحق</div>
+                <div className="text-xs font-bold" style={{ color: NAVY }}>{fmtRial(finance.outstandingBalance)}</div>
+              </div>
+              <div className="p-2 rounded-lg text-center" style={{ background: finance.overdueAmount > 0 ? "#fef2f2" : "#f0fdf4" }}>
+                <div className="text-[9px] font-medium" style={{ color: finance.overdueAmount > 0 ? "#ef4444" : "#16a34a" }}>متأخرات</div>
+                <div className="text-xs font-bold" style={{ color: NAVY }}>{fmtRial(finance.overdueAmount)}</div>
+              </div>
+              <div className="p-2 rounded-lg text-center" style={{ background: "#f0fdf4" }}>
+                <div className="text-[9px] font-medium" style={{ color: "#16a34a" }}>المدفوع</div>
+                <div className="text-xs font-bold" style={{ color: NAVY }}>{fmtRial(finance.totalPaid ?? 0)}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Active Contract / Ortho */}
+        {(activeContract || activeOrtho) && (
+          <div>
+            <div className="text-[11px] font-bold mb-1.5" style={{ color: NAVY }}>
+              {activeOrtho ? "🦷 تقويم نشط" : "📋 عقد نشط"}
+            </div>
+            {activeContract && (
+              <div className="p-2.5 rounded-lg" style={{ background: "#f0f5fb", border: "1px solid #dce8f5" }}>
+                <div className="text-[11px] font-bold" style={{ color: NAVY }}>
+                  {activeContract.specialty ?? "عقد علاج"}
+                </div>
+                <div className="mt-1.5">
+                  <div className="flex items-center justify-between text-[10px] mb-0.5">
+                    <span style={{ color: "#64748b" }}>التقدم</span>
+                    <span className="font-bold" style={{ color: BLUE }}>
+                      {fmtRial(activeContract.paidAmount)} / {fmtRial(activeContract.totalAmount)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e2e8f0" }}>
+                    <div className="h-full rounded-full transition-all" style={{
+                      width: `${activeContract.totalAmount ? (activeContract.paidAmount / activeContract.totalAmount) * 100 : 0}%`,
+                      background: BLUE,
+                    }} />
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeOrtho && !activeContract && (
+              <div className="p-2.5 rounded-lg" style={{ background: "#faf5ff", border: "1px solid #e9d5ff" }}>
+                <div className="text-[11px] font-bold" style={{ color: "#9333ea" }}>
+                  حالة تقويم نشطة
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Recent Visits */}
+        {summary?.recentVisits && summary.recentVisits.length > 0 && (
+          <div>
+            <div className="text-[11px] font-bold mb-1.5" style={{ color: NAVY }}>📅 زيارات سابقة</div>
+            <div className="space-y-1">
+              {summary.recentVisits.slice(0, 3).map((visit, i) => (
+                <div key={i} className="px-2.5 py-1.5 rounded-lg text-[11px] flex items-center justify-between"
+                  style={{ background: "#f8fafc", border: "1px solid #f1f5f9" }}>
+                  <span className="font-medium" style={{ color: NAVY }}>
+                    {visit.treatmentDone ?? visit.chiefComplaint ?? "زيارة"}
+                  </span>
+                  <span style={{ color: "#94a3b8" }}>{visit.visitDate ? fmtDate(visit.visitDate) : "—"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Quick Actions (sticky bottom) */}
+      <div className="flex-shrink-0 p-3 flex items-center gap-1.5 border-t"
+        style={{ borderColor: "#e5e7eb", background: "#fafbfc" }}>
+        <button onClick={() => onQuickPayment(item)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition hover:opacity-80"
+          style={{ background: "#22c55e15", color: "#22c55e", border: "1px solid #22c55e30" }}>
+          <CreditCard className="w-3 h-3" />
+          دفع
+        </button>
+        <button onClick={() => onBookAppointment(item)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition hover:opacity-80"
+          style={{ background: BLUE + "12", color: BLUE, border: `1px solid ${BLUE}30` }}>
+          <Calendar className="w-3 h-3" />
+          حجز
+        </button>
+        {item.patientPhone && (
+          <button onClick={() => onWhatsApp(item)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition hover:opacity-80"
+            style={{ background: "#25D36612", color: "#25D366", border: "1px solid #25D36630" }}>
+            <MessageCircle className="w-3 h-3" />
+            واتساب
+          </button>
+        )}
+        <div className="flex-1" />
+        <button onClick={() => onViewPatient(item)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition hover:opacity-80"
+          style={{ background: NAVY + "0d", color: NAVY, border: `1px solid ${NAVY}20` }}>
+          فتح الملف
+        </button>
+      </div>
     </div>
   );
 }

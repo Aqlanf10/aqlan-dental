@@ -2509,7 +2509,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.24-pr195-email-reminder" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.25-stable-lockout-timezone-fix" }));
 
 // Serve uploaded files — resolve writable uploads directory
 // Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback

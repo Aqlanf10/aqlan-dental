@@ -452,6 +452,25 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (branchId.HasValue) activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == branchId);
         var activeContracts = await activeContractsQuery.CountAsync();
 
+        // ── Extended Sprint 1 Dashboard Stats ──
+        var unpaidInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
+        if (branchId.HasValue) unpaidInvoicesQuery = unpaidInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
+        var unpaidInvoicesCount = await unpaidInvoicesQuery.CountAsync();
+
+        var draftInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Draft && i.IsActive);
+        if (branchId.HasValue) draftInvoicesQuery = draftInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
+        var draftInvoicesCount = await draftInvoicesQuery.CountAsync();
+
+        // Overdue amount
+        var overdueContracts = await GetOverdueContractsAsync();
+        var overdueAmount = overdueContracts.Sum(o => o.OverdueAmount);
+
+        // Pending doctor commissions (calculated or approved or pending, but not paid)
+        var commissionQuery = db.InvoiceLineItems
+            .Where(l => l.IsActive && l.CommissionStatus != CommissionStatus.Paid && l.DoctorCommissionAmount > 0);
+        if (branchId.HasValue) commissionQuery = commissionQuery.Where(l => l.Invoice.Patient.BranchId == branchId);
+        var pendingCommissionsAmount = await commissionQuery.SumAsync(l => l.DoctorCommissionAmount);
+
         var recentQuery = db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
@@ -463,13 +482,40 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Select(p => MapPayment(p))
             .ToListAsync();
 
+        // Recent invoices
+        var recentInvoicesQuery = db.Invoices
+            .Include(i => i.Patient)
+            .Where(i => i.IsActive);
+        if (branchId.HasValue) recentInvoicesQuery = recentInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
+        var recentInvoices = await recentInvoicesQuery
+            .OrderByDescending(i => i.CreatedAt)
+            .Take(10)
+            .Select(i => new RecentInvoiceDto
+            {
+                Id = i.Id,
+                InvoiceNumber = i.InvoiceNumber,
+                PatientName = i.Patient != null ? (i.Patient.FirstName + " " + i.Patient.LastName).Trim() : "مريض",
+                TotalAmount = i.TotalAmount,
+                Status = i.Status.ToString(),
+                StatusArabic = i.Status == InvoiceStatus.Draft ? "مسودة" :
+                               i.Status == InvoiceStatus.Issued ? "مصدرة" :
+                               i.Status == InvoiceStatus.Paid ? "مدفوعة" : "ملغاة",
+                CreatedAt = i.CreatedAt
+            })
+            .ToListAsync();
+
         return new FinanceSummaryDto
         {
             TodayCollected = todayCollected,
             MonthCollected = monthCollected,
             TotalOutstanding = contractOutstanding + invoiceOutstanding,
             ActiveContracts = activeContracts,
-            RecentPayments = recentPayments
+            UnpaidInvoicesCount = unpaidInvoicesCount,
+            DraftInvoicesCount = draftInvoicesCount,
+            OverdueAmount = overdueAmount,
+            PendingCommissionsAmount = pendingCommissionsAmount,
+            RecentPayments = recentPayments,
+            RecentInvoices = recentInvoices
         };
     }
 

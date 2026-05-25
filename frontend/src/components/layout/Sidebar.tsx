@@ -32,6 +32,7 @@ type NavLeaf = {
   icon: React.ElementType;
   roles: string[];
   permission?: string;
+  badge?: string;
 };
 
 type NavGroup = {
@@ -92,6 +93,7 @@ const NAV: NavEntry[] = [
     label: "المالية", icon: Wallet,
     roles: ["Admin","Reception","Accountant"],
     children: [
+      { href: "/finance-v2",        label: "الإدارة المالية V2", icon: Wallet,         roles: ["Admin","Reception","Accountant"], badge: "جديد" },
       { href: "/finance",           label: "ملخص المالية", icon: Wallet,         roles: ["Admin","Reception","Accountant"] },
       { href: "/finance/contracts", label: "العقود",       icon: FileCheck,      roles: ["Admin","Reception","Accountant"] },
       { href: "/finance/overdue",   label: "المتأخرات",    icon: AlertTriangle,  roles: ["Admin","Reception","Accountant"] },
@@ -160,10 +162,10 @@ function SectionLabel({ label }: { label: string }) {
 
 /* ─── Leaf link ─────────────────────────────────────────────────────────────── */
 function NavLink({
-  href, label, icon: Icon, isCurrent, indent = false, unreadCount,
+  href, label, icon: Icon, isCurrent, indent = false, unreadCount, badge,
 }: {
   href: string; label: string; icon: React.ElementType;
-  isCurrent: boolean; indent?: boolean; unreadCount?: number;
+  isCurrent: boolean; indent?: boolean; unreadCount?: number; badge?: string;
 }) {
   return (
     <Link
@@ -187,7 +189,15 @@ function NavLink({
         className="w-[18px] h-[18px] flex-shrink-0"
         style={{ color: isCurrent ? BRAND_ORANGE : "rgba(255,255,255,0.65)" }}
       />
-      <span className="flex-1">{label}</span>
+      <span className="flex-1 text-right">{label}</span>
+      {badge && (
+        <span
+          className="text-[10px] font-extrabold rounded px-1.5 py-0.5 ml-1 flex-shrink-0"
+          style={{ backgroundColor: BRAND_ORANGE, color: "#fff" }}
+        >
+          {badge}
+        </span>
+      )}
       {unreadCount && unreadCount > 0 && (
         <span
           className="text-[10px] font-extrabold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5"
@@ -262,6 +272,7 @@ function NavGroupItem({
               icon={child.icon}
               isCurrent={child.href === "/" ? pathname === "/" : pathname.startsWith(child.href)}
               indent
+              badge={child.badge}
             />
           ))}
         </div>
@@ -376,6 +387,7 @@ export function Sidebar() {
                   icon={leaf.icon}
                   isCurrent={isCurrent}
                   unreadCount={unreadCount}
+                  badge={leaf.badge}
                 />
               </div>
             );

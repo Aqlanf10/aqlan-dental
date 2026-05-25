@@ -1678,6 +1678,67 @@ catch (Exception ex)
     pjLogger2.LogError(ex, "HOTFIX: Failed to ensure Patient Journey columns. Patient journey endpoint may return 500!");
 }
 
+// ── HOTFIX: Seed patient_journey permissions (idempotent, unconditional) ──────
+// PR #201 added Patient Daily Journey Hub but permissions were not seeded because
+// ENABLE_STARTUP_DB_MAINTENANCE may be false. Without patient_journey.view in
+// RolePermissions, the sidebar hides the link and /api/auth/me/permissions omits it.
+try
+{
+    using var pjpScope = app.Services.CreateScope();
+    var pjpDb     = pjpScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var pjpLogger = pjpScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    var journeyPerms = new (string Role, bool View, bool Create, bool Edit)[]{
+        ("Admin",          true, true, true),
+        ("Reception",      true, true, true),
+        ("Orthodontist",   true, true, false),
+        ("GeneralDentist", true, true, false),
+        ("OralSurgeon",    true, true, false),
+        ("Accountant",     true, false, false),
+        ("Assistant",      true, false, false),
+    };
+
+    var existingJourney = await pjpDb.RolePermissions
+        .Where(rp => rp.Resource == "patient_journey")
+        .Select(rp => rp.Role)
+        .ToListAsync();
+
+    var toAddJourney = new List<RolePermission>();
+    foreach (var (role, view, create, edit) in journeyPerms)
+    {
+        if (!existingJourney.Contains(role))
+        {
+            toAddJourney.Add(new RolePermission
+            {
+                Role = role,
+                Resource = "patient_journey",
+                CanView = view,
+                CanCreate = create,
+                CanEdit = edit,
+                CanDelete = false,
+                CanExport = false,
+                CanApprove = false
+            });
+        }
+    }
+
+    if (toAddJourney.Count > 0)
+    {
+        await pjpDb.RolePermissions.AddRangeAsync(toAddJourney);
+        await pjpDb.SaveChangesAsync();
+        pjpLogger.LogInformation("HOTFIX: Seeded {Count} patient_journey permissions", toAddJourney.Count);
+    }
+    else
+    {
+        pjpLogger.LogInformation("HOTFIX: patient_journey permissions already exist, no seeding needed");
+    }
+}
+catch (Exception ex)
+{
+    var pjpLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    pjpLogger2.LogError(ex, "HOTFIX: Failed to seed patient_journey permissions. Journey Hub may be hidden in sidebar!");
+}
+
 // ── HOTFIX: Ensure SMS Gateway tables exist (Sprint: Local Android SIM SMS Gateway) ──
 try
 {

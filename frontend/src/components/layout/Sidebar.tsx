@@ -270,7 +270,7 @@ function NavGroupItem({
               key={child.href}
               href={child.href}
               label={child.label}
-              icon={child.icon} badge={child.badge}
+              icon={child.icon}
               isCurrent={child.href === "/" ? pathname === "/" : pathname.startsWith(child.href)}
               indent
               badge={child.badge}

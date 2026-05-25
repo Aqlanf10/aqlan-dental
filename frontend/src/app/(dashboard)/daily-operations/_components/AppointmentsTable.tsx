@@ -1,7 +1,7 @@
 /**
- * Appointments Table with quick action buttons for each row.
+ * Appointments Table with Microsoft Fluent Design styling.
  * Supports desktop table and mobile card views.
- * Includes: wait time display, side panel trigger.
+ * Includes: wait time display, side panel trigger, selected row highlight.
  */
 
 "use client";
@@ -20,7 +20,7 @@ import {
   type TodayJourneyItem,
 } from "../_lib/constants";
 
-/* ─── Row action button ──────────────────────────────────────────────────── */
+/* ─── Row action button (Fluent style) ────────────────────────────────────── */
 function ActionBtn({
   icon: Icon, label, color, onClick, disabled,
 }: {
@@ -32,8 +32,8 @@ function ActionBtn({
       onClick={onClick}
       disabled={disabled}
       title={label}
-      className="w-8 h-8 rounded-lg flex items-center justify-center transition-opacity hover:opacity-80 disabled:opacity-30"
-      style={{ background: color + "15", color }}
+      className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-105 disabled:opacity-30 disabled:hover:scale-100"
+      style={{ background: color + "12", color }}
     >
       <Icon className="w-3.5 h-3.5" />
     </button>
@@ -138,6 +138,7 @@ interface AppointmentsTableProps {
   isReception: boolean;
   isAccountant: boolean;
   queueWaitTime?: { estimatedMinutes: number; patientsAhead: number } | null;
+  selectedPatientId?: string;
   // Callbacks
   onIntake: (item: TodayJourneyItem) => void;
   onSendToQueue: (item: TodayJourneyItem) => void;
@@ -154,7 +155,7 @@ interface AppointmentsTableProps {
 }
 
 export default function AppointmentsTable({
-  items, loading, isDoctor, queueWaitTime,
+  items, loading, isDoctor, queueWaitTime, selectedPatientId,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
@@ -164,9 +165,9 @@ export default function AppointmentsTable({
 
   if (loading) {
     return (
-      <div className="space-y-2">
-        {[1, 2, 3, 4, 5].map(i => (
-          <div key={i} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
+      <div className="space-y-1 p-4">
+        {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+          <div key={i} className="h-[52px] rounded-lg bg-gray-50 animate-pulse" style={{ border: "1px solid #f1f5f9" }} />
         ))}
       </div>
     );
@@ -174,9 +175,10 @@ export default function AppointmentsTable({
 
   if (items.length === 0) {
     return (
-      <div className="text-center py-12" style={{ color: "#94a3b8" }}>
-        <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
+      <div className="flex flex-col items-center justify-center py-20" style={{ color: "#94a3b8" }}>
+        <Calendar className="w-12 h-12 mb-3 opacity-20" />
         <p className="text-sm font-bold">لا توجد مواعيد</p>
+        <p className="text-xs mt-1">اختر تبويباً آخر أو غيّر الفلاتر</p>
       </div>
     );
   }
@@ -185,7 +187,7 @@ export default function AppointmentsTable({
     <div className="overflow-x-auto">
       {/* Queue Wait Banner */}
       {queueWaitTime && queueWaitTime.estimatedMinutes > 0 && (
-        <div className="mb-3 p-2.5 rounded-lg flex items-center gap-2"
+        <div className="mx-4 mt-3 p-2.5 rounded-lg flex items-center gap-2"
           style={{ background: "#fff7ed", border: "1px solid #fde8d0" }}>
           <Clock className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
           <span className="text-xs font-bold" style={{ color: NAVY }}>
@@ -199,27 +201,30 @@ export default function AppointmentsTable({
         </div>
       )}
 
-      {/* Desktop table */}
-      <table className="w-full hidden lg:table">
+      {/* Desktop table — Microsoft DataGrid style */}
+      <table className="w-full hidden lg:table" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
         <thead>
-          <tr className="text-[11px] font-bold border-b-2" style={{ color: "#64748b", borderColor: "#e8f0f9" }}>
-            <th className="text-right py-2.5 px-2">الوقت</th>
-            <th className="text-right py-2.5 px-2">المريض</th>
-            {!isDoctor && <th className="text-right py-2.5 px-2">الهاتف</th>}
-            <th className="text-right py-2.5 px-2">الطبيب</th>
-            <th className="text-right py-2.5 px-2">الخدمة</th>
-            <th className="text-right py-2.5 px-2">الغرفة</th>
-            <th className="text-right py-2.5 px-2">الحالة</th>
-            <th className="text-right py-2.5 px-2">الإجراء التالي</th>
-            <th className="text-right py-2.5 px-2">إجراءات</th>
+          <tr className="text-[11px] font-semibold sticky top-0 z-10"
+            style={{ color: "#64748b", background: "#f8fafc" }}>
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>الوقت</th>
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>المريض</th>
+            {!isDoctor && <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>الهاتف</th>}
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>الطبيب</th>
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>الخدمة</th>
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>الغرفة</th>
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>الحالة</th>
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>الإجراء التالي</th>
+            <th className="text-right py-2.5 px-3 font-semibold" style={{ borderBottom: "1px solid #e5e7eb" }}>إجراءات</th>
           </tr>
         </thead>
         <tbody>
-          {items.map(item => (
+          {items.map((item, idx) => (
             <AppointmentRow
               key={item.appointmentId}
               item={item}
               isDoctor={isDoctor}
+              isSelected={selectedPatientId === item.patientId}
+              isEven={idx % 2 === 1}
               queueWaitMinutes={
                 (item.queueStatus === "Waiting" || item.queueStatus === "Called")
                   ? queueWaitTime?.estimatedMinutes
@@ -243,7 +248,7 @@ export default function AppointmentsTable({
       </table>
 
       {/* Mobile cards */}
-      <div className="lg:hidden space-y-2">
+      <div className="lg:hidden p-3 space-y-2">
         {items.map(item => (
           <MobileCard
             key={item.appointmentId}
@@ -275,42 +280,71 @@ export default function AppointmentsTable({
   );
 }
 
-/* ─── Desktop row ──────────────────────────────────────────────────────────── */
+/* ─── Desktop row — Microsoft DataGrid style ───────────────────────────────── */
 function AppointmentRow({
-  item, isDoctor, queueWaitMinutes,
+  item, isDoctor, isSelected, isEven, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: {
-  item: TodayJourneyItem; isDoctor: boolean; queueWaitMinutes?: number;
-} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime">) {
+  item: TodayJourneyItem; isDoctor: boolean; isSelected: boolean; isEven: boolean; queueWaitMinutes?: number;
+} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
   const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
 
+  // Determine next patient highlight
+  const isNextPatient = item.nextAction === "CallPatient" || item.nextAction === "EnterRoom" || 
+    (item.nextAction === "Intake" && (item.appointmentStatus === "Scheduled" || item.appointmentStatus === "Confirmed"));
+
   return (
-    <tr className="border-b hover:bg-[#f8fafc] transition-colors" style={{
-      borderColor: "#f1f5f9",
-      background: overdueText ? "#fef2f208" : undefined,
-    }}>
-      <td className="py-2.5 px-2 text-sm font-bold" style={{ color: NAVY }}>
-        {fmtTime(item.appointmentTime)}
-        {overdueText && <OverdueBadge text={overdueText} />}
+    <tr
+      className="transition-colors cursor-default group"
+      style={{
+        height: 52,
+        background: isSelected
+          ? "#eff6ff"
+          : isNextPatient
+            ? "linear-gradient(90deg, #f0f7ff, #faf5ff)"
+            : isEven
+              ? "#fafbfc"
+              : "#fff",
+        borderRight: isSelected ? "3px solid #3d7ab5" : "3px solid transparent",
+        borderBottom: "1px solid #f1f5f9",
+      }}
+      onMouseEnter={e => {
+        if (!isSelected) (e.currentTarget as HTMLElement).style.background = "#eff6ff";
+      }}
+      onMouseLeave={e => {
+        if (!isSelected) {
+          (e.currentTarget as HTMLElement).style.background = isNextPatient
+            ? "linear-gradient(90deg, #f0f7ff, #faf5ff)"
+            : isEven ? "#fafbfc" : "#fff";
+        }
+      }}
+    >
+      <td className="py-2 px-3 text-sm font-bold" style={{ color: NAVY }}>
+        <div className="flex items-center gap-1.5">
+          {fmtTime(item.appointmentTime)}
+          {overdueText && <OverdueBadge text={overdueText} />}
+        </div>
       </td>
-      <td className="py-2.5 px-2">
-        <div className="flex items-center gap-1">
+      <td className="py-2 px-3">
+        <div className="flex items-center gap-1.5">
           {item.hasMedicalAlerts && <MedicalAlertBadge />}
-          <button onClick={() => onOpenSidePanel(item)} className="text-sm font-semibold hover:underline flex items-center gap-1.5" style={{ color: "#3d7ab5" }}>
+          <button onClick={() => onOpenSidePanel(item)}
+            className="text-sm font-semibold hover:underline flex items-center gap-1.5 transition-colors"
+            style={{ color: isSelected ? NAVY : "#3d7ab5" }}>
             {item.patientName}
-            <PanelRight className="w-3 h-3 opacity-40" />
+            <PanelRight className="w-3 h-3 opacity-0 group-hover:opacity-40 transition-opacity" />
           </button>
           {item.visitCount != null && item.visitCount <= 1 && <NewPatientBadge />}
         </div>
       </td>
       {!isDoctor && (
-        <td className="py-2.5 px-2">
+        <td className="py-2 px-3">
           {item.patientPhone ? (
             <a href={`https://wa.me/${normalizePhone(item.patientPhone)}`} target="_blank" rel="noopener noreferrer"
-              className="text-xs flex items-center gap-1 hover:underline" style={{ color: "#64748b" }}>
+              className="text-xs flex items-center gap-1 hover:underline transition-colors" style={{ color: "#64748b" }}>
               <Phone className="w-3 h-3" />
               {item.patientPhone}
             </a>
@@ -319,9 +353,9 @@ function AppointmentRow({
           )}
         </td>
       )}
-      <td className="py-2.5 px-2 text-xs" style={{ color: "#475569" }}>{item.doctorName}</td>
-      <td className="py-2.5 px-2 text-xs" style={{ color: "#475569" }}>{item.serviceName ?? "—"}</td>
-      <td className="py-2.5 px-2 text-xs" style={{ color: "#475569" }}>
+      <td className="py-2 px-3 text-xs font-medium" style={{ color: "#475569" }}>{item.doctorName}</td>
+      <td className="py-2 px-3 text-xs font-medium" style={{ color: "#475569" }}>{item.serviceName ?? "—"}</td>
+      <td className="py-2 px-3 text-xs font-medium" style={{ color: "#475569" }}>
         {item.roomName ? (
           <span className="inline-flex items-center gap-1">
             <Building2 className="w-3 h-3" />
@@ -332,52 +366,41 @@ function AppointmentRow({
           <SessionDurationChip since={item.inRoomSince} />
         )}
       </td>
-      <td className="py-2.5 px-2">
+      <td className="py-2 px-3">
         <div className="flex items-center gap-1.5">
           <StatusBadge status={item.appointmentStatus} />
           {queueWaitMinutes && <WaitTimeChip minutes={queueWaitMinutes} />}
         </div>
       </td>
-      <td className="py-2.5 px-2"><NextActionBadge action={item.nextAction} /></td>
-      <td className="py-2.5 px-2">
-        <div className="flex items-center gap-1 flex-wrap">
-          {/* View patient */}
+      <td className="py-2 px-3"><NextActionBadge action={item.nextAction} /></td>
+      <td className="py-2 px-3">
+        <div className="flex items-center gap-0.5 flex-wrap">
           <ActionBtn icon={Eye} label="فتح الملف" color="#3d7ab5" onClick={() => onViewPatient(item)} />
-          {/* Intake (Arrived) */}
           {canAct && item.nextAction === "Intake" && (
             <ActionBtn icon={UserCheck} label="تسجيل حضور" color="#16a34a" onClick={() => onIntake(item)} />
           )}
-          {/* Send to queue */}
           {canAct && item.nextAction === "SendToQueue" && (
             <ActionBtn icon={ClipboardList} label="إضافة للطابور" color="#f5922e" onClick={() => onSendToQueue(item)} />
           )}
-          {/* Call patient */}
           {canAct && item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient") && (
             <ActionBtn icon={Phone} label="نداء المريض" color="#d97706" onClick={() => onCallPatient(item)} />
           )}
-          {/* Enter room */}
           {canAct && item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom") && (
             <ActionBtn icon={DoorOpen} label="دخول الغرفة" color="#9333ea" onClick={() => onEnterRoom(item)} />
           )}
-          {/* Complete / Checkout */}
           {canAct && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
             <ActionBtn icon={CheckCircle} label="إنهاء الزيارة" color="#16a34a" onClick={() => onCompleteVisit(item)} />
           )}
-          {/* Quick payment */}
           {!isDoctor && (
             <ActionBtn icon={CreditCard} label="دفعة سريعة" color="#22c55e" onClick={() => onQuickPayment(item)} />
           )}
-          {/* Book follow-up */}
           <ActionBtn icon={CalendarPlus} label="حجز متابعة" color="#3d7ab5" onClick={() => onBookAppointment(item)} />
-          {/* WhatsApp */}
           {!isDoctor && item.patientPhone && (
             <ActionBtn icon={MessageCircle} label="واتساب" color="#25D366" onClick={() => onWhatsApp(item)} />
           )}
-          {/* No show */}
           {canAct && (item.appointmentStatus === "Scheduled" || item.appointmentStatus === "Confirmed") && (
             <ActionBtn icon={UserX} label="لم يحضر" color="#ef4444" onClick={() => onNoShow(item)} />
           )}
-          {/* Cancel */}
           {canAct && item.appointmentStatus !== "NoShow" && (
             <ActionBtn icon={XCircle} label="إلغاء" color="#6b7280" onClick={() => onCancel(item)} />
           )}
@@ -395,13 +418,13 @@ function MobileCard({
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: {
   item: TodayJourneyItem; isDoctor: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
-} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime">) {
+} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
   const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
 
   return (
-    <div className="rounded-xl border p-3" style={{
-      borderColor: overdueText ? "#fecaca" : "#e8f0f9",
+    <div className="rounded-xl border p-3 transition-shadow" style={{
+      borderColor: overdueText ? "#fecaca" : "#e5e7eb",
       background: overdueText ? "#fef2f208" : "#fff",
     }}>
       <div className="flex items-center gap-2">

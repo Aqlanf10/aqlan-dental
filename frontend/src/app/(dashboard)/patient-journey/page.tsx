@@ -8,6 +8,8 @@ import {
   Filter, FileText, AlertTriangle, ExternalLink, Megaphone,
   PlayCircle, ShieldAlert, Wallet, CircleDot,
   Wrench, HeartPulse, Route,
+  X, MessageSquare, Printer, Download, Pill, Send, Ban, UserX,
+  ArrowRightLeft, Timer, Plus, Trash2, MessageCircle,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -23,6 +25,17 @@ import {
   useJourneyHandoff,
   useJourneyCheckout,
   useJourneyCreateDraftInvoice,
+  useJourneyCancelQueue,
+  useJourneyChangeRoom,
+  useJourneyUpdateAppointmentStatus,
+  useJourneyCreatePayment,
+  useJourneyIssueInvoice,
+  useJourneyUpdateVisit,
+  useJourneySendSms,
+  useJourneySendAppointmentReminder,
+  useJourneyCreatePrescription,
+  useJourneyCreateAppointment,
+  useQueueEstimatedWait,
 } from "@/hooks/usePatientJourney";
 import { QUEUE_STATUS_ARABIC } from "@/types/journey";
 import type {
@@ -285,6 +298,18 @@ export default function PatientJourneyPage() {
   const checkoutMutation = useJourneyCheckout();
   const draftInvoiceMutation = useJourneyCreateDraftInvoice();
 
+  // ─── New Action Mutations ──────────────────────────────────────────────────
+  const cancelQueueMutation = useJourneyCancelQueue();
+  const changeRoomMutation = useJourneyChangeRoom();
+  const updateAptStatusMutation = useJourneyUpdateAppointmentStatus();
+  const createPaymentMutation = useJourneyCreatePayment();
+  const issueInvoiceMutation = useJourneyIssueInvoice();
+  const updateVisitMutation = useJourneyUpdateVisit();
+  const sendSmsMutation = useJourneySendSms();
+  const sendReminderMutation = useJourneySendAppointmentReminder();
+  const createPrescriptionMutation = useJourneyCreatePrescription();
+  const createAppointmentMutation = useJourneyCreateAppointment();
+
   // ─── Intake Form State ─────────────────────────────────────────────────────
   const [intakeService, setIntakeService] = useState("");
   const [intakeComplaint, setIntakeComplaint] = useState("");
@@ -311,6 +336,49 @@ export default function PatientJourneyPage() {
   const [checkoutNotes, setCheckoutNotes] = useState("");
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
   const [draftInvoiceResult, setDraftInvoiceResult] = useState<{ invoiceId: string; invoiceNumber: string } | null>(null);
+
+  // ─── Cancel Appointment/NoShow Dialog ──────────────────────────────────────
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelDialogType, setCancelDialogType] = useState<"Cancelled" | "NoShow">("Cancelled");
+
+  // ─── Record Payment Modal ──────────────────────────────────────────────────
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentServiceDesc, setPaymentServiceDesc] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
+
+  // ─── Send SMS Modal ────────────────────────────────────────────────────────
+  const [smsModalOpen, setSmsModalOpen] = useState(false);
+  const [smsTo, setSmsTo] = useState("");
+  const [smsMessage, setSmsMessage] = useState("");
+
+  // ─── Prescription Modal ────────────────────────────────────────────────────
+  const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
+  const [prescDiagnosis, setPrescDiagnosis] = useState("");
+  const [prescNotes, setPrescNotes] = useState("");
+  const [prescItems, setPrescItems] = useState<Array<{
+    medicationName: string; dosage: string; frequency: string; duration: string; notes: string;
+  }>>([{ medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+
+  // ─── Edit Visit Modal ──────────────────────────────────────────────────────
+  const [editVisitModalOpen, setEditVisitModalOpen] = useState(false);
+  const [editVisitForm, setEditVisitForm] = useState({
+    chiefComplaint: "", clinicalNotes: "", treatmentDone: "", diagnosis: "", instructions: "", nextVisitPlan: "", cost: 0,
+  });
+
+  // ─── Book Appointment Modal ────────────────────────────────────────────────
+  const [bookAppointmentModalOpen, setBookAppointmentModalOpen] = useState(false);
+  const [bookAptDate, setBookAptDate] = useState("");
+  const [bookAptStartTime, setBookAptStartTime] = useState("");
+  const [bookAptEndTime, setBookAptEndTime] = useState("");
+  const [bookAptDoctorId, setBookAptDoctorId] = useState("");
+  const [bookAptServiceId, setBookAptServiceId] = useState("");
+  const [bookAptType, setBookAptType] = useState("FollowUp");
+  const [bookAptNotes, setBookAptNotes] = useState("");
+
+  // ─── Change Room Inline ────────────────────────────────────────────────────
+  const [changeRoomSelectedRoom, setChangeRoomSelectedRoom] = useState("");
 
   // ─── Data Loading ──────────────────────────────────────────────────────────
 
@@ -367,7 +435,40 @@ export default function PatientJourneyPage() {
     setCheckoutNextDate("");
     setCheckoutNextService("");
     setCheckoutNotes("");
+    // Reset new modal states
+    setCancelDialogOpen(false);
+    setRecordPaymentOpen(false);
+    setPaymentAmount(0);
+    setPaymentMethod("cash");
+    setPaymentServiceDesc("");
+    setPaymentNotes("");
+    setSmsModalOpen(false);
+    setSmsTo("");
+    setSmsMessage("");
+    setPrescriptionModalOpen(false);
+    setPrescDiagnosis("");
+    setPrescNotes("");
+    setPrescItems([{ medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+    setEditVisitModalOpen(false);
+    setEditVisitForm({ chiefComplaint: "", clinicalNotes: "", treatmentDone: "", diagnosis: "", instructions: "", nextVisitPlan: "", cost: 0 });
+    setBookAppointmentModalOpen(false);
+    setBookAptDate("");
+    setBookAptStartTime("");
+    setBookAptEndTime("");
+    setBookAptDoctorId("");
+    setBookAptServiceId("");
+    setBookAptType("FollowUp");
+    setBookAptNotes("");
+    setChangeRoomSelectedRoom("");
   }, [selectedPatientId]);
+
+  // ─── Auto-fill Checkout Amount ──────────────────────────────────────────────
+  useEffect(() => {
+    if (summary?.todayVisit?.amountDueReference && checkoutAmount === 0) {
+      setCheckoutAmount(summary.todayVisit.amountDueReference);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary?.todayVisit?.amountDueReference]);
 
   // ─── Summary Cards ─────────────────────────────────────────────────────────
 
@@ -403,6 +504,10 @@ export default function PatientJourneyPage() {
     () => items.find((i) => i.patientId === selectedPatientId) ?? null,
     [items, selectedPatientId]
   );
+
+  // ─── Queue Estimated Wait ──────────────────────────────────────────────────
+  const queueItemId = selectedItem?.queueItemId || summary?.queueStatus?.id || null;
+  const { data: estimatedWait } = useQueueEstimatedWait(queueItemId);
 
   // ─── Action Handlers ──────────────────────────────────────────────────────
 
@@ -519,6 +624,257 @@ export default function PatientJourneyPage() {
       toast.error("فشل إنشاء الفاتورة المسودة");
     }
   }, [summary?.todayVisit?.id, draftInvoiceMutation]);
+
+  // ─── Cancel Appointment / NoShow ────────────────────────────────────────────
+  const handleCancelOrNoShow = useCallback(async () => {
+    if (!summary?.todayAppointment?.id) return;
+    try {
+      await updateAptStatusMutation.mutateAsync({
+        appointmentId: summary.todayAppointment.id,
+        status: cancelDialogType,
+      });
+      toast.success(cancelDialogType === "Cancelled" ? "تم إلغاء الموعد" : "تم تسجيل عدم الحضور");
+      setCancelDialogOpen(false);
+      loadJourney();
+      refetchSummary();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [summary?.todayAppointment?.id, cancelDialogType, updateAptStatusMutation, loadJourney, refetchSummary]);
+
+  // ─── Cancel from Queue ─────────────────────────────────────────────────────
+  const handleCancelQueue = useCallback(async () => {
+    if (!queueItemId) return;
+    try {
+      await cancelQueueMutation.mutateAsync(queueItemId);
+      toast.success("تم إلغاء المريض من الطابور");
+      loadJourney();
+      refetchSummary();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [queueItemId, cancelQueueMutation, loadJourney, refetchSummary]);
+
+  // ─── Change Room ───────────────────────────────────────────────────────────
+  const handleChangeRoom = useCallback(async (roomId: string) => {
+    if (!queueItemId || !roomId) return;
+    try {
+      await changeRoomMutation.mutateAsync({ queueItemId, roomId });
+      toast.success("تم تغيير الغرفة");
+      loadJourney();
+      refetchSummary();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [queueItemId, changeRoomMutation, loadJourney, refetchSummary]);
+
+  // ─── Record Payment ────────────────────────────────────────────────────────
+  const handleRecordPayment = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatientId || paymentAmount <= 0) {
+      toast.error("يرجى إدخال مبلغ صحيح");
+      return;
+    }
+    try {
+      await createPaymentMutation.mutateAsync({
+        patientId: selectedPatientId,
+        amount: paymentAmount,
+        paymentMethod: paymentMethod || undefined,
+        serviceDescription: paymentServiceDesc || undefined,
+        notes: paymentNotes || undefined,
+        doctorId: selectedItem?.doctorId || undefined,
+      });
+      toast.success("تم تسجيل الدفعة بنجاح");
+      setRecordPaymentOpen(false);
+      setPaymentAmount(0);
+      setPaymentServiceDesc("");
+      setPaymentNotes("");
+      loadJourney();
+      refetchSummary();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [selectedPatientId, paymentAmount, paymentMethod, paymentServiceDesc, paymentNotes, selectedItem?.doctorId, createPaymentMutation, loadJourney, refetchSummary]);
+
+  // ─── Issue Invoice ─────────────────────────────────────────────────────────
+  const handleIssueInvoice = useCallback(async () => {
+    if (!draftInvoiceResult?.invoiceId) return;
+    try {
+      await issueInvoiceMutation.mutateAsync(draftInvoiceResult.invoiceId);
+      toast.success("تم إصدار الفاتورة");
+      refetchSummary();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [draftInvoiceResult?.invoiceId, issueInvoiceMutation, refetchSummary]);
+
+  // ─── Download PDF ──────────────────────────────────────────────────────────
+  const handleDownloadPdf = useCallback(async (url: string, filename: string) => {
+    try {
+      const res = await api.get(url, { responseType: "blob" });
+      const blob = new Blob([res.data as BlobPart], { type: "application/pdf" });
+      const linkUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = linkUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(linkUrl);
+    } catch {
+      toast.error("فشل تحميل الملف");
+    }
+  }, []);
+
+  // ─── Send SMS ──────────────────────────────────────────────────────────────
+  const handleSendSms = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!smsTo || !smsMessage) {
+      toast.error("يرجى إدخال رقم الهاتف والرسالة");
+      return;
+    }
+    try {
+      await sendSmsMutation.mutateAsync({
+        to: smsTo,
+        message: smsMessage,
+        patientId: selectedPatientId || undefined,
+      });
+      toast.success("تم إرسال الرسالة");
+      setSmsModalOpen(false);
+      setSmsMessage("");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [smsTo, smsMessage, selectedPatientId, sendSmsMutation]);
+
+  // ─── Send Appointment Reminder ─────────────────────────────────────────────
+  const handleSendReminder = useCallback(async () => {
+    if (!summary?.todayAppointment?.id) return;
+    try {
+      await sendReminderMutation.mutateAsync(summary.todayAppointment.id);
+      toast.success("تم إرسال التذكير");
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [summary?.todayAppointment?.id, sendReminderMutation]);
+
+  // ─── WhatsApp Reminder ─────────────────────────────────────────────────────
+  const handleOpenWhatsApp = useCallback(() => {
+    const phone = summary?.patient.phone;
+    if (!phone) {
+      toast.error("لا يوجد رقم هاتف للمريض");
+      return;
+    }
+    const cleanPhone = phone.replace(/[^0-9+]/g, "");
+    const aptTime = summary?.todayAppointment?.startTime
+      ? fmtTime(summary.todayAppointment.startTime)
+      : "";
+    const aptDate = summary?.todayAppointment?.appointmentDate
+      ? fmtDate(summary.todayAppointment.appointmentDate)
+      : "";
+    const msg = `تذكير: لديكم موعد في عيادة أسنان يوم ${aptDate} الساعة ${aptTime}`;
+    const encoded = encodeURIComponent(msg);
+    window.open(`https://wa.me/${cleanPhone}?text=${encoded}`, "_blank");
+  }, [summary?.patient.phone, summary?.todayAppointment?.startTime, summary?.todayAppointment?.appointmentDate]);
+
+  // ─── Create Prescription ───────────────────────────────────────────────────
+  const handleCreatePrescription = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatientId) return;
+    const validItems = prescItems.filter((item) => item.medicationName.trim());
+    if (validItems.length === 0) {
+      toast.error("يرجى إضافة دواء واحد على الأقل");
+      return;
+    }
+    try {
+      await createPrescriptionMutation.mutateAsync({
+        patientId: selectedPatientId,
+        doctorId: selectedItem?.doctorId || undefined,
+        diagnosis: prescDiagnosis || undefined,
+        notes: prescNotes || undefined,
+        items: validItems.map((item) => ({
+          medicationName: item.medicationName,
+          dosage: item.dosage || undefined,
+          frequency: item.frequency || undefined,
+          duration: item.duration || undefined,
+          notes: item.notes || undefined,
+        })),
+      });
+      toast.success("تم إنشاء الوصفة الطبية");
+      setPrescriptionModalOpen(false);
+      setPrescDiagnosis("");
+      setPrescNotes("");
+      setPrescItems([{ medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [selectedPatientId, prescDiagnosis, prescNotes, prescItems, selectedItem?.doctorId, createPrescriptionMutation]);
+
+  // ─── Update Visit ──────────────────────────────────────────────────────────
+  const handleUpdateVisit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!summary?.todayVisit?.id) return;
+    try {
+      await updateVisitMutation.mutateAsync({
+        visitId: summary.todayVisit.id,
+        body: {
+          chiefComplaint: editVisitForm.chiefComplaint || undefined,
+          clinicalNotes: editVisitForm.clinicalNotes || undefined,
+          treatmentDone: editVisitForm.treatmentDone || undefined,
+          diagnosis: editVisitForm.diagnosis || undefined,
+          instructions: editVisitForm.instructions || undefined,
+          nextVisitPlan: editVisitForm.nextVisitPlan || undefined,
+          cost: editVisitForm.cost || undefined,
+        },
+      });
+      toast.success("تم تحديث ملاحظات الزيارة");
+      setEditVisitModalOpen(false);
+      refetchSummary();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [summary?.todayVisit?.id, editVisitForm, updateVisitMutation, refetchSummary]);
+
+  // ─── Book Next Appointment ─────────────────────────────────────────────────
+  const handleBookAppointment = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatientId || !bookAptDoctorId || !bookAptDate || !bookAptStartTime) {
+      toast.error("يرجى ملء جميع الحقول المطلوبة");
+      return;
+    }
+    try {
+      await createAppointmentMutation.mutateAsync({
+        patientId: selectedPatientId,
+        doctorId: bookAptDoctorId,
+        appointmentDate: bookAptDate,
+        startTime: bookAptStartTime,
+        endTime: bookAptEndTime || undefined,
+        serviceId: bookAptServiceId || undefined,
+        appointmentType: bookAptType || undefined,
+        notes: bookAptNotes || undefined,
+      });
+      toast.success("تم حجز الموعد بنجاح");
+      setBookAppointmentModalOpen(false);
+      setBookAptDate("");
+      setBookAptStartTime("");
+      setBookAptEndTime("");
+      setBookAptServiceId("");
+      setBookAptNotes("");
+      loadJourney();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
+      toast.error(msg);
+    }
+  }, [selectedPatientId, bookAptDoctorId, bookAptDate, bookAptStartTime, bookAptEndTime, bookAptServiceId, bookAptType, bookAptNotes, createAppointmentMutation, loadJourney]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -777,12 +1133,75 @@ export default function PatientJourneyPage() {
 
             {/* ─── 2. Today's Appointment ─── */}
             {summary.todayAppointment && (
-              <TodaysAppointmentCard summary={summary} />
+              <div>
+                <TodaysAppointmentCard summary={summary} />
+                {/* Phase 1a: Cancel / NoShow Buttons */}
+                {canEditJourney && ["Scheduled", "Confirmed"].includes(summary.todayAppointment.status) && (
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => { setCancelDialogType("Cancelled"); setCancelDialogOpen(true); }}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition"
+                    >
+                      <Ban className="w-3 h-3" />
+                      إلغاء الموعد
+                    </button>
+                    <button
+                      onClick={() => { setCancelDialogType("NoShow"); setCancelDialogOpen(true); }}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition"
+                    >
+                      <UserX className="w-3 h-3" />
+                      لم يحضر
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
-            {/* ─── 3. Queue Status ─── */}
+            {/* ─── 3. Queue Status (Enhanced) ─── */}
             {summary.queueStatus && (
-              <QueueStatusCard summary={summary} />
+              <div>
+                <QueueStatusCard summary={summary} />
+                {/* Phase 1b: Cancel from Queue */}
+                {canEditJourney && ["Waiting", "Called"].includes(summary.queueStatus.status) && (
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <button
+                      onClick={handleCancelQueue}
+                      disabled={cancelQueueMutation.isPending}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition disabled:opacity-50"
+                    >
+                      <Ban className="w-3 h-3" />
+                      {cancelQueueMutation.isPending ? "جارٍ..." : "إلغاء من الطابور"}
+                    </button>
+                    {/* Phase 1c: Change Room */}
+                    <div className="flex items-center gap-1.5">
+                      <ArrowRightLeft className="w-3 h-3 text-gray-500" />
+                      <select
+                        value={changeRoomSelectedRoom}
+                        onChange={(e) => {
+                          setChangeRoomSelectedRoom(e.target.value);
+                          if (e.target.value) handleChangeRoom(e.target.value);
+                        }}
+                        disabled={changeRoomMutation.isPending}
+                        className="px-2 py-1.5 text-[11px] rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-[#3d7ab5] disabled:opacity-50"
+                      >
+                        <option value="">تغيير الغرفة</option>
+                        {rooms.map((r) => (
+                          <option key={r.id} value={r.id}>{r.arabicName}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+                {/* Phase 1d: Estimated Wait Time */}
+                {summary.queueStatus.status === "Waiting" && estimatedWait && (
+                  <div className="mt-2 flex items-center gap-2 text-[11px] text-[#1a3a5c] bg-blue-50 border border-blue-100 rounded-lg px-3 py-1.5">
+                    <Timer className="w-3.5 h-3.5 text-[#3d7ab5]" />
+                    <span>الوقت المتوقع: <strong>{estimatedWait.estimatedMinutes} دقيقة</strong></span>
+                    <span className="text-gray-300">|</span>
+                    <span>الترتيب: <strong>{estimatedWait.position}</strong></span>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* ─── 4. Medical Safety Alerts ─── */}
@@ -835,17 +1254,65 @@ export default function PatientJourneyPage() {
                 onHandoffSubmit={handleHandoffSubmit}
                 onCheckoutSubmit={handleCheckoutSubmit}
                 onCreateDraftInvoice={handleCreateDraftInvoice}
+                onIssueInvoice={handleIssueInvoice}
+                issueInvoiceMutation={issueInvoiceMutation}
+                onDownloadPdf={handleDownloadPdf}
               />
             )}
 
             {/* ─── 6. Today's Visit ─── */}
             {summary.todayVisit && canViewVisits && (
-              <TodaysVisitCard summary={summary} isReception={isReception} isAccountant={isAccountant} />
+              <div>
+                <TodaysVisitCard summary={summary} isReception={isReception} isAccountant={isAccountant} />
+                {/* Phase 4b: Edit Visit Notes - Doctors only */}
+                {canEditJourney && isDoctor && summary.todayVisit.id && (
+                  <button
+                    onClick={() => {
+                      setEditVisitForm({
+                        chiefComplaint: summary.todayVisit?.chiefComplaint ?? "",
+                        clinicalNotes: summary.todayVisit?.clinicalNotes ?? "",
+                        treatmentDone: summary.todayVisit?.treatmentDone ?? "",
+                        diagnosis: summary.todayVisit?.diagnosis ?? "",
+                        instructions: summary.todayVisit?.instructions ?? "",
+                        nextVisitPlan: summary.todayVisit?.nextVisitPlan ?? "",
+                        cost: summary.todayVisit?.cost ?? 0,
+                      });
+                      setEditVisitModalOpen(true);
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-[#3d7ab5]/10 text-[#3d7ab5] border border-[#3d7ab5]/20 hover:bg-[#3d7ab5]/20 transition mt-2"
+                  >
+                    <Stethoscope className="w-3 h-3" />
+                    تعديل ملاحظات الزيارة
+                  </button>
+                )}
+              </div>
             )}
 
             {/* ─── 7. Finance Summary ─── */}
             {(canViewFinance || canViewCheckout) && !isDoctor && summary.financeSummary && (
-              <FinanceSummaryCard summary={summary} isAccountant={isAccountant} canViewFinance={canViewFinance} canViewInvoices={canViewInvoices} />
+              <div>
+                <FinanceSummaryCard summary={summary} isAccountant={isAccountant} canViewFinance={canViewFinance} canViewInvoices={canViewInvoices} />
+                {/* Phase 2a: Record Payment Button */}
+                {canEditJourney && (canViewFinance || canViewCheckout) && (
+                  <button
+                    onClick={() => setRecordPaymentOpen(true)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition mt-2"
+                  >
+                    <CreditCard className="w-3 h-3" />
+                    تسجيل دفعة
+                  </button>
+                )}
+                {/* Phase 2c: Download Payment Receipt PDF */}
+                {summary.financeSummary?.latestPayment && canViewFinance && (
+                  <button
+                    onClick={() => handleDownloadPdf(`/api/payments/${summary.financeSummary!.latestPayment!.id}/pdf`, `receipt-${summary.financeSummary!.latestPayment!.receiptNumber ?? summary.financeSummary!.latestPayment!.id}.pdf`)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition mt-1 mr-2"
+                  >
+                    <Download className="w-3 h-3" />
+                    تحميل إيصال الدفعة
+                  </button>
+                )}
+              </div>
             )}
 
             {/* ─── 8. Active Ortho Case ─── */}
@@ -862,9 +1329,622 @@ export default function PatientJourneyPage() {
             {summary.timeline && summary.timeline.length > 0 && canViewJourney && (
               <TimelineCard events={summary.timeline.slice(0, 5)} />
             )}
+
+            {/* ─── 11. Quick Actions Bar ─── */}
+            {canEditJourney && (
+              <div className="rounded-xl border border-[#3d7ab5]/20 bg-[#f0f6fc] p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <CircleDot className="w-4 h-4 text-[#f5922e]" />
+                  <span className="text-sm font-bold text-[#1a3a5c]">إجراءات سريعة</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {/* SMS */}
+                  <button
+                    onClick={() => {
+                      setSmsTo(summary.patient.phone ?? "");
+                      setSmsModalOpen(true);
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-[#3d7ab5] border border-[#3d7ab5]/20 hover:bg-[#3d7ab5]/10 transition"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    إرسال رسالة
+                  </button>
+                  {/* Appointment Reminder */}
+                  {summary.todayAppointment && (
+                    <button
+                      onClick={handleSendReminder}
+                      disabled={sendReminderMutation.isPending}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-amber-700 border border-amber-200 hover:bg-amber-50 transition disabled:opacity-50"
+                    >
+                      <Megaphone className="w-3 h-3" />
+                      {sendReminderMutation.isPending ? "جارٍ..." : "تذكير بالموعد"}
+                    </button>
+                  )}
+                  {/* WhatsApp */}
+                  <button
+                    onClick={handleOpenWhatsApp}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-green-700 border border-green-200 hover:bg-green-50 transition"
+                  >
+                    <MessageCircle className="w-3 h-3" />
+                    واتساب
+                  </button>
+                  {/* Prescription - Doctors only */}
+                  {isDoctor && (
+                    <button
+                      onClick={() => setPrescriptionModalOpen(true)}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-purple-700 border border-purple-200 hover:bg-purple-50 transition"
+                    >
+                      <Pill className="w-3 h-3" />
+                      وصفة طبية
+                    </button>
+                  )}
+                  {/* Edit Visit - Doctors only */}
+                  {isDoctor && summary.todayVisit?.id && (
+                    <button
+                      onClick={() => {
+                        setEditVisitForm({
+                          chiefComplaint: summary.todayVisit?.chiefComplaint ?? "",
+                          clinicalNotes: summary.todayVisit?.clinicalNotes ?? "",
+                          treatmentDone: summary.todayVisit?.treatmentDone ?? "",
+                          diagnosis: summary.todayVisit?.diagnosis ?? "",
+                          instructions: summary.todayVisit?.instructions ?? "",
+                          nextVisitPlan: summary.todayVisit?.nextVisitPlan ?? "",
+                          cost: summary.todayVisit?.cost ?? 0,
+                        });
+                        setEditVisitModalOpen(true);
+                      }}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-[#3d7ab5] border border-[#3d7ab5]/20 hover:bg-[#3d7ab5]/10 transition"
+                    >
+                      <Stethoscope className="w-3 h-3" />
+                      تعديل الزيارة
+                    </button>
+                  )}
+                  {/* Book Appointment */}
+                  <button
+                    onClick={() => {
+                      setBookAptDoctorId(selectedItem?.doctorId ?? "");
+                      setBookAptServiceId(selectedItem?.serviceId ?? "");
+                      setBookAppointmentModalOpen(true);
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-[#1a3a5c] border border-gray-200 hover:bg-gray-50 transition"
+                  >
+                    <CalendarDays className="w-3 h-3" />
+                    حجز موعد
+                  </button>
+                  {/* Print */}
+                  <button
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 transition"
+                  >
+                    <Printer className="w-3 h-3" />
+                    طباعة
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* ═══ MODAL OVERLAYS ═══ */}
+
+      {/* ─── Cancel / NoShow Confirmation Dialog ─── */}
+      {cancelDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-sm font-bold text-[#1a3a5c]">
+                {cancelDialogType === "Cancelled" ? "تأكيد إلغاء الموعد" : "تأكيد تسجيل عدم الحضور"}
+              </h3>
+              <button onClick={() => setCancelDialogOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-gray-700">
+                {cancelDialogType === "Cancelled"
+                  ? "هل أنت متأكد من إلغاء الموعد؟"
+                  : "هل أنت متأكد من تسجيل عدم الحضور؟"}
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end p-4 border-t">
+              <button
+                onClick={() => setCancelDialogOpen(false)}
+                className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleCancelOrNoShow}
+                disabled={updateAptStatusMutation.isPending}
+                className={cn(
+                  "px-4 py-2 text-xs font-bold rounded-lg text-white transition disabled:opacity-50",
+                  cancelDialogType === "Cancelled" ? "bg-red-600 hover:bg-red-700" : "bg-orange-600 hover:bg-orange-700"
+                )}
+              >
+                {updateAptStatusMutation.isPending ? "جارٍ..." : "تأكيد"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Record Payment Modal ─── */}
+      {recordPaymentOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-sm font-bold text-[#1a3a5c]">تسجيل دفعة</h3>
+              <button onClick={() => setRecordPaymentOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleRecordPayment} className="p-4 space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">المبلغ</label>
+                <input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(parseInt(e.target.value) || 0)}
+                  className={inputCls}
+                  dir="ltr"
+                  min={1}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">طريقة الدفع</label>
+                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputCls}>
+                  {PAYMENT_METHODS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">وصف الخدمة</label>
+                <input
+                  value={paymentServiceDesc}
+                  onChange={(e) => setPaymentServiceDesc(e.target.value)}
+                  className={inputCls}
+                  placeholder="مثل: رسوم معاينة"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">ملاحظات</label>
+                <textarea
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  className={cn(inputCls, "h-16 resize-none")}
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setRecordPaymentOpen(false)}
+                  className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={createPaymentMutation.isPending}
+                  className="px-4 py-2 text-xs font-bold rounded-lg bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-50"
+                >
+                  {createPaymentMutation.isPending ? "جارٍ..." : "تسجيل الدفعة"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Send SMS Modal ─── */}
+      {smsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-sm font-bold text-[#1a3a5c]">إرسال رسالة SMS</h3>
+              <button onClick={() => setSmsModalOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleSendSms} className="p-4 space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">رقم الهاتف</label>
+                <input
+                  value={smsTo}
+                  onChange={(e) => setSmsTo(e.target.value)}
+                  className={inputCls}
+                  dir="ltr"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">الرسالة</label>
+                <textarea
+                  value={smsMessage}
+                  onChange={(e) => setSmsMessage(e.target.value)}
+                  className={cn(inputCls, "h-28 resize-none")}
+                  placeholder="اكتب الرسالة هنا..."
+                  required
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setSmsModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendSmsMutation.isPending}
+                  className="flex items-center gap-1 px-4 py-2 text-xs font-bold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50"
+                >
+                  <Send className="w-3 h-3" />
+                  {sendSmsMutation.isPending ? "جارٍ الإرسال..." : "إرسال"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Quick Prescription Modal ─── */}
+      {prescriptionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-sm font-bold text-[#1a3a5c]">وصفة طبية</h3>
+              <button onClick={() => setPrescriptionModalOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleCreatePrescription} className="p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">التشخيص</label>
+                  <input
+                    value={prescDiagnosis}
+                    onChange={(e) => setPrescDiagnosis(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">ملاحظات</label>
+                  <input
+                    value={prescNotes}
+                    onChange={(e) => setPrescNotes(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              {/* Medication Items */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#1a3a5c]">الأدوية</span>
+                  <button
+                    type="button"
+                    onClick={() => setPrescItems([...prescItems, { medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }])}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] rounded-lg bg-[#3d7ab5]/10 text-[#3d7ab5] hover:bg-[#3d7ab5]/20 transition"
+                  >
+                    <Plus className="w-3 h-3" />
+                    إضافة دواء
+                  </button>
+                </div>
+                {prescItems.map((item, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-lg p-2.5 space-y-2 bg-gray-50/50">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-gray-500">دواء {idx + 1}</span>
+                      {prescItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setPrescItems(prescItems.filter((_, i) => i !== idx))}
+                          className="p-1 rounded hover:bg-red-50 transition"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-500" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[9px] font-medium text-gray-500">اسم الدواء *</label>
+                        <input
+                          value={item.medicationName}
+                          onChange={(e) => {
+                            const updated = [...prescItems];
+                            updated[idx] = { ...updated[idx], medicationName: e.target.value };
+                            setPrescItems(updated);
+                          }}
+                          className={inputCls}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-medium text-gray-500">الجرعة</label>
+                        <input
+                          value={item.dosage}
+                          onChange={(e) => {
+                            const updated = [...prescItems];
+                            updated[idx] = { ...updated[idx], dosage: e.target.value };
+                            setPrescItems(updated);
+                          }}
+                          className={inputCls}
+                          placeholder="مثل: 500mg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-medium text-gray-500">التكرار</label>
+                        <input
+                          value={item.frequency}
+                          onChange={(e) => {
+                            const updated = [...prescItems];
+                            updated[idx] = { ...updated[idx], frequency: e.target.value };
+                            setPrescItems(updated);
+                          }}
+                          className={inputCls}
+                          placeholder="مثل: مرتين يومياً"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-medium text-gray-500">المدة</label>
+                        <input
+                          value={item.duration}
+                          onChange={(e) => {
+                            const updated = [...prescItems];
+                            updated[idx] = { ...updated[idx], duration: e.target.value };
+                            setPrescItems(updated);
+                          }}
+                          className={inputCls}
+                          placeholder="مثل: 7 أيام"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[9px] font-medium text-gray-500">ملاحظات</label>
+                        <input
+                          value={item.notes}
+                          onChange={(e) => {
+                            const updated = [...prescItems];
+                            updated[idx] = { ...updated[idx], notes: e.target.value };
+                            setPrescItems(updated);
+                          }}
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setPrescriptionModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={createPrescriptionMutation.isPending}
+                  className="flex items-center gap-1 px-4 py-2 text-xs font-bold rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition disabled:opacity-50"
+                >
+                  <Pill className="w-3 h-3" />
+                  {createPrescriptionMutation.isPending ? "جارٍ..." : "إنشاء وصفة"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Edit Visit Notes Modal ─── */}
+      {editVisitModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-sm font-bold text-[#1a3a5c]">تعديل ملاحظات الزيارة</h3>
+              <button onClick={() => setEditVisitModalOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateVisit} className="p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">الشكوى الرئيسية</label>
+                  <textarea
+                    value={editVisitForm.chiefComplaint}
+                    onChange={(e) => setEditVisitForm({ ...editVisitForm, chiefComplaint: e.target.value })}
+                    className={cn(inputCls, "h-16 resize-none")}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">ملاحظات سريرية</label>
+                  <textarea
+                    value={editVisitForm.clinicalNotes}
+                    onChange={(e) => setEditVisitForm({ ...editVisitForm, clinicalNotes: e.target.value })}
+                    className={cn(inputCls, "h-16 resize-none")}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">ما تم عمله</label>
+                  <textarea
+                    value={editVisitForm.treatmentDone}
+                    onChange={(e) => setEditVisitForm({ ...editVisitForm, treatmentDone: e.target.value })}
+                    className={cn(inputCls, "h-16 resize-none")}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">التشخيص</label>
+                  <input
+                    value={editVisitForm.diagnosis}
+                    onChange={(e) => setEditVisitForm({ ...editVisitForm, diagnosis: e.target.value })}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">تعليمات للمريض</label>
+                  <textarea
+                    value={editVisitForm.instructions}
+                    onChange={(e) => setEditVisitForm({ ...editVisitForm, instructions: e.target.value })}
+                    className={cn(inputCls, "h-16 resize-none")}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">خطة الزيارة القادمة</label>
+                  <textarea
+                    value={editVisitForm.nextVisitPlan}
+                    onChange={(e) => setEditVisitForm({ ...editVisitForm, nextVisitPlan: e.target.value })}
+                    className={cn(inputCls, "h-16 resize-none")}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">التكلفة</label>
+                  <input
+                    type="number"
+                    value={editVisitForm.cost}
+                    onChange={(e) => setEditVisitForm({ ...editVisitForm, cost: parseInt(e.target.value) || 0 })}
+                    className={inputCls}
+                    dir="ltr"
+                    min={0}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setEditVisitModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateVisitMutation.isPending}
+                  className="flex items-center gap-1 px-4 py-2 text-xs font-bold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50"
+                >
+                  <Save className="w-3 h-3" />
+                  {updateVisitMutation.isPending ? "جارٍ الحفظ..." : "حفظ التعديلات"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Book Next Appointment Modal ─── */}
+      {bookAppointmentModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-sm font-bold text-[#1a3a5c]">حجز موعد قادم</h3>
+              <button onClick={() => setBookAppointmentModalOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <form onSubmit={handleBookAppointment} className="p-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">التاريخ *</label>
+                  <input
+                    type="date"
+                    value={bookAptDate}
+                    onChange={(e) => setBookAptDate(e.target.value)}
+                    className={inputCls}
+                    dir="ltr"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">وقت البداية *</label>
+                  <input
+                    type="time"
+                    value={bookAptStartTime}
+                    onChange={(e) => setBookAptStartTime(e.target.value)}
+                    className={inputCls}
+                    dir="ltr"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">وقت النهاية</label>
+                  <input
+                    type="time"
+                    value={bookAptEndTime}
+                    onChange={(e) => setBookAptEndTime(e.target.value)}
+                    className={inputCls}
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">الطبيب</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={selectedItem?.doctorName ?? ""}
+                      className={cn(inputCls, "bg-gray-50")}
+                      readOnly
+                    />
+                    <input type="hidden" value={bookAptDoctorId} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">الخدمة</label>
+                  <select
+                    value={bookAptServiceId}
+                    onChange={(e) => setBookAptServiceId(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">— اختر خدمة —</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>{s.arabicName}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">نوع الموعد</label>
+                  <select
+                    value={bookAptType}
+                    onChange={(e) => setBookAptType(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="FollowUp">متابعة</option>
+                    <option value="Consultation">معاينة</option>
+                    <option value="Procedure">إجراء</option>
+                    <option value="Emergency">طوارئ</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">ملاحظات</label>
+                <textarea
+                  value={bookAptNotes}
+                  onChange={(e) => setBookAptNotes(e.target.value)}
+                  className={cn(inputCls, "h-16 resize-none")}
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setBookAppointmentModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={createAppointmentMutation.isPending}
+                  className="flex items-center gap-1 px-4 py-2 text-xs font-bold rounded-lg bg-[#1a3a5c] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50"
+                >
+                  <CalendarDays className="w-3 h-3" />
+                  {createAppointmentMutation.isPending ? "جارٍ الحجز..." : "حجز الموعد"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1143,6 +2223,9 @@ interface JourneyActionsPanelProps {
   onCheckoutSubmit: (e: React.FormEvent) => void;
   isDoctor: boolean;
   onCreateDraftInvoice: () => void;
+  onIssueInvoice: () => void;
+  issueInvoiceMutation: { isPending: boolean };
+  onDownloadPdf: (url: string, filename: string) => void;
 }
 
 function JourneyActionsPanel({
@@ -1157,6 +2240,7 @@ function JourneyActionsPanel({
   intakeMutation, sendToQueueMutation, startVisitMutation,
   handoffMutation, checkoutMutation, draftInvoiceMutation,
   onSimpleAction, onIntakeSubmit, onHandoffSubmit, onCheckoutSubmit, onCreateDraftInvoice,
+  onIssueInvoice, issueInvoiceMutation, onDownloadPdf,
 }: JourneyActionsPanelProps) {
   const { nextAction } = summary;
   const actionLabel = ACTION_LABELS[nextAction] ?? nextAction;
@@ -1361,17 +2445,36 @@ function JourneyActionsPanel({
                 <span className="text-sm font-medium text-green-800">تم إنهاء حساب الزيارة بنجاح</span>
               </div>
               {draftInvoiceResult && (
-                <div className="border border-green-200 bg-green-50 rounded-lg p-2.5 space-y-1">
+                <div className="border border-green-200 bg-green-50 rounded-lg p-2.5 space-y-2">
                   <p className="text-xs font-medium text-green-800">
                     الفاتورة: <span className="font-mono">{draftInvoiceResult.invoiceNumber}</span>
                   </p>
-                  <Link
-                    href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
-                    className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
-                  >
-                    <FileText className="w-3 h-3" />
-                    عرض الفاتورة
-                  </Link>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                      className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
+                    >
+                      <FileText className="w-3 h-3" />
+                      عرض الفاتورة
+                    </Link>
+                    {/* Phase 2b: Issue Invoice */}
+                    <button
+                      onClick={onIssueInvoice}
+                      disabled={issueInvoiceMutation.isPending}
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] disabled:opacity-50 transition"
+                    >
+                      <FileText className="w-3 h-3" />
+                      {issueInvoiceMutation.isPending ? "جارٍ..." : "إصدار فاتورة"}
+                    </button>
+                    {/* Phase 2c: Download Invoice PDF */}
+                    <button
+                      onClick={() => onDownloadPdf(`/api/invoices/${draftInvoiceResult.invoiceId}/pdf`, `invoice-${draftInvoiceResult.invoiceNumber}.pdf`)}
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
+                    >
+                      <Download className="w-3 h-3" />
+                      تحميل PDF
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1417,7 +2520,10 @@ function JourneyActionsPanel({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-600 mb-0.5">المبلغ المطلوب (مرجعي)</label>
+                  <label className="block text-[10px] font-bold text-gray-600 mb-0.5">المبلغ المطلوب</label>
+                  {summary?.todayVisit?.amountDueReference != null && (
+                    <span className="text-[9px] text-[#3d7ab5] font-medium">المبلغ المرجعي: {fmtRial(summary.todayVisit.amountDueReference)}</span>
+                  )}
                   <input
                     type="number"
                     value={checkoutAmount}

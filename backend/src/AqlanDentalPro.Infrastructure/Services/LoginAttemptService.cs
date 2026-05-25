@@ -89,9 +89,10 @@ public class LoginAttemptService : ILoginAttemptService
             if (!lockValue.HasValue || !DateTime.TryParse(lockValue.ToString(), out var lockUntil))
                 return (false, 0);
 
-            if (DateTime.UtcNow < lockUntil)
+            var lockUntilUtc = lockUntil.ToUniversalTime();
+            if (DateTime.UtcNow < lockUntilUtc)
             {
-                var remaining = (int)Math.Ceiling((lockUntil - DateTime.UtcNow).TotalMinutes);
+                var remaining = (int)Math.Ceiling((lockUntilUtc - DateTime.UtcNow).TotalMinutes);
                 return (true, remaining);
             }
 

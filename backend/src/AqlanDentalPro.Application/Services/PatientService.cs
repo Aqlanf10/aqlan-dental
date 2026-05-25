@@ -32,11 +32,33 @@ public class PatientService(
             : new Dictionary<Guid, DateTime?>();
 
         // Batch-load patient emails from linked User records
+        // SAFETY: Email is optional. If the lookup fails for any individual patient
+        // (missing PatientAccount, DI resolution failure, DB error), the patient list
+        // must still load — the email for that patient will be null.
         var patientEmails = new Dictionary<Guid, string?>();
-        foreach (var pid in patientIds)
+        if (patientIds.Count > 0)
         {
-            var email = await portalService.GetPatientEmailAsync(pid);
-            patientEmails[pid] = email;
+            try
+            {
+                foreach (var pid in patientIds)
+                {
+                    try
+                    {
+                        patientEmails[pid] = await portalService.GetPatientEmailAsync(pid);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "GetPatientEmailAsync failed for patient {PatientId} — email will be null", pid);
+                        patientEmails[pid] = null;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Patient email batch failed — all emails will be null");
+                foreach (var pid in patientIds)
+                    patientEmails.TryAdd(pid, null);
+            }
         }
 
         return new PaginatedResponse<PatientListDto>
@@ -62,7 +84,15 @@ public class PatientService(
             patient = await repo.GetWithHistoriesIgnoreFiltersAsync(id);
         if (patient == null) return null;
         var dto = ToProfileDto(patient);
-        dto.Email = await portalService.GetPatientEmailAsync(patient.Id);
+        try
+        {
+            dto.Email = await portalService.GetPatientEmailAsync(patient.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "GetPatientEmailAsync failed for patient {PatientId} — email will be null", patient.Id);
+            dto.Email = null;
+        }
         return dto;
     }
 

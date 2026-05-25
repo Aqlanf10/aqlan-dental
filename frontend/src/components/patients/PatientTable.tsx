@@ -6,12 +6,14 @@ import {
   Search, UserPlus, Eye, Pencil,
   Download, MoreVertical, Archive, RotateCcw,
   MessageCircle, Phone, Copy, CalendarPlus, Printer,
+  AlertCircle, RefreshCw,
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
 import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
+import { toast } from "@/stores/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
   PatientContextMenu,
@@ -47,6 +49,7 @@ export function PatientTable() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<{ patient: PatientListItem; position: ContextMenuPosition } | null>(null);
@@ -78,6 +81,7 @@ export function PatientTable() {
 
   const fetchPatients = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: "20", status });
       if (search) params.set("search", search);
@@ -87,7 +91,10 @@ export function PatientTable() {
         `/api/patients?${params}`
       );
       setData(res);
-    } catch { /* ignore */ }
+    } catch {
+      setLoadError(true);
+      toast.error("تعذر تحميل بيانات المرضى حالياً");
+    }
     setLoading(false);
   }, [page, search, gender, doctorId, status]);
 
@@ -244,6 +251,25 @@ export function PatientTable() {
                     ))}
                   </tr>
                 ))
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3">
+                      <AlertCircle className="w-10 h-10" style={{ color: "#ef4444" }} />
+                      <p className="text-sm font-semibold" style={{ color: "#ef4444" }}>تعذر تحميل بيانات المرضى حالياً</p>
+                      <button
+                        onClick={fetchPatients}
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition"
+                        style={{ border: "1.5px solid #dce8f5", background: "#fff", color: "#3d7ab5" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f7fafd")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        إعادة المحاولة
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               ) : !data?.data.length ? (
                 <tr>
                   <td colSpan={8} className="text-center py-12" style={{ color: "#94a3b8" }}>

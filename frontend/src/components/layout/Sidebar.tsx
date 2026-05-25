@@ -10,6 +10,7 @@ import {
   UserRound, Building2, Monitor, UserCog,
   Truck, ShoppingCart, ChevronDown,
   Smartphone, Banknote, CalendarOff, Shield,
+  HeartPulse,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ const NAV: NavEntry[] = [
       { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
       { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [], permission: PERMISSION_KEYS.CLINIC_DISPLAY_VIEW },
       { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW, badge: "جديد" },
+      { href: "/doctor-clinic",       label: "عيادة الطبيب",      icon: HeartPulse,    roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"], badge: "جديد" },
       { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"], permission: PERMISSION_KEYS.ROOMS_VIEW },
     ],
   },

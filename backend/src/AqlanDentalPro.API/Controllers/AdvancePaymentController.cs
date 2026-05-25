@@ -26,7 +26,7 @@ public sealed class ApproveAdvanceRequest
 [ApiController]
 [Route("api/advances")]
 [Authorize(Policy = "ReportsAccess")]
-public class AdvancePaymentController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
+public class AdvancePaymentController(AppDbContext db, IAuditService audit) : ControllerBase
 {
     /// <summary>
     /// Get advance payment records with filters

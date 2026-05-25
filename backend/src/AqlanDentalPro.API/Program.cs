@@ -2211,6 +2211,10 @@ if (enableStartupDbMaintenance)
                 DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260609000000_AddEmailLog';
                 DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260610000000_AddSeparateReminderTrackingAndPatientEmail';
 
+                -- Financial Integrity Sprint: remove record if IsReversal column doesn't exist yet
+                DELETE FROM "__EFMigrationsHistory" WHERE "MigrationId" = '20260613000000_AddFinancialIntegrityAuditSprint'
+                    AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'CashFlowTransactions' AND column_name = 'IsReversal');
+
                 -- ═══ STEP 2: Insert missing records for existing schema ═══
                 -- These were created by HOTFIX blocks but not recorded in __EFMigrationsHistory.
 

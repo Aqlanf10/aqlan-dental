@@ -142,3 +142,30 @@ Stage Summary:
 - No DB/schema/migration/auth changes
 - Build verified: TypeScript + Next.js build pass
 - Branch ready to push: fix/clinic-display-voice-announcement-root
+---
+Task ID: daily-operations-unified
+Agent: main
+Task: Build unified Daily Operations reception screen
+
+Work Log:
+- Explored full codebase: 46 backend controllers, 80+ frontend pages, all APIs and types
+- Analyzed existing patient-journey page structure and hooks
+- Created _lib/constants.ts with types, status labels, WhatsApp templates, helpers
+- Created _lib/hooks.ts with 15+ React Query hooks for all operations
+- Created _components/Modals.tsx with 5 modal components (QuickPayment, CompleteVisit, BookAppointment, ConfirmDialog, WhatsAppMenu)
+- Created _components/AppointmentsTable.tsx with desktop table + mobile cards + 10+ quick actions per row
+- Rewrote page.tsx as full operations screen with: top bar, 7 summary cards, 6 tabs, all modals
+- Fixed ESLint errors (any types, unused hook)
+- Fixed toast import (useToastStore → toast direct import)
+- TypeScript check: ✅ clean
+- Build: ✅ Compiled successfully
+- Pushed to feature/daily-operations-unified
+- Created PR #218
+
+Stage Summary:
+- New route: /daily-operations (complete rewrite from launcher to full ops screen)
+- 5 new files, 1 modified file, ~2000 lines of new code
+- No backend changes, no DB changes, no auth changes
+- All existing units remain untouched
+- PR: https://github.com/Aqlanf10/aqlan-dental/pull/218
+- Commit: 615cec0

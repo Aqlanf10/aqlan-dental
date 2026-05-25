@@ -75,7 +75,7 @@ const NAV: NavEntry[] = [
   { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: [] },
 
   // ── المالية ───────────────────────────────────────────────────────────────
-  { href: "/finance-v2",  label: "المالية",  icon: Wallet,  roles: ["Admin","Reception","Accountant"],  section: "المالية", badge: "شاشة موحدة" },
+  { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant"],  section: "المالية", badge: "جديد" },
   {
     kind: "group",
     label: "المخزون", icon: Package,

@@ -22,6 +22,7 @@ public class Treasury : BaseEntity, ISoftDeletable
     public Guid BranchId { get; set; }
     public Branch? Branch { get; set; }
 
-    /// <summary>Row version for optimistic concurrency control (A4).</summary>
-    public byte[] Version { get; set; } = [];
+    // A4: Optimistic concurrency is handled via PostgreSQL xmin system column
+    // (configured in TreasuryConfiguration.UseXminAsConcurrencyToken()).
+    // No explicit Version property needed — PostgreSQL manages row versioning automatically.
 }

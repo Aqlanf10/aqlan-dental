@@ -5415,12 +5415,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<byte[]?>("Version")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .HasColumnType("bytea")
-                        .HasDefaultValue(new byte[] {});
-
                     b.HasKey("Id");
 
                     b.HasIndex("BranchId");

@@ -8,8 +8,10 @@ public class TreasuryConfiguration : IEntityTypeConfiguration<Treasury>
 {
     public void Configure(EntityTypeBuilder<Treasury> entity)
     {
-        // A4: Optimistic concurrency via row version
-        entity.Property(t => t.Version).IsRowVersion().IsConcurrencyToken();
+        // A4: Optimistic concurrency — use PostgreSQL xmin system column for row versioning
+        // Instead of a separate byte[] Version column (which doesn't work well with PostgreSQL),
+        // we use the built-in xmin column that PostgreSQL maintains automatically.
+        entity.UseXminAsConcurrencyToken();
 
         // Performance indexes for treasury lookups
         entity.HasIndex(t => t.BranchId);

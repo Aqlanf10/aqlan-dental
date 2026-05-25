@@ -57,9 +57,8 @@ public partial class AddFinancialIntegrityAuditSprint : Migration
                 END IF;
             END $$");
 
-        // A4: Add Version row version column to Treasuries for optimistic concurrency
-        migrationBuilder.Sql(
-            @"ALTER TABLE ""Treasuries"" ADD COLUMN IF NOT EXISTS ""Version"" bytea NULL");
+        // A4: Optimistic concurrency on Treasuries is handled via PostgreSQL xmin
+        // system column (UseXminAsConcurrencyToken). No explicit Version column needed.
 
         // Performance indexes for Treasury lookups by BranchId and composite (BranchId, Type)
         migrationBuilder.Sql(
@@ -96,9 +95,5 @@ public partial class AddFinancialIntegrityAuditSprint : Migration
             @"ALTER TABLE ""CashFlowTransactions"" DROP COLUMN IF EXISTS ""ReversalOfTransactionId""");
         migrationBuilder.Sql(
             @"ALTER TABLE ""CashFlowTransactions"" DROP COLUMN IF EXISTS ""IsReversal""");
-
-        // Drop Version from Treasuries
-        migrationBuilder.Sql(
-            @"ALTER TABLE ""Treasuries"" DROP COLUMN IF EXISTS ""Version""");
     }
 }

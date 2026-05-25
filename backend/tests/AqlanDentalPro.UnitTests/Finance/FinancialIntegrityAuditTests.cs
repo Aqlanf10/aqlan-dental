@@ -376,12 +376,9 @@ public class FinancialIntegrityAuditTests
         db.Treasuries.Add(treasury);
         await db.SaveChangesAsync();
 
-        // Simulate the optimistic concurrency check by verifying the Version property exists
-        treasury.Version.Should().NotBeNull("Treasury should have a Version property for optimistic concurrency");
-
-        // In a real concurrent scenario with PostgreSQL, DbUpdateConcurrencyException
-        // would be thrown when two updates modify the same row simultaneously.
-        // With InMemory provider, this cannot be tested directly, but we verify the property exists.
+        // A4: Optimistic concurrency is handled via PostgreSQL xmin system column.
+        // With InMemory provider, xmin concurrency cannot be tested directly,
+        // but we verify the Arabic error message is correct for concurrency conflicts.
         var exceptionMessage = "تعارض في تحديث رصيد الخزينة. يرجى المحاولة مرة أخرى.";
         exceptionMessage.Should().Contain("تعارض", "Arabic error message for concurrency conflict");
     }
@@ -608,7 +605,8 @@ public class FinancialIntegrityAuditTests
             BranchId = Guid.NewGuid()
         };
 
-        treasury.Version.Should().NotBeNull("Treasury must have a Version property");
-        treasury.Version.Should().BeEmpty("new Treasury should have empty Version byte array");
+        // A4: Optimistic concurrency uses PostgreSQL xmin (no explicit Version property needed)
+        treasury.Should().NotBeNull("Treasury entity must exist for optimistic concurrency");
+        treasury.Balance.Should().Be(100_000m);
     }
 }

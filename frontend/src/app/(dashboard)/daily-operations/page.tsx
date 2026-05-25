@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
 import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw, ArrowLeft,
@@ -126,25 +125,6 @@ const TAB_ICONS: Record<string, React.ElementType> = {
   payments: CreditCard,
   overdue: AlertTriangle,
 };
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Module tab type & lazy-loaded sub-pages (rendered inline)
-   ═══════════════════════════════════════════════════════════════════════════ */
-type ModuleTab = "journey" | "booking-requests" | "appointments" | "clinic-queue" | "clinic-display" | "rooms";
-
-const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; }[] = [
-  { key: "journey",          label: "رحلة المريض",  icon: Activity },
-  { key: "booking-requests", label: "طلبات الحجز",  icon: Globe },
-  { key: "appointments",    label: "المواعيد",     icon: Calendar },
-  { key: "clinic-queue",    label: "الطابور",      icon: ClipboardList },
-  { key: "clinic-display",  label: "شاشة النداء",  icon: Monitor },
-  { key: "rooms",           label: "الغرف",        icon: Building2 },
-];
-
-const BookingRequestsView = dynamic(() => import("../booking-requests/page"), { ssr: false });
-const AppointmentsView     = dynamic(() => import("../appointments/page"),      { ssr: false });
-const ClinicQueueView      = dynamic(() => import("../clinic-queue/page"),      { ssr: false });
-const RoomsView             = dynamic(() => import("../settings/rooms/page"),    { ssr: false });
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MAIN PAGE — Microsoft Fluent Design

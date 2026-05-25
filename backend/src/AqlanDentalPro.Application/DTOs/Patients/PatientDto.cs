@@ -4,6 +4,8 @@ public class PatientListDto
 {
     public Guid Id { get; set; }
     public string PatientNumber { get; set; } = string.Empty;
+    public string? LegacyFileNumber { get; set; }
+    public string? LegacyFullName { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public string? Email { get; set; }
@@ -20,6 +22,8 @@ public class PatientProfileDto
 {
     public Guid Id { get; set; }
     public string PatientNumber { get; set; } = string.Empty;
+    public string? LegacyFileNumber { get; set; }
+    public string? LegacyFullName { get; set; }
     public string FirstName { get; set; } = string.Empty;
     public string? MiddleName { get; set; }
     public string LastName { get; set; } = string.Empty;
@@ -77,6 +81,8 @@ public class PatientClinicalDto
 {
     public Guid Id { get; set; }
     public string PatientNumber { get; set; } = string.Empty;
+    public string? LegacyFileNumber { get; set; }
+    public string? LegacyFullName { get; set; }
     public string FirstName { get; set; } = string.Empty;
     public string? MiddleName { get; set; }
     public string LastName { get; set; } = string.Empty;

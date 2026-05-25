@@ -103,6 +103,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<CashierSession> CashierSessions => Set<CashierSession>();
     public DbSet<OperationalExpense> OperationalExpenses => Set<OperationalExpense>();
     public DbSet<CashFlowTransaction> CashFlowTransactions => Set<CashFlowTransaction>();
+    public DbSet<LegacyTreatmentArchive> LegacyTreatmentArchives => Set<LegacyTreatmentArchive>();
+    public DbSet<LegacyFinancialArchiveEntry> LegacyFinancialArchiveEntries => Set<LegacyFinancialArchiveEntry>();
+    public DbSet<LegacyAppointmentArchive> LegacyAppointmentArchives => Set<LegacyAppointmentArchive>();
+    public DbSet<LegacyLinkedArchiveRecord> LegacyLinkedArchiveRecords => Set<LegacyLinkedArchiveRecord>();
 
     // Sprint 21 — Treasuries & Vault Transfers
     public DbSet<Treasury> Treasuries => Set<Treasury>();

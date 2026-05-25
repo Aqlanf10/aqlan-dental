@@ -3,6 +3,7 @@ using System;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AqlanDentalPro.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260613000000_AddLegacyPatientArchiveImport")]
+    partial class AddLegacyPatientArchiveImport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2670,69 +2673,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.ToTable("LeaveRequests");
                 });
 
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LegacyAppointmentArchive", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("AppointmentAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ArchiveType")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LegacyFileNumber")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("SourceAppointmentId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("SourceSystem")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PatientId");
-
-                    b.HasIndex("SourceSystem", "SourceAppointmentId")
-                        .IsUnique();
-
-                    b.ToTable("LegacyAppointmentArchives");
-                });
-
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LegacyFinancialArchiveEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2807,85 +2747,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("LegacyFinancialArchiveEntries");
-                });
-
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LegacyLinkedArchiveRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AccountName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Classification")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DateValue01")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DateValue02")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LegacyFileNumber")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<int?>("LegacyTypeId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<decimal?>("NumberValue01")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("SourceRecordId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("SourceSystem")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("SourceTable")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PatientId");
-
-                    b.HasIndex("SourceSystem", "SourceTable", "SourceRecordId")
-                        .IsUnique();
-
-                    b.ToTable("LegacyLinkedArchiveRecords");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LegacyTreatmentArchive", b =>
@@ -6894,32 +6755,10 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Employee");
                 });
 
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LegacyAppointmentArchive", b =>
-                {
-                    b.HasOne("AqlanDentalPro.Domain.Entities.Patient", "Patient")
-                        .WithMany("LegacyAppointments")
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Patient");
-                });
-
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LegacyFinancialArchiveEntry", b =>
                 {
                     b.HasOne("AqlanDentalPro.Domain.Entities.Patient", "Patient")
                         .WithMany("LegacyFinancialEntries")
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Patient");
-                });
-
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LegacyLinkedArchiveRecord", b =>
-                {
-                    b.HasOne("AqlanDentalPro.Domain.Entities.Patient", "Patient")
-                        .WithMany("LegacyLinkedRecords")
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -7838,11 +7677,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Navigation("DentalHistory");
 
-                    b.Navigation("LegacyAppointments");
-
                     b.Navigation("LegacyFinancialEntries");
-
-                    b.Navigation("LegacyLinkedRecords");
 
                     b.Navigation("LegacyTreatments");
 

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AqlanDentalPro.Infrastructure\AqlanDentalPro.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\AqlanDentalPro.Application\AqlanDentalPro.Application.csproj" />
+    <ProjectReference Include="..\..\src\AqlanDentalPro.Domain\AqlanDentalPro.Domain.csproj" />
+  </ItemGroup>
+</Project>

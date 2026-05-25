@@ -25,7 +25,7 @@ interface Doctor { id: string; name: string; }
 function exportCsv(patients: PatientListItem[]) {
   const headers = ["رقم المريض", "الاسم", "الجنس", "العمر", "الهاتف", "الطبيب", "تاريخ التسجيل"];
   const rows = patients.map((p) => [
-    p.patientNumber, p.fullName, GENDER_LABELS[p.gender ?? ""] ?? "",
+    p.legacyFileNumber ?? p.patientNumber, p.fullName, GENDER_LABELS[p.gender ?? ""] ?? "",
     String(p.age ?? ""), p.phone ?? "", p.primaryDoctorName ?? "",
     new Date(p.createdAt).toLocaleDateString("ar-YE"),
   ]);
@@ -291,7 +291,12 @@ export function PatientTable() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                   >
                     <td className="px-4 py-3 font-bold" style={{ color: "#3d7ab5" }}>
-                      {p.patientNumber}
+                      <div>{p.legacyFileNumber ?? p.patientNumber}</div>
+                      {p.legacyFileNumber && (
+                        <div className="text-[10px] font-normal" style={{ color: "#94a3b8" }}>
+                          {p.patientNumber}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">

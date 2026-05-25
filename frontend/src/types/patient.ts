@@ -1,6 +1,8 @@
 export interface PatientListItem {
   id: string;
   patientNumber: string;
+  legacyFileNumber?: string;
+  legacyFullName?: string;
   fullName: string;
   phone?: string;
   email?: string;
@@ -37,6 +39,8 @@ export interface DentalHistory {
 export interface PatientProfile {
   id: string;
   patientNumber: string;
+  legacyFileNumber?: string;
+  legacyFullName?: string;
   firstName: string;
   middleName?: string;
   lastName: string;

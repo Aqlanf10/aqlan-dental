@@ -5,6 +5,12 @@ namespace AqlanDentalPro.Domain.Entities;
 public class Patient : BaseEntity
 {
     public string PatientNumber { get; set; } = string.Empty;
+    public string? LegacyFileNumber { get; set; }
+    public string? LegacySourceId { get; set; }
+    public string? LegacyFullName { get; set; }
+    public string? LegacyPhone { get; set; }
+    public string? LegacyPhone2 { get; set; }
+    public string? LegacyMobile { get; set; }
     public string FirstName { get; set; } = string.Empty;
     public string? MiddleName { get; set; }
     public string LastName { get; set; } = string.Empty;
@@ -36,4 +42,8 @@ public class Patient : BaseEntity
     public ICollection<InternalReferral> ReferralsFrom { get; set; } = [];
     public ICollection<Prescription> Prescriptions { get; set; } = [];
     public ICollection<AiRecommendation> AiRecommendations { get; set; } = [];
+    public ICollection<LegacyTreatmentArchive> LegacyTreatments { get; set; } = [];
+    public ICollection<LegacyFinancialArchiveEntry> LegacyFinancialEntries { get; set; } = [];
+    public ICollection<LegacyAppointmentArchive> LegacyAppointments { get; set; } = [];
+    public ICollection<LegacyLinkedArchiveRecord> LegacyLinkedRecords { get; set; } = [];
 }

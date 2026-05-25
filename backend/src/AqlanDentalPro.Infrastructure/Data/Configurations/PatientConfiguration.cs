@@ -11,6 +11,16 @@ public class PatientConfiguration : IEntityTypeConfiguration<Patient>
         builder.HasKey(p => p.Id);
         builder.Property(p => p.PatientNumber).HasMaxLength(20).IsRequired();
         builder.HasIndex(p => p.PatientNumber).IsUnique();
+        builder.Property(p => p.LegacyFileNumber).HasMaxLength(50);
+        builder.Property(p => p.LegacySourceId).HasMaxLength(100);
+        builder.Property(p => p.LegacyFullName).HasMaxLength(300);
+        builder.Property(p => p.LegacyPhone).HasMaxLength(50);
+        builder.Property(p => p.LegacyPhone2).HasMaxLength(50);
+        builder.Property(p => p.LegacyMobile).HasMaxLength(50);
+        builder.HasIndex(p => p.LegacyFileNumber);
+        builder.HasIndex(p => p.LegacySourceId)
+            .IsUnique()
+            .HasFilter("\"LegacySourceId\" IS NOT NULL AND \"LegacySourceId\" != ''");
         builder.HasIndex(p => p.Phone).IsUnique().HasFilter("\"Phone\" IS NOT NULL AND \"Phone\" != ''");
         builder.HasIndex(p => p.WhatsApp).IsUnique().HasFilter("\"WhatsApp\" IS NOT NULL AND \"WhatsApp\" != ''");
         builder.HasIndex(p => p.NormalizedPhone).IsUnique().HasFilter("\"NormalizedPhone\" IS NOT NULL AND \"NormalizedPhone\" != ''");

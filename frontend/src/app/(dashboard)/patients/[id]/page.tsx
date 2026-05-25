@@ -39,6 +39,7 @@ import { LabOrdersTab } from "@/components/patient/tabs/LabOrdersTab";
 import { TimelineTab } from "@/components/patient/tabs/TimelineTab";
 import { PortalAccessTab } from "@/components/patient/tabs/PortalAccessTab";
 import { TreatmentPlanTab } from "@/components/patient/tabs/TreatmentPlanTab";
+import { LegacyArchiveTab } from "@/components/patient/tabs/LegacyArchiveTab";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ interface SurgeryCase { id: string; caseNumber: string; surgeryType: string; sta
 type Tab = "overview" | "info" | "medical" | "dental" | "appointments" | "visits" |
   "finance" | "contracts" | "payments" | "messages" | "orthodontics" | "general" |
   "surgery" | "treatment-plan" | "photos" | "radiographs" | "prescriptions" | "referrals" |
-  "documents" | "lab-orders" | "timeline" | "portal-access";
+  "documents" | "lab-orders" | "timeline" | "portal-access" | "legacy-archive";
 
 interface TabDef {
   key: Tab;
@@ -88,6 +89,7 @@ const TABS: TabDef[] = [
   { key: "referrals",     label: "الإحالات",            icon: ArrowRightLeft,   group: 2 },
   { key: "lab-orders",    label: "طلبات المختبر",       icon: FlaskConical,     group: 2 },
   { key: "documents",     label: "المستندات",           icon: FolderOpen,       group: 2 },
+  { key: "legacy-archive", label: "الأرشيف القديم",      icon: Archive,          group: 2 },
   // Group 3 — Financial
   { key: "finance",       label: "المالية",             icon: Wallet,           group: 3 },
   { key: "contracts",     label: "العقود",              icon: FileSignature,    group: 3 },
@@ -266,6 +268,8 @@ export default function PatientProfilePage() {
         return <ReferralsTab patientId={id} />;
       case "documents":
         return <DocumentsTab patientId={id} />;
+      case "legacy-archive":
+        return <LegacyArchiveTab patientId={id} />;
       case "lab-orders":
         return <LabOrdersTab patientId={id} />;
       case "timeline":
@@ -283,9 +287,11 @@ export default function PatientProfilePage() {
 
   // Tabs restricted from doctors: finance, contracts, payments, messages, portal-access
   const DOCTOR_HIDDEN_TABS: Tab[] = ["finance", "contracts", "payments", "messages", "portal-access"];
+  const canViewLegacyArchive = user?.role?.toLowerCase() === "admin";
+  const roleVisibleTabs = canViewLegacyArchive ? TABS : TABS.filter(t => t.key !== "legacy-archive");
   const visibleTabs = limited
-    ? TABS.filter(t => !DOCTOR_HIDDEN_TABS.includes(t.key))
-    : TABS;
+    ? roleVisibleTabs.filter(t => !DOCTOR_HIDDEN_TABS.includes(t.key))
+    : roleVisibleTabs;
 
   return (
     <div className="space-y-5 max-w-5xl page-content">
@@ -317,11 +323,16 @@ export default function PatientProfilePage() {
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-lg sm:text-xl font-extrabold text-gray-900">
-                  {patient.firstName} {patient.middleName} {patient.lastName}
+                  {patient.legacyFullName ?? `${patient.firstName} ${patient.middleName ?? ""} ${patient.lastName}`.replace(/\s+/g, " ").trim()}
                 </h1>
                 <span className="font-mono text-xs px-2.5 py-1 rounded" style={{ background: "#3d7ab518", color: "#3d7ab5" }}>
                   {patient.patientNumber}
                 </span>
+                {patient.legacyFileNumber && (
+                  <span className="font-mono text-xs px-2.5 py-1 rounded" style={{ background: "#fef3c7", color: "#92400e" }}>
+                    رقم الملف القديم: {patient.legacyFileNumber}
+                  </span>
+                )}
                 <span
                   className="text-xs px-2.5 py-0.5 rounded-full font-semibold"
                   style={{

@@ -54,7 +54,9 @@ public class PatientRepository(AppDbContext context)
                 p.FirstName.ToLower().Contains(term) ||
                 p.LastName.ToLower().Contains(term) ||
                 (p.MiddleName != null && p.MiddleName.ToLower().Contains(term)) ||
+                (p.LegacyFullName != null && p.LegacyFullName.ToLower().Contains(term)) ||
                 p.PatientNumber.ToLower().Contains(term) ||
+                (p.LegacyFileNumber != null && p.LegacyFileNumber.ToLower().Contains(term)) ||
                 (p.Phone != null && p.Phone.Contains(term)) ||
                 (normalizedTerm != null && (
                     (p.NormalizedPhone != null && p.NormalizedPhone.Contains(normalizedTerm)) ||

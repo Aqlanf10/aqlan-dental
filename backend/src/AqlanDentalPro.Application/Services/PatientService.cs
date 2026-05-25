@@ -519,7 +519,9 @@ public class PatientService(
     {
         Id = p.Id,
         PatientNumber = p.PatientNumber,
-        FullName = $"{p.FirstName} {p.MiddleName} {p.LastName}".Replace("  ", " ").Trim(),
+        LegacyFileNumber = p.LegacyFileNumber,
+        LegacyFullName = p.LegacyFullName,
+        FullName = p.LegacyFullName ?? $"{p.FirstName} {p.MiddleName} {p.LastName}".Replace("  ", " ").Trim(),
         Phone = p.Phone,
         Gender = p.Gender?.ToString(),
         Age = p.DateOfBirth.HasValue
@@ -535,6 +537,8 @@ public class PatientService(
     {
         Id = p.Id,
         PatientNumber = p.PatientNumber,
+        LegacyFileNumber = p.LegacyFileNumber,
+        LegacyFullName = p.LegacyFullName,
         FirstName = p.FirstName,
         MiddleName = p.MiddleName,
         LastName = p.LastName,

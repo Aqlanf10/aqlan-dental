@@ -1,20 +1,20 @@
 /**
  * Appointments Table with quick action buttons for each row.
+ * Supports desktop table and mobile card views.
  */
 
 "use client";
 
-import { useState, useCallback } from "react";
-import Link from "next/link";
+import { useState } from "react";
 import {
   Calendar, UserCheck, ClipboardList, DoorOpen, CheckCircle,
-  CreditCard, FileText, CalendarPlus, MessageCircle, XCircle,
-  UserX, MoreHorizontal, ChevronDown, Eye, Phone, Clock,
-  Stethoscope, AlertTriangle,
+  CreditCard, CalendarPlus, MessageCircle, XCircle,
+  UserX, MoreHorizontal, Eye, Phone,
+  Building2,
 } from "lucide-react";
 import {
   APPT_STATUS_LABELS, STATUS_COLORS, ACTION_LABELS,
-  fmtTime, fmtRial, normalizePhone,
+  fmtTime, normalizePhone,
   type TodayJourneyItem,
 } from "../_lib/constants";
 
@@ -49,6 +49,29 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/* ─── Next Action badge ───────────────────────────────────────────────────── */
+function NextActionBadge({ action }: { action: string }) {
+  const label = ACTION_LABELS[action] ?? "—";
+  const colorMap: Record<string, string> = {
+    Intake: "#16a34a",
+    SendToQueue: "#f5922e",
+    CallPatient: "#d97706",
+    EnterRoom: "#9333ea",
+    StartVisit: "#dc2626",
+    InProgress: "#dc2626",
+    Checkout: "#22c55e",
+    Handoff: "#3d7ab5",
+    None: "#94a3b8",
+  };
+  const color = colorMap[action] ?? "#f5922e";
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold"
+      style={{ background: color + "12", color }}>
+      {label}
+    </span>
+  );
+}
+
 /* ─── Props ───────────────────────────────────────────────────────────────── */
 interface AppointmentsTableProps {
   items: TodayJourneyItem[];
@@ -61,7 +84,6 @@ interface AppointmentsTableProps {
   onSendToQueue: (item: TodayJourneyItem) => void;
   onCallPatient: (item: TodayJourneyItem) => void;
   onEnterRoom: (item: TodayJourneyItem) => void;
-  onComplete: (item: TodayJourneyItem) => void;
   onQuickPayment: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
   onWhatsApp: (item: TodayJourneyItem) => void;
@@ -72,11 +94,11 @@ interface AppointmentsTableProps {
 }
 
 export default function AppointmentsTable({
-  items, loading, isDoctor, isReception, isAccountant,
+  items, loading, isDoctor,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onComplete, onQuickPayment, onBookAppointment, onWhatsApp,
+  onQuickPayment, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit,
-}: AppointmentsTableProps) {
+}: Omit<AppointmentsTableProps, "isReception" | "isAccountant">) {
   // Mobile: expanded row
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -122,12 +144,10 @@ export default function AppointmentsTable({
               key={item.appointmentId}
               item={item}
               isDoctor={isDoctor}
-              isReception={isReception}
               onIntake={onIntake}
               onSendToQueue={onSendToQueue}
               onCallPatient={onCallPatient}
               onEnterRoom={onEnterRoom}
-              onComplete={onComplete}
               onQuickPayment={onQuickPayment}
               onBookAppointment={onBookAppointment}
               onWhatsApp={onWhatsApp}
@@ -147,14 +167,12 @@ export default function AppointmentsTable({
             key={item.appointmentId}
             item={item}
             isDoctor={isDoctor}
-            isReception={isReception}
             expanded={expandedId === item.appointmentId}
             onToggle={() => setExpandedId(expandedId === item.appointmentId ? null : item.appointmentId)}
             onIntake={onIntake}
             onSendToQueue={onSendToQueue}
             onCallPatient={onCallPatient}
             onEnterRoom={onEnterRoom}
-            onComplete={onComplete}
             onQuickPayment={onQuickPayment}
             onBookAppointment={onBookAppointment}
             onWhatsApp={onWhatsApp}
@@ -171,14 +189,13 @@ export default function AppointmentsTable({
 
 /* ─── Desktop row ──────────────────────────────────────────────────────────── */
 function AppointmentRow({
-  item, isDoctor, isReception,
+  item, isDoctor,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onComplete, onQuickPayment, onBookAppointment, onWhatsApp,
+  onQuickPayment, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit,
 }: {
-  item: TodayJourneyItem; isDoctor: boolean; isReception: boolean;
-} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant">) {
-  const nextAction = ACTION_LABELS[item.nextAction] ?? "—";
+  item: TodayJourneyItem; isDoctor: boolean;
+} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
 
   return (
@@ -191,17 +208,29 @@ function AppointmentRow({
       </td>
       {!isDoctor && (
         <td className="py-2.5 px-2">
-          <a href={`tel:${item.patientPhone}`} className="text-xs flex items-center gap-1" style={{ color: "#64748b" }}>
-            <Phone className="w-3 h-3" />
-            {item.patientPhone ?? "—"}
-          </a>
+          {item.patientPhone ? (
+            <a href={`https://wa.me/${normalizePhone(item.patientPhone)}`} target="_blank" rel="noopener noreferrer"
+              className="text-xs flex items-center gap-1 hover:underline" style={{ color: "#64748b" }}>
+              <Phone className="w-3 h-3" />
+              {item.patientPhone}
+            </a>
+          ) : (
+            <span className="text-xs" style={{ color: "#94a3b8" }}>—</span>
+          )}
         </td>
       )}
       <td className="py-2.5 px-2 text-xs" style={{ color: "#475569" }}>{item.doctorName}</td>
       <td className="py-2.5 px-2 text-xs" style={{ color: "#475569" }}>{item.serviceName ?? "—"}</td>
-      <td className="py-2.5 px-2 text-xs" style={{ color: "#475569" }}>{item.roomName ?? "—"}</td>
+      <td className="py-2.5 px-2 text-xs" style={{ color: "#475569" }}>
+        {item.roomName ? (
+          <span className="inline-flex items-center gap-1">
+            <Building2 className="w-3 h-3" />
+            {item.roomName}
+          </span>
+        ) : "—"}
+      </td>
       <td className="py-2.5 px-2"><StatusBadge status={item.appointmentStatus} /></td>
-      <td className="py-2.5 px-2 text-xs font-medium" style={{ color: "#f5922e" }}>{nextAction}</td>
+      <td className="py-2.5 px-2"><NextActionBadge action={item.nextAction} /></td>
       <td className="py-2.5 px-2">
         <div className="flex items-center gap-1 flex-wrap">
           {/* View patient */}
@@ -252,13 +281,13 @@ function AppointmentRow({
 
 /* ─── Mobile card ──────────────────────────────────────────────────────────── */
 function MobileCard({
-  item, isDoctor, isReception, expanded, onToggle,
+  item, isDoctor, expanded, onToggle,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onComplete, onQuickPayment, onBookAppointment, onWhatsApp,
+  onQuickPayment, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit,
 }: {
-  item: TodayJourneyItem; isDoctor: boolean; isReception: boolean; expanded: boolean; onToggle: () => void;
-} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant">) {
+  item: TodayJourneyItem; isDoctor: boolean; expanded: boolean; onToggle: () => void;
+} & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
 
   return (
@@ -276,6 +305,7 @@ function MobileCard({
           {item.patientName}
         </button>
         <span className="text-xs" style={{ color: "#64748b" }}>{item.doctorName}</span>
+        <NextActionBadge action={item.nextAction} />
       </div>
 
       {expanded && (

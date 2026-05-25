@@ -1,20 +1,20 @@
 /**
  * All modal components for Daily Operations page.
- * QuickPayment, CompleteVisit, BookAppointment, ConfirmDialog, WhatsAppMenu.
+ * QuickPayment, CompleteVisit, BookAppointment, ConfirmDialog, WhatsAppMenu, ChangeRoomModal.
  */
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import {
   X, CreditCard, CheckCircle, CalendarPlus, AlertTriangle,
-  MessageCircle, ChevronDown, Loader2, FileText, Send,
+  MessageCircle, Loader2, Send, Printer, Building2,
 } from "lucide-react";
 import {
   PAYMENT_METHODS, APPOINTMENT_TYPES, inputCls, fmtRial,
-  WHATSAPP_TEMPLATES, normalizePhone,
+  WHATSAPP_TEMPLATES, normalizePhone, fmtDate, fmtTime,
 } from "../_lib/constants";
-import type { TodayJourneyItem, RoomOption, DoctorOption, ServiceOption } from "../_lib/constants";
+import type { TodayJourneyItem, DoctorOption, ServiceOption } from "../_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -79,12 +79,18 @@ export function QuickPaymentModal({
     setAmount(""); setMethod("Cash"); setDesc(""); setNotes("");
   };
 
+  const handlePrintReceipt = () => {
+    window.print();
+  };
+
   return (
     <ModalShell open={open} onClose={onClose} title="دفع سريع" icon={CreditCard} iconColor="#22c55e">
       {/* Patient info */}
       <div className="mb-4 p-3 rounded-xl" style={{ background: "#f0f5fb" }}>
         <div className="font-bold text-sm" style={{ color: "#1a3a5c" }}>{item?.patientName}</div>
-        <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>ملف: {item?.patientId?.slice(0, 8)}…</div>
+        <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>
+          الطبيب: {item?.doctorName} — الخدمة: {item?.serviceName ?? "—"}
+        </div>
       </div>
 
       {/* Finance summary */}
@@ -108,6 +114,9 @@ export function QuickPaymentModal({
             <div className="p-2.5 rounded-lg" style={{ background: "#f5f5f5" }}>
               <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>آخر دفعة</div>
               <div className="text-sm font-bold" style={{ color: "#1a3a5c" }}>{fmtRial(latestPayment.amount)}</div>
+              {latestPayment.receiptNumber && (
+                <div className="text-[10px] mt-0.5" style={{ color: "#94a3b8" }}>إيصال: {latestPayment.receiptNumber}</div>
+              )}
             </div>
           )}
         </div>
@@ -119,7 +128,7 @@ export function QuickPaymentModal({
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>المبلغ *</label>
           <div className="flex gap-2">
             <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
-              placeholder="0" className={inputCls()} min={0} step={0.01} />
+              placeholder="0" className={inputCls()} min={0} step={0.01} dir="ltr" />
             {outstanding > 0 && (
               <button onClick={() => setAmount(String(outstanding))}
                 className="px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
@@ -155,13 +164,18 @@ export function QuickPaymentModal({
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
           تسجيل الدفع
         </button>
+        <button onClick={handlePrintReceipt} title="طباعة إيصال"
+          className="w-10 py-2.5 rounded-xl flex items-center justify-center"
+          style={{ background: "#3d7ab515", color: "#3d7ab5", border: "1px solid #3d7ab530" }}>
+          <Printer className="w-4 h-4" />
+        </button>
       </div>
     </ModalShell>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Complete Visit Modal
+   Complete Visit Modal — Enhanced with diagnosis, instructions, follow-up
    ═══════════════════════════════════════════════════════════════════════════ */
 export function CompleteVisitModal({
   open, onClose, item, summary, isPending, onConfirm, onCheckout,
@@ -173,11 +187,15 @@ export function CompleteVisitModal({
   onConfirm: (data: {
     serviceDesc: string; amountDue: number; isPaid: boolean;
     needsFollowUp: boolean; nextDate: string; notes: string;
+    diagnosis: string; instructions: string;
   }) => void;
   onCheckout: (data: { paymentAmount: number; paymentMethod: string; notes: string; nextDate?: string; nextServiceId?: string }) => void;
 }) {
   const [serviceDesc, setServiceDesc] = useState("");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [instructions, setInstructions] = useState("");
   const [amountDue, setAmountDue] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [isPaid, setIsPaid] = useState(false);
   const [needsFollowUp, setNeedsFollowUp] = useState(false);
   const [nextDate, setNextDate] = useState("");
@@ -188,64 +206,116 @@ export function CompleteVisitModal({
     if (item?.checkoutStatus === "ReadyForCheckout" || item?.nextAction === "Checkout") {
       onCheckout({
         paymentAmount: isPaid ? num : 0,
-        paymentMethod: "Cash",
+        paymentMethod,
         notes,
         nextDate: needsFollowUp ? nextDate : undefined,
       });
     } else {
-      onConfirm({ serviceDesc, amountDue: num, isPaid, needsFollowUp, nextDate, notes });
+      onConfirm({
+        serviceDesc, amountDue: num, isPaid, needsFollowUp, nextDate, notes,
+        diagnosis, instructions,
+      });
     }
-    setServiceDesc(""); setAmountDue(""); setIsPaid(false); setNeedsFollowUp(false); setNextDate(""); setNotes("");
+    setServiceDesc(""); setDiagnosis(""); setInstructions("");
+    setAmountDue(""); setPaymentMethod("Cash"); setIsPaid(false);
+    setNeedsFollowUp(false); setNextDate(""); setNotes("");
   };
 
+  const outstanding = summary?.financeSummary?.outstandingBalance ?? 0;
+
   return (
-    <ModalShell open={open} onClose={onClose} title="إنهاء الزيارة" icon={CheckCircle} iconColor="#16a34a">
+    <ModalShell open={open} onClose={onClose} title="إنهاء الزيارة" icon={CheckCircle} iconColor="#16a34a" wide>
       {/* Patient info */}
       <div className="mb-4 p-3 rounded-xl" style={{ background: "#f0f5fb" }}>
         <div className="font-bold text-sm" style={{ color: "#1a3a5c" }}>{item?.patientName}</div>
-        <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>الطبيب: {item?.doctorName}</div>
+        <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>
+          الطبيب: {item?.doctorName} — الخدمة: {item?.serviceName ?? "—"} — الغرفة: {item?.roomName ?? "—"}
+        </div>
       </div>
 
       {/* Finance info */}
       {summary?.financeSummary && (
-        <div className="mb-4 p-3 rounded-lg" style={{ background: "#fff7ed" }}>
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-medium" style={{ color: "#f5922e" }}>المتبقي</span>
-            <span className="text-sm font-bold" style={{ color: "#1a3a5c" }}>
-              {fmtRial(summary.financeSummary.outstandingBalance)}
-            </span>
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          <div className="p-2.5 rounded-lg" style={{ background: "#fff7ed" }}>
+            <div className="text-[11px] font-medium" style={{ color: "#f5922e" }}>المتبقي</div>
+            <div className="text-sm font-bold" style={{ color: "#1a3a5c" }}>{fmtRial(outstanding)}</div>
+          </div>
+          <div className="p-2.5 rounded-lg" style={{ background: summary.financeSummary.overdueAmount > 0 ? "#fef2f2" : "#f0fdf4" }}>
+            <div className="text-[11px] font-medium" style={{ color: summary.financeSummary.overdueAmount > 0 ? "#ef4444" : "#16a34a" }}>متأخرات</div>
+            <div className="text-sm font-bold" style={{ color: "#1a3a5c" }}>{fmtRial(summary.financeSummary.overdueAmount)}</div>
+          </div>
+          <div className="p-2.5 rounded-lg" style={{ background: "#f0fdf4" }}>
+            <div className="text-[11px] font-medium" style={{ color: "#16a34a" }}>الحالة المالية</div>
+            <div className="text-xs font-bold" style={{ color: "#1a3a5c" }}>
+              {summary.financeSummary.financialStatus === "paid_full" ? "مكتمل الدفع" :
+               summary.financeSummary.financialStatus === "has_balance" ? "عليه رصيد" :
+               summary.financeSummary.financialStatus === "overdue" ? "متأخر" : "لا خطة"}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Form */}
+      {/* Form — Two columns on desktop */}
       <div className="space-y-3">
+        {/* Row 1: Service + Diagnosis */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملخص الإجراء / الخدمة</label>
+            <input value={serviceDesc} onChange={e => setServiceDesc(e.target.value)}
+              placeholder="مثال: حشو + تنظيف" className={inputCls()} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>التشخيص</label>
+            <input value={diagnosis} onChange={e => setDiagnosis(e.target.value)}
+              placeholder="مثال: تسوس سطحي" className={inputCls()} />
+          </div>
+        </div>
+
+        {/* Row 2: Amount + Payment */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>المبلغ المستحق</label>
+            <input type="number" value={amountDue} onChange={e => setAmountDue(e.target.value)}
+              placeholder="0" className={inputCls()} min={0} step={0.01} dir="ltr" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>طريقة الدفع</label>
+            <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={inputCls()}>
+              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Instructions */}
         <div>
-          <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملخص الإجراء / الخدمة</label>
-          <input value={serviceDesc} onChange={e => setServiceDesc(e.target.value)}
-            placeholder="مثال: حشو + تنظيف" className={inputCls()} />
+          <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>التعليمات للمريض</label>
+          <input value={instructions} onChange={e => setInstructions(e.target.value)}
+            placeholder="مثال: عدم أكل الأطعمة الصلبة لمدة 24 ساعة" className={inputCls()} />
         </div>
-        <div>
-          <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>المبلغ المستحق</label>
-          <input type="number" value={amountDue} onChange={e => setAmountDue(e.target.value)}
-            placeholder="0" className={inputCls()} min={0} step={0.01} />
+
+        {/* Checkboxes */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="isPaid" checked={isPaid} onChange={e => setIsPaid(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 accent-[#22c55e]" />
+            <label htmlFor="isPaid" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>تم الدفع</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="needsFollowUp" checked={needsFollowUp} onChange={e => setNeedsFollowUp(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 accent-[#3d7ab5]" />
+            <label htmlFor="needsFollowUp" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>يحتاج موعد متابعة</label>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="isPaid" checked={isPaid} onChange={e => setIsPaid(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300" />
-          <label htmlFor="isPaid" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>تم الدفع</label>
-        </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="needsFollowUp" checked={needsFollowUp} onChange={e => setNeedsFollowUp(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300" />
-          <label htmlFor="needsFollowUp" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>يحتاج موعد متابعة</label>
-        </div>
+
+        {/* Follow-up date */}
         {needsFollowUp && (
           <div>
             <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>تاريخ الموعد القادم</label>
             <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className={inputCls()} />
           </div>
         )}
+
+        {/* Notes */}
         <div>
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملاحظات</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
@@ -313,7 +383,7 @@ export function BookAppointmentModal({
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>الطبيب *</label>
           <select value={doctorId} onChange={e => setDoctorId(e.target.value)} className={inputCls()}>
             <option value="">اختر الطبيب</option>
-            {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            {doctors.map(d => <option key={d.id} value={d.id}>{d.name}{d.specialty ? ` (${d.specialty})` : ""}</option>)}
           </select>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -323,14 +393,14 @@ export function BookAppointmentModal({
           </div>
           <div>
             <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>الوقت *</label>
-            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className={inputCls()} />
+            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className={inputCls()} dir="ltr" />
           </div>
         </div>
         <div>
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>الخدمة</label>
           <select value={serviceId} onChange={e => setServiceId(e.target.value)} className={inputCls()}>
             <option value="">اختر الخدمة</option>
-            {services.map(s => <option key={s.id} value={s.id}>{s.arabicName}</option>)}
+            {services.map(s => <option key={s.id} value={s.id}>{s.arabicName}{s.defaultPrice ? ` — ${s.defaultPrice} ر.ي` : ""}</option>)}
           </select>
         </div>
         <div>
@@ -399,7 +469,51 @@ export function ConfirmDialog({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   WhatsApp Menu
+   Change Room Modal
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function ChangeRoomModal({
+  open, onClose, rooms, isPending, onConfirm,
+}: {
+  open: boolean; onClose: () => void;
+  rooms: { id: string; arabicName: string }[];
+  isPending: boolean;
+  onConfirm: (roomId: string) => void;
+}) {
+  const [roomId, setRoomId] = useState("");
+
+  const handleSubmit = () => {
+    if (!roomId) return;
+    onConfirm(roomId);
+    setRoomId("");
+  };
+
+  return (
+    <ModalShell open={open} onClose={onClose} title="تغيير الغرفة" icon={Building2} iconColor="#3d7ab5">
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>الغرفة الجديدة *</label>
+          <select value={roomId} onChange={e => setRoomId(e.target.value)} className={inputCls()}>
+            <option value="">اختر الغرفة</option>
+            {rooms.map(r => <option key={r.id} value={r.id}>{r.arabicName}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="flex gap-2 mt-5">
+        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+          style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
+        <button onClick={handleSubmit} disabled={!roomId || isPending}
+          className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+          style={{ background: "#3d7ab5", opacity: !roomId || isPending ? 0.5 : 1 }}>
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
+          تغيير الغرفة
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WhatsApp Menu — Opens WhatsApp Web with Arabic templates
    ═══════════════════════════════════════════════════════════════════════════ */
 export function WhatsAppMenu({
   open, onClose, item, summary, clinicName,
@@ -414,13 +528,20 @@ export function WhatsAppMenu({
   const phone = normalizePhone(item.patientPhone);
   const patientName = item.patientName;
   const doctorName = item.doctorName;
-  const aptDate = item.appointmentTime ? `اليوم ${item.appointmentTime}` : "اليوم";
-  const aptTime = item.appointmentTime;
+  const todayDate = new Date();
+  const aptDate = fmtDate(todayDate);
+  const aptTime = fmtTime(item.appointmentTime);
   const remaining = summary?.financeSummary?.outstandingBalance;
 
   const handleSend = (template: typeof WHATSAPP_TEMPLATES[number]) => {
     const msg = template.build({ patientName, clinicName, aptDate, aptTime, doctorName, remaining });
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+    // Use WhatsApp Web (web.whatsapp.com) for desktop, fallback to wa.me for mobile
+    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+    } else {
+      window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`, "_blank");
+    }
     onClose();
   };
 
@@ -433,7 +554,7 @@ export function WhatsAppMenu({
           </div>
           <div className="flex-1">
             <h3 className="font-extrabold text-[15px]" style={{ color: "#1a3a5c" }}>واتساب</h3>
-            <p className="text-xs" style={{ color: "#64748b" }}>{patientName}</p>
+            <p className="text-xs" style={{ color: "#64748b" }}>{patientName} — {item.patientPhone ?? "—"}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100">
             <X className="w-4 h-4 text-gray-400" />
@@ -448,6 +569,11 @@ export function WhatsAppMenu({
               {t.label}
             </button>
           ))}
+        </div>
+        <div className="px-5 pb-4">
+          <p className="text-[10px] text-center" style={{ color: "#94a3b8" }}>
+            سيتم فتح واتساب ويب لإرسال الرسالة
+          </p>
         </div>
       </div>
     </div>

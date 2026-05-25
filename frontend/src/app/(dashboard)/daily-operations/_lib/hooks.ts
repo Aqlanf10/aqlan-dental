@@ -7,7 +7,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
-import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceOption } from "./constants";
+import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceOption, FinanceSummaryData } from "./constants";
 import type { DailyJourneySummary } from "@/types/journey";
 import type { DashboardStats } from "@/types/dashboard";
 
@@ -344,5 +344,18 @@ export function useCompleteVisit() {
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
       queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
     },
+  });
+}
+
+// ─── Finance Summary ────────────────────────────────────────────────────────
+export function useFinanceSummary() {
+  return useQuery<FinanceSummaryData>({
+    queryKey: ["daily-ops", "finance-summary"],
+    queryFn: async () => {
+      const { data } = await api.get("/api/finance/summary");
+      return data as FinanceSummaryData;
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }

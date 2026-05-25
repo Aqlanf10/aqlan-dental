@@ -3,8 +3,6 @@
  * Reuses existing journey types where possible.
  */
 
-import type { DailyJourneySummary } from "@/types/journey";
-
 // ─── Brand ───────────────────────────────────────────────────────────────────
 export const NAVY = "#1a3a5c";
 export const BLUE = "#3d7ab5";
@@ -70,6 +68,20 @@ export interface ServiceOption {
   arabicName: string;
   defaultPrice?: number;
   requiresConsultationFee?: boolean;
+}
+
+// ─── Finance Summary from API ────────────────────────────────────────────────
+export interface FinanceSummaryData {
+  todayCollected: number;
+  monthCollected: number;
+  totalOutstanding: number;
+  activeContracts: number;
+  unpaidInvoicesCount: number;
+  draftInvoicesCount: number;
+  overdueAmount: number;
+  pendingCommissionsAmount: number;
+  recentPayments?: { id: string; amount: number; paymentDate: string; patientName?: string }[];
+  recentInvoices?: { id: string; invoiceNumber: string; totalAmount: number; status: string }[];
 }
 
 // ─── Status Labels ───────────────────────────────────────────────────────────
@@ -236,6 +248,8 @@ export function normalizePhone(phone: string | undefined): string {
   } else if (!clean.startsWith("+") && !clean.startsWith("967") && clean.length <= 9) {
     clean = "967" + clean;
   }
+  // Remove leading + if present (wa.me URLs don't use +)
+  if (clean.startsWith("+")) clean = clean.substring(1);
   return clean;
 }
 
@@ -247,8 +261,8 @@ export function inputCls(hasError = false): string {
   return `${base} ${hasError ? error : normal}`;
 }
 
-// ─── Compute DayStats from journey items ─────────────────────────────────────
-export function computeDayStats(items: TodayJourneyItem[]): DayStats {
+// ─── Compute DayStats from journey items + finance summary ────────────────────
+export function computeDayStats(items: TodayJourneyItem[], financeSummary?: FinanceSummaryData | null): DayStats {
   return {
     totalAppointments: items.length,
     arrived: items.filter(i => i.appointmentStatus === "Arrived").length,
@@ -256,8 +270,8 @@ export function computeDayStats(items: TodayJourneyItem[]): DayStats {
     inClinic: items.filter(i => ["InRoom", "InProgress"].includes(i.appointmentStatus)).length,
     completed: items.filter(i => i.appointmentStatus === "Completed").length,
     noShow: items.filter(i => i.appointmentStatus === "NoShow").length,
-    todayPayments: 0, // Will be filled from API if available
-    overdueAmount: 0,
+    todayPayments: financeSummary?.todayCollected ?? 0,
+    overdueAmount: financeSummary?.overdueAmount ?? 0,
   };
 }
 

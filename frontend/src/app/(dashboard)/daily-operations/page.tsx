@@ -6,9 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw, ArrowLeft,
-  Filter, UserCheck, Users, FileText, Globe, Plus, ListOrdered,
-  CalendarClock, Monitor, Route, Settings, MessageCircle,
-  ChevronDown, Loader2,
+  UserCheck, Globe, Plus, CalendarClock, Route,
+  Wallet,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
@@ -17,12 +16,11 @@ import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 
 import {
   NAVY, BLUE, ORANGE,
-  TABS, APPT_STATUS_LABELS, STATUS_COLORS,
-  fmtDate, fmtTime, getTodayStr, fmtRial,
+  TABS,
+  fmtDate, getTodayStr, fmtRial,
   computeDayStats, filterByTab,
-  isDoctorRole, isReceptionRole, isAccountantRole,
-  normalizePhone, inputCls,
-  type TodayJourneyItem, type TabKey, DayStats,
+  isDoctorRole,
+  type TodayJourneyItem, type TabKey,
 } from "./_lib/constants";
 
 import {
@@ -34,6 +32,7 @@ import {
   useServices,
   useClinicSettings,
   useDashboardStats,
+  useFinanceSummary,
   useIntake,
   useSendToQueue,
   useCallPatient,
@@ -55,6 +54,7 @@ import {
   BookAppointmentModal,
   ConfirmDialog,
   WhatsAppMenu,
+  ChangeRoomModal,
 } from "./_components/Modals";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -103,12 +103,11 @@ export default function DailyOperationsPage() {
   // toast is imported directly from the store
   const userRole = user?.role ?? "";
   const isDoctor = isDoctorRole(userRole);
-  const isReception = isReceptionRole(userRole);
-  const isAccountant = isAccountantRole(userRole);
 
   // ── Filters ──
   const [filterDate, setFilterDate] = useState(getTodayStr());
   const [filterDoctor, setFilterDoctor] = useState("");
+  const [filterBranch, setFilterBranch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
@@ -120,13 +119,14 @@ export default function DailyOperationsPage() {
     doctorId: filterDoctor || undefined,
   });
 
-  const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
+  useDashboardStats();
   const { data: doctors = [] } = useDoctors();
   const { data: branches = [] } = useBranches();
   const { data: rooms = [] } = useRooms();
   const { data: services = [] } = useServices();
   const { data: clinicSettings } = useClinicSettings();
-  const clinicName = clinicSettings?.clinicName ?? "مركز الدكتور عقلان الكامل";
+  const { data: financeSummary } = useFinanceSummary();
+  const clinicName = clinicSettings?.clinicName ?? "مركز الدكتور عقلان";
 
   // ── Mutations ──
   const intakeMutation = useIntake();
@@ -150,12 +150,13 @@ export default function DailyOperationsPage() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmDialogType, setConfirmDialogType] = useState<"Cancel" | "NoShow" | "CancelQueue" | "ChangeRoom" | "Complete">("Cancel");
   const [whatsAppMenuOpen, setWhatsAppMenuOpen] = useState(false);
+  const [changeRoomModalOpen, setChangeRoomModalOpen] = useState(false);
 
   // ── Selected patient summary ──
   const { data: selectedSummary } = usePatientSummary(selectedItem?.patientId ?? null);
 
   // ── Computed ──
-  const dayStats = useMemo(() => computeDayStats(items), [items]);
+  const dayStats = useMemo(() => computeDayStats(items, financeSummary), [items, financeSummary]);
 
   const filteredItems = useMemo(() => {
     let result = filterByTab(items, activeTab);
@@ -187,14 +188,14 @@ export default function DailyOperationsPage() {
       { appointmentId: item.appointmentId, body: {} },
       { onSuccess: () => toast.success("تم تسجيل وصول المريض"), onError: () => toast.error("فشل تسجيل الوصول") },
     );
-  }, [intakeMutation, toast]);
+  }, [intakeMutation]);
 
   const handleSendToQueue = useCallback((item: TodayJourneyItem) => {
     sendToQueueMutation.mutate(
       { appointmentId: item.appointmentId },
       { onSuccess: () => toast.success("تمت إضافة المريض للطابور"), onError: () => toast.error("فشل الإضافة للطابور") },
     );
-  }, [sendToQueueMutation, toast]);
+  }, [sendToQueueMutation]);
 
   const handleCallPatient = useCallback((item: TodayJourneyItem) => {
     if (!item.queueItemId) return;
@@ -202,7 +203,7 @@ export default function DailyOperationsPage() {
       item.queueItemId,
       { onSuccess: () => toast.success("تم نداء المريض"), onError: () => toast.error("فشل نداء المريض") },
     );
-  }, [callPatientMutation, toast]);
+  }, [callPatientMutation]);
 
   const handleEnterRoom = useCallback((item: TodayJourneyItem) => {
     if (!item.queueItemId) return;
@@ -210,7 +211,7 @@ export default function DailyOperationsPage() {
       item.queueItemId,
       { onSuccess: () => toast.success("تم دخول الغرفة"), onError: () => toast.error("فشل دخول الغرفة") },
     );
-  }, [enterRoomMutation, toast]);
+  }, [enterRoomMutation]);
 
   const handleQuickPayment = useCallback((item: TodayJourneyItem) => {
     setSelectedItem(item);
@@ -271,7 +272,7 @@ export default function DailyOperationsPage() {
       toast.error("فشل تنفيذ الإجراء");
     }
     setConfirmDialogOpen(false);
-  }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, toast]);
+  }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation]);
 
   // ── Payment confirm ──
   const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string) => {
@@ -290,12 +291,13 @@ export default function DailyOperationsPage() {
     } catch {
       toast.error("فشل تسجيل الدفعة");
     }
-  }, [selectedItem, createPaymentMutation, toast]);
+  }, [selectedItem, createPaymentMutation]);
 
   // ── Complete visit confirm ──
   const handleCompleteVisitConfirm = useCallback(async (data: {
     serviceDesc: string; amountDue: number; isPaid: boolean;
     needsFollowUp: boolean; nextDate: string; notes: string;
+    diagnosis: string; instructions: string;
   }) => {
     if (!selectedItem) return;
     try {
@@ -305,6 +307,8 @@ export default function DailyOperationsPage() {
           visitId: selectedItem.visitId,
           body: {
             treatmentDone: data.serviceDesc || undefined,
+            diagnosis: data.diagnosis || undefined,
+            instructions: data.instructions || undefined,
             amountDue: data.amountDue || undefined,
             notes: data.notes || undefined,
             followUpDate: data.needsFollowUp ? data.nextDate : undefined,
@@ -326,7 +330,7 @@ export default function DailyOperationsPage() {
     } catch {
       toast.error("فشل إنهاء الزيارة");
     }
-  }, [selectedItem, handoffMutation, checkoutMutation, toast]);
+  }, [selectedItem, handoffMutation, checkoutMutation]);
 
   // ── Checkout shortcut ──
   const handleCheckoutConfirm = useCallback(async (data: {
@@ -344,7 +348,7 @@ export default function DailyOperationsPage() {
     } catch {
       toast.error("فشل إنهاء الزيارة");
     }
-  }, [selectedItem, checkoutMutation, toast]);
+  }, [selectedItem, checkoutMutation]);
 
   // ── Book appointment confirm ──
   const handleBookConfirm = useCallback(async (data: {
@@ -368,16 +372,7 @@ export default function DailyOperationsPage() {
     } catch {
       toast.error("فشل حجز الموعد");
     }
-  }, [selectedItem, createAppointmentMutation, toast]);
-
-  // ── Any mutation pending? ──
-  const isAnyPending =
-    intakeMutation.isPending || sendToQueueMutation.isPending ||
-    callPatientMutation.isPending || enterRoomMutation.isPending ||
-    updateStatusMutation.isPending || createPaymentMutation.isPending ||
-    checkoutMutation.isPending || handoffMutation.isPending ||
-    cancelQueueMutation.isPending || changeRoomMutation.isPending ||
-    createAppointmentMutation.isPending || completeVisitMutation.isPending;
+  }, [selectedItem, createAppointmentMutation]);
 
   // ── Visible quick links ──
   const visibleQuickLinks = useMemo(() =>
@@ -452,6 +447,16 @@ export default function DailyOperationsPage() {
             style={{ borderColor: "#e2e8f0", color: NAVY }} />
         </div>
 
+        {/* Branch filter */}
+        {!isDoctor && branches.length > 1 && (
+          <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}
+            className="text-sm rounded-lg border px-2.5 py-1.5 outline-none focus:border-[#3d7ab5]"
+            style={{ borderColor: "#e2e8f0", color: NAVY }}>
+            <option value="">كل الفروع</option>
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
+
         {/* Doctor filter */}
         {!isDoctor && (
           <select value={filterDoctor} onChange={e => setFilterDoctor(e.target.value)}
@@ -489,7 +494,7 @@ export default function DailyOperationsPage() {
       </div>
 
       {/* ═══ Summary Cards ═══ */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         <SummaryCard icon={Calendar} label="مواعيد اليوم" value={dayStats.totalAppointments} color={ORANGE} />
         <SummaryCard icon={UserCheck} label="حضروا" value={dayStats.arrived} color="#16a34a" />
         <SummaryCard icon={Clock} label="في الانتظار" value={dayStats.waiting} color="#d97706" />
@@ -497,8 +502,12 @@ export default function DailyOperationsPage() {
         <SummaryCard icon={CheckCircle} label="مكتمل" value={dayStats.completed} color="#22c55e" />
         <SummaryCard icon={AlertTriangle} label="لم يحضر" value={dayStats.noShow} color="#ef4444" />
         <SummaryCard icon={CreditCard} label="مدفوعات اليوم"
-          value={dashboardStats?.totalRevenueMTD != null ? fmtRial(dashboardStats.totalRevenueMTD) : "—"}
+          value={fmtRial(dayStats.todayPayments)}
           color="#22c55e" />
+        <SummaryCard icon={Wallet} label="المستحقات المتأخرة"
+          value={fmtRial(dayStats.overdueAmount)}
+          color="#ef4444"
+          subValue={financeSummary?.overdueAmount ? "يحتاج متابعة" : undefined} />
       </div>
 
       {/* ═══ Tabs ═══ */}
@@ -533,13 +542,10 @@ export default function DailyOperationsPage() {
             items={filteredItems}
             loading={itemsLoading}
             isDoctor={isDoctor}
-            isReception={isReception}
-            isAccountant={isAccountant}
             onIntake={handleIntake}
             onSendToQueue={handleSendToQueue}
             onCallPatient={handleCallPatient}
             onEnterRoom={handleEnterRoom}
-            onComplete={() => {}}
             onQuickPayment={handleQuickPayment}
             onBookAppointment={handleBookAppointment}
             onWhatsApp={handleWhatsApp}
@@ -615,6 +621,23 @@ export default function DailyOperationsPage() {
         item={selectedItem}
         summary={selectedSummary ?? null}
         clinicName={clinicName}
+      />
+
+      <ChangeRoomModal
+        open={changeRoomModalOpen}
+        onClose={() => setChangeRoomModalOpen(false)}
+        rooms={rooms}
+        isPending={changeRoomMutation.isPending}
+        onConfirm={async (roomId: string) => {
+          if (!selectedItem?.queueItemId) return;
+          try {
+            await changeRoomMutation.mutateAsync({ queueItemId: selectedItem.queueItemId, roomId });
+            toast.success("تم تغيير الغرفة");
+            setChangeRoomModalOpen(false);
+          } catch {
+            toast.error("فشل تغيير الغرفة");
+          }
+        }}
       />
     </div>
   );

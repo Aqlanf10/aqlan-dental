@@ -35,4 +35,5 @@ public class OrthoCase : BaseEntity
     public ICollection<ClinicalPhoto> Photos { get; set; } = [];
     public OrthoDiagnosis? Diagnosis { get; set; }
     public ICollection<OrthoClinicalPhoto> OrthoClinicalPhotos { get; set; } = [];
+    public RecordsChecklist? RecordsChecklist { get; set; }
 }

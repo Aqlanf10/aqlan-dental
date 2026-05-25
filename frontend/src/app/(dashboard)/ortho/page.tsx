@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Plus, GitBranch, Search, UserPlus } from "lucide-react";
 import type { OrthoCase } from "@/types/ortho";
+import { ORTHO_STAGE_LABELS } from "@/types/ortho";
 import type { PatientListItem } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
@@ -160,7 +161,7 @@ export default function OrthoPage() {
                         <span className="text-xs text-gray-500 flex-shrink-0">{c.stagePercentage}%</span>
                       </div>
                       {c.currentStage && (
-                        <div className="text-xs text-gray-400 mt-0.5">{c.currentStage}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{ORTHO_STAGE_LABELS[c.currentStage] ?? c.currentStage}</div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-700 font-mono text-xs">

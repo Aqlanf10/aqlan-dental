@@ -12,7 +12,13 @@ public class OrthoDiagnosis : BaseEntity
     public decimal? SNA { get; set; }
     public decimal? SNB { get; set; }
     public decimal? IMPA { get; set; }
+    public string? SoftTissueDiagnosis { get; set; }
+    public string? FunctionalDiagnosis { get; set; }
+    public string? Etiology { get; set; }
     public string? Summary { get; set; }
+    public Guid? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
 
     public OrthoCase OrthoCase { get; set; } = null!;
+    public Doctor? ApprovedByDoctor { get; set; }
 }

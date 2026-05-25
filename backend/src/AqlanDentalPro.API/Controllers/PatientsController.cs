@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
@@ -65,49 +66,38 @@ public class PatientsController(
     {
         try
         {
-        // Doctors see only the patients they are linked to (all 5 link types).
-        if (patientAccess.IsDoctor)
-        {
-            HashSet<Guid>? accessible;
-            try
+            // Doctors see only the patients they are linked to (all 5 link types).
+            if (patientAccess.IsDoctor)
             {
-                accessible = await patientAccess.GetAccessiblePatientIdsAsync();
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "GetAccessiblePatientIdsAsync failed for user {UserId} role {Role}",
-                    patientAccess.IsDoctor, User.Identity?.Name);
-                return StatusCode(500, new
+                HashSet<Guid>? accessible;
+                try
                 {
-                    title = "Patient access query failed",
-                    detail = ex.InnerException?.Message ?? ex.Message,
-                    stackTrace = ex.StackTrace?.Split('\n').Take(3)
-                });
+                    accessible = await patientAccess.GetAccessiblePatientIdsAsync();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "GetAccessiblePatientIdsAsync failed for user {UserId}",
+                        currentUser.UserId);
+                    // Return standard empty paginated response so the frontend renders a valid table
+                    return Ok(new PaginatedResponse<PatientListDto>());
+                }
+
+                if (accessible == null || accessible.Count == 0)
+                    return Ok(new PaginatedResponse<PatientListDto>());
+
+                // Pass the full accessible set — covers primary, appointment, visit, step, referral links.
+                var result = await service.GetListAsync(search, page, pageSize, gender,
+                    doctorId: null, status, allowedPatientIds: accessible);
+                return Ok(result);
             }
 
-            if (accessible == null || accessible.Count == 0)
-                return Ok(new { items = Array.Empty<object>(), total = 0, page, pageSize });
-
-            // Pass the full accessible set — covers primary, appointment, visit, step, referral links.
-            var result = await service.GetListAsync(search, page, pageSize, gender,
-                doctorId: null, status, allowedPatientIds: accessible);
-            return Ok(result);
-        }
-
-        var fullResult = await service.GetListAsync(search, page, pageSize, gender, doctorId, status);
-        return Ok(fullResult);
+            var fullResult = await service.GetListAsync(search, page, pageSize, gender, doctorId, status);
+            return Ok(fullResult);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "PatientsController.GetList FAILED: {Type}: {Message}\n{Stack}",
-                ex.GetType().Name, ex.Message, ex.StackTrace);
-            return StatusCode(500, new
-            {
-                errorType = ex.GetType().Name,
-                message = ex.Message,
-                innerMessage = ex.InnerException?.Message,
-                stackTrace = ex.StackTrace?.Split('\n').Take(5)
-            });
+            logger.LogError(ex, "PatientsController.GetList failed");
+            return StatusCode(500, new { message = "تعذر تحميل بيانات المرضى حالياً" });
         }
     }
 
@@ -118,33 +108,26 @@ public class PatientsController(
     {
         try
         {
-        var denied = await DenyIfDoctorCannotAccess(id);
-        if (denied != null) return denied;
+            var denied = await DenyIfDoctorCannotAccess(id);
+            if (denied != null) return denied;
 
-        var patient = await service.GetByIdAsync(id);
-        if (patient == null) return NotFound(new { message = "المريض غير موجود" });
+            var patient = await service.GetByIdAsync(id);
+            if (patient == null) return NotFound(new { message = "المريض غير موجود" });
 
-        // Doctors receive a clinical-only view without contact/finance fields.
-        if (patientAccess.IsDoctor)
-            return Ok(ToClinicalDto(patient));
+            // Doctors receive a clinical-only view without contact/finance fields.
+            if (patientAccess.IsDoctor)
+                return Ok(ToClinicalDto(patient));
 
-        // Non-doctor roles receive the full profile including contact info — log for compliance.
-        await audit.LogAsync(AuditAction.View, "PatientContactInfo", id,
-            newData: new { role = currentUser.Role?.ToString() });
+            // Non-doctor roles receive the full profile including contact info — log for compliance.
+            await audit.LogAsync(AuditAction.View, "PatientContactInfo", id,
+                newData: new { role = currentUser.Role?.ToString() });
 
-        return Ok(patient);
+            return Ok(patient);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "PatientsController.GetById FAILED: {Type}: {Message}\n{Stack}",
-                ex.GetType().Name, ex.Message, ex.StackTrace);
-            return StatusCode(500, new
-            {
-                errorType = ex.GetType().Name,
-                message = ex.Message,
-                innerMessage = ex.InnerException?.Message,
-                stackTrace = ex.StackTrace?.Split('\n').Take(5)
-            });
+            logger.LogError(ex, "PatientsController.GetById failed for {PatientId}", id);
+            return StatusCode(500, new { message = "تعذر تحميل بيانات المريض حالياً" });
         }
     }
 

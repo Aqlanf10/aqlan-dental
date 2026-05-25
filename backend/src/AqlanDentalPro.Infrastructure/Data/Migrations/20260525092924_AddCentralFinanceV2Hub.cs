@@ -11,35 +11,17 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "Email",
-                table: "Patients",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<DateTime>(
-                name: "EmailReminderSentAt",
-                table: "Appointments",
-                type: "timestamp with time zone",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "EmailReminderWindowsSent",
-                table: "Appointments",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "SmsReminderWindowsSent",
-                table: "Appointments",
-                type: "text",
-                nullable: true);
-
-            migrationBuilder.AddColumn<DateTime>(
-                name: "WhatsAppReminderSentAt",
-                table: "Appointments",
-                type: "timestamp with time zone",
-                nullable: true);
+            // ── Idempotent column additions ──
+            // These columns are also created by later migrations (AddEmailLog, AddSeparateReminderTrackingAndPatientEmail).
+            // Using raw PostgreSQL SQL with IF NOT EXISTS so that applying this migration does not fail
+            // on databases where the later migrations were already applied before Finance V2 was merged.
+            migrationBuilder.Sql(@"
+ALTER TABLE ""Patients"" ADD COLUMN IF NOT EXISTS ""Email"" TEXT NULL;
+ALTER TABLE ""Appointments"" ADD COLUMN IF NOT EXISTS ""EmailReminderSentAt"" TIMESTAMPTZ NULL;
+ALTER TABLE ""Appointments"" ADD COLUMN IF NOT EXISTS ""EmailReminderWindowsSent"" TEXT NULL;
+ALTER TABLE ""Appointments"" ADD COLUMN IF NOT EXISTS ""SmsReminderWindowsSent"" TEXT NULL;
+ALTER TABLE ""Appointments"" ADD COLUMN IF NOT EXISTS ""WhatsAppReminderSentAt"" TIMESTAMPTZ NULL;
+");
 
             migrationBuilder.CreateTable(
                 name: "AdvancePayments",
@@ -170,26 +152,30 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.CreateTable(
-                name: "EmailLogs",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    ToEmail = table.Column<string>(type: "text", nullable: false),
-                    Subject = table.Column<string>(type: "text", nullable: false),
-                    Category = table.Column<string>(type: "text", nullable: false),
-                    Provider = table.Column<string>(type: "text", nullable: true),
-                    IsSent = table.Column<bool>(type: "boolean", nullable: false),
-                    ErrorMessage = table.Column<string>(type: "text", nullable: true),
-                    ExternalId = table.Column<string>(type: "text", nullable: true),
-                    RelatedEntityType = table.Column<string>(type: "text", nullable: true),
-                    RelatedEntityId = table.Column<Guid>(type: "uuid", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_EmailLogs", x => x.Id);
-                });
+            // ── Idempotent EmailLogs table creation ──
+            // The EmailLogs table is also created by migration AddEmailLog (20260609000000).
+            // Using raw PostgreSQL SQL with IF NOT EXISTS so that applying this migration does not fail
+            // on databases where AddEmailLog was already applied before Finance V2 was merged.
+            migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'EmailLogs') THEN
+        CREATE TABLE ""EmailLogs"" (
+            ""Id""                UUID NOT NULL,
+            ""ToEmail""           TEXT NOT NULL,
+            ""Subject""           TEXT NOT NULL,
+            ""Category""          TEXT NOT NULL,
+            ""Provider""          TEXT NULL,
+            ""IsSent""            BOOLEAN NOT NULL,
+            ""ErrorMessage""      TEXT NULL,
+            ""ExternalId""        TEXT NULL,
+            ""RelatedEntityType"" TEXT NULL,
+            ""RelatedEntityId""   UUID NULL,
+            ""CreatedAt""         TIMESTAMPTZ NOT NULL,
+            CONSTRAINT ""PK_EmailLogs"" PRIMARY KEY (""Id"")
+        );
+    END IF;
+END $$;
+");
 
             migrationBuilder.CreateTable(
                 name: "EmployeeDocuments",
@@ -548,8 +534,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
             migrationBuilder.DropTable(
                 name: "CashFlowTransactions");
 
-            migrationBuilder.DropTable(
-                name: "EmailLogs");
+            // Idempotent drop: EmailLogs may have already been dropped by AddEmailLog Down.
+            migrationBuilder.Sql(@"DROP TABLE IF EXISTS ""EmailLogs"";");
 
             migrationBuilder.DropTable(
                 name: "EmployeeDocuments");
@@ -572,25 +558,15 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
             migrationBuilder.DropTable(
                 name: "CashierSessions");
 
-            migrationBuilder.DropColumn(
-                name: "Email",
-                table: "Patients");
-
-            migrationBuilder.DropColumn(
-                name: "EmailReminderSentAt",
-                table: "Appointments");
-
-            migrationBuilder.DropColumn(
-                name: "EmailReminderWindowsSent",
-                table: "Appointments");
-
-            migrationBuilder.DropColumn(
-                name: "SmsReminderWindowsSent",
-                table: "Appointments");
-
-            migrationBuilder.DropColumn(
-                name: "WhatsAppReminderSentAt",
-                table: "Appointments");
+            // Idempotent drops: columns may have already been dropped by
+            // AddSeparateReminderTrackingAndPatientEmail Down.
+            migrationBuilder.Sql(@"
+ALTER TABLE ""Patients"" DROP COLUMN IF EXISTS ""Email"";
+ALTER TABLE ""Appointments"" DROP COLUMN IF EXISTS ""EmailReminderSentAt"";
+ALTER TABLE ""Appointments"" DROP COLUMN IF EXISTS ""EmailReminderWindowsSent"";
+ALTER TABLE ""Appointments"" DROP COLUMN IF EXISTS ""SmsReminderWindowsSent"";
+ALTER TABLE ""Appointments"" DROP COLUMN IF EXISTS ""WhatsAppReminderSentAt"";
+");
         }
     }
 }

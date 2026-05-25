@@ -6,15 +6,13 @@ import { useRouter } from "next/navigation";
 import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw, ArrowLeft,
-  UserCheck, Globe, Plus, CalendarClock, Route,
+  UserCheck, Globe,
   Wallet, UserPlus, Keyboard, Bell, BellOff,
   Printer, Users, Activity, ArrowRight, Megaphone, Building2,
-  X, PanelRight, ChevronLeft, Phone, MessageCircle,
+  X, PanelRight, ChevronLeft, Phone, MessageCircle, Monitor,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
-import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { toast } from "@/stores/toastStore";
-import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 
 import {
@@ -94,17 +92,7 @@ const animationStyles = `
 .animate-panel-slide { animation: panelSlideIn 0.25s ease-out; }
 `;
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Quick Link items for sidebar-style navigation at bottom
-   ═══════════════════════════════════════════════════════════════════════════ */
-const QUICK_LINKS = [
-  { href: "/booking-requests",    label: "طلبات الحجز",   icon: Globe,         color: BLUE,   perm: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
-  { href: "/appointments/new",    label: "موعد جديد",     icon: CalendarClock, color: "#a855f7", perm: PERMISSION_KEYS.APPOINTMENTS_CREATE },
-  { href: "/clinic-queue",        label: "الطابور",       icon: ClipboardList, color: ORANGE, perm: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
-  { href: "/patient-journey",     label: "رحلة المريض",   icon: Route,         color: "#22c55e", perm: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW },
-  { href: "/finance/payments",    label: "المدفوعات",     icon: CreditCard,    color: "#22c55e", perm: PERMISSION_KEYS.PAYMENTS_VIEW },
-  { href: "/patients/new",        label: "مريض جديد",     icon: Plus,          color: BLUE,   perm: PERMISSION_KEYS.PATIENTS_CREATE },
-];
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Tab icon mapping
@@ -494,7 +482,8 @@ export default function DailyOperationsPage() {
   }) => {
     if (!selectedItem) return;
     try {
-      if (selectedItem.visitId) {
+      // If patient is ReadyForCheckout (doctor already handed off), ONLY do checkout
+      if (selectedItem.checkoutStatus !== "ReadyForCheckout" && selectedItem.visitId) {
         await handoffMutation.mutateAsync({
           visitId: selectedItem.visitId,
           body: {
@@ -588,11 +577,6 @@ export default function DailyOperationsPage() {
     }
   }, [bulkSmsMutation, tomorrowItems]);
 
-  // ── Visible quick links ──
-  const visibleQuickLinks = useMemo(() =>
-    QUICK_LINKS.filter(l => hasPermission(user, l.perm)),
-  [user]);
-
   // ── Available status filters ──
   const statusFilters = [
     { value: "", label: "الكل" },
@@ -639,7 +623,7 @@ export default function DailyOperationsPage() {
             </div>
             <div className="leading-tight">
               <div className="text-sm font-extrabold" style={{ color: NAVY }}>التشغيل اليومي</div>
-              <div className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>رحلة الاستقبال</div>
+              <div className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>لوحة التحكم الموحدة</div>
             </div>
           </div>
 
@@ -746,6 +730,54 @@ export default function DailyOperationsPage() {
           <div className="flex items-center gap-1 w-9 h-9 rounded-lg justify-center" title={signalrConnected ? "متصل مباشر" : "غير متصل"}>
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: signalrConnected ? "#16a34a" : "#ef4444" }} />
           </div>
+        </div>
+
+        {/* ═══════════ Module Tabs Row (42px) ═══════════ */}
+        <div className="h-[42px] flex-shrink-0 bg-white flex items-center px-3 gap-1"
+          style={{ borderBottom: "2px solid #f1f5f9" }}>
+          {/* رحلة المريض — default active tab */}
+          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold relative"
+            style={{ color: NAVY, background: "#f8fafc" }}>
+            <Activity className="w-3.5 h-3.5" />
+            رحلة المريض
+            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+              style={{ background: ORANGE, color: "#fff" }}>{items.length}</span>
+            <span className="absolute bottom-[-2px] left-2 right-2 h-[2px] rounded-full" style={{ background: ORANGE }} />
+          </button>
+
+          <div className="w-px h-5 mx-1" style={{ background: "#e5e7eb" }} />
+
+          {/* External navigation links — these open separate pages */}
+          <Link href="/booking-requests"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
+            style={{ color: "#64748b" }}>
+            <Globe className="w-3.5 h-3.5" />
+            طلبات الحجز
+          </Link>
+          <Link href="/appointments"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
+            style={{ color: "#64748b" }}>
+            <Calendar className="w-3.5 h-3.5" />
+            المواعيد
+          </Link>
+          <Link href="/clinic-queue"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
+            style={{ color: "#64748b" }}>
+            <ClipboardList className="w-3.5 h-3.5" />
+            الطابور
+          </Link>
+          <Link href="/clinic-display" target="_blank"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
+            style={{ color: "#64748b" }}>
+            <Monitor className="w-3.5 h-3.5" />
+            شاشة النداء
+          </Link>
+          <Link href="/settings/rooms"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
+            style={{ color: "#64748b" }}>
+            <Building2 className="w-3.5 h-3.5" />
+            الغرف
+          </Link>
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════

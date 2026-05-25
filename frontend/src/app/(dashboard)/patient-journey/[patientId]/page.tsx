@@ -5,10 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Route, Stethoscope, CreditCard, Wrench, HeartPulse, Clock,
-  MessageSquare, FileText, RefreshCw, CalendarCheck, UserCheck,
+  FileText, RefreshCw, CalendarCheck, UserCheck,
   Megaphone, DoorOpen, PlayCircle, AlertTriangle,
   CheckCircle2, UserX, Ban,
-  Calendar, Printer, Send, Mail, MessageCircle, Camera,
+  Calendar, Printer, Camera,
   Plus, Save, ArrowUpRight, CircleDot, Info, ShieldAlert,
   BadgeDollarSign, Receipt, FileSpreadsheet, ExternalLink,
   Wallet,
@@ -42,7 +42,7 @@ import api from "@/lib/api";
 
 // ─── Panel Keys ─────────────────────────────────────────────────────────────
 
-type PanelKey = "journey" | "visit" | "payment" | "ortho" | "history" | "timeline" | "messages" | "docs";
+type PanelKey = "journey" | "visit" | "payment" | "ortho" | "history" | "timeline" | "docs";
 
 // ─── Currency Formatter ─────────────────────────────────────────────────────
 
@@ -176,17 +176,15 @@ export default function PatientDailyJourneyHub() {
   const { user } = useAuthStore();
   const userRole = user?.role ?? "";
 
-  // Permissions
+  // Permissions — use proper permission system, not just isDoctor
   const canViewJourney = useHasPermission(PERMISSION_KEYS.PATIENT_JOURNEY_VIEW);
   const canEditJourney = useHasPermission(PERMISSION_KEYS.PATIENT_JOURNEY_EDIT);
   const canViewVisits = useHasPermission(PERMISSION_KEYS.VISITS_VIEW);
   const canEditVisits = useHasPermission(PERMISSION_KEYS.VISITS_EDIT);
   const canViewFinance = useHasPermission(PERMISSION_KEYS.PAYMENTS_VIEW);
-  const canCreatePayment = useHasPermission(PERMISSION_KEYS.PAYMENTS_CREATE);
-  const canViewInvoices = useHasPermission(PERMISSION_KEYS.INVOICES_VIEW);
   const canViewCheckout = useHasPermission(PERMISSION_KEYS.CHECKOUT_VIEW);
-  const canViewQueue = useHasPermission(PERMISSION_KEYS.CLINIC_QUEUE_VIEW);
-  const canViewPatients = useHasPermission(PERMISSION_KEYS.PATIENTS_VIEW);
+  const canViewInvoices = useHasPermission(PERMISSION_KEYS.INVOICES_VIEW);
+  const canCreateInvoices = useHasPermission(PERMISSION_KEYS.INVOICES_CREATE);
 
   const isDoctor = userRole === "Orthodontist" || userRole === "GeneralDentist" || userRole === "OralSurgeon";
 
@@ -354,14 +352,13 @@ export default function PatientDailyJourneyHub() {
       { key: "journey", label: "رحلة المريض", icon: Route, section: "رحلة اليوم", hidden: !canViewJourney, badge: data?.nextAction && data.nextAction !== "None" ? NEXT_ACTION_ARABIC[data.nextAction] ?? undefined : undefined, badgeType: "teal" },
       { key: "visit", label: "تسجيل الزيارة", icon: Stethoscope, section: "رحلة اليوم", hidden: !canViewVisits },
       { key: "payment", label: "الدفع والحساب", icon: CreditCard, section: "رحلة اليوم", badge: data?.financeSummary?.outstandingBalance ? data.financeSummary.outstandingBalance.toLocaleString("ar-SA") : undefined, badgeType: "warn", hidden: !(canViewFinance || canViewCheckout) },
-      { key: "ortho", label: "ملف التقويم", icon: Wrench, section: "الملف السريري", badge: data?.activeOrthoCase ? "نشط" : undefined, badgeType: "teal" },
-      { key: "history", label: "التاريخ الطبي", icon: HeartPulse, section: "الملف السريري" },
-      { key: "timeline", label: "السجل الزمني", icon: Clock, section: "الملف السريري", badge: data?.timeline?.length ? data.timeline.length.toLocaleString("ar-SA") : undefined },
-      { key: "messages", label: "الرسائل", icon: MessageSquare, section: "التواصل والمستندات" },
-      { key: "docs", label: "المستندات", icon: FileText, section: "التواصل والمستندات" },
+      { key: "ortho", label: "ملف التقويم", icon: Wrench, section: "الملف السريري", badge: data?.activeOrthoCase ? "نشط" : undefined, badgeType: "teal", hidden: !canViewVisits },
+      { key: "history", label: "التاريخ الطبي", icon: HeartPulse, section: "الملف السريري", hidden: !canViewVisits },
+      { key: "timeline", label: "السجل الزمني", icon: Clock, section: "الملف السريري", badge: data?.timeline?.length ? data.timeline.length.toLocaleString("ar-SA") : undefined, hidden: !canViewJourney },
+      { key: "docs", label: "المستندات", icon: FileText, section: "المستندات", hidden: !canViewJourney },
     ];
     return items.filter((i) => !i.hidden);
-  }, [data, canViewVisits, canViewFinance, canViewCheckout]);
+  }, [data, canViewJourney, canViewVisits, canViewFinance, canViewCheckout]);
 
   // ─── Render: Loading State ──────────────────────────────────────────────────
 
@@ -522,9 +519,7 @@ export default function PatientDailyJourneyHub() {
                   )}
                   <button
                     onClick={() => {
-                      if (item.key === "messages") {
-                        router.push(`/messages?patientId=${patientId}`);
-                      } else if (item.key === "docs") {
+                      if (item.key === "docs") {
                         router.push(`/patients/${patientId}`);
                       } else {
                         setActivePanel(item.key);
@@ -743,7 +738,7 @@ export default function PatientDailyJourneyHub() {
                             <Stethoscope className="w-3.5 h-3.5" />
                             عند الطبيب
                           </span>
-                          {isDoctor && todayVisit?.id && (
+                          {isDoctor && canEditVisits && todayVisit?.id && (
                             <button onClick={() => setShowHandoffForm(true)} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50 mr-auto">
                               <ArrowUpRight className="w-3.5 h-3.5" />
                               تسليم للاستقبال
@@ -853,7 +848,7 @@ export default function PatientDailyJourneyHub() {
               )}
 
               {/* Handoff Form (Inline) */}
-              {showHandoffForm && isDoctor && todayVisit?.id && (
+              {showHandoffForm && isDoctor && canEditVisits && todayVisit?.id && (
                 <div className="bg-[#e1f5ee] rounded-xl border border-[#9fe1cb] p-4 space-y-3">
                   <span className="text-[12px] font-bold text-[#2d5e8e] flex items-center gap-1.5">
                     <ArrowUpRight className="w-4 h-4" />
@@ -909,7 +904,7 @@ export default function PatientDailyJourneyHub() {
               )}
 
               {/* Alert Boxes */}
-              {financeSummary && financeSummary.overdueAmount > 0 && !isDoctor && (
+              {financeSummary && financeSummary.overdueAmount > 0 && canViewFinance && (
                 <div className="flex gap-2 p-3 rounded-lg bg-[#faeeda] border border-[#fac775]/50 text-[#633806]">
                   <AlertTriangle className="w-4 h-4 text-[#ba7517] flex-shrink-0 mt-0.5" />
                   <div>
@@ -931,7 +926,7 @@ export default function PatientDailyJourneyHub() {
               )}
 
               {/* Finance Snapshot */}
-              {financeSummary && !isDoctor && (
+              {financeSummary && (canViewFinance || canViewCheckout) && (
                 <div className="bg-white rounded-xl border border-[#d3d1c7] p-4">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5">
@@ -1157,7 +1152,7 @@ export default function PatientDailyJourneyHub() {
         )}
 
         {/* ─── Panel: Payment ─── */}
-        {activePanel === "payment" && !isDoctor && (
+        {activePanel === "payment" && (canViewFinance || canViewCheckout) && (
           <div>
             <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
               <CreditCard className="w-5 h-5 text-[#3d7ab5]" />
@@ -1268,7 +1263,7 @@ export default function PatientDailyJourneyHub() {
                         className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
-                    {canCreatePayment && (
+                    {(canViewFinance || canViewCheckout) && (
                       <button
                         onClick={async () => {
                           if (paymentAmount <= 0) { toast.error("أدخل مبلغاً صحيحاً"); return; }
@@ -1307,7 +1302,8 @@ export default function PatientDailyJourneyHub() {
                   <div className="space-y-3">
                     {todayVisit?.id ? (
                       <>
-                        <button
+                        {canCreateInvoices && (
+                          <button
                           onClick={handleCreateDraftInvoice}
                           disabled={draftInvoiceMutation.isPending}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#185fa5] text-white hover:opacity-90 transition disabled:opacity-50"
@@ -1315,6 +1311,7 @@ export default function PatientDailyJourneyHub() {
                           <FileSpreadsheet className="w-3.5 h-3.5" />
                           {draftInvoiceMutation.isPending ? "جارٍ الإنشاء..." : "إنشاء فاتورة مسودة"}
                         </button>
+                        )}
                         {canViewInvoices && (
                           <Link
                             href={`/finance/invoices?patientId=${patientId}`}
@@ -1675,76 +1672,7 @@ export default function PatientDailyJourneyHub() {
           </div>
         )}
 
-        {/* ─── Panel: Messages ─── */}
-        {activePanel === "messages" && (
-          <div>
-            <div className="bg-white px-5 py-3 border-b border-[#d3d1c7] sticky top-0 z-10 flex items-center gap-3">
-              <MessageSquare className="w-5 h-5 text-[#3d7ab5]" />
-              <div className="flex-1">
-                <h2 className="text-[15px] font-bold text-[#1a3a5c]">الرسائل</h2>
-                <p className="text-[11px] text-[#5f5e5a]">التواصل مع المريض</p>
-              </div>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="bg-white rounded-xl border border-[#d3d1c7] p-4 space-y-3">
-                <span className="text-[13px] font-bold text-[#1a3a5c] flex items-center gap-1.5 mb-2">
-                  <MessageSquare className="w-4 h-4 text-[#3d7ab5]" />
-                  الوصول السريع للرسائل
-                </span>
-                <Link
-                  href={`/messages?patientId=${patientId}`}
-                  className="flex items-center gap-2 p-3 rounded-lg bg-[#e1f5ee] border border-[#9fe1cb] hover:bg-[#9fe1cb]/30 transition"
-                >
-                  <MessageSquare className="w-4 h-4 text-[#2d5e8e]" />
-                  <div className="flex-1">
-                    <span className="text-[12px] font-semibold text-[#2d5e8e]">فتح صفحة الرسائل</span>
-                    <p className="text-[10px] text-[#5f5e5a]">عرض وإرسال رسائل للمريض</p>
-                  </div>
-                  <ExternalLink className="w-3.5 h-3.5 text-[#2d5e8e]" />
-                </Link>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Link
-                    href={`/messages?patientId=${patientId}&compose=email`}
-                    className="flex items-center gap-2 p-2.5 rounded-lg border border-[#d3d1c7] hover:bg-[#f8f9fa] transition"
-                  >
-                    <Mail className="w-4 h-4 text-[#185fa5]" />
-                    <span className="text-[11px] font-semibold text-[#1a3a5c]">إرسال بريد إلكتروني</span>
-                  </Link>
-                  {patient.phone && !isDoctor && (
-                    <>
-                      <a
-                        href={`https://wa.me/${patient.phone.replace(/[^0-9]/g, "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 p-2.5 rounded-lg border border-[#d3d1c7] hover:bg-[#f8f9fa] transition"
-                      >
-                        <MessageCircle className="w-4 h-4 text-[#3b6d11]" />
-                        <span className="text-[11px] font-semibold text-[#1a3a5c]">واتساب</span>
-                      </a>
-                      <button
-                        onClick={async () => {
-                          try {
-                            await api.post(`/api/sms/send`, {
-                              patientId,
-                              message: `تذكير: لديك موعد في مركز عقلان لطب الأسنان.`,
-                            });
-                            toast.success("تم إرسال رسالة SMS");
-                          } catch {
-                            toast.error("فشل إرسال الرسالة");
-                          }
-                        }}
-                        className="flex items-center gap-2 p-2.5 rounded-lg border border-[#d3d1c7] hover:bg-[#f8f9fa] transition"
-                      >
-                        <Send className="w-4 h-4 text-[#ba7517]" />
-                        <span className="text-[11px] font-semibold text-[#1a3a5c]">إرسال SMS تذكير</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ─── Panel: Messages ─── — REMOVED (Blocker-5: messaging/SMS not authorized in this PR) */}
 
         {/* ─── Panel: Docs ─── */}
         {activePanel === "docs" && (

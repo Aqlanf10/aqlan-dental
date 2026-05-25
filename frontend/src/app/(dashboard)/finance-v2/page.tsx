@@ -9,10 +9,10 @@ import api from "@/lib/api";
 import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import {
-  TrendingUp, Wallet, AlertCircle, FileText, Plus, Printer,
-  RefreshCw, CheckCircle2, Search, ArrowLeftRight, Percent,
+  TrendingUp, Wallet, AlertCircle, FileText, Printer,
+  RefreshCw, CheckCircle2, Search, Percent,
   Settings, ChevronRight, Ban, Building, Coins, ShieldAlert,
-  Calendar, Receipt, Landmark, X
+  Calendar, Landmark, X
 } from "lucide-react";
 
 // --- Types ---
@@ -115,7 +115,6 @@ export default function FinanceV2Page() {
 
   const userRole = user?.role ?? "";
   const isAdmin = userRole === "Admin";
-  const isAccountant = userRole === "Accountant";
   const isReception = userRole === "Reception";
   const isDoctor = ["Orthodontist", "GeneralDentist", "OralSurgeon"].includes(userRole);
 
@@ -151,11 +150,6 @@ export default function FinanceV2Page() {
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   // Tracks the maximum payable amount for the selected invoice (for overpayment guard)
   const [invoiceRemainingAmount, setInvoiceRemainingAmount] = useState<number | null>(null);
-  
-  // Currency planning placeholders (no DB migrations in Sprint 1)
-  const [currency, setCurrency] = useState<string>("YER");
-  const [exchangeRate, setExchangeRate] = useState<number>(1);
-  const [originalAmount, setOriginalAmount] = useState<string>("");
 
   // Tabs Listings States
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);

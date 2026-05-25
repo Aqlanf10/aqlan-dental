@@ -31,7 +31,11 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     public async Task<IActionResult> OpenSession([FromBody] OpenSessionRequest req)
     {
         var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+
+        // BranchId guard: must have a valid branch assignment before opening a cashier session
+        var branchId = currentUser.BranchId;
+        if (branchId == null || branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل فتح صندوق الكاشير." });
 
         // Check if there is already an open session for this user
         var hasOpenSession = await db.CashierSessions
@@ -75,7 +79,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             {
                 SessionNumber = sessionNumber,
                 CashierId = userId,
-                BranchId = branchId,
+                BranchId = branchId.Value,
                 OpeningTime = DateTime.UtcNow,
                 OpeningBalance = req.OpeningBalance,
                 ExpectedClosingCash = req.OpeningBalance, // starts with just opening cash
@@ -140,21 +144,23 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         if (session == null)
             return BadRequest(new { message = "لا يوجد صندوق مفتوح حالياً لإقفاله." });
 
-        // Calculate expected receipts during this session
-        // Every Payment recorded between session.OpeningTime and Now by this cashier.
-        var payments = await db.Payments
-            .Where(p => p.ReceivedBy == userId 
-                     && p.CreatedAt >= session.OpeningTime 
-                     && p.IsActive)
+        // Use CashFlowTransactions as the reconciled source for session financial movement.
+        // This replaces the old Payment-based calculation which did NOT subtract
+        // refunds, operational expenses, or other outflows — causing drawer overstatement.
+        var sessionTransactions = await db.CashFlowTransactions
+            .Where(t => t.CashierSessionId == session.Id && t.IsActive)
             .ToListAsync();
 
-        var totalCashPayments = payments.Where(p => p.PaymentMethod == "cash").Sum(p => p.Amount);
-        var totalCardPayments = payments.Where(p => p.PaymentMethod == "card").Sum(p => p.Amount);
-        var totalBankPayments = payments.Where(p => p.PaymentMethod == "bank_transfer" || p.PaymentMethod == "bank").Sum(p => p.Amount);
+        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
 
-        session.ExpectedClosingCash = session.OpeningBalance + totalCashPayments;
-        session.ExpectedClosingCard = totalCardPayments;
-        session.ExpectedClosingBank = totalBankPayments;
+        session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
+        session.ExpectedClosingCard = cardInflows - cardOutflows;
+        session.ExpectedClosingBank = bankInflows - bankOutflows;
 
         session.ActualClosingCash = req.ActualClosingCash;
         session.ActualClosingCard = req.ActualClosingCard;
@@ -168,21 +174,20 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         session.Status = SessionStatus.Closed; // Locked!
         session.Notes = req.Notes?.Trim();
 
-        // Automatically link all payments created during this session to the session record
-        foreach (var p in payments)
+        // Backwards-compatibility pass: link any unlinked cashflow transactions
+        // created during the session window that were not linked at creation time.
+        // (New transactions should already be linked at creation time, but older
+        // data or race conditions may leave some unlinked.)
+        var unlinkedTransactions = await db.CashFlowTransactions
+            .Where(t => t.CashierSessionId == null
+                     && t.PerformedBy == userId
+                     && t.CreatedAt >= session.OpeningTime
+                     && t.IsActive)
+            .ToListAsync();
+
+        foreach (var t in unlinkedTransactions)
         {
-            // Update Payments directly to link them to this cashier session
-            // We need to fetch from database to track them, but since we already queried them, they are in the tracker.
-            // Let's verify if Payment has CashierSessionId property. It was added as FK index, let's update it in DbContext or via direct SQL if needed.
-            // Wait! Did we add CashierSessionId on Payment entity? Yes, CashFlowTransaction has it, and let's check if we should link it or if it is already tracked.
-            // In CashFlowTransaction we definitely have CashierSessionId. Let's link them in CashFlowTransaction!
-            var cashflow = await db.CashFlowTransactions
-                .Where(t => t.ReferenceId == p.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive)
-                .ToListAsync();
-            foreach (var cf in cashflow)
-            {
-                cf.CashierSessionId = session.Id;
-            }
+            t.CashierSessionId = session.Id;
         }
 
         await db.SaveChangesAsync();
@@ -205,6 +210,16 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
         });
     }
+
+    private static bool IsCashMethod(string method) =>
+        string.Equals(method, "cash", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCardMethod(string method) =>
+        string.Equals(method, "card", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBankMethod(string method) =>
+        string.Equals(method, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(method, "bank", StringComparison.OrdinalIgnoreCase);
 
     [HttpGet]
     public async Task<IActionResult> GetAll(

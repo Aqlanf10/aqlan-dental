@@ -188,6 +188,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (activeSession == null)
             throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات.");
 
+        // BranchId guard: must have a valid branch assignment before creating a payment
+        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+            throw new ArgumentException("عذراً، يجب تحديد الفرع قبل تسجيل أي مدفوعات.");
+
         // H9 FIX: Generate receipt number using advisory lock + sequential pattern
         // instead of random 4-digit (which had ~50% collision probability at 95 payments/day).
         var receiptNumber = await GenerateReceiptNumberAsync();
@@ -257,7 +261,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ReferenceNumber = payment.ReceiptNumber,
             Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
             PerformedBy = userId,
-            BranchId = currentUser.BranchId ?? Guid.Empty,
+            BranchId = currentUser.BranchId.Value,
             CashierSessionId = activeSession.Id
         };
         db.CashFlowTransactions.Add(cashflow);
@@ -629,6 +633,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (activeSession == null)
             throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل إجراء أي عمليات استرداد للدفعة.");
 
+        // BranchId guard: must have a valid branch assignment before processing a refund
+        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+            throw new ArgumentException("عذراً، يجب تحديد الفرع قبل إجراء أي عمليات استرداد للدفعة.");
+
         var refund = new Payment
         {
             PatientId          = payment.PatientId,
@@ -662,7 +670,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ReferenceNumber = refund.ReceiptNumber,
             Description = $"استرداد دفعة مريض - سند قبض {refund.ReceiptNumber}",
             PerformedBy = userId,
-            BranchId = currentUser.BranchId ?? Guid.Empty,
+            BranchId = currentUser.BranchId.Value,
             CashierSessionId = activeSession.Id
         };
         db.CashFlowTransactions.Add(refundCashflow);

@@ -23,12 +23,10 @@ import {
   useJourneySendToQueue,
   useJourneyStartVisit,
   useJourneyHandoff,
-  useJourneyCheckout,
   useJourneyCreateDraftInvoice,
 } from "@/hooks/usePatientJourney";
 import {
   JOURNEY_STEPS,
-  STEP_ORDER,
   getStepIndex,
   APPOINTMENT_STATUS_ARABIC,
   NEXT_ACTION_ARABIC,
@@ -170,7 +168,6 @@ export default function PatientDailyJourneyHub() {
   const sendToQueueMutation = useJourneySendToQueue();
   const startVisitMutation = useJourneyStartVisit();
   const handoffMutation = useJourneyHandoff();
-  const checkoutMutation = useJourneyCheckout();
   const draftInvoiceMutation = useJourneyCreateDraftInvoice();
 
   const { user } = useAuthStore();
@@ -182,6 +179,7 @@ export default function PatientDailyJourneyHub() {
   const canViewVisits = useHasPermission(PERMISSION_KEYS.VISITS_VIEW);
   const canEditVisits = useHasPermission(PERMISSION_KEYS.VISITS_EDIT);
   const canViewFinance = useHasPermission(PERMISSION_KEYS.PAYMENTS_VIEW);
+  const canCreatePayment = useHasPermission(PERMISSION_KEYS.PAYMENTS_CREATE);
   const canViewCheckout = useHasPermission(PERMISSION_KEYS.CHECKOUT_VIEW);
   const canViewInvoices = useHasPermission(PERMISSION_KEYS.INVOICES_VIEW);
   const canCreateInvoices = useHasPermission(PERMISSION_KEYS.INVOICES_CREATE);
@@ -273,25 +271,6 @@ export default function PatientDailyJourneyHub() {
       toast.error("فشل تسليم المريض");
     }
   }, [data?.todayVisit?.id, handoffForm, handoffMutation]);
-
-  const handleCheckout = useCallback(async () => {
-    if (!data?.todayAppointment?.id) return;
-    try {
-      await checkoutMutation.mutateAsync({
-        appointmentId: data.todayAppointment.id,
-        body: {
-          paymentAmount: paymentAmount > 0 ? paymentAmount : undefined,
-          paymentMethod: paymentMethod || undefined,
-          notes: paymentNote || undefined,
-        },
-      });
-      toast.success("تم إنهاء الحساب بنجاح");
-      setPaymentAmount(0);
-      setPaymentNote("");
-    } catch {
-      toast.error("فشل إنهاء الحساب");
-    }
-  }, [data?.todayAppointment?.id, paymentAmount, paymentMethod, paymentNote, checkoutMutation]);
 
   const handleCreateDraftInvoice = useCallback(async () => {
     if (!data?.todayVisit?.id) return;
@@ -412,7 +391,7 @@ export default function PatientDailyJourneyHub() {
     );
   }
 
-  const { patient, todayAppointment, queueStatus, todayVisit, financeSummary, activeContract, activeOrthoCase, medicalAlerts, recentVisits, timeline, journeyStep, nextAction, unpaidInvoicesCount } = data;
+  const { patient, todayAppointment, todayVisit, financeSummary, activeContract, activeOrthoCase, medicalAlerts, recentVisits, timeline, journeyStep, nextAction, unpaidInvoicesCount } = data;
   const currentStepIdx = getStepIndex(journeyStep);
   const payPercent = financeSummary && financeSummary.totalTreatmentCost && financeSummary.totalTreatmentCost > 0
     ? Math.round(((financeSummary.totalPaid ?? 0) / financeSummary.totalTreatmentCost) * 100)
@@ -1263,7 +1242,7 @@ export default function PatientDailyJourneyHub() {
                         className="border border-[#d3d1c7] rounded-lg px-2.5 py-1.5 text-[12px] bg-white text-[#2c2c2a] focus:outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/10"
                       />
                     </div>
-                    {(canViewFinance || canViewCheckout) && (
+                    {canCreatePayment && (
                       <button
                         onClick={async () => {
                           if (paymentAmount <= 0) { toast.error("أدخل مبلغاً صحيحاً"); return; }

@@ -505,10 +505,12 @@ public class PatientJourneyController(
             // Blocker-5: Remove messaging/SMS — conversationIds query removed from this PR.
             // Messaging improvements must be a separate focused sprint later.
 
-            // Blocker-4: Clinical privacy — shape response by role on the backend.
+            // Fix-3: Clinical privacy — shape response by role on the backend.
             // Do not rely only on frontend hiding. Backend must shape the response safely.
             var isDoctor = patientAccessService.IsDoctor;
             var isAccountant = User.IsInRole("Accountant") && !User.IsInRole("Admin");
+            var isAdmin = User.IsInRole("Admin");
+            // isReception already declared above (line ~305) for finance access tiers
 
             // ── Build role-specific response ──
 
@@ -533,7 +535,7 @@ public class PatientJourneyController(
             object? todayVisitResponse;
             if (isAccountant)
             {
-                // Accountant: checkout/finance only — no clinical notes, diagnosis, instructions
+                // Accountant: checkout/finance only — no clinical notes, diagnosis, instructions, nextVisitPlan
                 todayVisitResponse = todayVisit != null ? new
                 {
                     todayVisit.Id,
@@ -546,7 +548,7 @@ public class PatientJourneyController(
             }
             else if (isDoctor)
             {
-                // Doctor: clinical summary only
+                // Doctor: clinical summary only (no finance-specific fields hidden, but financeSummary is null)
                 todayVisitResponse = todayVisit != null ? new
                 {
                     todayVisit.Id,
@@ -565,9 +567,28 @@ public class PatientJourneyController(
                     todayVisit.AppointmentId
                 } : null;
             }
+            else if (isReception)
+            {
+                // Fix-3: Reception — operational checkout information only.
+                // Do not return ClinicalNotes, Diagnosis, Instructions, NextVisitPlan.
+                todayVisitResponse = todayVisit != null ? new
+                {
+                    todayVisit.Id,
+                    todayVisit.VisitType,
+                    todayVisit.Specialty,
+                    todayVisit.DoctorId,
+                    todayVisit.ChiefComplaint,
+                    todayVisit.Cost,
+                    todayVisit.CheckoutStatus,
+                    todayVisit.ReadyForCheckoutAt,
+                    todayVisit.AmountDueReference,
+                    todayVisit.NextVisitDate,
+                    todayVisit.AppointmentId
+                } : null;
+            }
             else
             {
-                // Admin / Reception: full visit info
+                // Admin: full visit info
                 todayVisitResponse = todayVisit;
             }
 
@@ -576,37 +597,43 @@ public class PatientJourneyController(
             // ActiveContract: only for roles with full finance access
             object? activeContractResponse = hasFullFinanceAccess ? activeContract : null;
 
-            // ActiveOrthoCase: clinical data — accountants must NOT see ortho clinical data
-            // Doctors see ortho case (they are treating), Admin sees, Reception does not need it
+            // ActiveOrthoCase: clinical data — accountants and reception must NOT see ortho clinical data
             object? orthoCaseResponse;
-            if (isAccountant)
+            if (isAccountant || isReception)
             {
-                orthoCaseResponse = null; // Accountant: no ortho clinical data
+                // Accountant: no ortho clinical data
+                // Reception: no ortho clinical data unless explicit permission
+                // Fix-4: Use canonical permission key patient_journey.view (not patientJourney.view)
+                orthoCaseResponse = User.HasClaim("permission", "patient_journey.view") ? activeOrthoCase : null;
             }
-            else if (isDoctor || User.IsInRole("Admin"))
+            else if (isDoctor || isAdmin)
             {
                 orthoCaseResponse = activeOrthoCase;
             }
             else
             {
-                // Reception: no ortho clinical data unless explicit permission
-                orthoCaseResponse = User.HasClaim("permission", "patientJourney.view") ? activeOrthoCase : null;
+                orthoCaseResponse = null;
             }
 
-            // MedicalAlerts: accountants must NOT receive clinical notes, diagnosis,
-            // full medical history alerts, or ortho clinical data
+            // MedicalAlerts: role-filtered
             object? medicalAlertsResponse;
             if (isAccountant)
             {
-                medicalAlertsResponse = null; // Accountant: no medical alerts / clinical data
+                // Accountant: no medical alerts / clinical data
+                medicalAlertsResponse = null;
             }
-            else if (isDoctor || User.IsInRole("Admin"))
+            else if (isReception)
             {
-                medicalAlertsResponse = medicalAlerts;
+                // Fix-3: Reception — safety alerts only (allergy, bleeding, pregnancy).
+                // Do not return chronic diseases or current medications by default.
+                var safetyOnly = medicalAlerts
+                    .Where(a => ((dynamic)a).Type == "allergy" || ((dynamic)a).Type == "bleeding" || ((dynamic)a).Type == "pregnancy")
+                    .ToList();
+                medicalAlertsResponse = safetyOnly;
             }
             else
             {
-                // Reception: sees safety-critical alerts only (allergies, bleeding, pregnancy)
+                // Doctor / Admin: full medical alerts
                 medicalAlertsResponse = medicalAlerts;
             }
 
@@ -619,6 +646,20 @@ public class PatientJourneyController(
                 {
                     v.Id,
                     v.VisitDate,
+                    v.Cost,
+                    v.DoctorId
+                }).ToList();
+            }
+            else if (isReception)
+            {
+                // Fix-3: Reception — operational visit info, no Diagnosis/ClinicalNotes
+                recentVisitsResponse = recentVisits.Select(v => new
+                {
+                    v.Id,
+                    v.VisitDate,
+                    v.VisitType,
+                    v.ChiefComplaint,
+                    v.TreatmentDone,
                     v.Cost,
                     v.DoctorId
                 }).ToList();
@@ -1027,7 +1068,8 @@ public class PatientJourneyController(
     /// Does NOT create a Payment. Does NOT alter Contract or Patient balance.
     /// If a Draft invoice already exists for this Visit, returns the existing one.
     /// Uses transaction + advisory lock + InvoicesController.GenerateInvoiceNumberAsync
-    /// + commissionService.AutoFillFromServiceAsync to match main branch safe behavior.</summary>
+    /// + commissionService.AutoFillFromServiceAsync to match main branch safe behavior.
+    /// Re-checks for duplicate draft inside the transaction to prevent race conditions.</summary>
     [HttpPost("{visitId:guid}/create-draft-invoice")]
     [Authorize(Policy = "FinanceAccess")]
     public async Task<IActionResult> CreateDraftInvoice(Guid visitId)
@@ -1040,14 +1082,13 @@ public class PatientJourneyController(
         if (!visit.IsActive)
             return BadRequest(new { message = "الزيارة محذوفة" });
 
-        // Duplicate prevention: check for existing active Draft invoice for this Visit
+        // Fast-path duplicate prevention: check before acquiring lock
         var existingDraft = await db.Invoices
             .Include(i => i.LineItems)
             .FirstOrDefaultAsync(i => i.VisitId == visitId && i.Status == InvoiceStatus.Draft && i.IsActive);
 
         if (existingDraft != null)
         {
-            // Preserve response fields: IsExisting, StatusArabic, Subtotal, TotalAmount, LineItemCount
             return Ok(new
             {
                 IsExisting = true,
@@ -1089,6 +1130,29 @@ public class PatientJourneyController(
             var lockKey = (int)(DateTime.UtcNow.ToString("yyyyMMdd").GetHashCode() % 100000);
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
+            // Fix-1: Re-check for existing draft INSIDE the transaction after advisory lock
+            // to prevent two concurrent requests from creating duplicate drafts
+            var inTxExistingDraft = await db.Invoices
+                .Include(i => i.LineItems)
+                .FirstOrDefaultAsync(i => i.VisitId == visitId && i.Status == InvoiceStatus.Draft && i.IsActive);
+
+            if (inTxExistingDraft != null)
+            {
+                await tx.RollbackAsync();
+                return Ok(new
+                {
+                    IsExisting = true,
+                    inTxExistingDraft.Id,
+                    inTxExistingDraft.InvoiceNumber,
+                    Status = inTxExistingDraft.Status.ToString(),
+                    StatusArabic = GetInvoiceStatusArabic(inTxExistingDraft.Status),
+                    inTxExistingDraft.Subtotal,
+                    inTxExistingDraft.TotalAmount,
+                    LineItemCount = inTxExistingDraft.LineItems.Count,
+                    message = "فاتورة مسودة موجودة مسبقاً"
+                });
+            }
+
             // Use InvoicesController.GenerateInvoiceNumberAsync (same as main branch)
             var invoiceNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
             var userId = GetCurrentUserId();
@@ -1107,7 +1171,7 @@ public class PatientJourneyController(
 
             db.Invoices.Add(invoice);
 
-            // Add line item
+            // Add line item — restore RelatedVisitId = visitId (matching main branch)
             var lineItem = new InvoiceLineItem
             {
                 InvoiceId = invoice.Id,
@@ -1117,6 +1181,7 @@ public class PatientJourneyController(
                 Quantity = 1,
                 UnitPrice = lineAmount,
                 TotalPrice = lineAmount,
+                RelatedVisitId = visitId,
                 SortOrder = 0
             };
             db.InvoiceLineItems.Add(lineItem);

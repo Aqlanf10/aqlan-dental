@@ -8,6 +8,13 @@ import { useDoctors } from "@/hooks/useDoctors";
 import api from "@/lib/api";
 import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
+import type { AxiosError } from "axios";
+
+/** Extract Arabic backend error message from Axios error response */
+function getBackendError(err: unknown, fallback: string): string {
+  const axiosErr = err as AxiosError<{ message?: string }>;
+  return axiosErr?.response?.data?.message ?? fallback;
+}
 import {
   TrendingUp, Wallet, AlertCircle, FileText, Printer,
   RefreshCw, CheckCircle2, Search, Percent,
@@ -671,7 +678,7 @@ export default function FinanceV2Page() {
       fetchActiveSession();
     } catch (err) {
       console.error(err);
-      toast.error("تعذر فتح وردية الصندوق اليومي.", "فشل الإجراء");
+      toast.error(getBackendError(err, "تعذر فتح وردية الصندوق اليومي."), "فشل الإجراء");
     } finally {
       setIsOpeningSession(false);
     }
@@ -710,7 +717,7 @@ export default function FinanceV2Page() {
       fetchSummary();
     } catch (err) {
       console.error(err);
-      toast.error("تعذر إقفال وردية الصندوق.", "فشل الإجراء");
+      toast.error(getBackendError(err, "تعذر إقفال وردية الصندوق."), "فشل الإجراء");
     } finally {
       setIsClosingSession(false);
     }
@@ -753,7 +760,7 @@ export default function FinanceV2Page() {
       fetchSummary();
     } catch (err) {
       console.error(err);
-      toast.error("تعذر قيد المصروف التشغيلي.", "فشل قيد المصروف");
+      toast.error(getBackendError(err, "تعذر قيد المصروف التشغيلي."), "فشل قيد المصروف");
     } finally {
       setIsSubmittingExpense(false);
     }
@@ -768,7 +775,7 @@ export default function FinanceV2Page() {
       fetchSummary();
     } catch (err) {
       console.error(err);
-      toast.error("تعذر حذف قيد المصروف.", "فشل الحذف");
+      toast.error(getBackendError(err, "تعذر حذف قيد المصروف."), "فشل الحذف");
     }
   };
 

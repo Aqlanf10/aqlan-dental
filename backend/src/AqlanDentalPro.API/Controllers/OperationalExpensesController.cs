@@ -59,7 +59,23 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             date = parsedDate;
 
         var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+
+        // BranchId guard: must have a valid branch assignment before registering an expense
+        var branchId = currentUser.BranchId;
+        if (branchId == null || branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل المصروف." });
+
+        // Cash expenses require an open cashier session so they are linked to the drawer.
+        // Non-cash expenses (card, bank_transfer) do NOT require an open session — only
+        // physical cash leaves the drawer and must be tracked against the open shift.
+        CashierSession? activeSession = null;
+        if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        {
+            activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل مصروف نقدي." });
+        }
 
         // Verify supplier if provided
         if (req.SupplierId.HasValue)
@@ -124,7 +140,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 Notes = req.Notes?.Trim(),
                 ReceiptAttachmentUrl = req.ReceiptAttachmentUrl,
                 PaidBy = userId,
-                BranchId = branchId,
+                BranchId = branchId.Value,
                 ApprovalStatus = approvalStatus,
                 IsPostedToLedger = false
             };
@@ -134,8 +150,11 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             // Auto-post to ledger ONLY if no approval is needed
             if (!needsApproval)
             {
-                await PostToLedgerAsync(db, expense, nextSeq, datePart, userId, branchId);
+                // Phase 0A: link cashflow to the active cashier session for cash expenses
+                // so that the drawer reconciliation correctly subtracts cash outflows.
+                var cashflow = await PostToLedgerAsync(db, expense, nextSeq, datePart, userId, branchId.Value, activeSession?.Id);
                 expense.IsPostedToLedger = true;
+                expense.CashFlowTransactionId = cashflow.Id;
             }
 
             // If linked to lab order, update lab order status to "paid"
@@ -297,6 +316,18 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         var userId = currentUser.UserId ?? Guid.Empty;
         var branchId = expense.BranchId;
 
+        // Phase 0A: When approving a cash expense, find the active session to link
+        CashierSession? activeSession = null;
+        if (string.Equals(expense.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        {
+            activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            // Note: We do NOT block approval if no session is open — the expense was already
+            // created. The approved expense will still post to the ledger, but without a
+            // session link it won't affect the current drawer reconciliation. This is safe
+            // because approved expenses may be processed after session closing.
+        }
+
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -305,12 +336,12 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             expense.ApprovedAt = DateTime.UtcNow;
             expense.ApprovalNotes = req.Notes?.Trim();
 
-            // Post to GL now that it's approved
+            // Post to GL now that it's approved — Phase 0A: link to session if cash
             var datePart = expense.ExpenseDate.ToString("yyyyMMdd");
             var seqSuffix = expense.ExpenseNumber.Split('-').LastOrDefault() ?? "001";
             if (!int.TryParse(seqSuffix, out var seq)) seq = 1;
 
-            var cashflow = await PostToLedgerAsync(db, expense, seq, datePart, userId, branchId);
+            var cashflow = await PostToLedgerAsync(db, expense, seq, datePart, userId, branchId, activeSession?.Id);
             expense.IsPostedToLedger = true;
             expense.CashFlowTransactionId = cashflow.Id;
 
@@ -396,6 +427,16 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             var cashflow = await db.CashFlowTransactions.FindAsync(expense.CashFlowTransactionId.Value);
             if (cashflow != null)
             {
+                // Phase 0A: Guard — do not corrupt a closed or reconciled session by removing
+                // a transaction that was part of its reconciliation calculation.
+                if (cashflow.CashierSessionId.HasValue)
+                {
+                    var linkedSession = await db.CashierSessions.FindAsync(cashflow.CashierSessionId.Value);
+                    if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
+                    {
+                        return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." });
+                    }
+                }
                 cashflow.IsActive = false;
                 cashflow.DeletedAt = DateTime.UtcNow;
                 cashflow.DeletedBy = userId;
@@ -403,11 +444,20 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         }
         else
         {
-            // Fallback: search by reference
+            // Fallback: search by reference for legacy expenses not linked via CashFlowTransactionId
             var cashflow = await db.CashFlowTransactions
                 .FirstOrDefaultAsync(t => t.ReferenceId == expense.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
             if (cashflow != null)
             {
+                // Phase 0A: Guard — same closed session protection
+                if (cashflow.CashierSessionId.HasValue)
+                {
+                    var linkedSession = await db.CashierSessions.FindAsync(cashflow.CashierSessionId.Value);
+                    if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
+                    {
+                        return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." });
+                    }
+                }
                 cashflow.IsActive = false;
                 cashflow.DeletedAt = DateTime.UtcNow;
                 cashflow.DeletedBy = userId;
@@ -430,7 +480,8 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     // --------------- Helpers ---------------
 
     private static async Task<CashFlowTransaction> PostToLedgerAsync(
-        AppDbContext db, OperationalExpense expense, int seq, string datePart, Guid userId, Guid branchId)
+        AppDbContext db, OperationalExpense expense, int seq, string datePart, Guid userId, Guid branchId,
+        Guid? cashierSessionId = null)
     {
         var cashflow = new CashFlowTransaction
         {
@@ -444,7 +495,10 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             ReferenceNumber = expense.ExpenseNumber,
             Description = $"قيد مصروف تشغيلي: {expense.Title} ({GetCategoryArabic(expense.Category)})",
             PerformedBy = userId,
-            BranchId = branchId
+            BranchId = branchId,
+            // Phase 0A: Link to cashier session for cash expenses so drawer reconciliation
+            // correctly subtracts cash outflows from expected closing amounts.
+            CashierSessionId = cashierSessionId
         };
         db.CashFlowTransactions.Add(cashflow);
         return cashflow;

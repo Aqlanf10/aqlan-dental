@@ -12,5 +12,6 @@ public enum FinancialCategory
     OperationalExpense, // مصروف تشغيلي (إيجار، منافع، إلخ)
     Refund,             // استرداد دفعة مريض
     GeneralCost,        // تكاليف عامة
-    InternalTransfer    // تحويل سيولة داخلي بين الخزائن
+    InternalTransfer,   // تحويل سيولة داخلي بين الخزائن
+    SalaryAdvance       // سلفة موظف
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -26,6 +26,7 @@ import {
   User,
   Wallet,
   X,
+  Upload,
 } from "lucide-react";
 import { cn, formatArabicDate, formatYemeniRiyal } from "@/lib/utils";
 import {
@@ -72,7 +73,9 @@ import {
   RECORDS_CHECKLIST_ITEMS,
 } from "@/types/ortho";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
+import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
+import api from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -392,6 +395,20 @@ function RecordsPanel({ caseId }: { caseId: string }) {
     caption: "",
   });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const PHOTO_TYPE_LABELS: Record<string, string> = {
+    Intraoral: "داخل الفم",
+    Extraoral: "خارج الفم",
+    Progress: "متابعة",
+    Radiograph: "أشعة",
+  };
 
   // Group checklist items
   const grouped = useMemo(() => {
@@ -428,7 +445,28 @@ function RecordsPanel({ caseId }: { caseId: string }) {
     );
   };
 
-  const addPhoto = async (event: FormEvent) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Validate
+    const validExts = [".jpg", ".jpeg", ".png", ".webp"];
+    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (!validExts.includes(ext)) {
+      toast.error("صيغة الملف غير مدعومة. استخدم JPG أو PNG أو WebP");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("حجم الملف يتجاوز 10 ميجابايت");
+      return;
+    }
+    setPhotoFile(file);
+    // Generate preview
+    const reader = new FileReader();
+    reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const addPhotoFromUrl = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.photoUrl.trim()) return;
     setSaving(true);
@@ -444,6 +482,58 @@ function RecordsPanel({ caseId }: { caseId: string }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const uploadAndAddPhoto = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!photoFile) return;
+    setUploading(true);
+    try {
+      // Step 1: Upload file via authenticated api client (sends to Railway backend with Bearer token)
+      const formData = new FormData();
+      formData.append("file", photoFile);
+      const uploadRes = await api.post<{ url: string }>("/api/uploads", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const url = uploadRes.data.url;
+      // Step 2: Add photo to ortho case
+      await (
+        await import("@/services/orthoService")
+      ).orthoService.addPhoto(caseId, {
+        photoUrl: url,
+        photoType: form.photoType,
+        caption: form.caption,
+      });
+      setPhotoFile(null);
+      setPhotoPreview(null);
+      setForm((f) => ({ ...f, photoType: "Intraoral", caption: "" }));
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      await refetchPhotos();
+      toast.success("تم رفع الصورة وإضافتها بنجاح");
+    } catch {
+      toast.error("فشل رفع الصورة");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const deletePhoto = async (photoId: string) => {
+    try {
+      await (
+        await import("@/services/orthoService")
+      ).orthoService.deletePhoto(caseId, photoId);
+      setDeleteConfirm(null);
+      await refetchPhotos();
+      toast.success("تم حذف الصورة");
+    } catch {
+      toast.error("فشل حذف الصورة");
+    }
+  };
+
+  const resolveImageUrl = (url: string) => {
+    if (url.startsWith("http") || url.startsWith("data:")) return url;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "";
+    return apiBase ? `${apiBase}${url.startsWith("/") ? "" : "/"}${url}` : url;
   };
 
   return (
@@ -524,76 +614,178 @@ function RecordsPanel({ caseId }: { caseId: string }) {
         </div>
       </div>
 
-      {/* Photo upload + grid */}
+      {/* Photo upload + gallery */}
       <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-        <form
-          onSubmit={addPhoto}
-          className="space-y-3 rounded-lg border border-gray-200 bg-white p-5"
-        >
-          <h2 className="font-semibold text-gray-900">إضافة صورة / سجل</h2>
-          <Field label="الرابط">
-            <input
-              className={inputCls}
-              value={form.photoUrl}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, photoUrl: e.target.value }))
-              }
-            />
-          </Field>
-          <Field label="النوع">
-            <select
-              className={inputCls}
-              value={form.photoType}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, photoType: e.target.value }))
-              }
-            >
-              <option value="Intraoral">داخل الفم</option>
-              <option value="Extraoral">خارج الفم</option>
-              <option value="Progress">متابعة</option>
-              <option value="Radiograph">أشعة</option>
-            </select>
-          </Field>
-          <Field label="ملاحظة">
-            <input
-              className={inputCls}
-              value={form.caption}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, caption: e.target.value }))
-              }
-            />
-          </Field>
-          <SaveButton saving={saving}>إضافة السجل</SaveButton>
-        </form>
+        <div className="space-y-4">
+          {/* File Upload Form */}
+          <form
+            onSubmit={uploadAndAddPhoto}
+            className="space-y-3 rounded-lg border border-gray-200 bg-white p-5"
+          >
+            <h2 className="font-semibold text-gray-900">رفع صورة</h2>
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp"
+                onChange={handleFileSelect}
+                className="block w-full text-sm text-gray-500 file:ml-2 file:rounded-lg file:border-0 file:bg-[#3d7ab5] file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-[#1a3a5c] file:cursor-pointer"
+              />
+            </div>
+            {photoPreview && (
+              <div className="relative aspect-square w-full max-w-[200px] overflow-hidden rounded-lg border border-gray-200">
+                <img
+                  src={photoPreview}
+                  alt="معاينة"
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            )}
+            <Field label="النوع">
+              <select
+                className={inputCls}
+                value={form.photoType}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, photoType: e.target.value }))
+                }
+              >
+                <option value="Intraoral">داخل الفم</option>
+                <option value="Extraoral">خارج الفم</option>
+                <option value="Progress">متابعة</option>
+                <option value="Radiograph">أشعة</option>
+              </select>
+            </Field>
+            <Field label="ملاحظة">
+              <input
+                className={inputCls}
+                value={form.caption}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, caption: e.target.value }))
+                }
+                placeholder="وصف الصورة"
+              />
+            </Field>
+            <SaveButton saving={uploading}>رفع وإضافة</SaveButton>
+          </form>
 
+          {/* URL paste fallback */}
+          <details className="rounded-lg border border-gray-200 bg-white">
+            <summary className="cursor-pointer px-5 py-3 text-sm font-medium text-gray-600 hover:text-gray-900">
+              إضافة عبر رابط (متقدم)
+            </summary>
+            <form
+              onSubmit={addPhotoFromUrl}
+              className="space-y-3 border-t border-gray-100 p-5"
+            >
+              <Field label="رابط الصورة">
+                <input
+                  className={inputCls}
+                  value={form.photoUrl}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, photoUrl: e.target.value }))
+                  }
+                  placeholder="https://..."
+                  dir="ltr"
+                />
+              </Field>
+              <SaveButton saving={saving}>إضافة</SaveButton>
+            </form>
+          </details>
+        </div>
+
+        {/* Photo Gallery */}
         <div>
           {photos.length === 0 ? (
             <EmptyState text="لا توجد صور أو سجلات مرتبطة بحالة التقويم." />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
-              {photos.map((p: OrthoPhoto) => (
-                <a
+            <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
+              {photos.map((p: OrthoPhoto, idx: number) => (
+                <div
                   key={p.id}
-                  href={p.photoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg border border-gray-200 bg-white p-4 transition hover:border-clinic-blue/60"
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-50 cursor-pointer"
+                  onClick={() => {
+                    setPreviewIndex(idx);
+                    setPreviewOpen(true);
+                  }}
                 >
-                  <p className="text-sm font-semibold text-gray-900">
-                    {p.caption || p.photoType}
-                  </p>
-                  <p className="mt-1 truncate text-xs text-gray-400">
-                    {p.photoUrl}
-                  </p>
-                  <p className="mt-2 text-xs text-gray-500">
-                    {p.takenAt ? formatArabicDate(p.takenAt) : ""}
-                  </p>
-                </a>
+                  <img
+                    src={resolveImageUrl(p.photoUrl)}
+                    alt={p.caption || PHOTO_TYPE_LABELS[p.photoType] || p.photoType}
+                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                  {/* Overlay on hover */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute bottom-0 right-0 left-0 p-2">
+                      <p className="text-xs font-medium text-white truncate">
+                        {p.caption || PHOTO_TYPE_LABELS[p.photoType] || p.photoType}
+                      </p>
+                      {p.takenAt && (
+                        <p className="text-[10px] text-white/70">
+                          {formatArabicDate(p.takenAt)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {/* Type badge */}
+                  <span className="absolute top-2 right-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                    {PHOTO_TYPE_LABELS[p.photoType] || p.photoType}
+                  </span>
+                  {/* Delete button */}
+                  {deleteConfirm === p.id ? (
+                    <div
+                      className="absolute top-2 left-2 flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => deletePhoto(p.id)}
+                        className="rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white"
+                      >
+                        تأكيد
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirm(null)}
+                        className="rounded bg-gray-600 px-2 py-1 text-[10px] font-bold text-white"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirm(p.id);
+                      }}
+                      className="absolute top-2 left-2 rounded bg-black/40 p-1 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        url={photos[previewIndex]?.photoUrl ?? ""}
+        fileName={photos[previewIndex]?.caption || photos[previewIndex]?.photoType}
+        items={photos.map((p) => ({
+          url: resolveImageUrl(p.photoUrl),
+          fileName: p.caption || p.photoType,
+        }))}
+        currentIndex={previewIndex}
+        onNavigate={setPreviewIndex}
+      />
     </div>
   );
 }

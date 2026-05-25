@@ -2,7 +2,6 @@ using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.DTOs.Patients;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
-using AqlanDentalPro.Infrastructure.Services;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -18,7 +17,7 @@ public class PatientsController(
     PatientService service,
     AppDbContext db,
     IPatientPortalService portalService,
-    FinanceService financeService,
+    IFinanceService financeService,
     ICurrentUserService currentUser,
     IPatientAccessService patientAccess,
     IAuditService audit,

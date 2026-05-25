@@ -15,6 +15,12 @@ public class TreatmentPlanConfiguration : IEntityTypeConfiguration<TreatmentPlan
         // Performance indexes
         builder.HasIndex(p => p.OrthoCaseId);
 
+        // Unique composite index: each ortho case can have at most one plan per label (A/B/C)
+        builder.HasIndex(p => new { p.OrthoCaseId, p.PlanLabel }).IsUnique();
+
+        // PlanLabel for Plan A/B/C
+        builder.Property(p => p.PlanLabel).HasMaxLength(5).HasDefaultValue("A");
+
         // Relationships
         builder.HasOne(p => p.OrthoCase)
             .WithMany(c => c.TreatmentPlans)

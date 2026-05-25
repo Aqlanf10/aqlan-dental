@@ -41,6 +41,7 @@ type NavGroup = {
   icon: React.ElementType;
   roles: string[];
   permission?: string;
+  badge?: string;
   children: NavLeaf[];
 };
 
@@ -65,7 +66,7 @@ const NAV: NavEntry[] = [
       { href: "/appointments",        label: "المواعيد",         icon: Calendar,      roles: [], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
       { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
       { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [], permission: PERMISSION_KEYS.CLINIC_DISPLAY_VIEW },
-      { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW },
+      { href: "/patient-journey",     label: "رحلة المرضى",      icon: Route,         roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW, badge: "جديد" },
       { href: "/finance/payments",    label: "المدفوعات",        icon: CreditCard,    roles: ["Admin","Reception","Accountant"], permission: PERMISSION_KEYS.PAYMENTS_VIEW },
       { href: "/finance/invoices",    label: "الفواتير",         icon: FileText,      roles: ["Admin","Reception","Accountant"], permission: PERMISSION_KEYS.INVOICES_VIEW },
       { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"], permission: PERMISSION_KEYS.ROOMS_VIEW },
@@ -76,7 +77,7 @@ const NAV: NavEntry[] = [
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"],                                         section: "العيادة" },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
-  { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: ["Admin","Orthodontist"],                                       section: "تخصصات" },
+  { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: ["Admin","Orthodontist"],                                       section: "تخصصات", badge: "محدّث" },
   { href: "/ceph",           label: "السيفالومتري",     icon: Activity,        roles: ["Admin","Orthodontist"] },
   { href: "/general",        label: "طب الأسنان العام", icon: Stethoscope,     roles: ["Admin","GeneralDentist"] },
   { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: ["Admin","OralSurgeon"] },
@@ -192,8 +193,8 @@ function NavLink({
       <span className="flex-1 text-right">{label}</span>
       {badge && (
         <span
-          className="text-[10px] font-extrabold rounded px-1.5 py-0.5 ml-1 flex-shrink-0"
-          style={{ backgroundColor: BRAND_ORANGE, color: "#fff" }}
+          className="text-[9px] font-bold rounded-full px-1.5 py-0.5 ml-1 flex-shrink-0"
+          style={{ background: BRAND_ORANGE, color: "#fff" }}
         >
           {badge}
         </span>
@@ -269,7 +270,7 @@ function NavGroupItem({
               key={child.href}
               href={child.href}
               label={child.label}
-              icon={child.icon}
+              icon={child.icon} badge={child.badge}
               isCurrent={child.href === "/" ? pathname === "/" : pathname.startsWith(child.href)}
               indent
               badge={child.badge}

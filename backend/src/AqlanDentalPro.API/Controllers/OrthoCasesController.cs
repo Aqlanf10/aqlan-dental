@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.DTOs.Ortho;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
@@ -37,7 +38,10 @@ public sealed class UpsertClinicalExamRequest
 [ApiController]
 [Route("api/ortho-cases")]
 [Authorize(Policy = "OrthoAccess")]
-public class OrthoCasesController(OrthoService service, AppDbContext db) : ControllerBase
+public class OrthoCasesController(
+    OrthoService service,
+    AppDbContext db,
+    ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -59,12 +63,140 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         return result == null ? NotFound(new { message = "الحالة التقويمية غير موجودة" }) : Ok(result);
     }
 
+    [HttpGet("{id:guid}/overview")]
+    public async Task<IActionResult> GetOverview(Guid id)
+    {
+        var orthoCase = await db.OrthoCases
+            .AsNoTracking()
+            .Include(c => c.TreatmentPlans)
+            .Include(c => c.Stages)
+            .Include(c => c.Visits)
+            .Include(c => c.OrthoClinicalPhotos)
+            .Include(c => c.CephAnalyses)
+            .Include(c => c.RetentionRecord)
+            .Include(c => c.RecordsChecklist)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var hasClinicalExam = await db.OrthoClinicalExams.AnyAsync(e => e.OrthoCaseId == id);
+        var problemsCount = await db.ProblemListItems.CountAsync(p => p.OrthoCaseId == id);
+        var hasDiagnosis = await db.OrthoDiagnoses.AnyAsync(d => d.OrthoCaseId == id);
+        var isDiagnosisApproved = await db.OrthoDiagnoses.AnyAsync(d => d.OrthoCaseId == id && d.ApprovedAt != null);
+        var latestPlan = orthoCase.TreatmentPlans.OrderByDescending(p => p.CreatedAt).FirstOrDefault();
+        var latestVisit = orthoCase.Visits.OrderByDescending(v => v.VisitDate).FirstOrDefault();
+
+        // Contract selection: prefer contract explicitly linked to this ortho case.
+        // Fallback: unlinked legacy ortho contracts (RelatedCaseId == null).
+        // Never select a contract linked to a different ortho case.
+        var contract = await db.Contracts
+            .Include(c => c.Payments)
+            .Where(c => c.PatientId == orthoCase.PatientId &&
+                c.RelatedCaseId == id)
+            .OrderByDescending(c => c.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (contract is null)
+        {
+            // Legacy fallback: orthodontics contracts with no case link (pre-dating RelatedCaseId)
+            var unlinkedOrthoContracts = await db.Contracts
+                .Include(c => c.Payments)
+                .Where(c => c.PatientId == orthoCase.PatientId &&
+                    c.RelatedCaseId == null &&
+                    (c.Specialty == "orthodontics" || c.Specialty == "ortho"))
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+
+            // If multiple ambiguous unlinked contracts exist, do not silently pick the wrong one
+            contract = unlinkedOrthoContracts.Count == 1 ? unlinkedOrthoContracts[0] : null;
+        }
+
+        decimal? contractTotal = null;
+        decimal? contractPaid = null;
+        decimal? contractRemaining = null;
+        if (contract is not null)
+        {
+            contractTotal = contract.TotalAmount - contract.DiscountAmount;
+            // FIX: Only count active payments — exclude soft-deleted/refunded payments
+            contractPaid = contract.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
+            contractRemaining = Math.Max(0, contractTotal.Value - contractPaid.Value);
+        }
+
+        // Records checklist completion
+        var checklist = orthoCase.RecordsChecklist;
+        int checklistCompleted = 0;
+        int checklistTotal = 14;
+        if (checklist is not null)
+        {
+            checklistCompleted = new[]
+            {
+                checklist.ExtraoralFrontal, checklist.ExtraoralProfile, checklist.ExtraoralSmile,
+                checklist.IntraoralFrontal, checklist.IntraoralRight, checklist.IntraoralLeft,
+                checklist.UpperOcclusal, checklist.LowerOcclusal,
+                checklist.Opg, checklist.LateralCeph, checklist.Cbct,
+                checklist.StudyModels, checklist.Consent, checklist.Contract,
+            }.Count(b => b);
+        }
+        // Auto-derive checklist items from existing data using same per-item logic as GET /checklist
+        if (checklist is null)
+        {
+            var photos = orthoCase.OrthoClinicalPhotos;
+            var hasCeph = orthoCase.CephAnalyses.Count > 0;
+            var hasModel = await db.ModelAnalyses.AnyAsync(m => m.OrthoCaseId == id);
+            // Use precise per-item matching — same as GET /checklist derivation
+            checklistCompleted = new[]
+            {
+                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("frontal") == true),
+                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("profile") == true),
+                photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("smile") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("frontal") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("right") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("left") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("upper") == true),
+                photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("lower") == true),
+                photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("OPG") == true),
+                hasCeph,
+                photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("CBCT") == true),
+                hasModel,
+                false, // Consent — cannot auto-derive
+                contract is not null,
+            }.Count(b => b);
+        }
+
+        return Ok(new
+        {
+            HasClinicalExam = hasClinicalExam,
+            ProblemsCount = problemsCount,
+            HasDiagnosis = hasDiagnosis,
+            IsDiagnosisApproved = isDiagnosisApproved,
+            HasTreatmentPlan = latestPlan is not null,
+            IsTreatmentPlanApproved = latestPlan?.IsApproved ?? false,
+            TreatmentPlansCount = orthoCase.TreatmentPlans.Count,
+            CompletedStages = orthoCase.Stages.Count(s => s.Status == "completed"),
+            TotalStages = orthoCase.Stages.Count,
+            VisitsCount = orthoCase.Visits.Count,
+            PhotosCount = orthoCase.OrthoClinicalPhotos.Count,
+            CephAnalysesCount = orthoCase.CephAnalyses.Count,
+            HasRetention = orthoCase.RetentionRecord is not null,
+            ChecklistCompleted = checklistCompleted,
+            ChecklistTotal = checklistTotal,
+            ContractId = contract?.Id,
+            ContractTotal = contractTotal,
+            ContractPaid = contractPaid,
+            ContractRemaining = contractRemaining,
+            LatestVisitDate = latestVisit?.VisitDate.ToString("yyyy-MM-dd"),
+            NextAppointmentDate = latestVisit?.NextAppointmentDate?.ToString("yyyy-MM-dd")
+        });
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateOrthoCaseRequest req)
     {
         var result = await service.CreateAsync(req);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
+
+    // ─── Visits ──────────────────────────────────────────────────────────────────
 
     [HttpGet("{id:guid}/visits")]
     public async Task<IActionResult> GetVisits(Guid id)
@@ -80,6 +212,8 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         return Ok(result);
     }
 
+    // ─── Stages ──────────────────────────────────────────────────────────────────
+
     [HttpGet("{id:guid}/stages")]
     public async Task<IActionResult> GetStages(Guid id)
     {
@@ -93,6 +227,8 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         var result = await service.UpdateStageAsync(stageId, req.Status);
         return result == null ? NotFound() : Ok(result);
     }
+
+    // ─── Clinical Exam ───────────────────────────────────────────────────────────
 
     [HttpGet("{id:guid}/clinical-exam")]
     public async Task<IActionResult> GetClinicalExam(Guid id)
@@ -216,21 +352,55 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         return Ok(new { message = "تم الحذف" });
     }
 
-    // ─── Treatment Plan ──────────────────────────────────────────────────────────
+    // ─── Treatment Plans (multiple: Plan A/B/C) ──────────────────────────────────
+
+    [HttpGet("{id:guid}/treatment-plans")]
+    public async Task<IActionResult> GetTreatmentPlans(Guid id)
+    {
+        var plans = await db.TreatmentPlans
+            .Include(p => p.ApprovedByDoctor)
+            .Where(p => p.OrthoCaseId == id)
+            .OrderBy(p => p.PlanLabel)
+            .Select(p => new
+            {
+                p.Id,
+                p.PlanVersion,
+                p.PlanLabel,
+                p.IsApproved,
+                p.ApplianceType,
+                p.BracketSystem,
+                p.InitialWire,
+                p.ExtractionPlan,
+                p.AnchoragePlan,
+                p.UseTads,
+                p.UseElastics,
+                p.ExpectedDurationMonths,
+                p.RetentionPlan,
+                p.TreatmentGoals,
+                p.RisksLimitations,
+                ApprovedByName = p.ApprovedByDoctor != null ? p.ApprovedByDoctor.Name : null,
+                ApprovedAt     = p.ApprovedAt != null ? p.ApprovedAt.Value.ToString("yyyy-MM-dd") : null,
+            })
+            .ToListAsync();
+        return Ok(plans);
+    }
 
     [HttpGet("{id:guid}/treatment-plan")]
     public async Task<IActionResult> GetTreatmentPlan(Guid id)
     {
+        // Backward-compatible: returns the latest (or approved) plan
         var plan = await db.TreatmentPlans
             .Include(p => p.ApprovedByDoctor)
             .Where(p => p.OrthoCaseId == id)
-            .OrderByDescending(p => p.CreatedAt)
+            .OrderByDescending(p => p.IsApproved ? 1 : 0)
+            .ThenByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
         if (plan is null) return Ok(null);
         return Ok(new
         {
             plan.Id,
             plan.PlanVersion,
+            plan.PlanLabel,
             plan.IsApproved,
             plan.ApplianceType,
             plan.BracketSystem,
@@ -248,6 +418,85 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         });
     }
 
+    private static readonly HashSet<string> ValidPlanLabels = new(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
+
+    [HttpPost("{id:guid}/treatment-plans")]
+    public async Task<IActionResult> CreateTreatmentPlan(Guid id, [FromBody] CreateTreatmentPlanRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        // ── Canonicalise PlanLabel: trim whitespace and force uppercase ──
+        // This prevents "a" / " b " / "C" from bypassing the unique index,
+        // which is case-sensitive in PostgreSQL.
+        var normalizedLabel = req.PlanLabel?.Trim().ToUpperInvariant();
+
+        // Fetch existing labels for this ortho case
+        var existingLabels = await db.TreatmentPlans
+            .Where(p => p.OrthoCaseId == id)
+            .Select(p => p.PlanLabel)
+            .ToListAsync();
+
+        // If caller supplied a label, validate it (after normalisation)
+        if (normalizedLabel is not null)
+        {
+            if (!ValidPlanLabels.Contains(normalizedLabel))
+                return BadRequest(new { message = "تصنيف الخطة غير صالح. القيم المسموح بها: A أو B أو C فقط" });
+
+            if (existingLabels.Contains(normalizedLabel, StringComparer.OrdinalIgnoreCase))
+                return BadRequest(new { message = $"تصنيف الخطة {normalizedLabel} مستخدم بالفعل لهذه الحالة" });
+        }
+
+        // Auto-select next available label when caller omitted it
+        var chosenLabel = normalizedLabel
+            ?? new[] { "A", "B", "C" }.FirstOrDefault(l => !existingLabels.Contains(l, StringComparer.OrdinalIgnoreCase));
+
+        if (chosenLabel is null)
+            return BadRequest(new { message = "تم إنشاء الخطط A و B و C بالفعل لهذه الحالة. لا يمكن إضافة خطة رابعة" });
+
+        var plan = new TreatmentPlan
+        {
+            OrthoCaseId = id,
+            PlanLabel = chosenLabel,
+            ApplianceType = req.ApplianceType,
+            BracketSystem = req.BracketSystem,
+            InitialWire = req.InitialWire,
+            ExtractionPlan = req.ExtractionPlan,
+            AnchoragePlan = req.AnchoragePlan,
+            UseTads = req.UseTads,
+            UseElastics = req.UseElastics,
+            ExpectedDurationMonths = req.ExpectedDurationMonths,
+            RetentionPlan = req.RetentionPlan,
+            TreatmentGoals = req.TreatmentGoals,
+            RisksLimitations = req.RisksLimitations,
+        };
+        db.TreatmentPlans.Add(plan);
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent request won the race for this (OrthoCaseId, PlanLabel) pair.
+            // The pre-check passed but another transaction inserted the same label first.
+            return Conflict(new { message = "تصنيف الخطة مستخدم بالفعل لهذه الحالة. قم بتحديث الصفحة والمحاولة مرة أخرى." });
+        }
+        return Ok(new { plan.Id, plan.PlanLabel, message = "تم إنشاء خطة العلاج" });
+    }
+
+    /// <summary>
+    /// Detects PostgreSQL unique-constraint violation (23505) from a DbUpdateException.
+    /// Used to handle concurrent PlanLabel inserts without exposing database internals.
+    /// </summary>
+    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    {
+        var inner = ex.InnerException;
+        if (inner is Npgsql.PostgresException pgEx)
+            return pgEx.SqlState == "23505";
+        // Fallback: check the exception message for the standard SQLSTATE pattern
+        return inner?.Message?.Contains("23505") == true;
+    }
+
     [HttpPut("{id:guid}/treatment-plan")]
     public async Task<IActionResult> UpsertTreatmentPlan(Guid id, [FromBody] UpsertTreatmentPlanRequest req)
     {
@@ -257,6 +506,9 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         var existing = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id).OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
         if (existing is null)
         {
+            // New plan defaults to PlanLabel "A" (see entity default).
+            // If a concurrent request already created Plan A, the unique index
+            // IX_TreatmentPlans_OrthoCaseId_PlanLabel will catch it → HTTP 409.
             existing = new TreatmentPlan { OrthoCaseId = id };
             db.TreatmentPlans.Add(existing);
         }
@@ -273,8 +525,148 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         existing.TreatmentGoals         = req.TreatmentGoals;
         existing.RisksLimitations       = req.RisksLimitations;
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent first-time request already created Plan A for this case.
+            return Conflict(new { message = "تصنيف الخطة مستخدم بالفعل لهذه الحالة. قم بتحديث الصفحة والمحاولة مرة أخرى." });
+        }
         return Ok(new { existing.Id, message = "تم حفظ خطة العلاج" });
+    }
+
+    [HttpPut("{id:guid}/treatment-plans/{planId:guid}")]
+    public async Task<IActionResult> UpdateTreatmentPlan(Guid id, Guid planId, [FromBody] UpsertTreatmentPlanRequest req)
+    {
+        var plan = await db.TreatmentPlans.FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
+        if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
+        if (plan.IsApproved) return BadRequest(new { message = "لا يمكن تعديل خطة معتمدة" });
+
+        plan.ApplianceType          = req.ApplianceType;
+        plan.BracketSystem          = req.BracketSystem;
+        plan.InitialWire            = req.InitialWire;
+        plan.ExtractionPlan         = req.ExtractionPlan;
+        plan.AnchoragePlan          = req.AnchoragePlan;
+        plan.UseTads                = req.UseTads;
+        plan.UseElastics            = req.UseElastics;
+        plan.ExpectedDurationMonths = req.ExpectedDurationMonths;
+        plan.RetentionPlan          = req.RetentionPlan;
+        plan.TreatmentGoals         = req.TreatmentGoals;
+        plan.RisksLimitations       = req.RisksLimitations;
+
+        await db.SaveChangesAsync();
+        return Ok(new { plan.Id, message = "تم تحديث خطة العلاج" });
+    }
+
+    [HttpPatch("{id:guid}/treatment-plan/approve")]
+    public async Task<IActionResult> ApproveTreatmentPlan(Guid id)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var plan = await db.TreatmentPlans
+            .Where(p => p.OrthoCaseId == id)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
+
+        // FIX: Record the actual approving user, not the assigned orthodontist.
+        var approverId = currentUser.UserId;
+        if (approverId == null) return Unauthorized(new { message = "غير مصادق عليه" });
+
+        var isAssignedOrthodontist = orthoCase.DoctorId != null &&
+            await db.Doctors.AnyAsync(d => d.Id == orthoCase.DoctorId && d.UserId == approverId && d.IsActive);
+
+        if (!isAssignedOrthodontist && !currentUser.IsAdmin)
+            return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة.");
+
+        // Enforce single-approved-treatment-plan invariant: un-approve other plans for this case
+        var otherPlans = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id && p.Id != plan.Id).ToListAsync();
+        foreach (var op in otherPlans) { op.IsApproved = false; }
+
+        Guid? approvedByDoctorId = null;
+        if (isAssignedOrthodontist)
+        {
+            approvedByDoctorId = orthoCase.DoctorId;
+        }
+        else if (currentUser.IsAdmin)
+        {
+            var adminDoctor = await db.Doctors
+                .Where(d => d.UserId == approverId && d.IsActive)
+                .Select(d => (Guid?)d.Id)
+                .FirstOrDefaultAsync();
+            approvedByDoctorId = adminDoctor;
+        }
+
+        plan.IsApproved = true;
+        plan.ApprovedAt = DateTime.UtcNow;
+        plan.ApprovedBy = approvedByDoctorId;
+        await db.SaveChangesAsync();
+
+        // If admin approved without a linked Doctor record, approvedByDoctorId is null.
+        // The approval is still valid (recorded via ApprovedAt timestamp + audit logs),
+        // but ApprovedBy will be null — UI should display "Admin" in this case.
+        return Ok(new
+        {
+            plan.Id,
+            plan.PlanVersion,
+            plan.PlanLabel,
+            plan.IsApproved,
+            ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
+            ApprovedByDoctorId = approvedByDoctorId,
+            ApprovedByUserId = approverId,
+        });
+    }
+
+    [HttpPatch("{id:guid}/treatment-plans/{planId:guid}/approve")]
+    public async Task<IActionResult> ApproveSpecificTreatmentPlan(Guid id, Guid planId)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var plan = await db.TreatmentPlans.FirstOrDefaultAsync(p => p.Id == planId && p.OrthoCaseId == id);
+        if (plan is null) return NotFound(new { message = "خطة العلاج غير موجودة" });
+
+        var approverId = currentUser.UserId;
+        if (approverId == null) return Unauthorized(new { message = "غير مصادق عليه" });
+
+        var isAssignedOrthodontist = orthoCase.DoctorId != null &&
+            await db.Doctors.AnyAsync(d => d.Id == orthoCase.DoctorId && d.UserId == approverId && d.IsActive);
+
+        if (!isAssignedOrthodontist && !currentUser.IsAdmin)
+            return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد الخطة.");
+
+        // Un-approve other plans for this case
+        var otherPlans = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id && p.Id != planId).ToListAsync();
+        foreach (var op in otherPlans) { op.IsApproved = false; }
+
+        Guid? approvedByDoctorId = null;
+        if (isAssignedOrthodontist) { approvedByDoctorId = orthoCase.DoctorId; }
+        else if (currentUser.IsAdmin)
+        {
+            var adminDoctor = await db.Doctors
+                .Where(d => d.UserId == approverId && d.IsActive)
+                .Select(d => (Guid?)d.Id)
+                .FirstOrDefaultAsync();
+            approvedByDoctorId = adminDoctor;
+        }
+
+        plan.IsApproved = true;
+        plan.ApprovedAt = DateTime.UtcNow;
+        plan.ApprovedBy = approvedByDoctorId;
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            plan.Id,
+            plan.PlanLabel,
+            plan.IsApproved,
+            ApprovedAt = plan.ApprovedAt?.ToString("yyyy-MM-dd"),
+            ApprovedByDoctorId = approvedByDoctorId,
+            ApprovedByUserId = approverId,
+        });
     }
 
     // ─── Extraction Decision ─────────────────────────────────────────────────────
@@ -291,6 +683,8 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         return Ok(new {
             decision.Id,
             decision.Decision,
+            decision.ProExtraction,
+            decision.ConExtraction,
             decision.DoctorNotes,
             decision.AiRecommendation,
             DecidedByName = decision.Doctor?.Name,
@@ -310,15 +704,294 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
             existing = new ExtractionDecision { OrthoCaseId = id };
             db.ExtractionDecisions.Add(existing);
         }
-        existing.Decision    = req.Decision;
-        existing.DoctorNotes = req.DoctorNotes;
-        existing.DecidedAt   = DateTime.UtcNow;
+        existing.Decision      = req.Decision;
+        existing.DoctorNotes   = req.DoctorNotes;
+        existing.ProExtraction = req.ProExtraction;
+        existing.ConExtraction = req.ConExtraction;
+        existing.DecidedAt     = DateTime.UtcNow;
 
         // Mirror to orthoCase for quick access
         orthoCase.ExtractionDecisionValue = req.Decision;
 
         await db.SaveChangesAsync();
         return Ok(new { existing.Id, message = "تم حفظ قرار الخلع" });
+    }
+
+    // ─── Records Checklist ───────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/checklist")]
+    public async Task<IActionResult> GetChecklist(Guid id)
+    {
+        var checklist = await db.RecordsChecklists
+            .Where(r => r.OrthoCaseId == id)
+            .FirstOrDefaultAsync();
+
+        if (checklist is not null)
+        {
+            return Ok(new
+            {
+                checklist.Id,
+                checklist.OrthoCaseId,
+                checklist.ExtraoralFrontal,
+                checklist.ExtraoralProfile,
+                checklist.ExtraoralSmile,
+                checklist.IntraoralFrontal,
+                checklist.IntraoralRight,
+                checklist.IntraoralLeft,
+                checklist.UpperOcclusal,
+                checklist.LowerOcclusal,
+                checklist.Opg,
+                checklist.LateralCeph,
+                checklist.Cbct,
+                checklist.StudyModels,
+                checklist.Consent,
+                checklist.Contract,
+            });
+        }
+
+        // Auto-derive from existing data if no checklist exists yet
+        var photos = await db.OrthoClinicalPhotos.Where(p => p.OrthoCaseId == id).ToListAsync();
+        var hasCeph = await db.CephAnalyses.AnyAsync(c => c.OrthoCaseId == id);
+        var hasModel = await db.ModelAnalyses.AnyAsync(m => m.OrthoCaseId == id);
+        var patientId = await db.OrthoCases.Where(oc => oc.Id == id).Select(oc => oc.PatientId).FirstOrDefaultAsync();
+        var contract = await db.Contracts
+            .Where(c => c.PatientId == patientId && c.RelatedCaseId == id)
+            .AnyAsync();
+        if (!contract && patientId != Guid.Empty)
+        {
+            var unlinkedCount = await db.Contracts
+                .Where(c => c.PatientId == patientId && c.RelatedCaseId == null &&
+                    (c.Specialty == "orthodontics" || c.Specialty == "ortho"))
+                .CountAsync();
+            contract = unlinkedCount == 1;
+        }
+
+        return Ok(new
+        {
+            Id = (Guid?)null,
+            OrthoCaseId = id,
+            ExtraoralFrontal = photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("frontal") == true),
+            ExtraoralProfile = photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("profile") == true),
+            ExtraoralSmile = photos.Any(p => p.PhotoType == "Extraoral" && p.Caption?.Contains("smile") == true),
+            IntraoralFrontal = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("frontal") == true),
+            IntraoralRight = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("right") == true),
+            IntraoralLeft = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("left") == true),
+            UpperOcclusal = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("upper") == true),
+            LowerOcclusal = photos.Any(p => p.PhotoType == "Intraoral" && p.Caption?.Contains("lower") == true),
+            Opg = photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("OPG") == true),
+            LateralCeph = hasCeph,
+            Cbct = photos.Any(p => p.PhotoType == "Radiograph" && p.Caption?.Contains("CBCT") == true),
+            StudyModels = hasModel,
+            Consent = false,
+            Contract = contract,
+        });
+    }
+
+    [HttpPut("{id:guid}/checklist")]
+    public async Task<IActionResult> UpsertChecklist(Guid id, [FromBody] UpsertChecklistRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.RecordsChecklists.FirstOrDefaultAsync(r => r.OrthoCaseId == id);
+        if (existing is null)
+        {
+            existing = new RecordsChecklist { OrthoCaseId = id };
+            db.RecordsChecklists.Add(existing);
+        }
+
+        existing.ExtraoralFrontal = req.ExtraoralFrontal;
+        existing.ExtraoralProfile = req.ExtraoralProfile;
+        existing.ExtraoralSmile   = req.ExtraoralSmile;
+        existing.IntraoralFrontal = req.IntraoralFrontal;
+        existing.IntraoralRight   = req.IntraoralRight;
+        existing.IntraoralLeft    = req.IntraoralLeft;
+        existing.UpperOcclusal    = req.UpperOcclusal;
+        existing.LowerOcclusal    = req.LowerOcclusal;
+        existing.Opg              = req.Opg;
+        existing.LateralCeph      = req.LateralCeph;
+        existing.Cbct             = req.Cbct;
+        existing.StudyModels      = req.StudyModels;
+        existing.Consent          = req.Consent;
+        existing.Contract         = req.Contract;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم تحديث قائمة السجلات" });
+    }
+
+    // ─── Diagnosis (enhanced) ─────────────────────────────────────────────────────
+
+    [HttpGet("{id:guid}/diagnosis")]
+    public async Task<IActionResult> GetDiagnosis(Guid id)
+    {
+        var diagnosis = await db.OrthoDiagnoses
+            .Include(d => d.ApprovedByDoctor)
+            .Where(d => d.OrthoCaseId == id)
+            .FirstOrDefaultAsync();
+
+        if (diagnosis is not null)
+        {
+            return Ok(new
+            {
+                diagnosis.Id,
+                diagnosis.SkeletalClassification,
+                diagnosis.DentalClassification,
+                diagnosis.FacialPattern,
+                diagnosis.SoftTissueDiagnosis,
+                diagnosis.FunctionalDiagnosis,
+                diagnosis.Etiology,
+                diagnosis.ANB,
+                diagnosis.Wits,
+                diagnosis.FMA,
+                diagnosis.SNA,
+                diagnosis.SNB,
+                diagnosis.IMPA,
+                diagnosis.Summary,
+                IsApproved = diagnosis.ApprovedAt != null,
+                ApprovedByName = diagnosis.ApprovedByDoctor?.Name,
+                ApprovedAt = diagnosis.ApprovedAt?.ToString("yyyy-MM-dd"),
+            });
+        }
+
+        // Compute a summary from ClinicalExam, ProblemList, and CephAnalysis measurements
+        var orthoCase = await db.OrthoCases
+            .Include(c => c.ClinicalExam)
+            .Include(c => c.ProblemList)
+            .Include(c => c.CephAnalyses)
+                .ThenInclude(a => a.Measurements)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var latestCeph = orthoCase.CephAnalyses
+            .OrderByDescending(a => a.AnalysisDate)
+            .FirstOrDefault();
+        var measurements = latestCeph?.Measurements ?? [];
+
+        var anbValue = measurements.FirstOrDefault(m => m.MeasurementName == "ANB")?.MeasurementValue;
+        var witsValue = measurements.FirstOrDefault(m => m.MeasurementName == "Wits")?.MeasurementValue;
+        var fmaValue = measurements.FirstOrDefault(m => m.MeasurementName == "FMA")?.MeasurementValue;
+        var snaValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNA")?.MeasurementValue;
+        var snbValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNB")?.MeasurementValue;
+        var impaValue = measurements.FirstOrDefault(m => m.MeasurementName == "IMPA")?.MeasurementValue;
+
+        string? skeletalClass = anbValue switch
+        {
+            >= 0 and <= 4 => "Class I",
+            > 4 => "Class II",
+            < 0 => "Class III",
+            null => null
+        };
+
+        string? facialPattern = fmaValue switch
+        {
+            < 22 => "Hypodivergent",
+            >= 22 and <= 28 => "Normodivergent",
+            > 28 => "Hyperdivergent",
+            null => null
+        };
+
+        string? dentalClass = orthoCase.ClinicalExam?.MolarRelation;
+
+        var problemSummary = orthoCase.ProblemList.Count > 0
+            ? string.Join("، ", orthoCase.ProblemList.OrderBy(p => p.SortOrder).Select(p => p.Description))
+            : null;
+
+        return Ok(new
+        {
+            Id = (Guid?)null,
+            SkeletalClassification = skeletalClass,
+            DentalClassification = dentalClass,
+            FacialPattern = facialPattern,
+            SoftTissueDiagnosis = (string?)null,
+            FunctionalDiagnosis = (string?)null,
+            Etiology = (string?)null,
+            ANB = anbValue,
+            Wits = witsValue,
+            FMA = fmaValue,
+            SNA = snaValue,
+            SNB = snbValue,
+            IMPA = impaValue,
+            Summary = problemSummary,
+            IsApproved = false,
+            ApprovedByName = (string?)null,
+            ApprovedAt = (string?)null,
+        });
+    }
+
+    [HttpPut("{id:guid}/diagnosis")]
+    public async Task<IActionResult> UpsertDiagnosis(Guid id, [FromBody] UpsertDiagnosisRequest req)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var existing = await db.OrthoDiagnoses.FirstOrDefaultAsync(d => d.OrthoCaseId == id);
+        if (existing is null)
+        {
+            existing = new OrthoDiagnosis { OrthoCaseId = id };
+            db.OrthoDiagnoses.Add(existing);
+        }
+
+        existing.SkeletalClassification = req.SkeletalClassification;
+        existing.DentalClassification   = req.DentalClassification;
+        existing.FacialPattern          = req.FacialPattern;
+        existing.SoftTissueDiagnosis    = req.SoftTissueDiagnosis;
+        existing.FunctionalDiagnosis    = req.FunctionalDiagnosis;
+        existing.Etiology               = req.Etiology;
+        existing.ANB                    = req.ANB;
+        existing.Wits                   = req.Wits;
+        existing.FMA                    = req.FMA;
+        existing.SNA                    = req.SNA;
+        existing.SNB                    = req.SNB;
+        existing.IMPA                   = req.IMPA;
+        existing.Summary                = req.Summary;
+
+        await db.SaveChangesAsync();
+        return Ok(new { existing.Id, message = "تم حفظ التشخيص" });
+    }
+
+    [HttpPatch("{id:guid}/diagnosis/approve")]
+    public async Task<IActionResult> ApproveDiagnosis(Guid id)
+    {
+        var orthoCase = await db.OrthoCases.FindAsync(id);
+        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        var diagnosis = await db.OrthoDiagnoses.FirstOrDefaultAsync(d => d.OrthoCaseId == id);
+        if (diagnosis is null) return NotFound(new { message = "التشخيص غير موجود" });
+
+        var approverId = currentUser.UserId;
+        if (approverId == null) return Unauthorized(new { message = "غير مصادق عليه" });
+
+        var isAssignedOrthodontist = orthoCase.DoctorId != null &&
+            await db.Doctors.AnyAsync(d => d.Id == orthoCase.DoctorId && d.UserId == approverId && d.IsActive);
+
+        if (!isAssignedOrthodontist && !currentUser.IsAdmin)
+            return Forbid("فقط طبيب التقويم المعين أو المسؤول يمكنه اعتماد التشخيص.");
+
+        Guid? approvedByDoctorId = null;
+        if (isAssignedOrthodontist) { approvedByDoctorId = orthoCase.DoctorId; }
+        else if (currentUser.IsAdmin)
+        {
+            var adminDoctor = await db.Doctors
+                .Where(d => d.UserId == approverId && d.IsActive)
+                .Select(d => (Guid?)d.Id)
+                .FirstOrDefaultAsync();
+            approvedByDoctorId = adminDoctor;
+        }
+
+        diagnosis.ApprovedBy = approvedByDoctorId;
+        diagnosis.ApprovedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            diagnosis.Id,
+            IsApproved = true,
+            ApprovedAt = diagnosis.ApprovedAt?.ToString("yyyy-MM-dd"),
+            ApprovedByDoctorId = approvedByDoctorId,
+            ApprovedByUserId = approverId,
+            message = "تم اعتماد التشخيص",
+        });
     }
 
     // ─── Retention Records ─────────────────────────────────────────────────────
@@ -423,122 +1096,6 @@ public class OrthoCasesController(OrthoService service, AppDbContext db) : Contr
         return Ok(visits);
     }
 
-    // ─── Diagnosis Summary ──────────────────────────────────────────────────────
-
-    [HttpGet("{id:guid}/diagnosis")]
-    public async Task<IActionResult> GetDiagnosis(Guid id)
-    {
-        var diagnosis = await db.OrthoDiagnoses
-            .Where(d => d.OrthoCaseId == id)
-            .FirstOrDefaultAsync();
-
-        if (diagnosis is not null)
-        {
-            return Ok(new
-            {
-                diagnosis.Id,
-                diagnosis.SkeletalClassification,
-                diagnosis.DentalClassification,
-                diagnosis.FacialPattern,
-                diagnosis.ANB,
-                diagnosis.Wits,
-                diagnosis.FMA,
-                diagnosis.SNA,
-                diagnosis.SNB,
-                diagnosis.IMPA,
-                diagnosis.Summary,
-            });
-        }
-
-        // Compute a summary from ClinicalExam, ProblemList, and CephAnalysis measurements
-        var orthoCase = await db.OrthoCases
-            .Include(c => c.ClinicalExam)
-            .Include(c => c.ProblemList)
-            .Include(c => c.CephAnalyses)
-                .ThenInclude(a => a.Measurements)
-            .FirstOrDefaultAsync(c => c.Id == id);
-
-        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
-
-        // Derive skeletal classification from the latest ceph measurements
-        var latestCeph = orthoCase.CephAnalyses
-            .OrderByDescending(a => a.AnalysisDate)
-            .FirstOrDefault();
-        var measurements = latestCeph?.Measurements ?? [];
-
-        var anbValue = measurements.FirstOrDefault(m => m.MeasurementName == "ANB")?.MeasurementValue;
-        var witsValue = measurements.FirstOrDefault(m => m.MeasurementName == "Wits")?.MeasurementValue;
-        var fmaValue = measurements.FirstOrDefault(m => m.MeasurementName == "FMA")?.MeasurementValue;
-        var snaValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNA")?.MeasurementValue;
-        var snbValue = measurements.FirstOrDefault(m => m.MeasurementName == "SNB")?.MeasurementValue;
-        var impaValue = measurements.FirstOrDefault(m => m.MeasurementName == "IMPA")?.MeasurementValue;
-
-        string? skeletalClass = anbValue switch
-        {
-            >= 0 and <= 4 => "Class I",
-            > 4 => "Class II",
-            < 0 => "Class III",
-            null => null
-        };
-
-        string? facialPattern = fmaValue switch
-        {
-            < 22 => "Hypodivergent",
-            >= 22 and <= 28 => "Normodivergent",
-            > 28 => "Hyperdivergent",
-            null => null
-        };
-
-        string? dentalClass = orthoCase.ClinicalExam?.MolarRelation;
-
-        var problemSummary = orthoCase.ProblemList.Count > 0
-            ? string.Join("، ", orthoCase.ProblemList.OrderBy(p => p.SortOrder).Select(p => p.Description))
-            : null;
-
-        return Ok(new
-        {
-            Id = (Guid?)null,
-            SkeletalClassification = skeletalClass,
-            DentalClassification = dentalClass,
-            FacialPattern = facialPattern,
-            ANB = anbValue,
-            Wits = witsValue,
-            FMA = fmaValue,
-            SNA = snaValue,
-            SNB = snbValue,
-            IMPA = impaValue,
-            Summary = problemSummary,
-        });
-    }
-
-    [HttpPut("{id:guid}/diagnosis")]
-    public async Task<IActionResult> UpsertDiagnosis(Guid id, [FromBody] UpsertDiagnosisRequest req)
-    {
-        var orthoCase = await db.OrthoCases.FindAsync(id);
-        if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
-
-        var existing = await db.OrthoDiagnoses.FirstOrDefaultAsync(d => d.OrthoCaseId == id);
-        if (existing is null)
-        {
-            existing = new OrthoDiagnosis { OrthoCaseId = id };
-            db.OrthoDiagnoses.Add(existing);
-        }
-
-        existing.SkeletalClassification = req.SkeletalClassification;
-        existing.DentalClassification   = req.DentalClassification;
-        existing.FacialPattern          = req.FacialPattern;
-        existing.ANB                    = req.ANB;
-        existing.Wits                   = req.Wits;
-        existing.FMA                    = req.FMA;
-        existing.SNA                    = req.SNA;
-        existing.SNB                    = req.SNB;
-        existing.IMPA                   = req.IMPA;
-        existing.Summary                = req.Summary;
-
-        await db.SaveChangesAsync();
-        return Ok(new { existing.Id, message = "تم حفظ التشخيص" });
-    }
-
     // ─── Clinical Photos ────────────────────────────────────────────────────────
 
     [HttpPost("{id:guid}/photos")]
@@ -624,6 +1181,24 @@ public sealed class UpsertExtractionDecisionRequest
 {
     public string? Decision    { get; init; }
     public string? DoctorNotes { get; init; }
+    public System.Text.Json.JsonDocument? ProExtraction { get; init; }
+    public System.Text.Json.JsonDocument? ConExtraction { get; init; }
+}
+
+public sealed class CreateTreatmentPlanRequest
+{
+    public string? PlanLabel          { get; init; }
+    public string? ApplianceType      { get; init; }
+    public string? BracketSystem      { get; init; }
+    public string? InitialWire        { get; init; }
+    public string? ExtractionPlan     { get; init; }
+    public string? AnchoragePlan      { get; init; }
+    public bool UseTads               { get; init; }
+    public bool UseElastics           { get; init; }
+    public int? ExpectedDurationMonths { get; init; }
+    public string? RetentionPlan      { get; init; }
+    public string? TreatmentGoals     { get; init; }
+    public string? RisksLimitations   { get; init; }
 }
 
 public sealed class UpsertTreatmentPlanRequest
@@ -664,6 +1239,9 @@ public sealed class UpsertDiagnosisRequest
     public string? SkeletalClassification { get; init; }
     public string? DentalClassification   { get; init; }
     public string? FacialPattern          { get; init; }
+    public string? SoftTissueDiagnosis    { get; init; }
+    public string? FunctionalDiagnosis    { get; init; }
+    public string? Etiology               { get; init; }
     public decimal? ANB                   { get; init; }
     public decimal? Wits                  { get; init; }
     public decimal? FMA                   { get; init; }
@@ -671,6 +1249,24 @@ public sealed class UpsertDiagnosisRequest
     public decimal? SNB                   { get; init; }
     public decimal? IMPA                  { get; init; }
     public string? Summary                { get; init; }
+}
+
+public sealed class UpsertChecklistRequest
+{
+    public bool ExtraoralFrontal { get; init; }
+    public bool ExtraoralProfile { get; init; }
+    public bool ExtraoralSmile   { get; init; }
+    public bool IntraoralFrontal { get; init; }
+    public bool IntraoralRight   { get; init; }
+    public bool IntraoralLeft    { get; init; }
+    public bool UpperOcclusal    { get; init; }
+    public bool LowerOcclusal    { get; init; }
+    public bool Opg              { get; init; }
+    public bool LateralCeph      { get; init; }
+    public bool Cbct             { get; init; }
+    public bool StudyModels      { get; init; }
+    public bool Consent          { get; init; }
+    public bool Contract         { get; init; }
 }
 
 public sealed class AddOrthoPhotoRequest

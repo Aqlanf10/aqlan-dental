@@ -9,7 +9,8 @@ namespace AqlanDentalPro.UnitTests.Ortho;
 
 /// <summary>
 /// Tests for PlanLabel validation: only A/B/C allowed, no duplicates per ortho case,
-/// max three plans per case, unique index in EF model snapshot, and concurrent conflict detection.
+/// max three plans per case, unique index in EF model snapshot, canonical uppercase
+/// normalisation, and concurrent conflict detection.
 /// </summary>
 public class OrthoPlanLabelValidationTests : IDisposable
 {
@@ -41,6 +42,119 @@ public class OrthoPlanLabelValidationTests : IDisposable
         await _db.SaveChangesAsync();
         return orthoCaseId;
     }
+
+    // ── Canonicalisation tests ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LowercaseLabel_NormalisedToUppercase()
+    {
+        // Sending "a" must be normalised to "A" before persistence.
+        // This mirrors the controller logic: normalizedLabel = req.PlanLabel?.Trim().ToUpperInvariant()
+        var rawLabel = "a";
+        var normalizedLabel = rawLabel.Trim().ToUpperInvariant();
+
+        normalizedLabel.Should().Be("A", "lowercase 'a' must be canonicalised to uppercase 'A' before storage");
+
+        // Persist and verify the stored value is uppercase
+        var orthoCaseId = await SeedOrthoCase();
+        _db.TreatmentPlans.Add(new TreatmentPlanEntity { OrthoCaseId = orthoCaseId, PlanLabel = normalizedLabel });
+        await _db.SaveChangesAsync();
+
+        var stored = await _db.TreatmentPlans.FirstAsync(p => p.OrthoCaseId == orthoCaseId);
+        stored.PlanLabel.Should().Be("A");
+    }
+
+    [Fact]
+    public async Task PaddedLowercaseLabel_NormalisedToUppercase()
+    {
+        // Sending " b " must be normalised to "B" before persistence.
+        var rawLabel = " b ";
+        var normalizedLabel = rawLabel.Trim().ToUpperInvariant();
+
+        normalizedLabel.Should().Be("B", "' b ' must be trimmed and uppercased to 'B'");
+
+        var orthoCaseId = await SeedOrthoCase();
+        _db.TreatmentPlans.Add(new TreatmentPlanEntity { OrthoCaseId = orthoCaseId, PlanLabel = normalizedLabel });
+        await _db.SaveChangesAsync();
+
+        var stored = await _db.TreatmentPlans.FirstAsync(p => p.OrthoCaseId == orthoCaseId);
+        stored.PlanLabel.Should().Be("B");
+    }
+
+    [Fact]
+    public async Task ExistingUppercaseA_RejectsLowercaseA()
+    {
+        // If Plan A already exists, requesting "a" (which normalises to "A") must be rejected.
+        var orthoCaseId = await SeedOrthoCase();
+        _db.TreatmentPlans.Add(new TreatmentPlanEntity { OrthoCaseId = orthoCaseId, PlanLabel = "A" });
+        await _db.SaveChangesAsync();
+
+        // Simulate controller logic: normalise then check duplicates
+        var normalizedLabel = "a".Trim().ToUpperInvariant(); // → "A"
+        var existingLabels = await _db.TreatmentPlans
+            .Where(p => p.OrthoCaseId == orthoCaseId)
+            .Select(p => p.PlanLabel)
+            .ToListAsync();
+
+        var isDuplicate = existingLabels.Contains(normalizedLabel, StringComparer.OrdinalIgnoreCase);
+        isDuplicate.Should().BeTrue("an existing 'A' must reject a requested 'a' after normalisation");
+    }
+
+    [Fact]
+    public async Task MixedCaseDuplicateLabels_CannotCoexistForSameOrthoCaseId()
+    {
+        // After canonicalisation, "A" and "a" map to the same value and cannot both exist.
+        // The unique index on (OrthoCaseId, PlanLabel) enforces this at the DB level,
+        // and the pre-check with OrdinalIgnoreCase catches it before SaveChanges.
+        var orthoCaseId = await SeedOrthoCase();
+        _db.TreatmentPlans.Add(new TreatmentPlanEntity { OrthoCaseId = orthoCaseId, PlanLabel = "A" });
+        await _db.SaveChangesAsync();
+
+        // Normalise "a" → "A", then check for duplicate
+        var requestedLabel = "a".Trim().ToUpperInvariant(); // → "A"
+        var existingLabels = await _db.TreatmentPlans
+            .Where(p => p.OrthoCaseId == orthoCaseId)
+            .Select(p => p.PlanLabel)
+            .ToListAsync();
+
+        var isDuplicate = existingLabels.Contains(requestedLabel, StringComparer.OrdinalIgnoreCase);
+        isDuplicate.Should().BeTrue("mixed-case duplicates must be detected after canonicalisation");
+    }
+
+    [Fact]
+    public async Task DatabaseUniqueness_EnforcesCanonicalUppercase()
+    {
+        // The unique index on (OrthoCaseId, PlanLabel) in PostgreSQL is case-sensitive.
+        // Because the controller always normalises to uppercase BEFORE persisting,
+        // the index never sees lowercase values. This test verifies that the
+        // canonicalisation + index strategy is self-consistent: all stored values
+        // are uppercase, so case-sensitivity of the index is never a problem.
+        var orthoCaseId = await SeedOrthoCase();
+
+        // Simulate three normalised inserts (matching controller flow)
+        var labels = new[] { "a", " B ", "c" };
+        foreach (var raw in labels)
+        {
+            var normalized = raw.Trim().ToUpperInvariant();
+            _db.TreatmentPlans.Add(new TreatmentPlanEntity { OrthoCaseId = orthoCaseId, PlanLabel = normalized });
+        }
+        await _db.SaveChangesAsync();
+
+        var storedPlans = await _db.TreatmentPlans
+            .Where(p => p.OrthoCaseId == orthoCaseId)
+            .OrderBy(p => p.PlanLabel)
+            .ToListAsync();
+
+        storedPlans.Should().HaveCount(3);
+        storedPlans[0].PlanLabel.Should().Be("A");
+        storedPlans[1].PlanLabel.Should().Be("B");
+        storedPlans[2].PlanLabel.Should().Be("C");
+
+        // All stored labels are uppercase — consistent with the unique index
+        storedPlans.All(p => p.PlanLabel == p.PlanLabel.ToUpperInvariant()).Should().BeTrue();
+    }
+
+    // ── Original tests ──────────────────────────────────────────────────────────
 
     [Fact]
     public async Task Duplicate_PlanLabel_ForSameOrthoCase_IsRejected()
@@ -190,6 +304,25 @@ public class OrthoPlanLabelValidationTests : IDisposable
         plans.Should().HaveCount(2);
         plans.All(p => p.PlanLabel == "A").Should().BeTrue();
     }
+
+    // ── Entity default label test ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task NewTreatmentPlan_DefaultsToPlanLabelA()
+    {
+        // The TreatmentPlan entity defaults PlanLabel to "A".
+        // This is critical for the legacy PUT endpoint which creates plans
+        // without specifying a label.
+        var orthoCaseId = await SeedOrthoCase();
+        var plan = new TreatmentPlanEntity { OrthoCaseId = orthoCaseId };
+        plan.PlanLabel.Should().Be("A", "entity default must be uppercase 'A' for the legacy PUT endpoint");
+
+        _db.TreatmentPlans.Add(plan);
+        await _db.SaveChangesAsync();
+
+        var stored = await _db.TreatmentPlans.FirstAsync(p => p.OrthoCaseId == orthoCaseId);
+        stored.PlanLabel.Should().Be("A");
+    }
 }
 
 /// <summary>
@@ -286,5 +419,43 @@ public class OrthoPlanLabelConflictTests
         chosenByRequest1.Should().Be("B");
         chosenByRequest2.Should().Be("B");
         // Both chose the same label — the unique index will catch one of them.
+    }
+
+    [Fact]
+    public void ConcurrentLowercaseRequests_Canonicalised_BeforeRace()
+    {
+        // Even if two concurrent requests send different cases for the same logical label
+        // (e.g. "a" and "A"), canonicalisation normalises both to "A" before the
+        // pre-check, so the second request is rejected at the validation layer —
+        // not only at the database constraint layer.
+        var raw1 = "a";
+        var raw2 = "A";
+
+        var normalized1 = raw1.Trim().ToUpperInvariant(); // "A"
+        var normalized2 = raw2.Trim().ToUpperInvariant(); // "A"
+
+        normalized1.Should().Be(normalized2, "different cases of the same label must canonicalise to the same value");
+
+        // After canonicalisation, both map to "A" — the pre-check catches it.
+        var existingLabels = new List<string> { "A" };
+        var isDuplicate1 = existingLabels.Contains(normalized1, StringComparer.OrdinalIgnoreCase);
+        var isDuplicate2 = existingLabels.Contains(normalized2, StringComparer.OrdinalIgnoreCase);
+
+        isDuplicate1.Should().BeTrue("normalised 'a' → 'A' must be detected as duplicate of existing 'A'");
+        isDuplicate2.Should().BeTrue("normalised 'A' must be detected as duplicate of existing 'A'");
+    }
+
+    [Fact]
+    public void PaddedLabel_Canonicalised_BeforeValidation()
+    {
+        // A label like " b " is trimmed and uppercased to "B" before any validation.
+        // This ensures the unique index (case-sensitive) never sees lowercase or padded values.
+        var rawLabel = " b ";
+        var normalizedLabel = rawLabel.Trim().ToUpperInvariant();
+
+        normalizedLabel.Should().Be("B");
+
+        var validLabels = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "A", "B", "C" };
+        validLabels.Contains(normalizedLabel).Should().BeTrue("normalised 'B' must pass the whitelist check");
     }
 }

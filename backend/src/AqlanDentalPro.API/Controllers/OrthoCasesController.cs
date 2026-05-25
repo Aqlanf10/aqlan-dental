@@ -426,24 +426,29 @@ public class OrthoCasesController(
         var orthoCase = await db.OrthoCases.FindAsync(id);
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
 
+        // ── Canonicalise PlanLabel: trim whitespace and force uppercase ──
+        // This prevents "a" / " b " / "C" from bypassing the unique index,
+        // which is case-sensitive in PostgreSQL.
+        var normalizedLabel = req.PlanLabel?.Trim().ToUpperInvariant();
+
         // Fetch existing labels for this ortho case
         var existingLabels = await db.TreatmentPlans
             .Where(p => p.OrthoCaseId == id)
             .Select(p => p.PlanLabel)
             .ToListAsync();
 
-        // If caller supplied a label, validate it
-        if (req.PlanLabel is not null)
+        // If caller supplied a label, validate it (after normalisation)
+        if (normalizedLabel is not null)
         {
-            if (!ValidPlanLabels.Contains(req.PlanLabel))
+            if (!ValidPlanLabels.Contains(normalizedLabel))
                 return BadRequest(new { message = "تصنيف الخطة غير صالح. القيم المسموح بها: A أو B أو C فقط" });
 
-            if (existingLabels.Contains(req.PlanLabel, StringComparer.OrdinalIgnoreCase))
-                return BadRequest(new { message = $"تصنيف الخطة {req.PlanLabel} مستخدم بالفعل لهذه الحالة" });
+            if (existingLabels.Contains(normalizedLabel, StringComparer.OrdinalIgnoreCase))
+                return BadRequest(new { message = $"تصنيف الخطة {normalizedLabel} مستخدم بالفعل لهذه الحالة" });
         }
 
         // Auto-select next available label when caller omitted it
-        var chosenLabel = req.PlanLabel
+        var chosenLabel = normalizedLabel
             ?? new[] { "A", "B", "C" }.FirstOrDefault(l => !existingLabels.Contains(l, StringComparer.OrdinalIgnoreCase));
 
         if (chosenLabel is null)
@@ -501,6 +506,9 @@ public class OrthoCasesController(
         var existing = await db.TreatmentPlans.Where(p => p.OrthoCaseId == id).OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
         if (existing is null)
         {
+            // New plan defaults to PlanLabel "A" (see entity default).
+            // If a concurrent request already created Plan A, the unique index
+            // IX_TreatmentPlans_OrthoCaseId_PlanLabel will catch it → HTTP 409.
             existing = new TreatmentPlan { OrthoCaseId = id };
             db.TreatmentPlans.Add(existing);
         }
@@ -517,7 +525,15 @@ public class OrthoCasesController(
         existing.TreatmentGoals         = req.TreatmentGoals;
         existing.RisksLimitations       = req.RisksLimitations;
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // Concurrent first-time request already created Plan A for this case.
+            return Conflict(new { message = "تصنيف الخطة مستخدم بالفعل لهذه الحالة. قم بتحديث الصفحة والمحاولة مرة أخرى." });
+        }
         return Ok(new { existing.Id, message = "تم حفظ خطة العلاج" });
     }
 

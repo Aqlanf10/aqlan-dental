@@ -15,4 +15,5 @@ public class Supplier : BaseEntity
 
     // Navigation
     public ICollection<PurchaseOrder> PurchaseOrders { get; set; } = [];
+    public ICollection<SupplierBill> Bills { get; set; } = [];
 }

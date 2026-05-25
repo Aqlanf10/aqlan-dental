@@ -262,6 +262,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         };
         db.CashFlowTransactions.Add(cashflow);
 
+        await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, payment.Amount, payment.PaymentMethod);
+
         await db.SaveChangesAsync();
 
         // Auto-transition invoice to Paid if payments cover the total
@@ -591,6 +593,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             cashflow.DeletedBy = userId;
         }
 
+        await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
+
         await db.SaveChangesAsync();
 
         // H3 FIX: Re-evaluate invoice status after deleting a payment.
@@ -662,6 +666,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             CashierSessionId = activeSession.Id
         };
         db.CashFlowTransactions.Add(refundCashflow);
+
+        await UpdateTreasuryBalanceAsync(refund.BranchId ?? Guid.Empty, refund.Amount, refund.PaymentMethod);
 
         await db.SaveChangesAsync();
 
@@ -813,15 +819,34 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// </summary>
     private async Task<string> GenerateReceiptNumberAsync()
     {
+        var today = DateTime.UtcNow;
+        var datePart = today.ToString("yyyyMMdd");
+        var prefix = $"RCP-{datePart}-";
+
+        if (!db.Database.IsRelational())
+        {
+            var lastReceipt = await db.Payments
+                .IgnoreQueryFilters()
+                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+                .OrderByDescending(p => p.ReceiptNumber)
+                .Select(p => p.ReceiptNumber)
+                .FirstOrDefaultAsync();
+
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
+            {
+                var seqPart = lastReceipt[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq))
+                    nextSeq = lastSeq + 1;
+            }
+            return $"{prefix}{nextSeq:D3}";
+        }
+
         var lockKey = Math.Abs("ReceiptNumber".GetHashCode()) % 100000;
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
-            var today = DateTime.UtcNow;
-            var datePart = today.ToString("yyyyMMdd");
-            var prefix = $"RCP-{datePart}-";
 
             var lastReceipt = await db.Payments
                 .IgnoreQueryFilters()
@@ -857,15 +882,34 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// </summary>
     private async Task<string> GenerateRefundReceiptNumberAsync()
     {
+        var today = DateTime.UtcNow;
+        var datePart = today.ToString("yyyyMMdd");
+        var prefix = $"REF-{datePart}-";
+
+        if (!db.Database.IsRelational())
+        {
+            var lastRefund = await db.Payments
+                .IgnoreQueryFilters()
+                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+                .OrderByDescending(p => p.ReceiptNumber)
+                .Select(p => p.ReceiptNumber)
+                .FirstOrDefaultAsync();
+
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
+            {
+                var seqPart = lastRefund[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq))
+                    nextSeq = lastSeq + 1;
+            }
+            return $"{prefix}{nextSeq:D3}";
+        }
+
         var lockKey = Math.Abs("RefundReceiptNumber".GetHashCode()) % 100000;
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
-
-            var today = DateTime.UtcNow;
-            var datePart = today.ToString("yyyyMMdd");
-            var prefix = $"REF-{datePart}-";
 
             var lastRefund = await db.Payments
                 .IgnoreQueryFilters()
@@ -962,5 +1006,32 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             invoice.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
         }
+    }
+
+    private async Task UpdateTreasuryBalanceAsync(Guid branchId, decimal amount, string? paymentMethod)
+    {
+        var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank") 
+            ? TreasuryType.Bank 
+            : TreasuryType.Vault;
+            
+        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
+        
+        var treasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+            
+        if (treasury == null)
+        {
+            treasury = new Treasury
+            {
+                Name = name,
+                Type = type,
+                Balance = 0,
+                BranchId = branchId,
+                IsActive = true
+            };
+            db.Treasuries.Add(treasury);
+        }
+        
+        treasury.Balance += amount;
     }
 }

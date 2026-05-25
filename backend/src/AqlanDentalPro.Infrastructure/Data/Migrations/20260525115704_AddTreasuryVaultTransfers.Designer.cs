@@ -3,6 +3,7 @@ using System;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AqlanDentalPro.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260525115704_AddTreasuryVaultTransfers")]
+    partial class AddTreasuryVaultTransfers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3015,22 +3018,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("numeric");
 
-                    b.Property<string>("ApprovalNotes")
-                        .HasColumnType("text");
-
-                    b.Property<int>("ApprovalStatus")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ApprovedById")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid>("BranchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("CashFlowTransactionId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("Category")
@@ -3053,9 +3041,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasColumnType("text");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsPostedToLedger")
                         .HasColumnType("boolean");
 
                     b.Property<Guid?>("LabOrderId")
@@ -3086,11 +3071,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ApprovedById");
-
                     b.HasIndex("BranchId");
-
-                    b.HasIndex("CashFlowTransactionId");
 
                     b.HasIndex("LabOrderId");
 
@@ -5128,139 +5109,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.ToTable("Suppliers", (string)null);
                 });
 
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SupplierBill", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AttachmentUrl")
-                        .HasColumnType("text");
-
-                    b.Property<DateOnly>("BillDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("BillNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("BranchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateOnly?>("DueDate")
-                        .HasColumnType("date");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid?>("LabOrderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<decimal>("PaidAmount")
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid?>("PurchaseOrderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("SupplierId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasColumnType("numeric");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BranchId");
-
-                    b.HasIndex("LabOrderId");
-
-                    b.HasIndex("PurchaseOrderId");
-
-                    b.HasIndex("SupplierId");
-
-                    b.ToTable("SupplierBills");
-                });
-
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SupplierBillPayment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid?>("CashFlowTransactionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("PaidBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateOnly>("PaymentDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("PaymentMethod")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ReferenceNumber")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("SupplierBillId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CashFlowTransactionId");
-
-                    b.HasIndex("SupplierBillId");
-
-                    b.ToTable("SupplierBillPayments");
-                });
-
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SurgeryCase", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6655,19 +6503,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.OperationalExpense", b =>
                 {
-                    b.HasOne("AqlanDentalPro.Domain.Entities.User", "ApprovedBy")
-                        .WithMany()
-                        .HasForeignKey("ApprovedById");
-
                     b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
                         .WithMany()
                         .HasForeignKey("BranchId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.HasOne("AqlanDentalPro.Domain.Entities.CashFlowTransaction", "CashFlowTransaction")
-                        .WithMany()
-                        .HasForeignKey("CashFlowTransactionId");
 
                     b.HasOne("AqlanDentalPro.Domain.Entities.LabOrder", "LabOrder")
                         .WithMany()
@@ -6677,11 +6517,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .WithMany()
                         .HasForeignKey("SupplierId");
 
-                    b.Navigation("ApprovedBy");
-
                     b.Navigation("Branch");
-
-                    b.Navigation("CashFlowTransaction");
 
                     b.Navigation("LabOrder");
 
@@ -7147,54 +6983,6 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("Patient");
                 });
 
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SupplierBill", b =>
-                {
-                    b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("AqlanDentalPro.Domain.Entities.LabOrder", "LabOrder")
-                        .WithMany()
-                        .HasForeignKey("LabOrderId");
-
-                    b.HasOne("AqlanDentalPro.Domain.Entities.PurchaseOrder", "PurchaseOrder")
-                        .WithMany()
-                        .HasForeignKey("PurchaseOrderId");
-
-                    b.HasOne("AqlanDentalPro.Domain.Entities.Supplier", "Supplier")
-                        .WithMany("Bills")
-                        .HasForeignKey("SupplierId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("LabOrder");
-
-                    b.Navigation("PurchaseOrder");
-
-                    b.Navigation("Supplier");
-                });
-
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SupplierBillPayment", b =>
-                {
-                    b.HasOne("AqlanDentalPro.Domain.Entities.CashFlowTransaction", "CashFlowTransaction")
-                        .WithMany()
-                        .HasForeignKey("CashFlowTransactionId");
-
-                    b.HasOne("AqlanDentalPro.Domain.Entities.SupplierBill", "SupplierBill")
-                        .WithMany("Payments")
-                        .HasForeignKey("SupplierBillId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CashFlowTransaction");
-
-                    b.Navigation("SupplierBill");
-                });
-
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SurgeryCase", b =>
                 {
                     b.HasOne("AqlanDentalPro.Domain.Entities.Doctor", "Doctor")
@@ -7500,14 +7288,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Supplier", b =>
                 {
-                    b.Navigation("Bills");
-
                     b.Navigation("PurchaseOrders");
-                });
-
-            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SupplierBill", b =>
-                {
-                    b.Navigation("Payments");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.SurgeryCase", b =>

@@ -405,6 +405,7 @@ builder.Services.AddScoped<IBookingRequestService, AqlanDentalPro.Infrastructure
 builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.ICommissionService, AqlanDentalPro.Infrastructure.Services.CommissionService>();
 builder.Services.AddScoped<AqlanDentalPro.Application.Interfaces.Services.IPatientAccessService, AqlanDentalPro.Infrastructure.Services.PatientAccessService>();
 builder.Services.AddScoped<ILoginAttemptService, LoginAttemptService>();
+builder.Services.AddHttpClient(); // Register IHttpClientFactory for PatientPortalService
 builder.Services.AddHttpClient<IRecaptchaService, RecaptchaService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddScoped<IEmailService, EmailService>();

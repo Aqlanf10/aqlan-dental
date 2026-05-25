@@ -158,6 +158,7 @@ foreach (var row in patientRows)
         Gender = ParseGender(row["GenderForTarget"]),
         Phone = operationalPhoneAllowed ? NullIfEmpty(row["PreferredPhone"]) : null,
         NormalizedPhone = operationalPhoneAllowed ? normalizedPhone : null,
+        Email = NullIfEmpty(row["Email"]),
         Address = NullIfEmpty(row["FullAddress"]),
         BranchId = branchId,
         ReferralSource = "Legacy Dent2026 import"

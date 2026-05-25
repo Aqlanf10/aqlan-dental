@@ -339,7 +339,9 @@ export default function PatientJourneyPage() {
 
   // ─── Cancel Appointment/NoShow Dialog ──────────────────────────────────────
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [cancelDialogType, setCancelDialogType] = useState<"Cancelled" | "NoShow">("Cancelled");
+  const [cancelDialogType, setCancelDialogType] = useState<"Cancelled" | "NoShow" | "CancelQueue" | "ChangeRoom">("Cancelled");
+  const [pendingChangeRoomId, setPendingChangeRoomId] = useState("");
+  const [pendingChangeRoomName, setPendingChangeRoomName] = useState("");
 
   // ─── Record Payment Modal ──────────────────────────────────────────────────
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
@@ -379,6 +381,9 @@ export default function PatientJourneyPage() {
 
   // ─── Change Room Inline ────────────────────────────────────────────────────
   const [changeRoomSelectedRoom, setChangeRoomSelectedRoom] = useState("");
+
+  // ─── PDF Download Loading ────────────────────────────────────────────────────
+  const [pdfDownloading, setPdfDownloading] = useState(false);
 
   // ─── Data Loading ──────────────────────────────────────────────────────────
 
@@ -437,6 +442,9 @@ export default function PatientJourneyPage() {
     setCheckoutNotes("");
     // Reset new modal states
     setCancelDialogOpen(false);
+    setPendingChangeRoomId("");
+    setPendingChangeRoomName("");
+    setPdfDownloading(false);
     setRecordPaymentOpen(false);
     setPaymentAmount(0);
     setPaymentMethod("cash");
@@ -625,51 +633,52 @@ export default function PatientJourneyPage() {
     }
   }, [summary?.todayVisit?.id, draftInvoiceMutation]);
 
-  // ─── Cancel Appointment / NoShow ────────────────────────────────────────────
-  const handleCancelOrNoShow = useCallback(async () => {
-    if (!summary?.todayAppointment?.id) return;
+  // ─── Confirm Action (Cancel/NoShow/CancelQueue/ChangeRoom) ────────────────
+  const handleConfirmAction = useCallback(async () => {
     try {
-      await updateAptStatusMutation.mutateAsync({
-        appointmentId: summary.todayAppointment.id,
-        status: cancelDialogType,
-      });
-      toast.success(cancelDialogType === "Cancelled" ? "تم إلغاء الموعد" : "تم تسجيل عدم الحضور");
+      if (cancelDialogType === "Cancelled" || cancelDialogType === "NoShow") {
+        if (!summary?.todayAppointment?.id) return;
+        await updateAptStatusMutation.mutateAsync({
+          appointmentId: summary.todayAppointment.id,
+          status: cancelDialogType,
+        });
+        toast.success(cancelDialogType === "Cancelled" ? "تم إلغاء الموعد" : "تم تسجيل عدم الحضور");
+      } else if (cancelDialogType === "CancelQueue") {
+        if (!queueItemId) return;
+        await cancelQueueMutation.mutateAsync(queueItemId);
+        toast.success("تم إلغاء المريض من الطابور");
+      } else if (cancelDialogType === "ChangeRoom") {
+        if (!queueItemId || !pendingChangeRoomId) return;
+        await changeRoomMutation.mutateAsync({ queueItemId, roomId: pendingChangeRoomId });
+        toast.success("تم تغيير الغرفة");
+        setChangeRoomSelectedRoom("");
+      }
       setCancelDialogOpen(false);
+      setPendingChangeRoomId("");
       loadJourney();
       refetchSummary();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       toast.error(msg);
     }
-  }, [summary?.todayAppointment?.id, cancelDialogType, updateAptStatusMutation, loadJourney, refetchSummary]);
+  }, [cancelDialogType, summary?.todayAppointment?.id, queueItemId, pendingChangeRoomId, updateAptStatusMutation, cancelQueueMutation, changeRoomMutation, loadJourney, refetchSummary]);
 
-  // ─── Cancel from Queue ─────────────────────────────────────────────────────
-  const handleCancelQueue = useCallback(async () => {
-    if (!queueItemId) return;
-    try {
-      await cancelQueueMutation.mutateAsync(queueItemId);
-      toast.success("تم إلغاء المريض من الطابور");
-      loadJourney();
-      refetchSummary();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
-      toast.error(msg);
-    }
-  }, [queueItemId, cancelQueueMutation, loadJourney, refetchSummary]);
+  // ─── Request Cancel from Queue (shows confirmation) ────────────────────────
+  const handleRequestCancelQueue = useCallback(() => {
+    setCancelDialogType("CancelQueue");
+    setCancelDialogOpen(true);
+  }, []);
 
-  // ─── Change Room ───────────────────────────────────────────────────────────
-  const handleChangeRoom = useCallback(async (roomId: string) => {
-    if (!queueItemId || !roomId) return;
-    try {
-      await changeRoomMutation.mutateAsync({ queueItemId, roomId });
-      toast.success("تم تغيير الغرفة");
-      loadJourney();
-      refetchSummary();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
-      toast.error(msg);
-    }
-  }, [queueItemId, changeRoomMutation, loadJourney, refetchSummary]);
+  // ─── Request Change Room (shows confirmation) ───────────────────────────────
+  const handleRequestChangeRoom = useCallback((roomId: string) => {
+    const targetRoom = rooms.find((r) => r.id === roomId);
+    setPendingChangeRoomId(roomId);
+    setChangeRoomSelectedRoom(roomId);
+    setCancelDialogType("ChangeRoom");
+    setCancelDialogOpen(true);
+    // Store target room name for dialog display
+    setPendingChangeRoomName(targetRoom?.arabicName ?? "");
+  }, [rooms]);
 
   // ─── Record Payment ────────────────────────────────────────────────────────
   const handleRecordPayment = useCallback(async (e: React.FormEvent) => {
@@ -715,6 +724,7 @@ export default function PatientJourneyPage() {
 
   // ─── Download PDF ──────────────────────────────────────────────────────────
   const handleDownloadPdf = useCallback(async (url: string, filename: string) => {
+    setPdfDownloading(true);
     try {
       const res = await api.get(url, { responseType: "blob" });
       const blob = new Blob([res.data as BlobPart], { type: "application/pdf" });
@@ -726,8 +736,11 @@ export default function PatientJourneyPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(linkUrl);
+      toast.success("تم تحميل الملف بنجاح");
     } catch {
       toast.error("فشل تحميل الملف");
+    } finally {
+      setPdfDownloading(false);
     }
   }, []);
 
@@ -772,17 +785,24 @@ export default function PatientJourneyPage() {
       toast.error("لا يوجد رقم هاتف للمريض");
       return;
     }
-    const cleanPhone = phone.replace(/[^0-9+]/g, "");
+    // Ensure country code: if starts with 0, replace with 967 (Yemen)
+    let cleanPhone = phone.replace(/[^0-9+]/g, "");
+    if (cleanPhone.startsWith("0")) {
+      cleanPhone = "967" + cleanPhone.substring(1);
+    } else if (!cleanPhone.startsWith("+") && !cleanPhone.startsWith("967") && cleanPhone.length <= 9) {
+      cleanPhone = "967" + cleanPhone;
+    }
     const aptTime = summary?.todayAppointment?.startTime
       ? fmtTime(summary.todayAppointment.startTime)
       : "";
     const aptDate = summary?.todayAppointment?.appointmentDate
       ? fmtDate(summary.todayAppointment.appointmentDate)
       : "";
-    const msg = `تذكير: لديكم موعد في عيادة أسنان يوم ${aptDate} الساعة ${aptTime}`;
+    const doctorName = summary?.todayAppointment?.doctorName ?? "الطبيب";
+    const msg = `تذكير: لديكم موعد يوم ${aptDate} الساعة ${aptTime} مع ${doctorName}`;
     const encoded = encodeURIComponent(msg);
     window.open(`https://wa.me/${cleanPhone}?text=${encoded}`, "_blank");
-  }, [summary?.patient.phone, summary?.todayAppointment?.startTime, summary?.todayAppointment?.appointmentDate]);
+  }, [summary?.patient.phone, summary?.todayAppointment?.startTime, summary?.todayAppointment?.appointmentDate, summary?.todayAppointment?.doctorName]);
 
   // ─── Create Prescription ───────────────────────────────────────────────────
   const handleCreatePrescription = useCallback(async (e: React.FormEvent) => {
@@ -1165,12 +1185,11 @@ export default function PatientJourneyPage() {
                 {canEditJourney && ["Waiting", "Called"].includes(summary.queueStatus.status) && (
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     <button
-                      onClick={handleCancelQueue}
-                      disabled={cancelQueueMutation.isPending}
-                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition disabled:opacity-50"
+                      onClick={handleRequestCancelQueue}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition"
                     >
                       <Ban className="w-3 h-3" />
-                      {cancelQueueMutation.isPending ? "جارٍ..." : "إلغاء من الطابور"}
+                      إلغاء من الطابور
                     </button>
                     {/* Phase 1c: Change Room */}
                     <div className="flex items-center gap-1.5">
@@ -1178,8 +1197,7 @@ export default function PatientJourneyPage() {
                       <select
                         value={changeRoomSelectedRoom}
                         onChange={(e) => {
-                          setChangeRoomSelectedRoom(e.target.value);
-                          if (e.target.value) handleChangeRoom(e.target.value);
+                          if (e.target.value) handleRequestChangeRoom(e.target.value);
                         }}
                         disabled={changeRoomMutation.isPending}
                         className="px-2 py-1.5 text-[11px] rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-[#3d7ab5] disabled:opacity-50"
@@ -1295,7 +1313,10 @@ export default function PatientJourneyPage() {
                 {/* Phase 2a: Record Payment Button */}
                 {canEditJourney && (canViewFinance || canViewCheckout) && (
                   <button
-                    onClick={() => setRecordPaymentOpen(true)}
+                    onClick={() => {
+                      setPaymentAmount(summary.financeSummary?.outstandingBalance ?? 0);
+                      setRecordPaymentOpen(true);
+                    }}
                     className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition mt-2"
                   >
                     <CreditCard className="w-3 h-3" />
@@ -1306,10 +1327,11 @@ export default function PatientJourneyPage() {
                 {summary.financeSummary?.latestPayment && canViewFinance && (
                   <button
                     onClick={() => handleDownloadPdf(`/api/payments/${summary.financeSummary!.latestPayment!.id}/pdf`, `receipt-${summary.financeSummary!.latestPayment!.receiptNumber ?? summary.financeSummary!.latestPayment!.id}.pdf`)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition mt-1 mr-2"
+                    disabled={pdfDownloading}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition mt-1 mr-2 disabled:opacity-50"
                   >
-                    <Download className="w-3 h-3" />
-                    تحميل إيصال الدفعة
+                    {pdfDownloading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                    {pdfDownloading ? "جارٍ التحميل..." : "تحميل إيصال الدفعة"}
                   </button>
                 )}
               </div>
@@ -1428,41 +1450,55 @@ export default function PatientJourneyPage() {
 
       {/* ═══ MODAL OVERLAYS ═══ */}
 
-      {/* ─── Cancel / NoShow Confirmation Dialog ─── */}
+      {/* ─── Unified Confirmation Dialog ─── */}
       {cancelDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-sm font-bold text-[#1a3a5c]">
-                {cancelDialogType === "Cancelled" ? "تأكيد إلغاء الموعد" : "تأكيد تسجيل عدم الحضور"}
+                {cancelDialogType === "Cancelled" ? "تأكيد إلغاء الموعد"
+                  : cancelDialogType === "NoShow" ? "تأكيد تسجيل عدم الحضور"
+                  : cancelDialogType === "CancelQueue" ? "تأكيد الإلغاء من الطابور"
+                  : "تأكيد تغيير الغرفة"}
               </h3>
-              <button onClick={() => setCancelDialogOpen(false)} className="p-1 rounded-lg hover:bg-gray-100 transition">
+              <button onClick={() => { setCancelDialogOpen(false); setChangeRoomSelectedRoom(""); }} className="p-1 rounded-lg hover:bg-gray-100 transition">
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>
-            <div className="p-4">
+            <div className="p-4 space-y-2">
+              {/* Patient name display */}
+              <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                <span className="text-[11px] text-gray-500">المريض:</span>
+                <span className="text-sm font-bold text-[#1a3a5c]">{summary?.patient.fullName}</span>
+              </div>
               <p className="text-sm text-gray-700">
                 {cancelDialogType === "Cancelled"
-                  ? "هل أنت متأكد من إلغاء الموعد؟"
-                  : "هل أنت متأكد من تسجيل عدم الحضور؟"}
+                  ? "هل أنت متأكد من إلغاء هذا الموعد؟ لا يمكن التراجع عن هذا الإجراء."
+                  : cancelDialogType === "NoShow"
+                  ? "هل أنت متأكد من تسجيل عدم الحضور؟ سيتم تغيير حالة الموعد."
+                  : cancelDialogType === "CancelQueue"
+                  ? "هل أنت متأكد من إلغاء المريض من الطابور؟ سيتم إخراجه من قائمة الانتظار."
+                  : `هل أنت متأكد من نقل المريض إلى غرفة "${pendingChangeRoomName}"؟`}
               </p>
             </div>
             <div className="flex gap-2 justify-end p-4 border-t">
               <button
-                onClick={() => setCancelDialogOpen(false)}
+                onClick={() => { setCancelDialogOpen(false); setChangeRoomSelectedRoom(""); }}
                 className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
               >
                 إلغاء
               </button>
               <button
-                onClick={handleCancelOrNoShow}
-                disabled={updateAptStatusMutation.isPending}
+                onClick={handleConfirmAction}
+                disabled={updateAptStatusMutation.isPending || cancelQueueMutation.isPending || changeRoomMutation.isPending}
                 className={cn(
                   "px-4 py-2 text-xs font-bold rounded-lg text-white transition disabled:opacity-50",
-                  cancelDialogType === "Cancelled" ? "bg-red-600 hover:bg-red-700" : "bg-orange-600 hover:bg-orange-700"
+                  cancelDialogType === "Cancelled" || cancelDialogType === "CancelQueue" ? "bg-red-600 hover:bg-red-700"
+                  : cancelDialogType === "NoShow" ? "bg-orange-600 hover:bg-orange-700"
+                  : "bg-[#3d7ab5] hover:bg-[#2d5e8e]"
                 )}
               >
-                {updateAptStatusMutation.isPending ? "جارٍ..." : "تأكيد"}
+                {(updateAptStatusMutation.isPending || cancelQueueMutation.isPending || changeRoomMutation.isPending) ? "جارٍ..." : "تأكيد"}
               </button>
             </div>
           </div>
@@ -1480,6 +1516,13 @@ export default function PatientJourneyPage() {
               </button>
             </div>
             <form onSubmit={handleRecordPayment} className="p-4 space-y-3">
+              {/* Outstanding balance reference */}
+              {summary?.financeSummary && summary.financeSummary.outstandingBalance > 0 && (
+                <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <span className="text-[10px] text-amber-700 font-semibold">الرصيد المستحق</span>
+                  <span className="text-sm font-bold text-amber-800">{fmtRial(summary.financeSummary.outstandingBalance)}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">المبلغ</label>
                 <input

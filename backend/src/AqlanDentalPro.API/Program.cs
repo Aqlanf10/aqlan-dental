@@ -5,6 +5,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Application.Validators;
 using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Data.Seed;
 using AqlanDentalPro.Infrastructure.Repositories;

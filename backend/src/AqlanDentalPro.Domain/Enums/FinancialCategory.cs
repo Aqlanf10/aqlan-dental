@@ -13,5 +13,6 @@ public enum FinancialCategory
     Refund,             // استرداد دفعة مريض
     GeneralCost,        // تكاليف عامة
     InternalTransfer,   // تحويل سيولة داخلي بين الخزائن
-    SalaryAdvance       // سلفة موظف
+    SalaryAdvance,      // سلفة موظف
+    Reversal            // قيد عكسي (reversal of a previous transaction)
 }

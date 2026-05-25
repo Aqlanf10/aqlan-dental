@@ -21,4 +21,7 @@ public class Treasury : BaseEntity, ISoftDeletable
     /// <summary>Branch ID where the treasury belongs.</summary>
     public Guid BranchId { get; set; }
     public Branch? Branch { get; set; }
+
+    /// <summary>Row version for optimistic concurrency control (A4).</summary>
+    public byte[] Version { get; set; } = [];
 }

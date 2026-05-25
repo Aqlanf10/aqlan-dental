@@ -33,7 +33,7 @@ public sealed class PayBillInstallmentRequest
 [ApiController]
 [Route("api/supplier-bills")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
 {
     /// <summary>POST /api/supplier-bills — Register a new supplier bill (A/P entry).</summary>
     [HttpPost]
@@ -110,6 +110,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
             db.SupplierBills.Add(bill);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // H3: Audit logging for supplier bill creation
+            await audit.LogAsync(AuditAction.Create, "SupplierBill", bill.Id);
 
             return Created($"/api/supplier-bills/{bill.Id}", new
             {
@@ -383,6 +386,10 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // H3: Audit logging for supplier bill payment
+            await audit.LogAsync(AuditAction.Create, "SupplierBillPayment", payment.Id,
+                details: $"Bill {id} partial payment");
 
             return Ok(new
             {

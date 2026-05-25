@@ -45,4 +45,21 @@ public class CashFlowTransaction : BaseEntity
     /// <summary>Optional reference to the cashier drawer session in which this transaction occurred.</summary>
     public Guid? CashierSessionId { get; set; }
     public CashierSession? CashierSession { get; set; }
+
+    // ─── Reversal Tracking (C3 — CashFlowTransaction Immutability) ─────────
+    // IMPORTANT: CashFlowTransaction entries MUST NEVER be soft-deleted
+    // (IsActive must never be set to false). For financial ledger integrity,
+    // any correction must be done by creating a reversal CashFlowTransaction
+    // with opposite Type and linking via ReversalOfTransactionId.
+
+    /// <summary>Indicates whether this transaction is a reversal of a previous transaction.</summary>
+    public bool IsReversal { get; set; } = false;
+
+    /// <summary>FK to the original CashFlowTransaction that this transaction reverses.</summary>
+    public Guid? ReversalOfTransactionId { get; set; }
+    public CashFlowTransaction? ReversalOfTransaction { get; set; }
+
+    /// <summary>Navigation to the CashFlowTransaction that reverses this transaction.</summary>
+    public Guid? ReversedByTransactionId { get; set; }
+    public CashFlowTransaction? ReversedByTransaction { get; set; }
 }

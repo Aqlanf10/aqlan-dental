@@ -15,7 +15,7 @@ public interface IFinanceService
     Task<PaymentDto> CreatePaymentAsync(CreatePaymentRequest req);
     Task<PaymentDto?> UpdatePaymentAsync(Guid id, UpdatePaymentRequest req);
     Task<bool> DeletePaymentAsync(Guid id);
-    Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason);
+    Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason, decimal? partialAmount = null);
     Task<AccountStatementDto?> GetAccountStatementAsync(Guid patientId);
     Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId);
     Task<FinanceSummaryDto> GetSummaryAsync();

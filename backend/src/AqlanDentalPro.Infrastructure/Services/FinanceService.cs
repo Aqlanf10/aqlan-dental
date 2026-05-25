@@ -371,16 +371,37 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 payment.DeletedAt = DateTime.UtcNow;
             }
 
-            // Phase 0B: Soft-delete linked CashFlowTransactions and reverse Treasury
+            // C3: Instead of soft-deleting linked CashFlowTransactions, create reversal entries.
+            // CashFlowTransaction entries are immutable — they MUST NEVER be soft-deleted for
+            // financial ledger integrity.
             foreach (var payment in activePayments)
             {
                 var linkedCashflow = await db.CashFlowTransactions
                     .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
                 if (linkedCashflow != null)
                 {
-                    linkedCashflow.IsActive = false;
-                    linkedCashflow.DeletedAt = DateTime.UtcNow;
-                    linkedCashflow.DeletedBy = currentUser.UserId;
+                    var reversalCashflow = new CashFlowTransaction
+                    {
+                        TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-REV-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                        Type = linkedCashflow.Type == TransactionType.Inflow ? TransactionType.Outflow : TransactionType.Inflow,
+                        Category = FinancialCategory.Reversal,
+                        Amount = linkedCashflow.Amount,
+                        PaymentMethod = linkedCashflow.PaymentMethod,
+                        TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                        ReferenceId = payment.Id,
+                        ReferenceNumber = linkedCashflow.ReferenceNumber,
+                        Description = $"قيد عكسي لإلغاء عقد - {linkedCashflow.Description}",
+                        PerformedBy = currentUser.UserId ?? Guid.Empty,
+                        BranchId = linkedCashflow.BranchId,
+                        CashierSessionId = linkedCashflow.CashierSessionId,
+                        IsReversal = true,
+                        ReversalOfTransactionId = linkedCashflow.Id
+                    };
+                    db.CashFlowTransactions.Add(reversalCashflow);
+
+                    // Link original to the reversal
+                    linkedCashflow.ReversedByTransactionId = reversalCashflow.Id;
+                    // Keep original's IsActive = true (never soft-delete CashFlowTransactions)
                 }
                 // Reverse treasury balance
                 await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
@@ -637,12 +658,34 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         payment.DeletedAt = DateTime.UtcNow;
         payment.DeletedBy = userId;
 
-        // Soft-delete the linked cashflow ledger transaction (already found in guard above)
+        // C3: Instead of soft-deleting the linked CashFlowTransaction, create a reversal entry.
+        // CashFlowTransaction entries are immutable — they MUST NEVER be soft-deleted for
+        // financial ledger integrity. The reversal creates an opposite entry and links
+        // it to the original via ReversalOfTransactionId / ReversedByTransactionId.
         if (linkedCashflow != null)
         {
-            linkedCashflow.IsActive = false;
-            linkedCashflow.DeletedAt = DateTime.UtcNow;
-            linkedCashflow.DeletedBy = userId;
+            var reversalCashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-REV-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                Type = linkedCashflow.Type == TransactionType.Inflow ? TransactionType.Outflow : TransactionType.Inflow,
+                Category = FinancialCategory.Reversal,
+                Amount = linkedCashflow.Amount,
+                PaymentMethod = linkedCashflow.PaymentMethod,
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = payment.Id,
+                ReferenceNumber = linkedCashflow.ReferenceNumber,
+                Description = $"قيد عكسي لحذف دفعة - {linkedCashflow.Description}",
+                PerformedBy = userId ?? Guid.Empty,
+                BranchId = linkedCashflow.BranchId,
+                CashierSessionId = linkedCashflow.CashierSessionId,
+                IsReversal = true,
+                ReversalOfTransactionId = linkedCashflow.Id
+            };
+            db.CashFlowTransactions.Add(reversalCashflow);
+
+            // Link original to the reversal
+            linkedCashflow.ReversedByTransactionId = reversalCashflow.Id;
+            // Keep original's IsActive = true (never soft-delete CashFlowTransactions)
         }
 
         await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
@@ -669,10 +712,20 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         return true;
     }
 
-    public async Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason)
+    public async Task<PaymentDto?> RefundPaymentAsync(Guid id, string? reason, decimal? partialAmount = null)
     {
         var payment = await db.Payments.FindAsync(id);
         if (payment == null || !payment.IsActive) return null;
+
+        // H1: Partial refund validation
+        var refundAmount = partialAmount.HasValue && partialAmount.Value > 0 && partialAmount.Value < payment.Amount
+            ? partialAmount.Value
+            : payment.Amount; // Full refund if null or >= original
+
+        if (partialAmount.HasValue && (partialAmount.Value <= 0 || partialAmount.Value > payment.Amount))
+            throw new ArgumentException("يجب أن يكون مبلغ الاسترداد الجزئي أكبر من الصفر ولا يتجاوز مبلغ الدفعة الأصلية.");
+
+        var isPartialRefund = refundAmount < payment.Amount;
 
         // Phase 0B: Prevent double-refund — check if a refund already exists for this payment
         var existingRefund = await db.Payments
@@ -702,10 +755,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             PatientId          = payment.PatientId,
             ContractId         = payment.ContractId,
             InvoiceId          = payment.InvoiceId,
-            Amount             = -payment.Amount,
+            Amount             = -refundAmount,
             PaymentDate        = DateOnly.FromDateTime(DateTime.Today),
             PaymentMethod      = payment.PaymentMethod,
-            ServiceDescription = $"استرداد: {payment.ServiceDescription ?? payment.ReceiptNumber}",
+            ServiceDescription = isPartialRefund
+                ? $"استرداد جزئي ({refundAmount:N0}): {payment.ServiceDescription ?? payment.ReceiptNumber}"
+                : $"استرداد: {payment.ServiceDescription ?? payment.ReceiptNumber}",
             Specialty          = payment.Specialty,
             DoctorId           = payment.DoctorId,
             BranchId           = payment.BranchId,
@@ -723,12 +778,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             TransactionNumber = $"TX-{refundDatePart}-REF-{refund.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
             Type = TransactionType.Outflow,
             Category = FinancialCategory.Refund,
-            Amount = payment.Amount, // original payment positive amount represents the outflow cost
+            Amount = refundAmount, // the actual refund amount (positive for outflow recording)
             PaymentMethod = refund.PaymentMethod ?? "cash",
             TransactionDate = refund.PaymentDate,
             ReferenceId = refund.Id,
             ReferenceNumber = refund.ReceiptNumber,
-            Description = $"استرداد دفعة مريض - سند قبض {refund.ReceiptNumber}",
+            Description = isPartialRefund
+                ? $"استرداد جزئي ({refundAmount:N0}) دفعة مريض - سند قبض {refund.ReceiptNumber}"
+                : $"استرداد دفعة مريض - سند قبض {refund.ReceiptNumber}",
             PerformedBy = userId,
             BranchId = currentUser.BranchId.Value,
             CashierSessionId = activeSession.Id
@@ -1119,6 +1176,16 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             // Fallback for InMemory provider (used in tests) — read-modify-write is
             // safe in single-threaded test scenarios.
             treasury.Balance += amount;
+        }
+
+        // A4: Handle optimistic concurrency for Treasury balance updates
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ArgumentException("تعارض في تحديث رصيد الخزينة. يرجى المحاولة مرة أخرى.");
         }
     }
 }

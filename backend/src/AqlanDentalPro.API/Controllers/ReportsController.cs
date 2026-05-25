@@ -1174,6 +1174,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         // Calculate Operating Expenses (OPEX)
         var salariesPaid = transactions.Where(t => t.Category == FinancialCategory.SalaryPayment).Sum(t => t.Amount);
         var commissionsPaid = transactions.Where(t => t.Category == FinancialCategory.DoctorCommission).Sum(t => t.Amount);
+        // C4 FIX: salaryAdvances are NOT an expense — they're a temporary cash outflow
+        // that gets recovered from salaries (محصلة من الرواتب). Including them in OPEX
+        // double-counts because they are also deducted from SalaryRecord.Advances.
         var salaryAdvances = transactions.Where(t => t.Category == FinancialCategory.SalaryAdvance).Sum(t => t.Amount);
         var supplierPayments = transactions.Where(t => t.Category == FinancialCategory.SupplierPayment).Sum(t => t.Amount);
         
@@ -1184,7 +1187,8 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var taxes = expenses.Where(e => e.Category == ExpenseCategory.Taxes).Sum(e => e.Amount);
         var opexMiscellaneous = expenses.Where(e => e.Category == ExpenseCategory.Miscellaneous).Sum(e => e.Amount);
 
-        var totalOpex = salariesPaid + commissionsPaid + salaryAdvances + supplierPayments + rent + utilities + marketing + maintenance + taxes + opexMiscellaneous;
+        // C4 FIX: salaryAdvances removed from OPEX total — not an expense, just a temporary outflow
+        var totalOpex = salariesPaid + commissionsPaid + supplierPayments + rent + utilities + marketing + maintenance + taxes + opexMiscellaneous;
         var netProfit = grossProfit - totalOpex;
 
         return Ok(new
@@ -1206,7 +1210,6 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             // Operating Expenses (OPEX)
             salariesPaid,
             commissionsPaid,
-            salaryAdvances,
             supplierPayments,
             rent,
             utilities,
@@ -1216,8 +1219,108 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
             opexMiscellaneous,
             totalOpex,
 
+            // C4 FIX: Salary Advances shown separately — NOT in OPEX
+            // These are temporary cash outflows recovered from salaries (محصلة من الرواتب)
+            salaryAdvances,
+            salaryAdvancesNote = "محصلة من الرواتب",
+
             // Net Bottom Line
             netProfit
+        });
+    }
+
+    // ─── H4: Daily Cash Summary Report ────────────────────────────────────
+    [HttpGet("daily-cash-summary")]
+    public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date, [FromQuery] Guid? branchId)
+    {
+        var (reportDate, dateErr) = DateParsingHelper.TryParseDateOrDefault(date, DateOnly.FromDateTime(DateTime.Today), "التاريخ");
+        if (dateErr != null) return dateErr;
+
+        // Determine branch scope
+        var effectiveBranchId = branchId ?? currentUser.BranchId;
+        if (!currentUser.IsAdmin && currentUser.BranchId.HasValue)
+            effectiveBranchId = currentUser.BranchId.Value;
+
+        if (effectiveBranchId == null || effectiveBranchId == Guid.Empty)
+            return BadRequest(new { message = "يجب تحديد الفرع" });
+
+        // Branch name
+        var branchName = await db.Branches
+            .Where(b => b.Id == effectiveBranchId.Value)
+            .Select(b => b.Name)
+            .FirstOrDefaultAsync() ?? "غير معروف";
+
+        // Opening balance: sum of OpeningBalance from sessions opened on this date for this branch
+        var openingBalance = await db.CashierSessions
+            .Where(s => s.BranchId == effectiveBranchId.Value && s.IsActive
+                && DateOnly.FromDateTime(s.OpeningTime.Date) == reportDate)
+            .SumAsync(s => (decimal?)s.OpeningBalance) ?? 0m;
+
+        // Inflows by PaymentMethod with category breakdown
+        var inflowTransactions = await db.CashFlowTransactions
+            .Where(t => t.IsActive && t.Type == TransactionType.Inflow
+                && t.TransactionDate == reportDate
+                && t.BranchId == effectiveBranchId.Value)
+            .GroupBy(t => t.PaymentMethod.ToLower())
+            .Select(g => new
+            {
+                PaymentMethod = g.Key,
+                Total = g.Sum(t => t.Amount),
+                Categories = g.GroupBy(t => t.Category.ToString())
+                    .Select(cg => new { Category = cg.Key, Amount = cg.Sum(t => t.Amount) })
+                    .ToList()
+            })
+            .ToListAsync();
+
+        // Outflows by PaymentMethod with category breakdown
+        var outflowTransactions = await db.CashFlowTransactions
+            .Where(t => t.IsActive && t.Type == TransactionType.Outflow
+                && t.TransactionDate == reportDate
+                && t.BranchId == effectiveBranchId.Value)
+            .GroupBy(t => t.PaymentMethod.ToLower())
+            .Select(g => new
+            {
+                PaymentMethod = g.Key,
+                Total = g.Sum(t => t.Amount),
+                Categories = g.GroupBy(t => t.Category.ToString())
+                    .Select(cg => new { Category = cg.Key, Amount = cg.Sum(t => t.Amount) })
+                    .ToList()
+            })
+            .ToListAsync();
+
+        var totalInflows = inflowTransactions.Sum(i => i.Total);
+        var totalOutflows = outflowTransactions.Sum(o => o.Total);
+        var closingBalance = openingBalance + totalInflows - totalOutflows;
+
+        // Session summary for the day
+        var sessions = await db.CashierSessions
+            .Include(s => s.Cashier)
+            .Where(s => s.BranchId == effectiveBranchId.Value && s.IsActive
+                && DateOnly.FromDateTime(s.OpeningTime.Date) == reportDate)
+            .Select(s => new
+            {
+                s.Id,
+                s.SessionNumber,
+                CashierName = s.Cashier.Username,
+                s.OpeningBalance,
+                s.ShortageOrSurplus,
+                Status = s.Status.ToString()
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            Date = reportDate.ToString("yyyy-MM-dd"),
+            BranchId = effectiveBranchId.Value,
+            BranchName = branchName,
+            OpeningBalance = openingBalance,
+            Inflows = inflowTransactions,
+            Outflows = outflowTransactions,
+            TotalInflows = totalInflows,
+            TotalOutflows = totalOutflows,
+            NetCashFlow = totalInflows - totalOutflows,
+            ClosingBalance = closingBalance,
+            Sessions = sessions
         });
     }
 }

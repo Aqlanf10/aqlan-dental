@@ -26,7 +26,7 @@ public sealed class ApproveAdvanceRequest
 [ApiController]
 [Route("api/advances")]
 [Authorize(Policy = "ReportsAccess")]
-public class AdvancePaymentController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class AdvancePaymentController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
 {
     /// <summary>
     /// Get advance payment records with filters
@@ -110,6 +110,9 @@ public class AdvancePaymentController(AppDbContext db, ICurrentUserService curre
         db.AdvancePayments.Add(advance);
         await db.SaveChangesAsync();
 
+        // H3: Audit logging for advance payment creation
+        await audit.LogAsync(AuditAction.Create, "AdvancePayment", advance.Id);
+
         return Created($"/api/advances/{advance.Id}", new
         {
             advance.Id,
@@ -183,6 +186,12 @@ public class AdvancePaymentController(AppDbContext db, ICurrentUserService curre
         }
 
         await db.SaveChangesAsync();
+
+        // H3: Audit logging for advance payment approval/rejection
+        if (req.Approve)
+            await audit.LogAsync(AuditAction.Approve, "AdvancePayment", id);
+        else
+            await audit.LogAsync(AuditAction.Update, "AdvancePayment", id, details: "Advance rejected");
 
         return Ok(new
         {

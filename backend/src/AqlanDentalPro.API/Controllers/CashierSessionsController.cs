@@ -25,7 +25,7 @@ public sealed class CloseSessionRequest
 [ApiController]
 [Route("api/cashier-sessions")]
 [Authorize(Policy = "FinanceAccess")] // Admin, Accountant, Reception
-public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, ILogger<CashierSessionsController> logger) : ControllerBase
+public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ILogger<CashierSessionsController> logger) : ControllerBase
 {
     [HttpPost("open")]
     public async Task<IActionResult> OpenSession([FromBody] OpenSessionRequest req)
@@ -92,6 +92,10 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             db.CashierSessions.Add(session);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // H3: Audit logging for session open
+            await audit.LogAsync(AuditAction.Create, "CashierSession", session.Id,
+                details: $"Session {sessionNumber} opened");
 
             return Ok(new
             {
@@ -199,6 +203,10 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
 
         await db.SaveChangesAsync();
 
+        // H3: Audit logging for session close
+        await audit.LogAsync(AuditAction.Update, "CashierSession", session.Id,
+            details: $"Session closed, surplus/shortage: {session.ShortageOrSurplus}");
+
         return Ok(new
         {
             session.Id,
@@ -278,6 +286,60 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         return Ok(new { data = sessions, total, page, pageSize });
     }
 
+    // ─── H13: Cashier Session Detail Endpoint ───────────────────────────────
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetSessionDetail(Guid id)
+    {
+        var session = await db.CashierSessions
+            .Include(s => s.Cashier)
+            .Include(s => s.Transactions)
+            .FirstOrDefaultAsync(s => s.Id == id && s.IsActive);
+
+        if (session == null)
+            return NotFound(new { message = "الوردية غير موجودة" });
+
+        // Non-admin can only see their own branch sessions
+        if (!currentUser.IsAdmin && currentUser.BranchId.HasValue && session.BranchId != currentUser.BranchId.Value)
+            return Forbid();
+
+        var transactions = session.Transactions
+            .Where(t => t.IsActive)
+            .OrderByDescending(t => t.TransactionDate)
+            .ThenByDescending(t => t.CreatedAt)
+            .Select(t => new
+            {
+                t.Id,
+                Type = t.Type.ToString(),
+                Category = t.Category.ToString(),
+                t.Amount,
+                t.PaymentMethod,
+                t.Description,
+                t.ReferenceNumber,
+                t.IsReversal,
+                PerformedBy = t.PerformedBy
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            session.Id,
+            session.SessionNumber,
+            Status = session.Status.ToString(),
+            session.OpeningTime,
+            session.ClosingTime,
+            session.OpeningBalance,
+            session.ExpectedClosingCash,
+            session.ExpectedClosingCard,
+            session.ExpectedClosingBank,
+            session.ActualClosingCash,
+            session.ActualClosingCard,
+            session.ActualClosingBank,
+            session.ShortageOrSurplus,
+            CashierName = session.Cashier?.Username,
+            Transactions = transactions
+        });
+    }
+
     [HttpPatch("{id:guid}/reconcile")]
     [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
     public async Task<IActionResult> ReconcileSession(Guid id, [FromBody] string? notes)
@@ -298,6 +360,10 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         }
 
         await db.SaveChangesAsync();
+
+        // H3: Audit logging for session reconciliation
+        await audit.LogAsync(AuditAction.Update, "CashierSession", id,
+            details: "Session reconciled");
 
         return Ok(new
         {

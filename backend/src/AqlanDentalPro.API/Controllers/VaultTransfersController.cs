@@ -24,7 +24,7 @@ public sealed class RejectTransferRequest
 [ApiController]
 [Route("api/vault-transfers")]
 [Authorize(Policy = "FinanceAccess")]
-public class VaultTransfersController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class VaultTransfersController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -165,6 +165,9 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // H3: Audit logging for vault transfer creation
+            await audit.LogAsync(AuditAction.Create, "VaultTransfer", transfer.Id);
+
             return Ok(new
             {
                 transfer.Id,
@@ -251,6 +254,9 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
 
         await db.SaveChangesAsync();
 
+        // H3: Audit logging for vault transfer approval
+        await audit.LogAsync(AuditAction.Approve, "VaultTransfer", id);
+
         return Ok(new
         {
             transfer.Id,
@@ -293,6 +299,9 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         transfer.Notes = req.Notes.Trim();
 
         await db.SaveChangesAsync();
+
+        // H3: Audit logging for vault transfer rejection
+        await audit.LogAsync(AuditAction.Update, "VaultTransfer", id, details: "Transfer rejected");
 
         return Ok(new
         {

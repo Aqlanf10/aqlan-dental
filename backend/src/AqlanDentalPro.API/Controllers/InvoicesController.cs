@@ -17,7 +17,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/invoices")]
 [Authorize(Policy = "FinanceAccess")]
-public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger<InvoicesController> logger, ICommissionService commissionService, ICurrentUserService currentUser) : ControllerBase
+public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditService audit, ILogger<InvoicesController> logger, ICommissionService commissionService, ICurrentUserService currentUser) : ControllerBase
 {
     // ─── F5: POST /api/invoices — Create standalone invoice ──────────────────
     /// <summary>
@@ -153,6 +153,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // H3: Audit logging for invoice creation
+            await audit.LogAsync(AuditAction.Create, "Invoice", invoice.Id);
 
             return Created($"/api/invoices/{invoice.Id}", new
             {
@@ -554,6 +557,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
 
         await db.SaveChangesAsync();
 
+        // H3: Audit logging for invoice issue
+        await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice issued");
+
         return Ok(new
         {
             invoice.Id,
@@ -595,6 +601,9 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, ILogger
                 : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
 
         await db.SaveChangesAsync();
+
+        // H3: Audit logging for invoice cancellation
+        await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice cancelled");
 
         return Ok(new
         {

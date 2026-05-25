@@ -34,7 +34,7 @@ public sealed class RejectExpenseRequest
 [ApiController]
 [Route("api/expenses")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
+public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
 {
     /// <summary>
     /// Approval threshold in YER: expenses above this amount require managerial approval.
@@ -167,6 +167,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // H3: Audit logging for expense creation
+            await audit.LogAsync(AuditAction.Create, "OperationalExpense", expense.Id);
 
             return Created($"/api/expenses/{expense.Id}", new
             {
@@ -348,6 +351,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // H3: Audit logging for expense approval
+            await audit.LogAsync(AuditAction.Approve, "OperationalExpense", id);
+
             return Ok(new
             {
                 message = "تم اعتماد المصروف وترحيله للأستاذ العام بنجاح",
@@ -391,6 +397,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         expense.DeletedBy = userId;
 
         await db.SaveChangesAsync();
+
+        // H3: Audit logging for expense rejection
+        await audit.LogAsync(AuditAction.Update, "OperationalExpense", id, details: "Expense rejected");
 
         return Ok(new
         {

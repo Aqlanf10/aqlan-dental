@@ -22,5 +22,6 @@ public enum AuditAction
     UserDeactivated,
     UserRestored,
     PermissionsChanged,
-    UnauthorizedAttempt
+    UnauthorizedAttempt,
+    Refund               // استرداد دفعة
 }

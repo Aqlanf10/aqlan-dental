@@ -2342,7 +2342,26 @@ if (enableStartupDbMaintenance)
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Migration failed, attempting to ensure messaging tables exist manually");
+        logger.LogError(ex, "Migration failed, attempting to ensure critical tables exist manually");
+
+        // If migration fails, ensure the Financial Integrity Sprint columns exist manually
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "IsReversal" boolean NOT NULL DEFAULT false;
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "ReversalOfTransactionId" uuid NULL;
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "ReversedByTransactionId" uuid NULL;
+                CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_ReversalOfTransactionId" ON "CashFlowTransactions" ("ReversalOfTransactionId");
+                CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_ReversedByTransactionId" ON "CashFlowTransactions" ("ReversedByTransactionId");
+                CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId" ON "Treasuries" ("BranchId");
+                CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type" ON "Treasuries" ("BranchId", "Type");
+            """);
+            logger.LogInformation("Financial Integrity Sprint columns created manually after migration failure");
+        }
+        catch (Exception ex2)
+        {
+            logger.LogError(ex2, "Failed to create Financial Integrity Sprint columns manually");
+        }
 
         // Manually create messaging tables if they don't exist
         try

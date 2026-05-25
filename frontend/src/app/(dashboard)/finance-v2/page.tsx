@@ -240,6 +240,23 @@ export default function FinanceV2Page() {
   const [plFromDate, setPlFromDate] = useState("");
   const [plToDate, setPlToDate] = useState("");
 
+  // Daily Cash Summary State
+  const [dailyCashDate, setDailyCashDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dailyCashSummary, setDailyCashSummary] = useState<{
+    date: string;
+    openingBalance: number;
+    totalInflows: number;
+    totalOutflows: number;
+    netCashFlow: number;
+    closingBalance: number;
+    inflowsByMethod: Record<string, number>;
+    outflowsByMethod: Record<string, number>;
+    inflowsByCategory: Record<string, number>;
+    outflowsByCategory: Record<string, number>;
+    sessions: Array<{ sessionNumber: string; cashierName: string; openingTime: string; closingTime?: string; shortageOrSurplus?: number }>;
+  } | null>(null);
+  const [loadingDailyCash, setLoadingDailyCash] = useState(false);
+
   const { data: doctors } = useDoctors();
 
   // Treasuries & Vault Transfers States
@@ -286,6 +303,7 @@ export default function FinanceV2Page() {
   const [newTreasuryType, setNewTreasuryType] = useState("Vault");
   const [newTreasuryOpeningBalance, setNewTreasuryOpeningBalance] = useState("");
   const [isSubmittingTreasury, setIsSubmittingTreasury] = useState(false);
+  const [recalculatingTreasuryId, setRecalculatingTreasuryId] = useState<string | null>(null);
 
   // Reject Modal Form State
   const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
@@ -623,6 +641,25 @@ export default function FinanceV2Page() {
     }
   };
 
+  const handleRecalculateTreasury = async (treasuryId: string) => {
+    setRecalculatingTreasuryId(treasuryId);
+    try {
+      const res = await api.post(`/api/treasuries/${treasuryId}/recalculate`);
+      const { oldBalance, newBalance, drift } = res.data;
+      if (drift !== 0) {
+        toast.error(`تم اكتشاف فرق في رصيد الخزنة! القديم: ${formatYemeniRiyal(oldBalance)} → الجديد: ${formatYemeniRiyal(newBalance)} (الفرق: ${formatYemeniRiyal(Math.abs(drift))})`, "تنبيه رصيد الخزنة");
+      } else {
+        toast.success("الرصيد صحيح — لا يوجد فرق بين الرصيد المحسوب والمخزّن");
+      }
+      await fetchTreasuries();
+    } catch (err) {
+      const msg = getBackendError(err, "فشل إعادة حساب رصيد الخزنة");
+      toast.error(msg);
+    } finally {
+      setRecalculatingTreasuryId(null);
+    }
+  };
+
   // Deny Doctor Access immediately
   useEffect(() => {
     if (isDoctor) {
@@ -789,6 +826,20 @@ export default function FinanceV2Page() {
       console.error("Failed to fetch P&L report", err);
     } finally {
       setLoadingPLReport(false);
+    }
+  };
+
+  const fetchDailyCashSummary = async () => {
+    if (!dailyCashDate) return;
+    setLoadingDailyCash(true);
+    try {
+      const res = await api.get(`/api/reports/daily-cash-summary?date=${dailyCashDate}`);
+      setDailyCashSummary(res.data);
+    } catch (err) {
+      const msg = getBackendError(err, "فشل تحميل ملخص النقدية اليومي");
+      toast.error(msg);
+    } finally {
+      setLoadingDailyCash(false);
     }
   };
 
@@ -2203,6 +2254,115 @@ export default function FinanceV2Page() {
 
           {/* TAB 8: REPORTS & CONSOLIDATED P&L SHEET */}
           {activeTab === "reports" && (
+            <div className="space-y-6">
+
+              {/* Daily Cash Summary */}
+              <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-gray-900">ملخص النقدية اليومي</h3>
+                    <p className="text-[10px] text-gray-500 mt-1">كشف تدفقات نقدي يومي شامل يربط حركات الإيرادات والمصروفات بالوردية</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={dailyCashDate}
+                      onChange={(e) => setDailyCashDate(e.target.value)}
+                      className="text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-700 font-semibold"
+                    />
+                    <button
+                      onClick={fetchDailyCashSummary}
+                      disabled={loadingDailyCash}
+                      className="px-3 py-1.5 bg-[#1a3a5c] text-white text-xs font-bold rounded-lg hover:opacity-90 transition shrink-0 disabled:opacity-50"
+                    >
+                      {loadingDailyCash ? "جاري التحميل..." : "عرض الملخص"}
+                    </button>
+                  </div>
+                </div>
+
+                {dailyCashSummary && (
+                  <div className="space-y-4">
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                        <span className="text-[10px] text-blue-600 font-bold block">رصيد الافتتاح</span>
+                        <span className="text-sm font-mono font-black text-blue-800">{formatYemeniRiyal(dailyCashSummary.openingBalance)}</span>
+                      </div>
+                      <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
+                        <span className="text-[10px] text-green-600 font-bold block">إجمالي التدفقات الداخلة</span>
+                        <span className="text-sm font-mono font-black text-green-800">{formatYemeniRiyal(dailyCashSummary.totalInflows)}</span>
+                      </div>
+                      <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
+                        <span className="text-[10px] text-red-600 font-bold block">إجمالي التدفقات الخارجة</span>
+                        <span className="text-sm font-mono font-black text-red-800">{formatYemeniRiyal(dailyCashSummary.totalOutflows)}</span>
+                      </div>
+                      <div className={`border rounded-xl p-3 text-center ${dailyCashSummary.netCashFlow >= 0 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                        <span className={`text-[10px] font-bold block ${dailyCashSummary.netCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>صافي التدفق النقدي</span>
+                        <span className={`text-sm font-mono font-black ${dailyCashSummary.netCashFlow >= 0 ? 'text-green-800' : 'text-red-800'}`}>{formatYemeniRiyal(dailyCashSummary.netCashFlow)}</span>
+                      </div>
+                    </div>
+
+                    {/* By Method Breakdown */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="border border-gray-100 rounded-xl p-3">
+                        <h4 className="text-[10px] text-gray-500 font-bold mb-2">التدفقات الداخلة حسب طريقة الدفع</h4>
+                        {dailyCashSummary.inflowsByMethod && Object.entries(dailyCashSummary.inflowsByMethod).map(([method, amount]) => (
+                          <div key={method} className="flex justify-between text-xs py-1 border-b border-gray-50">
+                            <span className="text-gray-600">{method === 'cash' ? 'نقدي' : method === 'card' ? 'بطاقة' : 'تحويل بنكي'}</span>
+                            <span className="font-mono font-bold text-green-700">{formatYemeniRiyal(amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border border-gray-100 rounded-xl p-3">
+                        <h4 className="text-[10px] text-gray-500 font-bold mb-2">التدفقات الخارجة حسب طريقة الدفع</h4>
+                        {dailyCashSummary.outflowsByMethod && Object.entries(dailyCashSummary.outflowsByMethod).map(([method, amount]) => (
+                          <div key={method} className="flex justify-between text-xs py-1 border-b border-gray-50">
+                            <span className="text-gray-600">{method === 'cash' ? 'نقدي' : method === 'card' ? 'بطاقة' : 'تحويل بنكي'}</span>
+                            <span className="font-mono font-bold text-red-700">{formatYemeniRiyal(amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Sessions */}
+                    {dailyCashSummary.sessions && dailyCashSummary.sessions.length > 0 && (
+                      <div className="border border-gray-100 rounded-xl p-3">
+                        <h4 className="text-[10px] text-gray-500 font-bold mb-2">تفاصيل الورديات</h4>
+                        <table className="w-full text-xs text-right">
+                          <thead className="bg-gray-50 text-gray-500 font-bold">
+                            <tr>
+                              <th className="px-3 py-2">رقم الوردية</th>
+                              <th className="px-3 py-2">الكاشير</th>
+                              <th className="px-3 py-2">وقت الافتتاح</th>
+                              <th className="px-3 py-2">وقت الإغلاق</th>
+                              <th className="px-3 py-2">العجز/الزيادة</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {dailyCashSummary.sessions.map((s, i) => (
+                              <tr key={i}>
+                                <td className="px-3 py-2 font-mono font-bold">{s.sessionNumber}</td>
+                                <td className="px-3 py-2">{s.cashierName}</td>
+                                <td className="px-3 py-2">{s.openingTime}</td>
+                                <td className="px-3 py-2">{s.closingTime || '—'}</td>
+                                <td className="px-3 py-2 font-mono font-bold">
+                                  {s.shortageOrSurplus != null ? (
+                                    <span className={s.shortageOrSurplus >= 0 ? 'text-green-700' : 'text-red-700'}>
+                                      {formatYemeniRiyal(s.shortageOrSurplus)}
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+            {/* P&L Report */}
             <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
                 <div>
@@ -2385,6 +2545,7 @@ export default function FinanceV2Page() {
                 </div>
               </div>
             </div>
+            </div>
           )}
 
           {/* TAB 10: TREASURIES & LIQUIDITY TRANSFERS */}
@@ -2461,6 +2622,16 @@ export default function FinanceV2Page() {
                           {formatYemeniRiyal(t.balance)}
                         </span>
                       </div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleRecalculateTreasury(t.id)}
+                          disabled={recalculatingTreasuryId === t.id}
+                          className="w-full mt-2 text-[10px] py-1.5 px-3 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${recalculatingTreasuryId === t.id ? 'animate-spin' : ''}`} />
+                          {recalculatingTreasuryId === t.id ? "جاري التحقق..." : "إعادة حساب الرصيد"}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

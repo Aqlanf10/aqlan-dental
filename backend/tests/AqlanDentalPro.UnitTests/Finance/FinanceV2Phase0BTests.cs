@@ -518,18 +518,28 @@ public class FinanceV2Phase0BTests
         // Cancel the contract
         await service.UpdateContractStatusAsync(contractDto.Id, "cancelled");
 
-        // Verify CashFlowTransactions are now soft-deleted
-        var activeCashflowsAfter = await db.CashFlowTransactions
-            .Where(t => t.Category == FinancialCategory.PatientPayment && t.IsActive)
+        // Verify CashFlowTransactions use reversal pattern (NOT soft-delete).
+        // The original PatientPayment cashflow stays IsActive=true but gets a
+        // ReversedByTransactionId pointing to the reversal entry.
+        var originalCashflowsAfter = await db.CashFlowTransactions
+            .Where(t => t.Category == FinancialCategory.PatientPayment && t.IsActive && !t.IsReversal)
             .ToListAsync();
-        activeCashflowsAfter.Should().BeEmpty("cashflow should be soft-deleted after contract cancellation");
+        originalCashflowsAfter.Should().NotBeEmpty("original cashflow should remain active (reversal pattern)");
 
-        // Verify the cashflow records still exist but are inactive
-        var inactiveCashflows = await db.CashFlowTransactions
-            .IgnoreQueryFilters()
-            .Where(t => t.Category == FinancialCategory.PatientPayment && !t.IsActive)
+        // Verify reversal cashflow entries were created
+        var reversalCashflows = await db.CashFlowTransactions
+            .Where(t => t.Category == FinancialCategory.Reversal && t.IsReversal && t.IsActive)
             .ToListAsync();
-        inactiveCashflows.Should().NotBeEmpty("cashflow records should exist but be inactive");
+        reversalCashflows.Should().NotBeEmpty("reversal cashflow entries should be created for cancelled contract");
+
+        // Verify original cashflow is linked to its reversal
+        foreach (var original in originalCashflowsAfter.Where(c => c.ReversedByTransactionId.HasValue))
+        {
+            var reversal = reversalCashflows.FirstOrDefault(r => r.Id == original.ReversedByTransactionId.Value);
+            reversal.Should().NotBeNull("original cashflow should reference its reversal entry");
+            reversal!.ReversalOfTransactionId.Should().Be(original.Id, "reversal should reference the original");
+            reversal.Type.Should().Be(TransactionType.Outflow, "reversal of Inflow should be Outflow");
+        }
     }
 
     [Fact]

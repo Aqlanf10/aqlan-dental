@@ -386,6 +386,7 @@ export function Sidebar() {
                   icon={leaf.icon}
                   isCurrent={isCurrent}
                   unreadCount={unreadCount}
+                  badge={leaf.badge}
                 />
               </div>
             );

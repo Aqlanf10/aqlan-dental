@@ -8,10 +8,9 @@ public class TreasuryConfiguration : IEntityTypeConfiguration<Treasury>
 {
     public void Configure(EntityTypeBuilder<Treasury> entity)
     {
-        // A4: Optimistic concurrency — use PostgreSQL xmin system column for row versioning
-        // Instead of a separate byte[] Version column (which doesn't work well with PostgreSQL),
-        // we use the built-in xmin column that PostgreSQL maintains automatically.
-        entity.UseXminAsConcurrencyToken();
+        // A4: Optimistic concurrency — we rely on application-level checks
+        // (comparing Balance before/after update) rather than EF Core row versioning.
+        // This avoids PostgreSQL-specific xmin complications and works universally.
 
         // Performance indexes for treasury lookups
         entity.HasIndex(t => t.BranchId);

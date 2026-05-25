@@ -72,6 +72,7 @@ export function QuickPaymentModal({
   const [method, setMethod] = useState("Cash");
   const [desc, setDesc] = useState("");
   const [notes, setNotes] = useState("");
+  const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const outstanding = summary?.financeSummary?.outstandingBalance ?? 0;
@@ -82,8 +83,9 @@ export function QuickPaymentModal({
   const handleSubmit = () => {
     const num = parseFloat(amount);
     if (!num || num <= 0) return;
-    onConfirm(num, method, desc, notes);
-    setAmount(""); setMethod("Cash"); setDesc(""); setNotes("");
+    const voucherPrefix = voucherType === "consultation" ? "[سند معاينة] " : "[إجراءات شغل/خدمة مقدمة] ";
+    onConfirm(num, method, desc ? voucherPrefix + desc : voucherPrefix.trim(), notes);
+    setAmount(""); setMethod("Cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
   };
 
   const handleDownloadReceipt = async () => {
@@ -145,6 +147,39 @@ export function QuickPaymentModal({
         </div>
       )}
 
+      {/* Voucher Type Selector */}
+      <div className="mb-4">
+        <label className="text-xs font-semibold block mb-2" style={{ color: "#1a3a5c" }}>نوع السند *</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setVoucherType("consultation")}
+            className="flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center"
+            style={{
+              background: voucherType === "consultation" ? "#f0f5fb" : "#fff",
+              borderColor: voucherType === "consultation" ? "#3d7ab5" : "#e5e7eb",
+              boxShadow: voucherType === "consultation" ? "0 2px 8px rgba(61,122,181,0.15)" : "none",
+            }}>
+            <Stethoscope className="w-5 h-5" style={{ color: voucherType === "consultation" ? "#3d7ab5" : "#94a3b8" }} />
+            <span className="text-xs font-bold" style={{ color: voucherType === "consultation" ? "#1a3a5c" : "#94a3b8" }}>سند معاينة</span>
+            <span className="text-[9px] font-medium" style={{ color: "#94a3b8" }}>كشف وفحص واستشارة</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setVoucherType("procedure")}
+            className="flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center"
+            style={{
+              background: voucherType === "procedure" ? "#faf5ff" : "#fff",
+              borderColor: voucherType === "procedure" ? "#9333ea" : "#e5e7eb",
+              boxShadow: voucherType === "procedure" ? "0 2px 8px rgba(147,51,234,0.15)" : "none",
+            }}>
+            <FileText className="w-5 h-5" style={{ color: voucherType === "procedure" ? "#9333ea" : "#94a3b8" }} />
+            <span className="text-xs font-bold" style={{ color: voucherType === "procedure" ? "#1a3a5c" : "#94a3b8" }}>إجراءات شغل / خدمة مقدمة</span>
+            <span className="text-[9px] font-medium" style={{ color: "#94a3b8" }}>علاج وتقويم وجراحة</span>
+          </button>
+        </div>
+      </div>
+
       {/* Form */}
       <div className="space-y-3">
         <div>
@@ -169,7 +204,7 @@ export function QuickPaymentModal({
         </div>
         <div>
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>وصف الخدمة</label>
-          <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="مثال: استشارة + أشعة" className={inputCls()} />
+          <input value={desc} onChange={e => setDesc(e.target.value)} placeholder={voucherType === "consultation" ? "مثال: كشف + فحص أشعة" : "مثال: حشوة تجميلية + تنظيف"} className={inputCls()} />
         </div>
         <div>
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملاحظات</label>

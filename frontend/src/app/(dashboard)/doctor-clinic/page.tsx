@@ -4,9 +4,10 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   Stethoscope, Play, ClipboardCheck, ListChecks, GitBranch,
   Image, Pill, FlaskConical, CalendarClock, Send, RefreshCw,
-  Search, X, ChevronLeft, AlertCircle, CheckCircle, Clock,
-  Activity, Loader2, FileText, User, Settings2, Eye,
-  CreditCard, ArrowRight,
+  Search, X, AlertCircle, CheckCircle, Clock,
+  Activity, Loader2, FileText, User, Eye,
+  CreditCard, ArrowRight, Route, DoorOpen, UserCheck,
+  Wallet, Printer, MessageCircle, Zap, History, Bell,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -25,6 +26,7 @@ import {
   useStartVisit,
   useHandoffToReception,
   type DoctorPatientItem,
+  type ServiceWithPrice,
 } from "./_lib/hooks";
 
 import {
@@ -57,7 +59,45 @@ const animationStyles = `
 `;
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Action card definitions
+   Patient Detail Tabs
+   ═══════════════════════════════════════════════════════════════════════════ */
+type PatientTab = "journey" | "visit" | "ortho" | "history" | "payment" | "timeline";
+
+const PATIENT_TABS: { key: PatientTab; label: string; icon: React.ElementType }[] = [
+  { key: "journey",  label: "الرحلة",         icon: Route },
+  { key: "visit",    label: "تسجيل الزيارة",   icon: Stethoscope },
+  { key: "ortho",    label: "التقويم",         icon: Zap },
+  { key: "history",  label: "التاريخ الطبي",   icon: History },
+  { key: "payment",  label: "الدفع",           icon: CreditCard },
+  { key: "timeline", label: "السجل",           icon: Clock },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Flow Steps for Patient Journey
+   ═══════════════════════════════════════════════════════════════════════════ */
+const flowSteps = [
+  { key: "Arrived",    label: "وصل",     icon: UserCheck },
+  { key: "Waiting",    label: "انتظار",   icon: Clock },
+  { key: "Called",     label: "نداء",     icon: Bell },
+  { key: "InRoom",     label: "الغرفة",   icon: DoorOpen },
+  { key: "InProgress", label: "الطبيب",   icon: Stethoscope },
+  { key: "Checkout",   label: "الدفع",    icon: CreditCard },
+  { key: "Completed",  label: "مكتمل",    icon: CheckCircle },
+];
+
+const STATUS_FLOW_MAP: Record<string, number> = {
+  Arrived: 0, Waiting: 1, Called: 2, InRoom: 3, InProgress: 4, Checkout: 5, Completed: 6,
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Helper: format money
+   ═══════════════════════════════════════════════════════════════════════════ */
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("ar-YE").format(value || 0) + " ر.ي";
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Action card definitions (for quick actions in the visit tab)
    ═══════════════════════════════════════════════════════════════════════════ */
 interface ActionCardDef {
   key: string;
@@ -65,7 +105,7 @@ interface ActionCardDef {
   icon: React.ElementType;
   color: string;
   bgColor: string;
-  requiredStatus: string[]; // appointmentStatus that enables this action
+  requiredStatus: string[];
   description: string;
 }
 
@@ -154,7 +194,7 @@ const ACTION_CARDS: ActionCardDef[] = [
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MAIN PAGE — Doctor Clinic Workspace
+   MAIN PAGE — Doctor Clinic Workspace (Redesigned with Patient Tabs)
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function DoctorClinicPage() {
   const { user } = useAuthStore();
@@ -174,6 +214,12 @@ export default function DoctorClinicPage() {
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatientItem | null>(null);
   const activePatientId = selectedPatient?.patientId ?? null;
   const { data: selectedSummary } = useDoctorPatientSummary(activePatientId);
+
+  // ── Active patient detail tab ──
+  const [activeTab, setActiveTab] = useState<PatientTab>("journey");
+
+  // ── Selected services for visit ──
+  const [selectedServices, setSelectedServices] = useState<ServiceWithPrice[]>([]);
 
   // ── Modal state ──
   const [startVisitModalOpen, setStartVisitModalOpen] = useState(false);
@@ -250,6 +296,12 @@ export default function DoctorClinicPage() {
       ["InRoom", "InProgress"].includes(selectedPatient.queueStatus ?? "")
     : false;
 
+  // ── Selected services total ──
+  const selectedServicesTotal = useMemo(() =>
+    selectedServices.reduce((sum, s) => sum + (s.defaultPrice ?? 0), 0),
+    [selectedServices]
+  );
+
   // ── Keyboard shortcuts ──
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -279,7 +331,6 @@ export default function DoctorClinicPage() {
       return;
     }
 
-    // Check if action is enabled for current patient status
     const card = ACTION_CARDS.find(c => c.key === cardKey);
     if (card && !card.requiredStatus.includes(selectedPatient.appointmentStatus) &&
         !card.requiredStatus.includes(selectedPatient.queueStatus ?? "")) {
@@ -288,33 +339,15 @@ export default function DoctorClinicPage() {
     }
 
     switch (cardKey) {
-      case "startVisit":
-        setStartVisitModalOpen(true);
-        break;
-      case "examination":
-        setExaminationModalOpen(true);
-        break;
-      case "procedures":
-        setProceduresModalOpen(true);
-        break;
-      case "treatmentPlan":
-        setTreatmentPlanModalOpen(true);
-        break;
-      case "orthoFollowUp":
-        setOrthoFollowUpModalOpen(true);
-        break;
-      case "images":
-        setImagesModalOpen(true);
-        break;
-      case "prescription":
-        setPrescriptionModalOpen(true);
-        break;
-      case "labOrder":
-        setLabOrderModalOpen(true);
-        break;
-      case "followUp":
-        setFollowUpModalOpen(true);
-        break;
+      case "startVisit": setStartVisitModalOpen(true); break;
+      case "examination": setExaminationModalOpen(true); break;
+      case "procedures": setProceduresModalOpen(true); break;
+      case "treatmentPlan": setTreatmentPlanModalOpen(true); break;
+      case "orthoFollowUp": setOrthoFollowUpModalOpen(true); break;
+      case "images": setImagesModalOpen(true); break;
+      case "prescription": setPrescriptionModalOpen(true); break;
+      case "labOrder": setLabOrderModalOpen(true); break;
+      case "followUp": setFollowUpModalOpen(true); break;
     }
   }, [selectedPatient]);
 
@@ -329,6 +362,15 @@ export default function DoctorClinicPage() {
       toast.error("فشل بدء الزيارة");
     }
   }, [selectedPatient, startVisitMutation]);
+
+  // ── Toggle service selection ──
+  const handleToggleService = useCallback((service: ServiceWithPrice) => {
+    setSelectedServices(prev => {
+      const exists = prev.some(s => s.id === service.id);
+      if (exists) return prev.filter(s => s.id !== service.id);
+      return [...prev, service];
+    });
+  }, []);
 
   // ── Handoff to reception ──
   const handleHandoff = useCallback(async () => {
@@ -352,6 +394,7 @@ export default function DoctorClinicPage() {
       toast.success("تم إرسال المريض للاستقبال للتحصيل والخروج");
       setHandoffModalOpen(false);
       setSelectedPatient(null);
+      setSelectedServices([]);
       setClinicalNotes({
         diagnosis: "", treatmentDone: "", instructions: "",
         nextVisitPlan: "", amountDue: 0, suggestedServiceId: "", followUpDate: "",
@@ -374,6 +417,9 @@ export default function DoctorClinicPage() {
 
   // ── Doctor display name ──
   const doctorName = user?.doctorName ?? user?.username ?? "الطبيب";
+
+  // ── Get flow index for journey tab ──
+  const getFlowIndex = (status: string) => STATUS_FLOW_MAP[status] ?? -1;
 
   // ── Render ──
   return (
@@ -445,237 +491,589 @@ export default function DoctorClinicPage() {
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════
-            MAIN CONTENT — Two-column layout
+            MAIN CONTENT — Three-panel layout
             ═══════════════════════════════════════════════════════════════ */}
         <div className="flex-1 flex overflow-hidden">
 
-          {/* ── Left: Patient List + Action Cards ── */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-
-            {/* Patient selector row (horizontal scrollable) */}
-            <div className="flex-shrink-0 bg-white px-4 py-3" style={{ borderBottom: "1px solid #f1f5f9" }}>
-              <div className="flex items-center gap-2 mb-2">
+          {/* ── Left Panel: Patient List ── */}
+          <div className="w-[280px] flex-shrink-0 flex flex-col bg-white border-l" style={{ borderColor: "#e5e7eb" }}>
+            {/* Patient list header */}
+            <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid #f1f5f9" }}>
+              <div className="flex items-center gap-2">
                 <User className="w-4 h-4" style={{ color: NAVY }} />
                 <span className="text-xs font-bold" style={{ color: NAVY }}>مرضاي اليوم</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: NAVY + "15", color: NAVY }}>{patients.length}</span>
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {filteredPatients.length === 0 && !isLoading && (
-                  <div className="text-xs font-medium py-3 text-center w-full" style={{ color: "#94a3b8" }}>لا يوجد مرضى</div>
-                )}
-                {filteredPatients.map(p => {
-                  const isSelected = selectedPatient?.appointmentId === p.appointmentId;
-                  const isActive = ["InRoom", "InProgress"].includes(p.appointmentStatus);
-                  const isWaiting = p.queueStatus === "Waiting" || p.queueStatus === "Called";
-                  const isCompleted = p.appointmentStatus === "Completed" || p.checkoutStatus === "ReadyForCheckout";
-                  const statusColors = STATUS_COLORS[p.appointmentStatus] ?? STATUS_COLORS.Scheduled;
-
-                  return (
-                    <button key={p.appointmentId}
-                      onClick={() => {
-                        setSelectedPatient(p);
-                        // Reset clinical notes when switching patients
-                        setClinicalNotes({
-                          diagnosis: "", treatmentDone: "", instructions: "",
-                          nextVisitPlan: "", amountDue: 0, suggestedServiceId: "", followUpDate: "",
-                        });
-                      }}
-                      className="flex-shrink-0 flex flex-col items-center gap-1.5 px-3 py-2.5 rounded-xl transition-all border-2 min-w-[90px]"
-                      style={{
-                        background: isSelected ? NAVY + "08" : "#fff",
-                        borderColor: isSelected ? NAVY : "#e5e7eb",
-                        boxShadow: isSelected ? `0 2px 8px ${NAVY}15` : "none",
-                      }}>
-                      {/* Avatar */}
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold"
-                        style={{
-                          background: isActive ? "#16a34a" : isWaiting ? ORANGE : isCompleted ? "#94a3b8" : BLUE,
-                          color: "#fff",
-                        }}>
-                        {getInitials(p.patientName)}
-                      </div>
-                      {/* Name */}
-                      <div className="text-[11px] font-bold text-center leading-tight max-w-[80px] truncate" style={{ color: NAVY }}>
-                        {p.patientName}
-                      </div>
-                      {/* Status badge */}
-                      <div className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                        style={{ background: statusColors.bg, color: statusColors.text }}>
-                        {APPT_STATUS_LABELS[p.appointmentStatus] ?? p.appointmentStatus}
-                      </div>
-                      {/* Time */}
-                      <div className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>
-                        {fmtTime(p.appointmentTime)}
-                      </div>
-                      {/* Session duration for active patients */}
-                      {isActive && p.inRoomSince && (
-                        <div className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ background: "#f0fdf4", color: "#16a34a" }}>
-                          {fmtSessionDuration(p.inRoomSince)}
-                        </div>
-                      )}
-                      {/* ReadyForCheckout indicator */}
-                      {p.checkoutStatus === "ReadyForCheckout" && (
-                        <div className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ background: "#fef3c7", color: "#d97706" }}>
-                          جاهز للدفع
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
 
-            {/* ── Selected Patient Summary + Action Cards ── */}
-            {selectedPatient ? (
-              <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-                {/* Patient Summary Card */}
-                <div className="bg-white rounded-2xl p-4 border" style={{ borderColor: "#e5e7eb" }}>
-                  <div className="flex items-start gap-4">
+            {/* Patient list */}
+            <div className="flex-1 overflow-y-auto">
+              {isLoading && (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: BLUE }} />
+                </div>
+              )}
+              {!isLoading && filteredPatients.length === 0 && (
+                <div className="p-6 text-center text-xs font-medium" style={{ color: "#94a3b8" }}>لا يوجد مرضى</div>
+              )}
+              {filteredPatients.map(p => {
+                const isSelected = selectedPatient?.appointmentId === p.appointmentId;
+                const isActive = ["InRoom", "InProgress"].includes(p.appointmentStatus);
+                const isWaiting = p.queueStatus === "Waiting" || p.queueStatus === "Called";
+                const statusColors = STATUS_COLORS[p.appointmentStatus] ?? STATUS_COLORS.Scheduled;
+
+                return (
+                  <button key={p.appointmentId}
+                    onClick={() => {
+                      setSelectedPatient(p);
+                      setActiveTab("journey");
+                      setSelectedServices([]);
+                      setClinicalNotes({
+                        diagnosis: "", treatmentDone: "", instructions: "",
+                        nextVisitPlan: "", amountDue: 0, suggestedServiceId: "", followUpDate: "",
+                      });
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-3 text-right border-b transition-all"
+                    style={{
+                      background: isSelected ? "#f0f5fb" : "#fff",
+                      borderRight: isSelected ? `3px solid ${BLUE}` : "3px solid transparent",
+                      borderBottomColor: "#f1f5f9",
+                    }}>
                     {/* Avatar */}
-                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold flex-shrink-0"
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                       style={{
-                        background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                        background: isActive ? "#16a34a" : isWaiting ? ORANGE : BLUE,
                         color: "#fff",
                       }}>
-                      {getInitials(selectedPatient.patientName)}
+                      {getInitials(p.patientName)}
                     </div>
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-base font-extrabold" style={{ color: NAVY }}>{selectedPatient.patientName}</h2>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: STATUS_COLORS[selectedPatient.appointmentStatus]?.bg ?? "#f5f5f5", color: STATUS_COLORS[selectedPatient.appointmentStatus]?.text ?? "#64748b" }}>
-                          {APPT_STATUS_LABELS[selectedPatient.appointmentStatus] ?? selectedPatient.appointmentStatus}
+                      <p className="text-xs font-bold truncate" style={{ color: isSelected ? BLUE : NAVY }}>{p.patientName}</p>
+                      <p className="text-[10px]" style={{ color: "#94a3b8" }}>{fmtTime(p.appointmentTime)} · {p.serviceName ?? "—"}</p>
+                    </div>
+                    {/* Status */}
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
+                        style={{ background: statusColors.bg, color: statusColors.text }}>
+                        {APPT_STATUS_LABELS[p.appointmentStatus] ?? p.appointmentStatus}
+                      </span>
+                      {isActive && p.inRoomSince && (
+                        <span className="text-[9px] font-bold" style={{ color: "#16a34a" }}>
+                          {fmtSessionDuration(p.inRoomSince)}
                         </span>
-                        {selectedPatient.checkoutStatus === "ReadyForCheckout" && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#fef3c7", color: "#d97706" }}>
-                            جاهز للدفع
+                      )}
+                      {p.checkoutStatus === "ReadyForCheckout" && (
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded" style={{ background: "#fef3c7", color: "#d97706" }}>
+                          جاهز للدفع
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Right Panel: Patient Detail with Tabs ── */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            {selectedPatient ? (
+              <>
+                {/* Patient Header Bar */}
+                <div className="flex-shrink-0 bg-white px-4 py-3 flex items-center gap-4" style={{ borderBottom: "1px solid #e5e7eb" }}>
+                  {/* Avatar */}
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-base font-bold flex-shrink-0"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`, color: "#fff" }}>
+                    {getInitials(selectedPatient.patientName)}
+                  </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-extrabold" style={{ color: NAVY }}>{selectedPatient.patientName}</h2>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: STATUS_COLORS[selectedPatient.appointmentStatus]?.bg ?? "#f5f5f5", color: STATUS_COLORS[selectedPatient.appointmentStatus]?.text ?? "#64748b" }}>
+                        {APPT_STATUS_LABELS[selectedPatient.appointmentStatus] ?? selectedPatient.appointmentStatus}
+                      </span>
+                      {selectedPatient.checkoutStatus === "ReadyForCheckout" && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#fef3c7", color: "#d97706" }}>جاهز للدفع</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 mt-1 text-xs font-medium" style={{ color: "#64748b" }}>
+                      <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {fmtTime(selectedPatient.appointmentTime)}</span>
+                      <span>{selectedPatient.serviceName ?? "—"}</span>
+                      <span>غرفة: {selectedPatient.roomName ?? "—"}</span>
+                      {selectedPatient.inRoomSince && (
+                        <span className="font-bold" style={{ color: "#16a34a" }}>{fmtSessionDuration(selectedPatient.inRoomSince)}</span>
+                      )}
+                    </div>
+
+                    {/* Medical Alerts */}
+                    {medicalAlerts.length > 0 && (
+                      <div className="flex gap-1.5 mt-2 flex-wrap">
+                        {medicalAlerts.map((alert, i) => (
+                          <span key={i} className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
+                            style={{ background: alert.severity === "danger" ? "#fef2f2" : "#fff7ed", color: alert.severity === "danger" ? "#dc2626" : "#d97706" }}>
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            {alert.type === "allergy" ? "حساسية" : alert.type === "bleeding" ? "نزيف" : alert.type === "pregnancy" ? "حمل" : alert.label ?? "تنبيه"}
                           </span>
-                        )}
+                        ))}
                       </div>
-                      <div className="flex items-center gap-4 mt-1 text-xs font-medium" style={{ color: "#64748b" }}>
-                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {fmtTime(selectedPatient.appointmentTime)}</span>
-                        <span>{selectedPatient.serviceName ?? "—"}</span>
-                        <span>غرفة: {selectedPatient.roomName ?? "—"}</span>
-                        {selectedPatient.inRoomSince && (
-                          <span className="font-bold" style={{ color: "#16a34a" }}>{fmtSessionDuration(selectedPatient.inRoomSince)}</span>
-                        )}
+                    )}
+
+                    {/* Chief Complaint */}
+                    {selectedPatient.chiefComplaint && (
+                      <div className="mt-2 text-xs font-medium px-3 py-1.5 rounded-lg inline-block" style={{ background: "#fff7ed", color: "#92400e" }}>
+                        الشكوى: {selectedPatient.chiefComplaint}
                       </div>
-
-                      {/* Medical Alerts */}
-                      {medicalAlerts.length > 0 && (
-                        <div className="flex gap-1.5 mt-2 flex-wrap">
-                          {medicalAlerts.map((alert, i) => (
-                            <span key={i} className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
-                              style={{ background: alert.severity === "danger" ? "#fef2f2" : "#fff7ed", color: alert.severity === "danger" ? "#dc2626" : "#d97706" }}>
-                              <AlertCircle className="w-2.5 h-2.5" />
-                              {alert.type === "allergy" ? "حساسية" : alert.type === "bleeding" ? "نزيف" : alert.type === "pregnancy" ? "حمل" : alert.label ?? "تنبيه"}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Chief Complaint */}
-                      {selectedPatient.chiefComplaint && (
-                        <div className="mt-2 text-xs font-medium px-3 py-1.5 rounded-lg" style={{ background: "#fff7ed", color: "#92400e" }}>
-                          الشكوى: {selectedPatient.chiefComplaint}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
-                </div>
 
-                {/* Clinical Notes Summary (if any) */}
-                {(clinicalNotes.diagnosis || clinicalNotes.treatmentDone || clinicalNotes.amountDue > 0) && (
-                  <div className="bg-white rounded-2xl p-4 border" style={{ borderColor: "#e5e7eb" }}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileText className="w-4 h-4" style={{ color: BLUE }} />
-                      <span className="text-xs font-bold" style={{ color: NAVY }}>ملاحظات سريرية مسجّلة</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {clinicalNotes.diagnosis && (
-                        <div className="px-2.5 py-1.5 rounded-lg" style={{ background: "#f0f5fb" }}>
-                          <span className="font-bold" style={{ color: BLUE }}>التشخيص:</span>{" "}
-                          <span style={{ color: NAVY }}>{clinicalNotes.diagnosis}</span>
-                        </div>
-                      )}
-                      {clinicalNotes.treatmentDone && (
-                        <div className="px-2.5 py-1.5 rounded-lg" style={{ background: "#faf5ff" }}>
-                          <span className="font-bold" style={{ color: "#9333ea" }}>العلاج:</span>{" "}
-                          <span style={{ color: NAVY }}>{clinicalNotes.treatmentDone}</span>
-                        </div>
-                      )}
-                      {clinicalNotes.amountDue > 0 && (
-                        <div className="px-2.5 py-1.5 rounded-lg" style={{ background: "#fff7ed" }}>
-                          <span className="font-bold" style={{ color: ORANGE }}>المبلغ:</span>{" "}
-                          <span style={{ color: NAVY }}>{fmtRial(clinicalNotes.amountDue)}</span>
-                        </div>
-                      )}
-                      {clinicalNotes.instructions && (
-                        <div className="px-2.5 py-1.5 rounded-lg" style={{ background: "#f0fdf4" }}>
-                          <span className="font-bold" style={{ color: "#16a34a" }}>التعليمات:</span>{" "}
-                          <span style={{ color: NAVY }}>{clinicalNotes.instructions}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Action Cards Grid ── */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Settings2 className="w-4 h-4" style={{ color: NAVY }} />
-                    <span className="text-xs font-bold" style={{ color: NAVY }}>إجراءات سريرية</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                    {ACTION_CARDS.map(card => {
-                      const isDisabled = !selectedPatient ||
-                        (!card.requiredStatus.includes(selectedPatient.appointmentStatus) &&
-                         !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
-                      return (
-                        <button key={card.key}
-                          onClick={() => handleAction(card.key)}
-                          disabled={isDisabled}
-                          className="flex flex-col items-center gap-2 p-4 rounded-xl border transition-all text-center"
-                          style={{
-                            background: isDisabled ? "#f9fafb" : card.bgColor,
-                            borderColor: isDisabled ? "#f1f5f9" : card.color + "25",
-                            opacity: isDisabled ? 0.4 : 1,
-                            cursor: isDisabled ? "not-allowed" : "pointer",
-                          }}>
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                            style={{ background: isDisabled ? "#e5e7eb" : card.color + "18" }}>
-                            <card.icon className="w-5 h-5" style={{ color: isDisabled ? "#94a3b8" : card.color }} />
-                          </div>
-                          <div className="text-[11px] font-bold leading-tight" style={{ color: isDisabled ? "#94a3b8" : card.color }}>
-                            {card.label}
-                          </div>
-                          <div className="text-[9px] font-medium leading-tight" style={{ color: "#94a3b8" }}>
-                            {card.description}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* ── Finish & Send to Reception ── */}
-                {isPatientActive && (
-                  <div className="mt-4">
-                    <button
-                      onClick={() => setHandoffModalOpen(true)}
-                      className="w-full py-3.5 rounded-2xl text-sm font-extrabold text-white flex items-center justify-center gap-2 transition hover:opacity-90 animate-pulse-glow"
+                  {/* Handoff button (when patient is active) */}
+                  {isPatientActive && (
+                    <button onClick={() => setHandoffModalOpen(true)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-extrabold text-white transition hover:opacity-90 animate-pulse-glow flex-shrink-0"
                       style={{ background: `linear-gradient(135deg, ${ORANGE}, #e67e22)` }}>
-                      <Send className="w-5 h-5" />
+                      <Send className="w-4 h-4" />
                       إنهاء وإرسال للاستقبال
-                      <ArrowRight className="w-4 h-4" />
                     </button>
-                    <p className="text-[10px] text-center mt-1.5 font-medium" style={{ color: "#94a3b8" }}>
-                      سيتم إرسال المريض للاستقبال لإتمام التحصيل والخروج
-                    </p>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+
+                {/* Patient Detail Tabs */}
+                <div className="flex-shrink-0 bg-white flex items-center px-4 gap-0.5"
+                  style={{ borderBottom: "2px solid #f1f5f9" }}>
+                  {PATIENT_TABS.map(tab => {
+                    const isActive = activeTab === tab.key;
+                    const TabIcon = tab.icon;
+                    return (
+                      <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                        className="flex items-center gap-1.5 px-3 py-2.5 rounded-t-lg text-xs font-bold relative transition-all"
+                        style={{
+                          color: isActive ? BLUE : "#64748b",
+                          background: isActive ? BLUE + "08" : "transparent",
+                        }}>
+                        <TabIcon className="w-3.5 h-3.5" />
+                        <span>{tab.label}</span>
+                        {isActive && (
+                          <span className="absolute bottom-[-2px] left-2 right-2 h-[2px] rounded-full" style={{ background: BLUE }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Tab Content */}
+                <div className="flex-1 overflow-y-auto p-4 bg-[#f8fafc]">
+                  {/* ═══ JOURNEY TAB ═══ */}
+                  {activeTab === "journey" && (
+                    <div className="space-y-4 animate-fade-in-up">
+                      {/* Flow steps */}
+                      <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Route className="w-4 h-4" style={{ color: BLUE }} />
+                          <span className="text-xs font-bold" style={{ color: NAVY }}>مسار المريض اليوم</span>
+                        </div>
+                        <div className="grid grid-cols-7 gap-2">
+                          {flowSteps.map((step, i) => {
+                            const StepIcon = step.icon;
+                            const flowIndex = getFlowIndex(selectedPatient.appointmentStatus);
+                            const active = i === flowIndex;
+                            const done = i < flowIndex || selectedPatient.appointmentStatus === "Completed";
+                            return (
+                              <div key={step.key}
+                                className="rounded-xl border p-3 text-center"
+                                style={{
+                                  background: active ? BLUE : done ? "#f0fdf4" : "#f9fafb",
+                                  borderColor: active ? BLUE : done ? "#bbf7d0" : "#f1f5f9",
+                                  color: active ? "#fff" : done ? "#16a34a" : "#94a3b8",
+                                }}>
+                                <StepIcon className="w-5 h-5 mx-auto mb-1" />
+                                <p className="text-[10px] font-bold">{step.label}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Quick info cards */}
+                      <div className="grid grid-cols-3 gap-4">
+                        {/* Financial quick view */}
+                        <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                          <div className="flex items-center gap-2 mb-3">
+                            <Wallet className="w-4 h-4" style={{ color: ORANGE }} />
+                            <span className="text-xs font-bold" style={{ color: NAVY }}>المالية السريعة</span>
+                          </div>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">الإجمالي</span>
+                              <b>{fmtRial(selectedSummary?.financeSummary?.totalTreatmentCost ?? 0)}</b>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">المدفوع</span>
+                              <b className="text-green-700">{fmtRial(selectedSummary?.financeSummary?.totalPaid ?? 0)}</b>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">المتبقي</span>
+                              <b className="text-red-600">{fmtRial(selectedSummary?.financeSummary?.outstandingBalance ?? 0)}</b>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Communication */}
+                        <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                          <div className="flex items-center gap-2 mb-3">
+                            <MessageCircle className="w-4 h-4" style={{ color: "#16a34a" }} />
+                            <span className="text-xs font-bold" style={{ color: NAVY }}>التواصل</span>
+                          </div>
+                          <div className="space-y-2">
+                            <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-green-50 border border-green-100 text-green-700 hover:bg-green-100">
+                              <MessageCircle className="w-3.5 h-3.5" /> واتساب
+                            </button>
+                            <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-white border border-gray-200 hover:bg-gray-50" style={{ color: NAVY }}>
+                              <Printer className="w-3.5 h-3.5" /> طباعة سند
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Status summary */}
+                        <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                          <div className="flex items-center gap-2 mb-3">
+                            <FileText className="w-4 h-4" style={{ color: NAVY }} />
+                            <span className="text-xs font-bold" style={{ color: NAVY }}>ملخص الحالة</span>
+                          </div>
+                          <div className="space-y-2 text-xs">
+                            <div className="rounded-lg bg-gray-50 p-2.5">
+                              <p className="text-[10px] text-gray-500 mb-0.5">الشكوى</p>
+                              <p className="font-bold" style={{ color: NAVY }}>{selectedPatient.chiefComplaint ?? "—"}</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-2.5">
+                              <p className="text-[10px] text-gray-500 mb-0.5">الخدمة</p>
+                              <p className="font-bold" style={{ color: NAVY }}>{selectedPatient.serviceName ?? "—"}</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-2.5">
+                              <p className="text-[10px] text-gray-500 mb-0.5">الغرفة</p>
+                              <p className="font-bold" style={{ color: NAVY }}>{selectedPatient.roomName ?? "—"}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ═══ VISIT TAB ═══ */}
+                  {activeTab === "visit" && (
+                    <div className="space-y-4 animate-fade-in-up">
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Service catalog selection */}
+                        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "#e5e7eb" }}>
+                          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+                            <div className="flex items-center gap-1.5">
+                              <Stethoscope className="w-4 h-4" style={{ color: BLUE }} />
+                              <span className="text-xs font-bold" style={{ color: NAVY }}>اختر الإجراءات من الخدمات المسعّرة</span>
+                            </div>
+                          </div>
+                          <div className="p-4 space-y-3">
+                            <div className="grid grid-cols-2 gap-2 max-h-[320px] overflow-y-auto">
+                              {services.map(service => {
+                                const checked = selectedServices.some(s => s.id === service.id);
+                                return (
+                                  <button key={service.id}
+                                    type="button"
+                                    onClick={() => handleToggleService(service)}
+                                    className="rounded-xl border p-3 text-right transition"
+                                    style={{
+                                      background: checked ? BLUE : "#fff",
+                                      borderColor: checked ? BLUE : "#e5e7eb",
+                                      color: checked ? "#fff" : NAVY,
+                                    }}>
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div>
+                                        <p className="text-xs font-bold">{service.arabicName}</p>
+                                        {service.requiresConsultationFee && (
+                                          <p className="text-[10px] mt-0.5" style={{ color: checked ? "#bfdbfe" : "#94a3b8" }}>يتطلب رسوم معاينة</p>
+                                        )}
+                                      </div>
+                                      {service.defaultPrice != null && (
+                                        <b className="text-[10px] whitespace-nowrap">{formatMoney(service.defaultPrice)}</b>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Notes */}
+                            <textarea className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs min-h-16" placeholder="ملاحظات الطبيب على الإجراءات" />
+                          </div>
+                        </div>
+
+                        {/* Visit invoice preview */}
+                        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "#e5e7eb" }}>
+                          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+                            <div className="flex items-center gap-1.5">
+                              <Wallet className="w-4 h-4" style={{ color: ORANGE }} />
+                              <span className="text-xs font-bold" style={{ color: NAVY }}>فاتورة الزيارة قبل الإرسال</span>
+                            </div>
+                          </div>
+                          <div className="p-4 space-y-3">
+                            {/* Selected services list */}
+                            <div className="rounded-xl border border-gray-100 overflow-hidden">
+                              {selectedServices.length === 0 ? (
+                                <div className="p-5 text-center text-xs text-gray-400">اختر إجراءً واحداً أو أكثر من قائمة الخدمات</div>
+                              ) : selectedServices.map(service => (
+                                <div key={service.id} className="flex items-center justify-between border-b border-gray-100 px-3 py-2 text-xs last:border-b-0">
+                                  <span className="font-bold" style={{ color: NAVY }}>{service.arabicName}</span>
+                                  <span className="font-bold" style={{ color: "#64748b" }}>{service.defaultPrice != null ? formatMoney(service.defaultPrice) : "—"}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Total */}
+                            <div className="rounded-xl bg-gray-50 p-3 text-sm flex items-center justify-between">
+                              <span className="font-bold text-gray-600">إجمالي إجراءات اليوم</span>
+                              <b style={{ color: NAVY }}>{formatMoney(selectedServicesTotal)}</b>
+                            </div>
+
+                            {/* Note about reception */}
+                            <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800 leading-6">
+                              الطبيب لا يستلم المبلغ هنا؛ فقط يحدد الإجراءات المنفذة من الخدمات المسعّرة، ثم يرسل المريض للاستقبال للتحصيل والسند.
+                            </div>
+
+                            {/* Save & Send buttons */}
+                            <button onClick={() => {
+                              const treatmentDone = selectedServices.map(s => s.arabicName).join(" + ");
+                              updateClinicalNotes({
+                                treatmentDone: clinicalNotes.treatmentDone ? `${clinicalNotes.treatmentDone} + ${treatmentDone}` : treatmentDone,
+                                amountDue: clinicalNotes.amountDue + selectedServicesTotal,
+                              });
+                              toast.success("تم حفظ إجراءات الزيارة");
+                            }}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white"
+                              style={{ background: BLUE }}>
+                              <CheckCircle className="w-4 h-4" /> حفظ زيارة اليوم
+                            </button>
+                            <button onClick={() => setHandoffModalOpen(true)}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border"
+                              style={{ background: "#f0fdf4", borderColor: "#bbf7d0", color: "#16a34a" }}>
+                              <Send className="w-4 h-4" /> إنهاء وإرسال للاستقبال
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Clinical Quick Actions */}
+                      <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Activity className="w-4 h-4" style={{ color: NAVY }} />
+                          <span className="text-xs font-bold" style={{ color: NAVY }}>إجراءات سريرية سريعة</span>
+                        </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+                          {ACTION_CARDS.map(card => {
+                            const isDisabled = !selectedPatient ||
+                              (!card.requiredStatus.includes(selectedPatient.appointmentStatus) &&
+                               !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
+                            return (
+                              <button key={card.key}
+                                onClick={() => handleAction(card.key)}
+                                disabled={isDisabled}
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all text-center"
+                                style={{
+                                  background: isDisabled ? "#f9fafb" : card.bgColor,
+                                  borderColor: isDisabled ? "#f1f5f9" : card.color + "25",
+                                  opacity: isDisabled ? 0.4 : 1,
+                                  cursor: isDisabled ? "not-allowed" : "pointer",
+                                }}>
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                  style={{ background: isDisabled ? "#e5e7eb" : card.color + "18" }}>
+                                  <card.icon className="w-4 h-4" style={{ color: isDisabled ? "#94a3b8" : card.color }} />
+                                </div>
+                                <div className="text-[10px] font-bold leading-tight" style={{ color: isDisabled ? "#94a3b8" : card.color }}>
+                                  {card.label}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ═══ ORTHO TAB ═══ */}
+                  {activeTab === "ortho" && (
+                    <div className="animate-fade-in-up">
+                      <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Zap className="w-4 h-4" style={{ color: ORANGE }} />
+                          <span className="text-xs font-bold" style={{ color: NAVY }}>ملف التقويم النشط</span>
+                        </div>
+                        {selectedSummary?.activeOrthoCase ? (
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">رقم الحالة</p>
+                              <p className="font-bold" style={{ color: NAVY }}>{selectedSummary.activeOrthoCase.caseNumber ?? "—"}</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">المرحلة الحالية</p>
+                              <p className="font-bold" style={{ color: NAVY }}>{selectedSummary.activeOrthoCase.currentStage ?? "—"}</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">نوع الجهاز</p>
+                              <p className="font-bold" style={{ color: NAVY }}>{selectedSummary.activeOrthoCase.applianceType ?? "—"}</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">الخطة</p>
+                              <p className="font-bold" style={{ color: NAVY }}>{selectedSummary.activeOrthoCase.currentStage ?? "—"}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 text-xs" style={{ color: "#94a3b8" }}>لا يوجد ملف تقويم نشط لهذا المريض</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ═══ HISTORY TAB ═══ */}
+                  {activeTab === "history" && (
+                    <div className="animate-fade-in-up">
+                      <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <History className="w-4 h-4" style={{ color: NAVY }} />
+                          <span className="text-xs font-bold" style={{ color: NAVY }}>التاريخ الطبي المختصر</span>
+                        </div>
+                        {selectedSummary?.medicalAlerts && selectedSummary.medicalAlerts.length > 0 ? (
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            {selectedSummary.medicalAlerts.map((alert, i) => (
+                              <div key={i} className="rounded-lg p-3"
+                                style={{ background: alert.severity === "danger" ? "#fef2f2" : "#fff7ed" }}>
+                                <p className="text-[10px] mb-1" style={{ color: alert.severity === "danger" ? "#dc2626" : "#d97706" }}>
+                                  {alert.type === "allergy" ? "حساسية" : alert.type === "bleeding" ? "نزيف" : alert.type === "pregnancy" ? "حمل" : alert.label ?? "تنبيه"}
+                                </p>
+                                <p className="font-bold" style={{ color: NAVY }}>{alert.value ?? alert.label ?? "مسجل"}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">أمراض مزمنة</p>
+                              <p className="font-bold" style={{ color: NAVY }}>لا يوجد</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">حساسية أدوية</p>
+                              <p className="font-bold" style={{ color: NAVY }}>لا يوجد</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">مشاكل نزف</p>
+                              <p className="font-bold" style={{ color: NAVY }}>لا</p>
+                            </div>
+                            <div className="rounded-lg bg-gray-50 p-3">
+                              <p className="text-[10px] text-gray-500 mb-1">ملاحظات أخرى</p>
+                              <p className="font-bold" style={{ color: NAVY }}>—</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ═══ PAYMENT TAB ═══ */}
+                  {activeTab === "payment" && (
+                    <div className="grid grid-cols-2 gap-4 animate-fade-in-up">
+                      {/* Payment form */}
+                      <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <CreditCard className="w-4 h-4" style={{ color: "#22c55e" }} />
+                          <span className="text-xs font-bold" style={{ color: NAVY }}>تسجيل دفعة</span>
+                        </div>
+                        <div className="space-y-3">
+                          <input className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs" placeholder="المبلغ" type="number" dir="ltr" />
+                          <select className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs">
+                            <option>نقداً</option>
+                            <option>تحويل بنكي</option>
+                            <option>بطاقة</option>
+                          </select>
+                          <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white"
+                            style={{ background: "#22c55e" }}>
+                            <Wallet className="w-4 h-4" /> حفظ الدفعة
+                          </button>
+                          <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
+                            الطبيب لا يستلم المبلغ هنا؛ فقط يحدد الإجراءات ثم يرسل المريض للاستقبال للتحصيل والسند.
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Account summary */}
+                      <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Wallet className="w-4 h-4" style={{ color: ORANGE }} />
+                          <span className="text-xs font-bold" style={{ color: NAVY }}>ملخص الحساب</span>
+                        </div>
+                        <div className="space-y-3 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">إجمالي الخطة</span>
+                            <b>{fmtRial(selectedSummary?.financeSummary?.totalTreatmentCost ?? 0)}</b>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">المدفوع</span>
+                            <b className="text-green-700">{fmtRial(selectedSummary?.financeSummary?.totalPaid ?? 0)}</b>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">المتبقي</span>
+                            <b className="text-red-600">{fmtRial(selectedSummary?.financeSummary?.outstandingBalance ?? 0)}</b>
+                          </div>
+                          {(clinicalNotes.amountDue > 0 || selectedServicesTotal > 0) && (
+                            <div className="flex justify-between pt-2 border-t border-gray-100">
+                              <span className="text-gray-500 font-bold">إجراءات اليوم</span>
+                              <b style={{ color: ORANGE }}>{formatMoney(clinicalNotes.amountDue || selectedServicesTotal)}</b>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ═══ TIMELINE TAB ═══ */}
+                  {activeTab === "timeline" && (
+                    <div className="animate-fade-in-up">
+                      <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Clock className="w-4 h-4" style={{ color: NAVY }} />
+                          <span className="text-xs font-bold" style={{ color: NAVY }}>سجل الأحداث</span>
+                        </div>
+                        <div className="space-y-3">
+                          {selectedPatient.appointmentStatus !== "Scheduled" && (
+                            <div className="rounded-lg bg-blue-50 p-3 text-xs">
+                              <b style={{ color: NAVY }}>تم تسجيل الحضور</b>
+                              <p className="text-gray-500 mt-1">اليوم</p>
+                            </div>
+                          )}
+                          {(selectedPatient.queueStatus === "Called" || selectedPatient.appointmentStatus === "InProgress" || selectedPatient.appointmentStatus === "InRoom") && (
+                            <div className="rounded-lg bg-purple-50 p-3 text-xs">
+                              <b style={{ color: NAVY }}>تم نداء المريض</b>
+                              <p className="text-gray-500 mt-1">اليوم</p>
+                            </div>
+                          )}
+                          {(clinicalNotes.treatmentDone || clinicalNotes.diagnosis) && (
+                            <div className="rounded-lg bg-green-50 p-3 text-xs">
+                              <b style={{ color: NAVY }}>تم حفظ زيارة — {clinicalNotes.treatmentDone || clinicalNotes.diagnosis}</b>
+                              <p className="text-gray-500 mt-1">اليوم</p>
+                            </div>
+                          )}
+                          {selectedPatient.appointmentStatus === "Completed" && (
+                            <div className="rounded-lg bg-gray-50 p-3 text-xs">
+                              <b style={{ color: NAVY }}>تم إكمال الزيارة</b>
+                              <p className="text-gray-500 mt-1">اليوم</p>
+                            </div>
+                          )}
+                          {selectedPatient.appointmentStatus === "Scheduled" && (
+                            <div className="text-center py-8 text-xs" style={{ color: "#94a3b8" }}>لم تبدأ الزيارة بعد</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               /* ── Empty state ── */
               <div className="flex-1 flex flex-col items-center justify-center p-8">
@@ -683,7 +1081,7 @@ export default function DoctorClinicPage() {
                   <Stethoscope className="w-10 h-10" style={{ color: NAVY + "30" }} />
                 </div>
                 <p className="text-base font-bold" style={{ color: NAVY }}>اختر مريضاً للبدء</p>
-                <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>اختر مريضاً من القائمة أعلاه لعرض الإجراءات السريرية</p>
+                <p className="text-sm mt-1" style={{ color: "#94a3b8" }}>اختر مريضاً من القائمة على اليمين لعرض التفاصيل والإجراءات</p>
                 {isLoading && <Loader2 className="w-6 h-6 animate-spin mt-4" style={{ color: BLUE }} />}
               </div>
             )}
@@ -724,7 +1122,6 @@ export default function DoctorClinicPage() {
         diagnosis={clinicalNotes.diagnosis}
         medicalAlerts={medicalAlerts}
         onSave={(data) => {
-          // Merge examination data into clinical notes for handoff
           const diagnosisParts = [
             data.chiefComplaint ? `الشكوى: ${data.chiefComplaint}` : "",
             data.extraoral ? `فحص خارج الفم: ${data.extraoral}` : "",
@@ -733,9 +1130,7 @@ export default function DoctorClinicPage() {
             data.clinicalNotes ? `ملاحظات: ${data.clinicalNotes}` : "",
           ].filter(Boolean).join(" | ");
 
-          const treatmentParts = [
-            data.treatmentDone,
-          ].filter(Boolean).join(" + ");
+          const treatmentParts = [data.treatmentDone].filter(Boolean).join(" + ");
 
           updateClinicalNotes({
             diagnosis: diagnosisParts || data.diagnosis,
@@ -790,7 +1185,6 @@ export default function DoctorClinicPage() {
         onClose={() => setLabOrderModalOpen(false)}
         patient={selectedPatient}
         onSave={(data) => {
-          // Save lab order info into treatmentDone
           const labParts = [
             data.labWorkType ? `طلب مختبر: ${data.labWorkType}` : "",
             data.shade ? `اللون: ${data.shade}` : "",
@@ -815,10 +1209,8 @@ export default function DoctorClinicPage() {
         onClose={() => setOrthoFollowUpModalOpen(false)}
         patient={selectedPatient}
         onSave={(data) => {
-          // Merge ortho data into clinical notes
           const orthoTreatment = data.notes || "متابعة تقويم";
           const orthoPlan = data.nextVisitPlan || data.nextOrthodonticPlan;
-
           const existing = clinicalNotes.treatmentDone;
           updateClinicalNotes({
             treatmentDone: existing ? `${existing} + متابعة تقويم` : orthoTreatment,
@@ -834,7 +1226,6 @@ export default function DoctorClinicPage() {
         onClose={() => setPrescriptionModalOpen(false)}
         patient={selectedPatient}
         onSave={(data) => {
-          // Merge prescription + instructions
           const instructionParts = [
             data.prescriptionText ? `الوصفة: ${data.prescriptionText}` : "",
             data.instructions ? `التعليمات: ${data.instructions}` : "",
@@ -851,7 +1242,6 @@ export default function DoctorClinicPage() {
         patient={selectedPatient}
         services={services}
         onSave={(data) => {
-          // Just save the suggestion — do NOT create appointment
           updateClinicalNotes({
             followUpDate: data.followUpDate,
             suggestedServiceId: data.serviceId,

@@ -57,6 +57,7 @@ const NAV: NavEntry[] = [
   // ── التشغيل اليومي ────────────────────────────────────────────────────────
   { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, section: "التشغيل اليومي" },
   { href: "/appointments",     label: "المواعيد",        icon: Calendar,      roles: [], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
+  { href: "/doctor-clinic",    label: "عيادة الطبيب",    icon: Stethoscope,   roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"],                                         section: "العيادة" },

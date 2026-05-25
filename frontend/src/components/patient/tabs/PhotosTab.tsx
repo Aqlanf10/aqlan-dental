@@ -70,9 +70,10 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 interface PhotosTabProps {
   patientId: string;
+  orthoCaseId?: string;
 }
 
-export function PhotosTab({ patientId }: PhotosTabProps) {
+export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
   const [photos, setPhotos] = useState<ClinicalPhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -104,11 +105,11 @@ export function PhotosTab({ patientId }: PhotosTabProps) {
     if (filterCategory) params.set("category", filterCategory);
     if (filterStage) params.set("stage", filterStage);
     const qs = params.toString();
-    api.get<ClinicalPhotoItem[]>(`/api/clinical-photos/${patientId}${qs ? `?${qs}` : ""}`)
+    api.get<ClinicalPhotoItem[]>(`/api/clinical-photos/${patientId}${qs ? `?${qs}` : ""}${orthoCaseId ? `${qs ? "&" : "?"}orthoCaseId=${orthoCaseId}` : ""}`)
       .then((r) => setPhotos(r.data))
       .catch(() => setError("فشل تحميل الصور"))
       .finally(() => setLoading(false));
-  }, [patientId, filterCategory, filterStage]);
+  }, [patientId, filterCategory, filterStage, orthoCaseId]);
 
   useEffect(() => {
     fetchPhotos();

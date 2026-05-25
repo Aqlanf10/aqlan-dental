@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -73,6 +72,12 @@ import {
   BulkSmsModal,
 } from "./_components/Modals";
 
+// ── Embedded module views ──
+import BookingRequestsView from "./_modules/BookingRequestsView";
+import ClinicQueueView from "./_modules/ClinicQueueView";
+import AppointmentsView from "./_modules/AppointmentsView";
+import RoomsView from "./_modules/RoomsView";
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Inline styles for animations
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -97,7 +102,21 @@ const animationStyles = `
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Tab icon mapping
+   Module tabs (top level navigation within daily operations)
+   ═══════════════════════════════════════════════════════════════════════════ */
+type ModuleTab = "journey" | "booking" | "appointments" | "queue" | "calling" | "rooms";
+
+const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [
+  { key: "journey",     label: "رحلة المريض",  icon: Activity,      color: ORANGE },
+  { key: "booking",     label: "طلبات الحجز",  icon: Globe,         color: BLUE },
+  { key: "appointments", label: "المواعيد",     icon: Calendar,      color: BLUE },
+  { key: "queue",       label: "الطابور",      icon: ClipboardList, color: ORANGE },
+  { key: "calling",     label: "النداء",       icon: Monitor,       color: "#8b5cf6" },
+  { key: "rooms",       label: "الغرف",       icon: Building2,     color: NAVY },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Sub-tab icon mapping (for رحلة المريض view)
    ═══════════════════════════════════════════════════════════════════════════ */
 const TAB_ICONS: Record<string, React.ElementType> = {
   appointments: Calendar,
@@ -146,7 +165,7 @@ export default function DailyOperationsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
-  const [moduleTab, setModuleTab] = useState<ModuleTab>("journey");
+  const [activeModule, setActiveModule] = useState<ModuleTab>("journey");
 
   // ── Data ──
   const { data: items = [], isLoading: itemsLoading, refetch: refetchItems } = useTodayJourneyItems({
@@ -754,45 +773,37 @@ export default function DailyOperationsPage() {
           </div>
         </div>
 
-        {/* ═══════════ Module Tabs Row (42px) ═══════════ */}
-        <div className="h-[42px] flex-shrink-0 bg-white flex items-center px-3 gap-1"
+        {/* ═══════════ Module Tabs Row (42px) — Microsoft Fluent Tabs ═══════════ */}
+        <div className="h-[42px] flex-shrink-0 bg-white flex items-center px-3 gap-0.5"
           style={{ borderBottom: "2px solid #f1f5f9" }}>
           {MODULE_TABS.map(tab => {
-            const isActive = moduleTab === tab.key;
-            const isDisplayScreen = tab.key === "clinic-display";
+            const isActive = activeModule === tab.key;
             const TabIcon = tab.icon;
-            const journeyCount = tab.key === "journey" ? items.length : 0;
-
-            // "شاشة النداء" opens in a new tab since it's a full-screen display
-            if (isDisplayScreen) {
-              return (
-                <Link key={tab.key} href="/clinic-display" target="_blank"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-50"
-                  style={{ color: "#64748b" }}>
-                  <TabIcon className="w-3.5 h-3.5" />
-                  {tab.label}
-                  <ExternalLink className="w-2.5 h-2.5 opacity-50" />
-                </Link>
-              );
-            }
-
             return (
-              <button key={tab.key} onClick={() => setModuleTab(tab.key)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition relative"
+              <button key={tab.key}
+                onClick={() => {
+                  if (tab.key === "calling") {
+                    window.open("/clinic-display", "_blank");
+                    return;
+                  }
+                  setActiveModule(tab.key);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-bold relative transition-all"
                 style={{
-                  color: isActive ? NAVY : "#64748b",
-                  background: isActive ? "#f8fafc" : "transparent",
+                  color: isActive ? tab.color : "#64748b",
+                  background: isActive ? tab.color + "08" : "transparent",
                 }}>
                 <TabIcon className="w-3.5 h-3.5" />
-                {tab.label}
-                {tab.key === "journey" && journeyCount > 0 && (
+                <span>{tab.label}</span>
+                {tab.key === "journey" && items.length > 0 && (
                   <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
-                    style={{ background: isActive ? ORANGE : ORANGE + "30", color: isActive ? "#fff" : ORANGE }}>
-                    {journeyCount}
+                    style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
+                    {items.length}
                   </span>
                 )}
+                {/* Active indicator */}
                 {isActive && (
-                  <span className="absolute bottom-[-2px] left-2 right-2 h-[2px] rounded-full" style={{ background: ORANGE }} />
+                  <span className="absolute bottom-[-2px] left-2 right-2 h-[2px] rounded-full" style={{ background: tab.color }} />
                 )}
               </button>
             );
@@ -800,187 +811,205 @@ export default function DailyOperationsPage() {
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            MAIN CONTENT AREA (flex-1) — switches based on moduleTab
+            MAIN CONTENT AREA (flex-1) — Switches by activeModule
             ═══════════════════════════════════════════════════════════════════ */}
         <div className="flex-1 flex overflow-hidden">
 
-        {/* ─── Inline module content (non-journey tabs) ─── */}
-        {moduleTab !== "journey" && (
-          <div className="flex-1 overflow-auto bg-[#f8fafc] p-4">
-            {moduleTab === "booking-requests" && <BookingRequestsView />}
-            {moduleTab === "appointments"    && <AppointmentsView />}
-            {moduleTab === "clinic-queue"    && <ClinicQueueView />}
-            {moduleTab === "rooms"           && <RoomsView />}
-          </div>
-        )}
-
-        {/* ─── Journey tab (default) — existing patient journey UI ─── */}
-        {moduleTab === "journey" && (
-          <>
-          {/* ── Left: Tab Pills + Data Grid ── */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* Tab Pills */}
-            <div className="flex-shrink-0 bg-white px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
-              style={{ borderBottom: "1px solid #f1f5f9" }}>
-              {TABS.map(tab => {
-                const count = tabCounts[tab.key];
-                const isActive = activeTab === tab.key;
-                const TabIcon = TAB_ICONS[tab.key];
-                return (
-                  <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all"
-                    style={{
-                      background: isActive ? tab.color : "#f5f7fa",
-                      color: isActive ? "#fff" : "#64748b",
-                      boxShadow: isActive ? `0 1px 3px ${tab.color}30` : "none",
-                    }}>
-                    {TabIcon && <TabIcon className="w-3.5 h-3.5" />}
-                    <span>{tab.label}</span>
-                    {count > 0 && (
-                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
-                        style={{
-                          background: isActive ? "rgba(255,255,255,0.25)" : tab.color + "15",
-                          color: isActive ? "#fff" : tab.color,
-                        }}>
-                        {count}
-                      </span>
-                    )}
-                    {tab.key === "queue" && queueWaitTime && queueWaitTime.estimatedMinutes > 0 && (
-                      <span className="text-[9px] font-bold px-1 py-0.5 rounded"
-                        style={{ background: "rgba(255,255,255,0.2)", color: isActive ? "#fff" : ORANGE }}>
-                        ~{queueWaitTime.estimatedMinutes}د
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-
-              {/* Next patient chip (inline) */}
-              {nextPatient && (
-                <div className="flex items-center gap-1.5 mr-auto px-2.5 py-1 rounded-lg text-xs font-bold"
-                  style={{ background: "linear-gradient(135deg, #f0f7ff, #faf5ff)", border: "1px solid #e0e7ff", color: NAVY }}>
-                  <Activity className="w-3 h-3" style={{ color: BLUE }} />
-                  <span>التالي: {nextPatient.patientName}</span>
-                  {nextPatient.nextAction === "CallPatient" && (
-                    <button onClick={() => handleCallPatient(nextPatient)}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ORANGE }}>
-                      نداء
-                    </button>
-                  )}
-                  {nextPatient.nextAction === "EnterRoom" && (
-                    <button onClick={() => handleEnterRoom(nextPatient)}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#9333ea" }}>
-                      دخول
-                    </button>
-                  )}
-                  {(nextPatient.nextAction === "Intake" || nextPatient.nextAction === "SendToQueue") && (
-                    <button onClick={() => handleIntake(nextPatient)}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#16a34a" }}>
-                      تسجيل
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* ReadyForCheckout Banner — Prominent for Reception */}
-            {!isDoctor && tabCounts.payments > 0 && (
-              <div className="flex-shrink-0 mx-3 mt-2 mb-1 p-2.5 rounded-xl flex items-center gap-3"
-                style={{
-                  background: "linear-gradient(135deg, #fff7ed, #fef3c7)",
-                  border: "1.5px solid #f5922e40",
-                  boxShadow: "0 2px 8px rgba(245,146,46,0.1)",
-                }}>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: ORANGE + "20" }}>
-                  <CreditCard className="w-4 h-4" style={{ color: ORANGE }} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-xs font-extrabold" style={{ color: NAVY }}>
-                    جاهزون للدفع من الطبيب
-                  </div>
-                  <div className="text-[10px] font-medium" style={{ color: "#92400e" }}>
-                    {tabCounts.payments} مريض بحاجة لتحصيل وخروج
-                  </div>
-                </div>
-                <button onClick={() => setActiveTab("payments")}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center gap-1.5"
-                  style={{ background: ORANGE }}>
-                  <CreditCard className="w-3.5 h-3.5" />
-                  عرض الكل
-                </button>
-              </div>
-            )}
-
-            {/* Data Grid Area */}
-            <div className="flex-1 overflow-auto bg-white">
-              <AppointmentsTable
-                items={filteredItems}
-                loading={itemsLoading}
-                isDoctor={isDoctor}
-                queueWaitTime={queueWaitTime}
-                onIntake={handleIntake}
-                onSendToQueue={handleSendToQueue}
-                onCallPatient={handleCallPatient}
-                onEnterRoom={handleEnterRoom}
-                onQuickPayment={handleQuickPayment}
-                onBookAppointment={handleBookAppointment}
-                onWhatsApp={handleWhatsApp}
-                onNoShow={handleNoShow}
-                onCancel={handleCancel}
-                onViewPatient={handleViewPatient}
-                onCompleteVisit={handleCompleteVisit}
-                onOpenSidePanel={handleOpenSidePanel}
-                selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
-              />
-            </div>
-          </div>
-
-          {/* ── Right: Patient Detail Panel (380px) ── */}
-          {sidePanelOpen && sidePanelItem && (
+          {/* ═══ Module: رحلة المريض (default) ═══ */}
+          {activeModule === "journey" && (
             <>
-              {/* Desktop: inline panel */}
-              <div className="hidden lg:flex w-[380px] flex-shrink-0 flex-col bg-white animate-panel-slide overflow-hidden"
-                style={{ borderRight: "1px solid #e5e7eb" }}>
-                <PatientDetailPanel
-                  item={sidePanelItem}
-                  summary={selectedSummary ?? null}
-                  waitTime={queueWaitTime}
-                  onClose={() => setSidePanelOpen(false)}
-                  onQuickPayment={handleQuickPayment}
-                  onBookAppointment={handleBookAppointment}
-                  onWhatsApp={handleWhatsApp}
-                  onViewPatient={handleViewPatient}
-                  medicalAlerts={panelMedicalAlerts}
-                  finance={panelFinance}
-                  activeContract={panelActiveContract}
-                  activeOrtho={panelActiveOrtho}
-                />
-              </div>
+              {/* ── Left: Tab Pills + Data Grid ── */}
+              <div className="flex-1 flex flex-col min-w-0">
+                {/* Tab Pills */}
+                <div className="flex-shrink-0 bg-white px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
+                  style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  {TABS.map(tab => {
+                    const count = tabCounts[tab.key];
+                    const isActive = activeTab === tab.key;
+                    const TabIcon = TAB_ICONS[tab.key];
+                    return (
+                      <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all"
+                        style={{
+                          background: isActive ? tab.color : "#f5f7fa",
+                          color: isActive ? "#fff" : "#64748b",
+                          boxShadow: isActive ? `0 1px 3px ${tab.color}30` : "none",
+                        }}>
+                        {TabIcon && <TabIcon className="w-3.5 h-3.5" />}
+                        <span>{tab.label}</span>
+                        {count > 0 && (
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                            style={{
+                              background: isActive ? "rgba(255,255,255,0.25)" : tab.color + "15",
+                              color: isActive ? "#fff" : tab.color,
+                            }}>
+                            {count}
+                          </span>
+                        )}
+                        {tab.key === "queue" && queueWaitTime && queueWaitTime.estimatedMinutes > 0 && (
+                          <span className="text-[9px] font-bold px-1 py-0.5 rounded"
+                            style={{ background: "rgba(255,255,255,0.2)", color: isActive ? "#fff" : ORANGE }}>
+                            ~{queueWaitTime.estimatedMinutes}د
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
 
-              {/* Mobile: full-screen overlay */}
-              <div className="lg:hidden fixed inset-0 z-50 flex">
-                <div className="flex-1 bg-black/30" onClick={() => setSidePanelOpen(false)} />
-                <div className="w-full max-w-md bg-white overflow-y-auto animate-slide-in-right">
-                  <PatientDetailPanel
-                    item={sidePanelItem}
-                    summary={selectedSummary ?? null}
-                    waitTime={queueWaitTime}
-                    onClose={() => setSidePanelOpen(false)}
+                  {/* Next patient chip (inline) */}
+                  {nextPatient && (
+                    <div className="flex items-center gap-1.5 mr-auto px-2.5 py-1 rounded-lg text-xs font-bold"
+                      style={{ background: "linear-gradient(135deg, #f0f7ff, #faf5ff)", border: "1px solid #e0e7ff", color: NAVY }}>
+                      <Activity className="w-3 h-3" style={{ color: BLUE }} />
+                      <span>التالي: {nextPatient.patientName}</span>
+                      {nextPatient.nextAction === "CallPatient" && (
+                        <button onClick={() => handleCallPatient(nextPatient)}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: ORANGE }}>
+                          نداء
+                        </button>
+                      )}
+                      {nextPatient.nextAction === "EnterRoom" && (
+                        <button onClick={() => handleEnterRoom(nextPatient)}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#9333ea" }}>
+                          دخول
+                        </button>
+                      )}
+                      {(nextPatient.nextAction === "Intake" || nextPatient.nextAction === "SendToQueue") && (
+                        <button onClick={() => handleIntake(nextPatient)}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold text-white" style={{ background: "#16a34a" }}>
+                          تسجيل
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* ReadyForCheckout Banner — Prominent for Reception */}
+                {!isDoctor && tabCounts.payments > 0 && (
+                  <div className="flex-shrink-0 mx-3 mt-2 mb-1 p-2.5 rounded-xl flex items-center gap-3"
+                    style={{
+                      background: "linear-gradient(135deg, #fff7ed, #fef3c7)",
+                      border: "1.5px solid #f5922e40",
+                      boxShadow: "0 2px 8px rgba(245,146,46,0.1)",
+                    }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: ORANGE + "20" }}>
+                      <CreditCard className="w-4 h-4" style={{ color: ORANGE }} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs font-extrabold" style={{ color: NAVY }}>
+                        جاهزون للدفع من الطبيب
+                      </div>
+                      <div className="text-[10px] font-medium" style={{ color: "#92400e" }}>
+                        {tabCounts.payments} مريض بحاجة لتحصيل وخروج
+                      </div>
+                    </div>
+                    <button onClick={() => setActiveTab("payments")}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center gap-1.5"
+                      style={{ background: ORANGE }}>
+                      <CreditCard className="w-3.5 h-3.5" />
+                      عرض الكل
+                    </button>
+                  </div>
+                )}
+
+                {/* Data Grid Area */}
+                <div className="flex-1 overflow-auto bg-white">
+                  <AppointmentsTable
+                    items={filteredItems}
+                    loading={itemsLoading}
+                    isDoctor={isDoctor}
+                    queueWaitTime={queueWaitTime}
+                    onIntake={handleIntake}
+                    onSendToQueue={handleSendToQueue}
+                    onCallPatient={handleCallPatient}
+                    onEnterRoom={handleEnterRoom}
                     onQuickPayment={handleQuickPayment}
                     onBookAppointment={handleBookAppointment}
                     onWhatsApp={handleWhatsApp}
+                    onNoShow={handleNoShow}
+                    onCancel={handleCancel}
                     onViewPatient={handleViewPatient}
-                    medicalAlerts={panelMedicalAlerts}
-                    finance={panelFinance}
-                    activeContract={panelActiveContract}
-                    activeOrtho={panelActiveOrtho}
+                    onCompleteVisit={handleCompleteVisit}
+                    onOpenSidePanel={handleOpenSidePanel}
+                    selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
                   />
                 </div>
               </div>
+
+              {/* ── Right: Patient Detail Panel (380px) ── */}
+              {sidePanelOpen && sidePanelItem && (
+                <>
+                  {/* Desktop: inline panel */}
+                  <div className="hidden lg:flex w-[380px] flex-shrink-0 flex-col bg-white animate-panel-slide overflow-hidden"
+                    style={{ borderRight: "1px solid #e5e7eb" }}>
+                    <PatientDetailPanel
+                      item={sidePanelItem}
+                      summary={selectedSummary ?? null}
+                      waitTime={queueWaitTime}
+                      onClose={() => setSidePanelOpen(false)}
+                      onQuickPayment={handleQuickPayment}
+                      onBookAppointment={handleBookAppointment}
+                      onWhatsApp={handleWhatsApp}
+                      onViewPatient={handleViewPatient}
+                      medicalAlerts={panelMedicalAlerts}
+                      finance={panelFinance}
+                      activeContract={panelActiveContract}
+                      activeOrtho={panelActiveOrtho}
+                    />
+                  </div>
+
+                  {/* Mobile: full-screen overlay */}
+                  <div className="lg:hidden fixed inset-0 z-50 flex">
+                    <div className="flex-1 bg-black/30" onClick={() => setSidePanelOpen(false)} />
+                    <div className="w-full max-w-md bg-white overflow-y-auto animate-slide-in-right">
+                      <PatientDetailPanel
+                        item={sidePanelItem}
+                        summary={selectedSummary ?? null}
+                        waitTime={queueWaitTime}
+                        onClose={() => setSidePanelOpen(false)}
+                        onQuickPayment={handleQuickPayment}
+                        onBookAppointment={handleBookAppointment}
+                        onWhatsApp={handleWhatsApp}
+                        onViewPatient={handleViewPatient}
+                        medicalAlerts={panelMedicalAlerts}
+                        finance={panelFinance}
+                        activeContract={panelActiveContract}
+                        activeOrtho={panelActiveOrtho}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
-          </>
-        )}
+
+          {/* ═══ Module: طلبات الحجز ═══ */}
+          {activeModule === "booking" && (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+              <BookingRequestsView searchQuery={searchQuery} />
+            </div>
+          )}
+
+          {/* ═══ Module: المواعيد ═══ */}
+          {activeModule === "appointments" && (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+              <AppointmentsView />
+            </div>
+          )}
+
+          {/* ═══ Module: الطابور ═══ */}
+          {activeModule === "queue" && (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+              <ClinicQueueView searchQuery={searchQuery} />
+            </div>
+          )}
+
+          {/* ═══ Module: الغرف ═══ */}
+          {activeModule === "rooms" && (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+              <RoomsView />
+            </div>
+          )}
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════

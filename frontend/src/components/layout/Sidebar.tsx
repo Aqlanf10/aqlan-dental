@@ -55,21 +55,8 @@ const NAV: NavEntry[] = [
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: [], permission: PERMISSION_KEYS.PATIENTS_VIEW },
 
   // ── التشغيل اليومي ────────────────────────────────────────────────────────
-  {
-    kind: "group", section: "التشغيل اليومي",
-    label: "التشغيل اليومي", icon: ClipboardList,
-    roles: ["Admin","Reception","GeneralDentist","OralSurgeon","Orthodontist","Accountant"],
-    permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW,
-    children: [
-      { href: "/daily-operations",    label: "التشغيل اليومي",   icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW },
-      { href: "/booking-requests",    label: "طلبات الحجز",     icon: Globe,         roles: ["Admin","Reception"], permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW },
-      { href: "/appointments",        label: "المواعيد",         icon: Calendar,      roles: [], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
-      { href: "/clinic-queue",        label: "الطابور",         icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
-      { href: "/clinic-display",      label: "شاشة النداء",      icon: Monitor,       roles: [], permission: PERMISSION_KEYS.CLINIC_DISPLAY_VIEW },
-      { href: "/doctor-clinic",       label: "عيادة الطبيب",      icon: HeartPulse,    roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
-      { href: "/settings/rooms",      label: "الغرف / الكراسي",  icon: Building2,     roles: ["Admin"], permission: PERMISSION_KEYS.ROOMS_VIEW },
-    ],
-  },
+  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, section: "التشغيل اليومي" },
+  { href: "/appointments",     label: "المواعيد",        icon: Calendar,      roles: [], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"],                                         section: "العيادة" },

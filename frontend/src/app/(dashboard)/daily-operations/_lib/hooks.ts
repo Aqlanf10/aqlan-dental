@@ -11,6 +11,8 @@ import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceO
 import type { DailyJourneySummary } from "@/types/journey";
 import type { DashboardStats } from "@/types/dashboard";
 
+let lastHandoffToReceptionAt = 0;
+
 // ─── Today's Journey Items ───────────────────────────────────────────────────
 export function useTodayJourneyItems(params: {
   date?: string;
@@ -160,7 +162,6 @@ export function useQueueWaitTime() {
 
 // ─── Mutations ───────────────────────────────────────────────────────────────
 
-
 export function useIntake() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -273,6 +274,9 @@ export function useCheckout() {
         nextServiceId?: string;
       };
     }) => {
+      if (Date.now() - lastHandoffToReceptionAt < 5_000) {
+        return { skipped: true, reason: "recent_handoff_to_reception" };
+      }
       const { data } = await api.post(`/api/patient-journey/${params.appointmentId}/checkout`, params.body);
       return data;
     },
@@ -300,11 +304,14 @@ export function useHandoff() {
       };
     }) => {
       const { data } = await api.post(`/api/patient-journey/${params.visitId}/handoff-to-reception`, params.body);
+      lastHandoffToReceptionAt = Date.now();
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
       queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["finance"] });
     },
   });
 }
@@ -388,7 +395,6 @@ export function useWalkInPatient() {
       branchId?: string;
       notes?: string;
     }) => {
-      // Step 1: Create patient
       const patientRes = await api.post("/api/patients", {
         fullName: params.patientName,
         phone: params.patientPhone,
@@ -398,7 +404,6 @@ export function useWalkInPatient() {
 
       if (!patientId) throw new Error("فشل إنشاء المريض");
 
-      // Step 2: Create appointment for today
       const today = new Date().toISOString().split("T")[0];
       const now = new Date();
       const startTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -420,7 +425,6 @@ export function useWalkInPatient() {
 
       if (!appointmentId) throw new Error("فشل إنشاء الموعد");
 
-      // Step 3: Intake (register arrival + send to queue)
       await api.post(`/api/patient-journey/${appointmentId}/intake`, {
         chiefComplaint: params.notes || undefined,
       });
@@ -466,7 +470,7 @@ export function useTomorrowAppointments(doctorId?: string) {
       return data;
     },
     staleTime: 60_000,
-    enabled: false, // Only fetch on demand
+    enabled: false,
   });
 }
 
@@ -477,7 +481,6 @@ export function useSendBulkSmsReminders() {
     mutationFn: async (params: {
       appointmentIds: string[];
     }) => {
-      // Send reminders for each appointment
       const results = await Promise.allSettled(
         params.appointmentIds.map(id =>
           api.post(`/api/appointments/${id}/send-reminder`)

@@ -131,6 +131,8 @@ function NewPatientBadge() {
 }
 
 /* ─── Props ───────────────────────────────────────────────────────────────── */
+import type { ContextMenuPosition } from "./JourneyContextMenu";
+
 interface AppointmentsTableProps {
   items: TodayJourneyItem[];
   loading: boolean;
@@ -155,6 +157,8 @@ interface AppointmentsTableProps {
   onViewPatient: (item: TodayJourneyItem) => void;
   onCompleteVisit: (item: TodayJourneyItem) => void;
   onOpenSidePanel: (item: TodayJourneyItem) => void;
+  // Right-click context menu
+  onContextMenu?: (e: React.MouseEvent, item: TodayJourneyItem) => void;
 }
 
 export default function AppointmentsTable({
@@ -163,6 +167,7 @@ export default function AppointmentsTable({
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
+  onContextMenu,
 }: AppointmentsTableProps) {
   // Mobile: expanded row
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -249,6 +254,7 @@ export default function AppointmentsTable({
               onViewPatient={onViewPatient}
               onCompleteVisit={onCompleteVisit}
               onOpenSidePanel={onOpenSidePanel}
+              onContextMenu={onContextMenu}
             />
           ))}
         </tbody>
@@ -283,6 +289,7 @@ export default function AppointmentsTable({
             onViewPatient={onViewPatient}
             onCompleteVisit={onCompleteVisit}
             onOpenSidePanel={onOpenSidePanel}
+            onContextMenu={onContextMenu}
           />
         ))}
       </div>
@@ -295,7 +302,7 @@ function AppointmentRow({
   item, isDoctor, canProcessCheckout, isSelected, isEven, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
-  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
+  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
 }: {
   item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; isSelected: boolean; isEven: boolean; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
@@ -309,6 +316,10 @@ function AppointmentRow({
   return (
     <tr
       className="transition-colors cursor-default group"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu?.(e, item);
+      }}
       style={{
         height: 52,
         background: isSelected
@@ -428,7 +439,7 @@ function MobileCard({
   item, isDoctor, canProcessCheckout, expanded, onToggle, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
-  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
+  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
 }: {
   item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
@@ -436,10 +447,17 @@ function MobileCard({
   const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
 
   return (
-    <div className="rounded-xl border p-3 transition-shadow" style={{
-      borderColor: overdueText ? "#fecaca" : "#e5e7eb",
-      background: overdueText ? "#fef2f208" : "#fff",
-    }}>
+    <div
+      className="rounded-xl border p-3 transition-shadow"
+      style={{
+        borderColor: overdueText ? "#fecaca" : "#e5e7eb",
+        background: overdueText ? "#fef2f208" : "#fff",
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu?.(e, item);
+      }}
+    >
       <div className="flex items-center gap-2">
         <span className="text-sm font-bold" style={{ color: NAVY }}>{fmtTime(item.appointmentTime)}</span>
         <StatusBadge status={item.appointmentStatus} />

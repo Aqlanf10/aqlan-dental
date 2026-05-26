@@ -58,6 +58,8 @@ import {
 } from "./_lib/hooks";
 
 import AppointmentsTable from "./_components/AppointmentsTable";
+import JourneyContextMenu from "./_components/JourneyContextMenu";
+import type { ContextMenuPosition } from "./_components/JourneyContextMenu";
 import {
   QuickPaymentModal,
   CompleteVisitModal,
@@ -219,6 +221,13 @@ export default function DailyOperationsPage() {
   // ── Sound toggle ──
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // ── Context menu state (right-click on journey items) ──
+  const [ctxMenu, setCtxMenu] = useState<{ item: TodayJourneyItem; position: ContextMenuPosition } | null>(null);
+
+  const handleItemContextMenu = useCallback((e: React.MouseEvent, item: TodayJourneyItem) => {
+    setCtxMenu({ item, position: { x: e.clientX, y: e.clientY } });
+  }, []);
+
   // ── Selected patient summary (for side panel + modals) ──
   const activePatientId = sidePanelItem?.patientId ?? selectedItem?.patientId ?? null;
   const { data: selectedSummary } = usePatientSummary(activePatientId);
@@ -269,6 +278,7 @@ export default function DailyOperationsPage() {
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
 
       if (e.key === "Escape") {
+        if (ctxMenu) { setCtxMenu(null); return; }
         if (paymentModalOpen) { setPaymentModalOpen(false); return; }
         if (completeVisitModalOpen) { setCompleteVisitModalOpen(false); return; }
         if (bookAppointmentModalOpen) { setBookAppointmentModalOpen(false); return; }
@@ -317,7 +327,7 @@ export default function DailyOperationsPage() {
   }, [
     paymentModalOpen, completeVisitModalOpen, bookAppointmentModalOpen,
     confirmDialogOpen, whatsAppMenuOpen, changeRoomModalOpen,
-    walkInModalOpen, sidePanelOpen, shortcutsHelpOpen, refetchItems,
+    walkInModalOpen, sidePanelOpen, shortcutsHelpOpen, ctxMenu, refetchItems,
   ]);
 
   // ── Action handlers ──
@@ -968,6 +978,7 @@ export default function DailyOperationsPage() {
                     onCompleteVisit={handleCompleteVisit}
                     onOpenSidePanel={handleOpenSidePanel}
                     selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
+                    onContextMenu={handleItemContextMenu}
                   />
                 </div>
               </div>
@@ -1203,6 +1214,28 @@ export default function DailyOperationsPage() {
         tomorrowItems={tomorrowItems}
         isPending={bulkSmsMutation.isPending}
         onConfirm={handleBulkSms}
+      />
+
+      {/* ── Right-click Context Menu for Journey Items ── */}
+      <JourneyContextMenu
+        item={ctxMenu?.item ?? null}
+        position={ctxMenu?.position ?? null}
+        isDoctor={isDoctor}
+        canProcessCheckout={canProcessCheckout}
+        onClose={() => setCtxMenu(null)}
+        onIntake={handleIntake}
+        onSendToQueue={handleSendToQueue}
+        onCallPatient={handleCallPatient}
+        onEnterRoom={handleEnterRoom}
+        onQuickPayment={handleQuickPayment}
+        onCreateDraftInvoice={handleCreateDraftInvoice}
+        onCompleteVisit={handleCompleteVisit}
+        onBookAppointment={handleBookAppointment}
+        onWhatsApp={handleWhatsApp}
+        onNoShow={handleNoShow}
+        onCancel={handleCancel}
+        onViewPatient={handleViewPatient}
+        onOpenSidePanel={handleOpenSidePanel}
       />
     </>
   );

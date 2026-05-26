@@ -383,7 +383,7 @@ export function useCompleteVisit() {
   });
 }
 
-// ─── Walk-in: Quick Patient + Appointment + Intake ──────────────────────────
+// ─── Walk-in: Quick Patient + Appointment + Intake + Queue ──────────────────
 export function useWalkInPatient() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -426,10 +426,16 @@ export function useWalkInPatient() {
       if (!appointmentId) throw new Error("فشل إنشاء الموعد");
 
       await api.post(`/api/patient-journey/${appointmentId}/intake`, {
+        serviceId: params.serviceId || undefined,
         chiefComplaint: params.notes || undefined,
+        notes: params.notes || "مريض مشي (Walk-in)",
       });
 
-      return { patientId, appointmentId };
+      const queueRes = await api.post(`/api/patient-journey/${appointmentId}/send-to-queue`, {
+        notes: params.notes || "مريض مشي (Walk-in)",
+      });
+
+      return { patientId, appointmentId, queueItemId: queueRes.data?.id };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });

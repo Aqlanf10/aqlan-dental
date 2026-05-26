@@ -242,7 +242,7 @@ export function PricedProceduresModal({
 }) {
   const [searchService, setSearchService] = useState("");
   const [selectedServices, setSelectedServices] = useState<Map<string, ServiceWithPrice & { quantity: number }>>(new Map());
-  const [customAmount, setCustomAmount] = useState("");
+  const [isFreeVisit, setIsFreeVisit] = useState(false);
 
   // Filter services by search
   const filteredServices = useMemo(() => {
@@ -300,13 +300,14 @@ export function PricedProceduresModal({
     return sum;
   }, [selectedServices]);
 
-  const finalAmount = customAmount ? parseFloat(customAmount) || 0 : totalAmount;
+  const finalAmount = isFreeVisit ? 0 : totalAmount;
 
   const handleSave = () => {
+    if (!isFreeVisit && selectedServices.size === 0) return;
     const names = Array.from(selectedServices.values()).map(s =>
       s.quantity > 1 ? `${s.arabicName} ×${s.quantity}` : s.arabicName
     );
-    const treatmentText = names.join(" + ") || currentTreatmentDone;
+    const treatmentText = names.join(" + ") || currentTreatmentDone || "زيارة بدون رسوم";
     const firstServiceId = selectedServices.keys().next().value ?? "";
 
     onSave({
@@ -316,7 +317,7 @@ export function PricedProceduresModal({
     });
     setSelectedServices(new Map());
     setSearchService("");
-    setCustomAmount("");
+    setIsFreeVisit(false);
   };
 
   return (
@@ -406,25 +407,19 @@ export function PricedProceduresModal({
             ))}
           </div>
 
-          {/* Total + Custom amount */}
+          {/* Total + Free visit option */}
           <div className="mt-3 p-3 rounded-xl" style={{ background: "#9333ea08", border: "1px solid #9333ea20" }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold" style={{ color: NAVY }}>الإجمالي المحسوب</span>
-              <span className="text-sm font-extrabold" style={{ color: "#9333ea" }}>{fmtRial(totalAmount)}</span>
+              <span className="text-xs font-bold" style={{ color: NAVY }}>{isFreeVisit ? "زيارة بدون رسوم" : "الإجمالي المحسوب"}</span>
+              <span className="text-sm font-extrabold" style={{ color: isFreeVisit ? "#6b7280" : "#9333ea" }}>
+                {isFreeVisit ? fmtRial(0) : fmtRial(totalAmount)}
+              </span>
             </div>
-            <div>
-              <label className="text-[10px] font-semibold block mb-1" style={{ color: "#64748b" }}>
-                تعديل المبلغ يدوياً (اختياري)
-              </label>
-              <input type="number" value={customAmount} onChange={e => setCustomAmount(e.target.value)}
-                placeholder={String(totalAmount)} className={inputCls()} dir="ltr" min={0} step={0.01} />
-            </div>
-            {customAmount && parseFloat(customAmount) !== totalAmount && (
-              <div className="text-[10px] font-medium mt-1 flex items-center gap-1" style={{ color: ORANGE }}>
-                <AlertCircle className="w-3 h-3" />
-                المبلغ النهائي: {fmtRial(finalAmount)}
-              </div>
-            )}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={isFreeVisit} onChange={e => setIsFreeVisit(e.target.checked)}
+                className="w-4 h-4 rounded accent-[#9333ea]" />
+              <span className="text-[11px] font-medium" style={{ color: "#64748b" }}>زيارة بدون رسوم</span>
+            </label>
           </div>
         </div>
       </div>
@@ -440,11 +435,11 @@ export function PricedProceduresModal({
       <div className="flex gap-2 mt-5">
         <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
           style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
-        <button onClick={handleSave} disabled={selectedServices.size === 0 && !customAmount}
+        <button onClick={handleSave} disabled={!isFreeVisit && selectedServices.size === 0}
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: "#9333ea", opacity: selectedServices.size === 0 && !customAmount ? 0.5 : 1 }}>
+          style={{ background: "#9333ea", opacity: !isFreeVisit && selectedServices.size === 0 ? 0.5 : 1 }}>
           <Check className="w-4 h-4" />
-          تأكيد الإجراءات ({fmtRial(finalAmount)})
+          {isFreeVisit ? "تأكيد زيارة بدون رسوم" : `تأكيد الإجراءات (${fmtRial(finalAmount)})`}
         </button>
       </div>
     </ModalShell>

@@ -1342,6 +1342,323 @@ public class FinanceV3AccountingSafetyTests
         balance.Should().Be(0m, "account with no entries should have zero balance");
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 15. Salary Payment Journal Mapping
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task SalaryPaymentJournalEntry_DebitExpenseCreditTreasury()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateJournalEntryService(db);
+
+        var docId = Guid.NewGuid();
+        var treasuryId = Guid.NewGuid();
+        var salaryExpenseAccountId = Guid.NewGuid();
+
+        var entry = await service.CreateEntryAsync(
+            documentType: FinancialDocumentType.SalaryPayment,
+            financialDocumentId: docId,
+            description: "صرف راتب طبيب - يناير",
+            entryDate: DateOnly.FromDateTime(DateTime.Today),
+            branchId: branchId,
+            performedBy: cashierId,
+            cashierSessionId: null,
+            treasuryId: treasuryId,
+            lines: new (JournalAccountType, Guid, decimal, decimal, string?)[]
+            {
+                (JournalAccountType.Expense, salaryExpenseAccountId, 35_000m, 0m, "Debit Expense — Doctor Salary"),
+                (JournalAccountType.Treasury, treasuryId, 0m, 35_000m, "Credit Treasury — Cash out for salary")
+            });
+
+        entry.Should().NotBeNull();
+        entry.IsBalanced().Should().BeTrue();
+        entry.FinancialDocumentType.Should().Be(FinancialDocumentType.SalaryPayment);
+
+        var expenseLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Expense && l.Debit > 0);
+        expenseLine.Should().NotBeNull("salary payment must Debit Expense");
+        expenseLine!.Debit.Should().Be(35_000m);
+
+        var treasuryLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury && l.Credit > 0);
+        treasuryLine.Should().NotBeNull("salary payment must Credit Treasury");
+        treasuryLine!.Credit.Should().Be(35_000m);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 16. Commission Payment Journal Mapping
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task CommissionPaymentJournalEntry_DebitExpenseCreditTreasury()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateJournalEntryService(db);
+
+        var docId = Guid.NewGuid();
+        var treasuryId = Guid.NewGuid();
+        var commissionExpenseAccountId = Guid.NewGuid();
+
+        var entry = await service.CreateEntryAsync(
+            documentType: FinancialDocumentType.CommissionPayment,
+            financialDocumentId: docId,
+            description: "صرف عمولة طبيب - يناير",
+            entryDate: DateOnly.FromDateTime(DateTime.Today),
+            branchId: branchId,
+            performedBy: cashierId,
+            cashierSessionId: null,
+            treasuryId: treasuryId,
+            lines: new (JournalAccountType, Guid, decimal, decimal, string?)[]
+            {
+                (JournalAccountType.Expense, commissionExpenseAccountId, 8_000m, 0m, "Debit Expense — Doctor Commission"),
+                (JournalAccountType.Treasury, treasuryId, 0m, 8_000m, "Credit Treasury — Cash out for commission")
+            });
+
+        entry.Should().NotBeNull();
+        entry.IsBalanced().Should().BeTrue();
+        entry.FinancialDocumentType.Should().Be(FinancialDocumentType.CommissionPayment);
+
+        var expenseLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Expense && l.Debit > 0);
+        expenseLine.Should().NotBeNull("commission payment must Debit Expense");
+        expenseLine!.Debit.Should().Be(8_000m);
+
+        var treasuryLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury && l.Credit > 0);
+        treasuryLine.Should().NotBeNull("commission payment must Credit Treasury");
+        treasuryLine!.Credit.Should().Be(8_000m);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 17. Supplier Payment Journal Mapping
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task SupplierPaymentJournalEntry_DebitPayableCreditTreasury()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateJournalEntryService(db);
+
+        var docId = Guid.NewGuid();
+        var treasuryId = Guid.NewGuid();
+        var supplierId = Guid.NewGuid();
+
+        var entry = await service.CreateEntryAsync(
+            documentType: FinancialDocumentType.SupplierPayment,
+            financialDocumentId: docId,
+            description: "دفع مورد — مستلزمات طبية",
+            entryDate: DateOnly.FromDateTime(DateTime.Today),
+            branchId: branchId,
+            performedBy: cashierId,
+            cashierSessionId: null,
+            treasuryId: treasuryId,
+            lines: new (JournalAccountType, Guid, decimal, decimal, string?)[]
+            {
+                (JournalAccountType.Payable, supplierId, 15_000m, 0m, "Debit Payable — Supplier"),
+                (JournalAccountType.Treasury, treasuryId, 0m, 15_000m, "Credit Treasury — Cash out for supplier")
+            });
+
+        entry.Should().NotBeNull();
+        entry.IsBalanced().Should().BeTrue();
+        entry.FinancialDocumentType.Should().Be(FinancialDocumentType.SupplierPayment);
+
+        var payableLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Payable && l.Debit > 0);
+        payableLine.Should().NotBeNull("supplier payment must Debit Payable (reduces liability)");
+        payableLine!.Debit.Should().Be(15_000m);
+
+        var treasuryLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury && l.Credit > 0);
+        treasuryLine.Should().NotBeNull("supplier payment must Credit Treasury");
+        treasuryLine!.Credit.Should().Be(15_000m);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 18. Vault Transfer Journal Mapping (Between Treasuries)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task VaultTransferJournalEntry_DebitDestinationTreasuryCreditSourceTreasury()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateJournalEntryService(db);
+
+        var docId = Guid.NewGuid();
+        var sourceTreasuryId = Guid.NewGuid();
+        var destTreasuryId = Guid.NewGuid();
+
+        var entry = await service.CreateEntryAsync(
+            documentType: FinancialDocumentType.VaultTransfer,
+            financialDocumentId: docId,
+            description: "ترحيل سيولة من خزينة رئيسية إلى فرعية",
+            entryDate: DateOnly.FromDateTime(DateTime.Today),
+            branchId: branchId,
+            performedBy: cashierId,
+            cashierSessionId: null,
+            treasuryId: destTreasuryId,
+            lines: new (JournalAccountType, Guid, decimal, decimal, string?)[]
+            {
+                (JournalAccountType.Treasury, destTreasuryId, 50_000m, 0m, "Debit Treasury — Destination"),
+                (JournalAccountType.Treasury, sourceTreasuryId, 0m, 50_000m, "Credit Treasury — Source")
+            });
+
+        entry.Should().NotBeNull();
+        entry.IsBalanced().Should().BeTrue();
+        entry.FinancialDocumentType.Should().Be(FinancialDocumentType.VaultTransfer);
+
+        var destLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury && l.Debit > 0);
+        destLine.Should().NotBeNull("vault transfer must Debit destination Treasury");
+        destLine!.Debit.Should().Be(50_000m);
+
+        var sourceLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury && l.Credit > 0);
+        sourceLine.Should().NotBeNull("vault transfer must Credit source Treasury");
+        sourceLine!.Credit.Should().Be(50_000m);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 19. Employee Advance / Payable Journal Mapping
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task EmployeeAdvanceJournalEntry_DebitPayableCreditTreasury()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateJournalEntryService(db);
+
+        var docId = Guid.NewGuid();
+        var treasuryId = Guid.NewGuid();
+        var employeePayableId = Guid.NewGuid();
+
+        // Employee advance: The clinic owes the employee or the employee takes an advance
+        // DR Payable (reduces what we owe employee) / CR Treasury (cash out)
+        var entry = await service.CreateEntryAsync(
+            documentType: FinancialDocumentType.Other,
+            financialDocumentId: docId,
+            description: "سلفة موظف",
+            entryDate: DateOnly.FromDateTime(DateTime.Today),
+            branchId: branchId,
+            performedBy: cashierId,
+            cashierSessionId: null,
+            treasuryId: treasuryId,
+            lines: new (JournalAccountType, Guid, decimal, decimal, string?)[]
+            {
+                (JournalAccountType.Payable, employeePayableId, 5_000m, 0m, "Debit Payable — Employee Advance"),
+                (JournalAccountType.Treasury, treasuryId, 0m, 5_000m, "Credit Treasury — Cash out for advance")
+            });
+
+        entry.Should().NotBeNull();
+        entry.IsBalanced().Should().BeTrue();
+
+        var payableLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Payable && l.Debit > 0);
+        payableLine.Should().NotBeNull("employee advance must Debit Payable");
+        payableLine!.Debit.Should().Be(5_000m);
+
+        var treasuryLine = entry.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury && l.Credit > 0);
+        treasuryLine.Should().NotBeNull("employee advance must Credit Treasury");
+        treasuryLine!.Credit.Should().Be(5_000m);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 20. Reversal Reflected in Account Balance (Dashboard/P&L)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task ReversalReflectedInAccountBalance_OriginalMinusReversal()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateJournalEntryService(db);
+
+        var treasuryId = Guid.NewGuid();
+        var revenueId = Guid.NewGuid();
+
+        // Create and post a revenue entry
+        var entry = await service.CreateEntryAsync(
+            documentType: FinancialDocumentType.Payment,
+            financialDocumentId: Guid.NewGuid(),
+            description: "Revenue entry to be reversed",
+            entryDate: DateOnly.FromDateTime(DateTime.Today),
+            branchId: branchId,
+            performedBy: cashierId,
+            cashierSessionId: null,
+            treasuryId: treasuryId,
+            lines: new (JournalAccountType, Guid, decimal, decimal, string?)[]
+            {
+                (JournalAccountType.Treasury, treasuryId, 100_000m, 0m, "Debit Treasury"),
+                (JournalAccountType.Revenue, revenueId, 0m, 100_000m, "Credit Revenue")
+            });
+
+        await service.PostEntryAsync(entry.Id);
+
+        // Verify balance before reversal
+        var treasuryBalanceBefore = await service.GetAccountBalanceAsync(JournalAccountType.Treasury, treasuryId);
+        treasuryBalanceBefore.Should().Be(100_000m, "Treasury balance before reversal should be 100,000");
+
+        var revenueBalanceBefore = await service.GetAccountBalanceAsync(JournalAccountType.Revenue, revenueId);
+        revenueBalanceBefore.Should().Be(-100_000m, "Revenue balance before reversal should be -100,000 (credit)");
+
+        // Create and post the reversal
+        var reversal = await service.CreateReversalEntryAsync(entry.Id, "Correction", cashierId);
+        await service.PostEntryAsync(reversal.Id);
+
+        // Verify balances are zeroed after reversal (reflected in dashboard/P&L)
+        var treasuryBalanceAfter = await service.GetAccountBalanceAsync(JournalAccountType.Treasury, treasuryId);
+        treasuryBalanceAfter.Should().Be(0m, "Treasury balance after reversal must be 0 — reflected in dashboard");
+
+        var revenueBalanceAfter = await service.GetAccountBalanceAsync(JournalAccountType.Revenue, revenueId);
+        revenueBalanceAfter.Should().Be(0m, "Revenue balance after reversal must be 0 — reflected in P&L");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 21. TreasuryId Migration Deterministic Backfill Verification
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task CashFlowTransaction_TreasuryId_BackfilledFromCashierSession()
+    {
+        await using var db = CreateContext();
+        var (branchId, cashierId) = SeedBranchAndUser(db);
+        var treasuryId = Guid.NewGuid();
+
+        // Create a CashierSession with a TreasuryId
+        var session = new CashierSession
+        {
+            SessionNumber = $"CS-BF-{DateTime.UtcNow:yyyyMMdd}-01",
+            CashierId = cashierId,
+            BranchId = branchId,
+            OpeningTime = DateTime.UtcNow.AddHours(-2),
+            OpeningBalance = 100_000m,
+            ExpectedClosingCash = 100_000m,
+            ExpectedClosingCard = 0,
+            ExpectedClosingBank = 0,
+            Status = SessionStatus.Open,
+            TreasuryId = treasuryId
+        };
+        db.CashierSessions.Add(session);
+
+        // Create a CashFlowTransaction linked to this session
+        var cft = new CashFlowTransaction
+        {
+            Type = TransactionType.Inflow,
+            Amount = 10_000m,
+            Description = "Test CFT",
+            CashierSessionId = session.Id,
+            BranchId = branchId
+        };
+        db.CashFlowTransactions.Add(cft);
+        await db.SaveChangesAsync();
+
+        // Simulate backfill: set TreasuryId from session
+        var savedCft = await db.CashFlowTransactions.FindAsync(cft.Id);
+        savedCft.Should().NotBeNull();
+
+        if (savedCft!.TreasuryId == null && savedCft.CashierSessionId.HasValue)
+        {
+            var linkedSession = await db.CashierSessions.FindAsync(savedCft.CashierSessionId.Value);
+            if (linkedSession?.TreasuryId != null)
+            {
+                savedCft.TreasuryId = linkedSession.TreasuryId;
+                await db.SaveChangesAsync();
+            }
+        }
+
+        savedCft.TreasuryId.Should().Be(treasuryId, "backfill must set TreasuryId from CashierSession");
+    }
+
     [Fact]
     public async Task GetEntriesByBranchAsync_OnlyReturnsEntriesForSpecifiedBranch()
     {

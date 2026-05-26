@@ -11,7 +11,7 @@ namespace AqlanDentalPro.API.Controllers;
 
 /// <summary>
 /// Finance V3 API — Provides data endpoints for the Finance V3 Financial Center dashboard.
-/// Access is restricted to Admin and Accountant roles only (FinanceAccess policy).
+/// Access is restricted to Admin and Accountant roles only (ReportsAccess policy).
 ///
 /// This controller reads from both CashFlowTransaction (transitional) and
 /// JournalEntry + JournalLine (canonical) tables, supporting the transition period.

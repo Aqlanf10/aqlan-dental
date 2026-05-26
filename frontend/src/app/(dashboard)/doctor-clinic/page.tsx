@@ -161,14 +161,23 @@ const ACTION_CARDS: ActionCardDef[] = [
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function DoctorClinicPage() {
   const { user } = useAuthStore();
+  const isAdmin = user?.role === "Admin";
   const doctorId = user?.doctorId ?? user?.id ?? "";
   const doctorName = user?.doctorName ?? user?.username ?? "الطبيب";
 
   // ── SignalR ──
   const { isConnected: signalrConnected } = useSignalRClinicQueue();
 
+  // ── Admin filter state ──
+  const [filterDoctorId, setFilterDoctorId] = useState<string | null>(null);
+  const [filterRoomId, setFilterRoomId] = useState<string | null>(null);
+
   // ── Data ──
-  const { data: patients = [], isLoading, refetch } = useDoctorPatientsToday(doctorId);
+  // Admin: includeAll=true (no doctorId filter) → sees all active clinical patients.
+  // Doctor: passes own doctorId → sees only assigned patients.
+  const { data: patients = [], isLoading, refetch } = useDoctorPatientsToday(
+    isAdmin ? { includeAll: true } : { doctorId }
+  );
   const { data: services = [] } = useDoctorServices();
   const startVisitMutation = useStartVisit();
   const handoffMutation = useHandoffToReception();
@@ -229,15 +238,46 @@ export default function DoctorClinicPage() {
       (p.appointmentStatus === "Waiting" && !p.queueStatus)
     ), [patients]);
 
+  // ── Admin: derive unique doctors/rooms from patient list for filter dropdowns ──
+  const availableDoctors = useMemo(() => {
+    if (!isAdmin) return [];
+    const map = new Map<string, string>();
+    for (const p of patients) {
+      if (p.doctorId && p.doctorName) map.set(p.doctorId, p.doctorName);
+    }
+    return Array.from(map, ([id, name]) => ({ id, name }));
+  }, [patients, isAdmin]);
+
+  const availableRooms = useMemo(() => {
+    if (!isAdmin) return [];
+    const map = new Map<string, string>();
+    for (const p of patients) {
+      if (p.roomId && p.roomName) map.set(p.roomId, p.roomName);
+    }
+    return Array.from(map, ([id, name]) => ({ id, name }));
+  }, [patients, isAdmin]);
+
   // ── Filtered patients for list ──
   const filteredPatients = useMemo(() => {
-    if (!searchQuery.trim()) return patients;
-    const q = searchQuery.trim().toLowerCase();
-    return patients.filter(p =>
-      p.patientName.toLowerCase().includes(q) ||
-      (p.serviceName && p.serviceName.toLowerCase().includes(q))
-    );
-  }, [patients, searchQuery]);
+    let result = patients;
+    // Admin: apply doctor/room filters
+    if (isAdmin && filterDoctorId) {
+      result = result.filter(p => p.doctorId === filterDoctorId);
+    }
+    if (isAdmin && filterRoomId) {
+      result = result.filter(p => p.roomId === filterRoomId);
+    }
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter(p =>
+        p.patientName.toLowerCase().includes(q) ||
+        (p.serviceName && p.serviceName.toLowerCase().includes(q)) ||
+        (isAdmin && p.doctorName && p.doctorName.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [patients, searchQuery, isAdmin, filterDoctorId, filterRoomId]);
 
   // ── Medical alerts from summary ──
   const medicalAlerts = selectedSummary?.medicalAlerts ?? [];
@@ -522,15 +562,46 @@ export default function DoctorClinicPage() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-sm font-extrabold" style={{ color: "#1e3a8a" }}>
-                    مرضاي اليوم
+                    {isAdmin ? "كل غرف العلاج" : "مرضاي اليوم"}
                   </h2>
                   <span
                     className="text-[10px] px-1.5 py-0.5 rounded-full font-bold"
                     style={{ background: "#1e3a8a12", color: "#1e3a8a" }}
                   >
-                    {patients.length}
+                    {filteredPatients.length}
                   </span>
                 </div>
+                {/* Admin filter dropdowns */}
+                {isAdmin && (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {availableDoctors.length > 1 && (
+                      <select
+                        value={filterDoctorId ?? ""}
+                        onChange={e => setFilterDoctorId(e.target.value || null)}
+                        className="text-xs rounded-lg border px-2 py-1.5 outline-none transition-colors"
+                        style={{ borderColor: "#e5e7eb", background: "#fff", color: "#1e3a8a" }}
+                      >
+                        <option value="">كل الأطباء</option>
+                        {availableDoctors.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    {availableRooms.length > 1 && (
+                      <select
+                        value={filterRoomId ?? ""}
+                        onChange={e => setFilterRoomId(e.target.value || null)}
+                        className="text-xs rounded-lg border px-2 py-1.5 outline-none transition-colors"
+                        style={{ borderColor: "#e5e7eb", background: "#fff", color: "#1e3a8a" }}
+                      >
+                        <option value="">كل الغرف</option>
+                        {availableRooms.map(r => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
                 <div className="relative">
                   <input
                     ref={searchRef}
@@ -620,6 +691,7 @@ export default function DoctorClinicPage() {
                             </p>
                             <p className="text-[10px] truncate" style={{ color: "#94a3b8" }}>
                               {p.patientNumber ? `#${p.patientNumber}` : ""}
+                              {isAdmin && p.doctorName ? ` · ${p.doctorName}` : ""}
                             </p>
                           </div>
                         </div>
@@ -639,6 +711,12 @@ export default function DoctorClinicPage() {
                               : APPT_STATUS_LABELS[p.appointmentStatus] ?? p.appointmentStatus}
                           </span>
                         </div>
+                        {/* Admin: show room name on card */}
+                        {isAdmin && (
+                          <div className="mt-1 text-[9px] font-medium truncate" style={{ color: "#64748b" }}>
+                            {p.roomName ?? "بدون غرفة"}
+                          </div>
+                        )}
                         {isActive && p.inRoomSince && (
                           <div className="mt-1.5 text-[9px] font-bold" style={{ color: "#16a34a" }}>
                             {fmtSessionDuration(p.inRoomSince)}
@@ -699,7 +777,13 @@ export default function DoctorClinicPage() {
                     <div className="flex items-center gap-4 mt-1.5 text-xs font-medium flex-wrap" style={{ color: "#64748b" }}>
                       <span>{selectedPatient.serviceName ?? "—"}</span>
                       <span>·</span>
-                      <span>{selectedPatient.roomName ?? "—"}</span>
+                      <span>{selectedPatient.roomName ?? "بدون غرفة"}</span>
+                      {isAdmin && selectedPatient.doctorName && (
+                        <>
+                          <span>·</span>
+                          <span>{selectedPatient.doctorName}</span>
+                        </>
+                      )}
                       {selectedPatient.inRoomSince && (
                         <>
                           <span>·</span>
@@ -750,7 +834,7 @@ export default function DoctorClinicPage() {
                   >
                     <p className="text-[10px] font-medium mb-0.5" style={{ color: "#94a3b8" }}>الغرفة</p>
                     <p className="text-sm font-bold" style={{ color: "#1e3a8a" }}>
-                      {selectedPatient.roomName ?? "—"}
+                      {selectedPatient.roomName ?? "بدون غرفة"}
                     </p>
                   </div>
                   {/* وقت الموعد */}

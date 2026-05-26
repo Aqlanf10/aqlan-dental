@@ -135,6 +135,9 @@ public class PatientJourneyController(
             string? checkoutStatus = visit?.CheckoutStatus;
             string nextAction = DetermineNextAction(a.Status, queueItem?.Status, checkoutStatus);
 
+            // Compute in-room timestamp from queue item
+            DateTime? inRoomSince = queueItem?.InRoomAt ?? queueItem?.StartedAt;
+
             return new
             {
                 AppointmentId = a.Id,
@@ -148,6 +151,7 @@ public class PatientJourneyController(
                 DoctorName = a.Doctor?.Name ?? "",
                 ServiceId = a.ServiceId,
                 ServiceName = service?.ArabicName,
+                RoomId = a.ClinicRoomId ?? queueItem?.ClinicRoomId,
                 RoomName = a.RoomName ?? queueItem?.RoomName,
                 QueueItemId = queueItem?.Id,
                 QueueStatus = queueItem?.Status.ToString(),
@@ -158,6 +162,8 @@ public class PatientJourneyController(
                 CheckoutStatus = checkoutStatus,
                 AmountDueReference = visit?.AmountDueReference,
                 TreatmentDone = visit?.TreatmentDone,
+                ChiefComplaint = visit?.ChiefComplaint,
+                InRoomSince = inRoomSince,
                 NextAction = nextAction
             };
         }).ToList();

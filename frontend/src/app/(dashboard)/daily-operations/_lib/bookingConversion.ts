@@ -70,15 +70,84 @@ export async function confirmBookingAndCreateAppointment(
     return { statusConfirmed: true, appointmentCreated: false, reason: "missing_doctor_date_or_time" };
   }
 
-  await api.post(`/api/booking-requests/${item.id}/convert-to-appointment`, {
-    patientId: "00000000-0000-0000-0000-000000000000",
+  // Build the payload — only include patientId if we have a real one.
+  // The backend ConvertToAppointmentAsync handles patient lookup/creation by phone,
+  // so omitting patientId is safe and preferred over sending a placeholder.
+  // TODO: After calling this, invalidate:
+  //   - queryClient.invalidateQueries({ queryKey: ["daily-ops"] })
+  //   - queryClient.invalidateQueries({ queryKey: ["patient-journey"] })
+  //   - queryClient.invalidateQueries({ queryKey: ["appointments"] })
+  //   - queryClient.invalidateQueries({ queryKey: ["booking-requests"] })
+  const payload: Record<string, unknown> = {
     doctorId: item.doctorId,
     appointmentDate,
     startTime,
     endTime: addMinutes(startTime, 30),
     appointmentType: item.serviceType || "Consultation",
     durationMinutes: 30,
-  });
+  };
+
+  await api.post(`/api/booking-requests/${item.id}/convert-to-appointment`, payload);
 
   return { statusConfirmed: true, appointmentCreated: true };
+}
+
+/**
+ * V2 conversion: tries the dedicated confirm-and-create-appointment endpoint first,
+ * falls back to the legacy convert-to-appointment on 404.
+ *
+ * Steps:
+ *  1. PATCH status → "Confirmed"
+ *  2. POST /api/booking-requests/{id}/confirm-and-create-appointment
+ *  3. If 404 → POST /api/booking-requests/{id}/convert-to-appointment (legacy)
+ *
+ * TODO: After calling this, invalidate:
+ *   - queryClient.invalidateQueries({ queryKey: ["daily-ops"] })
+ *   - queryClient.invalidateQueries({ queryKey: ["patient-journey"] })
+ *   - queryClient.invalidateQueries({ queryKey: ["appointments"] })
+ *   - queryClient.invalidateQueries({ queryKey: ["booking-requests"] })
+ */
+export async function confirmBookingAndCreateAppointmentV2(
+  item: DailyOpsBookingConversionInput,
+  staffNotes?: string,
+): Promise<DailyOpsBookingConversionResult> {
+  // Step 1: Confirm booking status
+  await api.patch(`/api/booking-requests/${item.id}/status`, {
+    status: "Confirmed",
+    staffNotes,
+  });
+
+  if (item.convertedToAppointmentId) {
+    return { statusConfirmed: true, appointmentCreated: false, reason: "already_converted" };
+  }
+
+  const appointmentDate = normalizeDateForApi(item.preferredDate);
+  const startTime = normalizeTimeForApi(item.preferredTime);
+
+  if (!item.doctorId || !appointmentDate || !startTime) {
+    return { statusConfirmed: true, appointmentCreated: false, reason: "missing_doctor_date_or_time" };
+  }
+
+  const payload = {
+    doctorId: item.doctorId,
+    appointmentDate,
+    startTime,
+    endTime: addMinutes(startTime, 30),
+    appointmentType: item.serviceType || "Consultation",
+    durationMinutes: 30,
+  };
+
+  // Step 2: Try the new dedicated endpoint
+  try {
+    await api.post(`/api/booking-requests/${item.id}/confirm-and-create-appointment`, payload);
+    return { statusConfirmed: true, appointmentCreated: true };
+  } catch (err: unknown) {
+    // Fall back to legacy endpoint if the new one is not implemented (404)
+    const axiosErr = err as { response?: { status?: number } };
+    if (axiosErr?.response?.status === 404) {
+      await api.post(`/api/booking-requests/${item.id}/convert-to-appointment`, payload);
+      return { statusConfirmed: true, appointmentCreated: true };
+    }
+    throw err;
+  }
 }

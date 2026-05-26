@@ -505,8 +505,8 @@ export function JourneyActionsPanel({
         </form>
       )}
 
-      {/* ── Checkout Form (Inline) ── */}
-      {nextAction === "Checkout" && (
+      {/* ── Checkout Form (Inline) — Reception/Admin only, not Doctor ── */}
+      {nextAction === "Checkout" && !isDoctor && (
         <div className="space-y-3 bg-white rounded-xl border border-green-200 p-3">
           {checkoutSuccess ? (
             <div className="space-y-3">

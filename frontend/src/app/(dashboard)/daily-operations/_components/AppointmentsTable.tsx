@@ -9,7 +9,7 @@
 import { useState } from "react";
 import {
   Calendar, UserCheck, ClipboardList, DoorOpen, CheckCircle,
-  CreditCard, CalendarPlus, MessageCircle, XCircle,
+  CreditCard, FileText, CalendarPlus, MessageCircle, XCircle,
   UserX, MoreHorizontal, Eye, Phone, Clock,
   Building2, PanelRight, Timer, AlertCircle, Heart,
 } from "lucide-react";
@@ -135,6 +135,7 @@ interface AppointmentsTableProps {
   items: TodayJourneyItem[];
   loading: boolean;
   isDoctor: boolean;
+  canProcessCheckout: boolean;
   isReception: boolean;
   isAccountant: boolean;
   queueWaitTime?: { estimatedMinutes: number; patientsAhead: number } | null;
@@ -145,6 +146,8 @@ interface AppointmentsTableProps {
   onCallPatient: (item: TodayJourneyItem) => void;
   onEnterRoom: (item: TodayJourneyItem) => void;
   onQuickPayment: (item: TodayJourneyItem) => void;
+  onCreateDraftInvoice: (item: TodayJourneyItem) => void;
+  createDraftInvoicePending: boolean;
   onBookAppointment: (item: TodayJourneyItem) => void;
   onWhatsApp: (item: TodayJourneyItem) => void;
   onNoShow: (item: TodayJourneyItem) => void;
@@ -155,9 +158,9 @@ interface AppointmentsTableProps {
 }
 
 export default function AppointmentsTable({
-  items, loading, isDoctor, queueWaitTime, selectedPatientId,
+  items, loading, isDoctor, canProcessCheckout, queueWaitTime, selectedPatientId,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onQuickPayment, onBookAppointment, onWhatsApp,
+  onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: Omit<AppointmentsTableProps, "isReception" | "isAccountant">) {
   // Mobile: expanded row
@@ -223,6 +226,7 @@ export default function AppointmentsTable({
               key={item.appointmentId}
               item={item}
               isDoctor={isDoctor}
+              canProcessCheckout={canProcessCheckout}
               isSelected={selectedPatientId === item.patientId}
               isEven={idx % 2 === 1}
               queueWaitMinutes={
@@ -235,6 +239,8 @@ export default function AppointmentsTable({
               onCallPatient={onCallPatient}
               onEnterRoom={onEnterRoom}
               onQuickPayment={onQuickPayment}
+              onCreateDraftInvoice={onCreateDraftInvoice}
+              createDraftInvoicePending={createDraftInvoicePending}
               onBookAppointment={onBookAppointment}
               onWhatsApp={onWhatsApp}
               onNoShow={onNoShow}
@@ -254,6 +260,7 @@ export default function AppointmentsTable({
             key={item.appointmentId}
             item={item}
             isDoctor={isDoctor}
+            canProcessCheckout={canProcessCheckout}
             expanded={expandedId === item.appointmentId}
             onToggle={() => setExpandedId(expandedId === item.appointmentId ? null : item.appointmentId)}
             queueWaitMinutes={
@@ -266,6 +273,8 @@ export default function AppointmentsTable({
             onCallPatient={onCallPatient}
             onEnterRoom={onEnterRoom}
             onQuickPayment={onQuickPayment}
+            onCreateDraftInvoice={onCreateDraftInvoice}
+            createDraftInvoicePending={createDraftInvoicePending}
             onBookAppointment={onBookAppointment}
             onWhatsApp={onWhatsApp}
             onNoShow={onNoShow}
@@ -282,12 +291,12 @@ export default function AppointmentsTable({
 
 /* ─── Desktop row — Microsoft DataGrid style ───────────────────────────────── */
 function AppointmentRow({
-  item, isDoctor, isSelected, isEven, queueWaitMinutes,
+  item, isDoctor, canProcessCheckout, isSelected, isEven, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onQuickPayment, onBookAppointment, onWhatsApp,
+  onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: {
-  item: TodayJourneyItem; isDoctor: boolean; isSelected: boolean; isEven: boolean; queueWaitMinutes?: number;
+  item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; isSelected: boolean; isEven: boolean; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
   const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
@@ -388,8 +397,11 @@ function AppointmentRow({
           {canAct && item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom") && (
             <ActionBtn icon={DoorOpen} label="دخول الغرفة" color="#9333ea" onClick={() => onEnterRoom(item)} />
           )}
-          {canAct && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
-            <ActionBtn icon={CheckCircle} label="إنهاء الزيارة" color="#16a34a" onClick={() => onCompleteVisit(item)} />
+          {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
+            <ActionBtn icon={CheckCircle} label="التحصيل والخروج" color="#16a34a" onClick={() => onCompleteVisit(item)} />
+          )}
+          {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
+            <ActionBtn icon={FileText} label="إنشاء فاتورة مسودة" color="#3d7ab5" disabled={createDraftInvoicePending} onClick={() => onCreateDraftInvoice(item)} />
           )}
           {!isDoctor && (
             <ActionBtn icon={CreditCard} label="دفعة سريعة" color="#22c55e" onClick={() => onQuickPayment(item)} />
@@ -412,12 +424,12 @@ function AppointmentRow({
 
 /* ─── Mobile card ──────────────────────────────────────────────────────────── */
 function MobileCard({
-  item, isDoctor, expanded, onToggle, queueWaitMinutes,
+  item, isDoctor, canProcessCheckout, expanded, onToggle, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onQuickPayment, onBookAppointment, onWhatsApp,
+  onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
 }: {
-  item: TodayJourneyItem; isDoctor: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
+  item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
   const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
@@ -470,8 +482,11 @@ function MobileCard({
             {canAct && item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom") && (
               <ActionBtn icon={DoorOpen} label="دخول" color="#9333ea" onClick={() => onEnterRoom(item)} />
             )}
-            {canAct && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
-              <ActionBtn icon={CheckCircle} label="إنهاء" color="#16a34a" onClick={() => onCompleteVisit(item)} />
+            {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
+              <ActionBtn icon={CheckCircle} label="تحصيل وخروج" color="#16a34a" onClick={() => onCompleteVisit(item)} />
+            )}
+            {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
+              <ActionBtn icon={FileText} label="فاتورة مسودة" color="#3d7ab5" disabled={createDraftInvoicePending} onClick={() => onCreateDraftInvoice(item)} />
             )}
             {!isDoctor && (
               <ActionBtn icon={CreditCard} label="دفعة" color="#22c55e" onClick={() => onQuickPayment(item)} />

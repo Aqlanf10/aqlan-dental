@@ -44,6 +44,7 @@ import {
   useEnterRoom,
   useUpdateAppointmentStatus,
   useCreatePayment,
+  useCreateDraftInvoice,
   useCheckout,
   useHandoff,
   useCancelQueue,
@@ -134,6 +135,7 @@ export default function DailyOperationsPage() {
   const { user } = useAuthStore();
   const userRole = user?.role ?? "";
   const isDoctor = isDoctorRole(userRole);
+  const canProcessCheckout = userRole === "Admin" || userRole === "Reception";
 
   // ── SignalR real-time updates ──
   const { isConnected: signalrConnected } = useSignalRClinicQueue();
@@ -177,6 +179,7 @@ export default function DailyOperationsPage() {
   const enterRoomMutation = useEnterRoom();
   const updateStatusMutation = useUpdateAppointmentStatus();
   const createPaymentMutation = useCreatePayment();
+  const createDraftInvoiceMutation = useCreateDraftInvoice();
   const checkoutMutation = useCheckout();
   const handoffMutation = useHandoff();
   const cancelQueueMutation = useCancelQueue();
@@ -356,6 +359,27 @@ export default function DailyOperationsPage() {
     setCompleteVisitModalOpen(true);
   }, []);
 
+  const handleCreateDraftInvoice = useCallback(async (item: TodayJourneyItem) => {
+    if (!item.visitId) {
+      toast.error("لا توجد زيارة مرتبطة لإنشاء الفاتورة");
+      return;
+    }
+
+    try {
+      const result = await createDraftInvoiceMutation.mutateAsync(item.visitId) as {
+        isExisting?: boolean;
+        IsExisting?: boolean;
+      };
+      toast.success(
+        result?.isExisting || result?.IsExisting
+          ? "توجد فاتورة مسودة مسبقاً لهذه الزيارة"
+          : "تم إنشاء فاتورة مسودة للتحصيل"
+      );
+    } catch {
+      toast.error("فشل إنشاء فاتورة التحصيل");
+    }
+  }, [createDraftInvoiceMutation]);
+
   const handleBookAppointment = useCallback((item: TodayJourneyItem) => {
     setSelectedItem(item);
     setBookAppointmentModalOpen(true);
@@ -503,8 +527,11 @@ export default function DailyOperationsPage() {
   }) => {
     if (!selectedItem) return;
     try {
-      // If patient is ReadyForCheckout (doctor already handed off), ONLY do checkout
-      if (selectedItem.checkoutStatus !== "ReadyForCheckout" && selectedItem.visitId) {
+      if (
+        selectedItem.checkoutStatus !== "ReadyForCheckout" &&
+        selectedItem.nextAction !== "Checkout" &&
+        selectedItem.visitId
+      ) {
         await handoffMutation.mutateAsync({
           visitId: selectedItem.visitId,
           body: {
@@ -516,18 +543,27 @@ export default function DailyOperationsPage() {
             followUpDate: data.needsFollowUp ? data.nextDate : undefined,
           },
         });
+        toast.success("تم إرسال المريض للاستقبال للتحصيل والخروج");
+        setCompleteVisitModalOpen(false);
+        return;
       }
-      await checkoutMutation.mutateAsync({
-        appointmentId: selectedItem.appointmentId,
-        body: {
-          paymentAmount: data.isPaid ? data.amountDue : 0,
-          paymentMethod: "Cash",
-          notes: data.notes || undefined,
-          nextAppointmentDate: data.needsFollowUp ? data.nextDate : undefined,
-        },
-      });
-      toast.success("تم إنهاء الزيارة بنجاح");
-      setCompleteVisitModalOpen(false);
+
+      if (selectedItem.checkoutStatus === "ReadyForCheckout" || selectedItem.nextAction === "Checkout") {
+        await checkoutMutation.mutateAsync({
+          appointmentId: selectedItem.appointmentId,
+          body: {
+            paymentAmount: data.isPaid ? data.amountDue : 0,
+            paymentMethod: "Cash",
+            notes: data.notes || undefined,
+            nextAppointmentDate: data.needsFollowUp ? data.nextDate : undefined,
+          },
+        });
+        toast.success("تم إكمال الخروج بنجاح");
+        setCompleteVisitModalOpen(false);
+        return;
+      }
+
+      toast.error("لا يمكن إكمال الإجراء دون زيارة جاهزة للتحصيل");
     } catch {
       toast.error("فشل إنهاء الزيارة");
     }
@@ -865,7 +901,7 @@ export default function DailyOperationsPage() {
                 </div>
 
                 {/* ReadyForCheckout Banner — Prominent for Reception */}
-                {!isDoctor && tabCounts.payments > 0 && (
+                {canProcessCheckout && tabCounts.payments > 0 && (
                   <div className="flex-shrink-0 mx-3 mt-2 mb-1 p-2.5 rounded-xl flex items-center gap-3"
                     style={{
                       background: "linear-gradient(135deg, #fff7ed, #fef3c7)",
@@ -898,12 +934,15 @@ export default function DailyOperationsPage() {
                     items={filteredItems}
                     loading={itemsLoading}
                     isDoctor={isDoctor}
+                    canProcessCheckout={canProcessCheckout}
                     queueWaitTime={queueWaitTime}
                     onIntake={handleIntake}
                     onSendToQueue={handleSendToQueue}
                     onCallPatient={handleCallPatient}
                     onEnterRoom={handleEnterRoom}
                     onQuickPayment={handleQuickPayment}
+                    onCreateDraftInvoice={handleCreateDraftInvoice}
+                    createDraftInvoicePending={createDraftInvoiceMutation.isPending}
                     onBookAppointment={handleBookAppointment}
                     onWhatsApp={handleWhatsApp}
                     onNoShow={handleNoShow}

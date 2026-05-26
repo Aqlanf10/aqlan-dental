@@ -272,11 +272,23 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, payment.Amount, payment.PaymentMethod);
 
-        // Finance V3: Dual-write journal entry BEFORE SaveChangesAsync
-        // If DualWritePaymentEntryAsync throws, the entire operation fails (atomic)
-        await DualWritePaymentEntryAsync(payment, cashflow, invoice);
-
-        await db.SaveChangesAsync();
+        // Finance V3: Dual-write journal entry — wrap in explicit transaction for relational DB
+        // to guarantee atomicity: if any SaveChangesAsync fails, everything rolls back.
+        // InMemory provider does not support transactions; dual-write + single SaveChangesAsync
+        // is sufficient for test atomicity since InMemory wraps SaveChanges in an implicit transaction.
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await DualWritePaymentEntryAsync(payment, cashflow, invoice);
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
 
         // Auto-transition invoice to Paid if payments cover the total
         if (invoice != null)
@@ -697,10 +709,20 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
 
-        // Finance V3: Dual-write reversal entry — if this throws, the delete fails too
-        await DualWriteReversalEntryAsync(payment.Id, "حذف دفعة");
-
-        await db.SaveChangesAsync();
+        // Finance V3: Dual-write reversal entry — wrap in explicit transaction for relational DB
+        var useDeleteTx = db.Database.IsRelational();
+        var deleteTx = useDeleteTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await DualWriteReversalEntryAsync(payment.Id, "حذف دفعة");
+            await db.SaveChangesAsync();
+            if (useDeleteTx) await deleteTx!.CommitAsync();
+        }
+        catch
+        {
+            if (useDeleteTx) await deleteTx!.RollbackAsync();
+            throw;
+        }
 
         // H3 FIX: Re-evaluate invoice status after deleting a payment.
         if (invoiceId.HasValue)
@@ -804,10 +826,20 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         await UpdateTreasuryBalanceAsync(refund.BranchId ?? Guid.Empty, refund.Amount, refund.PaymentMethod);
 
-        // Finance V3: Dual-write refund entry — if this throws, the refund fails too
-        await DualWriteRefundEntryAsync(payment, refund, refundAmount);
-
-        await db.SaveChangesAsync();
+        // Finance V3: Dual-write refund entry — wrap in explicit transaction for relational DB
+        var useRefundTx = db.Database.IsRelational();
+        var refundTx = useRefundTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await DualWriteRefundEntryAsync(payment, refund, refundAmount);
+            await db.SaveChangesAsync();
+            if (useRefundTx) await refundTx!.CommitAsync();
+        }
+        catch
+        {
+            if (useRefundTx) await refundTx!.RollbackAsync();
+            throw;
+        }
 
         // H3 FIX: Re-evaluate invoice status after creating a refund.
         if (payment.InvoiceId.HasValue)

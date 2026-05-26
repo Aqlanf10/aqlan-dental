@@ -273,55 +273,68 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         // Finance V3: External deposit journal entry with DepositSource classification
         // External deposits (no source treasury) must have an explicit classification
         // to avoid incorrectly posting as Revenue.
-        if (transfer.SourceTreasuryId == null)
+        // Wrap in explicit transaction for relational DB to guarantee atomicity.
+        var useApproveTx = db.Database.IsRelational();
+        var approveTx = useApproveTx ? await db.Database.BeginTransactionAsync() : null;
+        try
         {
-            var depositSource = approveReq?.DepositSource;
-            if (string.IsNullOrWhiteSpace(depositSource))
+            if (transfer.SourceTreasuryId == null)
             {
-                return BadRequest(new { message = "يجب تحديد مصدر الإيداع الخارجي (OwnerCapital أو OpeningBalance أو OtherReceivable أو AuthorizedRevenueDocument)" });
+                var depositSource = approveReq?.DepositSource;
+                if (string.IsNullOrWhiteSpace(depositSource))
+                {
+                    if (useApproveTx) await approveTx!.RollbackAsync();
+                    return BadRequest(new { message = "يجب تحديد مصدر الإيداع الخارجي (OwnerCapital أو OpeningBalance أو OtherReceivable أو AuthorizedRevenueDocument)" });
+                }
+
+                var branchId = transfer.DestinationTreasury.BranchId;
+                var treasuryId = transfer.DestinationTreasury.Id;
+                var performedBy = transfer.PerformedBy;
+
+                var (creditAccountType, creditAccountId, description) = depositSource switch
+                {
+                    "OwnerCapital" => (JournalAccountType.OwnerEquity, branchId, $"إيداع رأس مال مالك - {transfer.TransferNumber}"),
+                    "OpeningBalance" => (JournalAccountType.OwnerEquity, branchId, $"رصيد افتتاحي - {transfer.TransferNumber}"),
+                    "OtherReceivable" => (JournalAccountType.OtherReceivable, branchId, $"إيداع ذمم مدينة أخرى - {transfer.TransferNumber}"),
+                    "AuthorizedRevenueDocument" => (JournalAccountType.Revenue, transfer.Id, $"إيراد مستندي معتمد - {transfer.TransferNumber}"),
+                    _ => ((JournalAccountType)0, Guid.Empty, "")
+                };
+
+                if (creditAccountId == Guid.Empty)
+                {
+                    if (useApproveTx) await approveTx!.RollbackAsync();
+                    return BadRequest(new { message = $"مصدر الإيداع غير معروف: {depositSource}. القيم المقبولة: OwnerCapital, OpeningBalance, OtherReceivable, AuthorizedRevenueDocument" });
+                }
+
+                var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+                {
+                    (JournalAccountType.Treasury, treasuryId, transfer.Amount, 0m, $"استلام إيداع خارجي - {transfer.TransferNumber}"),
+                    (creditAccountType, creditAccountId, 0m, transfer.Amount, description)
+                };
+
+                var jeEntry = await journalEntryService.CreateEntryAsync(
+                    documentType: FinancialDocumentType.VaultTransfer,
+                    financialDocumentId: transfer.Id,
+                    description: description,
+                    entryDate: DateOnly.FromDateTime(DateTime.UtcNow),
+                    branchId: branchId,
+                    performedBy: performedBy,
+                    cashierSessionId: transfer.CashierSessionId,
+                    treasuryId: treasuryId,
+                    lines: journalLines);
+
+                jeEntry.IsPosted = true;
+                jeEntry.PostedAt = DateTime.UtcNow;
             }
 
-            var branchId = transfer.DestinationTreasury.BranchId;
-            var treasuryId = transfer.DestinationTreasury.Id;
-            var performedBy = transfer.PerformedBy;
-
-            var (creditAccountType, creditAccountId, description) = depositSource switch
-            {
-                "OwnerCapital" => (JournalAccountType.OwnerEquity, branchId, $"إيداع رأس مال مالك - {transfer.TransferNumber}"),
-                "OpeningBalance" => (JournalAccountType.OwnerEquity, branchId, $"رصيد افتتاحي - {transfer.TransferNumber}"),
-                "OtherReceivable" => (JournalAccountType.OtherReceivable, branchId, $"إيداع ذمم مدينة أخرى - {transfer.TransferNumber}"),
-                "AuthorizedRevenueDocument" => (JournalAccountType.Revenue, transfer.Id, $"إيراد مستندي معتمد - {transfer.TransferNumber}"),
-                _ => ((JournalAccountType)0, Guid.Empty, "")
-            };
-
-            if (creditAccountId == Guid.Empty)
-            {
-                return BadRequest(new { message = $"مصدر الإيداع غير معروف: {depositSource}. القيم المقبولة: OwnerCapital, OpeningBalance, OtherReceivable, AuthorizedRevenueDocument" });
-            }
-
-            var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
-            {
-                (JournalAccountType.Treasury, treasuryId, transfer.Amount, 0m, $"استلام إيداع خارجي - {transfer.TransferNumber}"),
-                (creditAccountType, creditAccountId, 0m, transfer.Amount, description)
-            };
-
-            var jeEntry = await journalEntryService.CreateEntryAsync(
-                documentType: FinancialDocumentType.VaultTransfer,
-                financialDocumentId: transfer.Id,
-                description: description,
-                entryDate: DateOnly.FromDateTime(DateTime.UtcNow),
-                branchId: branchId,
-                performedBy: performedBy,
-                cashierSessionId: transfer.CashierSessionId,
-                treasuryId: treasuryId,
-                lines: journalLines);
-
-            jeEntry.IsPosted = true;
-            jeEntry.PostedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+            if (useApproveTx) await approveTx!.CommitAsync();
         }
-
-        await db.SaveChangesAsync();
+        catch
+        {
+            if (useApproveTx) await approveTx!.RollbackAsync();
+            throw;
+        }
 
         // H3: Audit logging for vault transfer approval
         await audit.LogAsync(AuditAction.Approve, "VaultTransfer", id);

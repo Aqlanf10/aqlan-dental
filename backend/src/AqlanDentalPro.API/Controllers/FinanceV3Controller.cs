@@ -5,7 +5,6 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -21,9 +20,7 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "ReportsAccess")]
 public class FinanceV3Controller(
     AppDbContext db,
-    ICurrentUserService currentUser,
-    IJournalEntryService journalEntryService,
-    ILogger<FinanceV3Controller> logger) : ControllerBase
+    ICurrentUserService currentUser) : ControllerBase
 {
     // ─── Dashboard KPIs ─────────────────────────────────────────────────────
 
@@ -303,11 +300,11 @@ public class FinanceV3Controller(
         {
             AccountBalances = accountBalances,
             Treasuries = treasuries,
-            TotalAssets = accountBalances.FirstOrDefault(a => a.AccountType == "Treasury")?.NetBalance ?? 0,
-            TotalRevenue = -(accountBalances.FirstOrDefault(a => a.AccountType == "Revenue")?.NetBalance ?? 0),
-            TotalExpenses = accountBalances.FirstOrDefault(a => a.AccountType == "Expense")?.NetBalance ?? 0,
-            TotalReceivables = accountBalances.FirstOrDefault(a => a.AccountType == "PatientReceivable")?.NetBalance ?? 0,
-            TotalPayables = -(accountBalances.FirstOrDefault(a => a.AccountType == "Payable")?.NetBalance ?? 0)
+            TotalAssets = accountBalances.Find(a => a.AccountType == "Treasury")?.NetBalance ?? 0,
+            TotalRevenue = -(accountBalances.Find(a => a.AccountType == "Revenue")?.NetBalance ?? 0),
+            TotalExpenses = accountBalances.Find(a => a.AccountType == "Expense")?.NetBalance ?? 0,
+            TotalReceivables = accountBalances.Find(a => a.AccountType == "PatientReceivable")?.NetBalance ?? 0,
+            TotalPayables = -(accountBalances.Find(a => a.AccountType == "Payable")?.NetBalance ?? 0)
         });
     }
 

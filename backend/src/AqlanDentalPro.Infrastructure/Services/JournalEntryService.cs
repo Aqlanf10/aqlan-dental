@@ -141,7 +141,7 @@ public class JournalEntryService(
             l.AccountId,
             debit: l.Credit,   // swap
             credit: l.Debit,   // swap
-            description: $"Reversal: {l.Description}"
+            description: (string?)$"Reversal: {l.Description}"
         ));
 
         var reversal = await CreateEntryAsync(
@@ -272,7 +272,7 @@ public class JournalEntryService(
     {
         // FIX: Only include posted entries — unposted entries are not part of the canonical balance
         var lines = await db.JournalLines
-            .Where(l => l.AccountType == accountType && l.AccountId == accountId && l.JournalEntry.IsPosted)
+            .Where(l => l.AccountType == accountType && l.AccountId == accountId && l.JournalEntry != null && l.JournalEntry.IsPosted)
             .ToListAsync(ct);
 
         // Balance = SUM(Debit) - SUM(Credit)

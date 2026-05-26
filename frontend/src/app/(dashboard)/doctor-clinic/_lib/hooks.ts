@@ -45,17 +45,27 @@ export interface DoctorPatientItem {
 }
 
 // ─── Fetch doctor's patients today ──────────────────────────────────────────
-export function useDoctorPatientsToday(doctorId: string | undefined) {
+// Admin (includeAll=true): fetches ALL active clinical patients across all doctors/rooms.
+// Doctor (doctorId): fetches only patients assigned to that specific doctor.
+export function useDoctorPatientsToday(opts: { doctorId?: string; includeAll?: boolean } = {}) {
+  const { doctorId, includeAll = false } = opts;
+
   return useQuery<DoctorPatientItem[]>({
-    queryKey: ["doctor-clinic", "patients", doctorId],
+    queryKey: includeAll
+      ? ["doctor-clinic", "patients", "all"]
+      : ["doctor-clinic", "patients", doctorId],
     queryFn: async () => {
-      if (!doctorId) return [];
+      // Admin: omit doctorId to get all active patients
+      // Doctor: send doctorId to filter to their patients
+      if (!includeAll && !doctorId) return [];
       const qs = new URLSearchParams();
-      qs.set("doctorId", doctorId);
+      if (!includeAll && doctorId) {
+        qs.set("doctorId", doctorId);
+      }
       const { data } = await api.get(`/api/patient-journey/today?${qs.toString()}`);
       return data;
     },
-    enabled: !!doctorId,
+    enabled: includeAll || !!doctorId,
     staleTime: 15_000,
     refetchInterval: 30_000,
   });

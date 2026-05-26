@@ -52,6 +52,10 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
+        // Blocker 4: Non-admin users must have a valid branch to view transfers
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var isAdmin = currentUser.IsAdmin;
 
@@ -105,6 +109,10 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     {
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
+
+        // Blocker 4: Non-admin users must have a valid branch to create transfers
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var userId = currentUser.UserId ?? Guid.Empty;
@@ -219,9 +227,12 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (transfer.Status != TransferStatus.Pending)
             return BadRequest(new { message = "يمكن قبول طلبات التحويل المعلقة فقط" });
 
-        // Blocker 6: Branch ownership check for Accountant users
-        if (!currentUser.IsAdmin && currentUser.BranchId.HasValue)
+        // Blocker 4: Branch isolation — non-admin users MUST have a valid branch assignment
+        if (!currentUser.IsAdmin)
         {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
             var destBranchId = transfer.DestinationTreasury.BranchId;
             if (destBranchId != currentUser.BranchId.Value)
                 return Forbid("ليس لديك صلاحية الموافقة على تحويلات فرع آخر");
@@ -405,9 +416,12 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (transfer.Status != TransferStatus.Pending)
             return BadRequest(new { message = "يمكن رفض طلبات التحويل المعلقة فقط" });
 
-        // Blocker 6: Branch ownership check for Accountant users
-        if (!currentUser.IsAdmin && currentUser.BranchId.HasValue)
+        // Blocker 4: Branch isolation — non-admin users MUST have a valid branch assignment
+        if (!currentUser.IsAdmin)
         {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
             var destBranchId = transfer.DestinationTreasury.BranchId;
             if (destBranchId != currentUser.BranchId.Value)
                 return Forbid("ليس لديك صلاحية رفض تحويلات فرع آخر");

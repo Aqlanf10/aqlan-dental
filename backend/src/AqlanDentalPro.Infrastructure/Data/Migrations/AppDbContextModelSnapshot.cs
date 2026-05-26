@@ -5593,6 +5593,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("BranchId", "Type");
 
+                    b.HasIndex("BranchId", "Type", "Name")
+                        .IsUnique()
+                        .HasFilter("\"IsActive\" = true")
+                        .HasDatabaseName("IX_Treasuries_BranchId_Type_Name_Unique");
+
                     b.ToTable("Treasuries");
                 });
 

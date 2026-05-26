@@ -115,7 +115,7 @@ interface KpiDef {
 
 const KPI_ITEMS: KpiDef[] = [
   { key: "today-revenue",   label: "إيراد اليوم (مستحق)",  icon: Receipt },
-  { key: "today-expenses",  label: "مصروفات اليوم",      icon: TrendingDown },
+  { key: "today-expenses",  label: "التدفقات الخارجة اليوم",      icon: TrendingDown },
   { key: "cash-balance",    label: "رصيد الصندوق",       icon: Vault },
   { key: "outstanding",     label: "المستحقات المعلقة",  icon: HandCoins },
   { key: "open-invoices",   label: "فواتير مفتوحة",      icon: FileText },
@@ -322,8 +322,8 @@ function OverviewTab() {
           </div>
         ) : data ? (
           <>
-            <KpiCard label="إيراد اليوم (مستحق)" value={formatYER(data.TodayAccruedRevenue)} sublabel={`تحصيل: ${formatYER(data.TodayInflow)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
-            <KpiCard label="مصروفات اليوم" value={formatYER(data.TodayOutflow)} sublabel={`شهري: ${formatYER(data.MonthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
+            <KpiCard label="إيراد اليوم (مستحق)" value={formatYER(data.TodayAccruedRevenue)} sublabel={`التدفقات الداخلة: ${formatYER(data.TodayInflow)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="التدفقات الخارجة اليوم" value={formatYER(data.TodayOutflow)} sublabel={`شهري: ${formatYER(data.MonthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
             <KpiCard label="رصيد الخزائن" value={formatYER(data.TotalTreasuryBalance)} sublabel={`${data.JournalEntryCount} قيد محاسبي`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
             <KpiCard label="المستحقات المعلقة" value={formatYER(data.TotalOutstanding)} sublabel={`عقود: ${formatYER(data.ContractOutstanding)}`} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
           </>
@@ -390,7 +390,7 @@ function OverviewTab() {
               <p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.MonthAccruedRevenue)}</p>
             </div>
             <div>
-              <p className="text-xs" style={{ color: tokens.textTertiary }}>المصروفات</p>
+              <p className="text-xs" style={{ color: tokens.textTertiary }}>التدفقات الخارجة</p>
               <p className="text-lg font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.MonthOutflow)}</p>
             </div>
             <div>

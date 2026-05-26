@@ -85,14 +85,14 @@ public class FinanceV3Controller(
                 && l.JournalEntry.EntryDate == today
                 && l.JournalEntry.IsPosted
                 && (!branchId.HasValue || l.BranchId == branchId.Value))
-            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+            .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         var monthAccruedRevenue = await db.JournalLines
             .Where(l => l.AccountType == JournalAccountType.Revenue
                 && l.JournalEntry.EntryDate >= monthStart
                 && l.JournalEntry.IsPosted
                 && (!branchId.HasValue || l.BranchId == branchId.Value))
-            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+            .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         // ── Pending approvals ──
         var pendingExpensesQuery = db.OperationalExpenses
@@ -446,14 +446,14 @@ public class FinanceV3Controller(
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
                 && (!branchId.HasValue || l.BranchId == branchId.Value));
-        var accruedRevenue = await accruedRevenueQuery.SumAsync(l => (decimal?)l.Credit) ?? 0;
+        var accruedRevenue = await accruedRevenueQuery.SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         var accruedExpensesQuery = db.JournalLines
             .Where(l => l.AccountType == JournalAccountType.Expense
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
                 && (!branchId.HasValue || l.BranchId == branchId.Value));
-        var accruedExpenses = await accruedExpensesQuery.SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var accruedExpenses = await accruedExpensesQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
 
         var accruedNetProfit = accruedRevenue - accruedExpenses;
 
@@ -467,15 +467,29 @@ public class FinanceV3Controller(
                 && tx.Type == TransactionType.Outflow
                 && tx.Category == FinancialCategory.Refund);
 
+        // Reversal outflows that reverse patient payments (deleted payment reversals)
+        var patientPaymentReversals = db.CashFlowTransactions
+            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
+                && tx.Type == TransactionType.Outflow
+                && tx.Category == FinancialCategory.Reversal
+                && tx.IsReversal
+                && tx.ReversalOfTransactionId != null
+                && db.CashFlowTransactions
+                    .Where(orig => orig.Category == FinancialCategory.PatientPayment)
+                    .Select(orig => orig.Id)
+                    .Contains(tx.ReversalOfTransactionId.Value));
+
         if (branchId.HasValue)
         {
             revenuePayments = revenuePayments.Where(tx => tx.BranchId == branchId.Value);
             refundPayments = refundPayments.Where(tx => tx.BranchId == branchId.Value);
+            patientPaymentReversals = patientPaymentReversals.Where(tx => tx.BranchId == branchId.Value);
         }
 
         var cashCollections = await revenuePayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
         var cashRefunds = await refundPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
-        var netCashCollections = cashCollections - cashRefunds;
+        var patientReversalTotal = await patientPaymentReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+        var netCashCollections = cashCollections - cashRefunds - patientReversalTotal;
 
         // Operating Expenses
         var expenses = db.CashFlowTransactions
@@ -524,7 +538,9 @@ public class FinanceV3Controller(
             // Cash-flow figures (from CashFlowTransaction)
             CashCollections = cashCollections,
             CashRefunds = cashRefunds,
+            PatientPaymentReversals = patientReversalTotal,
             NetCashCollections = netCashCollections,
+            NetCashCollectionsFormula = "PatientPayment Inflows - Refund Outflows - PatientPayment Reversal Outflows",
             OperatingExpenses = operatingExpenses,
             SalaryPayments = salaryTotal,
             DoctorCommissions = commissionTotal,

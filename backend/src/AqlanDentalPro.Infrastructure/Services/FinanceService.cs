@@ -1243,15 +1243,33 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     /// </summary>
     private async Task UpdateTreasuryBalanceNoSaveAsync(Guid branchId, decimal amount, string? paymentMethod)
     {
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("BranchId is required for treasury balance update");
+
         var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank")
             ? TreasuryType.Bank
             : TreasuryType.Vault;
 
         var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
 
+        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
         var treasury = await db.Treasuries
             .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
 
+        if (treasury == null)
+        {
+            // Check ChangeTracker for a locally added treasury not yet persisted
+            treasury = db.ChangeTracker.Entries<Treasury>()
+                .Where(e => e.State == EntityState.Added
+                    && e.Entity.BranchId == branchId
+                    && e.Entity.Type == type
+                    && e.Entity.Name == name
+                    && e.Entity.IsActive)
+                .Select(e => e.Entity)
+                .FirstOrDefault();
+        }
+
+        var isNewTreasury = false;
         if (treasury == null)
         {
             treasury = new Treasury
@@ -1263,11 +1281,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 IsActive = true
             };
             db.Treasuries.Add(treasury);
-            // Do NOT call SaveChangesAsync — the caller will save all tracked entities together
+            isNewTreasury = true;
         }
 
-        // For relational DB: raw SQL update works within the caller's transaction
-        if (db.Database.IsRelational())
+        // For relational DB: use raw SQL update ONLY if the treasury already exists in DB
+        if (db.Database.IsRelational() && !isNewTreasury)
         {
             await db.Database.ExecuteSqlRawAsync(
                 @"UPDATE ""Treasuries"" SET ""Balance"" = ""Balance"" + {0} WHERE ""Id"" = {1}",
@@ -1278,7 +1296,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         }
         else
         {
-            // InMemory provider — read-modify-write is safe in single-threaded test scenarios
+            // InMemory provider or newly created treasury — direct balance update is safe
             treasury.Balance += amount;
         }
 
@@ -1338,8 +1356,22 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
 
+        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
         var treasury = await db.Treasuries
             .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+
+        if (treasury == null)
+        {
+            // Check ChangeTracker for a locally added treasury not yet persisted
+            treasury = db.ChangeTracker.Entries<Treasury>()
+                .Where(e => e.State == EntityState.Added
+                    && e.Entity.BranchId == branchId
+                    && e.Entity.Type == type
+                    && e.Entity.Name == name
+                    && e.Entity.IsActive)
+                .Select(e => e.Entity)
+                .FirstOrDefault();
+        }
 
         if (treasury == null)
         {

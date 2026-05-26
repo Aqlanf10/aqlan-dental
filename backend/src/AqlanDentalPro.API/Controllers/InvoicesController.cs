@@ -578,7 +578,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     }
 
     // ─── 6. PATCH /api/invoices/{id}/cancel — Cancel invoice ────────
-    /// <summary>Changes invoice status to Cancelled. Draft and Issued invoices can be cancelled. Paid invoices cannot.</summary>
+    /// <summary>Changes invoice status to Cancelled atomically with its reversal JE. Draft→Cancelled: status only. Issued→Cancelled: status + reversal must both succeed. Paid: rejected.</summary>
     [HttpPatch("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelInvoiceRequest? req = null)
     {
@@ -591,15 +591,17 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         if (!invoice.IsActive)
             return BadRequest(new { message = "الفاتورة محذوفة" });
 
-        // Phase 0B: Allow cancelling Draft invoices (simple cancel) and Issued invoices (void).
+        // Capture original status before any changes
+        var originalStatus = invoice.Status;
+
         // Paid invoices cannot be cancelled — payments must be refunded first.
-        if (invoice.Status == InvoiceStatus.Paid)
+        if (originalStatus == InvoiceStatus.Paid)
             return BadRequest(new { message = "لا يمكن إلغاء فاتورة مدفوعة. يجب استرداد المدفوعات أولاً." });
-        if (invoice.Status == InvoiceStatus.Cancelled)
+        if (originalStatus == InvoiceStatus.Cancelled)
             return BadRequest(new { message = "الفاتورة ملغاة بالفعل" });
 
-        // Blocker 2: For Issued invoices, reject cancellation if there are active payments
-        if (invoice.Status == InvoiceStatus.Issued)
+        // For Issued invoices, reject cancellation if there are active payments
+        if (originalStatus == InvoiceStatus.Issued)
         {
             var hasActivePayments = invoice.Payments.Any(p => p.IsActive);
             if (hasActivePayments)
@@ -615,18 +617,23 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 ? $"[إلغاء] {req.Notes}"
                 : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
 
-        // Blocker 2: For Issued invoices, reverse the original issuance JournalEntry
-        // within the same SaveChangesAsync call so status change + JE reversal are atomic.
-        if (invoice.Status == InvoiceStatus.Cancelled && invoice.Payments.All(p => !p.IsActive))
+        // Blocker 2: Atomic cancellation — only reverse for Issued invoices
+        // Draft -> Cancelled: no reversal needed (no accrual was posted)
+        // Issued -> Cancelled: reversal MUST succeed, otherwise we do NOT persist the cancellation
+        if (originalStatus == InvoiceStatus.Issued)
         {
-            var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
-            try
+            // Check if a reversal already exists to prevent double reversal on retry
+            var existingReversal = await db.JournalEntries
+                .AnyAsync(e => e.FinancialDocumentId == invoice.Id
+                    && e.FinancialDocumentType == FinancialDocumentType.Invoice
+                    && e.IsReversal);
+
+            if (!existingReversal)
             {
+                var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+                // This call throws if it fails — we do NOT catch-and-continue.
+                // If reversal fails, the entire operation fails and the invoice remains Issued.
                 await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to reverse invoice issuance JE for invoice {InvoiceId} during cancellation", id);
             }
         }
 

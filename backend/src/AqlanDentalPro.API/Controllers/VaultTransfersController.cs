@@ -2,6 +2,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -139,7 +140,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = Math.Abs("VaultTransferNumber".GetHashCode()) % 100000;
+            var lockKey = StableLockKeyHelper.VaultTransferNumber;
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
             var today = DateTime.UtcNow;

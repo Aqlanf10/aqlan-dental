@@ -284,7 +284,7 @@ public class CommissionService(
             // Uses a stable bigint derived from the doctor Guid (not .NET GetHashCode).
             if (useTx)
             {
-                var doctorLockKey = StableGuidToLong(req.DoctorId);
+                var doctorLockKey = StableLockKeyHelper.StableGuidToLong(req.DoctorId);
                 await db.Database.ExecuteSqlRawAsync(
                     "SELECT pg_advisory_xact_lock({0})", doctorLockKey);
             }
@@ -689,14 +689,5 @@ public class CommissionService(
         }
     }
 
-    /// <summary>
-    /// Converts a Guid to a stable long for use as a PostgreSQL advisory lock key.
-    /// Uses the first 8 bytes of the Guid — deterministic across processes and restarts.
-    /// Do NOT use .NET GetHashCode() which is not stable across app domains.
-    /// </summary>
-    private static long StableGuidToLong(Guid guid)
-    {
-        var bytes = guid.ToByteArray();
-        return BitConverter.ToInt64(bytes, 0);
-    }
+    // StableGuidToLong moved to StableLockKeyHelper — shared across all finance services.
 }

@@ -2,6 +2,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -72,7 +73,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
 
             if (db.Database.IsRelational())
             {
-                var lockKey = Math.Abs("BillNumber".GetHashCode()) % 100000;
+                var lockKey = StableLockKeyHelper.BillNumber;
                 await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
             }
 

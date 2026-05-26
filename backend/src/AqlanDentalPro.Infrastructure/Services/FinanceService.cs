@@ -1013,7 +1013,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             return $"{prefix}{nextSeq:D3}";
         }
 
-        var lockKey = Math.Abs("ReceiptNumber".GetHashCode()) % 100000;
+        var lockKey = StableLockKeyHelper.ReceiptNumber;
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -1076,7 +1076,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             return $"{prefix}{nextSeq:D3}";
         }
 
-        var lockKey = Math.Abs("RefundReceiptNumber".GetHashCode()) % 100000;
+        var lockKey = StableLockKeyHelper.RefundReceiptNumber;
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {

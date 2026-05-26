@@ -2,6 +2,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -37,24 +38,39 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         if (branchId == null || branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل فتح صندوق الكاشير." });
 
-        // Check if there is already an open session for this user
-        var hasOpenSession = await db.CashierSessions
-            .AnyAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
-
-        if (hasOpenSession)
-            return BadRequest(new { message = "لديك وردية مفتوحة بالفعل. يجب إقفال الوردية الحالية أولاً قبل فتح وردية جديدة." });
-
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "لا يمكن أن يكون رصيد العهدة الافتتاحية سالباً" });
 
-        // Generate sequential SessionNumber CS-yyyyMMdd-NNN using advisory lock
+        // CONCURRENCY SAFETY: Begin the transaction BEFORE the authoritative open-session
+        // eligibility check, then acquire a deterministic lock scoped to the cashier identity
+        // to prevent two concurrent requests (or two Railway replicas) from creating two
+        // open sessions for the same cashier.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = Math.Abs("CashierSessionNumber".GetHashCode()) % 100000;
+            // Acquire a deterministic transaction-scoped PostgreSQL lock for the cashier identity.
+            // Uses StableGuidToLong(cashierId) which is deterministic across processes and restarts.
+            // Do NOT use .NET GetHashCode which is not stable across app domains.
             if (db.Database.IsRelational())
             {
-                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+                var cashierLockKey = StableLockKeyHelper.StableGuidToLong(userId);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", cashierLockKey);
+            }
+
+            // AUTHORITATIVE RE-CHECK inside the lock: verify no open session exists for this cashier.
+            // This check must happen after acquiring the lock to prevent concurrent OpenSession calls
+            // from both passing the eligibility check before either creates a session.
+            var hasOpenSession = await db.CashierSessions
+                .AnyAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+
+            if (hasOpenSession)
+                return BadRequest(new { message = "لديك وردية مفتوحة بالفعل. يجب إقفال الوردية الحالية أولاً قبل فتح وردية جديدة." });
+
+            // Generate sequential SessionNumber CS-yyyyMMdd-NNN using advisory lock
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", StableLockKeyHelper.CashierSessionNumber);
             }
 
             var today = DateTime.UtcNow;
@@ -90,7 +106,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 ExpectedClosingBank = 0,
                 Status = SessionStatus.Open,
                 Notes = req.Notes?.Trim(),
-                // BLOCKER 2: Explicitly resolve and set the cash vault TreasuryId when opening
+                // Explicitly resolve and set the cash vault TreasuryId when opening
                 // the session so all subsequent cash movements tied to this session are routed
                 // to the same treasury. OpeningBalance is a drawer-reconciliation seed only — it
                 // does NOT adjust Treasury.Balance. Treasury.Balance reflects actual cash

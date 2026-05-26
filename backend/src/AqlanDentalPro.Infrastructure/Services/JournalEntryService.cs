@@ -210,7 +210,7 @@ public class JournalEntryService(
         // under concurrent requests, similar to receipt number generation.
         if (db.Database.IsRelational())
         {
-            var lockKey = Math.Abs("JournalEntryNumber".GetHashCode()) % 100000;
+            var lockKey = StableLockKeyHelper.JournalEntryNumber;
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
         }
 

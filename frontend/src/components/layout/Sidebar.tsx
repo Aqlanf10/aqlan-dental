@@ -57,7 +57,7 @@ const NAV: NavEntry[] = [
 
   // ── العيادة ───────────────────────────────────────────────────────────────
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"],                                         section: "العيادة" },
-  { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["GeneralDentist","OralSurgeon","Orthodontist"] },
+  { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
   { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: ["Admin","Orthodontist"],                                       section: "تخصصات", badge: "محدّث" },

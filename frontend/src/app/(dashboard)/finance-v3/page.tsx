@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Wallet,
   FileText,
@@ -9,157 +10,190 @@ import {
   Vault,
   TrendingDown,
   Truck,
-  Award,
-  Banknote,
   BarChart3,
   ClipboardCheck,
   AlertTriangle,
-  Construction,
   ShieldX,
+  Plus,
+  FileMinus,
+  Lock,
+  Download,
+  Search,
+  Bell,
+  CircleDot,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  ChevronLeft,
+  Info,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
-import { hasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 
-/* ─── Brand constants ───────────────────────────────────────────────────────── */
-const BRAND_PRIMARY = "#1a3a5c";
-const BRAND_BG = "#f8f9fb";
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Microsoft Fluent 2 Design Tokens
+   ═══════════════════════════════════════════════════════════════════════════════ */
+const tokens = {
+  /* Surface */
+  bg:              "#faf9f8",
+  card:            "#ffffff",
+  cardHover:       "#f3f2f1",
+  /* Brand */
+  brand:           "#0078d4",
+  brandLight:      "#deecf9",
+  /* Text */
+  textPrimary:     "#323130",
+  textSecondary:   "#605e5c",
+  textTertiary:    "#a19f9d",
+  textOnBrand:     "#ffffff",
+  /* Borders */
+  border:          "#edebe9",
+  /* Semantic */
+  warningBg:       "#fff4ce",
+  warningBorder:   "#ffb900",
+  warningText:     "#8a6914",
+  infoBg:          "#deecf9",
+  infoBorder:      "#0078d4",
+  infoText:        "#0b5fa5",
+  successBg:       "#dff6dd",
+  successBorder:   "#107c10",
+  dangerBg:        "#fde7e9",
+  dangerBorder:    "#d13438",
+  dangerText:      "#a4262c",
+  /* Shadows */
+  shadow2:         "0 1.6px 3.6px rgba(0,0,0,.132), 0 .3px .9px rgba(0,0,0,.108)",
+  shadow4:         "0 3.2px 7.2px rgba(0,0,0,.132), 0 .6px 1.8px rgba(0,0,0,.108)",
+} as const;
 
-/* ─── Financial domain definition ──────────────────────────────────────────── */
-interface FinanceDomain {
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Tab definition
+   ═══════════════════════════════════════════════════════════════════════════════ */
+interface TabDef {
   key: string;
   label: string;
-  description: string;
   icon: React.ElementType;
-  color: string;
-  bgLight: string;
 }
 
-const FINANCE_DOMAINS: FinanceDomain[] = [
-  {
-    key: "patient-accounts",
-    label: "حسابات المرضى",
-    description: "أرصدة المرضى، كشوف الحسابات، والمتابعة المالية",
-    icon: Wallet,
-    color: "#2563eb",
-    bgLight: "#eff6ff",
-  },
-  {
-    key: "invoices",
-    label: "الفواتير",
-    description: "إنشاء وإصدار وإدارة فواتير الخدمات العلاجية",
-    icon: FileText,
-    color: "#7c3aed",
-    bgLight: "#f5f3ff",
-  },
-  {
-    key: "collections",
-    label: "التحصيل والإيصالات",
-    description: "تسجيل المدفوعات، إصدار الإيصالات، والاسترداد",
-    icon: Receipt,
-    color: "#059669",
-    bgLight: "#ecfdf5",
-  },
-  {
-    key: "contracts",
-    label: "العقود وخطط السداد",
-    description: "عقود الأقساط، خطط السداد، والمتابعة",
-    icon: HandCoins,
-    color: "#d97706",
-    bgLight: "#fffbeb",
-  },
-  {
-    key: "cashier",
-    label: "الصندوق اليومي",
-    description: "فتح وإغلاق الصندوق، التسوية، ومتابعة العهدة",
-    icon: Vault,
-    color: "#dc2626",
-    bgLight: "#fef2f2",
-  },
-  {
-    key: "treasuries",
-    label: "الخزائن والحسابات",
-    description: "إدارة الخزائن، الحسابات البنكية، والتحويلات",
-    icon: Landmark,
-    color: "#0891b2",
-    bgLight: "#ecfeff",
-  },
-  {
-    key: "expenses",
-    label: "المصروفات",
-    description: "المصروفات التشغيلية، الاعتماد، والصرف",
-    icon: TrendingDown,
-    color: "#9333ea",
-    bgLight: "#faf5ff",
-  },
-  {
-    key: "suppliers",
-    label: "الموردون",
-    description: "فواتير الموردين، المدفوعات، وكشوف الحسابات",
-    icon: Truck,
-    color: "#0d9488",
-    bgLight: "#f0fdfa",
-  },
-  {
-    key: "commissions",
-    label: "العمولات",
-    description: "احتساب واعتماد وصرف عمولات الأطباء",
-    icon: Award,
-    color: "#ea580c",
-    bgLight: "#fff7ed",
-  },
-  {
-    key: "salaries",
-    label: "الرواتب والسلف",
-    description: "رواتب الموظفين، السلف، والخصومات",
-    icon: Banknote,
-    color: "#4f46e5",
-    bgLight: "#eef2ff",
-  },
-  {
-    key: "reports",
-    label: "التقارير المالية",
-    description: "الأرباح والخسائر، الملخص اليومي، وتقارير الحركة",
-    icon: BarChart3,
-    color: "#1d4ed8",
-    bgLight: "#eff6ff",
-  },
-  {
-    key: "audit",
-    label: "سجل المراجعة",
-    description: "سجل عمليات التعديل والإلغاء والمراجعة المالية",
-    icon: ClipboardCheck,
-    color: "#64748b",
-    bgLight: "#f8fafc",
-  },
+const TABS: TabDef[] = [
+  { key: "overview",       label: "نظرة عامة",        icon: BarChart3 },
+  { key: "patient-acct",   label: "حسابات المرضى",    icon: Wallet },
+  { key: "invoices",       label: "الفواتير",          icon: FileText },
+  { key: "collections",    label: "التحصيل",           icon: Receipt },
+  { key: "contracts",      label: "العقود",            icon: HandCoins },
+  { key: "cashier",        label: "الصندوق",           icon: Vault },
+  { key: "treasuries",     label: "الخزائن",           icon: Landmark },
+  { key: "expenses",       label: "المصروفات",         icon: TrendingDown },
+  { key: "suppliers",      label: "الموردون",          icon: Truck },
+  { key: "audit",          label: "سجل المراجعة",      icon: ClipboardCheck },
 ];
 
-/* ─── Access Denied State ──────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Command Bar button definition
+   ═══════════════════════════════════════════════════════════════════════════════ */
+interface CommandBtn {
+  key: string;
+  label: string;
+  icon: React.ElementType;
+  disabled: boolean;
+}
+
+const COMMAND_BUTTONS: CommandBtn[] = [
+  { key: "new-receipt",  label: "إيصال جديد",    icon: Plus,      disabled: true },
+  { key: "new-expense",  label: "مصروف جديد",    icon: FileMinus, disabled: true },
+  { key: "close-shift",  label: "إقفال الوردية",  icon: Lock,      disabled: true },
+  { key: "export",       label: "تصدير",          icon: Download,  disabled: true },
+  { key: "search",       label: "بحث",            icon: Search,    disabled: true },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   KPI definition
+   ═══════════════════════════════════════════════════════════════════════════════ */
+interface KpiDef {
+  key: string;
+  label: string;
+  icon: React.ElementType;
+}
+
+const KPI_ITEMS: KpiDef[] = [
+  { key: "today-revenue",   label: "إيراد اليوم",        icon: Receipt },
+  { key: "today-expenses",  label: "مصروفات اليوم",      icon: TrendingDown },
+  { key: "cash-balance",    label: "رصيد الصندوق",       icon: Vault },
+  { key: "outstanding",     label: "المستحقات المعلقة",  icon: HandCoins },
+  { key: "open-invoices",   label: "فواتير مفتوحة",      icon: FileText },
+  { key: "overdue-contracts", label: "عقود متأخرة",      icon: AlertTriangle },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Phase status items for review panel
+   ═══════════════════════════════════════════════════════════════════════════════ */
+interface PhaseStatus {
+  key: string;
+  label: string;
+  status: "completed" | "in-progress" | "pending";
+}
+
+const PHASE_STATUS: PhaseStatus[] = [
+  { key: "phase1", label: "التدقيق والتأسيس",      status: "in-progress" },
+  { key: "phase2", label: "دفتر الأستاذ المزدوج",  status: "pending" },
+  { key: "phase3", label: "الفواتير والتحصيل",      status: "pending" },
+  { key: "phase4", label: "الصندوق والخزائن",       status: "pending" },
+  { key: "phase5", label: "التقارير والاعتماد",      status: "pending" },
+  { key: "phase6", label: "ترحيل البيانات",         status: "pending" },
+  { key: "phase7", label: "إيقاف النظام القديم",    status: "pending" },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Helpers
+   ═══════════════════════════════════════════════════════════════════════════════ */
+function todayArabic(): string {
+  return new Date().toLocaleDateString("ar-SA", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function PhaseIcon({ status }: { status: PhaseStatus["status"] }) {
+  switch (status) {
+    case "completed":
+      return <CheckCircle2 className="w-4 h-4" style={{ color: tokens.successBorder }} />;
+    case "in-progress":
+      return <Clock className="w-4 h-4" style={{ color: tokens.warningBorder }} />;
+    case "pending":
+      return <XCircle className="w-4 h-4" style={{ color: tokens.textTertiary }} />;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Access Denied
+   ═══════════════════════════════════════════════════════════════════════════════ */
 function AccessDenied() {
   return (
     <div
       className="min-h-screen flex items-center justify-center"
-      style={{ backgroundColor: BRAND_BG, direction: "rtl" }}
+      style={{ backgroundColor: tokens.bg, direction: "rtl" }}
     >
       <div
-        className="rounded-2xl border p-8 max-w-md text-center"
+        className="rounded-lg border p-8 max-w-md text-center"
         style={{
-          backgroundColor: "#fff",
-          borderColor: "#fecaca",
+          backgroundColor: tokens.card,
+          borderColor: tokens.dangerBorder,
+          boxShadow: tokens.shadow4,
         }}
       >
         <div
-          className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
-          style={{ backgroundColor: "#fef2f2" }}
+          className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+          style={{ backgroundColor: tokens.dangerBg }}
         >
-          <ShieldX className="w-8 h-8" style={{ color: "#dc2626" }} />
+          <ShieldX className="w-7 h-7" style={{ color: tokens.dangerBorder }} />
         </div>
         <h2
-          className="text-xl font-bold mb-2"
-          style={{ color: BRAND_PRIMARY }}
+          className="text-lg font-bold mb-2"
+          style={{ color: tokens.textPrimary }}
         >
           غير مصرح بالوصول
         </h2>
-        <p className="text-sm" style={{ color: "#6b7280" }}>
+        <p className="text-sm leading-relaxed" style={{ color: tokens.textSecondary }}>
           هذه الشاشة متاحة فقط للمسؤول والمحاسب. إذا كنت تحتاج الوصول إلى
           تسجيل التحصيل، يرجى استخدام شاشة التشغيل اليومي.
         </p>
@@ -168,15 +202,178 @@ function AccessDenied() {
   );
 }
 
-/* ─── Finance V3 Landing Page ──────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Empty tab state
+   ═══════════════════════════════════════════════════════════════════════════════ */
+function EmptyTabState({ tab }: { tab: TabDef }) {
+  const Icon = tab.icon;
+  return (
+    <div className="flex flex-col items-center justify-center py-20 px-6">
+      <div
+        className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
+        style={{ backgroundColor: tokens.brandLight }}
+      >
+        <Icon className="w-8 h-8" style={{ color: tokens.brand }} />
+      </div>
+      <h3 className="text-base font-semibold mb-2" style={{ color: tokens.textPrimary }}>
+        {tab.label}
+      </h3>
+      <p className="text-sm text-center max-w-sm leading-relaxed" style={{ color: tokens.textSecondary }}>
+        هذا القسم قيد التطوير وسيكون متاحاً في المراحل القادمة من إعادة بناء
+        الوحدة المالية. يرجى العودة لاحقاً.
+      </p>
+      <span
+        className="mt-3 text-xs font-semibold px-3 py-1 rounded-full"
+        style={{
+          backgroundColor: tokens.warningBg,
+          color: tokens.warningText,
+          border: `1px solid ${tokens.warningBorder}`,
+        }}
+      >
+        قريباً
+      </span>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Overview Tab Content
+   ═══════════════════════════════════════════════════════════════════════════════ */
+function OverviewTab() {
+  return (
+    <div className="p-6 space-y-6">
+      {/* Welcome message */}
+      <div>
+        <h2 className="text-base font-semibold mb-1" style={{ color: tokens.textPrimary }}>
+          المركز المالي
+        </h2>
+        <p className="text-sm leading-relaxed" style={{ color: tokens.textSecondary }}>
+          مرحباً بك في المركز المالي الجديد. هذه الشاشة هي واجهة المحاسبة والمراجعة
+          المالية المخصصة للمسؤول والمحاسب. يتم تسجيل تحصيل المرضى من شاشة التشغيل
+          اليومي، بينما هذه الشاشة مخصصة للمراجعة والتسوية والتقارير.
+        </p>
+      </div>
+
+      {/* Current status */}
+      <div
+        className="rounded-lg border p-4"
+        style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
+      >
+        <h3 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>
+          حالة إعادة البناء
+        </h3>
+        <div className="space-y-2">
+          {PHASE_STATUS.map((phase) => (
+            <div
+              key={phase.key}
+              className="flex items-center gap-3 py-1.5 px-3 rounded-md"
+              style={{ backgroundColor: phase.status === "in-progress" ? tokens.warningBg : "transparent" }}
+            >
+              <PhaseIcon status={phase.status} />
+              <span
+                className="text-sm flex-1"
+                style={{ color: phase.status === "pending" ? tokens.textTertiary : tokens.textPrimary }}
+              >
+                {phase.label}
+              </span>
+              <span
+                className="text-xs font-medium"
+                style={{
+                  color:
+                    phase.status === "completed"
+                      ? tokens.successBorder
+                      : phase.status === "in-progress"
+                      ? tokens.warningText
+                      : tokens.textTertiary,
+                }}
+              >
+                {phase.status === "completed"
+                  ? "مكتمل"
+                  : phase.status === "in-progress"
+                  ? "جارٍ التنفيذ"
+                  : "لم يبدأ"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Quick info grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div
+          className="rounded-lg border p-4"
+          style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Info className="w-4 h-4" style={{ color: tokens.brand }} />
+            <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>
+              معلومات مهمة
+            </h4>
+          </div>
+          <ul className="space-y-1.5 text-xs leading-relaxed" style={{ color: tokens.textSecondary }}>
+            <li>يستمر تسجيل تحصيل المرضى من شاشة التشغيل اليومي وفق سير العمل المعتمد.</li>
+            <li>لا تستخدم هذه الشاشة لإدخال أو تعديل قيود مالية حتى اكتمال الاعتماد.</li>
+            <li>الشاشات المالية القديمة ما زالت تعمل عبر الروابط المباشرة.</li>
+            <li>بيانات المالية الحالية هي بيانات تجريبية وسيتم تنظيفها لاحقاً.</li>
+          </ul>
+        </div>
+        <div
+          className="rounded-lg border p-4"
+          style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <FileText className="w-4 h-4" style={{ color: tokens.brand }} />
+            <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>
+              المواصفات المرجعية
+            </h4>
+          </div>
+          <ul className="space-y-1.5 text-xs leading-relaxed" style={{ color: tokens.textSecondary }}>
+            <li>
+              المصدر الرسمي للحقيقة المحاسبية:
+              <code
+                className="px-1.5 py-0.5 rounded text-[11px] mx-1"
+                style={{ backgroundColor: tokens.cardHover, color: tokens.brand }}
+              >
+                JournalEntry + JournalLine
+              </code>
+              (دفتر الأستاذ المزدوج)
+            </li>
+            <li>
+              <code
+                className="px-1.5 py-0.5 rounded text-[11px] mx-0.5"
+                style={{ backgroundColor: tokens.cardHover, color: tokens.textSecondary }}
+              >
+                CashFlowTransaction
+              </code>
+              جدول انتقالي حتى اكتمال الانتقال
+            </li>
+            <li>
+              المواصفات الكاملة:
+              <code
+                className="px-1.5 py-0.5 rounded text-[11px] mx-1"
+                style={{ backgroundColor: tokens.cardHover, color: tokens.brand }}
+              >
+                docs/finance-v3/FINANCE-V3-FOUNDATION.md
+              </code>
+            </li>
+            <li>المرحلة الحالية: ١ من ٧ (التدقيق والتأسيس)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Finance V3 Financial Center — Main Page
+   ═══════════════════════════════════════════════════════════════════════════════ */
 export default function FinanceV3Page() {
   const { user } = useAuthStore();
+  const [activeTab, setActiveTab] = useState("overview");
 
-  // Enforce Admin/Accountant access or finance.view permission
+  /* ── Access gate: Admin / Accountant only ────────────────────────────────── */
   const isAuthorized =
-    user?.role === "Admin" ||
-    user?.role === "Accountant" ||
-    hasPermission(user, PERMISSION_KEYS.PAYMENTS_VIEW);
+    user?.role === "Admin" || user?.role === "Accountant";
 
   if (!isAuthorized) {
     return <AccessDenied />;
@@ -184,216 +381,282 @@ export default function FinanceV3Page() {
 
   return (
     <div
-      className="min-h-screen"
-      style={{ backgroundColor: BRAND_BG, direction: "rtl" }}
+      className="min-h-screen flex flex-col"
+      style={{ backgroundColor: tokens.bg, direction: "rtl" }}
     >
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div
-        className="px-6 pt-6 pb-4"
+      {/* ════════════════════════════════════════════════════════════════════════
+         Top Header — Compact brand bar
+         ════════════════════════════════════════════════════════════════════════ */}
+      <header
+        className="flex items-center gap-4 px-5 py-2.5 border-b"
         style={{
-          background: `linear-gradient(135deg, ${BRAND_PRIMARY} 0%, #244b73 100%)`,
+          backgroundColor: tokens.card,
+          borderColor: tokens.border,
+          boxShadow: tokens.shadow2,
         }}
       >
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center gap-3 mb-3">
+        {/* Brand icon + title */}
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-8 h-8 rounded-md flex items-center justify-center"
+            style={{ backgroundColor: tokens.brand }}
+          >
+            <Wallet className="w-4 h-4" style={{ color: tokens.textOnBrand }} />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold leading-tight" style={{ color: tokens.textPrimary }}>
+              المركز المالي
+            </h1>
+            <p className="text-[11px]" style={{ color: tokens.textTertiary }}>
+              Finance V3
+            </p>
+          </div>
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Date */}
+        <span className="text-xs" style={{ color: tokens.textSecondary }}>
+          {todayArabic()}
+        </span>
+
+        {/* Divider */}
+        <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
+
+        {/* Branch placeholder */}
+        <span className="text-xs font-medium" style={{ color: tokens.textSecondary }}>
+          الفرع الرئيسي
+        </span>
+
+        {/* Divider */}
+        <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
+
+        {/* Session status */}
+        <div className="flex items-center gap-1.5">
+          <CircleDot className="w-3 h-3" style={{ color: tokens.textTertiary }} />
+          <span className="text-xs" style={{ color: tokens.textTertiary }}>
+            لا وردية مفتوحة
+          </span>
+        </div>
+
+        {/* Divider */}
+        <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
+
+        {/* Notifications */}
+        <button
+          className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
+          style={{ color: tokens.textSecondary }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.cardHover; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+          title="الإشعارات"
+        >
+          <Bell className="w-4 h-4" />
+        </button>
+      </header>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+         Command Bar — Disabled action buttons
+         ════════════════════════════════════════════════════════════════════════ */}
+      <div
+        className="flex items-center gap-2 px-5 py-2 border-b"
+        style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
+      >
+        {COMMAND_BUTTONS.map((btn) => {
+          const Icon = btn.icon;
+          return (
+            <button
+              key={btn.key}
+              disabled
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium cursor-not-allowed"
+              style={{
+                backgroundColor: tokens.cardHover,
+                color: tokens.textTertiary,
+                border: `1px solid ${tokens.border}`,
+                opacity: 0.6,
+              }}
+              title="هذا الإجراء سيكون متاحاً في المراحل القادمة"
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{btn.label}</span>
+              <span
+                className="text-[9px] font-bold mr-1 px-1.5 py-0.5 rounded-full"
+                style={{
+                  backgroundColor: tokens.warningBg,
+                  color: tokens.warningText,
+                  border: `1px solid ${tokens.warningBorder}`,
+                }}
+              >
+                قريباً
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+         KPI Summary Band — Placeholder values only
+         ════════════════════════════════════════════════════════════════════════ */}
+      <div
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 border-b"
+        style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
+      >
+        {KPI_ITEMS.map((kpi) => {
+          const Icon = kpi.icon;
+          return (
             <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+              key={kpi.key}
+              className="flex items-center gap-2.5 px-4 py-3 border-l"
+              style={{ borderColor: tokens.border }}
             >
-              <Wallet className="w-6 h-6 text-white" />
+              <Icon className="w-4 h-4 flex-shrink-0" style={{ color: tokens.textTertiary }} />
+              <div className="min-w-0">
+                <p className="text-[11px] truncate" style={{ color: tokens.textTertiary }}>
+                  {kpi.label}
+                </p>
+                <p className="text-sm font-bold" style={{ color: tokens.textTertiary }}>
+                  —
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-extrabold text-white">
-                المالية الجديدة
-              </h1>
-              <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>
-                وحدة المحاسبة والمراجعة المالية — قيد إعادة البناء
-              </p>
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
-      {/* ── Notice Banner ──────────────────────────────────────────────────── */}
-      <div className="px-6 -mt-1">
-        <div className="max-w-6xl mx-auto">
-          <div
-            className="rounded-xl p-4 flex items-start gap-3 border"
-            style={{
-              backgroundColor: "#fffbeb",
-              borderColor: "#fbbf24",
-            }}
-          >
-            <AlertTriangle
-              className="w-5 h-5 flex-shrink-0 mt-0.5"
-              style={{ color: "#d97706" }}
-            />
-            <div>
-              <p className="font-bold text-sm" style={{ color: "#92400e" }}>
-                تجري إعادة بناء وحدة المحاسبة والمراجعة المالية
-              </p>
-              <p className="text-sm mt-1" style={{ color: "#a16207" }}>
-                يستمر تسجيل تحصيل المرضى من شاشة التشغيل اليومي وفق سير العمل
-                المعتمد، بينما لا تستخدم هذه الشاشة الجديدة لإدخال أو تعديل
-                قيود مالية مباشرة حتى اكتمال الاعتماد.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Under Construction Notice ──────────────────────────────────────── */}
-      <div className="px-6 mt-4">
-        <div className="max-w-6xl mx-auto">
-          <div
-            className="rounded-xl p-4 flex items-center gap-3 border"
-            style={{
-              backgroundColor: "#f0f9ff",
-              borderColor: "#93c5fd",
-            }}
-          >
-            <Construction
-              className="w-5 h-5 flex-shrink-0"
-              style={{ color: "#2563eb" }}
-            />
-            <div>
-              <p className="font-bold text-sm" style={{ color: "#1e40af" }}>
-                مراحل البناء
-              </p>
-              <p className="text-sm mt-1" style={{ color: "#1d4ed8" }}>
-                المرحلة ١: التدقيق والتأسيس ← المرحلة ٢: دفتر الأستاذ
-                والنموذج ← المرحلة ٣: الفواتير والتحصيل ← المرحلة ٤: الصندوق
-                والخزائن ← المرحلة ٥: التقارير والاعتماد
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Domain Grid ────────────────────────────────────────────────────── */}
-      <div className="px-6 py-6">
-        <div className="max-w-6xl mx-auto">
-          <h2
-            className="text-lg font-bold mb-4"
-            style={{ color: BRAND_PRIMARY }}
-          >
-            المجالات المالية
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {FINANCE_DOMAINS.map((domain) => {
-              const Icon = domain.icon;
-              return (
-                <div
-                  key={domain.key}
-                  className="rounded-xl border p-4 transition-all duration-200 cursor-default"
-                  style={{
-                    backgroundColor: "#fff",
-                    borderColor: "#e5e7eb",
-                    opacity: 0.7,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = domain.color;
-                    e.currentTarget.style.boxShadow = `0 4px 12px ${domain.color}20`;
-                    e.currentTarget.style.opacity = "1";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = "#e5e7eb";
-                    e.currentTarget.style.boxShadow = "none";
-                    e.currentTarget.style.opacity = "0.7";
-                  }}
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div
-                      className="w-10 h-10 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: domain.bgLight }}
-                    >
-                      <Icon
-                        className="w-5 h-5"
-                        style={{ color: domain.color }}
-                      />
-                    </div>
-                    <h3
-                      className="font-bold text-sm"
-                      style={{ color: BRAND_PRIMARY }}
-                    >
-                      {domain.label}
-                    </h3>
-                  </div>
-                  <p className="text-xs leading-relaxed" style={{ color: "#6b7280" }}>
-                    {domain.description}
-                  </p>
-                  <div className="mt-3 flex items-center gap-1.5">
-                    <Construction
-                      className="w-3 h-3"
-                      style={{ color: "#d97706" }}
-                    />
-                    <span
-                      className="text-[11px] font-medium"
-                      style={{ color: "#d97706" }}
-                    >
-                      قيد الإنشاء
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Admin Info Section ─────────────────────────────────────────────── */}
-      <div className="px-6 pb-6">
-        <div className="max-w-6xl mx-auto">
-          <div
-            className="rounded-xl border p-5"
-            style={{
-              backgroundColor: "#fff",
-              borderColor: "#e5e7eb",
-            }}
-          >
-            <h3
-              className="font-bold text-sm mb-3"
-              style={{ color: BRAND_PRIMARY }}
+      {/* ════════════════════════════════════════════════════════════════════════
+         Tabs
+         ════════════════════════════════════════════════════════════════════════ */}
+      <div
+        className="flex items-center border-b px-5 overflow-x-auto"
+        style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
+      >
+        {TABS.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium whitespace-nowrap transition-colors relative"
+              style={{
+                color: isActive ? tokens.brand : tokens.textSecondary,
+                borderBottom: isActive ? `2px solid ${tokens.brand}` : "2px solid transparent",
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.color = tokens.textPrimary;
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.color = tokens.textSecondary;
+              }}
             >
-              معلومات للمسؤول والمحاسب
+              <Icon className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+         Main Content Area
+         ════════════════════════════════════════════════════════════════════════ */}
+      <div className="flex-1 flex">
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === "overview" ? (
+            <OverviewTab />
+          ) : (
+            <EmptyTabState tab={TABS.find((t) => t.key === activeTab)!} />
+          )}
+        </div>
+
+        {/* ── Review side panel ────────────────────────────────────────────── */}
+        <aside
+          className="w-72 border-r hidden xl:block overflow-y-auto"
+          style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
+        >
+          <div className="p-4 space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: tokens.textTertiary }}>
+              حالة إعادة البناء
             </h3>
-            <div className="space-y-2 text-xs" style={{ color: "#4b5563" }}>
-              <p>
-                • النظام المالي الحالي (V1 + V2) يحتوي على عيوب هيكلية تم
-                توثيقها في مواصفات Finance V3 Foundation.
-              </p>
-              <p>
-                • بيانات المالية الحالية هي بيانات تجريبية فقط وسيتم تنظيفها
-                بعد اعتماد النظام الجديد.
-              </p>
-              <p>
-                • يتم إعادة بناء الوحدة المالية بالكامل لضمان سلامة دفتر
-                الأستاذ وحماية البيانات المالية.
-              </p>
-              <p>
-                • الشاشات المالية القديمة (/finance و /finance-v2) تم إخفاؤها
-                من القائمة الجانبية مؤقتاً، لكن المسارات المباشرة وواجهات API لا
-                تزال تعمل لضمان استمرار التشغيل اليومي.
-              </p>
-              <p>
-                • تسجيل تحصيل المرضى يستمر من شاشة التشغيل اليومي
-                (/daily-operations) وفق سير العمل المعتمد ولا يتأثر بإعادة
-                البناء.
-              </p>
-              <p>
-                • للاطلاع على تفاصيل المواصفات:
-                <code
-                  className="px-1.5 py-0.5 rounded text-[11px] mx-1"
-                  style={{
-                    backgroundColor: "#f1f5f9",
-                    color: "#475569",
-                  }}
-                >
-                  docs/finance-v3/FINANCE-V3-FOUNDATION.md
-                </code>
+
+            {/* Phase list */}
+            <div className="space-y-2">
+              {PHASE_STATUS.map((phase) => (
+                <div key={phase.key} className="flex items-center gap-2.5">
+                  <PhaseIcon status={phase.status} />
+                  <span
+                    className="text-xs flex-1"
+                    style={{
+                      color: phase.status === "pending" ? tokens.textTertiary : tokens.textPrimary,
+                    }}
+                  >
+                    {phase.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Current phase detail */}
+            <div
+              className="rounded-md border p-3"
+              style={{ backgroundColor: tokens.warningBg, borderColor: tokens.warningBorder }}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <Clock className="w-3.5 h-3.5" style={{ color: tokens.warningText }} />
+                <span className="text-xs font-bold" style={{ color: tokens.warningText }}>
+                  المرحلة ١: التدقيق والتأسيس
+                </span>
+              </div>
+              <p className="text-[11px] leading-relaxed" style={{ color: tokens.warningText }}>
+                جارٍ توثيق العيوب والمواصفات وتهيئة الشاشة الجديدة. لا تغييرات
+                على منطق الخادم أو قاعدة البيانات في هذه المرحلة.
               </p>
             </div>
+
+            {/* Quick links */}
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold" style={{ color: tokens.textPrimary }}>
+                روابط سريعة
+              </h4>
+              <a
+                href="/daily-operations"
+                className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-md transition-colors"
+                style={{ color: tokens.brand }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.brandLight; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+              >
+                <ChevronLeft className="w-3 h-3" />
+                التشغيل اليومي (تسجيل التحصيل)
+              </a>
+              <a
+                href="/reports"
+                className="flex items-center gap-2 text-xs py-1.5 px-2 rounded-md transition-colors"
+                style={{ color: tokens.brand }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.brandLight; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+              >
+                <ChevronLeft className="w-3 h-3" />
+                التقارير
+              </a>
+            </div>
           </div>
+        </aside>
+      </div>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+         Arabic Notice Banner — Bottom
+         ════════════════════════════════════════════════════════════════════════ */}
+      <div
+        className="px-5 py-2.5 border-t"
+        style={{ backgroundColor: tokens.warningBg, borderColor: tokens.warningBorder }}
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: tokens.warningText }} />
+          <p className="text-xs" style={{ color: tokens.warningText }}>
+            تجري إعادة بناء وحدة المحاسبة والمراجعة المالية. يستمر تسجيل تحصيل
+            المرضى من شاشة التشغيل اليومي وفق سير العمل المعتمد. لا تستخدم هذه
+            الشاشة لإدخال أو تعديل قيود مالية حتى اكتمال الاعتماد.
+          </p>
         </div>
       </div>
     </div>

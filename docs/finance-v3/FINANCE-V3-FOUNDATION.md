@@ -14,11 +14,13 @@
 3. [Core Objects](#3-core-objects)
 4. [Required Formulas](#4-required-formulas)
 5. [Reception Checkout Integration](#5-reception-checkout-integration)
-6. [Roles and Permissions](#6-roles-and-permissions)
-7. [Confirmed Defects in Current Implementation](#7-confirmed-defects-in-current-implementation)
-8. [Legacy Inventory](#8-legacy-inventory)
-9. [Migration / Reset Plan](#9-migration--reset-plan)
-10. [Phase Roadmap](#10-phase-roadmap)
+6. [Future Posting Rules](#6-future-posting-rules)
+7. [Roles and Permissions](#7-roles-and-permissions)
+8. [Confirmed Defects in Current Implementation](#8-confirmed-defects-in-current-implementation)
+9. [Legacy Inventory](#9-legacy-inventory)
+10. [Migration / Reset Plan](#10-migration--reset-plan)
+11. [Transition Risk](#11-transition-risk)
+12. [Phase Roadmap](#12-phase-roadmap)
 
 ---
 
@@ -44,33 +46,106 @@ The current Finance module (V1 + V2) is architecturally fragmented, contains cri
 
 ## 2. Accounting Source of Truth
 
-### 2.1 Immutable Ledger Principle
+### 2.1 Final Architecture: JournalEntry + JournalLine (Double-Entry)
 
-The `CashFlowTransaction` table is the **single source of truth** for all financial movements. Every monetary event in the system must be recorded as one or more ledger entries.
+The **final accounting source of truth** for Finance V3 is the `JournalEntry` + `JournalLine` model. This is a proper double-entry bookkeeping architecture where every financial event produces a balanced journal entry with at least two lines (debits and credits) that sum to zero.
 
-**Rules:**
+**Why double-entry:**
+- A single-table ledger (`CashFlowTransaction` alone) cannot guarantee that every inflow has a corresponding outflow or liability. This leads to phantom balances, unlinked payments, and reconciliation failures — all of which are present in the current system.
+- Double-entry enforces the fundamental accounting equation: `Assets = Liabilities + Equity`. Every transaction must balance before it is posted.
+- Audit trail is built into the structure: each `JournalEntry` links to a `FinancialDocument` (Payment, Expense, Invoice, etc.), and each `JournalLine` references an account (Treasury, Receivable, Payable, Revenue, Expense).
 
-1. **No hard deletion of posted financial transactions.** Once a `CashFlowTransaction` is created and linked to a financial event, it must never be removed from the database.
+**Model structure:**
 
-2. **No soft deletion of ledger entries.** Setting `IsActive = false` on a `CashFlowTransaction` is prohibited. This was a defect in the legacy system (see Defect #1 in Section 6).
+```
+FinancialDocument (Payment, Expense, Invoice, etc.)
+  └── JournalEntry (one per document, atomic posting unit)
+        ├── JournalLine (debit: Treasury  +500)
+        └── JournalLine (credit: Revenue  +500)
+```
 
-3. **Corrections use reversal entries.** To undo a financial transaction, create a new `CashFlowTransaction` with the opposite `Type` (Inflow → Outflow or Outflow → Inflow) and the same amount, linked via `ReversalOfTransactionId`. The original entry remains with `IsActive = true` and `ReversedByTransactionId` pointing to the reversal.
+**JournalEntry fields:**
+
+| Field | Purpose |
+|-------|---------|
+| `Id` | Primary key (Guid, never Guid.Empty) |
+| `EntryNumber` | Unique sequential identifier (e.g., `JE-20260526-001`) |
+| `FinancialDocumentId` | FK to the source document (Payment, Expense, etc.) |
+| `FinancialDocumentType` | Discriminator: `Payment`, `Expense`, `Salary`, `Advance`, `Commission`, `Transfer`, `DrawerOpen`, `DrawerClose`, `SupplierPayment`, `Refund` |
+| `Description` | Human-readable description of the transaction |
+| `EntryDate` | Date of the financial event |
+| `BranchId` | **Required** — never `Guid.Empty` |
+| `CashierSessionId` | Link to the active cashier session (null only for non-session events) |
+| `TreasuryId` | Primary treasury affected |
+| `PerformedBy` | UserId of the person who created this entry |
+| `IsReversal` | `true` if this is a reversal entry |
+| `ReversalOfEntryId` | Points to the original entry (if this is a reversal) |
+| `ReversedByEntryId` | Points to the reversal entry (if this was reversed) |
+| `IsPosted` | `true` once the entry has been validated and balances confirmed |
+| `CreatedAt` | Timestamp of creation |
+
+**JournalLine fields:**
+
+| Field | Purpose |
+|-------|---------|
+| `Id` | Primary key (Guid, never Guid.Empty) |
+| `JournalEntryId` | FK to the parent JournalEntry |
+| `AccountType` | `Treasury`, `Receivable`, `Payable`, `Revenue`, `Expense`, `Equity`, `ContraRevenue`, `ContraExpense` |
+| `AccountId` | FK to the specific account instance (TreasuryId, PatientId, SupplierId, etc.) |
+| `Debit` | Debit amount (zero if credit) |
+| `Credit` | Credit amount (zero if debit) |
+| `Description` | Line-level description |
+| `BranchId` | **Required** — never `Guid.Empty` |
+
+**Balancing invariant:**
+```
+SUM(JournalLine.Debit) = SUM(JournalLine.Credit)   — per JournalEntry
+```
+
+This invariant is validated before posting. An entry that does not balance is rejected.
+
+### 2.2 CashFlowTransaction as Transitional / Operational Table
+
+The `CashFlowTransaction` table is the **current operational ledger** used by the existing V1/V2 system. It is transitional — it will continue to be written to by the current Daily Operations checkout flow and existing APIs during the rebuild, but it is **not** the final accounting source of truth.
+
+**Transition plan:**
+- During Phase 2, the `JournalEntry` + `JournalLine` tables will be introduced alongside `CashFlowTransaction`.
+- During Phase 3, new financial operations will write to both `CashFlowTransaction` (for backward compatibility with existing UI and Daily Operations) and `JournalEntry` + `JournalLine` (for the new accounting engine).
+- Once all financial operations are migrated to the double-entry model, `CashFlowTransaction` will become a read-only historical record and eventually be deprecated.
+- **CashFlowTransaction must NOT be removed or truncated during the transition.** It remains the active operational ledger until the new model is fully validated.
+
+**What CashFlowTransaction currently handles (and what replaces it):**
+
+| CashFlowTransaction Responsibility | JournalEntry + JournalLine Replacement |
+|------------------------------------|---------------------------------------|
+| Record payment inflow | Debit Treasury / Credit Revenue |
+| Record expense outflow | Debit Expense / Credit Treasury |
+| Record salary payment | Debit Salary Expense / Credit Treasury |
+| Record advance payment | Debit Advance Receivable / Credit Treasury |
+| Record commission payment | Debit Commission Expense / Credit Treasury |
+| Record supplier payment | Debit Accounts Payable / Credit Treasury |
+| Record vault transfer | Debit Destination Treasury / Credit Source Treasury |
+| Record reversal | New JournalEntry with opposite Debit/Credit lines |
+
+### 2.3 Immutable Ledger Principle
+
+Regardless of whether a `CashFlowTransaction` or a `JournalEntry` + `JournalLine` is used, the following principles apply to all financial records:
+
+1. **No hard deletion of posted financial transactions.** Once a financial record is created and linked to a financial event, it must never be removed from the database.
+
+2. **No soft deletion of ledger entries.** Setting `IsActive = false` on a `CashFlowTransaction` is prohibited. This was a defect in the legacy system (see Defect #1 in Section 8).
+
+3. **Corrections use reversal entries.** To undo a financial transaction, create a new entry with the opposite effect, linked via `ReversalOfTransactionId` / `ReversalOfEntryId`. The original entry remains with `ReversedByTransactionId` / `ReversedByEntryId` pointing to the reversal.
 
 4. **Draft documents may be cancelled.** Invoices in `Draft` status can be cancelled without creating reversals (no ledger entry exists yet for a draft).
 
-5. **Posted entries must be reversed.** Once a financial event has been posted to the ledger (a `CashFlowTransaction` exists), any correction must go through the reversal pattern. This applies to:
-   - Payment refunds
-   - Payment deletions
-   - Expense cancellations
-   - Contract cancellations
-   - Invoice cancellations (after issue)
-   - Advance payment cancellations
+5. **Posted entries must be reversed.** Once a financial event has been posted to the ledger, any correction must go through the reversal pattern.
 
-6. **Every reversal must reference the original.** `ReversalOfTransactionId` on the reversal entry must point to the original. `ReversedByTransactionId` on the original must point to the reversal. This creates a bidirectional audit trail.
+6. **Every reversal must reference the original.** This creates a bidirectional audit trail.
 
 7. **Reversals cannot themselves be reversed.** If a reversal was made in error, the correct procedure is to create a new original-type entry (not reverse the reversal). This prevents circular chains.
 
-### 2.2 Ledger Entry Structure
+### 2.4 Current CashFlowTransaction Ledger Entry Structure
 
 Every `CashFlowTransaction` must contain:
 
@@ -91,14 +166,6 @@ Every `CashFlowTransaction` must contain:
 | `ReversalOfTransactionId` | Points to the original entry (if this is a reversal) |
 | `ReversedByTransactionId` | Points to the reversal entry (if this was reversed) |
 | `CreatedAt` | Timestamp of creation |
-
-### 2.3 Double-Entry Awareness
-
-While the system does not implement full double-entry bookkeeping, the following invariants must hold:
-
-- **Total Inflows − Total Outflows = Net Treasury Balance Change** (per treasury, per branch)
-- **Every inflow to one treasury must correspond to either an outflow from another treasury or an external inflow** (patient payment, supplier refund)
-- **Transfers between treasuries create paired entries**: Outflow from source + Inflow to destination
 
 ---
 
@@ -338,9 +405,9 @@ While the system does not implement full double-entry bookkeeping, the following
 - Advance rejections or deletions of approved advances must create reversals.
 - Salary records use `ReportsAccess` policy (not bare `[Authorize]`).
 
-### 3.12 Ledger Entry
+### 3.12 JournalEntry + JournalLine (Final Model)
 
-See Section 2.2 for the full structure. This is the `CashFlowTransaction` entity.
+See Section 2.1 for the full structure. This is the final accounting source of truth that will replace `CashFlowTransaction` as the system of record.
 
 ### 3.13 Audit Record
 
@@ -506,7 +573,7 @@ Booking / Appointment
 3. **Payment posting must eventually be atomic.** A single checkout transaction must create all of the following as one atomic unit:
    - Payment record
    - Receipt record
-   - CashFlowTransaction (ledger entry)
+   - JournalEntry + JournalLines (in the final model) or CashFlowTransaction (in the transitional model)
    - Cashier Session link
    - Treasury link
    - Invoice/Contract allocation (if applicable)
@@ -531,9 +598,50 @@ Reception users who are permitted to collect payments at checkout will be grante
 
 ---
 
-## 6. Roles and Permissions
+## 6. Future Posting Rules
 
-### 6.1 Role Definitions
+> These rules will govern all financial posting once the Finance V3 double-entry model is implemented. They are documented here as the target architecture. Phase 1 does not enforce these rules in code.
+
+### 6.1 Mandatory Fields for Every Posted Entry
+
+Every posted financial entry (JournalEntry + JournalLines or CashFlowTransaction) must contain:
+
+1. **BranchId** — Required, never `Guid.Empty`. If the user's BranchId is null, the operation must be rejected with a clear error.
+2. **PerformedBy (UserId)** — Required. System-generated entries (e.g., auto-reversals) must reference the user who triggered the parent action.
+3. **FinancialDocument reference** — Required. Every ledger entry must be linked to a source document (Payment, Expense, Invoice, etc.). No free-floating ledger entries.
+4. **TreasuryId** — Required for all entries that affect a cash or bank account. Only non-cash adjustments (discounts, write-offs) may omit TreasuryId, but they must reference the affected account instead.
+5. **Audit trail** — Every financial action (create, update, reverse, approve, reject, close, reconcile) must produce an AuditRecord.
+
+### 6.2 No Unlinked Payments
+
+Every payment must be linked to at least one of:
+- An Invoice
+- A Contract
+- A Patient Checkout event (visit-based payment)
+
+Payments with no document link are prohibited in the final design. During the transition, existing unlinked payments are documented as legacy data that must be reconciled.
+
+### 6.3 No Deletion of Posted Entries
+
+Posted financial entries cannot be deleted or soft-deleted (`IsActive = false`). Corrections must use the reversal pattern (see Section 2.3).
+
+### 6.4 Reversal Corrections Only
+
+All corrections to posted financial data must be made through reversal entries. Direct editing of amount, type, or treasury on a posted entry is prohibited.
+
+### 6.5 Balanced Double-Entry
+
+Every `JournalEntry` must have `SUM(Debit) = SUM(Credit)`. The system must validate this before posting and reject any unbalanced entry.
+
+### 6.6 No Guid.Empty in Financial Records
+
+The value `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is prohibited in `BranchId`, `TreasuryId`, `PerformedBy`, `JournalEntryId`, `JournalLineId`, or any FK field in financial records. Any attempt to write `Guid.Empty` to these fields must be rejected at the application level with a clear error message.
+
+---
+
+## 7. Roles and Permissions
+
+### 7.1 Role Definitions
 
 | Role | Arabic | Description |
 |------|--------|-------------|
@@ -542,7 +650,7 @@ Reception users who are permitted to collect payments at checkout will be grante
 | Reception | استقبال/كاشير | Payment collection only through `/daily-operations` checkout; no Finance V3 dashboard access by default |
 | Doctor | طبيب | No financial entry; clinically necessary limited status view only if approved by Admin |
 
-### 6.2 Permission Matrix
+### 7.2 Permission Matrix
 
 | Operation | Admin | Accountant | Reception | Doctor |
 |-----------|-------|------------|-----------|--------|
@@ -598,13 +706,23 @@ Reception users who are permitted to collect payments at checkout will be grante
 | Apply discount | ✅ | ❌ | ❌ | ❌ |
 | View audit log | ✅ | ✅ | ❌ | ❌ |
 
-### 6.3 Branch Isolation
+### 7.3 Finance V3 Access Gate
+
+**Finance V3 is restricted to Admin and Accountant roles only.** Access is NOT granted through the `PAYMENTS_VIEW` / `finance.view` permission or any other permission key. The access check is:
+
+```typescript
+const isAuthorized = user?.role === "Admin" || user?.role === "Accountant";
+```
+
+This is an explicit role check, not a permission-based check. The reason is that `finance.view` permission is granted to Reception users for Daily Operations checkout access, and we must not allow Reception to access the Finance V3 dashboard through that same permission.
+
+### 7.4 Branch Isolation
 
 - Non-Admin users can only see financial data from their own branch (`BranchId`).
 - Admin can see all branches.
 - **Critical rule:** `BranchId` must NEVER be `Guid.Empty`. If a user's `BranchId` is null, the financial operation must be **rejected**, not silently default to `Guid.Empty`.
 
-### 6.4 Current Limitation (Phase 1)
+### 7.5 Current Limitation (Phase 1)
 
 - The sidebar hides the old finance entry for normal navigation.
 - Direct old routes (`/finance`, `/finance-v2`) and all payment APIs are **not disabled** in Phase 1.
@@ -613,7 +731,7 @@ Reception users who are permitted to collect payments at checkout will be grante
 
 ---
 
-## 7. Confirmed Defects in Current Implementation
+## 8. Confirmed Defects in Current Implementation
 
 ### Defect #1: Operational Expense Deletion Soft-Deletes CashFlowTransaction
 
@@ -677,9 +795,9 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 
 ---
 
-## 8. Legacy Inventory
+## 9. Legacy Inventory
 
-### 8.1 Frontend Finance Routes
+### 9.1 Frontend Finance Routes
 
 | Route | Purpose | Status |
 |-------|---------|--------|
@@ -694,6 +812,7 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 | `/finance/contracts/new` | V1 Create contract | **PRIMARY** — not in V2 |
 | `/finance/contracts/[id]` | V1 Contract detail | **PRIMARY** — not in V2 |
 | `/finance-v2` | V2 Unified finance screen | **CURRENT** — sidebar entry |
+| `/finance-v3` | V3 Financial Center (rebuild) | **NEW** — Admin/Accountant only |
 | `/commissions` | Commission management | **STANDALONE** |
 | `/hr/salaries` | Salary management | **STANDALONE** |
 | `/hr/advances` | Advance management | **STANDALONE** |
@@ -701,7 +820,7 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 | `/patients/[id]/print/financial` | Patient financial statement | **PRIMARY** — patient-scoped |
 | `/portal/finance` | Portal patient finance | **PRIMARY** — portal-scoped |
 
-### 8.2 Backend Finance API Endpoints
+### 9.2 Backend Finance API Endpoints
 
 | Controller | Route Prefix | Endpoints | Auth Policy |
 |-----------|--------------|-----------|-------------|
@@ -717,7 +836,7 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 | AdvancePaymentController | `/api/advances` | 4 | ReportsAccess |
 | PurchaseOrdersController | `/api/purchase-orders` | 7 | AdminOnly |
 
-### 8.3 Finance Database Tables
+### 9.3 Finance Database Tables
 
 | Table | Entity | Migrations |
 |-------|--------|------------|
@@ -740,7 +859,7 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 | PurchaseOrderLineItems | PurchaseOrderLineItem | AddSuppliersAndPurchases |
 | PatientAccounts | PatientAccount | Initial (NOT finance — portal auth) |
 
-### 8.4 Finance Services
+### 9.4 Finance Services
 
 | Service | Interface | Key Methods |
 |---------|-----------|-------------|
@@ -750,16 +869,16 @@ Dashboard still links to V1 routes. V1 has create forms that V2 lacks. V2 has ca
 
 ---
 
-## 9. Migration / Reset Plan
+## 10. Migration / Reset Plan
 
-> **⚠️ This plan is for FUTURE execution only. It must NOT be executed in Phase 1.  
+> **This plan is for FUTURE execution only. It must NOT be executed in Phase 1.  
 > It will be separately approved and deployed after the new Finance V3 structure is reviewed.**
 
-### 9.1 Owner Confirmation
+### 10.1 Owner Confirmation
 
 The clinic owner confirms that the current finance records are experimental/test data only and are not real production accounting records.
 
-### 9.2 Finance Transaction Test Candidates
+### 10.2 Finance Transaction Test Candidates
 
 The following tables contain finance transaction data that **may** be candidates for cleanup after independent verification and explicit approval. Each table must be reviewed for row count and content before any action is taken.
 
@@ -781,7 +900,7 @@ The following tables contain finance transaction data that **may** be candidates
 | SalaryRecords | TRUNCATE (after backup) | Test salary records |
 | AdvancePayments | TRUNCATE (after backup) | Test advances only |
 
-### 9.3 Preserve Unless Independently Verified and Explicitly Approved
+### 10.3 Preserve Unless Independently Verified and Explicitly Approved
 
 The following tables are **NOT** finance test data candidates. They contain operational, inventory, supplier, employee, or audit records that must be preserved unless separately verified and explicitly approved for cleanup.
 
@@ -796,7 +915,7 @@ The following tables are **NOT** finance test data candidates. They contain oper
 | **AuditLogs** | Audit logs must **NEVER** be deleted. They are the compliance trail. |
 | **FinancialAuditLogs** | Finance-specific audit logs must **NEVER** be deleted. They are the compliance trail for financial operations. |
 
-### 9.4 Always Preserve — No Exceptions
+### 10.4 Always Preserve — No Exceptions
 
 The following tables must **NEVER** be truncated or deleted under any circumstances:
 
@@ -826,11 +945,11 @@ The following tables must **NEVER** be truncated or deleted under any circumstan
 | SmsMessages / SmsTemplates | Communication records |
 | EmailLogs | Communication logs |
 
-### 9.5 Reset Procedure (Future)
+### 10.5 Reset Procedure (Future)
 
 1. Create a full database backup.
 2. Verify the backup is restorable.
-3. Run a **read-only row-count and content review** on all candidate tables (Section 9.2).
+3. Run a **read-only row-count and content review** on all candidate tables (Section 10.2).
 4. Obtain explicit owner approval for each table to be cleaned.
 5. Run the truncation in a transaction for each approved finance table.
 6. Re-seed treasuries with correct starting balances.
@@ -841,7 +960,46 @@ The following tables must **NEVER** be truncated or deleted under any circumstan
 
 ---
 
-## 10. Phase Roadmap
+## 11. Transition Risk
+
+### 11.1 Old Routes Still Reachable
+
+During Phase 1, the following old financial routes and APIs remain active and reachable by direct URL:
+
+- `/finance` — V1 Finance dashboard (10 sub-routes)
+- `/finance-v2` — V2 Unified finance screen
+- All backend API endpoints (`/api/payments`, `/api/cashier-sessions`, `/api/expenses`, etc.)
+
+These are not disabled because:
+- Daily Operations checkout depends on `/api/payments`.
+- Patient receipt printing depends on `/finance/payments/[id]`.
+- Patient financial statements depend on `/patients/[id]/print/financial`.
+- Invoice and contract creation forms only exist in V1 routes.
+- Portal finance depends on `/portal/finance`.
+
+**Risk:** Users who know the old URLs can continue to use the defective V1/V2 financial interfaces. This is accepted as a known risk during the transition period.
+
+**Mitigation:** The sidebar no longer links to `/finance` or `/finance-v2`. The new `/finance-v3` route is the only financial navigation entry visible to Admin and Accountant. Old routes will be deprecated and eventually removed in later phases.
+
+### 11.2 CashFlowTransaction Remains Active
+
+The `CashFlowTransaction` table continues to be the operational ledger during the transition. All new payments from Daily Operations, expenses, salaries, and other financial operations continue to write to this table using the existing (defective) logic.
+
+**Risk:** New defective data (missing BranchId, soft-deleted entries) may continue to be created during the transition.
+
+**Mitigation:** This is documented and accepted. The data cleanup plan (Section 10) will address this after the new model is validated.
+
+### 11.3 No Data Integrity Enforcement
+
+Phase 1 does not add any backend validation guards, migrations, or data integrity checks. The existing defects documented in Section 8 continue to exist.
+
+**Risk:** Financial data integrity continues to degrade until Phase 2 is implemented.
+
+**Mitigation:** This is explicitly out of scope for Phase 1. The purpose of Phase 1 is documentation, navigation, and foundation — not code fixes.
+
+---
+
+## 12. Phase Roadmap
 
 ### Phase 1: Audit & Foundation (Current PR)
 - [x] Inventory all finance routes, APIs, entities, tables
@@ -851,18 +1009,21 @@ The following tables must **NEVER** be truncated or deleted under any circumstan
 - [x] Hide legacy finance navigation (Admin/Accountant only)
 - [x] Document Reception Checkout Integration workflow
 - [x] Protect /finance-v3 route for Admin/Accountant only
+- [x] Document JournalEntry + JournalLine as final accounting model
+- [x] Document transition risk and old route accessibility
 - [ ] **NO** code changes to backend logic
 - [ ] **NO** database migrations
 - [ ] **NO** data deletion
 - [ ] **NO** disabling of /api/payments (Daily Operations depends on it)
 
-### Phase 2: Canonical Immutable Ledger & Database Model
-- Redesign `CashFlowTransaction` entity with all required fields
+### Phase 2: Canonical Double-Entry Ledger & Database Model
+- Create `JournalEntry` and `JournalLine` entities with EF Core
 - Add `TreasuryId` to all CashFlowTransactions
-- Fix all BranchId issues
+- Fix all BranchId issues (reject null BranchId instead of Guid.Empty)
 - Create proper EF Core migrations
 - Implement the reversal pattern consistently across all controllers
 - Add validation guards for null BranchId/UserId
+- Dual-write: new operations write to both CashFlowTransaction and JournalEntry+JournalLine
 
 ### Phase 3: Patient Invoices, Receipts, Discounts, Refunds, and Balances
 - Rebuild invoice lifecycle (Draft → Issued → Paid/Cancelled)
@@ -876,45 +1037,28 @@ The following tables must **NEVER** be truncated or deleted under any circumstan
 ### Phase 4: Cashier Shifts, Treasury, Expenses, Suppliers, Salary, and Commissions
 - Rebuild cashier session open/close/reconcile
 - Rebuild treasury management with balance recalculation
-- Rebuild expense management with approval workflow
-- Rebuild supplier bills/payments
-- Fix salary and advance payment CashFlowTransactions
-- Fix commission payment CashFlowTransactions
+- Rebuild expense approval workflow
+- Rebuild supplier bill management
+- Rebuild salary and advance payment workflow
+- Rebuild commission calculation and payment
 
-### Phase 5: Reports, Audit Verification, Reset, and Rollout
-- Rebuild P&L report with correct double-counting prevention
-- Rebuild daily cash summary
-- Rebuild audit log viewer
-- Execute finance data reset (Section 9) — read-only review + explicit approval required
-- End-to-end testing with real clinic workflows
-- Staff training
-- Production rollout
+### Phase 5: Reports and Financial Statements
+- Profit and Loss statement
+- Daily cash summary
+- Patient account statements
+- Treasury reports
+- Supplier statements
+- Commission reports
+- Audit trail viewer
 
----
+### Phase 6: Data Migration and Cleanup
+- Execute the data cleanup plan (Section 10)
+- Migrate historical CashFlowTransaction data to JournalEntry + JournalLine
+- Validate all balances after migration
+- Deprecate old routes and APIs
 
-## Appendix A: Program.cs Startup SQL Risk
-
-The current `Program.cs` performs unconditional idempotent SQL blocks at startup that:
-- Create finance tables if they don't exist (bypassing EF migrations)
-- Add columns to existing tables
-- Modify migration history
-
-This is a risk for the V3 rebuild because:
-- New migrations may conflict with the startup SQL
-- The startup SQL can mask migration failures
-- Schema reconciliation logic is difficult to test
-
-**Recommendation:** During Phase 2, the startup SQL for finance tables should be removed in favor of proper EF Core migrations only. The `ENABLE_STARTUP_DB_MAINTENANCE` gate for `MigrateAsync()` should remain.
-
----
-
-## Appendix B: PDF Generation
-
-The current PDF system uses QuestPDF with NotoNaskhArabic font for RTL Arabic support. It supports:
-- Payment receipts (A5 size)
-- Financial statements (A4 size)
-- Invoice PDFs (A4 size)
-
-**Risk:** QuestPDF community license has limitations. Verify the license covers the clinic's usage before V3.
-
-**V3 Plan:** Rebuild PDF templates with the new data model in Phase 3/4. The current PDF generation logic can be preserved as reference but should be rebuilt to match the new ledger structure.
+### Phase 7: Deprecation and Production Lock
+- Disable old V1/V2 financial routes
+- Remove backward-compatible CashFlowTransaction writes
+- Full production deployment with double-entry enforcement
+- Staff training on new financial workflows

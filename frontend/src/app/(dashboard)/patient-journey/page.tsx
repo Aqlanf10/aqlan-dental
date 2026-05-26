@@ -426,11 +426,12 @@ export default function PatientJourneyPage() {
     e.preventDefault();
     if (!selectedItem) return;
     try {
+      // Checkout only marks the appointment as completed.
+      // Payment creation is handled separately via the payment flow,
+      // not auto-created during checkout.
       await checkoutMutation.mutateAsync({
         appointmentId: selectedItem.appointmentId,
         body: {
-          paymentAmount: checkoutAmount > 0 ? checkoutAmount : undefined,
-          paymentMethod: checkoutPayment,
           nextAppointmentDate: checkoutNextDate || undefined,
           nextServiceId: checkoutNextService || undefined,
           notes: checkoutNotes || undefined,
@@ -444,7 +445,7 @@ export default function PatientJourneyPage() {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       toast.error(msg);
     }
-  }, [selectedItem, checkoutAmount, checkoutPayment, checkoutNextDate, checkoutNextService, checkoutNotes, checkoutMutation, loadJourney, refetchSummary]);
+  }, [selectedItem, checkoutNextDate, checkoutNextService, checkoutNotes, checkoutMutation, loadJourney, refetchSummary]);
 
   const handleCreateDraftInvoice = useCallback(async () => {
     if (!summary?.todayVisit?.id) {

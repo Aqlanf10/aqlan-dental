@@ -395,12 +395,26 @@ export function useWalkInPatient() {
       branchId?: string;
       notes?: string;
     }) => {
-      const patientRes = await api.post("/api/patients", {
-        fullName: params.patientName,
-        phone: params.patientPhone,
-        branchId: params.branchId || undefined,
-      });
-      const patientId = patientRes.data?.id;
+      // Step 1: Check for duplicate patient by phone before creating
+      let patientId: string | undefined;
+      try {
+        const { data: existingPatient } = await api.get(`/api/patients/check-duplicate?phone=${encodeURIComponent(params.patientPhone)}`);
+        if (existingPatient?.id) {
+          patientId = existingPatient.id;
+        }
+      } catch {
+        // Endpoint may not exist or no match found — proceed to create
+      }
+
+      // Step 2: Create new patient only if no existing one was found
+      if (!patientId) {
+        const patientRes = await api.post("/api/patients", {
+          fullName: params.patientName,
+          phone: params.patientPhone,
+          branchId: params.branchId || undefined,
+        });
+        patientId = patientRes.data?.id;
+      }
 
       if (!patientId) throw new Error("فشل إنشاء المريض");
 

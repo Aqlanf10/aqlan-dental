@@ -549,11 +549,12 @@ export default function DailyOperationsPage() {
       }
 
       if (selectedItem.checkoutStatus === "ReadyForCheckout" || selectedItem.nextAction === "Checkout") {
+        // Checkout should only mark the appointment as completed.
+        // Payment creation is handled separately via the payment flow,
+        // not auto-created during checkout with a hardcoded method.
         await checkoutMutation.mutateAsync({
           appointmentId: selectedItem.appointmentId,
           body: {
-            paymentAmount: data.isPaid ? data.amountDue : 0,
-            paymentMethod: "Cash",
             notes: data.notes || undefined,
             nextAppointmentDate: data.needsFollowUp ? data.nextDate : undefined,
           },
@@ -575,9 +576,15 @@ export default function DailyOperationsPage() {
   }) => {
     if (!selectedItem) return;
     try {
+      // Checkout only marks the appointment as completed.
+      // Payment creation is handled separately via the payment flow,
+      // not auto-created during checkout.
       await checkoutMutation.mutateAsync({
         appointmentId: selectedItem.appointmentId,
-        body: data,
+        body: {
+          notes: data.notes || undefined,
+          nextAppointmentDate: data.nextDate || undefined,
+        },
       });
       toast.success("تم إنهاء الزيارة بنجاح");
       setCompleteVisitModalOpen(false);
@@ -935,6 +942,8 @@ export default function DailyOperationsPage() {
                     loading={itemsLoading}
                     isDoctor={isDoctor}
                     canProcessCheckout={canProcessCheckout}
+                    isReception={userRole === "Reception"}
+                    isAccountant={userRole === "Accountant"}
                     queueWaitTime={queueWaitTime}
                     onIntake={handleIntake}
                     onSendToQueue={handleSendToQueue}

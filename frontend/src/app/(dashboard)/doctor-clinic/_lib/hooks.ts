@@ -23,6 +23,7 @@ export interface DoctorPatientItem {
   appointmentId: string;
   patientId: string;
   patientName: string;
+  patientNumber?: string;
   appointmentTime: string;
   appointmentStatus: string;
   doctorId: string;
@@ -40,6 +41,7 @@ export interface DoctorPatientItem {
   hasMedicalAlerts?: boolean;
   chiefComplaint?: string;
   inRoomSince?: string;
+  visitCount?: number;
 }
 
 // ─── Fetch doctor's patients today ──────────────────────────────────────────
@@ -144,6 +146,7 @@ export function useHandoffToReception() {
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
       queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
       queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["finance"] });
     },
   });
 }

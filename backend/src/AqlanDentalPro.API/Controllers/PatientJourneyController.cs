@@ -140,6 +140,7 @@ public class PatientJourneyController(
                 AppointmentId = a.Id,
                 PatientId = a.PatientId,
                 PatientName = BuildPatientDisplayName(a.Patient),
+                PatientNumber = a.Patient?.PatientNumber,
                 PatientPhone = isDoctor ? null : a.Patient?.Phone,
                 AppointmentTime = a.StartTime.ToString("HH:mm"),
                 AppointmentStatus = a.Status.ToString(),
@@ -155,6 +156,8 @@ public class PatientJourneyController(
                 ConsultationFeeRequired = consultationFeeRequired,
                 ConsultationFeePaid = consultationFeePaid,
                 CheckoutStatus = checkoutStatus,
+                AmountDueReference = visit?.AmountDueReference,
+                TreatmentDone = visit?.TreatmentDone,
                 NextAction = nextAction
             };
         }).ToList();

@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -119,7 +119,9 @@ export default function LoginPage() {
 
         {/* Two Panels */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-7">
-          <StaffLoginPanel />
+          <Suspense fallback={<div className="rounded-[20px] p-7" style={glassCardStyle}><div className="animate-pulse text-white text-sm">جارٍ التحميل...</div></div>}>
+            <StaffLoginPanel />
+          </Suspense>
           <PatientLoginPanel />
         </div>
 
@@ -171,6 +173,7 @@ export default function LoginPage() {
 // ─── Staff Login Panel ───────────────────────────────────────────────────────
 function StaffLoginPanel() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, isLoading } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -181,6 +184,18 @@ function StaffLoginPanel() {
     formState: { errors },
   } = useForm<StaffFormData>({ resolver: zodResolver(staffSchema) });
 
+  /** Resolve the post-login landing page based on user role */
+  const getRoleDefaultRoute = (role: string | undefined): string => {
+    if (["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(role ?? "")) {
+      return "/doctor-clinic";
+    }
+    if (role === "Accountant") {
+      return "/finance-v3";
+    }
+    // Admin, Reception, Assistant, BranchManager → daily operations
+    return "/daily-operations";
+  };
+
   const onSubmit = async (data: StaffFormData) => {
     setError("");
     try {
@@ -188,7 +203,14 @@ function StaffLoginPanel() {
       if (mustChange) {
         router.push("/change-password");
       } else {
-        router.push("/");
+        // Priority: redirect query param > role-based default
+        const redirectUrl = searchParams.get("redirect");
+        if (redirectUrl) {
+          router.push(redirectUrl);
+        } else {
+          const role = useAuthStore.getState().user?.role;
+          router.push(getRoleDefaultRoute(role));
+        }
       }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } }; code?: string; message?: string };

@@ -159,10 +159,11 @@ interface AppointmentsTableProps {
 
 export default function AppointmentsTable({
   items, loading, isDoctor, canProcessCheckout, queueWaitTime, selectedPatientId,
+  isReception = false, isAccountant = false,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,
-}: Omit<AppointmentsTableProps, "isReception" | "isAccountant">) {
+}: AppointmentsTableProps) {
   // Mobile: expanded row
   const [expandedId, setExpandedId] = useState<string | null>(null);
 

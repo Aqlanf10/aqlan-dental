@@ -31,6 +31,10 @@ public class FinanceV3Controller(
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard([FromQuery] string? period = "today")
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
@@ -75,11 +79,34 @@ public class FinanceV3Controller(
         if (branchId.HasValue) treasuryQuery = treasuryQuery.Where(t => t.BranchId == branchId.Value);
         var totalTreasuryBalance = await treasuryQuery.SumAsync(t => (decimal?)t.Balance) ?? 0;
 
+        // ── Accrued revenue from posted JournalLines ──
+        var todayAccruedRevenue = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Revenue
+                && l.JournalEntry.EntryDate == today
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        var monthAccruedRevenue = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Revenue
+                && l.JournalEntry.EntryDate >= monthStart
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
         // ── Pending approvals ──
-        var pendingExpenses = await db.OperationalExpenses
-            .CountAsync(e => e.ApprovalStatus == ApprovalStatus.Pending && e.IsActive);
-        var pendingTransfers = await db.VaultTransfers
-            .CountAsync(t => t.Status == TransferStatus.Pending && t.IsActive);
+        var pendingExpensesQuery = db.OperationalExpenses
+            .Where(e => e.ApprovalStatus == ApprovalStatus.Pending && e.IsActive);
+        var pendingTransfersQuery = db.VaultTransfers
+            .Where(t => t.Status == TransferStatus.Pending && t.IsActive);
+        // Blocker 6: Branch filter for pending approvals
+        if (branchId.HasValue)
+        {
+            pendingExpensesQuery = pendingExpensesQuery.Where(e => e.BranchId == branchId.Value);
+            pendingTransfersQuery = pendingTransfersQuery.Where(t => t.DestinationTreasury.BranchId == branchId.Value);
+        }
+        var pendingExpenses = await pendingExpensesQuery.CountAsync();
+        var pendingTransfers = await pendingTransfersQuery.CountAsync();
 
         return Ok(new
         {
@@ -98,6 +125,10 @@ public class FinanceV3Controller(
 
             // Treasury
             TotalTreasuryBalance = totalTreasuryBalance,
+
+            // Accrued Revenue (from posted JournalLines)
+            TodayAccruedRevenue = todayAccruedRevenue,
+            MonthAccruedRevenue = monthAccruedRevenue,
 
             // Journal Entry health
             JournalEntryCount = journalEntryCount,
@@ -202,6 +233,10 @@ public class FinanceV3Controller(
     [HttpGet("journal-entries/{id:guid}")]
     public async Task<IActionResult> GetJournalEntryById(Guid id)
     {
+        // Blocker 6: Reject non-admin with null/empty BranchId
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var entry = await db.JournalEntries
             .Include(e => e.Lines)
             .Include(e => e.Branch)
@@ -259,6 +294,10 @@ public class FinanceV3Controller(
     [HttpGet("account-balances")]
     public async Task<IActionResult> GetAccountBalances()
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
         // FIX: Only include lines from POSTED journal entries in canonical balances.
@@ -316,6 +355,10 @@ public class FinanceV3Controller(
     [HttpGet("daily-cash-summary")]
     public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date = null)
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var targetDate = DateOnly.TryParse(date, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
@@ -380,21 +423,41 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/profit-loss — Basic P&L using the formulas from the Foundation Spec (Section 4.6).
+    /// PRIMARY P&L numbers come from posted JournalLines (accrual basis).
+    /// Cash-flow figures are labeled as Cash Collections, NOT Revenue.
     /// </summary>
     [HttpGet("profit-loss")]
     public async Task<IActionResult> GetProfitAndLoss(
         [FromQuery] string? fromDate = null,
         [FromQuery] string? toDate = null)
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
         var from = DateOnly.TryParse(fromDate, out var f) ? f : new DateOnly(today.Year, today.Month, 1);
         var to = DateOnly.TryParse(toDate, out var t) ? t : today;
 
-        // Revenue = Patient Payments (Inflow) - Refunds (Outflow)
-        // FIX: Reversal CashFlowTransactions are included in the calculation
-        // because they carry the opposite Type (reversal of Inflow = Outflow),
-        // so they naturally reduce net amounts. We do NOT filter out IsReversal (Blocker 5).
+        // ── Accrued P&L from posted JournalLines (canonical, accrual basis) ──
+        var accruedRevenueQuery = db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Revenue
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
+        var accruedRevenue = await accruedRevenueQuery.SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        var accruedExpensesQuery = db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Expense
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
+        var accruedExpenses = await accruedExpensesQuery.SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        var accruedNetProfit = accruedRevenue - accruedExpenses;
+
+        // ── Cash Collections (from CashFlowTransaction — previously mislabeled as Revenue) ──
         var revenuePayments = db.CashFlowTransactions
             .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
                 && tx.Type == TransactionType.Inflow
@@ -410,8 +473,9 @@ public class FinanceV3Controller(
             refundPayments = refundPayments.Where(tx => tx.BranchId == branchId.Value);
         }
 
-        var revenue = await revenuePayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
-        var refunds = await refundPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+        var cashCollections = await revenuePayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+        var cashRefunds = await refundPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+        var netCashCollections = cashCollections - cashRefunds;
 
         // Operating Expenses
         var expenses = db.CashFlowTransactions
@@ -445,46 +509,29 @@ public class FinanceV3Controller(
         if (branchId.HasValue) supplierPayments = supplierPayments.Where(tx => tx.BranchId == branchId.Value);
         var supplierTotal = await supplierPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
 
-        var netRevenue = revenue - refunds;
         var totalCosts = operatingExpenses + salaryTotal + commissionTotal + supplierTotal;
-        var netProfit = netRevenue - totalCosts;
-
-        // Cross-check with JournalEntry canonical data
-        var jeRevenue = await db.JournalLines
-            .Where(l => l.AccountType == JournalAccountType.Revenue
-                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
-                && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
-            .SumAsync(l => (decimal?)l.Credit) ?? 0;
-
-        var jeExpenses = await db.JournalLines
-            .Where(l => l.AccountType == JournalAccountType.Expense
-                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
-                && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
-            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var cashNetProfit = netCashCollections - totalCosts;
 
         return Ok(new
         {
             Period = new { From = from.ToString("yyyy-MM-dd"), To = to.ToString("yyyy-MM-dd") },
 
-            // P&L from CashFlowTransaction (operational)
-            Revenue = revenue,
-            Refunds = refunds,
-            NetRevenue = netRevenue,
+            // Accrued P&L (from posted JournalLines — accrual basis)
+            AccruedRevenue = accruedRevenue,
+            AccruedExpenses = accruedExpenses,
+            AccruedNetProfit = accruedNetProfit,
+
+            // Cash-flow figures (from CashFlowTransaction)
+            CashCollections = cashCollections,
+            CashRefunds = cashRefunds,
+            NetCashCollections = netCashCollections,
             OperatingExpenses = operatingExpenses,
             SalaryPayments = salaryTotal,
             DoctorCommissions = commissionTotal,
             SupplierPayments = supplierTotal,
             TotalCosts = totalCosts,
-            NetProfit = netProfit,
-            ProfitMargin = netRevenue > 0 ? (double)(netProfit / netRevenue * 100) : 0,
-
-            // Cross-check from JournalEntry (canonical)
-            JournalEntryRevenue = jeRevenue,
-            JournalEntryExpenses = jeExpenses,
-            JournalEntryNetProfit = jeRevenue - jeExpenses,
-            Variance = netProfit - (jeRevenue - jeExpenses),
+            CashNetProfit = cashNetProfit,
+            ProfitMargin = netCashCollections > 0 ? (double)(cashNetProfit / netCashCollections * 100) : 0,
 
             // Summary counts
             RevenueTransactionCount = await revenuePayments.CountAsync(),
@@ -501,9 +548,17 @@ public class FinanceV3Controller(
     [HttpGet("patient-balance/{patientId:guid}")]
     public async Task<IActionResult> GetPatientBalance(Guid patientId)
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var patient = await db.Patients.FindAsync(patientId);
         if (patient == null)
             return NotFound(new { message = "المريض غير موجود" });
+
+        // Blocker 6: Branch filter for non-admin users
+        if (!currentUser.IsAdmin && patient.BranchId != currentUser.BranchId)
+            return Forbid("ليس لديك صلاحية الوصول إلى بيانات مريض من فرع آخر");
 
         // Total Invoiced = SUM(Invoice.TotalAmount) WHERE Status IN (Issued, Paid)
         var totalInvoiced = await db.Invoices
@@ -559,6 +614,10 @@ public class FinanceV3Controller(
     [HttpGet("treasuries")]
     public async Task<IActionResult> GetTreasuries()
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
         var query = db.Treasuries
@@ -594,6 +653,12 @@ public class FinanceV3Controller(
         [FromQuery] string? resource = null,
         [FromQuery] string? action = null)
     {
+        // Blocker 6: Audit endpoint restricted to Admin only
+        // Financial audit trail contains cross-branch sensitive data;
+        // non-admin Accountant users should not access other branches' audit records.
+        if (!currentUser.IsAdmin)
+            return Forbid("الاطلاع على سجل المراجعة متاح للمسؤول فقط.");
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 

@@ -12,7 +12,14 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// 6. Add FK from CashFlowTransactions.TreasuryId → Treasuries.Id
 /// 7. Add index on CashFlowTransactions.TreasuryId
 /// 8. Deterministic backfill: CashFlowTransactions.TreasuryId ← CashierSessions.TreasuryId
+///    NOTE: This is a BEST-EFFORT operation. It only backfills where
+///    CashierSessions.TreasuryId is populated. Historical CashFlowTransactions
+///    with null CashierSessionId or null session TreasuryId will remain null.
+///    Do NOT claim full historical backfill coverage.
 /// 9. Leave NULL where CashierSessions.TreasuryId is null
+///
+/// Preflight: Check how many CashFlowTransactions will have null TreasuryId after migration
+/// SELECT COUNT(*) FROM "CashFlowTransactions" WHERE "TreasuryId" IS NULL;
 /// </summary>
 public partial class AddFinanceV3JournalEntries : Migration
 {
@@ -257,9 +264,11 @@ public partial class AddFinanceV3JournalEntries : Migration
                 END IF;
             END $$");
 
-        // ─── 8 & 9. Deterministic backfill: CashFlowTransactions.TreasuryId ← CashierSessions.TreasuryId
+        // ─── 8 & 9. Best-effort backfill: CashFlowTransactions.TreasuryId ← CashierSessions.TreasuryId
         //     Only update rows where TreasuryId is still NULL and the session has a TreasuryId.
-        //     Leave NULL where CashierSession.TreasuryId is null (or CashierSessionId is null). ──
+        //     Leave NULL where CashierSession.TreasuryId is null (or CashierSessionId is null).
+        //     This is a BEST-EFFORT operation — it only backfills where CashierSessions.TreasuryId
+        //     is populated. Do NOT claim full historical backfill coverage. ──
         migrationBuilder.Sql(
             @"UPDATE ""CashFlowTransactions"" cft
               SET ""TreasuryId"" = cs.""TreasuryId""

@@ -598,6 +598,14 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         if (invoice.Status == InvoiceStatus.Cancelled)
             return BadRequest(new { message = "الفاتورة ملغاة بالفعل" });
 
+        // Blocker 2: For Issued invoices, reject cancellation if there are active payments
+        if (invoice.Status == InvoiceStatus.Issued)
+        {
+            var hasActivePayments = invoice.Payments.Any(p => p.IsActive);
+            if (hasActivePayments)
+                return BadRequest(new { message = "لا يمكن إلغاء فاتورة مصدرة بها مدفوعات نشطة. يجب استرداد أو حذف المدفوعات أولاً." });
+        }
+
         var userId = GetCurrentUserId();
         invoice.Status = InvoiceStatus.Cancelled;
         invoice.UpdatedBy = userId;
@@ -606,6 +614,21 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             invoice.Notes = string.IsNullOrWhiteSpace(invoice.Notes)
                 ? $"[إلغاء] {req.Notes}"
                 : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
+
+        // Blocker 2: For Issued invoices, reverse the original issuance JournalEntry
+        // within the same SaveChangesAsync call so status change + JE reversal are atomic.
+        if (invoice.Status == InvoiceStatus.Cancelled && invoice.Payments.All(p => !p.IsActive))
+        {
+            var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+            try
+            {
+                await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to reverse invoice issuance JE for invoice {InvoiceId} during cancellation", id);
+            }
+        }
 
         await db.SaveChangesAsync();
 

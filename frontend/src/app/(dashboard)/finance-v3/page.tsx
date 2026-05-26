@@ -114,7 +114,7 @@ interface KpiDef {
 }
 
 const KPI_ITEMS: KpiDef[] = [
-  { key: "today-revenue",   label: "إيراد اليوم",        icon: Receipt },
+  { key: "today-revenue",   label: "إيراد اليوم (مستحق)",  icon: Receipt },
   { key: "today-expenses",  label: "مصروفات اليوم",      icon: TrendingDown },
   { key: "cash-balance",    label: "رصيد الصندوق",       icon: Vault },
   { key: "outstanding",     label: "المستحقات المعلقة",  icon: HandCoins },
@@ -250,6 +250,8 @@ interface DashboardData {
   ContractOutstanding: number;
   InvoiceOutstanding: number;
   TotalTreasuryBalance: number;
+  TodayAccruedRevenue: number;
+  MonthAccruedRevenue: number;
   JournalEntryCount: number;
   PostedEntryCount: number;
   ReversalEntryCount: number;
@@ -320,7 +322,7 @@ function OverviewTab() {
           </div>
         ) : data ? (
           <>
-            <KpiCard label="إيراد اليوم" value={formatYER(data.TodayInflow)} sublabel={`صافي: ${formatYER(data.TodayNet)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="إيراد اليوم (مستحق)" value={formatYER(data.TodayAccruedRevenue)} sublabel={`تحصيل: ${formatYER(data.TodayInflow)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
             <KpiCard label="مصروفات اليوم" value={formatYER(data.TodayOutflow)} sublabel={`شهري: ${formatYER(data.MonthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
             <KpiCard label="رصيد الخزائن" value={formatYER(data.TotalTreasuryBalance)} sublabel={`${data.JournalEntryCount} قيد محاسبي`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
             <KpiCard label="المستحقات المعلقة" value={formatYER(data.TotalOutstanding)} sublabel={`عقود: ${formatYER(data.ContractOutstanding)}`} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
@@ -384,8 +386,8 @@ function OverviewTab() {
           <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>ملخص الشهر</h4>
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <p className="text-xs" style={{ color: tokens.textTertiary }}>الإيرادات</p>
-              <p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.MonthInflow)}</p>
+              <p className="text-xs" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p>
+              <p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.MonthAccruedRevenue)}</p>
             </div>
             <div>
               <p className="text-xs" style={{ color: tokens.textTertiary }}>المصروفات</p>

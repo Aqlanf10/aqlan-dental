@@ -25,7 +25,7 @@ public sealed class CloseSessionRequest
 [ApiController]
 [Route("api/cashier-sessions")]
 [Authorize(Policy = "FinanceAccess")] // Admin, Accountant, Reception
-public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ILogger<CashierSessionsController> logger) : ControllerBase
+public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ITreasuryResolutionService treasuryResolution, ILogger<CashierSessionsController> logger) : ControllerBase
 {
     [HttpPost("open")]
     public async Task<IActionResult> OpenSession([FromBody] OpenSessionRequest req)
@@ -52,7 +52,10 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         try
         {
             var lockKey = Math.Abs("CashierSessionNumber".GetHashCode()) % 100000;
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
 
             var today = DateTime.UtcNow;
             var datePart = today.ToString("yyyyMMdd");
@@ -86,7 +89,16 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 ExpectedClosingCard = 0,
                 ExpectedClosingBank = 0,
                 Status = SessionStatus.Open,
-                Notes = req.Notes?.Trim()
+                Notes = req.Notes?.Trim(),
+                // BLOCKER 2: Explicitly resolve and set the cash vault TreasuryId when opening
+                // the session so all subsequent cash movements tied to this session are routed
+                // to the same treasury. OpeningBalance is a drawer-reconciliation seed only — it
+                // does NOT adjust Treasury.Balance. Treasury.Balance reflects actual cash
+                // movements (CashFlowTransaction outflows/inflows), not the cashier's opening
+                // float. Double-counting would occur if we also incremented Treasury.Balance by
+                // the opening balance, since patient cash receipts during the session already
+                // increment it via CashFlowTransaction inflows.
+                TreasuryId = await ResolveSessionTreasuryIdAsync(branchId.Value)
             };
 
             db.CashierSessions.Add(session);
@@ -103,6 +115,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 session.SessionNumber,
                 session.OpeningTime,
                 session.OpeningBalance,
+                session.TreasuryId,
                 Status = session.Status.ToString(),
                 message = "تم فتح صندوق الكاشير والوردية اليومية بنجاح"
             });
@@ -235,6 +248,17 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     private static bool IsBankMethod(string method) =>
         string.Equals(method, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(method, "bank", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Resolves the branch cash Vault treasury for a CashierSession.
+    /// Uses the centralized TreasuryResolutionService to find or auto-create
+    /// the vault treasury for the branch. Returns the TreasuryId.
+    /// </summary>
+    private async Task<Guid> ResolveSessionTreasuryIdAsync(Guid branchId)
+    {
+        var treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, "cash", null);
+        return treasury.Id;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll(

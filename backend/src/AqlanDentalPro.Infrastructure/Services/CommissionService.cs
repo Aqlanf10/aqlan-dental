@@ -255,7 +255,7 @@ public class CommissionService(
             throw new ArgumentException(ex.Message);
         }
 
-        // Enforce payment cap: cannot pay more than (approved + paid) − already-paid
+        // Pre-check remaining (fast-fail before starting transaction; re-checked inside lock)
         var earned = await db.InvoiceLineItems
             .Where(i => i.DoctorId == req.DoctorId
                      && i.IsActive
@@ -279,6 +279,32 @@ public class CommissionService(
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         try
         {
+            // CONCURRENCY SAFETY: Acquire advisory lock scoped to the doctor to serialize
+            // all commission payments for the same doctor within the transaction.
+            // Uses a stable bigint derived from the doctor Guid (not .NET GetHashCode).
+            if (useTx)
+            {
+                var doctorLockKey = StableGuidToLong(req.DoctorId);
+                await db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", doctorLockKey);
+            }
+
+            // Re-calculate remaining approved commission inside the lock
+            var lockedEarned = await db.InvoiceLineItems
+                .Where(i => i.DoctorId == req.DoctorId
+                         && i.IsActive
+                         && (i.CommissionStatus == CommissionStatus.Approved
+                          || i.CommissionStatus == CommissionStatus.Paid))
+                .SumAsync(i => (decimal?)i.DoctorCommissionAmount) ?? 0m;
+
+            var lockedAlreadyPaid = await db.DoctorCommissionPayments
+                .Where(p => p.DoctorId == req.DoctorId && p.IsActive)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+            remaining = lockedEarned - lockedAlreadyPaid;
+            if (req.Amount > remaining)
+                throw new ArgumentException(
+                    $"المبلغ ({req.Amount:N2}) يتجاوز المتبقي المستحق للطبيب ({remaining:N2})");
             var payment = new DoctorCommissionPayment
             {
                 DoctorId        = req.DoctorId,
@@ -661,5 +687,16 @@ public class CommissionService(
         {
             logger.LogWarning(ex, "Audit log failed for {Action} on {EntityId}", action, entityId);
         }
+    }
+
+    /// <summary>
+    /// Converts a Guid to a stable long for use as a PostgreSQL advisory lock key.
+    /// Uses the first 8 bytes of the Guid — deterministic across processes and restarts.
+    /// Do NOT use .NET GetHashCode() which is not stable across app domains.
+    /// </summary>
+    private static long StableGuidToLong(Guid guid)
+    {
+        var bytes = guid.ToByteArray();
+        return BitConverter.ToInt64(bytes, 0);
     }
 }

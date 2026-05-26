@@ -339,23 +339,28 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveExpenseRequest req)
     {
-        var expense = await db.OperationalExpenses.FindAsync(id);
-        if (expense == null || !expense.IsActive)
+        var userId = currentUser.UserId ?? Guid.Empty;
+
+        // Blocker 2: Cash expense approval MUST require an open cashier session
+        //   Pre-check session BEFORE starting the transaction to fail fast.
+        CashierSession? activeSession = null;
+        // We need the expense to know the payment method; load it first without tracking
+        var expenseSnapshot = await db.OperationalExpenses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == id && e.IsActive);
+        if (expenseSnapshot == null)
             return NotFound(new { message = "المصروف غير موجود" });
 
-        if (expense.ApprovalStatus != ApprovalStatus.Pending)
+        if (expenseSnapshot.ApprovalStatus != ApprovalStatus.Pending)
             return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
 
-        var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = expense.BranchId;
+        var branchId = expenseSnapshot.BranchId;
 
         // Guard: reject if branch is invalid
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، الفرع غير محدد لهذا المصروف. تواصل مع الإدارة." });
 
-        // Blocker 2: Cash expense approval MUST require an open cashier session
-        CashierSession? activeSession = null;
-        if (string.Equals(expense.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(expenseSnapshot.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
             activeSession = await db.CashierSessions
                 .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
@@ -366,16 +371,39 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         Treasury treasury;
         try
         {
-            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, expense.PaymentMethod, activeSession?.Id);
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, expenseSnapshot.PaymentMethod, activeSession?.Id);
         }
         catch (ArgumentException ex)
         {
             return BadRequest(new { message = ex.Message });
         }
 
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the source row and re-check eligibility.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            // Acquire transaction-scoped pessimistic lock on the expense row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""OperationalExpenses"" WHERE ""Id"" = {0} FOR UPDATE",
+                    id);
+            }
+
+            // Reload the expense inside the lock and re-check eligibility
+            var expense = await db.OperationalExpenses.FindAsync(id);
+            if (expense == null || !expense.IsActive)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "المصروف غير موجود" });
+            }
+
+            if (expense.ApprovalStatus != ApprovalStatus.Pending)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
+            }
+
             expense.ApprovalStatus = ApprovalStatus.Approved;
             expense.ApprovedById = userId;
             expense.ApprovedAt = DateTime.UtcNow;
@@ -520,55 +548,73 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     /// Reverses a posted expense by creating reversal CashFlowTransaction + JournalEntry.
     /// NEVER soft-deletes posted financial history — all corrections go through reversal entries.
     /// </summary>
-    private async Task<IActionResult> ReversePostedExpenseAsync(OperationalExpense expense, Guid userId)
+    private async Task<IActionResult> ReversePostedExpenseAsync(OperationalExpense expenseSnapshot, Guid userId)
     {
-        // Guard: do not corrupt a closed or reconciled session
-        CashFlowTransaction? originalCashflow = null;
-        if (expense.CashFlowTransactionId.HasValue)
-        {
-            originalCashflow = await db.CashFlowTransactions.FindAsync(expense.CashFlowTransactionId.Value);
-        }
-        else
-        {
-            originalCashflow = await db.CashFlowTransactions
-                .FirstOrDefaultAsync(t => t.ReferenceId == expense.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
-        }
-
-        if (originalCashflow != null && originalCashflow.CashierSessionId.HasValue)
-        {
-            var linkedSession = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId.Value);
-            if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
-            {
-                return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." });
-            }
-        }
-
-        // Check if already reversed — prevents double-restore
-        if (originalCashflow?.ReversedByTransactionId != null)
-        {
-            return BadRequest(new { message = "هذا المصروف تم عكسه مسبقاً." });
-        }
-
-        // Blocker 1: For posted expense reversal, we MUST restore balance to the exact original treasury.
-        // Never re-resolve by payment method — the original CashFlowTransaction.TreasuryId is the source of truth.
-        // If the original treasury cannot be located, reject the reversal before writing any records.
-        if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
-        {
-            return BadRequest(new { message = "عذراً، لا يمكن عكس القيد — سجل التدفق النقدي الأصلي غير مرتبط بخزينة. تواصل مع المحاسب." });
-        }
-
-        var originalTreasuryId = originalCashflow.TreasuryId.Value;
-
-        // Verify the original treasury exists and is active before writing any reversal records
-        var originalTreasury = await db.Treasuries.FindAsync(originalTreasuryId);
-        if (originalTreasury == null || !originalTreasury.IsActive)
-        {
-            return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." });
-        }
-
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the source row.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            // Acquire transaction-scoped pessimistic lock on the expense row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""OperationalExpenses"" WHERE ""Id"" = {0} FOR UPDATE",
+                    expenseSnapshot.Id);
+            }
+
+            // Reload the expense inside the lock
+            var expense = await db.OperationalExpenses.FindAsync(expenseSnapshot.Id);
+            if (expense == null || !expense.IsActive)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "المصروف غير موجود" });
+            }
+
+            // Guard: do not corrupt a closed or reconciled session
+            CashFlowTransaction? originalCashflow = null;
+            if (expense.CashFlowTransactionId.HasValue)
+            {
+                originalCashflow = await db.CashFlowTransactions.FindAsync(expense.CashFlowTransactionId.Value);
+            }
+            else
+            {
+                originalCashflow = await db.CashFlowTransactions
+                    .FirstOrDefaultAsync(t => t.ReferenceId == expense.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
+            }
+
+            if (originalCashflow != null && originalCashflow.CashierSessionId.HasValue)
+            {
+                var linkedSession = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId.Value);
+                if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." });
+                }
+            }
+
+            // Check if already reversed — prevents double-restore (re-checked inside lock)
+            if (originalCashflow?.ReversedByTransactionId != null)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذا المصروف تم عكسه مسبقاً." });
+            }
+
+            // Blocker 1: For posted expense reversal, we MUST restore balance to the exact original treasury.
+            if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "عذراً، لا يمكن عكس القيد — سجل التدفق النقدي الأصلي غير مرتبط بخزينة. تواصل مع المحاسب." });
+            }
+
+            var originalTreasuryId = originalCashflow.TreasuryId.Value;
+
+            // Verify the original treasury exists and is active before writing any reversal records
+            var originalTreasury = await db.Treasuries.FindAsync(originalTreasuryId);
+            if (originalTreasury == null || !originalTreasury.IsActive)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." });
+            }
             // Create reversal CashFlowTransaction (Inflow, Category=Reversal)
             var reversalCashflow = new CashFlowTransaction
             {

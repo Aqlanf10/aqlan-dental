@@ -259,18 +259,18 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> PaySalary(Guid id, [FromBody] PaySalaryRequest req)
     {
-        var salary = await db.SalaryRecords.FindAsync(id);
-        if (salary is null)
+        var salarySnapshot = await db.SalaryRecords.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
+        if (salarySnapshot is null)
             return NotFound(new { message = "كشف الراتب غير موجود" });
 
-        if (salary.PaidAt.HasValue)
+        if (salarySnapshot.PaidAt.HasValue)
             return BadRequest(new { message = "تم صرف هذا الراتب مسبقاً" });
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var paidByUid = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
 
         // Fetch employee details — reject if branch is unknown
-        var employee = await db.Employees.FindAsync(salary.EmployeeId);
+        var employee = await db.Employees.FindAsync(salarySnapshot.EmployeeId);
         if (employee is null)
             return BadRequest(new { message = "الموظف غير موجود" });
 
@@ -300,9 +300,31 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
             return BadRequest(new { message = ex.Message });
         }
 
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the salary row and re-check eligibility.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            // Acquire transaction-scoped pessimistic lock on the salary row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""SalaryRecords"" WHERE ""Id"" = {0} FOR UPDATE",
+                    id);
+            }
+
+            // Reload inside the lock and re-check PaidAt
+            var salary = await db.SalaryRecords.FindAsync(id);
+            if (salary is null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "كشف الراتب غير موجود" });
+            }
+
+            if (salary.PaidAt.HasValue)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "تم صرف هذا الراتب مسبقاً" });
+            }
             salary.PaidAt = DateTime.UtcNow;
             salary.PaidBy = paidByUid == Guid.Empty ? null : paidByUid;
             salary.PaymentMethod = paymentMethod;

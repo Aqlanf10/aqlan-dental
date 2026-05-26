@@ -317,26 +317,23 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ الدفعة أكبر من الصفر" });
 
-        var bill = await db.SupplierBills.Include(b => b.Supplier).FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
-        if (bill == null)
+        var billSnapshot = await db.SupplierBills.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+        if (billSnapshot == null)
             return NotFound(new { message = "الفاتورة غير موجودة" });
 
-        if (bill.Status == BillStatus.FullyPaid)
+        if (billSnapshot.Status == BillStatus.FullyPaid)
             return BadRequest(new { message = "هذه الفاتورة مدفوعة بالكامل بالفعل" });
 
-        if (bill.Status == BillStatus.Cancelled)
+        if (billSnapshot.Status == BillStatus.Cancelled)
             return BadRequest(new { message = "هذه الفاتورة ملغاة" });
-
-        var remaining = bill.TotalAmount - bill.PaidAmount;
-        if (req.Amount > remaining)
-            return BadRequest(new { message = $"مبلغ الدفعة ({req.Amount:N0}) يتجاوز المبلغ المتبقي ({remaining:N0} ريال)" });
 
         var paymentDate = DateOnly.FromDateTime(DateTime.Today);
         if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var parsedDate))
             paymentDate = parsedDate;
 
         var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = bill.BranchId;
+        var branchId = billSnapshot.BranchId;
 
         // Guard: reject if branch is invalid
         if (branchId == Guid.Empty)
@@ -363,9 +360,46 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
             return BadRequest(new { message = ex.Message });
         }
 
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the bill row and re-check remaining.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            // Acquire transaction-scoped pessimistic lock on the bill row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""SupplierBills"" WHERE ""Id"" = {0} FOR UPDATE",
+                    id);
+            }
+
+            // Reload the bill inside the lock
+            var bill = await db.SupplierBills.Include(b => b.Supplier)
+                .FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+            if (bill == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "الفاتورة غير موجودة" });
+            }
+
+            if (bill.Status == BillStatus.FullyPaid)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذه الفاتورة مدفوعة بالكامل بالفعل" });
+            }
+
+            if (bill.Status == BillStatus.Cancelled)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذه الفاتورة ملغاة" });
+            }
+
+            // Re-calculate remaining inside the lock to prevent overpayment
+            var remaining = bill.TotalAmount - bill.PaidAmount;
+            if (req.Amount > remaining)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = $"مبلغ الدفعة ({req.Amount:N0}) يتجاوز المبلغ المتبقي ({remaining:N0} ريال)" });
+            }
             // Dual-write: CashFlowTransaction (transitional)
             var cashflow = new CashFlowTransaction
             {

@@ -261,16 +261,21 @@ export function CompleteVisitModal({
   const [nextDate, setNextDate] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Determine mode: reception checkout vs doctor handoff
+  const isReceptionMode = item?.checkoutStatus === "ReadyForCheckout" || item?.nextAction === "Checkout";
+
   const handleSubmit = () => {
     const num = parseFloat(amountDue) || 0;
-    if (item?.checkoutStatus === "ReadyForCheckout" || item?.nextAction === "Checkout") {
+    if (isReceptionMode) {
+      // Reception mode: only checkout, no payment fields (payment handled separately)
       onCheckout({
-        paymentAmount: isPaid ? num : 0,
-        paymentMethod,
+        paymentAmount: 0,
+        paymentMethod: "",
         notes,
         nextDate: needsFollowUp ? nextDate : undefined,
       });
     } else {
+      // Doctor mode: handoff with treatment details
       onConfirm({
         serviceDesc, amountDue: num, isPaid, needsFollowUp, nextDate, notes,
         diagnosis, instructions,
@@ -283,8 +288,13 @@ export function CompleteVisitModal({
 
   const outstanding = summary?.financeSummary?.outstandingBalance ?? 0;
 
+  // Modal title and icon change based on mode
+  const modalTitle = isReceptionMode ? "التحصيل والخروج" : "تسليم للاستقبال";
+  const ModalIcon = isReceptionMode ? CreditCard : Send;
+  const modalIconColor = isReceptionMode ? "#16a34a" : ORANGE;
+
   return (
-    <ModalShell open={open} onClose={onClose} title="إنهاء الزيارة" icon={CheckCircle} iconColor="#16a34a" wide>
+    <ModalShell open={open} onClose={onClose} title={modalTitle} icon={ModalIcon} iconColor={modalIconColor} wide>
       {/* Patient info */}
       <div className="mb-4 p-3 rounded-xl" style={{ background: "#f0f5fb" }}>
         <div className="font-bold text-sm" style={{ color: "#1a3a5c" }}>{item?.patientName}</div>
@@ -315,73 +325,111 @@ export function CompleteVisitModal({
         </div>
       )}
 
-      {/* Form — Two columns on desktop */}
-      <div className="space-y-3">
-        {/* Row 1: Service + Diagnosis */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملخص الإجراء / الخدمة</label>
-            <input value={serviceDesc} onChange={e => setServiceDesc(e.target.value)}
-              placeholder="مثال: حشو + تنظيف" className={inputCls()} />
+      {/* Form — Doctor Handoff Mode */}
+      {!isReceptionMode && (
+        <div className="space-y-3">
+          {/* Info banner */}
+          <div className="p-2.5 rounded-xl flex items-center gap-2" style={{ background: "#fff7ed", border: "1px solid #f5922e30" }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
+            <span className="text-[11px] font-medium" style={{ color: "#92400e" }}>
+              سيتم إرسال المريض للاستقبال للتحصيل والخروج
+            </span>
           </div>
+
+          {/* Row 1: Service + Diagnosis */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملخص الإجراء / الخدمة</label>
+              <input value={serviceDesc} onChange={e => setServiceDesc(e.target.value)}
+                placeholder="مثال: حشو + تنظيف" className={inputCls()} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>التشخيص</label>
+              <input value={diagnosis} onChange={e => setDiagnosis(e.target.value)}
+                placeholder="مثال: تسوس سطحي" className={inputCls()} />
+            </div>
+          </div>
+
+          {/* Instructions */}
           <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>التشخيص</label>
-            <input value={diagnosis} onChange={e => setDiagnosis(e.target.value)}
-              placeholder="مثال: تسوس سطحي" className={inputCls()} />
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>التعليمات للمريض</label>
+            <input value={instructions} onChange={e => setInstructions(e.target.value)}
+              placeholder="مثال: عدم أكل الأطعمة الصلبة لمدة 24 ساعة" className={inputCls()} />
+          </div>
+
+          {/* Amount Due */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>المبلغ المستحق (مرجعي)</label>
+              <input type="number" value={amountDue} onChange={e => setAmountDue(e.target.value)}
+                placeholder="0" className={inputCls()} min={0} step={0.01} dir="ltr" />
+            </div>
+            {outstanding > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "#fff7ed" }}>
+                <Wallet className="w-4 h-4" style={{ color: ORANGE }} />
+                <span className="text-xs font-bold" style={{ color: "#92400e" }}>رصيد سابق: {fmtRial(outstanding)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Follow-up */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="needsFollowUp" checked={needsFollowUp} onChange={e => setNeedsFollowUp(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 accent-[#3d7ab5]" />
+              <label htmlFor="needsFollowUp" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>يحتاج موعد متابعة</label>
+            </div>
+          </div>
+          {needsFollowUp && (
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>تاريخ الموعد القادم</label>
+              <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className={inputCls()} />
+            </div>
+          )}
+
+          {/* Notes */}
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملاحظات</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              placeholder="ملاحظة للاستقبال" className={inputCls()} />
           </div>
         </div>
+      )}
 
-        {/* Row 2: Amount + Payment */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Form — Reception Checkout Mode */}
+      {isReceptionMode && (
+        <div className="space-y-3">
+          {/* Info banner */}
+          <div className="p-2.5 rounded-xl flex items-center gap-2" style={{ background: "#f0fdf4", border: "1px solid #16a34a30" }}>
+            <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#16a34a" }} />
+            <span className="text-[11px] font-medium" style={{ color: "#166534" }}>
+              المريض جاهز للتحصيل من الاستقبال — الدفع يتم عبر صفحة المدفوعات
+            </span>
+          </div>
+
+          {/* Follow-up */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="checkoutFollowUp" checked={needsFollowUp} onChange={e => setNeedsFollowUp(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 accent-[#16a34a]" />
+              <label htmlFor="checkoutFollowUp" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>حجز موعد متابعة</label>
+            </div>
+          </div>
+          {needsFollowUp && (
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>تاريخ الموعد القادم</label>
+              <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className={inputCls()} />
+            </div>
+          )}
+
+          {/* Notes */}
           <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>المبلغ المستحق</label>
-            <input type="number" value={amountDue} onChange={e => setAmountDue(e.target.value)}
-              placeholder="0" className={inputCls()} min={0} step={0.01} dir="ltr" />
-          </div>
-          <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>طريقة الدفع</label>
-            <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className={inputCls()}>
-              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملاحظات</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              placeholder="ملاحظات على إنهاء الزيارة" className={inputCls()} />
           </div>
         </div>
-
-        {/* Instructions */}
-        <div>
-          <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>التعليمات للمريض</label>
-          <input value={instructions} onChange={e => setInstructions(e.target.value)}
-            placeholder="مثال: عدم أكل الأطعمة الصلبة لمدة 24 ساعة" className={inputCls()} />
-        </div>
-
-        {/* Checkboxes */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="isPaid" checked={isPaid} onChange={e => setIsPaid(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 accent-[#22c55e]" />
-            <label htmlFor="isPaid" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>تم الدفع</label>
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="needsFollowUp" checked={needsFollowUp} onChange={e => setNeedsFollowUp(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 accent-[#3d7ab5]" />
-            <label htmlFor="needsFollowUp" className="text-sm font-medium" style={{ color: "#1a3a5c" }}>يحتاج موعد متابعة</label>
-          </div>
-        </div>
-
-        {/* Follow-up date */}
-        {needsFollowUp && (
-          <div>
-            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>تاريخ الموعد القادم</label>
-            <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} className={inputCls()} />
-          </div>
-        )}
-
-        {/* Notes */}
-        <div>
-          <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملاحظات</label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-            placeholder="ملاحظة للطبيب/الاستقبال" className={inputCls()} />
-        </div>
-      </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-2 mt-5">
@@ -389,9 +437,10 @@ export function CompleteVisitModal({
           style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
         <button onClick={handleSubmit} disabled={isPending}
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: "#16a34a", opacity: isPending ? 0.5 : 1 }}>
-          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-          إنهاء الزيارة
+          style={{ background: isReceptionMode ? "#16a34a" : ORANGE, opacity: isPending ? 0.5 : 1 }}>
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> :
+           isReceptionMode ? <CheckCircle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+          {isReceptionMode ? "إنهاء الحساب" : "تسليم للاستقبال"}
         </button>
       </div>
     </ModalShell>

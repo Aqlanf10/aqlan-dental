@@ -14,6 +14,7 @@ export interface TodayJourneyItem {
   patientId: string;
   patientName: string;
   patientPhone?: string;
+  patientNumber?: string;
   appointmentTime: string;
   appointmentStatus: string;
   doctorId: string;

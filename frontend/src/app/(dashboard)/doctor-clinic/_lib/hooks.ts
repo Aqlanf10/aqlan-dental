@@ -7,7 +7,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
-import type { ServiceOption, DoctorOption, RoomOption } from "../../daily-operations/_lib/constants";
+import type { RoomOption } from "../../daily-operations/_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
 
 // ─── Service option (with price) ────────────────────────────────────────────

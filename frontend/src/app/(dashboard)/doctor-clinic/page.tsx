@@ -6,7 +6,7 @@ import {
   Image, Pill, FlaskConical, CalendarClock, Send, RefreshCw,
   AlertCircle, CheckCircle,
   Loader2, FileText,
-  Route, Save, X, ChevronLeft,
+  Route, Save, X,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -357,7 +357,7 @@ export default function DoctorClinicPage() {
   };
 
   /* ═══════════════════════════════════════════════════════════════════════════
-   Render — Microsoft Fluent-style Workspace
+   Render — Vertical Sidebar + Workspace Layout
    ═══════════════════════════════════════════════════════════════════════════ */
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-[#f5f5f5]" dir="rtl">
@@ -424,424 +424,365 @@ export default function DoctorClinicPage() {
       </header>
 
       {/* ═══════════════════════════════════════════════════════════════
-          MAIN CONTENT AREA — Split: Patient bar + Workspace
+          MAIN CONTENT AREA — Horizontal split: Workspace + Patient Sidebar
           ═══════════════════════════════════════════════════════════════ */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex overflow-hidden">
 
-        {/* ── PATIENT STRIP — horizontal scrollable cards ── */}
-        <div className="flex-shrink-0 bg-white border-b border-[#e0e0e0] px-4 md:px-6 py-3">
-          <div className="flex items-center gap-3 mb-2.5">
-            <h2 className="text-xs font-bold text-[#1e3a8a]">
-              {isAdmin ? "كل غرف العلاج" : "المرضى"}
-            </h2>
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-[#1e3a8a]/8 text-[#1e3a8a]">
-              {filteredPatients.length}
-            </span>
+        {/* ═══════════════════════════════════════════════════════════════
+            WORKSPACE (flex-1, scrollable)
+            ═══════════════════════════════════════════════════════════════ */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
 
-            {/* Admin filters */}
-            {isAdmin && (
-              <div className="flex items-center gap-2 mr-auto">
-                {availableDoctors.length > 1 && (
-                  <select value={filterDoctorId ?? ""} onChange={e => setFilterDoctorId(e.target.value || null)}
-                    className="text-[11px] rounded-md border border-[#d1d5db] px-2 py-1 bg-white text-[#374151] outline-none focus:border-[#2563eb] transition-colors">
-                    <option value="">كل الأطباء</option>
-                    {availableDoctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                )}
-                {availableRooms.length > 1 && (
-                  <select value={filterRoomId ?? ""} onChange={e => setFilterRoomId(e.target.value || null)}
-                    className="text-[11px] rounded-md border border-[#d1d5db] px-2 py-1 bg-white text-[#374151] outline-none focus:border-[#2563eb] transition-colors">
-                    <option value="">كل الغرف</option>
-                    {availableRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                )}
-              </div>
-            )}
-
-            {/* Search */}
-            <input ref={searchRef} type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              placeholder="بحث..." className="text-[11px] rounded-md border border-[#d1d5db] px-2.5 py-1.5 outline-none w-32 focus:border-[#2563eb] transition-colors bg-white" />
-          </div>
-
-          {/* Patient cards row */}
-          {isLoading && (
-            <div className="flex items-center justify-center py-6">
-              <Loader2 className="w-5 h-5 animate-spin text-[#2563eb]" />
-            </div>
-          )}
-
-          {!isLoading && filteredPatients.length === 0 && (
-            <div className="rounded-lg border border-dashed border-[#d1d5db] p-6 text-center">
-              <p className="text-xs text-[#9ca3af] font-medium">لا يوجد مرضى اليوم</p>
-            </div>
-          )}
-
-          {!isLoading && filteredPatients.length > 0 && (
-            <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ direction: "rtl" }}>
-              {filteredPatients.map(p => {
-                const isSelected = selectedPatient?.appointmentId === p.appointmentId;
-                const isActive = ["InRoom", "InProgress"].includes(p.appointmentStatus);
-                const isWaiting = p.queueStatus === "Waiting" || p.queueStatus === "Called";
-                const sc = STATUS_COLORS[p.appointmentStatus] ?? STATUS_COLORS.Scheduled;
-                const isSent = sentPatients.has(p.appointmentId);
+          {/* ── ACTION BUTTONS BAR — sticky at top of workspace ── */}
+          <div className="flex-shrink-0 bg-white border-b border-[#e0e0e0] px-4 py-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <span className="text-[10px] font-bold text-[#9ca3af] flex-shrink-0 ml-2">إجراءات العلاج</span>
+              {ACTION_CARDS.map(card => {
+                const isDisabled = !selectedPatient ||
+                  (card.key !== "handoff" && !card.requiredStatus.includes(selectedPatient.appointmentStatus) && !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
+                const isSentDisabled = card.key === "handoff" && isPatientSent;
+                const isCurrentPanel = activePanel === card.key;
+                const CardIcon = card.icon;
 
                 return (
-                  <button key={p.appointmentId}
-                    onClick={() => {
-                      setSelectedPatient(p);
-                      setSelectedServices([]);
-                      setClinicalNotes({ diagnosis: "", treatmentDone: "", instructions: "", nextVisitPlan: "", amountDue: 0, suggestedServiceId: "", followUpDate: "" });
-                    }}
-                    className="flex-shrink-0 w-48 rounded-lg border p-3 text-right transition-all hover:shadow-md"
+                  <button
+                    key={card.key}
+                    onClick={() => handleAction(card.key)}
+                    disabled={isDisabled || isSentDisabled}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold flex-shrink-0 border transition-all whitespace-nowrap"
                     style={{
-                      background: isSelected ? "#fff" : "#fafafa",
-                      borderColor: isSelected ? "#2563eb" : "#e5e7eb",
-                      borderWidth: isSelected ? "2px" : "1px",
-                      boxShadow: isSelected ? "0 0 0 1px #2563eb, 0 2px 8px rgba(37,99,235,0.1)" : "none",
-                      opacity: isSent ? 0.4 : 1,
+                      background: isCurrentPanel ? card.bgColor : "#fff",
+                      borderColor: isCurrentPanel ? card.color : "#e5e7eb",
+                      color: isCurrentPanel ? card.color : (isDisabled || isSentDisabled ? "#9ca3af" : "#374151"),
+                      opacity: (isDisabled || isSentDisabled) ? 0.35 : 1,
+                      borderWidth: isCurrentPanel ? "1.5px" : "1px",
                     }}
                   >
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                        style={{ background: isSent ? "#9ca3af" : isActive ? "#16a34a" : isWaiting ? ORANGE : "#2563eb", color: "#fff" }}>
-                        {getInitials(p.patientName)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-bold truncate" style={{ color: isSelected ? "#2563eb" : "#1a1a1a" }}>{p.patientName}</p>
-                        <p className="text-[9px] truncate text-[#9ca3af]">
-                          {p.patientNumber ? `#${p.patientNumber}` : ""}
-                          {isAdmin && p.doctorName ? ` · ${p.doctorName}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-[#6b7280]">{fmtTime(p.appointmentTime)}</span>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold"
-                        style={{ background: isSent ? "#f3f4f6" : sc.bg, color: isSent ? "#9ca3af" : sc.text }}>
-                        {isSent ? "تم الإرسال" : APPT_STATUS_LABELS[p.appointmentStatus] ?? p.appointmentStatus}
-                      </span>
-                    </div>
-                    {isAdmin && (
-                      <p className="mt-1 text-[9px] text-[#6b7280] truncate">{p.roomName ?? "بدون غرفة"}</p>
-                    )}
-                    {isActive && p.inRoomSince && (
-                      <p className="mt-0.5 text-[9px] font-semibold text-[#16a34a]">{fmtSessionDuration(p.inRoomSince)}</p>
-                    )}
+                    <CardIcon className="w-3.5 h-3.5" />
+                    <span>{card.label}</span>
                   </button>
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* ── WORKSPACE AREA — summary + action cards OR panel content ── */}
-        <div className="flex-1 overflow-hidden">
+          {/* ── PANEL CONTENT AREA — fills remaining space ── */}
+          <div className="flex-1 overflow-y-auto">
+            {hasPanelOpen && selectedPatient ? (
+              /* ── Panel open: show panel content ── */
+              <div className="max-w-3xl mx-auto p-5">
+                {/* Panel header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const card = ACTION_CARDS.find(c => c.key === activePanel);
+                      const CardIcon = card?.icon ?? FileText;
+                      return (
+                        <>
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: (card?.color ?? "#2563eb") + "15" }}>
+                            <CardIcon className="w-4 h-4" style={{ color: card?.color ?? "#2563eb" }} />
+                          </div>
+                          <div>
+                            <h2 className="text-sm font-bold text-[#1a1a1a]">{PANEL_TITLES[activePanel ?? ""]}</h2>
+                            <p className="text-[10px] text-[#9ca3af]">{selectedPatient.patientName}</p>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <button onClick={() => setActivePanel(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#e5e7eb] transition-colors text-[#6b7280]">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
 
-          {/* When panel is open: show split view (patient summary left, panel right) */}
-          {hasPanelOpen && selectedPatient ? (
-            <div className="flex h-full">
-              {/* Left: compact patient summary (40%) */}
-              <div className="w-[40%] min-w-[320px] overflow-y-auto border-l border-[#e0e0e0] bg-white">
-                <div className="p-4 space-y-4">
-                  {/* Compact patient card */}
-                  <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-lg flex items-center justify-center text-sm font-bold text-white flex-shrink-0" style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)" }}>
+                {/* Panel body */}
+                <div className="bg-white rounded-xl border border-[#e5e7eb] shadow-sm">
+                  {activePanel === "startVisit" && (
+                    <StartVisitPanel patient={selectedPatient} isPending={startVisitMutation.isPending} onConfirm={handleStartVisit} onClose={() => setActivePanel(null)} />
+                  )}
+                  {activePanel === "examination" && (
+                    <ExaminationPanel patient={selectedPatient} diagnosis={clinicalNotes.diagnosis} medicalAlerts={medicalAlerts} onClose={() => setActivePanel(null)}
+                      onSave={(data) => {
+                        const parts = [data.chiefComplaint ? `الشكوى: ${data.chiefComplaint}` : "", data.extraoral ? `فحص خارج الفم: ${data.extraoral}` : "", data.intraoral ? `فحص داخل الفم: ${data.intraoral}` : "", data.diagnosis ? `التشخيص: ${data.diagnosis}` : "", data.clinicalNotes ? `ملاحظات: ${data.clinicalNotes}` : ""].filter(Boolean).join(" | ");
+                        updateClinicalNotes({ diagnosis: parts || data.diagnosis, treatmentDone: data.treatmentDone || clinicalNotes.treatmentDone });
+                        setActivePanel(null);
+                        toast.success("تم حفظ الفحص والتشخيص");
+                      }}
+                    />
+                  )}
+                  {activePanel === "procedures" && (
+                    <PricedProceduresPanel patient={selectedPatient} services={services} currentAmountDue={clinicalNotes.amountDue} currentTreatmentDone={clinicalNotes.treatmentDone} onClose={() => setActivePanel(null)}
+                      onSave={(data) => {
+                        updateClinicalNotes({ treatmentDone: data.treatmentDone, amountDue: data.totalAmount, suggestedServiceId: data.suggestedServiceId });
+                        setActivePanel(null);
+                        toast.success("تم حفظ الإجراءات المسعّرة");
+                      }}
+                    />
+                  )}
+                  {activePanel === "treatmentPlan" && (
+                    <TreatmentPlanPanel patient={selectedPatient} onClose={() => setActivePanel(null)}
+                      onSave={(data) => { updateClinicalNotes({ nextVisitPlan: data.plan }); setActivePanel(null); toast.success("تم حفظ خطة العلاج"); }}
+                    />
+                  )}
+                  {activePanel === "orthoFollowUp" && (
+                    <OrthoFollowUpPanel patient={selectedPatient} onClose={() => setActivePanel(null)}
+                      onSave={(data) => {
+                        const parts = [data.notes, data.nextVisitPlan ? `خطة قادمة: ${data.nextVisitPlan}` : ""].filter(Boolean).join(" | ");
+                        const existing = clinicalNotes.treatmentDone;
+                        updateClinicalNotes({ treatmentDone: existing ? `${existing} | ${parts}` : parts, nextVisitPlan: data.nextVisitPlan || clinicalNotes.nextVisitPlan });
+                        setActivePanel(null);
+                        toast.success("تم حفظ متابعة التقويم");
+                      }}
+                    />
+                  )}
+                  {activePanel === "images" && (
+                    <ImagesRadiographsPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ الصور"); }} />
+                  )}
+                  {activePanel === "prescription" && (
+                    <PrescriptionPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ الوصفة"); }} />
+                  )}
+                  {activePanel === "labOrder" && (
+                    <LabOrderPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ طلب المعمل"); }} />
+                  )}
+                  {activePanel === "followUp" && (
+                    <FollowUpSuggestPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ موعد المتابعة"); }} />
+                  )}
+                  {activePanel === "handoff" && (
+                    <HandoffPanel patient={selectedPatient} clinicalNotes={clinicalNotes} selectedServicesTotal={clinicalNotes.amountDue} onClose={() => setActivePanel(null)} onConfirm={handleHandoff} isPending={handoffMutation.isPending} />
+                  )}
+                </div>
+              </div>
+            ) : selectedPatient ? (
+              /* ── Patient selected but no panel: show patient summary ── */
+              <div className="max-w-4xl mx-auto p-5 space-y-4">
+                {/* Patient summary card */}
+                <div className="rounded-xl border border-[#e5e7eb] bg-white p-5">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold text-white flex-shrink-0" style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)" }}>
                       {getInitials(selectedPatient.patientName)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="text-sm font-bold text-[#1a1a1a]">{selectedPatient.patientName}</h3>
-                        {selectedPatient.patientNumber && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[#f3f4f6] text-[#6b7280]">#{selectedPatient.patientNumber}</span>}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-[#6b7280]">
-                        <span className="px-1.5 py-0.5 rounded font-semibold"
-                          style={{ background: STATUS_COLORS[selectedPatient.appointmentStatus]?.bg ?? "#f3f4f6", color: STATUS_COLORS[selectedPatient.appointmentStatus]?.text ?? "#6b7280" }}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-base font-bold text-[#1a1a1a]">{selectedPatient.patientName}</h2>
+                        {selectedPatient.patientNumber && <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-[#f3f4f6] text-[#6b7280]">#{selectedPatient.patientNumber}</span>}
+                        <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full" style={{ background: STATUS_COLORS[selectedPatient.appointmentStatus]?.bg ?? "#f3f4f6", color: STATUS_COLORS[selectedPatient.appointmentStatus]?.text ?? "#6b7280" }}>
                           {APPT_STATUS_LABELS[selectedPatient.appointmentStatus] ?? selectedPatient.appointmentStatus}
                         </span>
-                        <span>{selectedPatient.roomName ?? "بدون غرفة"}</span>
-                        {isAdmin && selectedPatient.doctorName && <span>· {selectedPatient.doctorName}</span>}
+                        {isPatientSent && <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 bg-[#dcfce7] text-[#16a34a]"><CheckCircle className="w-2.5 h-2.5" /> تم الإرسال</span>}
                       </div>
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-[#6b7280] flex-wrap">
+                        <span>{selectedPatient.serviceName ?? "—"}</span>
+                        <span className="text-[#d1d5db]">·</span>
+                        <span>{selectedPatient.roomName ?? "بدون غرفة"}</span>
+                        {isAdmin && selectedPatient.doctorName && <><span className="text-[#d1d5db]">·</span><span>{selectedPatient.doctorName}</span></>}
+                        {selectedPatient.inRoomSince && <><span className="text-[#d1d5db]">·</span><span className="font-semibold text-[#16a34a]">{fmtSessionDuration(selectedPatient.inRoomSince)}</span></>}
+                      </div>
+                      {/* Medical alerts */}
+                      {medicalAlerts.length > 0 && (
+                        <div className="flex gap-1 mt-2 flex-wrap">
+                          {medicalAlerts.map((alert, i) => (
+                            <span key={i} className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
+                              style={{ background: alert.severity === "danger" ? "#fef2f2" : "#fffbeb", color: alert.severity === "danger" ? "#dc2626" : "#d97706" }}>
+                              <AlertCircle className="w-2.5 h-2.5" />
+                              {alert.type === "allergy" ? "حساسية" : alert.type === "bleeding" ? "نزيف" : alert.type === "pregnancy" ? "حمل" : alert.label ?? "تنبيه"}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {selectedPatient.chiefComplaint && (
+                        <div className="mt-2 text-[11px] font-medium px-3 py-1.5 rounded-lg inline-block bg-[#fffbeb] text-[#92400e]">الشكوى: {selectedPatient.chiefComplaint}</div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Medical alerts */}
-                  {medicalAlerts.length > 0 && (
-                    <div className="flex gap-1 flex-wrap">
-                      {medicalAlerts.map((alert, i) => (
-                        <span key={i} className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
-                          style={{ background: alert.severity === "danger" ? "#fef2f2" : "#fffbeb", color: alert.severity === "danger" ? "#dc2626" : "#d97706" }}>
-                          <AlertCircle className="w-2.5 h-2.5" />
-                          {alert.type === "allergy" ? "حساسية" : alert.type === "bleeding" ? "نزيف" : alert.type === "pregnancy" ? "حمل" : alert.label ?? "تنبيه"}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Chief complaint */}
-                  {selectedPatient.chiefComplaint && (
-                    <div className="text-[11px] font-medium px-3 py-2 rounded-lg bg-[#fffbeb] text-[#92400e]">
-                      الشكوى: {selectedPatient.chiefComplaint}
-                    </div>
-                  )}
-
-                  {/* Info tiles */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-lg p-2.5 bg-[#f8fafc]">
-                      <p className="text-[9px] text-[#9ca3af] mb-0.5">الخدمة</p>
-                      <p className="text-[11px] font-bold text-[#1a1a1a]">{selectedPatient.serviceName ?? "—"}</p>
-                    </div>
-                    <div className="rounded-lg p-2.5 bg-[#f8fafc]">
+                  {/* Quick info tiles */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
+                    <div className="rounded-lg p-3 bg-[#f8fafc]">
                       <p className="text-[9px] text-[#9ca3af] mb-0.5">الغرفة</p>
-                      <p className="text-[11px] font-bold text-[#1a1a1a]">{selectedPatient.roomName ?? "بدون غرفة"}</p>
+                      <p className="text-xs font-bold text-[#1a1a1a]">{selectedPatient.roomName ?? "بدون غرفة"}</p>
                     </div>
-                    <div className="rounded-lg p-2.5 bg-[#faf5ff]">
+                    <div className="rounded-lg p-3 bg-[#f8fafc]">
+                      <p className="text-[9px] text-[#9ca3af] mb-0.5">وقت الموعد</p>
+                      <p className="text-xs font-bold text-[#1a1a1a]">{fmtTime(selectedPatient.appointmentTime)}</p>
+                    </div>
+                    <div className="rounded-lg p-3 bg-[#faf5ff]">
                       <p className="text-[9px] text-[#9ca3af] mb-0.5">الإجراءات</p>
-                      <p className="text-[11px] font-bold text-[#7c3aed]">
+                      <p className="text-xs font-bold text-[#7c3aed]">
                         {selectedServices.length} خدمة
                         {clinicalNotes.amountDue > 0 && <span className="text-[9px] mr-1">({fmtRial(clinicalNotes.amountDue)})</span>}
                       </p>
                     </div>
-                    <div className="rounded-lg p-2.5 bg-[#f0fdf4]">
+                    <div className="rounded-lg p-3 bg-[#f0fdf4]">
                       <p className="text-[9px] text-[#9ca3af] mb-0.5">المعالجون</p>
-                      <p className="text-[11px] font-bold text-[#16a34a]">{sentPatients.size}</p>
+                      <p className="text-xs font-bold text-[#16a34a]">{sentPatients.size}</p>
                     </div>
                   </div>
+                </div>
 
-                  {/* Action buttons — compact vertical list */}
-                  <div className="space-y-1 pt-2">
-                    <p className="text-[10px] font-bold text-[#9ca3af] mb-2">إجراءات سريعة</p>
+                {/* Action cards grid */}
+                <div>
+                  <h3 className="text-xs font-bold text-[#9ca3af] mb-3">إجراءات العلاج</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                     {ACTION_CARDS.map(card => {
                       const isDisabled = !selectedPatient ||
                         (card.key !== "handoff" && !card.requiredStatus.includes(selectedPatient.appointmentStatus) && !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
                       const isSentDisabled = card.key === "handoff" && isPatientSent;
-                      const isCurrentPanel = activePanel === card.key;
                       const CardIcon = card.icon;
 
                       return (
                         <button key={card.key} onClick={() => handleAction(card.key)} disabled={isDisabled || isSentDisabled}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-right transition-all"
+                          className="flex flex-col items-center gap-2 p-3.5 rounded-xl border transition-all text-center group"
                           style={{
-                            background: isCurrentPanel ? card.bgColor : "transparent",
+                            background: isDisabled || isSentDisabled ? "#fafafa" : "#fff",
+                            borderColor: isDisabled || isSentDisabled ? "#f3f4f6" : card.color + "25",
                             opacity: isDisabled || isSentDisabled ? 0.35 : 1,
                             cursor: isDisabled || isSentDisabled ? "not-allowed" : "pointer",
+                            boxShadow: !isDisabled && !isSentDisabled ? "0 1px 3px rgba(0,0,0,0.04)" : "none",
                           }}>
-                          <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
-                            style={{ background: (isDisabled || isSentDisabled) ? "#e5e7eb" : card.color + "15" }}>
-                            <CardIcon className="w-3.5 h-3.5" style={{ color: (isDisabled || isSentDisabled) ? "#9ca3af" : card.color }} />
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105"
+                            style={{ background: isDisabled || isSentDisabled ? "#e5e7eb" : card.color + "12" }}>
+                            <CardIcon className="w-4.5 h-4.5" style={{ color: isDisabled || isSentDisabled ? "#9ca3af" : card.color }} />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[11px] font-semibold" style={{ color: isCurrentPanel ? card.color : (isDisabled || isSentDisabled) ? "#9ca3af" : "#374151" }}>{card.label}</p>
-                          </div>
-                          <ChevronLeft className="w-3.5 h-3.5 text-[#d1d5db]" />
+                          <span className="text-[10px] font-bold leading-tight" style={{ color: isDisabled || isSentDisabled ? "#9ca3af" : "#374151" }}>{card.label}</span>
                         </button>
                       );
                     })}
                   </div>
                 </div>
               </div>
-
-              {/* Right: Panel content (60%) */}
-              <div className="flex-1 bg-[#fafafa] overflow-y-auto">
-                <div className="max-w-2xl mx-auto p-5">
-                  {/* Panel header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      {(() => {
-                        const card = ACTION_CARDS.find(c => c.key === activePanel);
-                        const CardIcon = card?.icon ?? FileText;
-                        return (
-                          <>
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: (card?.color ?? "#2563eb") + "15" }}>
-                              <CardIcon className="w-4 h-4" style={{ color: card?.color ?? "#2563eb" }} />
-                            </div>
-                            <div>
-                              <h2 className="text-sm font-bold text-[#1a1a1a]">{PANEL_TITLES[activePanel ?? ""]}</h2>
-                              <p className="text-[10px] text-[#9ca3af]">{selectedPatient.patientName}</p>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <button onClick={() => setActivePanel(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#e5e7eb] transition-colors text-[#6b7280]">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Panel body — renders the correct panel component */}
-                  <div className="bg-white rounded-xl border border-[#e5e7eb] shadow-sm">
-                    {activePanel === "startVisit" && (
-                      <StartVisitPanel patient={selectedPatient} isPending={startVisitMutation.isPending} onConfirm={handleStartVisit} onClose={() => setActivePanel(null)} />
-                    )}
-                    {activePanel === "examination" && (
-                      <ExaminationPanel patient={selectedPatient} diagnosis={clinicalNotes.diagnosis} medicalAlerts={medicalAlerts} onClose={() => setActivePanel(null)}
-                        onSave={(data) => {
-                          const parts = [data.chiefComplaint ? `الشكوى: ${data.chiefComplaint}` : "", data.extraoral ? `فحص خارج الفم: ${data.extraoral}` : "", data.intraoral ? `فحص داخل الفم: ${data.intraoral}` : "", data.diagnosis ? `التشخيص: ${data.diagnosis}` : "", data.clinicalNotes ? `ملاحظات: ${data.clinicalNotes}` : ""].filter(Boolean).join(" | ");
-                          updateClinicalNotes({ diagnosis: parts || data.diagnosis, treatmentDone: data.treatmentDone || clinicalNotes.treatmentDone });
-                          setActivePanel(null);
-                          toast.success("تم حفظ الفحص والتشخيص");
-                        }}
-                      />
-                    )}
-                    {activePanel === "procedures" && (
-                      <PricedProceduresPanel patient={selectedPatient} services={services} currentAmountDue={clinicalNotes.amountDue} currentTreatmentDone={clinicalNotes.treatmentDone} onClose={() => setActivePanel(null)}
-                        onSave={(data) => {
-                          updateClinicalNotes({ treatmentDone: data.treatmentDone, amountDue: data.totalAmount, suggestedServiceId: data.suggestedServiceId });
-                          setActivePanel(null);
-                          toast.success("تم حفظ الإجراءات المسعّرة");
-                        }}
-                      />
-                    )}
-                    {activePanel === "treatmentPlan" && (
-                      <TreatmentPlanPanel patient={selectedPatient} onClose={() => setActivePanel(null)}
-                        onSave={(data) => { updateClinicalNotes({ nextVisitPlan: data.plan }); setActivePanel(null); toast.success("تم حفظ خطة العلاج"); }}
-                      />
-                    )}
-                    {activePanel === "orthoFollowUp" && (
-                      <OrthoFollowUpPanel patient={selectedPatient} onClose={() => setActivePanel(null)}
-                        onSave={(data) => {
-                          const parts = [data.notes, data.nextVisitPlan ? `خطة قادمة: ${data.nextVisitPlan}` : ""].filter(Boolean).join(" | ");
-                          const existing = clinicalNotes.treatmentDone;
-                          updateClinicalNotes({ treatmentDone: existing ? `${existing} | ${parts}` : parts, nextVisitPlan: data.nextVisitPlan || clinicalNotes.nextVisitPlan });
-                          setActivePanel(null);
-                          toast.success("تم حفظ متابعة التقويم");
-                        }}
-                      />
-                    )}
-                    {activePanel === "images" && (
-                      <ImagesRadiographsPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ الصور"); }} />
-                    )}
-                    {activePanel === "prescription" && (
-                      <PrescriptionPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ الوصفة"); }} />
-                    )}
-                    {activePanel === "labOrder" && (
-                      <LabOrderPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ طلب المعمل"); }} />
-                    )}
-                    {activePanel === "followUp" && (
-                      <FollowUpSuggestPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ موعد المتابعة"); }} />
-                    )}
-                    {activePanel === "handoff" && (
-                      <HandoffPanel patient={selectedPatient} clinicalNotes={clinicalNotes} selectedServicesTotal={clinicalNotes.amountDue} onClose={() => setActivePanel(null)} onConfirm={handleHandoff} isPending={handoffMutation.isPending} />
-                    )}
-                  </div>
+            ) : (
+              /* ── Empty state — no patient selected ── */
+              <div className="flex flex-col items-center justify-center h-full min-h-[300px]">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 bg-[#1e3a8a]/5">
+                  <Stethoscope className="w-8 h-8 text-[#1e3a8a]/20" />
                 </div>
+                <p className="text-sm font-bold text-[#1a1a1a]">اختر مريضاً من القائمة الجانبية</p>
+                <p className="text-xs mt-1 text-[#9ca3af]">اختر مريضاً ثم اضغط على أحد الإجراءات أعلاه</p>
               </div>
-            </div>
-          ) : (
-            /* ── DEFAULT VIEW: No panel open — show summary + action grid ── */
-            <div className="flex-1 overflow-y-auto">
-              <div className="max-w-5xl mx-auto px-4 md:px-6 py-5 space-y-5">
-
-                {/* Selected patient summary */}
-                {selectedPatient ? (
-                  <div className="rounded-xl border border-[#e5e7eb] bg-white p-5">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold text-white flex-shrink-0" style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)" }}>
-                        {getInitials(selectedPatient.patientName)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h2 className="text-base font-bold text-[#1a1a1a]">{selectedPatient.patientName}</h2>
-                          {selectedPatient.patientNumber && <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-[#f3f4f6] text-[#6b7280]">#{selectedPatient.patientNumber}</span>}
-                          <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full" style={{ background: STATUS_COLORS[selectedPatient.appointmentStatus]?.bg ?? "#f3f4f6", color: STATUS_COLORS[selectedPatient.appointmentStatus]?.text ?? "#6b7280" }}>
-                            {APPT_STATUS_LABELS[selectedPatient.appointmentStatus] ?? selectedPatient.appointmentStatus}
-                          </span>
-                          {isPatientSent && <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 bg-[#dcfce7] text-[#16a34a]"><CheckCircle className="w-2.5 h-2.5" /> تم الإرسال</span>}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1 text-[11px] text-[#6b7280] flex-wrap">
-                          <span>{selectedPatient.serviceName ?? "—"}</span>
-                          <span className="text-[#d1d5db]">·</span>
-                          <span>{selectedPatient.roomName ?? "بدون غرفة"}</span>
-                          {isAdmin && selectedPatient.doctorName && <><span className="text-[#d1d5db]">·</span><span>{selectedPatient.doctorName}</span></>}
-                          {selectedPatient.inRoomSince && <><span className="text-[#d1d5db]">·</span><span className="font-semibold text-[#16a34a]">{fmtSessionDuration(selectedPatient.inRoomSince)}</span></>}
-                        </div>
-                        {/* Medical alerts */}
-                        {medicalAlerts.length > 0 && (
-                          <div className="flex gap-1 mt-2 flex-wrap">
-                            {medicalAlerts.map((alert, i) => (
-                              <span key={i} className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
-                                style={{ background: alert.severity === "danger" ? "#fef2f2" : "#fffbeb", color: alert.severity === "danger" ? "#dc2626" : "#d97706" }}>
-                                <AlertCircle className="w-2.5 h-2.5" />
-                                {alert.type === "allergy" ? "حساسية" : alert.type === "bleeding" ? "نزيف" : alert.type === "pregnancy" ? "حمل" : alert.label ?? "تنبيه"}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {selectedPatient.chiefComplaint && (
-                          <div className="mt-2 text-[11px] font-medium px-3 py-1.5 rounded-lg inline-block bg-[#fffbeb] text-[#92400e]">الشكوى: {selectedPatient.chiefComplaint}</div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Quick info tiles */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
-                      <div className="rounded-lg p-3 bg-[#f8fafc]">
-                        <p className="text-[9px] text-[#9ca3af] mb-0.5">الغرفة</p>
-                        <p className="text-xs font-bold text-[#1a1a1a]">{selectedPatient.roomName ?? "بدون غرفة"}</p>
-                      </div>
-                      <div className="rounded-lg p-3 bg-[#f8fafc]">
-                        <p className="text-[9px] text-[#9ca3af] mb-0.5">وقت الموعد</p>
-                        <p className="text-xs font-bold text-[#1a1a1a]">{fmtTime(selectedPatient.appointmentTime)}</p>
-                      </div>
-                      <div className="rounded-lg p-3 bg-[#faf5ff]">
-                        <p className="text-[9px] text-[#9ca3af] mb-0.5">الإجراءات</p>
-                        <p className="text-xs font-bold text-[#7c3aed]">
-                          {selectedServices.length} خدمة
-                          {clinicalNotes.amountDue > 0 && <span className="text-[9px] mr-1">({fmtRial(clinicalNotes.amountDue)})</span>}
-                        </p>
-                      </div>
-                      <div className="rounded-lg p-3 bg-[#f0fdf4]">
-                        <p className="text-[9px] text-[#9ca3af] mb-0.5">المعالجون</p>
-                        <p className="text-xs font-bold text-[#16a34a]">{sentPatients.size}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  /* No patient selected */
-                  <div className="flex flex-col items-center justify-center py-20">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 bg-[#1e3a8a]/5">
-                      <Stethoscope className="w-8 h-8 text-[#1e3a8a]/20" />
-                    </div>
-                    <p className="text-sm font-bold text-[#1a1a1a]">اختر مريضاً للبدء</p>
-                    <p className="text-xs mt-1 text-[#9ca3af]">اختر مريضاً من القائمة أعلاه لعرض التفاصيل والإجراءات</p>
-                  </div>
-                )}
-
-                {/* Action cards grid */}
-                {selectedPatient && (
-                  <div>
-                    <h3 className="text-xs font-bold text-[#9ca3af] mb-3">إجراءات العلاج</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                      {ACTION_CARDS.map(card => {
-                        const isDisabled = !selectedPatient ||
-                          (card.key !== "handoff" && !card.requiredStatus.includes(selectedPatient.appointmentStatus) && !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
-                        const isSentDisabled = card.key === "handoff" && isPatientSent;
-                        const CardIcon = card.icon;
-
-                        return (
-                          <button key={card.key} onClick={() => handleAction(card.key)} disabled={isDisabled || isSentDisabled}
-                            className="flex flex-col items-center gap-2 p-3.5 rounded-xl border transition-all text-center group"
-                            style={{
-                              background: isDisabled || isSentDisabled ? "#fafafa" : "#fff",
-                              borderColor: isDisabled || isSentDisabled ? "#f3f4f6" : card.color + "25",
-                              opacity: isDisabled || isSentDisabled ? 0.35 : 1,
-                              cursor: isDisabled || isSentDisabled ? "not-allowed" : "pointer",
-                              boxShadow: !isDisabled && !isSentDisabled ? "0 1px 3px rgba(0,0,0,0.04)" : "none",
-                            }}>
-                            <div className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105"
-                              style={{ background: isDisabled || isSentDisabled ? "#e5e7eb" : card.color + "12" }}>
-                              <CardIcon className="w-4.5 h-4.5" style={{ color: isDisabled || isSentDisabled ? "#9ca3af" : card.color }} />
-                            </div>
-                            <span className="text-[10px] font-bold leading-tight" style={{ color: isDisabled || isSentDisabled ? "#9ca3af" : "#374151" }}>{card.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            PATIENT SIDEBAR (280px fixed) — in RTL, appears on the RIGHT
+            ═══════════════════════════════════════════════════════════════ */}
+        <aside className="w-[280px] flex-shrink-0 bg-white border-r border-[#e0e0e0] flex flex-col overflow-hidden">
+          {/* Sidebar header: title + search + filters */}
+          <div className="p-3 border-b border-[#e0e0e0]">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-bold text-[#1e3a8a]">المرضى</h2>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-[#1e3a8a]/8 text-[#1e3a8a]">
+                {filteredPatients.length}
+              </span>
+            </div>
+            <input
+              ref={searchRef}
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="بحث عن مريض..."
+              className="w-full text-[11px] rounded-md border border-[#d1d5db] px-2.5 py-1.5 outline-none focus:border-[#2563eb] transition-colors bg-white mb-2"
+            />
+            {/* Admin filters */}
+            {isAdmin && availableDoctors.length > 1 && (
+              <select
+                value={filterDoctorId ?? ""}
+                onChange={e => setFilterDoctorId(e.target.value || null)}
+                className="w-full text-[11px] rounded-md border border-[#d1d5db] px-2 py-1 bg-white text-[#374151] outline-none focus:border-[#2563eb] transition-colors mb-1.5"
+              >
+                <option value="">كل الأطباء</option>
+                {availableDoctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            )}
+            {isAdmin && availableRooms.length > 1 && (
+              <select
+                value={filterRoomId ?? ""}
+                onChange={e => setFilterRoomId(e.target.value || null)}
+                className="w-full text-[11px] rounded-md border border-[#d1d5db] px-2 py-1 bg-white text-[#374151] outline-none focus:border-[#2563eb] transition-colors"
+              >
+                <option value="">كل الغرف</option>
+                {availableRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            )}
+          </div>
+
+          {/* Patient list — vertical scrollable */}
+          <div className="flex-1 overflow-y-auto">
+            {isLoading && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-[#2563eb]" />
+              </div>
+            )}
+
+            {!isLoading && filteredPatients.length === 0 && (
+              <div className="p-4 text-center">
+                <p className="text-[11px] text-[#9ca3af] font-medium">لا يوجد مرضى</p>
+              </div>
+            )}
+
+            {!isLoading && filteredPatients.length > 0 && filteredPatients.map(p => {
+              const isSelected = selectedPatient?.appointmentId === p.appointmentId;
+              const isActive = ["InRoom", "InProgress"].includes(p.appointmentStatus);
+              const isWaiting = p.queueStatus === "Waiting" || p.queueStatus === "Called";
+              const sc = STATUS_COLORS[p.appointmentStatus] ?? STATUS_COLORS.Scheduled;
+              const isSent = sentPatients.has(p.appointmentId);
+              const isPatientSentForBadge = isSent;
+
+              return (
+                <button
+                  key={p.appointmentId}
+                  onClick={() => {
+                    setSelectedPatient(p);
+                    setSelectedServices([]);
+                    setClinicalNotes({ diagnosis: "", treatmentDone: "", instructions: "", nextVisitPlan: "", amountDue: 0, suggestedServiceId: "", followUpDate: "" });
+                  }}
+                  className="w-full px-3 py-2.5 text-right transition-all hover:bg-[#f8fafc]"
+                  style={{
+                    background: isSelected ? "#eff6ff" : "transparent",
+                    borderRight: isSelected ? "3px solid #2563eb" : "3px solid transparent",
+                    borderBottom: "1px solid #f3f4f6",
+                    opacity: isSent ? 0.4 : 1,
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {/* Avatar */}
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                      style={{ background: isSent ? "#9ca3af" : isActive ? "#16a34a" : isWaiting ? ORANGE : "#2563eb", color: "#fff" }}
+                    >
+                      {getInitials(p.patientName)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[11px] font-bold truncate" style={{ color: isSelected ? "#2563eb" : "#1a1a1a" }}>{p.patientName}</p>
+                        <span
+                          className="text-[9px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0"
+                          style={{ background: sc.bg, color: sc.text }}
+                        >
+                          {APPT_STATUS_LABELS[p.appointmentStatus] ?? p.appointmentStatus}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-[#9ca3af] truncate mt-0.5">
+                        {p.serviceName ?? "—"} · {fmtTime(p.appointmentTime)}
+                      </p>
+                      {isAdmin && p.doctorName && (
+                        <p className="text-[9px] text-[#6b7280] truncate">{p.doctorName} · {p.roomName ?? "—"}</p>
+                      )}
+                      {isActive && p.inRoomSince && (
+                        <p className="text-[9px] font-semibold text-[#16a34a]">{fmtSessionDuration(p.inRoomSince)}</p>
+                      )}
+                    </div>
+                  </div>
+                  {isPatientSentForBadge && (
+                    <span className="text-[9px] font-semibold text-[#16a34a] mt-1 flex items-center gap-0.5">
+                      <CheckCircle className="w-2.5 h-2.5" /> تم الإرسال
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </aside>
       </div>
     </div>
   );

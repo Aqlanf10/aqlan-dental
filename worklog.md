@@ -42,7 +42,7 @@ Stage Summary:
 ---
 Task ID: 2
 Agent: Main Agent
-Task: Merge and Deploy PR #32 (Patient Portal messaging recipient selection)
+Task: Merge and deploy PR #32 (Patient Portal messaging recipient selection)
 
 Work Log:
 - Verified PR #32 was open and mergeable on GitHub (state: open, mergeable: true, merge_state: clean)
@@ -169,3 +169,32 @@ Stage Summary:
 - All existing units remain untouched
 - PR: https://github.com/Aqlanf10/aqlan-dental/pull/218
 - Commit: 615cec0
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: PR #231 Last Code Gate — Prevent Duplicate Cashier Sessions and Replace Unstable Finance Number Locks
+
+Work Log:
+- Checked out branch fix/finance-v3-phases-2-4-accounting-safety-gate (head: a783d9d)
+- Read all affected files: CashierSessionsController.cs, InvoicesController.cs, OperationalExpensesController.cs, SupplierBillsController.cs, VaultTransfersController.cs, CommissionService.cs, FinanceService.cs, JournalEntryService.cs, TreasuryResolutionService.cs, ConcurrencyAndCashierSessionTests.cs
+- Identified all GetHashCode usages in finance code paths (8 locations)
+- Created StableLockKeyHelper.cs with named constants and shared StableGuidToLong helper
+- Fixed Blocker 1: CashierSessionsController.OpenSession now begins transaction first, acquires deterministic pg_advisory_xact_lock(StableGuidToLong(cashierId)) before authoritative re-check, then acquires CashierSessionNumber lock for sequence generation
+- Fixed Blocker 2: Replaced all 8 GetHashCode-based advisory lock keys with deterministic StableLockKeyHelper constants
+- Consolidated StableGuidToLong from CommissionService into StableLockKeyHelper
+- Added 6 new tests in DuplicateSessionAndStableLockKeyTests.cs
+- Built: dotnet build Release — 0 errors
+- Tested: 959 tests pass (all), 13 finance tests pass (6 new + 7 existing)
+- Frontend: tsc --noEmit clean, lint passes, npm run build succeeds
+- Pushed to origin, new PR head: ae474df
+
+Stage Summary:
+- New file: StableLockKeyHelper.cs (deterministic lock key constants + helpers)
+- New test file: DuplicateSessionAndStableLockKeyTests.cs (6 tests)
+- 8 modified files (CashierSessionsController, InvoicesController, OperationalExpensesController, SupplierBillsController, VaultTransfersController, CommissionService, FinanceService, JournalEntryService)
+- All finance GetHashCode usages replaced with stable constants
+- Duplicate cashier session prevention via locked re-check inside transaction
+- OpeningBalance confirmed as reconciliation seed only (no Treasury.Balance mutation)
+- NOT VERIFIED — PostgreSQL concurrent lock execution still requires an integration environment
+- PR not merged, production preflight pending

@@ -557,12 +557,26 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         // No patient balance is altered. Payments module remains source of truth.
 
         // Finance V3: Post accrual journal entry for invoice issuance
-        // BEFORE SaveChangesAsync — if JE posting fails, the invoice status change
-        // is also rolled back (atomic operation, Blocker 3).
+        // Wrap status change + accrual journal creation + journal posting in one
+        // explicit transaction so any failure rolls everything back and the invoice
+        // remains Draft (atomic operation, Blocker 1).
         var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
-        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
-        await db.SaveChangesAsync();
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            // Reload invoice from DB to discard the in-memory status change
+            await db.Entry(invoice).ReloadAsync();
+            throw;
+        }
 
         // H3: Audit logging for invoice issue
         await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice issued");
@@ -617,9 +631,10 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 ? $"[إلغاء] {req.Notes}"
                 : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
 
-        // Blocker 2: Atomic cancellation — only reverse for Issued invoices
-        // Draft -> Cancelled: no reversal needed (no accrual was posted)
-        // Issued -> Cancelled: reversal MUST succeed, otherwise we do NOT persist the cancellation
+        // Blocker 1: Atomic cancellation — only reverse for Issued invoices
+        // Draft -> Cancelled: no reversal needed (no accrual was posted), status-only
+        // Issued -> Cancelled: status change + reversal MUST both succeed atomically,
+        //   otherwise we do NOT persist the cancellation and invoice remains Issued.
         if (originalStatus == InvoiceStatus.Issued)
         {
             // Check if a reversal already exists to prevent double reversal on retry
@@ -631,13 +646,34 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             if (!existingReversal)
             {
                 var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
-                // This call throws if it fails — we do NOT catch-and-continue.
-                // If reversal fails, the entire operation fails and the invoice remains Issued.
-                await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+
+                var useCancelTx = db.Database.IsRelational();
+                var cancelTx = useCancelTx ? await db.Database.BeginTransactionAsync() : null;
+                try
+                {
+                    // Status change + reversal creation + linking + posting + save — all atomic
+                    await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+                    await db.SaveChangesAsync();
+                    if (useCancelTx) await cancelTx!.CommitAsync();
+                }
+                catch
+                {
+                    if (useCancelTx) await cancelTx!.RollbackAsync();
+                    // Reload invoice to discard the in-memory status change
+                    await db.Entry(invoice).ReloadAsync();
+                    throw;
+                }
+            }
+            else
+            {
+                await db.SaveChangesAsync();
             }
         }
-
-        await db.SaveChangesAsync();
+        else
+        {
+            // Draft -> Cancelled: status-only, no JE reversal needed
+            await db.SaveChangesAsync();
+        }
 
         // H3: Audit logging for invoice cancellation
         await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice cancelled");

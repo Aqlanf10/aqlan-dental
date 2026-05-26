@@ -491,37 +491,108 @@ public class FinanceV3Controller(
         var patientReversalTotal = await patientPaymentReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
         var netCashCollections = cashCollections - cashRefunds - patientReversalTotal;
 
-        // Operating Expenses
+        // ── Cost categories: original outflows minus category-specific reversal inflows ──
+        // Blocker 2: Each outgoing category must net its own reversals.
+        // A reversal of OperationalExpense reduces OperatingExpenses ONLY.
+        // A reversal of SalaryPayment reduces SalaryPayments ONLY, etc.
+        // Transfer reversals must not affect operating costs.
+        // Patient payment reversals must not affect cost categories.
+
+        // Operating Expenses: original outflows - reversal inflows for OperationalExpense
         var expenses = db.CashFlowTransactions
             .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
                 && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.OperationalExpense);
-        if (branchId.HasValue) expenses = expenses.Where(tx => tx.BranchId == branchId.Value);
-        var operatingExpenses = await expenses.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+                && tx.Category == FinancialCategory.OperationalExpense
+                && !tx.IsReversal);
+        var expenseReversals = db.CashFlowTransactions
+            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
+                && tx.Type == TransactionType.Inflow
+                && tx.Category == FinancialCategory.Reversal
+                && tx.IsReversal
+                && tx.ReversalOfTransactionId != null
+                && db.CashFlowTransactions
+                    .Where(orig => orig.Category == FinancialCategory.OperationalExpense)
+                    .Select(orig => orig.Id)
+                    .Contains(tx.ReversalOfTransactionId.Value));
+        if (branchId.HasValue)
+        {
+            expenses = expenses.Where(tx => tx.BranchId == branchId.Value);
+            expenseReversals = expenseReversals.Where(tx => tx.BranchId == branchId.Value);
+        }
+        var operatingExpenses = (await expenses.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
+                              - (await expenseReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
 
-        // Salary Payments
+        // Salary Payments: original outflows - reversal inflows for SalaryPayment
         var salaries = db.CashFlowTransactions
             .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
                 && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.SalaryPayment);
-        if (branchId.HasValue) salaries = salaries.Where(tx => tx.BranchId == branchId.Value);
-        var salaryTotal = await salaries.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+                && tx.Category == FinancialCategory.SalaryPayment
+                && !tx.IsReversal);
+        var salaryReversals = db.CashFlowTransactions
+            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
+                && tx.Type == TransactionType.Inflow
+                && tx.Category == FinancialCategory.Reversal
+                && tx.IsReversal
+                && tx.ReversalOfTransactionId != null
+                && db.CashFlowTransactions
+                    .Where(orig => orig.Category == FinancialCategory.SalaryPayment)
+                    .Select(orig => orig.Id)
+                    .Contains(tx.ReversalOfTransactionId.Value));
+        if (branchId.HasValue)
+        {
+            salaries = salaries.Where(tx => tx.BranchId == branchId.Value);
+            salaryReversals = salaryReversals.Where(tx => tx.BranchId == branchId.Value);
+        }
+        var salaryTotal = (await salaries.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
+                        - (await salaryReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
 
-        // Doctor Commissions
+        // Doctor Commissions: original outflows - reversal inflows for DoctorCommission
         var commissions = db.CashFlowTransactions
             .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
                 && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.DoctorCommission);
-        if (branchId.HasValue) commissions = commissions.Where(tx => tx.BranchId == branchId.Value);
-        var commissionTotal = await commissions.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+                && tx.Category == FinancialCategory.DoctorCommission
+                && !tx.IsReversal);
+        var commissionReversals = db.CashFlowTransactions
+            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
+                && tx.Type == TransactionType.Inflow
+                && tx.Category == FinancialCategory.Reversal
+                && tx.IsReversal
+                && tx.ReversalOfTransactionId != null
+                && db.CashFlowTransactions
+                    .Where(orig => orig.Category == FinancialCategory.DoctorCommission)
+                    .Select(orig => orig.Id)
+                    .Contains(tx.ReversalOfTransactionId.Value));
+        if (branchId.HasValue)
+        {
+            commissions = commissions.Where(tx => tx.BranchId == branchId.Value);
+            commissionReversals = commissionReversals.Where(tx => tx.BranchId == branchId.Value);
+        }
+        var commissionTotal = (await commissions.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
+                            - (await commissionReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
 
-        // Supplier Payments
+        // Supplier Payments: original outflows - reversal inflows for SupplierPayment
         var supplierPayments = db.CashFlowTransactions
             .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
                 && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.SupplierPayment);
-        if (branchId.HasValue) supplierPayments = supplierPayments.Where(tx => tx.BranchId == branchId.Value);
-        var supplierTotal = await supplierPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
+                && tx.Category == FinancialCategory.SupplierPayment
+                && !tx.IsReversal);
+        var supplierReversals = db.CashFlowTransactions
+            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
+                && tx.Type == TransactionType.Inflow
+                && tx.Category == FinancialCategory.Reversal
+                && tx.IsReversal
+                && tx.ReversalOfTransactionId != null
+                && db.CashFlowTransactions
+                    .Where(orig => orig.Category == FinancialCategory.SupplierPayment)
+                    .Select(orig => orig.Id)
+                    .Contains(tx.ReversalOfTransactionId.Value));
+        if (branchId.HasValue)
+        {
+            supplierPayments = supplierPayments.Where(tx => tx.BranchId == branchId.Value);
+            supplierReversals = supplierReversals.Where(tx => tx.BranchId == branchId.Value);
+        }
+        var supplierTotal = (await supplierPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
+                          - (await supplierReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
 
         var totalCosts = operatingExpenses + salaryTotal + commissionTotal + supplierTotal;
         var cashNetProfit = netCashCollections - totalCosts;
@@ -545,6 +616,10 @@ public class FinanceV3Controller(
             SalaryPayments = salaryTotal,
             DoctorCommissions = commissionTotal,
             SupplierPayments = supplierTotal,
+            OperatingExpensesFormula = "OperationalExpense Outflows - Reversal Inflows of OperationalExpense",
+            SalaryPaymentsFormula = "SalaryPayment Outflows - Reversal Inflows of SalaryPayment",
+            DoctorCommissionsFormula = "DoctorCommission Outflows - Reversal Inflows of DoctorCommission",
+            SupplierPaymentsFormula = "SupplierPayment Outflows - Reversal Inflows of SupplierPayment",
             TotalCosts = totalCosts,
             CashNetProfit = cashNetProfit,
             ProfitMargin = netCashCollections > 0 ? (double)(cashNetProfit / netCashCollections * 100) : 0,

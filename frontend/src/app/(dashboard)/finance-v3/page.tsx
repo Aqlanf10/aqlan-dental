@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Wallet,
   FileText,
@@ -132,9 +132,9 @@ interface PhaseStatus {
 }
 
 const PHASE_STATUS: PhaseStatus[] = [
-  { key: "phase1", label: "التدقيق والتأسيس",      status: "in-progress" },
-  { key: "phase2", label: "دفتر الأستاذ المزدوج",  status: "pending" },
-  { key: "phase3", label: "الفواتير والتحصيل",      status: "pending" },
+  { key: "phase1", label: "التدقيق والتأسيس",      status: "completed" },
+  { key: "phase2", label: "دفتر الأستاذ المزدوج",  status: "completed" },
+  { key: "phase3", label: "الفواتير والتحصيل",      status: "in-progress" },
   { key: "phase4", label: "الصندوق والخزائن",       status: "pending" },
   { key: "phase5", label: "التقارير والاعتماد",      status: "pending" },
   { key: "phase6", label: "ترحيل البيانات",         status: "pending" },
@@ -237,9 +237,57 @@ function EmptyTabState({ tab }: { tab: TabDef }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   Overview Tab Content
+   Dashboard data types
+   ═══════════════════════════════════════════════════════════════════════════════ */
+interface DashboardData {
+  TodayInflow: number;
+  TodayOutflow: number;
+  TodayNet: number;
+  MonthInflow: number;
+  MonthOutflow: number;
+  MonthNet: number;
+  TotalOutstanding: number;
+  ContractOutstanding: number;
+  InvoiceOutstanding: number;
+  TotalTreasuryBalance: number;
+  JournalEntryCount: number;
+  PostedEntryCount: number;
+  ReversalEntryCount: number;
+  DualWriteCoverage: string;
+  PendingExpenses: number;
+  PendingTransfers: number;
+  Date: string;
+}
+
+function formatYER(amount: number): string {
+  return amount.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ر.ي";
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Overview Tab Content — Now fetches live data from FinanceV3 API
    ═══════════════════════════════════════════════════════════════════════════════ */
 function OverviewTab() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDashboard = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch("/api/finance-v3/dashboard");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل في تحميل البيانات");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
   return (
     <div className="p-6 space-y-6">
       {/* Welcome message */}
@@ -254,112 +302,132 @@ function OverviewTab() {
         </p>
       </div>
 
+      {/* Live KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-lg border p-4 animate-pulse" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+              <div className="h-3 w-20 rounded mb-2" style={{ backgroundColor: tokens.cardHover }} />
+              <div className="h-6 w-32 rounded" style={{ backgroundColor: tokens.cardHover }} />
+            </div>
+          ))
+        ) : error ? (
+          <div className="col-span-full rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+            <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+            <button onClick={fetchDashboard} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>
+              إعادة المحاولة
+            </button>
+          </div>
+        ) : data ? (
+          <>
+            <KpiCard label="إيراد اليوم" value={formatYER(data.TodayInflow)} sublabel={`صافي: ${formatYER(data.TodayNet)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="مصروفات اليوم" value={formatYER(data.TodayOutflow)} sublabel={`شهري: ${formatYER(data.MonthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
+            <KpiCard label="رصيد الخزائن" value={formatYER(data.TotalTreasuryBalance)} sublabel={`${data.JournalEntryCount} قيد محاسبي`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
+            <KpiCard label="المستحقات المعلقة" value={formatYER(data.TotalOutstanding)} sublabel={`عقود: ${formatYER(data.ContractOutstanding)}`} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
+          </>
+        ) : null}
+      </div>
+
+      {/* Dual-write health + Pending actions */}
+      {data && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle2 className="w-4 h-4" style={{ color: tokens.successBorder }} />
+              <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>حالة الكتابة المزدوجة</h4>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span style={{ color: tokens.textSecondary }}>إجمالي القيود</span>
+                <span className="font-bold" style={{ color: tokens.textPrimary }}>{data.JournalEntryCount}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span style={{ color: tokens.textSecondary }}>قيود مرحّلة</span>
+                <span className="font-bold" style={{ color: tokens.successBorder }}>{data.PostedEntryCount}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span style={{ color: tokens.textSecondary }}>قيود عكسية</span>
+                <span className="font-bold" style={{ color: tokens.warningText }}>{data.ReversalEntryCount}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span style={{ color: tokens.textSecondary }}>نسبة التغطية</span>
+                <span className="font-bold" style={{ color: tokens.brand }}>{data.DualWriteCoverage}</span>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4" style={{ color: tokens.warningBorder }} />
+              <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>إجراءات معلقة</h4>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span style={{ color: tokens.textSecondary }}>مصروفات بانتظار الاعتماد</span>
+                <span className="font-bold" style={{ color: data.PendingExpenses > 0 ? tokens.warningText : tokens.textPrimary }}>{data.PendingExpenses}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span style={{ color: tokens.textSecondary }}>تحويلات معلقة</span>
+                <span className="font-bold" style={{ color: data.PendingTransfers > 0 ? tokens.warningText : tokens.textPrimary }}>{data.PendingTransfers}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span style={{ color: tokens.textSecondary }}>فواتير غير مدفوعة</span>
+                <span className="font-bold" style={{ color: tokens.textPrimary }}>{formatYER(data.InvoiceOutstanding)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monthly summary */}
+      {data && (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+          <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>ملخص الشهر</h4>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-xs" style={{ color: tokens.textTertiary }}>الإيرادات</p>
+              <p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.MonthInflow)}</p>
+            </div>
+            <div>
+              <p className="text-xs" style={{ color: tokens.textTertiary }}>المصروفات</p>
+              <p className="text-lg font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.MonthOutflow)}</p>
+            </div>
+            <div>
+              <p className="text-xs" style={{ color: tokens.textTertiary }}>صافي التدفق</p>
+              <p className="text-lg font-bold" style={{ color: data.MonthNet >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.MonthNet)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Current status */}
-      <div
-        className="rounded-lg border p-4"
-        style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
-      >
-        <h3 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>
-          حالة إعادة البناء
-        </h3>
+      <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+        <h3 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>حالة إعادة البناء</h3>
         <div className="space-y-2">
           {PHASE_STATUS.map((phase) => (
-            <div
-              key={phase.key}
-              className="flex items-center gap-3 py-1.5 px-3 rounded-md"
-              style={{ backgroundColor: phase.status === "in-progress" ? tokens.warningBg : "transparent" }}
-            >
+            <div key={phase.key} className="flex items-center gap-3 py-1.5 px-3 rounded-md" style={{ backgroundColor: phase.status === "in-progress" ? tokens.warningBg : "transparent" }}>
               <PhaseIcon status={phase.status} />
-              <span
-                className="text-sm flex-1"
-                style={{ color: phase.status === "pending" ? tokens.textTertiary : tokens.textPrimary }}
-              >
-                {phase.label}
-              </span>
-              <span
-                className="text-xs font-medium"
-                style={{
-                  color:
-                    phase.status === "completed"
-                      ? tokens.successBorder
-                      : phase.status === "in-progress"
-                      ? tokens.warningText
-                      : tokens.textTertiary,
-                }}
-              >
-                {phase.status === "completed"
-                  ? "مكتمل"
-                  : phase.status === "in-progress"
-                  ? "جارٍ التنفيذ"
-                  : "لم يبدأ"}
+              <span className="text-sm flex-1" style={{ color: phase.status === "pending" ? tokens.textTertiary : tokens.textPrimary }}>{phase.label}</span>
+              <span className="text-xs font-medium" style={{ color: phase.status === "completed" ? tokens.successBorder : phase.status === "in-progress" ? tokens.warningText : tokens.textTertiary }}>
+                {phase.status === "completed" ? "مكتمل" : phase.status === "in-progress" ? "جارٍ التنفيذ" : "لم يبدأ"}
               </span>
             </div>
           ))}
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Quick info grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div
-          className="rounded-lg border p-4"
-          style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Info className="w-4 h-4" style={{ color: tokens.brand }} />
-            <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>
-              معلومات مهمة
-            </h4>
-          </div>
-          <ul className="space-y-1.5 text-xs leading-relaxed" style={{ color: tokens.textSecondary }}>
-            <li>يستمر تسجيل تحصيل المرضى من شاشة التشغيل اليومي وفق سير العمل المعتمد.</li>
-            <li>لا تستخدم هذه الشاشة لإدخال أو تعديل قيود مالية حتى اكتمال الاعتماد.</li>
-            <li>الشاشات المالية القديمة ما زالت تعمل عبر الروابط المباشرة.</li>
-            <li>بيانات المالية الحالية هي بيانات تجريبية وسيتم تنظيفها لاحقاً.</li>
-          </ul>
-        </div>
-        <div
-          className="rounded-lg border p-4"
-          style={{ backgroundColor: tokens.card, borderColor: tokens.border }}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <FileText className="w-4 h-4" style={{ color: tokens.brand }} />
-            <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>
-              المواصفات المرجعية
-            </h4>
-          </div>
-          <ul className="space-y-1.5 text-xs leading-relaxed" style={{ color: tokens.textSecondary }}>
-            <li>
-              المصدر الرسمي للحقيقة المحاسبية:
-              <code
-                className="px-1.5 py-0.5 rounded text-[11px] mx-1"
-                style={{ backgroundColor: tokens.cardHover, color: tokens.brand }}
-              >
-                JournalEntry + JournalLine
-              </code>
-              (دفتر الأستاذ المزدوج)
-            </li>
-            <li>
-              <code
-                className="px-1.5 py-0.5 rounded text-[11px] mx-0.5"
-                style={{ backgroundColor: tokens.cardHover, color: tokens.textSecondary }}
-              >
-                CashFlowTransaction
-              </code>
-              جدول انتقالي حتى اكتمال الانتقال
-            </li>
-            <li>
-              المواصفات الكاملة:
-              <code
-                className="px-1.5 py-0.5 rounded text-[11px] mx-1"
-                style={{ backgroundColor: tokens.cardHover, color: tokens.brand }}
-              >
-                docs/finance-v3/FINANCE-V3-FOUNDATION.md
-              </code>
-            </li>
-            <li>المرحلة الحالية: ١ من ٧ (التدقيق والتأسيس)</li>
-          </ul>
-        </div>
+/* ── KPI Card component ── */
+function KpiCard({ label, value, sublabel, color, icon }: { label: string; value: string; sublabel?: string; color: string; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}15` }}>{icon}</div>
+        <span className="text-xs font-medium" style={{ color: tokens.textTertiary }}>{label}</span>
       </div>
+      <p className="text-base font-bold" style={{ color }}>{value}</p>
+      {sublabel && <p className="text-[11px] mt-0.5" style={{ color: tokens.textTertiary }}>{sublabel}</p>}
     </div>
   );
 }
@@ -604,12 +672,12 @@ export default function FinanceV3Page() {
               <div className="flex items-center gap-2 mb-1.5">
                 <Clock className="w-3.5 h-3.5" style={{ color: tokens.warningText }} />
                 <span className="text-xs font-bold" style={{ color: tokens.warningText }}>
-                  المرحلة ١: التدقيق والتأسيس
+                  المرحلة ٣: الفواتير والتحصيل
                 </span>
               </div>
               <p className="text-[11px] leading-relaxed" style={{ color: tokens.warningText }}>
-                جارٍ توثيق العيوب والمواصفات وتهيئة الشاشة الجديدة. لا تغييرات
-                على منطق الخادم أو قاعدة البيانات في هذه المرحلة.
+                جارٍ بناء مسارات API للمالية وربطها بالواجهة. المرحلتان ١ و ٢ مكتملتان
+                — دفتر الأستاذ المزدوج والكتابة المزدوجة يعملان الآن.
               </p>
             </div>
 

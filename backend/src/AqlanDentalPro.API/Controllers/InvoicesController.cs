@@ -6,6 +6,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -554,6 +555,12 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
 
         // IMPORTANT: No Payment is created. No Contract is changed.
         // No patient balance is altered. Payments module remains source of truth.
+
+        // Finance V3: Post accrual journal entry for invoice issuance
+        // BEFORE SaveChangesAsync — if JE posting fails, the invoice status change
+        // is also rolled back (atomic operation, Blocker 3).
+        var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+        await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
 
         await db.SaveChangesAsync();
 

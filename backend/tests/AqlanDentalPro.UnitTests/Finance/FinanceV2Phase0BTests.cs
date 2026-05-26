@@ -82,7 +82,76 @@ public class FinanceV2Phase0BTests
         var logger = new Mock<ILogger<FinanceService>>();
         var commissionService = new Mock<ICommissionService>();
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object);
+        var journalEntryService = new Mock<IJournalEntryService>();
+
+        // Finance V3: Mock CreateEntryAsync to return a valid JournalEntry
+        journalEntryService.Setup(s => s.CreateEntryAsync(
+            It.IsAny<FinancialDocumentType>(),
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<DateOnly>(),
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)>>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FinancialDocumentType docType, Guid docId, string desc, DateOnly date, Guid branch, Guid performedBy, Guid? sessionId, Guid? treasuryId, IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)> lines, CancellationToken ct) =>
+            {
+                var entry = new JournalEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EntryNumber = "JE-TEST-001",
+                    FinancialDocumentId = docId,
+                    FinancialDocumentType = docType,
+                    Description = desc,
+                    EntryDate = date,
+                    BranchId = branch,
+                    PerformedBy = performedBy,
+                    CashierSessionId = sessionId,
+                    TreasuryId = treasuryId,
+                    IsPosted = false,
+                    IsReversal = false,
+                };
+                foreach (var (accountType, accountId, debit, credit, lineDesc) in lines)
+                {
+                    entry.Lines.Add(new JournalLine
+                    {
+                        Id = Guid.NewGuid(),
+                        AccountType = accountType,
+                        AccountId = accountId,
+                        Debit = debit,
+                        Credit = credit,
+                        Description = lineDesc,
+                        BranchId = branch,
+                    });
+                }
+                return entry;
+            });
+        journalEntryService.Setup(s => s.CreateReversalEntryAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<Guid>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid originalId, string reason, Guid performedBy, CancellationToken ct) =>
+            {
+                return new JournalEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EntryNumber = "JE-REV-001",
+                    FinancialDocumentId = Guid.NewGuid(),
+                    FinancialDocumentType = FinancialDocumentType.PaymentDeletion,
+                    Description = $"Reversal: {reason}",
+                    EntryDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    BranchId = Guid.Empty,
+                    PerformedBy = performedBy,
+                    IsPosted = false,
+                    IsReversal = true,
+                    ReversalOfEntryId = originalId,
+                };
+            });
+
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
 
         return (service, branchId, cashierId);
     }
@@ -319,7 +388,76 @@ public class FinanceV2Phase0BTests
         var logger = new Mock<ILogger<FinanceService>>();
         var commissionService = new Mock<ICommissionService>();
 
-        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object);
+        var journalEntryService = new Mock<IJournalEntryService>();
+
+        // Finance V3: Mock CreateEntryAsync to return a valid JournalEntry
+        journalEntryService.Setup(s => s.CreateEntryAsync(
+            It.IsAny<FinancialDocumentType>(),
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<DateOnly>(),
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)>>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FinancialDocumentType docType, Guid docId, string desc, DateOnly date, Guid branch, Guid performedBy, Guid? sessionId, Guid? treasuryId, IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)> lines, CancellationToken ct) =>
+            {
+                var entry = new JournalEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EntryNumber = "JE-TEST-001",
+                    FinancialDocumentId = docId,
+                    FinancialDocumentType = docType,
+                    Description = desc,
+                    EntryDate = date,
+                    BranchId = branch,
+                    PerformedBy = performedBy,
+                    CashierSessionId = sessionId,
+                    TreasuryId = treasuryId,
+                    IsPosted = false,
+                    IsReversal = false,
+                };
+                foreach (var (accountType, accountId, debit, credit, lineDesc) in lines)
+                {
+                    entry.Lines.Add(new JournalLine
+                    {
+                        Id = Guid.NewGuid(),
+                        AccountType = accountType,
+                        AccountId = accountId,
+                        Debit = debit,
+                        Credit = credit,
+                        Description = lineDesc,
+                        BranchId = branch,
+                    });
+                }
+                return entry;
+            });
+        journalEntryService.Setup(s => s.CreateReversalEntryAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<Guid>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid originalId, string reason, Guid performedBy, CancellationToken ct) =>
+            {
+                return new JournalEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EntryNumber = "JE-REV-001",
+                    FinancialDocumentId = Guid.NewGuid(),
+                    FinancialDocumentType = FinancialDocumentType.PaymentDeletion,
+                    Description = $"Reversal: {reason}",
+                    EntryDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    BranchId = Guid.Empty,
+                    PerformedBy = performedBy,
+                    IsPosted = false,
+                    IsReversal = true,
+                    ReversalOfEntryId = originalId,
+                };
+            });
+
+        var service = new FinanceService(db, currentUser.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
 
         // Deleting a payment with no linked CashFlowTransaction should succeed
         var result = await service.DeletePaymentAsync(paymentId);

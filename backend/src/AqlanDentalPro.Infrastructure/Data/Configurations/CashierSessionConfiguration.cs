@@ -25,5 +25,12 @@ public class CashierSessionConfiguration : IEntityTypeConfiguration<CashierSessi
         // WHERE CashierId = @id AND Status = Open AND IsActive
         builder.HasIndex(s => new { s.CashierId, s.Status });
         builder.HasIndex(s => s.BranchId);
+        builder.HasIndex(s => s.TreasuryId);
+
+        // Treasury FK
+        builder.HasOne(s => s.Treasury)
+            .WithMany()
+            .HasForeignKey(s => s.TreasuryId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

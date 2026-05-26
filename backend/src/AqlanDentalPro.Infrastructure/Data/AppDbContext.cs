@@ -112,6 +112,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SupplierBill> SupplierBills => Set<SupplierBill>();
     public DbSet<SupplierBillPayment> SupplierBillPayments => Set<SupplierBillPayment>();
 
+    // Finance V3 — Double-Entry Bookkeeping (JournalEntry + JournalLine)
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<JournalLine> JournalLines => Set<JournalLine>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -20,4 +20,11 @@ public interface IFinanceService
     Task<PatientFinanceSummaryDto> GetPatientFinanceSummaryAsync(Guid patientId);
     Task<FinanceSummaryDto> GetSummaryAsync();
     Task TryMarkInvoicePaidAsync(Guid invoiceId);
+
+    /// <summary>
+    /// Posts the accrual journal entry for an invoice issuance:
+    /// Debit PatientReceivable / Credit Revenue.
+    /// Called when an invoice transitions from Draft to Issued.
+    /// </summary>
+    Task PostInvoiceIssuedEntryAsync(Guid invoiceId);
 }

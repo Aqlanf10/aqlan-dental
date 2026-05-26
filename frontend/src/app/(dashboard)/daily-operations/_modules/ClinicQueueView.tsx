@@ -9,6 +9,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { NAVY, BLUE, ORANGE } from "../_lib/constants";
+import type { TodayJourneyItem } from "../_lib/constants";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ClinicQueueItem {
@@ -49,8 +50,41 @@ function formatTime(dateStr?: string): string {
   return new Date(dateStr).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+/** Map ClinicQueueItem → TodayJourneyItem for context menu compatibility */
+function queueItemToJourney(q: ClinicQueueItem): TodayJourneyItem {
+  const statusMap: Record<string, string> = {
+    Waiting: "Waiting", Called: "Called", InRoom: "InRoom",
+    InProgress: "InProgress", Completed: "Completed", Cancelled: "Cancelled",
+  };
+  const nextActionMap: Record<string, string> = {
+    Waiting: "CallPatient", Called: "EnterRoom", InRoom: "StartVisit",
+    InProgress: "Checkout", Completed: "None", Cancelled: "None",
+  };
+  return {
+    appointmentId: q.appointmentId ?? "",
+    patientId: q.patientId,
+    patientName: q.patientName,
+    patientNumber: q.patientNumber,
+    appointmentTime: q.appointmentTime ?? "",
+    appointmentStatus: statusMap[q.status] ?? q.status,
+    doctorId: q.doctorId ?? "",
+    doctorName: q.doctorName,
+    serviceName: q.serviceName,
+    roomName: q.roomName,
+    queueItemId: q.id,
+    queueStatus: q.status,
+    visitId: q.visitId,
+    nextAction: nextActionMap[q.status] ?? "None",
+  };
+}
+
 /* ─── Component ────────────────────────────────────────────────────────────── */
-export default function ClinicQueueView({ searchQuery }: { searchQuery: string }) {
+interface ClinicQueueViewProps {
+  searchQuery: string;
+  onContextMenu?: (e: React.MouseEvent, item: TodayJourneyItem) => void;
+}
+
+export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQueueViewProps) {
   const [items, setItems] = useState<ClinicQueueItem[]>([]);
   const [rooms, setRooms] = useState<DbRoom[]>([]);
   const [doctors, setDoctors] = useState<DoctorOption[]>([]);
@@ -164,8 +198,12 @@ export default function ClinicQueueView({ searchQuery }: { searchQuery: string }
               const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.Waiting;
               const isLoading = actionLoading !== null && actionLoading.includes(item.id);
               return (
-                <div key={item.id} className="rounded-xl border p-3 hover:shadow-sm transition"
-                  style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                <div key={item.id} className="rounded-xl border p-3 hover:shadow-sm transition cursor-context-menu"
+                  style={{ background: "#fff", borderColor: "#e5e7eb" }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onContextMenu?.(e, queueItemToJourney(item));
+                  }}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -227,7 +265,11 @@ export default function ClinicQueueView({ searchQuery }: { searchQuery: string }
                 {filtered(completedItems).map(item => {
                   const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.Completed;
                   return (
-                    <div key={item.id} className="rounded-xl border p-3 mb-2 opacity-60" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                    <div key={item.id} className="rounded-xl border p-3 mb-2 opacity-60 cursor-context-menu" style={{ background: "#fff", borderColor: "#e5e7eb" }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        onContextMenu?.(e, queueItemToJourney(item));
+                      }}>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm" style={{ color: NAVY }}>{item.patientName}</span>
                         <span className="text-[11px] px-2 py-0.5 rounded-full font-bold" style={{ background: cfg.bg, color: cfg.color }}>

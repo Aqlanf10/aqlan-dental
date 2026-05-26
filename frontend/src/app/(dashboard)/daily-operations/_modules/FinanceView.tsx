@@ -60,7 +60,13 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
-export default function FinanceView() {
+import type { TodayJourneyItem } from "../_lib/constants";
+
+interface FinanceViewProps {
+  onContextMenu?: (e: React.MouseEvent, item: TodayJourneyItem) => void;
+}
+
+export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   // ── Data hooks ──
   const { data: summaryRaw, isLoading: summaryLoading, refetch: refetchSummary } = useFinanceSummary();
   const { data: journeyItems, isLoading: journeyLoading, refetch: refetchJourney } = useTodayJourneyItems({});
@@ -259,8 +265,12 @@ export default function FinanceView() {
             {readyPatients.map((p) => (
               <div
                 key={p.appointmentId}
-                className="flex items-center justify-between bg-white rounded-lg border px-3 py-2.5"
+                className="flex items-center justify-between bg-white rounded-lg border px-3 py-2.5 cursor-context-menu"
                 style={{ borderColor: "#e5e7eb" }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onContextMenu?.(e, p as TodayJourneyItem);
+                }}
               >
                 <div className="flex items-center gap-3">
                   <div

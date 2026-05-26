@@ -1047,7 +1047,7 @@ export default function DailyOperationsPage() {
           {/* ═══ Module: الطابور ═══ */}
           {activeModule === "queue" && (
             <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-              <ClinicQueueView searchQuery={searchQuery} />
+              <ClinicQueueView searchQuery={searchQuery} onContextMenu={handleItemContextMenu} />
             </div>
           )}
 
@@ -1061,7 +1061,7 @@ export default function DailyOperationsPage() {
           {/* ═══ Module: المالية/الدفع ═══ */}
           {activeModule === "finance" && (
             <div className="flex-1 flex flex-col min-w-0">
-              <FinanceView />
+              <FinanceView onContextMenu={handleItemContextMenu} />
             </div>
           )}
         </div>

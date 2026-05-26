@@ -29,7 +29,7 @@ public sealed class PaySalaryRequest
 [ApiController]
 [Route("api/salaries")]
 [Authorize]
-public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService) : ControllerBase
+public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>
     /// Get salary records with filters
@@ -278,19 +278,26 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، لا يمكن صرف الراتب — الفرع غير محدد للموظف. تواصل مع الإدارة." });
 
-        // Resolve treasury for JournalEntry posting
-        var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.IsActive);
-        if (treasury == null)
-            return BadRequest(new { message = "عذراً، لا توجد خزينة للفرع. تواصل مع الإدارة لإنشاء خزينة." });
-
-        // Resolve cashier session for cash payments
-        CashierSession? activeSession = null;
+        // Resolve payment method and cashier session
         var paymentMethod = req.PaymentMethod?.Trim() ?? "cash";
+        CashierSession? activeSession = null;
         if (string.Equals(paymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
             activeSession = await db.CashierSessions
                 .FirstOrDefaultAsync(s => s.CashierId == paidByUid && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل صرف الرواتب النقدية." });
+        }
+
+        // Resolve treasury by payment method for JournalEntry posting
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
 
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -339,6 +346,9 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 });
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
+
+            // Blocker 1: Atomically decrement Treasury.Balance for the salary outflow
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, salary.NetSalary, activeSession?.Id);
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();

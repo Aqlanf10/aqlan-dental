@@ -7,17 +7,21 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// where IsActive = true. This prevents duplicate active treasuries for the same branch/type/name
 /// combination while allowing soft-deleted treasuries with the same combination to coexist.
 ///
-/// BLOCKER 7 — DEFERRED: This migration must NOT be applied until all code blockers are resolved.
-/// Before applying to production, run the following read-only preflight query to check for duplicates:
+/// BLOCKER 6 — DEFERRED: This migration must NOT be applied until all code blockers are resolved
+/// and CI passes. Before applying to production, run the following read-only preflight query:
 ///
-///   SELECT "BranchId", "Type", "Name", COUNT(*) AS cnt
+///   SELECT "BranchId", "Type", "Name", COUNT(*) AS duplicate_count
 ///   FROM "Treasuries"
 ///   WHERE "IsActive" = true
 ///   GROUP BY "BranchId", "Type", "Name"
 ///   HAVING COUNT(*) > 1;
 ///
+/// Do NOT merge until:
+///   1. Code blockers are fixed
+///   2. CI passes
+///   3. Production query returns zero rows
+///
 /// If any rows are returned, deduplicate them manually before applying this migration.
-/// If the migration fails at runtime due to existing duplicates, manual deduplication is required.
 /// </summary>
 public partial class AddUniqueIndexOnTreasuryBranchTypeAndName : Migration
 {

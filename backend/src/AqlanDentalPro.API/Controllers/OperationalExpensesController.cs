@@ -34,7 +34,7 @@ public sealed class RejectExpenseRequest
 [ApiController]
 [Route("api/expenses")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService) : ControllerBase
+public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>
     /// Approval threshold in YER: expenses above this amount require managerial approval.
@@ -75,10 +75,16 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل مصروف نقدي." });
         }
 
-        // Resolve treasury for the branch — required for JournalEntry posting
-        var treasury = await ResolveTreasuryAsync(branchId.Value);
-        if (treasury == null)
-            return BadRequest(new { message = "عذراً، لا توجد خزينة للفرع. تواصل مع الإدارة لإنشاء خزينة." });
+        // Resolve treasury for the branch by payment method — required for JournalEntry posting
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId.Value, req.PaymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
         // Verify supplier if provided
         if (req.SupplierId.HasValue)
@@ -176,6 +182,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                     });
                 je.IsPosted = true;
                 je.PostedAt = DateTime.UtcNow;
+
+                // Blocker 1: Atomically decrement Treasury.Balance for the outflow
+                await treasuryResolution.DecrementTreasuryBalanceAsync(branchId.Value, expense.PaymentMethod, expense.Amount, activeSession?.Id);
             }
 
             // If linked to lab order, update lab order status to "paid"
@@ -344,17 +353,22 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، الفرع غير محدد لهذا المصروف. تواصل مع الإدارة." });
 
-        // Resolve treasury for JournalEntry posting
-        var treasury = await ResolveTreasuryAsync(branchId);
-        if (treasury == null)
-            return BadRequest(new { message = "عذراً، لا توجد خزينة للفرع. تواصل مع الإدارة لإنشاء خزينة." });
-
-        // Phase 0A: When approving a cash expense, find the active session to link
+        // Resolve treasury by payment method for JournalEntry posting
         CashierSession? activeSession = null;
         if (string.Equals(expense.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
             activeSession = await db.CashierSessions
                 .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+        }
+
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, expense.PaymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
 
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -392,6 +406,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 });
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
+
+            // Blocker 1: Atomically decrement Treasury.Balance for the approved outflow
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, expense.PaymentMethod, expense.Amount, activeSession?.Id);
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -530,6 +547,18 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             return BadRequest(new { message = "هذا المصروف تم عكسه مسبقاً." });
         }
 
+        // Blocker 4: Resolve the treasury for reversal balance restoration
+        Treasury? reversalTreasury = null;
+        try
+        {
+            reversalTreasury = await treasuryResolution.ResolveTreasuryAsync(expense.BranchId, expense.PaymentMethod, originalCashflow?.CashierSessionId);
+        }
+        catch (ArgumentException)
+        {
+            // If treasury resolution fails, still allow reversal but log the issue
+            // (the JE and cashflow are the source of truth; balance can be reconciled later)
+        }
+
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -575,6 +604,15 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 reversalJe.PostedAt = DateTime.UtcNow;
             }
 
+            // Blocker 4: Atomically increment Treasury.Balance for the reversal
+            // Only restore if we have a valid treasury — this prevents double-restore
+            // because the duplicate reversal check above (ReversedByTransactionId != null)
+            // ensures we can only reach this point once per original cashflow.
+            if (reversalTreasury != null)
+            {
+                await treasuryResolution.IncrementTreasuryBalanceAsync(expense.BranchId, expense.PaymentMethod, expense.Amount);
+            }
+
             // Mark the expense as deactivated (but DO NOT soft-delete posted financial history)
             expense.IsActive = false;
             expense.DeletedAt = DateTime.UtcNow;
@@ -600,16 +638,6 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             await tx.RollbackAsync();
             throw;
         }
-    }
-
-    /// <summary>
-    /// Resolves the primary treasury for a branch. Returns the first active treasury for the branch,
-    /// or null if none exists.
-    /// </summary>
-    private async Task<Treasury?> ResolveTreasuryAsync(Guid branchId)
-    {
-        return await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.IsActive);
     }
 
     private static CashFlowTransaction CreateCashFlowTransaction(

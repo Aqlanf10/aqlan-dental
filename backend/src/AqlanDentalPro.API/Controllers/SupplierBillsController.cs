@@ -33,7 +33,7 @@ public sealed class PayBillInstallmentRequest
 [ApiController]
 [Route("api/supplier-bills")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService) : ControllerBase
+public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>POST /api/supplier-bills — Register a new supplier bill (A/P entry).</summary>
     [HttpPost]
@@ -342,12 +342,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، الفرع غير محدد لفاتورة المورد. تواصل مع الإدارة." });
 
-        // Resolve treasury for JournalEntry posting
-        var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.IsActive);
-        if (treasury == null)
-            return BadRequest(new { message = "عذراً، لا توجد خزينة للفرع. تواصل مع الإدارة لإنشاء خزينة." });
-
+        // Resolve treasury by payment method for JournalEntry posting
         // Phase 0B: Cash bill payments require an open cashier session
         CashierSession? activeSession = null;
         if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
@@ -356,6 +351,16 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
             if (activeSession == null)
                 return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل سداد فواتير المورد النقدية." });
+        }
+
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
 
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -410,6 +415,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 });
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
+
+            // Blocker 1: Atomically decrement Treasury.Balance for the supplier outflow
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, req.PaymentMethod, req.Amount, activeSession?.Id);
 
             // Update bill paid amount and status
             bill.PaidAmount += req.Amount;

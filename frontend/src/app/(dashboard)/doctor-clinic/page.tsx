@@ -776,14 +776,14 @@ export default function DoctorClinicPage() {
                       )}
                     </p>
                   </div>
-                  {/* إجمالي اليوم */}
+                  {/* عدد المرضى المعالجين */}
                   <div
                     className="rounded-xl p-3"
                     style={{ background: "#f0fdf4" }}
                   >
-                    <p className="text-[10px] font-medium mb-0.5" style={{ color: "#16a34a" }}>إجمالي اليوم</p>
+                    <p className="text-[10px] font-medium mb-0.5" style={{ color: "#16a34a" }}>المرضى المعالجون اليوم</p>
                     <p className="text-sm font-bold" style={{ color: "#16a34a" }}>
-                      {fmtRial(selectedSummary?.financeSummary?.totalTreatmentCost ?? 0)}
+                      {sentPatients.size}
                     </p>
                   </div>
                 </div>

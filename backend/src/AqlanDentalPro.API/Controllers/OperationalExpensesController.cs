@@ -353,12 +353,14 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، الفرع غير محدد لهذا المصروف. تواصل مع الإدارة." });
 
-        // Resolve treasury by payment method for JournalEntry posting
+        // Blocker 2: Cash expense approval MUST require an open cashier session
         CashierSession? activeSession = null;
         if (string.Equals(expense.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
             activeSession = await db.CashierSessions
                 .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل اعتماد المصروف النقدي." });
         }
 
         Treasury treasury;
@@ -541,22 +543,27 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             }
         }
 
-        // Check if already reversed
+        // Check if already reversed — prevents double-restore
         if (originalCashflow?.ReversedByTransactionId != null)
         {
             return BadRequest(new { message = "هذا المصروف تم عكسه مسبقاً." });
         }
 
-        // Blocker 4: Resolve the treasury for reversal balance restoration
-        Treasury? reversalTreasury = null;
-        try
+        // Blocker 1: For posted expense reversal, we MUST restore balance to the exact original treasury.
+        // Never re-resolve by payment method — the original CashFlowTransaction.TreasuryId is the source of truth.
+        // If the original treasury cannot be located, reject the reversal before writing any records.
+        if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
         {
-            reversalTreasury = await treasuryResolution.ResolveTreasuryAsync(expense.BranchId, expense.PaymentMethod, originalCashflow?.CashierSessionId);
+            return BadRequest(new { message = "عذراً، لا يمكن عكس القيد — سجل التدفق النقدي الأصلي غير مرتبط بخزينة. تواصل مع المحاسب." });
         }
-        catch (ArgumentException)
+
+        var originalTreasuryId = originalCashflow.TreasuryId.Value;
+
+        // Verify the original treasury exists and is active before writing any reversal records
+        var originalTreasury = await db.Treasuries.FindAsync(originalTreasuryId);
+        if (originalTreasury == null || !originalTreasury.IsActive)
         {
-            // If treasury resolution fails, still allow reversal but log the issue
-            // (the JE and cashflow are the source of truth; balance can be reconciled later)
+            return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." });
         }
 
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -577,16 +584,14 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 PerformedBy = userId,
                 BranchId = expense.BranchId,
                 IsReversal = true,
-                ReversalOfTransactionId = originalCashflow?.Id,
-                CashierSessionId = originalCashflow?.CashierSessionId
+                ReversalOfTransactionId = originalCashflow.Id,
+                CashierSessionId = originalCashflow.CashierSessionId,
+                TreasuryId = originalTreasuryId
             };
             db.CashFlowTransactions.Add(reversalCashflow);
 
-            // Link original to reversal
-            if (originalCashflow != null)
-            {
-                originalCashflow.ReversedByTransactionId = reversalCashflow.Id;
-            }
+            // Link original to reversal — prevents double-restore on retry
+            originalCashflow.ReversedByTransactionId = reversalCashflow.Id;
 
             // Create reversal JournalEntry via service
             var originalJe = await db.JournalEntries
@@ -604,14 +609,11 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 reversalJe.PostedAt = DateTime.UtcNow;
             }
 
-            // Blocker 4: Atomically increment Treasury.Balance for the reversal
-            // Only restore if we have a valid treasury — this prevents double-restore
-            // because the duplicate reversal check above (ReversedByTransactionId != null)
-            // ensures we can only reach this point once per original cashflow.
-            if (reversalTreasury != null)
-            {
-                await treasuryResolution.IncrementTreasuryBalanceAsync(expense.BranchId, expense.PaymentMethod, expense.Amount);
-            }
+            // Blocker 1: Atomically increment Treasury.Balance on the EXACT original treasury.
+            // Uses the original CashFlowTransaction.TreasuryId — never re-resolves by payment method.
+            // Double-restore is prevented because originalCashflow.ReversedByTransactionId is set above,
+            // and the check at the top of this method rejects if it's already non-null.
+            await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(originalTreasuryId, expense.Amount);
 
             // Mark the expense as deactivated (but DO NOT soft-delete posted financial history)
             expense.IsActive = false;

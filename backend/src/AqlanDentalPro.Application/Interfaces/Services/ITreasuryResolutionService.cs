@@ -52,4 +52,16 @@ public interface ITreasuryResolutionService
         string? paymentMethod,
         decimal amount,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically increments the balance of a specific treasury by its ID.
+    /// Used for reversals where the exact original treasury must be restored.
+    /// Rejects with Arabic error if the treasury cannot be found or is inactive.
+    /// Uses raw SQL on relational databases for concurrency safety.
+    /// Does NOT call SaveChangesAsync — the caller persists all changes together.
+    /// </summary>
+    Task IncrementTreasuryBalanceByTreasuryIdAsync(
+        Guid treasuryId,
+        decimal amount,
+        CancellationToken ct = default);
 }

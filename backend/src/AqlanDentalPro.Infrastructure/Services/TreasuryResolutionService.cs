@@ -136,6 +136,29 @@ public class TreasuryResolutionService(
             treasury.Id, treasury.Type, amount, paymentMethod);
     }
 
+    /// <inheritdoc />
+    public async Task IncrementTreasuryBalanceByTreasuryIdAsync(
+        Guid treasuryId,
+        decimal amount,
+        CancellationToken ct = default)
+    {
+        if (treasuryId == Guid.Empty)
+            throw new ArgumentException("عذراً، معرف الخزينة غير محدد. لا يمكن استعادة الرصيد.");
+
+        if (amount <= 0)
+            throw new ArgumentException("مبلغ الإضافة يجب أن يكون أكبر من الصفر.");
+
+        var treasury = await db.Treasuries.FindAsync(new object[] { treasuryId }, ct);
+        if (treasury == null || !treasury.IsActive)
+            throw new ArgumentException("عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب.");
+
+        await MutateTreasuryBalanceAsync(treasury, amount, ct);
+
+        logger.LogInformation(
+            "Treasury {TreasuryId} ({Type}) incremented by {Amount} via exact TreasuryId for reversal",
+            treasury.Id, treasury.Type, amount);
+    }
+
     // ─── Private Helpers ─────────────────────────────────────────────────────
 
     private static bool IsBankPaymentMethod(string? paymentMethod)

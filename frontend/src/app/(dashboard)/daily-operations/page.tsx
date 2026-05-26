@@ -77,6 +77,7 @@ import BookingRequestsView from "./_modules/BookingRequestsView";
 import ClinicQueueView from "./_modules/ClinicQueueView";
 import AppointmentsView from "./_modules/AppointmentsView";
 import RoomsView from "./_modules/RoomsView";
+import FinanceView from "./_modules/FinanceView";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Inline styles for animations
@@ -104,15 +105,16 @@ const animationStyles = `
 /* ═══════════════════════════════════════════════════════════════════════════
    Module tabs (top level navigation within daily operations)
    ═══════════════════════════════════════════════════════════════════════════ */
-type ModuleTab = "journey" | "booking" | "appointments" | "queue" | "calling" | "rooms";
+type ModuleTab = "journey" | "booking" | "appointments" | "queue" | "calling" | "rooms" | "finance";
 
 const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [
-  { key: "journey",     label: "رحلة المريض",  icon: Activity,      color: ORANGE },
-  { key: "booking",     label: "طلبات الحجز",  icon: Globe,         color: BLUE },
-  { key: "appointments", label: "المواعيد",     icon: Calendar,      color: BLUE },
-  { key: "queue",       label: "الطابور",      icon: ClipboardList, color: ORANGE },
-  { key: "calling",     label: "النداء",       icon: Monitor,       color: "#8b5cf6" },
-  { key: "rooms",       label: "الغرف",       icon: Building2,     color: NAVY },
+  { key: "journey",     label: "رحلة المريض",      icon: Activity,      color: ORANGE },
+  { key: "booking",     label: "طلبات الحجز",      icon: Globe,         color: BLUE },
+  { key: "appointments", label: "المواعيد",         icon: Calendar,      color: BLUE },
+  { key: "queue",       label: "الطابور",          icon: ClipboardList, color: ORANGE },
+  { key: "calling",     label: "النداء",           icon: Monitor,       color: "#8b5cf6" },
+  { key: "rooms",       label: "الغرف",           icon: Building2,     color: NAVY },
+  { key: "finance",     label: "المالية/الدفع",     icon: Wallet,        color: "#16a34a" },
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -824,6 +826,12 @@ export default function DailyOperationsPage() {
                     {items.length}
                   </span>
                 )}
+                {tab.key === "finance" && tabCounts.payments > 0 && (
+                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                    style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
+                    {tabCounts.payments}
+                  </span>
+                )}
                 {/* Active indicator */}
                 {isActive && (
                   <span className="absolute bottom-[-2px] left-2 right-2 h-[2px] rounded-full" style={{ background: tab.color }} />
@@ -1036,6 +1044,13 @@ export default function DailyOperationsPage() {
           {activeModule === "rooms" && (
             <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
               <RoomsView />
+            </div>
+          )}
+
+          {/* ═══ Module: المالية/الدفع ═══ */}
+          {activeModule === "finance" && (
+            <div className="flex-1 flex flex-col min-w-0">
+              <FinanceView />
             </div>
           )}
         </div>

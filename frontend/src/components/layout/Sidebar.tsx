@@ -9,7 +9,7 @@ import {
   UserRound, Building2, Monitor, UserCog,
   Truck, ShoppingCart, ChevronDown,
   Smartphone, Banknote, CalendarOff, Shield,
-  HeartPulse, Route, CalendarClock, ListOrdered,
+  HeartPulse,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -55,15 +55,9 @@ const NAV: NavEntry[] = [
   { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: [], permission: PERMISSION_KEYS.PATIENTS_VIEW },
 
-  // ── التشغيل اليومي ────────────────────────────────────────────────────────
-  { href: "/booking-requests", label: "طلبات الحجز",    icon: CalendarClock,  roles: [], permission: PERMISSION_KEYS.BOOKING_REQUESTS_VIEW, section: "التشغيل اليومي" },
-  { href: "/appointments",     label: "المواعيد",        icon: Calendar,      roles: [], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW },
-  { href: "/clinic-queue",     label: "الطابور",         icon: ListOrdered,    roles: [], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
-  { href: "/patient-journey",  label: "رحلة المريض",    icon: Route,          roles: [], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW },
-  { href: "/doctor-clinic",    label: "عيادة الطبيب",    icon: Stethoscope,   roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
-
   // ── العيادة ───────────────────────────────────────────────────────────────
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"],                                         section: "العيادة" },
+  { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["GeneralDentist","OralSurgeon","Orthodontist"] },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
   { href: "/ortho",          label: "التقويم",          icon: GitBranch,       roles: ["Admin","Orthodontist"],                                       section: "تخصصات", badge: "محدّث" },

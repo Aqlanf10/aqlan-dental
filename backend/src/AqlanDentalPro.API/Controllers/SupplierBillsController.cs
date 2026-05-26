@@ -33,7 +33,7 @@ public sealed class PayBillInstallmentRequest
 [ApiController]
 [Route("api/supplier-bills")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
+public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService) : ControllerBase
 {
     /// <summary>POST /api/supplier-bills — Register a new supplier bill (A/P entry).</summary>
     [HttpPost]
@@ -59,6 +59,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
 
         var userId = currentUser.UserId ?? Guid.Empty;
         var branchId = currentUser.BranchId ?? Guid.Empty;
+
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل فاتورة المورد." });
 
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -306,14 +309,15 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         });
     }
 
-    /// <summary>POST /api/supplier-bills/{id}/pay — Record an installment payment for a bill.</summary>
+    /// <summary>POST /api/supplier-bills/{id}/pay — Record an installment payment for a bill.
+    /// Dual-writes CashFlowTransaction + JournalEntry atomically.</summary>
     [HttpPost("{id:guid}/pay")]
     public async Task<IActionResult> Pay(Guid id, [FromBody] PayBillInstallmentRequest req)
     {
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ الدفعة أكبر من الصفر" });
 
-        var bill = await db.SupplierBills.FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+        var bill = await db.SupplierBills.Include(b => b.Supplier).FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
         if (bill == null)
             return NotFound(new { message = "الفاتورة غير موجودة" });
 
@@ -334,8 +338,17 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         var userId = currentUser.UserId ?? Guid.Empty;
         var branchId = bill.BranchId;
 
-        // Phase 0B: Cash bill payments require an open cashier session so they are
-        // tracked in the drawer reconciliation. Non-cash payments don't need one.
+        // Guard: reject if branch is invalid
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، الفرع غير محدد لفاتورة المورد. تواصل مع الإدارة." });
+
+        // Resolve treasury for JournalEntry posting
+        var treasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.IsActive);
+        if (treasury == null)
+            return BadRequest(new { message = "عذراً، لا توجد خزينة للفرع. تواصل مع الإدارة لإنشاء خزينة." });
+
+        // Phase 0B: Cash bill payments require an open cashier session
         CashierSession? activeSession = null;
         if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
@@ -348,7 +361,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            // Post to GL ledger
+            // Dual-write: CashFlowTransaction (transitional)
             var cashflow = new CashFlowTransaction
             {
                 TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-BILL-{DateTime.UtcNow:HHmmss}",
@@ -362,8 +375,8 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 Description = $"دفعة على فاتورة مورد {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
                 PerformedBy = userId,
                 BranchId = branchId,
-                // Phase 0B: Link to cashier session for cash payments
-                CashierSessionId = activeSession?.Id
+                CashierSessionId = activeSession?.Id,
+                TreasuryId = treasury.Id
             };
             db.CashFlowTransactions.Add(cashflow);
 
@@ -379,6 +392,24 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 CashFlowTransactionId = cashflow.Id
             };
             db.SupplierBillPayments.Add(payment);
+
+            // Dual-write: JournalEntry (canonical) — Debit AccountsPayable / Credit Treasury
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.SupplierPayment,
+                financialDocumentId: payment.Id,
+                description: $"سداد فاتورة مورد: {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
+                entryDate: paymentDate,
+                branchId: branchId,
+                performedBy: userId,
+                cashierSessionId: activeSession?.Id,
+                treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Payable, bill.SupplierId, req.Amount, 0m, (string?)$"سداد مستحقات: {bill.Supplier?.Name}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true;
+            je.PostedAt = DateTime.UtcNow;
 
             // Update bill paid amount and status
             bill.PaidAmount += req.Amount;

@@ -6,8 +6,18 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 /// Additive migration: adds a filtered unique composite index on Treasuries (BranchId, Type, Name)
 /// where IsActive = true. This prevents duplicate active treasuries for the same branch/type/name
 /// combination while allowing soft-deleted treasuries with the same combination to coexist.
-/// This migration is safe only if no duplicate active (BranchId, Type, Name) triples exist in production data.
-/// If duplicates exist, the migration will fail at runtime and manual deduplication will be required first.
+///
+/// BLOCKER 7 — DEFERRED: This migration must NOT be applied until all code blockers are resolved.
+/// Before applying to production, run the following read-only preflight query to check for duplicates:
+///
+///   SELECT "BranchId", "Type", "Name", COUNT(*) AS cnt
+///   FROM "Treasuries"
+///   WHERE "IsActive" = true
+///   GROUP BY "BranchId", "Type", "Name"
+///   HAVING COUNT(*) > 1;
+///
+/// If any rows are returned, deduplicate them manually before applying this migration.
+/// If the migration fails at runtime due to existing duplicates, manual deduplication is required.
 /// </summary>
 public partial class AddUniqueIndexOnTreasuryBranchTypeAndName : Migration
 {

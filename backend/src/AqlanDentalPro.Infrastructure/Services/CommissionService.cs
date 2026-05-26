@@ -11,6 +11,7 @@ namespace AqlanDentalPro.Infrastructure.Services;
 
 public class CommissionService(
     AppDbContext db,
+    IJournalEntryService journalEntryService,
     ILogger<CommissionService> logger) : ICommissionService
 {
     // ── Line item commission ──────────────────────────────────────────────────
@@ -215,6 +216,27 @@ public class CommissionService(
         var doctor = await db.Doctors.FindAsync(req.DoctorId)
             ?? throw new ArgumentException("الطبيب غير موجود");
 
+        // FIX: Determine valid BranchId from doctor — never write Guid.Empty
+        var branchId = doctor.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+        {
+            // Fallback: try to get branch from doctor's user account
+            if (doctor.UserId != Guid.Empty)
+            {
+                var user = await db.Users.FindAsync(doctor.UserId);
+                if (user?.BranchId.HasValue == true)
+                    branchId = user.BranchId.Value;
+            }
+        }
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("عذراً، لا يمكن صرف العمولة — الفرع غير محدد للطبيب. تواصل مع الإدارة.");
+
+        // Resolve treasury for JournalEntry posting
+        var treasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.IsActive);
+        if (treasury == null)
+            throw new ArgumentException("عذراً، لا توجد خزينة للفرع. تواصل مع الإدارة لإنشاء خزينة.");
+
         // Enforce payment cap: cannot pay more than (approved + paid) − already-paid
         var earned = await db.InvoiceLineItems
             .Where(i => i.DoctorId == req.DoctorId
@@ -245,7 +267,7 @@ public class CommissionService(
 
         db.DoctorCommissionPayments.Add(payment);
 
-        // Auto-create central ledger cashflow transaction (Outflow / Doctor Commission)
+        // Dual-write: CashFlowTransaction (transitional) — BranchId now resolved correctly
         var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
         var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.DoctorCommission) + 1;
         var cashflow = new CashFlowTransaction
@@ -260,9 +282,28 @@ public class CommissionService(
             ReferenceNumber = req.ReferenceNumber ?? $"COM-{doctor.Id.ToString()[..4]}",
             Description = $"صرف عمولة الطبيب: {doctor.Name}",
             PerformedBy = recordedBy,
-            BranchId = Guid.Empty
+            BranchId = branchId,
+            TreasuryId = treasury.Id
         };
         db.CashFlowTransactions.Add(cashflow);
+
+        // Dual-write: JournalEntry (canonical) — Debit Expense / Credit Treasury
+        var je = await journalEntryService.CreateEntryAsync(
+            documentType: FinancialDocumentType.CommissionPayment,
+            financialDocumentId: payment.Id,
+            description: $"صرف عمولة طبيب: {doctor.Name}",
+            entryDate: req.PaymentDate,
+            branchId: branchId,
+            performedBy: recordedBy,
+            cashierSessionId: null,
+            treasuryId: treasury.Id,
+            lines: new[]
+            {
+                (JournalAccountType.Expense, payment.Id, req.Amount, 0m, (string?)$"عمولة: {doctor.Name}"),
+                (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
+            });
+        je.IsPosted = true;
+        je.PostedAt = DateTime.UtcNow;
 
         // Mark specified line items as Paid
         if (req.LineItemIds is { Count: > 0 })

@@ -22,7 +22,7 @@ public class CommissionServiceValidationTests
             .Options);
 
     private static CommissionService CreateService(AppDbContext db) =>
-        new(db, NullLogger<CommissionService>.Instance);
+        new(db, new JournalEntryService(db, NullLogger<JournalEntryService>.Instance), NullLogger<CommissionService>.Instance);
 
     // ── UpdateServiceDefaults: cost validation ────────────────────────────────
 
@@ -245,7 +245,12 @@ public class CommissionServiceValidationTests
     {
         await using var db = CreateDb();
 
-        var doctor = new Doctor { Name = "د. أحمد", IsActive = true };
+        var branchId = Guid.NewGuid();
+        db.Branches.Add(new Branch { Id = branchId, Name = "الفرع" });
+        var treasury = new Treasury { Id = Guid.NewGuid(), Name = "الخزنة", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
+        db.Treasuries.Add(treasury);
+
+        var doctor = new Doctor { Name = "د. أحمد", IsActive = true, BranchId = branchId };
         db.Doctors.Add(doctor);
 
         // One approved line item worth 10,000 to the doctor
@@ -293,7 +298,12 @@ public class CommissionServiceValidationTests
     {
         await using var db = CreateDb();
 
-        var doctor = new Doctor { Name = "د. سارة", IsActive = true };
+        var branchId = Guid.NewGuid();
+        db.Branches.Add(new Branch { Id = branchId, Name = "الفرع" });
+        var treasury = new Treasury { Id = Guid.NewGuid(), Name = "الخزنة", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
+        db.Treasuries.Add(treasury);
+
+        var doctor = new Doctor { Name = "د. سارة", IsActive = true, BranchId = branchId };
         db.Doctors.Add(doctor);
 
         var invoice = new Invoice

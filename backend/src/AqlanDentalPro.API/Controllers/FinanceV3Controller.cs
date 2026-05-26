@@ -602,6 +602,9 @@ public class FinanceV3Controller(
             Period = new { From = from.ToString("yyyy-MM-dd"), To = to.ToString("yyyy-MM-dd") },
 
             // Accrued P&L (from posted JournalLines — accrual basis)
+            // NOTE: Accrued figures only include amounts where a JournalEntry was posted.
+            // Expense/Salary/Commission/Supplier JE posting was added in this PR;
+            // historical records may only have CashFlowTransaction entries.
             AccruedRevenue = accruedRevenue,
             AccruedExpenses = accruedExpenses,
             AccruedNetProfit = accruedNetProfit,
@@ -623,6 +626,16 @@ public class FinanceV3Controller(
             TotalCosts = totalCosts,
             CashNetProfit = cashNetProfit,
             ProfitMargin = netCashCollections > 0 ? (double)(cashNetProfit / netCashCollections * 100) : 0,
+
+            // Reversal coverage status — which write paths have actual correction endpoints
+            ReversalCoverage = new
+            {
+                OperationalExpenseReversal = "Implemented — DELETE /api/expenses/{id} creates CashFlow + JournalEntry reversal",
+                SalaryPaymentReversal = "Deferred — no reversal endpoint yet; salary records cannot be un-paid via API",
+                CommissionPaymentReversal = "Deferred — no reversal endpoint yet; commission payments cannot be reversed via API",
+                SupplierPaymentReversal = "Deferred — no reversal endpoint yet; supplier payments cannot be reversed via API",
+                InvoiceCancellationReversal = "Implemented — cancel creates CashFlow + JournalEntry reversal via FinanceService"
+            },
 
             // Summary counts
             RevenueTransactionCount = await revenuePayments.CountAsync(),

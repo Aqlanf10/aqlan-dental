@@ -1,29 +1,29 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import api from "@/lib/api";
+import { useState, useCallback } from "react";
 import {
   Wallet, CreditCard, TrendingUp, AlertTriangle,
   RefreshCw, Loader2, FileText, CheckCircle, Clock,
   DollarSign, ArrowUpRight, ArrowDownRight, Users,
-  Receipt, IndianRupee,
+  Receipt, IndianRupee, Send, X,
 } from "lucide-react";
-import { NAVY, BLUE, ORANGE, fmtRial } from "../_lib/constants";
+import { NAVY, BLUE, ORANGE, fmtRial, PAYMENT_METHODS } from "../_lib/constants";
+import type { FinanceSummaryData } from "../_lib/constants";
+import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout, useCreateDraftInvoice } from "../_lib/hooks";
 import { toast } from "@/stores/toastStore";
-import { useQueryClient } from "@tanstack/react-query";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
-interface FinanceSummary {
-  todayCollected: number;
-  monthCollected: number;
-  totalOutstanding: number;
-  activeContracts: number;
-  unpaidInvoicesCount: number;
-  draftInvoicesCount: number;
-  overdueAmount: number;
-  pendingCommissionsAmount: number;
-  recentPayments?: PaymentItem[];
-  recentInvoices?: InvoiceItem[];
+interface ReadyForCheckoutPatient {
+  visitId?: string | null;
+  appointmentId: string;
+  patientId: string;
+  patientName: string;
+  doctorName: string;
+  serviceName?: string;
+  amountDue?: number;
+  amountDueReference?: number;
+  checkoutStatus?: string;
+  nextAction: string;
 }
 
 interface PaymentItem {
@@ -40,16 +40,6 @@ interface InvoiceItem {
   totalAmount: number;
   status: string;
   patientName?: string;
-}
-
-interface ReadyForCheckoutPatient {
-  appointmentId: string;
-  patientId: string;
-  patientName: string;
-  serviceName?: string;
-  doctorName: string;
-  amountDue?: number;
-  checkoutStatus?: string;
 }
 
 /* ─── Status colors ────────────────────────────────────────────────────────── */
@@ -71,57 +61,130 @@ const METHOD_LABELS: Record<string, string> = {
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
 export default function FinanceView() {
-  const queryClient = useQueryClient();
-  const [summary, setSummary] = useState<FinanceSummary | null>(null);
-  const [readyPatients, setReadyPatients] = useState<ReadyForCheckoutPatient[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ── Data hooks ──
+  const { data: summaryRaw, isLoading: summaryLoading, refetch: refetchSummary } = useFinanceSummary();
+  const { data: journeyItems, isLoading: journeyLoading, refetch: refetchJourney } = useTodayJourneyItems({});
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [financeRes, journeyRes] = await Promise.allSettled([
-        api.get<FinanceSummary>("/api/finance/summary"),
-        api.get<ReadyForCheckoutPatient[]>("/api/patient-journey/today"),
-      ]);
+  // ── Mutations ──
+  const createPaymentMutation = useCreatePayment();
+  const checkoutMutation = useCheckout();
+  const draftInvoiceMutation = useCreateDraftInvoice();
 
-      if (financeRes.status === "fulfilled") {
-        setSummary(financeRes.value.data);
-      }
-      if (journeyRes.status === "fulfilled") {
-        const allPatients = journeyRes.value.data ?? [];
-        setReadyPatients(
-          allPatients.filter(
-            (p) =>
-              p.checkoutStatus === "ReadyForCheckout" ||
-              p.checkoutStatus === "Pending"
-          )
-        );
-      }
-    } catch {
-      /* silent */
-    } finally {
-      setLoading(false);
+  // ── Local UI state ──
+  const [paymentPatient, setPaymentPatient] = useState<ReadyForCheckoutPatient | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [checkoutPatient, setCheckoutPatient] = useState<ReadyForCheckoutPatient | null>(null);
+  const [checkoutNotes, setCheckoutNotes] = useState("");
+  const [draftPendingId, setDraftPendingId] = useState<string | null>(null);
+
+  // ── Derived data ──
+  const summary: FinanceSummaryData | undefined = summaryRaw;
+  const readyPatients: ReadyForCheckoutPatient[] = (journeyItems ?? []).filter(
+    (p) =>
+      p.checkoutStatus === "ReadyForCheckout" ||
+      p.nextAction === "Checkout"
+  );
+
+  const recentPayments: PaymentItem[] = (summary?.recentPayments ?? []).map((p) => ({
+    id: p.id,
+    amount: p.amount,
+    paymentDate: p.paymentDate,
+    patientName: p.patientName,
+    paymentMethod: undefined,
+  }));
+
+  const recentInvoices: InvoiceItem[] = (summary?.recentInvoices ?? []).map((inv) => ({
+    id: inv.id,
+    invoiceNumber: inv.invoiceNumber,
+    totalAmount: inv.totalAmount,
+    status: inv.status,
+    patientName: undefined,
+  }));
+
+  // ── Handlers ──
+
+  /** Draft invoice: uses visitId */
+  const handleDraftInvoice = useCallback(async (patient: ReadyForCheckoutPatient) => {
+    if (!patient.visitId) {
+      toast.error("لا يمكن إنشاء فاتورة: رقم الزيارة غير متوفر");
+      return;
     }
+    setDraftPendingId(patient.appointmentId);
+    try {
+      await draftInvoiceMutation.mutateAsync(patient.visitId);
+      toast.success("تم إنشاء فاتورة مسودة بنجاح");
+      refetchSummary();
+      refetchJourney();
+    } catch {
+      toast.error("فشل إنشاء الفاتورة المسودة");
+    } finally {
+      setDraftPendingId(null);
+    }
+  }, [draftInvoiceMutation, refetchSummary, refetchJourney]);
+
+  /** Quick payment: opens in-page payment form */
+  const handleOpenPayment = useCallback((patient: ReadyForCheckoutPatient) => {
+    const amount = patient.amountDueReference ?? patient.amountDue ?? 0;
+    setPaymentPatient(patient);
+    setPaymentAmount(amount > 0 ? String(amount) : "");
+    setPaymentMethod("Cash");
+    setPaymentNotes("");
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 30_000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  const handleCreateDraftInvoice = async (visitId: string) => {
-    try {
-      await api.post(`/api/patient-journey/${visitId}/create-draft-invoice`);
-      toast.success("تم إنشاء فاتورة مسودة");
-      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
-      queryClient.invalidateQueries({ queryKey: ["finance"] });
-      fetchData();
-    } catch {
-      toast.error("فشل إنشاء الفاتورة");
+  /** Submit quick payment */
+  const handleSubmitPayment = useCallback(async () => {
+    if (!paymentPatient) return;
+    const amount = parseFloat(paymentAmount);
+    if (!amount || amount <= 0) {
+      toast.error("يرجى إدخال مبلغ صحيح");
+      return;
     }
-  };
+    try {
+      await createPaymentMutation.mutateAsync({
+        patientId: paymentPatient.patientId,
+        amount,
+        paymentMethod,
+        serviceDescription: `دفع سريع — ${paymentPatient.serviceName ?? "خدمة"}`,
+        doctorId: undefined,
+        notes: paymentNotes || undefined,
+      });
+      toast.success(`تم تسجيل الدفع بنجاح — ${fmtRial(amount)}`);
+      setPaymentPatient(null);
+      refetchSummary();
+      refetchJourney();
+    } catch {
+      toast.error("فشل تسجيل الدفع");
+    }
+  }, [paymentPatient, paymentAmount, paymentMethod, paymentNotes, createPaymentMutation, refetchSummary, refetchJourney]);
 
-  if (loading) {
+  /** Complete checkout */
+  const handleOpenCheckout = useCallback((patient: ReadyForCheckoutPatient) => {
+    setCheckoutPatient(patient);
+    setCheckoutNotes("");
+  }, []);
+
+  const handleSubmitCheckout = useCallback(async () => {
+    if (!checkoutPatient) return;
+    try {
+      await checkoutMutation.mutateAsync({
+        appointmentId: checkoutPatient.appointmentId,
+        body: {
+          notes: checkoutNotes || undefined,
+        },
+      });
+      toast.success(`تم إكمال خروج ${checkoutPatient.patientName} بنجاح`);
+      setCheckoutPatient(null);
+      refetchSummary();
+      refetchJourney();
+    } catch {
+      toast.error("فشل إكمال الخروج");
+    }
+  }, [checkoutPatient, checkoutNotes, checkoutMutation, refetchSummary, refetchJourney]);
+
+  // ── Loading ──
+  if (summaryLoading && journeyLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader2 className="w-8 h-8 animate-spin" style={{ color: BLUE }} />
@@ -176,16 +239,21 @@ export default function FinanceView() {
             boxShadow: "0 2px 8px rgba(245,146,46,0.1)",
           }}
         >
-          <div className="flex items-center gap-2 mb-3">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: ORANGE + "20" }}
-            >
-              <CreditCard className="w-4 h-4" style={{ color: ORANGE }} />
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ background: ORANGE + "20" }}
+              >
+                <CreditCard className="w-4 h-4" style={{ color: ORANGE }} />
+              </div>
+              <h3 className="text-sm font-extrabold" style={{ color: NAVY }}>
+                جاهزون للدفع من الطبيب ({readyPatients.length})
+              </h3>
             </div>
-            <h3 className="text-sm font-extrabold" style={{ color: NAVY }}>
-              جاهزون للدفع من الطبيب ({readyPatients.length})
-            </h3>
+            <button onClick={() => { refetchSummary(); refetchJourney(); }} className="p-1 rounded-lg hover:bg-white/60 transition">
+              <RefreshCw className="w-3.5 h-3.5" style={{ color: ORANGE }} />
+            </button>
           </div>
           <div className="space-y-2">
             {readyPatients.map((p) => (
@@ -213,24 +281,208 @@ export default function FinanceView() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {p.amountDue != null && p.amountDue > 0 && (
+                  {(p.amountDueReference ?? p.amountDue ?? 0) > 0 && (
                     <span className="text-xs font-bold" style={{ color: ORANGE }}>
-                      {fmtRial(p.amountDue)}
+                      {fmtRial(p.amountDueReference ?? p.amountDue)}
                     </span>
                   )}
+                  {/* Draft Invoice */}
                   <button
-                    onClick={() => {
-                      // Navigate to finance-v3 for full payment processing
-                      window.open("/finance-v3", "_blank");
-                    }}
-                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white transition hover:opacity-90"
-                    style={{ background: ORANGE }}
+                    onClick={() => handleDraftInvoice(p)}
+                    disabled={draftPendingId === p.appointmentId || draftInvoiceMutation.isPending}
+                    className="px-2 py-1.5 rounded-lg text-[10px] font-bold transition hover:opacity-80"
+                    style={{ background: NAVY + "10", color: NAVY, border: `1px solid ${NAVY}30` }}
+                    title="إنشاء فاتورة مسودة"
                   >
-                    تحصيل
+                    {draftPendingId === p.appointmentId ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      "فاتورة مسودة"
+                    )}
+                  </button>
+                  {/* Quick Payment */}
+                  <button
+                    onClick={() => handleOpenPayment(p)}
+                    disabled={createPaymentMutation.isPending}
+                    className="px-2 py-1.5 rounded-lg text-[10px] font-bold text-white transition hover:opacity-80"
+                    style={{ background: "#16a34a" }}
+                    title="دفع سريع"
+                  >
+                    دفع سريع
+                  </button>
+                  {/* Complete Checkout */}
+                  <button
+                    onClick={() => handleOpenCheckout(p)}
+                    disabled={checkoutMutation.isPending}
+                    className="px-2 py-1.5 rounded-lg text-[10px] font-bold text-white transition hover:opacity-80"
+                    style={{ background: BLUE }}
+                    title="إكمال الخروج"
+                  >
+                    إكمال الخروج
                   </button>
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick Payment Modal (In-Page) ── */}
+      {paymentPatient && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setPaymentPatient(null)}>
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "#e8f0f9" }}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "#16a34a15" }}>
+                <CreditCard className="w-4 h-4" style={{ color: "#16a34a" }} />
+              </div>
+              <h3 className="flex-1 font-extrabold text-[15px]" style={{ color: NAVY }}>دفع سريع</h3>
+              <button onClick={() => setPaymentPatient(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+            {/* Body */}
+            <div className="p-5 space-y-3">
+              <div className="p-3 rounded-xl" style={{ background: "#f0f5fb" }}>
+                <div className="font-bold text-sm" style={{ color: NAVY }}>{paymentPatient.patientName}</div>
+                <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>
+                  الطبيب: {paymentPatient.doctorName} — الخدمة: {paymentPatient.serviceName ?? "—"}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المبلغ *</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
+                    min={0}
+                    step={0.01}
+                    dir="ltr"
+                  />
+                  {(paymentPatient.amountDueReference ?? paymentPatient.amountDue ?? 0) > 0 && (
+                    <button
+                      onClick={() => setPaymentAmount(String(paymentPatient.amountDueReference ?? paymentPatient.amountDue))}
+                      className="px-3 rounded-lg text-xs font-semibold whitespace-nowrap"
+                      style={{ background: "#f5922e15", color: ORANGE, border: "1px solid #f5922e30" }}
+                    >
+                      الكل
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>طريقة الدفع</label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
+                >
+                  {PAYMENT_METHODS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>ملاحظات</label>
+                <input
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  placeholder="اختياري"
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
+                />
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => setPaymentPatient(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                  style={{ background: "#f1f5f9", color: "#64748b" }}
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={handleSubmitPayment}
+                  disabled={!paymentAmount || createPaymentMutation.isPending}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                  style={{ background: "#22c55a", opacity: !paymentAmount || createPaymentMutation.isPending ? 0.5 : 1 }}
+                >
+                  {createPaymentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                  تسجيل الدفع
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Complete Checkout Modal (In-Page) ── */}
+      {checkoutPatient && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setCheckoutPatient(null)}>
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "#e8f0f9" }}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "#16a34a15" }}>
+                <CheckCircle className="w-4 h-4" style={{ color: "#16a34a" }} />
+              </div>
+              <h3 className="flex-1 font-extrabold text-[15px]" style={{ color: NAVY }}>إكمال الخروج</h3>
+              <button onClick={() => setCheckoutPatient(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+            {/* Body */}
+            <div className="p-5 space-y-3">
+              <div className="p-3 rounded-xl" style={{ background: "#f0f5fb" }}>
+                <div className="font-bold text-sm" style={{ color: NAVY }}>{checkoutPatient.patientName}</div>
+                <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>
+                  الطبيب: {checkoutPatient.doctorName} — الخدمة: {checkoutPatient.serviceName ?? "—"}
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl flex items-center gap-2" style={{ background: "#f0fdf4", border: "1px solid #16a34a30" }}>
+                <CheckCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#16a34a" }} />
+                <span className="text-[11px] font-medium" style={{ color: "#166534" }}>
+                  سيتم إنهاء الزيارة وإكمال خروج المريض
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>ملاحظات</label>
+                <textarea
+                  value={checkoutNotes}
+                  onChange={(e) => setCheckoutNotes(e.target.value)}
+                  rows={2}
+                  placeholder="ملاحظات على إنهاء الزيارة (اختياري)"
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
+                />
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => setCheckoutPatient(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                  style={{ background: "#f1f5f9", color: "#64748b" }}
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={handleSubmitCheckout}
+                  disabled={checkoutMutation.isPending}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                  style={{ background: "#16a34a", opacity: checkoutMutation.isPending ? 0.5 : 1 }}
+                >
+                  {checkoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                  تأكيد الخروج
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -249,13 +501,13 @@ export default function FinanceView() {
                 آخر المدفوعات
               </h3>
             </div>
-            <button onClick={fetchData} className="p-1 rounded-lg hover:bg-gray-100">
+            <button onClick={() => { refetchSummary(); refetchJourney(); }} className="p-1 rounded-lg hover:bg-gray-100">
               <RefreshCw className="w-3.5 h-3.5" style={{ color: "#94a3b8" }} />
             </button>
           </div>
-          {summary?.recentPayments && summary.recentPayments.length > 0 ? (
+          {recentPayments.length > 0 ? (
             <div className="space-y-2">
-              {summary.recentPayments.map((p) => (
+              {recentPayments.map((p) => (
                 <div
                   key={p.id}
                   className="flex items-center justify-between py-2 border-b last:border-0"
@@ -299,9 +551,9 @@ export default function FinanceView() {
               {summary?.draftInvoicesCount ?? 0} مسودة
             </span>
           </div>
-          {summary?.recentInvoices && summary.recentInvoices.length > 0 ? (
+          {recentInvoices.length > 0 ? (
             <div className="space-y-2">
-              {summary.recentInvoices.map((inv) => {
+              {recentInvoices.map((inv) => {
                 const st = INVOICE_STATUS[inv.status] ?? INVOICE_STATUS.Draft;
                 return (
                   <div

@@ -987,8 +987,16 @@ public class FinanceV3Controller(
             var docTypeLookup = new Dictionary<string, List<FinancialDocumentType>>
             {
                 ["Payment"] = [FinancialDocumentType.Payment, FinancialDocumentType.AdvancePayment],
+                ["AdvancePayment"] = [FinancialDocumentType.AdvancePayment],
                 ["OperationalExpense"] = [FinancialDocumentType.Expense],
+                ["SalaryRecord"] = [FinancialDocumentType.SalaryPayment],
+                ["DoctorCommissionPayment"] = [FinancialDocumentType.CommissionPayment],
                 ["VaultTransfer"] = [FinancialDocumentType.VaultTransfer],
+                ["Treasury"] = [FinancialDocumentType.VaultTransfer],
+                // SupplierBill: bills themselves don't create JournalEntries — only payments do
+                // (FinancialDocumentType.SupplierPayment). Mapped here for completeness; enrichment
+                // will be null for bill-creation audit entries since FinancialDocumentId differs.
+                ["SupplierBill"] = [FinancialDocumentType.SupplierPayment],
                 ["SupplierBillPayment"] = [FinancialDocumentType.SupplierPayment],
             };
 

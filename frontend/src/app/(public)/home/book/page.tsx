@@ -1110,6 +1110,7 @@ export default function BookPage() {
         <div className="relative max-w-2xl mx-auto px-4 text-center">
           <div className="flex justify-center mb-5">
             <div className="bg-white rounded-2xl p-2 shadow-sm inline-flex">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/logo.png"
                 alt="مركز الدكتور عقلان الكامل"

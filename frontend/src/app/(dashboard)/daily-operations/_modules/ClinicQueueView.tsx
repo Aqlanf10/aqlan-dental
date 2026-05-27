@@ -3,12 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
 import {
-  RefreshCw, Loader2, UserPlus, User, Stethoscope,
-  MapPin, Clock, CheckCircle2, XCircle, PhoneCall,
-  DoorOpen, Play, Square, ArrowRightLeft, AlertTriangle,
-  ExternalLink,
+  RefreshCw, Loader2, UserPlus, Stethoscope,
+  MapPin, Clock, XCircle, PhoneCall,
+  DoorOpen, Play, Square,
 } from "lucide-react";
-import { NAVY, BLUE, ORANGE } from "../_lib/constants";
+import { NAVY, BLUE } from "../_lib/constants";
 import type { TodayJourneyItem } from "../_lib/constants";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -44,11 +43,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   Completed:  { label: "مكتمل",        color: "#6b7280", bg: "#f9fafb" },
   Cancelled:  { label: "ملغي",         color: "#dc2626", bg: "#fef2f2" },
 };
-
-function formatTime(dateStr?: string): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", hour12: false });
-}
 
 /** Map ClinicQueueItem → TodayJourneyItem for context menu compatibility */
 function queueItemToJourney(q: ClinicQueueItem): TodayJourneyItem {
@@ -114,15 +108,6 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
     setActionLoading(url);
     try {
       await api.post(url, body);
-      fetchQueue();
-    } catch { /* ignore */ }
-    finally { setActionLoading(null); }
-  };
-
-  const queuePatch = async (url: string, body?: object) => {
-    setActionLoading(url);
-    try {
-      await api.patch(url, body);
       fetchQueue();
     } catch { /* ignore */ }
     finally { setActionLoading(null); }

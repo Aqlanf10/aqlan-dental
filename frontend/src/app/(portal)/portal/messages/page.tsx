@@ -176,7 +176,7 @@ export default function PortalMessagesPage() {
   const [patientUserId] = useState<string | null>(() => getPatientUserId());
 
   const { data: conversations = [], isLoading, isError, error } = usePortalConversations();
-  const { data: conversation, isLoading: convDetailLoading, isError: convDetailError, error: convDetailErrorObj, refetch: refetchConv } = usePortalConversation(selectedConvId);
+  const { data: conversation, isLoading: convDetailLoading, isError: convDetailError, refetch: refetchConv } = usePortalConversation(selectedConvId);
   const { data: unreadData } = usePortalUnreadCount();
   const markAsRead = usePortalMarkAsRead(selectedConvId);
   const sendMessage = usePortalSendMessage(selectedConvId ?? "");
@@ -190,9 +190,9 @@ export default function PortalMessagesPage() {
       markAsRead.mutate();
       setShowMobileChat(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     // Intentionally excluded: markAsRead is a mutation function that changes identity on every
     // render due to react-query. We only want to mark as read when selectedConvId changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConvId]);
 
   const handleSelectConv = useCallback((id: string) => {

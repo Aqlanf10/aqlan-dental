@@ -1,11 +1,10 @@
 "use client";
 
 import {
-  X, Send, Pill, Save, CalendarDays, Plus, Trash2, Download, RefreshCw, Upload,
+  X, Send, Pill, Save, CalendarDays, Plus, Trash2, Upload,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import type { DailyJourneySummary } from "@/types/journey";
 import {
   PAYMENT_METHODS, inputCls, fmtRial,
 } from "../_lib/constants";

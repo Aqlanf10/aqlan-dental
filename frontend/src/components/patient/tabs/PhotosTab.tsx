@@ -312,11 +312,14 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
                 onClick={() => openImagePreview(idx)}
               >
                 {photo.thumbnailUrl || photo.fileUrl ? (
+                  <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={resolveImageUrl(photo.thumbnailUrl || photo.fileUrl)}
                     alt={PHOTO_CATEGORIES[photo.category] ?? photo.category}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                   />
+                  </>
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <ImageIcon className="w-8 h-8 text-[#94a3b8] opacity-40" />
@@ -428,6 +431,7 @@ export function PhotosTab({ patientId, orthoCaseId }: PhotosTabProps) {
                   />
                   {photoPreview ? (
                     <div className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={photoPreview}
                         alt="preview"

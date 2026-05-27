@@ -55,6 +55,8 @@ export function FooterWithSettings() {
           <div className="flex items-center gap-3">
             <div className="bg-white rounded-xl p-2 flex-shrink-0 shadow-sm">
               {resolvedLogo ? (
+                <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={resolvedLogo}
                   alt={s.clinicName}
@@ -63,12 +65,16 @@ export function FooterWithSettings() {
                     (e.target as HTMLImageElement).src = "/logo.png";
                   }}
                 />
+                </>
               ) : (
+                <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/logo.png"
                   alt={s.clinicName}
                   className="h-10 w-auto object-contain"
                 />
+                </>
               )}
             </div>
             <div>

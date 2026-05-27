@@ -58,6 +58,8 @@ export function PublicNavbar() {
         {/* Logo */}
         <Link href="/home" className="flex items-center gap-3 flex-shrink-0">
           {resolvedLogo ? (
+            <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={resolvedLogo}
               alt="مركز الدكتور عقلان الكامل"
@@ -67,12 +69,16 @@ export function PublicNavbar() {
                 (e.target as HTMLImageElement).src = "/logo.png";
               }}
             />
+            </>
           ) : (
+            <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
               alt="مركز الدكتور عقلان الكامل"
               className="h-11 w-auto object-contain"
             />
+            </>
           )}
           <div className="hidden sm:block">
             <div className="font-extrabold text-[15px] text-slate-900 leading-tight">

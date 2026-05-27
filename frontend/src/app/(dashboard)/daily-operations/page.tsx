@@ -4,12 +4,11 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
-  Stethoscope, AlertTriangle, Search, RefreshCw, ArrowLeft,
-  UserCheck, Globe,
+  Stethoscope, AlertTriangle, Search, RefreshCw,
+  Globe,
   Wallet, UserPlus, Keyboard, Bell, BellOff,
-  Printer, Users, Activity, ArrowRight, Megaphone, Building2,
-  X, PanelRight, ChevronLeft, Phone, MessageCircle, Monitor,
-  ExternalLink,
+  Printer, Activity, Megaphone, Building2,
+  X, Phone, MessageCircle, Monitor,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -18,12 +17,11 @@ import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 import {
   NAVY, BLUE, ORANGE,
   TABS,
-  fmtDate, getTodayStr, fmtRial, fmtTime,
+  fmtDate, getTodayStr, fmtRial,
   computeDayStats, filterByTab,
-  computeRoomOccupancy, computeDoctorWorkload, getNextPatient,
+  computeRoomOccupancy, getNextPatient,
   isDoctorRole,
   APPT_STATUS_LABELS, STATUS_COLORS, ACTION_LABELS,
-  normalizePhone, isAppointmentOverdue, fmtOverdueMinutes, fmtSessionDuration,
   type TodayJourneyItem, type TabKey, type UndoAction,
 } from "./_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
@@ -69,7 +67,6 @@ import {
   ChangeRoomModal,
   WalkInModal,
   UndoToast,
-  PatientSidePanel,
   KeyboardShortcutsHelp,
   BulkSmsModal,
 } from "./_components/Modals";
@@ -147,7 +144,6 @@ export default function DailyOperationsPage() {
   // ── Filters ──
   const [filterDate, setFilterDate] = useState(getTodayStr());
   const [filterDoctor, setFilterDoctor] = useState("");
-  const [filterBranch, setFilterBranch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
@@ -237,9 +233,6 @@ export default function DailyOperationsPage() {
 
   // ── Room occupancy ──
   const roomOccupancy = useMemo(() => computeRoomOccupancy(rooms, items), [rooms, items]);
-
-  // ── Doctor workload ──
-  const doctorWorkload = useMemo(() => computeDoctorWorkload(items), [items]);
 
   // ── Next patient to call ──
   const nextPatient = useMemo(() => getNextPatient(items), [items]);
@@ -666,13 +659,6 @@ export default function DailyOperationsPage() {
     { value: "NoShow", label: "لم يحضر" },
     { value: "Cancelled", label: "ملغى" },
   ];
-
-  // ── Patient initials helper ──
-  const getInitials = (name: string) => {
-    const parts = name.split(" ").filter(Boolean);
-    if (parts.length >= 2) return parts[0][0] + parts[1][0];
-    return parts[0]?.[0] ?? "?";
-  };
 
   // ── Side panel data ──
   const panelFinance = selectedSummary?.financeSummary;

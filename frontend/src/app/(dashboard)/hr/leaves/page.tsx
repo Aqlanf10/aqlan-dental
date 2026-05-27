@@ -52,8 +52,8 @@ export default function LeavesPage() {
   const [page, setPage] = useState(1);
 
   const [records, setRecords] = useState<LeaveRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  const [, setTotal] = useState(0);
+  const [, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
 
   // Leave balance

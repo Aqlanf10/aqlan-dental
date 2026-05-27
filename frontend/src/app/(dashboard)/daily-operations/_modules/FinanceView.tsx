@@ -2,10 +2,10 @@
 
 import { useState, useCallback } from "react";
 import {
-  Wallet, CreditCard, TrendingUp, AlertTriangle,
-  RefreshCw, Loader2, FileText, CheckCircle, Clock,
+  CreditCard, TrendingUp, AlertTriangle,
+  RefreshCw, Loader2, FileText, CheckCircle,
   DollarSign, ArrowUpRight, ArrowDownRight, Users,
-  Receipt, IndianRupee, Send, X,
+  Receipt, IndianRupee, X,
 } from "lucide-react";
 import { NAVY, BLUE, ORANGE, fmtRial, PAYMENT_METHODS } from "../_lib/constants";
 import type { FinanceSummaryData } from "../_lib/constants";

@@ -5,7 +5,6 @@ import {
   Wallet,
   CheckCircle,
   XCircle,
-  AlertTriangle,
   Loader2,
   Plus,
 } from "lucide-react";
@@ -42,8 +41,8 @@ export default function AdvancesPage() {
   const [page, setPage] = useState(1);
 
   const [records, setRecords] = useState<AdvanceRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  const [, setTotal] = useState(0);
+  const [, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
 
   // New advance modal

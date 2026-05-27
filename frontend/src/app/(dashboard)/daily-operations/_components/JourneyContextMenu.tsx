@@ -13,8 +13,8 @@ import { useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   UserCheck, ClipboardList, Phone, DoorOpen, CreditCard,
-  FileText, CalendarPlus, MessageCircle, UserX, XCircle,
-  Eye, CheckCircle, Send, PanelRight, Wallet, Copy,
+  CalendarPlus, MessageCircle, UserX, XCircle,
+  Eye, CheckCircle, PanelRight, Wallet, Copy,
 } from "lucide-react";
 import type { TodayJourneyItem } from "../_lib/constants";
 import { normalizePhone, NAVY } from "../_lib/constants";

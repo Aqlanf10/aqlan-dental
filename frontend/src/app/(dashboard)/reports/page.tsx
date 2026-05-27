@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell,
-  AreaChart, Area, FunnelChart, Funnel, LabelList,
+  AreaChart, Area,
 } from "recharts";
 import {
   BarChart2, Users, Calendar, TrendingUp, Stethoscope, Wallet,
@@ -12,7 +12,7 @@ import {
   Pill, Heart, Filter, Building2, UserCheck, Clock,
 } from "lucide-react";
 import api from "@/lib/api";
-import { formatYemeniRiyal, formatArabicDate } from "@/lib/utils";
+import { formatYemeniRiyal } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { Skeleton } from "@/components/ui/skeleton";
 

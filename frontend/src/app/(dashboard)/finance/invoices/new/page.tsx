@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { PatientCombobox } from "@/components/shared/PatientCombobox";
 import { useDoctors } from "@/hooks/useDoctors";
 import type { PatientListItem } from "@/types/patient";
-import { SPECIALTY_OPTIONS } from "@/types/finance";
 import { toast } from "@/stores/toastStore";
 
 interface LineItemForm {
@@ -80,7 +79,7 @@ export default function NewInvoicePage() {
         patientId,
         discountAmount: discountAmount > 0 ? discountAmount : undefined,
         notes: notes || undefined,
-        lineItems: lineItems.map((li, i) => ({
+        lineItems: lineItems.map((li) => ({
           serviceNameSnapshot: li.serviceNameSnapshot,
           description: li.description || li.serviceNameSnapshot,
           quantity: li.quantity,

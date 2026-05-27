@@ -25,7 +25,6 @@ import {
   Clock,
   XCircle,
   ChevronLeft,
-  Info,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { api } from "@/lib/api";

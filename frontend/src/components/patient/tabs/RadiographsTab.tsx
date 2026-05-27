@@ -291,11 +291,14 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
                   onClick={() => openPreview(xray)}
                 >
                   {isImage && xray.fileUrl ? (
+                    <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={resolveImageUrl(xray.fileUrl)}
                       alt={XRAY_TYPE_LABELS[xray.xrayType] ?? xray.xrayType}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                     />
+                    </>
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-[#94a3b8]">
                       <FileText className="w-8 h-8 opacity-40" />
@@ -418,6 +421,7 @@ export function RadiographsTab({ patientId }: RadiographsTabProps) {
                   />
                   {xrayPreview ? (
                     <div className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={xrayPreview}
                         alt="preview"

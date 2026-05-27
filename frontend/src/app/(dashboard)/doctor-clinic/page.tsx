@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   Stethoscope, ClipboardCheck, ListChecks, GitBranch,
   Image, Pill, FlaskConical, CalendarClock, Send, RefreshCw,
-  AlertCircle, CheckCircle,
+  CheckCircle,
   Loader2, FileText,
   Route, Save, X,
 } from "lucide-react";
@@ -12,7 +12,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 import {
-  fmtRial, fmtTime,
+  fmtTime,
   APPT_STATUS_LABELS, STATUS_COLORS,
   fmtSessionDuration, ORANGE,
 } from "../daily-operations/_lib/constants";
@@ -195,7 +195,7 @@ export default function DoctorClinicPage() {
   const { data: selectedSummary } = useDoctorPatientSummary(activePatientId);
 
   // ── Selected services for visit ──
-  const [selectedServices, setSelectedServices] = useState<ServiceWithPrice[]>([]);
+  const [, setSelectedServices] = useState<ServiceWithPrice[]>([]);
 
   // ── Search ──
   const [searchQuery, setSearchQuery] = useState("");

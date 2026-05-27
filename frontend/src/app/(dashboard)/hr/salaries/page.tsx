@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Banknote,
   CheckCircle,
-  Search,
-  AlertTriangle,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -42,8 +40,8 @@ export default function SalariesPage() {
   const [page, setPage] = useState(1);
 
   const [records, setRecords] = useState<SalaryRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  const [, setTotal] = useState(0);
+  const [, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
 
   // Generate all modal

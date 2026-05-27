@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  Save, Globe, Phone, MapPin, Clock, MessageCircle, Image, Type,
+  Save, Globe, Phone, MapPin, Clock, MessageCircle, Type,
   FileText, ExternalLink, ArrowRight, Upload, X, Loader2, ImageIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -240,7 +240,7 @@ function ImageUploadCard({
           </div>
         ) : (
           <div className={`${previewHeight} rounded-lg bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2`}>
-            <Image className="w-8 h-8 text-gray-300" />
+            <ImageIcon className="w-8 h-8 text-gray-300" />
             <span className="text-xs text-gray-400">لا توجد صورة</span>
           </div>
         )}

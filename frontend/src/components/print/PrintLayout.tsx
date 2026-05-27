@@ -84,12 +84,15 @@ export function PrintLayout({ title, subtitle, children, branding: brandingProp,
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
           {/* Logo */}
           {showLogo && (
+            <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={logoSrc}
               alt="شعار المركز"
               onError={handleLogoError}
               style={{ width: "64px", height: "64px", objectFit: "contain", flexShrink: 0 }}
             />
+            </>
           )}
           {/* Clinic name and report title */}
           <div style={{ flex: 1 }}>

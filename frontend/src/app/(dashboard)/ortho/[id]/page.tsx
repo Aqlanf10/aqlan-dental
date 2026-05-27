@@ -26,7 +26,6 @@ import {
   User,
   Wallet,
   X,
-  Upload,
 } from "lucide-react";
 import { cn, formatArabicDate, formatYemeniRiyal } from "@/lib/utils";
 import {
@@ -634,6 +633,7 @@ function RecordsPanel({ caseId }: { caseId: string }) {
             </div>
             {photoPreview && (
               <div className="relative aspect-square w-full max-w-[200px] overflow-hidden rounded-lg border border-gray-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={photoPreview}
                   alt="معاينة"
@@ -708,6 +708,7 @@ function RecordsPanel({ caseId }: { caseId: string }) {
                     setPreviewOpen(true);
                   }}
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={resolveImageUrl(p.photoUrl)}
                     alt={p.caption || PHOTO_TYPE_LABELS[p.photoType] || p.photoType}

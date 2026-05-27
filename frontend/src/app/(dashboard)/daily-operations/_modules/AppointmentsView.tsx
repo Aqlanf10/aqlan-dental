@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import {
-  ChevronRight, ChevronLeft, CalendarDays, Plus, List, Calendar,
-  LayoutGrid, Stethoscope, Printer, Loader2,
+  ChevronRight, ChevronLeft, CalendarDays, List, Calendar,
+  LayoutGrid,
 } from "lucide-react";
 import { DaySchedule } from "@/components/appointments/DaySchedule";
 import { WeekCalendar } from "@/components/appointments/WeekCalendar";
 import { MonthCalendar } from "@/components/appointments/MonthCalendar";
 import { UpcomingWidget } from "@/components/appointments/UpcomingWidget";
 import { formatArabicDate, cn } from "@/lib/utils";
-import { NAVY, BLUE, ORANGE } from "../_lib/constants";
+import { NAVY, BLUE } from "../_lib/constants";
 
 interface Doctor { id: string; name: string; color?: string; specialty?: string; }
 

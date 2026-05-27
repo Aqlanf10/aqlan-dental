@@ -3,13 +3,13 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
-  Users, UserCheck, Clock, DoorOpen, CreditCard, CheckCircle2,
-  RefreshCw, Stethoscope, CalendarDays,
+  UserCheck, Clock, DoorOpen, CreditCard, CheckCircle2,
+  Stethoscope, CalendarDays, RefreshCw, Users,
   Filter, AlertTriangle, ExternalLink, Megaphone,
   CircleDot,
   Ban, UserX,
   ArrowRightLeft, Timer, MessageSquare, MessageCircle, Pill, Download, Printer,
-  Route, Upload, FileText, Undo2,
+  Route, Upload, Undo2,
 } from "lucide-react";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -39,7 +39,7 @@ import {
 } from "@/hooks/usePatientJourney";
 import {
   STATUS_LABELS, STATUS_COLORS, ACTION_LABELS, ACTION_COLORS,
-  fmtDate, fmtTime, fmtRial, isDoctorRole, isAccountantRole, isReceptionRole, inputCls,
+  fmtDate, fmtTime, isDoctorRole, isAccountantRole, isReceptionRole,
 } from "./_lib/constants";
 import type { JourneyItem, ServiceOption, RoomOption } from "./_lib/constants";
 import {
@@ -201,9 +201,6 @@ export default function PatientJourneyPage() {
     queueItemId?: string;
   } | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ─── Keyboard Shortcut Refs ─────────────────────────────────────────────────
-  const pageRef = useRef<HTMLDivElement>(null);
 
   // ─── Data Loading ──────────────────────────────────────────────────────────
 
@@ -498,7 +495,7 @@ export default function PatientJourneyPage() {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       toast.error(msg);
     }
-  }, [cancelDialogType, summary?.todayAppointment?.id, queueItemId, pendingChangeRoomId, updateAptStatusMutation, cancelQueueMutation, changeRoomMutation, loadJourney, refetchSummary]);
+  }, [cancelDialogType, summary?.todayAppointment?.id, summary?.todayAppointment?.status, queueItemId, pendingChangeRoomId, updateAptStatusMutation, cancelQueueMutation, changeRoomMutation, loadJourney, refetchSummary]);
 
   // ─── Undo Action ──────────────────────────────────────────────────────────
   const handleUndo = useCallback(async () => {

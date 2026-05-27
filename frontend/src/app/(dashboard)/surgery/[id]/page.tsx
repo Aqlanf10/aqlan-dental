@@ -12,7 +12,7 @@ import {
 import type {
   SurgeryCase, PreopReport, OperativeReport, PostopRecord, HospitalReferral,
   UpsertPreopRequest, UpsertOperativeReportRequest, UpsertPostopRequest,
-  CreateHospitalReferralRequest, UpdateHospitalReferralRequest,
+  CreateHospitalReferralRequest,
   PrescriptionItem, FollowupItem,
 } from "@/types/surgery";
 import { SURGERY_STATUS_LABELS, SURGERY_STATUS_COLORS, REFERRAL_STATUS_LABELS } from "@/types/surgery";
@@ -91,8 +91,6 @@ const selectCls =
 const textareaCls =
   "w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#3d7ab5] focus:border-[#3d7ab5] transition resize-y";
 
-const cardCls = "bg-white rounded-xl border border-[#e8f0f9] shadow-sm p-5";
-
 const primaryBtnCls =
   "flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] disabled:opacity-60 transition";
 
@@ -160,16 +158,19 @@ export default function SurgeryDetailPage() {
         setSurgeryCase(caseRes.data);
         setDoctors(doctorsRes.data);
         if (preopRes.data) {
-          const { id: _, ...rest } = preopRes.data;
+          const { id: _preopId, ...rest } = preopRes.data;
+          void _preopId;
           setPreop(rest);
         }
         if (operativeRes.data) {
           setOperativeLoaded(operativeRes.data);
-          const { id: _, approvedAt: __, ...rest } = operativeRes.data;
+          const { id: _opId, approvedAt: _opApprovedAt, ...rest } = operativeRes.data;
+          void _opId; void _opApprovedAt;
           setOperative(rest);
         }
         if (postopRes.data) {
-          const { id: _, ...rest } = postopRes.data;
+          const { id: _postId, ...rest } = postopRes.data;
+          void _postId;
           setPostop(rest);
         }
       })

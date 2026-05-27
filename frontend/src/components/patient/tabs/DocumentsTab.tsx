@@ -358,7 +358,10 @@ export function DocumentsTab({ patientId }: DocumentsTabProps) {
                     onClick={() => isImage && openPreview(doc)}
                   >
                     {isImage && doc.fileUrl ? (
+                      <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={resolveImageUrl(doc.fileUrl)} alt="" className="w-full h-full object-cover" />
+                      </>
                     ) : (
                       <TypeIcon className="w-5 h-5 text-[#3d7ab5]" />
                     )}

@@ -115,12 +115,15 @@ export function ImagePreviewModal({
 
         {/* Content */}
         {isImage ? (
+          <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={url}
             alt={fileName ?? "صورة"}
             className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg"
             onClick={(e) => e.stopPropagation()}
           />
+          </>
         ) : isPdf ? (
           <iframe
             src={url}

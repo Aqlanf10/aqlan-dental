@@ -22,8 +22,6 @@ import {
   Shield,
   UserCog,
   Clock,
-  CheckCircle,
-  XCircle,
   CalendarOff,
   FileSpreadsheet,
 } from "lucide-react";

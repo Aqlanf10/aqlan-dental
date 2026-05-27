@@ -131,7 +131,6 @@ function NewPatientBadge() {
 }
 
 /* ─── Props ───────────────────────────────────────────────────────────────── */
-import type { ContextMenuPosition } from "./JourneyContextMenu";
 
 interface AppointmentsTableProps {
   items: TodayJourneyItem[];
@@ -163,7 +162,6 @@ interface AppointmentsTableProps {
 
 export default function AppointmentsTable({
   items, loading, isDoctor, canProcessCheckout, queueWaitTime, selectedPatientId,
-  isReception = false, isAccountant = false,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
   onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
   onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel,

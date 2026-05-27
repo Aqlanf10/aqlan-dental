@@ -233,3 +233,28 @@ Stage Summary:
 - Advisory lock keys 2001-2008 verified working on production PostgreSQL 16.14
 - No production data was modified; only read-only SELECT queries were executed
 - Temporary SSH access key created and deleted (no lasting security exposure)
+---
+Task ID: 4
+Agent: Main Agent
+Task: Hotfix Finance V3 Dashboard HTTP 401 — Use Authenticated API Client
+
+Work Log:
+- Fetched latest origin/main (24f41834 — includes merged PR #231)
+- Created hotfix branch: hotfix/finance-v3-authenticated-dashboard-fetch from origin/main
+- Examined finance-v3/page.tsx: found single raw fetch("/api/finance-v3/dashboard") on line 280
+- Confirmed the authenticated API client at frontend/src/lib/api.ts (axios instance with Bearer token injection and 401 refresh handling)
+- Replaced raw fetch with api.get<DashboardData>("/api/finance-v3/dashboard")
+- Added improved Arabic error messages: 401/403 → "ليس لديك صلاحية الوصول. يرجى تسجيل الدخول مجدداً أو التواصل مع المسؤول."
+- Verified no other raw fetch calls to authenticated backend endpoints in the file
+- Committed: 9bfb146781ea2d352ecdd41e5f56f3f8ec8bfc3e
+- Frontend verification: tsc ✓, lint ✓ (warnings only, pre-existing), build ✓ (compiled in 24.7s)
+- Could not push: No GitHub PAT/token available in environment
+- Patch file saved to /home/z/my-project/download/hotfix-finance-v3-authenticated-dashboard-fetch.patch
+
+Stage Summary:
+- Fix: Replace raw fetch with authenticated api.get in finance-v3/page.tsx
+- 1 file changed, 14 insertions, 6 deletions
+- No backend/auth/migration/finance-calculation changes
+- Commit SHA: 9bfb146781ea2d352ecdd41e5f56f3f8ec8bfc3e
+- Branch: hotfix/finance-v3-authenticated-dashboard-fetch (not yet pushed — awaiting GitHub PAT)
+- PR not created — needs push first

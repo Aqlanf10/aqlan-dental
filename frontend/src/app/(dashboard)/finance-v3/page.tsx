@@ -28,6 +28,7 @@ import {
   Info,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import { api } from "@/lib/api";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Microsoft Fluent 2 Design Tokens
@@ -277,12 +278,19 @@ function OverviewTab() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/finance-v3/dashboard");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "فشل في تحميل البيانات");
+      const { data: responseData } = await api.get<DashboardData>("/api/finance-v3/dashboard");
+      setData(responseData);
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "response" in err) {
+        const status = (err as { response?: { status?: number } }).response?.status;
+        if (status === 401 || status === 403) {
+          setError("ليس لديك صلاحية الوصول. يرجى تسجيل الدخول مجدداً أو التواصل مع المسؤول.");
+        } else {
+          setError("فشل في تحميل البيانات. يرجى المحاولة لاحقاً.");
+        }
+      } else {
+        setError("فشل في الاتصال بالخادم. تحقق من اتصال الإنترنت وحاول مجدداً.");
+      }
     } finally {
       setLoading(false);
     }

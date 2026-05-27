@@ -30,6 +30,7 @@ export interface PatientBalance {
   PatientId: string;
   PatientName: string;
   PatientNumber: string;
+  Phone: string | null;
   TotalInvoiced: number;
   TotalPaid: number;
   TotalRefunds: number;
@@ -101,8 +102,8 @@ export interface InvoiceDetail {
 /* ── Collections / Payments ─────────────────────────────────────────────────────── */
 export interface PaymentListItem {
   Id: string;
-  PaymentNumber: string;
-  PatientId: string;
+  PaymentNumber?: string;
+  PatientId?: string;
   PatientName: string;
   PatientNumber: string;
   Amount: number;
@@ -111,9 +112,14 @@ export interface PaymentListItem {
   InvoiceId: string | null;
   ContractId: string | null;
   CashierSessionId: string | null;
-  IsReversal: boolean;
+  IsReversal?: boolean;
   ReversedById: string | null;
-  Status: string;
+  Status?: string;
+  ReceiptNumber?: string;
+  DoctorName?: string | null;
+  ServiceDescription?: string | null;
+  Notes?: string | null;
+  CreatedAt?: string;
 }
 
 export interface RegisterPaymentRequest {
@@ -128,7 +134,7 @@ export interface RegisterPaymentRequest {
 /* ── Contracts ──────────────────────────────────────────────────────────────────── */
 export interface ContractListItem {
   Id: string;
-  ContractNumber: string;
+  ContractNumber?: string;
   PatientId: string;
   PatientName: string;
   PatientNumber: string;
@@ -136,7 +142,7 @@ export interface ContractListItem {
   PaidAmount: number;
   OutstandingAmount: number;
   Status: string;
-  StartDate: string;
+  StartDate: string | null;
   EndDate: string | null;
   IsOverdue: boolean;
 }
@@ -176,7 +182,7 @@ export interface Treasury {
   Type: string;
   TypeArabic?: string;
   Balance: number;
-  BranchId: string;
+  BranchId?: string | null;
 }
 
 export interface CreateTreasuryRequest {
@@ -218,16 +224,16 @@ export interface ExpenseListItem {
   Title: string;
   Category: string;
   Amount: number;
-  PaymentMethod: string;
+  PaymentMethod: string | null;
   ExpenseDate: string;
   Status: string;
-  RequestedBy: string;
+  RequestedBy?: string | null;
   ApprovedBy: string | null;
   ApprovedAt: string | null;
   RejectedBy: string | null;
   RejectedAt: string | null;
   RejectionReason: string | null;
-  IsReversal: boolean;
+  IsReversal?: boolean | null;
   TreasuryId: string | null;
   TreasuryName: string | null;
 }
@@ -261,7 +267,7 @@ export interface SupplierBill {
   TotalAmount: number;
   PaidAmount: number;
   Balance: number;
-  DueDate: string;
+  DueDate: string | null;
   Status: string;
   CreatedAt: string;
 }
@@ -296,8 +302,8 @@ export interface ProfitLossData {
   SupplierPayments: number;
   TotalCosts: number;
   CashNetProfit: number;
-  ProfitMargin: number;
-  ReversalCoverage: Record<string, string>;
+  ProfitMargin?: number;
+  ReversalCoverage?: Record<string, string>;
 }
 
 /* ── Daily Cash Summary ─────────────────────────────────────────────────────────── */
@@ -332,7 +338,7 @@ export interface AccountBalance {
 
 export interface AccountBalancesData {
   AccountBalances: AccountBalance[];
-  Treasuries: { Id: string; Name: string; Type: string; Balance: number; BranchId: string }[];
+  Treasuries: { Id: string; Name: string; Type: string; Balance: number; BranchId?: string | null }[];
   TotalAssets: number;
   TotalRevenue: number;
   TotalExpenses: number;

@@ -137,12 +137,14 @@ function todayArabic(): string {
   });
 }
 
-function formatYER(amount: number): string {
-  return amount.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ر.ي";
+function formatYER(amount: number | undefined | null): string {
+  const safe = typeof amount === "number" && !isNaN(amount) ? amount : 0;
+  return safe.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ر.ي";
 }
 
-function formatNumber(amount: number): string {
-  return amount.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+function formatNumber(amount: number | undefined | null): string {
+  const safe = typeof amount === "number" && !isNaN(amount) ? amount : 0;
+  return safe.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 function extractErrorMessage(err: unknown, fallback = "حدث خطأ"): string {
@@ -536,7 +538,7 @@ function OverviewTab() {
             <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>التحصيلات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(plData.CashCollections)}</p></div>
             <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(plData.CashRefunds)}</p></div>
             <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي التكاليف</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.TotalCosts)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>هامش الربح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{plData.ProfitMargin.toFixed(1)}%</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>هامش الربح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{(typeof plData.ProfitMargin === 'number' && !isNaN(plData.ProfitMargin) ? plData.ProfitMargin.toFixed(1) : '0.0')}%</p></div>
           </div>
         ) : (
           <p className="text-xs" style={{ color: tokens.textTertiary }}>لم يتم تحميل بيانات الأرباح والخسائر</p>
@@ -570,7 +572,7 @@ function PatientAccountsTab() {
   const [showPayment, setShowPayment] = useState(false);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: PatientBalance[]; total: number }>("/api/finance-v3/patient-accounts"); setData(responseData.data); } catch { toast.error("فشل في تحميل حسابات المرضى"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: PatientBalance[]; total: number }>("/api/finance-v3/patient-accounts"); setData(responseData.data ?? []); } catch { toast.error("فشل في تحميل حسابات المرضى"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -661,7 +663,7 @@ function InvoicesTab() {
   const [cancelling, setCancelling] = useState(false);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: InvoiceListItem[]; total: number }>("/api/finance-v3/invoices"); setData(responseData.data); } catch { toast.error("فشل في تحميل الفواتير"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: InvoiceListItem[]; total: number }>("/api/finance-v3/invoices"); setData(responseData.data ?? []); } catch { toast.error("فشل في تحميل الفواتير"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -799,7 +801,7 @@ function CollectionsTab() {
   const [payNotes, setPayNotes] = useState("");
 
   const fetchPayments = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData.data); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData.data ?? []); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
@@ -825,7 +827,7 @@ function CollectionsTab() {
       const invData = invRes.data?.data ?? invRes.data as unknown as InvoiceListItem[];
       setInvoiceOptions((Array.isArray(invData) ? invData : []).filter((i) => i.Balance > 0).map((i) => ({ id: i.Id, invoiceNumber: i.InvoiceNumber, balance: i.Balance })));
       const conData = Array.isArray(conRes.data) ? conRes.data : (conRes.data as { data?: ContractListItem[] }).data ?? [];
-      setContractOptions(conData.filter((c) => c.OutstandingAmount > 0).map((c) => ({ id: c.Id, contractNumber: c.ContractNumber, outstandingAmount: c.OutstandingAmount })));
+      setContractOptions(conData.filter((c) => c.OutstandingAmount > 0).map((c) => ({ id: c.Id, contractNumber: c.ContractNumber || c.Id.slice(0, 8), outstandingAmount: c.OutstandingAmount })));
     } catch { /* ignore */ }
   };
 
@@ -895,11 +897,11 @@ function CollectionsTab() {
           keyField="Id"
           data={payments}
           columns={[
-            { key: "PaymentNumber", label: "رقم الإيصال" },
+            { key: "PaymentNumber", label: "رقم الإيصال", render: (r) => r.PaymentNumber || r.ReceiptNumber || r.Id.slice(0, 8) },
             { key: "PatientName", label: "المريض" },
             { key: "Amount", label: "المبلغ", render: (r) => formatYER(r.Amount) },
-            { key: "PaymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.PaymentMethod)?.label ?? r.PaymentMethod },
-            { key: "PaymentDate", label: "التاريخ", render: (r) => new Date(r.PaymentDate).toLocaleDateString("ar-SA") },
+            { key: "PaymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.PaymentMethod)?.label ?? r.PaymentMethod ?? "—" },
+            { key: "PaymentDate", label: "التاريخ", render: (r) => r.PaymentDate ? new Date(r.PaymentDate).toLocaleDateString("ar-SA") : "—" },
             { key: "IsReversal", label: "عكسي", render: (r) => r.IsReversal ? <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>نعم</span> : "—" },
             { key: "actions", label: "إجراءات", render: (r) => !r.IsReversal && !r.ReversedById ? (
               <div className="flex items-center gap-1">
@@ -1004,15 +1006,15 @@ function ContractsTab() {
       setLoading(true);
       const params: Record<string, string> = {};
       if (statusFilter) params.status = statusFilter;
-      const { data } = await api.get<ContractListItem[]>("/api/contracts", { params });
-      setData(data);
+      const { data: responseData } = await api.get<{ data: ContractListItem[]; total: number }>("/api/finance-v3/contracts", { params });
+      setData(responseData.data ?? []);
     } catch { toast.error("فشل في تحميل العقود"); } finally { setLoading(false); }
   }, [statusFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtered = data.filter((c) =>
-    c.PatientName.includes(search) || c.ContractNumber.includes(search) || c.PatientNumber.includes(search)
+    c.PatientName.includes(search) || (c.ContractNumber && c.ContractNumber.includes(search)) || c.PatientNumber.includes(search)
   );
 
   return (
@@ -1035,14 +1037,14 @@ function ContractsTab() {
           keyField="Id"
           data={filtered}
           columns={[
-            { key: "ContractNumber", label: "رقم العقد" },
+            { key: "ContractNumber", label: "رقم العقد", render: (r) => r.ContractNumber || r.Id.slice(0, 8) },
             { key: "PatientName", label: "المريض" },
             { key: "TotalAmount", label: "الإجمالي", render: (r) => formatYER(r.TotalAmount) },
             { key: "PaidAmount", label: "المدفوع", render: (r) => formatYER(r.PaidAmount) },
             { key: "OutstandingAmount", label: "المستحق", render: (r) => <span style={{ color: r.OutstandingAmount > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.OutstandingAmount)}</span> },
             { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
             { key: "IsOverdue", label: "متأخرة", render: (r) => r.IsOverdue ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.dangerBorder }} /> : "—" },
-            { key: "StartDate", label: "تاريخ البداية", render: (r) => new Date(r.StartDate).toLocaleDateString("ar-SA") },
+            { key: "StartDate", label: "تاريخ البداية", render: (r) => r.StartDate ? new Date(r.StartDate).toLocaleDateString("ar-SA") : "—" },
           ]}
         />
       )}
@@ -1064,7 +1066,7 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions"); setSessions(responseData.data); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions"); setSessions(responseData.data ?? []); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
@@ -1457,7 +1459,7 @@ function ExpensesTab() {
   const [eDate, setEDate] = useState(new Date().toISOString().slice(0, 10));
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/expenses"); setData(responseData.data); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/finance-v3/expenses"); setData(responseData.data ?? []); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -1520,7 +1522,7 @@ function ExpensesTab() {
             { key: "Title", label: "العنوان" },
             { key: "Category", label: "الفئة", render: (r) => EXPENSE_CATEGORIES.find((c) => c.value === r.Category)?.label ?? r.Category },
             { key: "Amount", label: "المبلغ", render: (r) => formatYER(r.Amount) },
-            { key: "PaymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.PaymentMethod)?.label ?? r.PaymentMethod },
+            { key: "PaymentMethod", label: "طريقة الدفع", render: (r) => (r.PaymentMethod ? PAYMENT_METHODS.find((m) => m.value === r.PaymentMethod)?.label ?? r.PaymentMethod : "—") },
             { key: "ExpenseDate", label: "التاريخ", render: (r) => new Date(r.ExpenseDate).toLocaleDateString("ar-SA") },
             { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (
@@ -1591,11 +1593,11 @@ function SuppliersTab() {
     try {
       setLoading(true);
       const [sRes, bRes] = await Promise.all([
-        api.get<{ data: SupplierListItem[]; total: number }>("/api/suppliers"),
-        api.get<{ data: SupplierBill[]; total: number }>("/api/supplier-bills"),
+        api.get<{ data: SupplierListItem[]; total: number }>("/api/finance-v3/suppliers"),
+        api.get<{ data: SupplierBill[]; total: number }>("/api/finance-v3/supplier-bills"),
       ]);
-      setSuppliers(sRes.data.data ?? (Array.isArray(sRes.data) ? sRes.data as unknown as SupplierListItem[] : []));
-      setBills(bRes.data.data ?? (Array.isArray(bRes.data) ? bRes.data as unknown as SupplierBill[] : []));
+      setSuppliers(sRes.data.data ?? []);
+      setBills(bRes.data.data ?? []);
     } catch { toast.error("فشل في تحميل بيانات الموردين"); } finally { setLoading(false); }
   }, []);
 
@@ -1683,7 +1685,7 @@ function SuppliersTab() {
               { key: "TotalAmount", label: "الإجمالي", render: (r) => formatYER(r.TotalAmount) },
               { key: "PaidAmount", label: "المدفوع", render: (r) => formatYER(r.PaidAmount) },
               { key: "Balance", label: "المتبقي", render: (r) => <span style={{ color: r.Balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.Balance)}</span> },
-              { key: "DueDate", label: "تاريخ الاستحقاق", render: (r) => new Date(r.DueDate).toLocaleDateString("ar-SA") },
+              { key: "DueDate", label: "تاريخ الاستحقاق", render: (r) => r.DueDate ? new Date(r.DueDate).toLocaleDateString("ar-SA") : "—" },
               { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
               { key: "actions", label: "إجراءات", render: (r) => r.Balance > 0 ? (
                 <button onClick={(e) => { e.stopPropagation(); setShowPayBill(r); setPayAmount(""); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="سداد قسط"><DollarSign className="w-3.5 h-3.5" /></button>
@@ -1828,7 +1830,7 @@ function PLSubTab() {
           <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>هامش الربح</span>
-              <span className="text-xl font-bold" style={{ color: data.ProfitMargin >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{data.ProfitMargin.toFixed(1)}%</span>
+              <span className="text-xl font-bold" style={{ color: (typeof data.ProfitMargin === 'number' && data.ProfitMargin >= 0) ? tokens.successBorder : tokens.dangerBorder }}>{(typeof data.ProfitMargin === 'number' && !isNaN(data.ProfitMargin) ? data.ProfitMargin.toFixed(1) : '0.0')}%</span>
             </div>
           </div>
         </div>

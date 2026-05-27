@@ -12,11 +12,14 @@ import {
   Clock,
   Settings,
   RefreshCw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import {
   RECEPTION_FALLBACK,
   buildAnnouncementText,
 } from "@/lib/clinic-display-announcement";
+import { HubConnectionBuilder, type HubConnection, LogLevel } from "@microsoft/signalr";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface DisplayData {
@@ -340,7 +343,9 @@ export default function ClinicDisplayPage() {
   const [now, setNow] = useState<Date>(new Date());
   const [pulseKey, setPulseKey] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(INITIAL_CONTEXT_MENU);
+  const [signalrConnected, setSignalrConnected] = useState(false);
   const prevLatestCalledRef = useRef<string | null>(null);
+  const signalrRef = useRef<HubConnection | null>(null);
 
   const {
     voiceEnabled, voiceSupported, voiceStatus, voiceError, setVoiceError,
@@ -392,8 +397,60 @@ export default function ClinicDisplayPage() {
 
   useEffect(() => {
     fetchDisplay();
-    const refreshInterval = setInterval(fetchDisplay, REFRESH_INTERVAL);
+    // SignalR: real-time updates — when connected, polling is reduced
+    const refreshInterval = setInterval(fetchDisplay, signalrConnected ? 60_000 : REFRESH_INTERVAL);
     return () => clearInterval(refreshInterval);
+  }, [fetchDisplay, signalrConnected]);
+
+  // ── SignalR real-time connection for instant patient call updates ──
+  useEffect(() => {
+    const hubUrl = process.env.NEXT_PUBLIC_API_URL
+      ? `${process.env.NEXT_PUBLIC_API_URL}/hubs/messaging`
+      : "/hubs/messaging";
+
+    const connectSignalR = async () => {
+      try {
+        // Clinic display is unauthenticated — connect without JWT
+        // The hub [Authorize] attribute will reject unauthenticated connections,
+        // so we gracefully fall back to HTTP polling only.
+        const connection = new HubConnectionBuilder()
+          .withUrl(hubUrl)
+          .withAutomaticReconnect([0, 5000, 15000, 60000])
+          .configureLogging(LogLevel.Warning)
+          .build();
+
+        connection.on("PatientCalled", () => {
+          // Instantly refresh display data when a patient is called
+          fetchDisplay();
+        });
+
+        connection.on("QueueUpdated", () => {
+          fetchDisplay();
+        });
+
+        connection.onreconnected(() => {
+          setSignalrConnected(true);
+          fetchDisplay();
+        });
+        connection.onclose(() => setSignalrConnected(false));
+
+        await connection.start();
+        signalrRef.current = connection;
+        setSignalrConnected(true);
+      } catch {
+        // SignalR auth failed (expected for anonymous display) — fall back to polling
+        setSignalrConnected(false);
+      }
+    };
+
+    connectSignalR();
+
+    return () => {
+      if (signalrRef.current) {
+        signalrRef.current.stop().catch(() => {});
+        signalrRef.current = null;
+      }
+    };
   }, [fetchDisplay]);
 
   useEffect(() => {

@@ -11,6 +11,7 @@ public enum FinancialDocumentType
     Invoice,           // فاتورة — Invoice issuance
     Expense,           // مصروف تشغيلي — Operational expense
     SalaryPayment,     // صرف راتب — Salary payment
+    AdvancePayment,    // سلفة موظف — Employee advance payment
     CommissionPayment, // صرف عمولة — Doctor commission payment
     SupplierPayment,   // دفع مورد — Supplier bill payment
     VaultTransfer,     // ترحيل سيولة — Vault transfer / external deposit

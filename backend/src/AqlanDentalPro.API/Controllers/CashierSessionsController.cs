@@ -312,14 +312,21 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 s.Id,
                 s.SessionNumber,
                 CashierName = s.Cashier.Username,
-                s.OpeningTime,
+                s.CashierId,
+                s.BranchId,
+                OpenedAt = s.OpeningTime,
                 s.ClosingTime,
                 s.OpeningBalance,
-                ExpectedTotal = s.ExpectedClosingCash + s.ExpectedClosingCard + s.ExpectedClosingBank,
-                ActualTotal = (s.ActualClosingCash ?? 0) + (s.ActualClosingCard ?? 0) + (s.ActualClosingBank ?? 0),
+                s.ExpectedClosingCash,
+                s.ExpectedClosingCard,
+                s.ExpectedClosingBank,
+                s.ActualClosingCash,
+                s.ActualClosingCard,
+                s.ActualClosingBank,
                 s.ShortageOrSurplus,
                 Status = s.Status.ToString(),
-                s.Notes
+                s.Notes,
+                s.TreasuryId
             })
             .ToListAsync();
 

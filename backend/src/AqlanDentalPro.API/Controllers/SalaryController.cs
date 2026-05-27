@@ -28,8 +28,8 @@ public sealed class PaySalaryRequest
 
 [ApiController]
 [Route("api/salaries")]
-[Authorize]
-public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
+[Authorize(Policy = "ReportsAccess")]
+public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, IAuditService audit) : ControllerBase
 {
     /// <summary>
     /// Get salary records with filters
@@ -431,10 +431,149 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
 
         return Ok(new { message = "تم حذف كشف الراتب بنجاح" });
     }
+
+    /// <summary>
+    /// PUT /api/salaries/{id}/reverse — Reverse a paid salary with dual-write CashFlow + JournalEntry reversal.
+    /// Admin-only. Pessimistic locking prevents concurrent reversal. Double-restore prevention.
+    /// </summary>
+    [HttpPut("{id:guid}/reverse")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> ReverseSalary(Guid id, [FromBody] ReverseSalaryRequest req)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var performedBy = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Pessimistic lock
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""SalaryRecords"" WHERE ""Id"" = {0} FOR UPDATE", id);
+            }
+
+            var salary = await db.SalaryRecords.FindAsync(id);
+            if (salary is null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "كشف الراتب غير موجود" });
+            }
+
+            if (!salary.PaidAt.HasValue)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لم يتم صرف هذا الراتب بعد" });
+            }
+
+            // Double-restore prevention: check if already reversed
+            var existingReversal = await db.CashFlowTransactions
+                .AnyAsync(c => c.ReversalOfTransactionId != null
+                    && c.Category == FinancialCategory.Reversal
+                    && c.IsReversal
+                    && c.ReferenceId == salary.Id);
+            if (existingReversal)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "تم عكس هذا الراتب مسبقاً" });
+            }
+
+            // Blocker 5: REQUIRE original CashFlow and JournalEntry to exist and be complete
+            var originalCashflow = await db.CashFlowTransactions
+                .FirstOrDefaultAsync(c => c.ReferenceId == salary.Id && c.Category == FinancialCategory.SalaryPayment && !c.IsReversal);
+            if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس الراتب — السجلات المالية الأصلية غير مكتملة. يجب مراجعة المحاسب لمعالجة هذا السجل." });
+            }
+
+            var originalJe = await db.JournalEntries
+                .FirstOrDefaultAsync(j => j.FinancialDocumentId == salary.Id && j.FinancialDocumentType == FinancialDocumentType.SalaryPayment && !j.IsReversal);
+            if (originalJe == null || !originalJe.IsPosted)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس الراتب — السجلات المالية الأصلية غير مكتملة. يجب مراجعة المحاسب لمعالجة هذا السجل." });
+            }
+
+            // Session guard: cannot reverse if linked session is closed/reconciled
+            if (originalCashflow.CashierSessionId != null)
+            {
+                var session = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId);
+                if (session != null && (session.Status == SessionStatus.Closed || session.Status == SessionStatus.Reconciled))
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new { message = "لا يمكن عكس راتب مرتبط بوردية مقفلة أو مسواة. تواصل مع الإدارة." });
+                }
+            }
+
+            // Un-mark salary as paid — only after all validation passes
+            salary.PaidAt = null;
+            salary.PaidBy = null;
+            salary.PaymentMethod = null;
+
+            var employee = await db.Employees.FindAsync(salary.EmployeeId);
+            // Blocker 6: Use original CashFlow's BranchId, NOT current employee branch
+            var branchId = originalCashflow.BranchId;
+            if (branchId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس الراتب — الفرع الأصلي غير محدد في السجل المالي. تواصل مع المحاسب." });
+            }
+            var treasuryId = originalCashflow.TreasuryId;
+
+            // Dual-write: CashFlow reversal
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.Reversal) + 1;
+            var reversalCashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-REV-SAL-{nextSeq:D3}",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.Reversal,
+                Amount = salary.NetSalary,
+                PaymentMethod = originalCashflow.PaymentMethod ?? "cash",
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = salary.Id,
+                ReferenceNumber = $"REV-SAL-{salary.Year}{salary.Month:D2}",
+                Description = $"عكس صرف راتب: {employee?.FullName ?? "غير معروف"} — {salary.Month}/{salary.Year}",
+                PerformedBy = performedBy,
+                BranchId = branchId,
+                TreasuryId = treasuryId,
+                IsReversal = true,
+                ReversalOfTransactionId = originalCashflow.Id,
+                CashierSessionId = originalCashflow.CashierSessionId
+            };
+            db.CashFlowTransactions.Add(reversalCashflow);
+
+            // Dual-write: JournalEntry reversal (originalJe already validated above)
+            var reversalJe = await journalEntryService.CreateReversalEntryAsync(originalJe.Id, $"عكس صرف راتب: {employee?.FullName}", performedBy);
+            reversalJe.IsPosted = true;
+            reversalJe.PostedAt = DateTime.UtcNow;
+
+            // Restore Treasury balance
+            await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(treasuryId.Value, salary.NetSalary);
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Update, "SalaryRecord", salary.Id, "Salary payment reversed");
+
+            return Ok(new { message = "تم عكس صرف الراتب بنجاح واستعادة الرصيد للخزينة" });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
 }
 
 public sealed class GenerateAllSalariesRequest
 {
     public int Year { get; init; }
     public int Month { get; init; }
+}
+
+public sealed class ReverseSalaryRequest
+{
+    public string? Reason { get; init; }
 }

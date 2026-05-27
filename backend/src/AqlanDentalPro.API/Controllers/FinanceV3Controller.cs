@@ -631,9 +631,9 @@ public class FinanceV3Controller(
             ReversalCoverage = new
             {
                 OperationalExpenseReversal = "Implemented — DELETE /api/expenses/{id} creates CashFlow + JournalEntry reversal",
-                SalaryPaymentReversal = "Deferred — no reversal endpoint yet; salary records cannot be un-paid via API",
-                CommissionPaymentReversal = "Deferred — no reversal endpoint yet; commission payments cannot be reversed via API",
-                SupplierPaymentReversal = "Deferred — no reversal endpoint yet; supplier payments cannot be reversed via API",
+                SalaryPaymentReversal = "Implemented — PUT /api/salaries/{id}/reverse creates CashFlow + JournalEntry reversal",
+                CommissionPaymentReversal = "Deferred — no standalone reversal endpoint yet; commission payments cannot be reversed via API",
+                SupplierPaymentReversal = "Deferred — no standalone reversal endpoint yet; supplier payments cannot be reversed via API",
                 InvoiceCancellationReversal = "Implemented — cancel creates CashFlow + JournalEntry reversal via FinanceService"
             },
 
@@ -798,6 +798,281 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = entries, total, page, pageSize });
+    }
+
+    // ─── Patient Accounts (Sub-ledger) ─────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/patient-accounts — Paginated list of patients with outstanding balances.
+    /// </summary>
+    [HttpGet("patient-accounts")]
+    public async Task<IActionResult> GetPatientAccounts(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
+    {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.Patients
+            .Where(p => p.IsActive)
+            .Where(p => !branchId.HasValue || p.BranchId == branchId.Value);
+
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(p => p.FirstName.Contains(search) || p.LastName.Contains(search) || p.PatientNumber.Contains(search) || (p.Phone != null && p.Phone.Contains(search)));
+
+        var total = await query.CountAsync();
+
+        var patients = await query
+            .OrderBy(p => p.FirstName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(p => new
+            {
+                PatientId = p.Id,
+                p.PatientNumber,
+                PatientName = (p.FirstName + " " + p.MiddleName + " " + p.LastName).Trim(),
+                Phone = p.Phone,
+                TotalInvoiced = db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0,
+                TotalPaid = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount > 0).Sum(pay => (decimal?)pay.Amount) ?? 0,
+                TotalRefunds = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount < 0).Sum(pay => (decimal?)Math.Abs(pay.Amount)) ?? 0,
+                Balance = (db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
+                         - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive).Sum(pay => (decimal?)pay.Amount) ?? 0),
+                OutstandingInvoices = db.Invoices.Count(i => i.PatientId == p.Id && i.IsActive && i.Status == InvoiceStatus.Issued),
+                ActiveContracts = db.Contracts.Count(c => c.PatientId == p.Id && c.IsActive && c.Status == ContractStatus.Active),
+                HasOutstanding = ((db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
+                               - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive).Sum(pay => (decimal?)pay.Amount) ?? 0)) > 0
+            })
+            .ToListAsync();
+
+        return Ok(new { data = patients, total, page, pageSize });
+    }
+
+    // ─── Trial Balance ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/trial-balance — Trial balance from posted JournalLines.
+    /// </summary>
+    [HttpGet("trial-balance")]
+    public async Task<IActionResult> GetTrialBalance([FromQuery] string? asOfDate = null)
+    {
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var cutoff = DateOnly.TryParse(asOfDate, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
+
+        var linesQuery = db.JournalLines
+            .Where(l => l.JournalEntry.IsPosted && l.JournalEntry.EntryDate <= cutoff)
+            .Where(l => !branchId.HasValue || l.BranchId == branchId.Value);
+
+        var accounts = await linesQuery
+            .GroupBy(l => l.AccountType)
+            .Select(g => new
+            {
+                AccountType = g.Key.ToString(),
+                TotalDebit = g.Sum(l => l.Debit),
+                TotalCredit = g.Sum(l => l.Credit),
+                NetBalance = g.Sum(l => l.Debit) - g.Sum(l => l.Credit),
+                EntryCount = g.Select(l => l.JournalEntryId).Distinct().Count()
+            })
+            .ToListAsync();
+
+        var grandTotalDebit = accounts.Sum(a => a.TotalDebit);
+        var grandTotalCredit = accounts.Sum(a => a.TotalCredit);
+
+        return Ok(new
+        {
+            AsOfDate = cutoff.ToString("yyyy-MM-dd"),
+            Accounts = accounts,
+            GrandTotalDebit = grandTotalDebit,
+            GrandTotalCredit = grandTotalCredit,
+            Difference = Math.Abs(grandTotalDebit - grandTotalCredit),
+            IsBalanced = Math.Abs(grandTotalDebit - grandTotalCredit) < 0.005m
+        });
+    }
+
+    // ─── Active Cashier Session ─────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/active-cashier-session — Current user's active cashier session with computed expected values.
+    /// </summary>
+    [HttpGet("active-cashier-session")]
+    public async Task<IActionResult> GetActiveCashierSession()
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var cashierId = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
+
+        var session = await db.CashierSessions
+            .Include(s => s.Treasury)
+            .FirstOrDefaultAsync(s => s.CashierId == cashierId && s.Status == SessionStatus.Open && s.IsActive);
+
+        if (session == null)
+            return Ok(new { hasActiveSession = false });
+
+        // Calculate expected values from CashFlowTransactions
+        var sessionTransactions = await db.CashFlowTransactions
+            .Where(t => t.CashierSessionId == session.Id && !t.IsReversal)
+            .ToListAsync();
+
+        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && t.PaymentMethod == "cash").Sum(t => t.Amount);
+        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && t.PaymentMethod == "cash").Sum(t => t.Amount);
+        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && t.PaymentMethod == "card").Sum(t => t.Amount);
+        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && t.PaymentMethod == "card").Sum(t => t.Amount);
+
+        return Ok(new
+        {
+            hasActiveSession = true,
+            session.Id,
+            session.SessionNumber,
+            session.CashierId,
+            session.BranchId,
+            OpeningTime = session.OpeningTime.ToString("yyyy-MM-dd HH:mm"),
+            session.OpeningBalance,
+            session.TreasuryId,
+            TreasuryName = session.Treasury?.Name ?? "",
+            Status = session.Status.ToString(),
+            ExpectedCash = session.OpeningBalance + cashInflows - cashOutflows,
+            ExpectedCard = cardInflows - cardOutflows,
+            TransactionCount = sessionTransactions.Count
+        });
+    }
+
+    // ─── Payments List ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/payments — Paginated payments with method and date range filtering.
+    /// </summary>
+    [HttpGet("payments")]
+    public async Task<IActionResult> GetPayments(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? method = null,
+        [FromQuery] string? fromDate = null,
+        [FromQuery] string? toDate = null)
+    {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.Payments
+            .Include(p => p.Patient)
+            .Include(p => p.Doctor)
+            .Where(p => p.IsActive && p.Amount > 0);
+
+        if (branchId.HasValue)
+            query = query.Where(p => p.Patient.BranchId == branchId.Value);
+
+        if (!string.IsNullOrWhiteSpace(method))
+            query = query.Where(p => p.PaymentMethod == method);
+
+        if (DateOnly.TryParse(fromDate, out var from))
+            query = query.Where(p => p.PaymentDate >= from);
+
+        if (DateOnly.TryParse(toDate, out var to))
+            query = query.Where(p => p.PaymentDate <= to);
+
+        var total = await query.CountAsync();
+
+        var payments = await query
+            .OrderByDescending(p => p.PaymentDate)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(p => new
+            {
+                p.Id,
+                p.Amount,
+                PaymentDate = p.PaymentDate.ToString("yyyy-MM-dd"),
+                p.PaymentMethod,
+                Specialty = p.Doctor != null ? p.Doctor.Specialty : null,
+                ServiceDescription = p.Notes,
+                p.ReceiptNumber,
+                PatientName = (p.Patient.FirstName + " " + p.Patient.LastName).Trim(),
+                PatientNumber = p.Patient.PatientNumber,
+                DoctorName = p.Doctor != null ? p.Doctor.Name : null,
+                p.Notes,
+                p.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { data = payments, total, page, pageSize });
+    }
+
+    // ─── Invoices List ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/invoices — Paginated invoices with status filtering.
+    /// </summary>
+    [HttpGet("invoices")]
+    public async Task<IActionResult> GetInvoices(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null,
+        [FromQuery] string? fromDate = null,
+        [FromQuery] string? toDate = null)
+    {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.Invoices
+            .Include(i => i.Patient)
+            .Include(i => i.Payments)
+            .Where(i => i.IsActive);
+
+        if (branchId.HasValue)
+            query = query.Where(i => i.Patient.BranchId == branchId.Value);
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<InvoiceStatus>(status, true, out var s))
+            query = query.Where(i => i.Status == s);
+
+        if (DateOnly.TryParse(fromDate, out var from))
+            query = query.Where(i => i.CreatedAt >= from.ToDateTime(TimeOnly.MinValue));
+
+        if (DateOnly.TryParse(toDate, out var to))
+            query = query.Where(i => i.CreatedAt <= to.ToDateTime(TimeOnly.MaxValue));
+
+        var total = await query.CountAsync();
+
+        var invoices = await query
+            .OrderByDescending(i => i.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(i => new
+            {
+                i.Id,
+                i.InvoiceNumber,
+                i.PatientId,
+                Status = i.Status.ToString(),
+                i.Subtotal,
+                i.DiscountAmount,
+                i.TotalAmount,
+                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
+                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                PatientName = (i.Patient.FirstName + " " + i.Patient.LastName).Trim(),
+                PatientNumber = i.Patient.PatientNumber,
+                IssueDate = i.CreatedAt,
+                i.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { data = invoices, total, page, pageSize });
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

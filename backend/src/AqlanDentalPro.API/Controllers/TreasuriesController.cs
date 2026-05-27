@@ -48,7 +48,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
             })
             .ToListAsync();
 
-        return Ok(list);
+        return Ok(new { data = list });
     }
 
     [HttpPost]

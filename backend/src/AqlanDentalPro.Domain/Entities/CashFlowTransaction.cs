@@ -46,6 +46,10 @@ public class CashFlowTransaction : BaseEntity
     public Guid? CashierSessionId { get; set; }
     public CashierSession? CashierSession { get; set; }
 
+    /// <summary>FK to the treasury account that received or disbursed the funds.</summary>
+    public Guid? TreasuryId { get; set; }
+    public Treasury? Treasury { get; set; }
+
     // ─── Reversal Tracking (C3 — CashFlowTransaction Immutability) ─────────
     // IMPORTANT: CashFlowTransaction entries MUST NEVER be soft-deleted
     // (IsActive must never be set to false). For financial ledger integrity,

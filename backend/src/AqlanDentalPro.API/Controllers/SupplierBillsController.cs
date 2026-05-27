@@ -2,6 +2,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -33,7 +34,7 @@ public sealed class PayBillInstallmentRequest
 [ApiController]
 [Route("api/supplier-bills")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
+public class SupplierBillsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>POST /api/supplier-bills — Register a new supplier bill (A/P entry).</summary>
     [HttpPost]
@@ -60,6 +61,9 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         var userId = currentUser.UserId ?? Guid.Empty;
         var branchId = currentUser.BranchId ?? Guid.Empty;
 
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل فاتورة المورد." });
+
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -69,7 +73,7 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
 
             if (db.Database.IsRelational())
             {
-                var lockKey = Math.Abs("BillNumber".GetHashCode()) % 100000;
+                var lockKey = StableLockKeyHelper.BillNumber;
                 await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
             }
 
@@ -306,36 +310,38 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
         });
     }
 
-    /// <summary>POST /api/supplier-bills/{id}/pay — Record an installment payment for a bill.</summary>
+    /// <summary>POST /api/supplier-bills/{id}/pay — Record an installment payment for a bill.
+    /// Dual-writes CashFlowTransaction + JournalEntry atomically.</summary>
     [HttpPost("{id:guid}/pay")]
     public async Task<IActionResult> Pay(Guid id, [FromBody] PayBillInstallmentRequest req)
     {
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ الدفعة أكبر من الصفر" });
 
-        var bill = await db.SupplierBills.FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
-        if (bill == null)
+        var billSnapshot = await db.SupplierBills.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+        if (billSnapshot == null)
             return NotFound(new { message = "الفاتورة غير موجودة" });
 
-        if (bill.Status == BillStatus.FullyPaid)
+        if (billSnapshot.Status == BillStatus.FullyPaid)
             return BadRequest(new { message = "هذه الفاتورة مدفوعة بالكامل بالفعل" });
 
-        if (bill.Status == BillStatus.Cancelled)
+        if (billSnapshot.Status == BillStatus.Cancelled)
             return BadRequest(new { message = "هذه الفاتورة ملغاة" });
-
-        var remaining = bill.TotalAmount - bill.PaidAmount;
-        if (req.Amount > remaining)
-            return BadRequest(new { message = $"مبلغ الدفعة ({req.Amount:N0}) يتجاوز المبلغ المتبقي ({remaining:N0} ريال)" });
 
         var paymentDate = DateOnly.FromDateTime(DateTime.Today);
         if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var parsedDate))
             paymentDate = parsedDate;
 
         var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = bill.BranchId;
+        var branchId = billSnapshot.BranchId;
 
-        // Phase 0B: Cash bill payments require an open cashier session so they are
-        // tracked in the drawer reconciliation. Non-cash payments don't need one.
+        // Guard: reject if branch is invalid
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، الفرع غير محدد لفاتورة المورد. تواصل مع الإدارة." });
+
+        // Resolve treasury by payment method for JournalEntry posting
+        // Phase 0B: Cash bill payments require an open cashier session
         CashierSession? activeSession = null;
         if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
@@ -345,10 +351,57 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل سداد فواتير المورد النقدية." });
         }
 
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the bill row and re-check remaining.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            // Post to GL ledger
+            // Acquire transaction-scoped pessimistic lock on the bill row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""SupplierBills"" WHERE ""Id"" = {0} FOR UPDATE",
+                    id);
+            }
+
+            // Reload the bill inside the lock
+            var bill = await db.SupplierBills.Include(b => b.Supplier)
+                .FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+            if (bill == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "الفاتورة غير موجودة" });
+            }
+
+            if (bill.Status == BillStatus.FullyPaid)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذه الفاتورة مدفوعة بالكامل بالفعل" });
+            }
+
+            if (bill.Status == BillStatus.Cancelled)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذه الفاتورة ملغاة" });
+            }
+
+            // Re-calculate remaining inside the lock to prevent overpayment
+            var remaining = bill.TotalAmount - bill.PaidAmount;
+            if (req.Amount > remaining)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = $"مبلغ الدفعة ({req.Amount:N0}) يتجاوز المبلغ المتبقي ({remaining:N0} ريال)" });
+            }
+            // Dual-write: CashFlowTransaction (transitional)
             var cashflow = new CashFlowTransaction
             {
                 TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-BILL-{DateTime.UtcNow:HHmmss}",
@@ -362,8 +415,8 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 Description = $"دفعة على فاتورة مورد {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
                 PerformedBy = userId,
                 BranchId = branchId,
-                // Phase 0B: Link to cashier session for cash payments
-                CashierSessionId = activeSession?.Id
+                CashierSessionId = activeSession?.Id,
+                TreasuryId = treasury.Id
             };
             db.CashFlowTransactions.Add(cashflow);
 
@@ -379,6 +432,27 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
                 CashFlowTransactionId = cashflow.Id
             };
             db.SupplierBillPayments.Add(payment);
+
+            // Dual-write: JournalEntry (canonical) — Debit AccountsPayable / Credit Treasury
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.SupplierPayment,
+                financialDocumentId: payment.Id,
+                description: $"سداد فاتورة مورد: {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
+                entryDate: paymentDate,
+                branchId: branchId,
+                performedBy: userId,
+                cashierSessionId: activeSession?.Id,
+                treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Payable, bill.SupplierId, req.Amount, 0m, (string?)$"سداد مستحقات: {bill.Supplier?.Name}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true;
+            je.PostedAt = DateTime.UtcNow;
+
+            // Blocker 1: Atomically decrement Treasury.Balance for the supplier outflow
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, req.PaymentMethod, req.Amount, activeSession?.Id);
 
             // Update bill paid amount and status
             bill.PaidAmount += req.Amount;

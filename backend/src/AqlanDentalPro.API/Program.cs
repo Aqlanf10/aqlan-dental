@@ -390,6 +390,8 @@ builder.Services.AddScoped<AppointmentService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<OrthoService>();
 builder.Services.AddScoped<IFinanceService, FinanceService>();
+builder.Services.AddScoped<IJournalEntryService, JournalEntryService>();
+builder.Services.AddScoped<ITreasuryResolutionService, TreasuryResolutionService>();
 builder.Services.AddScoped<GeneralService>();
 builder.Services.AddScoped<IMessagingService, MessagingService>();
 builder.Services.AddScoped<IPatientAccountLinkingService, PatientAccountLinkingService>();

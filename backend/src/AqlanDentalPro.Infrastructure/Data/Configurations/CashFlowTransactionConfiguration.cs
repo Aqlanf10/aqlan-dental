@@ -31,6 +31,15 @@ public class CashFlowTransactionConfiguration : IEntityTypeConfiguration<CashFlo
         builder.HasIndex(t => t.Type);
         builder.HasIndex(t => t.IsActive);
 
+        // Finance V3: Treasury FK and index
+        builder.HasIndex(t => t.TreasuryId);
+
+        // Finance V3: Treasury navigation
+        builder.HasOne(t => t.Treasury)
+            .WithMany()
+            .HasForeignKey(t => t.TreasuryId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // C3: Reversal tracking navigation properties
         builder.HasOne(t => t.ReversalOfTransaction)
             .WithMany()

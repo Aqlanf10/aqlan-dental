@@ -22,7 +22,9 @@ public class CommissionServiceValidationTests
             .Options);
 
     private static CommissionService CreateService(AppDbContext db) =>
-        new(db, NullLogger<CommissionService>.Instance);
+        new(db, new JournalEntryService(db, NullLogger<JournalEntryService>.Instance),
+            new TreasuryResolutionService(db, NullLogger<TreasuryResolutionService>.Instance),
+            NullLogger<CommissionService>.Instance);
 
     // ── UpdateServiceDefaults: cost validation ────────────────────────────────
 
@@ -245,7 +247,14 @@ public class CommissionServiceValidationTests
     {
         await using var db = CreateDb();
 
-        var doctor = new Doctor { Name = "د. أحمد", IsActive = true };
+        var branchId = Guid.NewGuid();
+        db.Branches.Add(new Branch { Id = branchId, Name = "الفرع" });
+        var vaultTreasury = new Treasury { Id = Guid.NewGuid(), Name = "درج كاشير الاستقبال", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
+        var bankTreasury = new Treasury { Id = Guid.NewGuid(), Name = "حساب بنك التضامن", Type = TreasuryType.Bank, Balance = 1_000_000m, BranchId = branchId, IsActive = true };
+        db.Treasuries.Add(vaultTreasury);
+        db.Treasuries.Add(bankTreasury);
+
+        var doctor = new Doctor { Name = "د. أحمد", IsActive = true, BranchId = branchId };
         db.Doctors.Add(doctor);
 
         // One approved line item worth 10,000 to the doctor
@@ -278,7 +287,7 @@ public class CommissionServiceValidationTests
             DoctorId:    doctor.Id,
             Amount:      15_000m,   // exceeds 10,000 remaining
             PaymentDate: DateOnly.FromDateTime(DateTime.UtcNow),
-            PaymentMethod: null,
+            PaymentMethod: "bank", // use bank to avoid cashier session requirement
             ReferenceNumber: null,
             Notes: null,
             LineItemIds: null);
@@ -293,7 +302,14 @@ public class CommissionServiceValidationTests
     {
         await using var db = CreateDb();
 
-        var doctor = new Doctor { Name = "د. سارة", IsActive = true };
+        var branchId = Guid.NewGuid();
+        db.Branches.Add(new Branch { Id = branchId, Name = "الفرع" });
+        var vaultTreasury = new Treasury { Id = Guid.NewGuid(), Name = "درج كاشير الاستقبال", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
+        var bankTreasury = new Treasury { Id = Guid.NewGuid(), Name = "حساب بنك التضامن", Type = TreasuryType.Bank, Balance = 1_000_000m, BranchId = branchId, IsActive = true };
+        db.Treasuries.Add(vaultTreasury);
+        db.Treasuries.Add(bankTreasury);
+
+        var doctor = new Doctor { Name = "د. سارة", IsActive = true, BranchId = branchId };
         db.Doctors.Add(doctor);
 
         var invoice = new Invoice
@@ -325,7 +341,7 @@ public class CommissionServiceValidationTests
             DoctorId:    doctor.Id,
             Amount:      2_000m,   // within 3,000 remaining
             PaymentDate: DateOnly.FromDateTime(DateTime.UtcNow),
-            PaymentMethod: "cash",
+            PaymentMethod: "bank", // use bank to avoid cashier session requirement
             ReferenceNumber: null,
             Notes: null,
             LineItemIds: null);

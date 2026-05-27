@@ -1,0 +1,196 @@
+using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
+using AqlanDentalPro.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace AqlanDentalPro.Infrastructure.Services;
+
+/// <summary>
+/// Centralized treasury resolution service for Finance V3.
+/// Routes payments to the correct treasury based on payment method:
+/// - cash → Vault treasury (linked to CashierSession when available)
+/// - card / bank / bank_transfer → Bank treasury
+///
+/// This ensures Treasury.Balance stays in sync with JournalEntry + CashFlowTransaction
+/// and that cash vs bank routing is always correct.
+/// </summary>
+public class TreasuryResolutionService(
+    AppDbContext db,
+    ILogger<TreasuryResolutionService> logger) : ITreasuryResolutionService
+{
+    // Standard treasury names (must match FinanceService convention)
+    private const string VaultTreasuryName = "درج كاشير الاستقبال";
+    private const string BankTreasuryName = "حساب بنك التضامن";
+
+    /// <inheritdoc />
+    public async Task<Treasury> ResolveTreasuryAsync(
+        Guid branchId,
+        string? paymentMethod,
+        Guid? cashierSessionId = null,
+        CancellationToken ct = default)
+    {
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("عذراً، الفرع غير محدد. لا يمكن تحديد الخزينة.");
+
+        var isBankPayment = IsBankPaymentMethod(paymentMethod);
+
+        // For cash payments with a CashierSession, try to use the session's treasury first
+        if (!isBankPayment && cashierSessionId.HasValue)
+        {
+            var session = await db.CashierSessions.FindAsync(new object[] { cashierSessionId.Value }, ct);
+            if (session != null && session.IsActive)
+            {
+                if (session.TreasuryId.HasValue)
+                {
+                    var sessionTreasury = await db.Treasuries.FindAsync(new object[] { session.TreasuryId.Value }, ct);
+                    if (sessionTreasury != null && sessionTreasury.IsActive)
+                    {
+                        return sessionTreasury;
+                    }
+                }
+            }
+        }
+
+        // Fall back to standard treasury resolution by type
+        var treasuryType = isBankPayment ? TreasuryType.Bank : TreasuryType.Vault;
+        var treasuryName = isBankPayment ? BankTreasuryName : VaultTreasuryName;
+
+        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
+        var treasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == treasuryType && t.Name == treasuryName && t.IsActive, ct);
+
+        if (treasury == null)
+        {
+            // Check ChangeTracker for a locally added treasury not yet persisted
+            treasury = db.ChangeTracker.Entries<Treasury>()
+                .Where(e => e.State == EntityState.Added
+                    && e.Entity.BranchId == branchId
+                    && e.Entity.Type == treasuryType
+                    && e.Entity.Name == treasuryName
+                    && e.Entity.IsActive)
+                .Select(e => e.Entity)
+                .FirstOrDefault();
+        }
+
+        if (treasury == null)
+        {
+            // Auto-create the treasury for the branch (same behavior as FinanceService)
+            treasury = new Treasury
+            {
+                Name = treasuryName,
+                Type = treasuryType,
+                Balance = 0,
+                BranchId = branchId,
+                IsActive = true
+            };
+            db.Treasuries.Add(treasury);
+            // Do NOT call SaveChangesAsync — caller persists all changes together
+            logger.LogInformation("Auto-creating {Type} treasury '{Name}' for branch {BranchId}", treasuryType, treasuryName, branchId);
+        }
+
+        return treasury;
+    }
+
+    /// <inheritdoc />
+    public async Task DecrementTreasuryBalanceAsync(
+        Guid branchId,
+        string? paymentMethod,
+        decimal amount,
+        Guid? cashierSessionId = null,
+        CancellationToken ct = default)
+    {
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("عذراً، الفرع غير محدد. لا يمكن تحديث رصيد الخزينة.");
+
+        if (amount <= 0)
+            throw new ArgumentException("مبلغ الصرف يجب أن يكون أكبر من الصفر.");
+
+        var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, cashierSessionId, ct);
+        await MutateTreasuryBalanceAsync(treasury, -amount, ct);
+
+        logger.LogInformation(
+            "Treasury {TreasuryId} ({Type}) decremented by {Amount} for {PaymentMethod} outflow",
+            treasury.Id, treasury.Type, amount, paymentMethod);
+    }
+
+    /// <inheritdoc />
+    public async Task IncrementTreasuryBalanceAsync(
+        Guid branchId,
+        string? paymentMethod,
+        decimal amount,
+        CancellationToken ct = default)
+    {
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("عذراً، الفرع غير محدد. لا يمكن تحديث رصيد الخزينة.");
+
+        if (amount <= 0)
+            throw new ArgumentException("مبلغ الإضافة يجب أن يكون أكبر من الصفر.");
+
+        var treasury = await ResolveTreasuryAsync(branchId, paymentMethod, null, ct);
+        await MutateTreasuryBalanceAsync(treasury, amount, ct);
+
+        logger.LogInformation(
+            "Treasury {TreasuryId} ({Type}) incremented by {Amount} for {PaymentMethod} reversal",
+            treasury.Id, treasury.Type, amount, paymentMethod);
+    }
+
+    /// <inheritdoc />
+    public async Task IncrementTreasuryBalanceByTreasuryIdAsync(
+        Guid treasuryId,
+        decimal amount,
+        CancellationToken ct = default)
+    {
+        if (treasuryId == Guid.Empty)
+            throw new ArgumentException("عذراً، معرف الخزينة غير محدد. لا يمكن استعادة الرصيد.");
+
+        if (amount <= 0)
+            throw new ArgumentException("مبلغ الإضافة يجب أن يكون أكبر من الصفر.");
+
+        var treasury = await db.Treasuries.FindAsync(new object[] { treasuryId }, ct);
+        if (treasury == null || !treasury.IsActive)
+            throw new ArgumentException("عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب.");
+
+        await MutateTreasuryBalanceAsync(treasury, amount, ct);
+
+        logger.LogInformation(
+            "Treasury {TreasuryId} ({Type}) incremented by {Amount} via exact TreasuryId for reversal",
+            treasury.Id, treasury.Type, amount);
+    }
+
+    // ─── Private Helpers ─────────────────────────────────────────────────────
+
+    private static bool IsBankPaymentMethod(string? paymentMethod)
+    {
+        return string.Equals(paymentMethod, "card", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(paymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(paymentMethod, "bank", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Mutates treasury balance atomically. Uses raw SQL on relational DB for concurrency safety.
+    /// Falls back to in-memory mutation for InMemory provider (test scenarios).
+    /// Does NOT call SaveChangesAsync.
+    /// </summary>
+    private async Task MutateTreasuryBalanceAsync(Treasury treasury, decimal delta, CancellationToken ct)
+    {
+        var isNewTreasury = db.Entry(treasury).State == EntityState.Added;
+
+        if (db.Database.IsRelational() && !isNewTreasury)
+        {
+            // Atomic balance update via raw SQL — prevents race conditions under concurrent requests
+            await db.Database.ExecuteSqlRawAsync(
+                @"UPDATE ""Treasuries"" SET ""Balance"" = ""Balance"" + {0} WHERE ""Id"" = {1}",
+                delta, treasury.Id);
+
+            // Refresh the entity to get the latest balance from DB
+            await db.Entry(treasury).ReloadAsync(ct);
+        }
+        else
+        {
+            // InMemory provider or newly created treasury — direct balance update is safe
+            treasury.Balance += delta;
+        }
+    }
+}

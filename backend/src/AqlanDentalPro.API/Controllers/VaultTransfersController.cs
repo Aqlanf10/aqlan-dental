@@ -2,6 +2,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,23 @@ public sealed class CreateTransferRequest
     public Guid DestinationTreasuryId { get; init; }
     public decimal Amount { get; init; }
     public string? Notes { get; init; }
+
+    /// <summary>
+    /// Finance V3: Required classification for external deposits.
+    /// Must be one of: OwnerCapital, OpeningBalance, OtherReceivable, AuthorizedRevenueDocument.
+    /// If null or unrecognized, the deposit will be rejected from Finance V3 posting.
+    /// </summary>
+    public string? DepositSource { get; init; }
+}
+
+public sealed class ApproveTransferRequest
+{
+    /// <summary>
+    /// Finance V3: Required classification for external deposits.
+    /// Must be one of: OwnerCapital, OpeningBalance, OtherReceivable, AuthorizedRevenueDocument.
+    /// If null or unrecognized, the deposit will be rejected from Finance V3 posting.
+    /// </summary>
+    public string? DepositSource { get; init; }
 }
 
 public sealed class RejectTransferRequest
@@ -24,7 +42,7 @@ public sealed class RejectTransferRequest
 [ApiController]
 [Route("api/vault-transfers")]
 [Authorize(Policy = "FinanceAccess")]
-public class VaultTransfersController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
+public class VaultTransfersController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -34,6 +52,10 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        // Blocker 4: Non-admin users must have a valid branch to view transfers
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var isAdmin = currentUser.IsAdmin;
@@ -89,6 +111,10 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
 
+        // Blocker 4: Non-admin users must have a valid branch to create transfers
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var userId = currentUser.UserId ?? Guid.Empty;
 
@@ -114,7 +140,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = Math.Abs("VaultTransferNumber".GetHashCode()) % 100000;
+            var lockKey = StableLockKeyHelper.VaultTransferNumber;
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
             var today = DateTime.UtcNow;
@@ -152,7 +178,8 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
                 TransferDate = DateTime.UtcNow,
                 PerformedBy = userId,
                 Status = TransferStatus.Pending,
-                Notes = req.Notes?.Trim()
+                Notes = req.Notes?.Trim(),
+                DepositSource = req.DepositSource // Finance V3: Store deposit source classification
             };
 
             // Deduct the source treasury immediately (lock/block funds)
@@ -186,7 +213,7 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
 
     [HttpPost("{id}/approve")]
     [Authorize(Roles = "Admin,Accountant")] // Only Admin or Accountant can reconcile and approve receipt of funds
-    public async Task<IActionResult> Approve(Guid id)
+    public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveTransferRequest? approveReq = null)
     {
         var userId = currentUser.UserId ?? Guid.Empty;
 
@@ -200,6 +227,17 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
 
         if (transfer.Status != TransferStatus.Pending)
             return BadRequest(new { message = "يمكن قبول طلبات التحويل المعلقة فقط" });
+
+        // Blocker 4: Branch isolation — non-admin users MUST have a valid branch assignment
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+            var destBranchId = transfer.DestinationTreasury.BranchId;
+            if (destBranchId != currentUser.BranchId.Value)
+                return Forbid("ليس لديك صلاحية الموافقة على تحويلات فرع آخر");
+        }
 
         // Add funds to destination treasury balance
         transfer.DestinationTreasury.Balance += transfer.Amount;
@@ -252,7 +290,99 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
             db.CashFlowTransactions.Add(sourceCashflow);
         }
 
-        await db.SaveChangesAsync();
+        // Finance V3: External deposit journal entry with DepositSource classification
+        // AND Internal transfer journal entry (Debit Destination / Credit Source)
+        // Wrap in explicit transaction for relational DB to guarantee atomicity.
+        var useApproveTx = db.Database.IsRelational();
+        var approveTx = useApproveTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            if (transfer.SourceTreasuryId == null)
+            {
+                var depositSource = approveReq?.DepositSource;
+                if (string.IsNullOrWhiteSpace(depositSource))
+                {
+                    if (useApproveTx) await approveTx!.RollbackAsync();
+                    return BadRequest(new { message = "يجب تحديد مصدر الإيداع الخارجي (OwnerCapital أو OpeningBalance أو OtherReceivable أو AuthorizedRevenueDocument)" });
+                }
+
+                var branchId = transfer.DestinationTreasury.BranchId;
+                var treasuryId = transfer.DestinationTreasury.Id;
+                var performedBy = transfer.PerformedBy;
+
+                var (creditAccountType, creditAccountId, description) = depositSource switch
+                {
+                    "OwnerCapital" => (JournalAccountType.OwnerEquity, branchId, $"إيداع رأس مال مالك - {transfer.TransferNumber}"),
+                    "OpeningBalance" => (JournalAccountType.OwnerEquity, branchId, $"رصيد افتتاحي - {transfer.TransferNumber}"),
+                    "OtherReceivable" => (JournalAccountType.OtherReceivable, branchId, $"إيداع ذمم مدينة أخرى - {transfer.TransferNumber}"),
+                    "AuthorizedRevenueDocument" => (JournalAccountType.Revenue, transfer.Id, $"إيراد مستندي معتمد - {transfer.TransferNumber}"),
+                    _ => ((JournalAccountType)0, Guid.Empty, "")
+                };
+
+                if (creditAccountId == Guid.Empty)
+                {
+                    if (useApproveTx) await approveTx!.RollbackAsync();
+                    return BadRequest(new { message = $"مصدر الإيداع غير معروف: {depositSource}. القيم المقبولة: OwnerCapital, OpeningBalance, OtherReceivable, AuthorizedRevenueDocument" });
+                }
+
+                var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+                {
+                    (JournalAccountType.Treasury, treasuryId, transfer.Amount, 0m, $"استلام إيداع خارجي - {transfer.TransferNumber}"),
+                    (creditAccountType, creditAccountId, 0m, transfer.Amount, description)
+                };
+
+                var jeEntry = await journalEntryService.CreateEntryAsync(
+                    documentType: FinancialDocumentType.VaultTransfer,
+                    financialDocumentId: transfer.Id,
+                    description: description,
+                    entryDate: DateOnly.FromDateTime(DateTime.UtcNow),
+                    branchId: branchId,
+                    performedBy: performedBy,
+                    cashierSessionId: transfer.CashierSessionId,
+                    treasuryId: treasuryId,
+                    lines: journalLines);
+
+                jeEntry.IsPosted = true;
+                jeEntry.PostedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                // Blocker 5: Internal vault transfer JE — Debit Destination / Credit Source
+                // This is NOT revenue; it's a transfer between two treasury accounts.
+                var sourceTreasuryId = transfer.SourceTreasuryId.Value;
+                var destTreasuryId = transfer.DestinationTreasuryId;
+                var branchId = transfer.DestinationTreasury.BranchId;
+
+                var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+                {
+                    (JournalAccountType.Treasury, destTreasuryId, transfer.Amount, 0m, $"استلام تحويل داخلي - {transfer.TransferNumber}"),
+                    (JournalAccountType.Treasury, sourceTreasuryId, 0m, transfer.Amount, $"إرسال تحويل داخلي - {transfer.TransferNumber}")
+                };
+
+                var jeEntry = await journalEntryService.CreateEntryAsync(
+                    documentType: FinancialDocumentType.VaultTransfer,
+                    financialDocumentId: transfer.Id,
+                    description: $"تحويل سيولة داخلية: {transfer.TransferNumber}",
+                    entryDate: DateOnly.FromDateTime(DateTime.UtcNow),
+                    branchId: branchId,
+                    performedBy: transfer.PerformedBy,
+                    cashierSessionId: transfer.CashierSessionId,
+                    treasuryId: destTreasuryId,
+                    lines: journalLines);
+
+                // Auto-post
+                jeEntry.IsPosted = true;
+                jeEntry.PostedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            if (useApproveTx) await approveTx!.CommitAsync();
+        }
+        catch
+        {
+            if (useApproveTx) await approveTx!.RollbackAsync();
+            throw;
+        }
 
         // H3: Audit logging for vault transfer approval
         await audit.LogAsync(AuditAction.Approve, "VaultTransfer", id);
@@ -286,6 +416,17 @@ public class VaultTransfersController(AppDbContext db, ICurrentUserService curre
 
         if (transfer.Status != TransferStatus.Pending)
             return BadRequest(new { message = "يمكن رفض طلبات التحويل المعلقة فقط" });
+
+        // Blocker 4: Branch isolation — non-admin users MUST have a valid branch assignment
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+            var destBranchId = transfer.DestinationTreasury.BranchId;
+            if (destBranchId != currentUser.BranchId.Value)
+                return Forbid("ليس لديك صلاحية رفض تحويلات فرع آخر");
+        }
 
         // Restore funds to source treasury balance
         if (transfer.SourceTreasury != null)

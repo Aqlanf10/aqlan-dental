@@ -588,6 +588,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<Guid?>("ReversedByTransactionId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("TreasuryId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BranchId");
@@ -597,6 +600,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("ReversalOfTransactionId");
 
                     b.HasIndex("ReversedByTransactionId");
+
+                    b.HasIndex("TreasuryId");
 
                     b.ToTable("CashFlowTransactions");
                 });
@@ -665,6 +670,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("TreasuryId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -673,6 +681,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("BranchId");
 
                     b.HasIndex("CashierId");
+
+                    b.HasIndex("TreasuryId");
 
                     b.ToTable("CashierSessions");
                 });
@@ -2544,6 +2554,168 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.HasIndex("ServiceId");
 
                     b.ToTable("InvoiceLineItems", (string)null);
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.JournalEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BranchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CashierSessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateOnly>("EntryDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EntryNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("FinancialDocumentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FinancialDocumentType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsPosted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsReversal")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("PerformedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("PostedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReversalOfEntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ReversedByEntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TreasuryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BranchId");
+
+                    b.HasIndex("CashierSessionId");
+
+                    b.HasIndex("EntryDate");
+
+                    b.HasIndex("EntryNumber")
+                        .IsUnique();
+
+                    b.HasIndex("FinancialDocumentType");
+
+                    b.HasIndex("IsPosted");
+
+                    b.HasIndex("IsReversal");
+
+                    b.HasIndex("PerformedBy");
+
+                    b.HasIndex("ReversalOfEntryId");
+
+                    b.HasIndex("ReversedByEntryId");
+
+                    b.HasIndex("TreasuryId");
+
+                    b.HasIndex("BranchId", "EntryDate");
+
+                    b.ToTable("JournalEntries");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.JournalLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccountType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid>("BranchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Credit")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("Debit")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("JournalEntryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("AccountType");
+
+                    b.HasIndex("BranchId");
+
+                    b.HasIndex("JournalEntryId");
+
+                    b.HasIndex("AccountType", "AccountId");
+
+                    b.ToTable("JournalLines", t => t.HasCheckConstraint("CK_JournalLines_DebitCreditMutual",
+                        "\"Debit\" >= 0 AND \"Credit\" >= 0 AND (\"Debit\" > 0 OR \"Credit\" > 0)"));
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LabOrder", b =>
@@ -5421,6 +5593,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.HasIndex("BranchId", "Type");
 
+                    b.HasIndex("BranchId", "Type", "Name")
+                        .IsUnique()
+                        .HasFilter("\"IsActive\" = true")
+                        .HasDatabaseName("IX_Treasuries_BranchId_Type_Name_Unique");
+
                     b.ToTable("Treasuries");
                 });
 
@@ -5704,6 +5881,9 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DepositSource")
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -6047,6 +6227,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .HasForeignKey("ReversedByTransactionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Treasury", "Treasury")
+                        .WithMany()
+                        .HasForeignKey("TreasuryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Branch");
 
                     b.Navigation("CashierSession");
@@ -6054,6 +6239,8 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("ReversalOfTransaction");
 
                     b.Navigation("ReversedByTransaction");
+
+                    b.Navigation("Treasury");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CashierSession", b =>
@@ -6070,9 +6257,16 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Treasury", "Treasury")
+                        .WithMany()
+                        .HasForeignKey("TreasuryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Branch");
 
                     b.Navigation("Cashier");
+
+                    b.Navigation("Treasury");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.CephAnalysis", b =>
@@ -6557,6 +6751,72 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("RelatedVisit");
 
                     b.Navigation("Service");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.JournalEntry", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.CashierSession", "CashierSession")
+                        .WithMany()
+                        .HasForeignKey("CashierSessionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.JournalEntry", "ReversalOfEntry")
+                        .WithMany()
+                        .HasForeignKey("ReversalOfEntryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.JournalEntry", "ReversedByEntry")
+                        .WithMany()
+                        .HasForeignKey("ReversedByEntryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Treasury", "Treasury")
+                        .WithMany()
+                        .HasForeignKey("TreasuryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.User", "PerformedByUser")
+                        .WithMany()
+                        .HasForeignKey("PerformedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Branch");
+
+                    b.Navigation("CashierSession");
+
+                    b.Navigation("PerformedByUser");
+
+                    b.Navigation("ReversalOfEntry");
+
+                    b.Navigation("ReversedByEntry");
+
+                    b.Navigation("Treasury");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.JournalLine", b =>
+                {
+                    b.HasOne("AqlanDentalPro.Domain.Entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("AqlanDentalPro.Domain.Entities.JournalEntry", "JournalEntry")
+                        .WithMany("Lines")
+                        .HasForeignKey("JournalEntryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Branch");
+
+                    b.Navigation("JournalEntry");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.LabOrder", b =>
@@ -7443,6 +7703,11 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
                     b.Navigation("LineItems");
 
                     b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("AqlanDentalPro.Domain.Entities.JournalEntry", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("AqlanDentalPro.Domain.Entities.Message", b =>

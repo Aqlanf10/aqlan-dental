@@ -2,6 +2,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -34,7 +35,7 @@ public sealed class RejectExpenseRequest
 [ApiController]
 [Route("api/expenses")]
 [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
-public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit) : ControllerBase
+public class OperationalExpensesController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>
     /// Approval threshold in YER: expenses above this amount require managerial approval.
@@ -66,8 +67,6 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل المصروف." });
 
         // Cash expenses require an open cashier session so they are linked to the drawer.
-        // Non-cash expenses (card, bank_transfer) do NOT require an open session — only
-        // physical cash leaves the drawer and must be tracked against the open shift.
         CashierSession? activeSession = null;
         if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
@@ -75,6 +74,17 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
                 .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
             if (activeSession == null)
                 return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل مصروف نقدي." });
+        }
+
+        // Resolve treasury for the branch by payment method — required for JournalEntry posting
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId.Value, req.PaymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
 
         // Verify supplier if provided
@@ -106,7 +116,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
 
             if (db.Database.IsRelational())
             {
-                var lockKey = Math.Abs("ExpenseNumber".GetHashCode()) % 100000;
+                var lockKey = StableLockKeyHelper.ExpenseNumber;
                 await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
             }
 
@@ -150,11 +160,32 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             // Auto-post to ledger ONLY if no approval is needed
             if (!needsApproval)
             {
-                // Phase 0A: link cashflow to the active cashier session for cash expenses
-                // so that the drawer reconciliation correctly subtracts cash outflows.
-                var cashflow = await PostToLedgerAsync(db, expense, nextSeq, datePart, userId, branchId.Value, activeSession?.Id);
+                // Dual-write: CashFlowTransaction (transitional) + JournalEntry (canonical)
+                var cashflow = CreateCashFlowTransaction(expense, nextSeq, datePart, userId, branchId.Value, activeSession?.Id, treasury.Id);
+                db.CashFlowTransactions.Add(cashflow);
                 expense.IsPostedToLedger = true;
                 expense.CashFlowTransactionId = cashflow.Id;
+
+                // JournalEntry: Debit Expense / Credit Treasury
+                var je = await journalEntryService.CreateEntryAsync(
+                    documentType: FinancialDocumentType.Expense,
+                    financialDocumentId: expense.Id,
+                    description: $"قيد مصروف تشغيلي: {expense.Title} ({GetCategoryArabic(expense.Category)})",
+                    entryDate: expense.ExpenseDate,
+                    branchId: branchId.Value,
+                    performedBy: userId,
+                    cashierSessionId: activeSession?.Id,
+                    treasuryId: treasury.Id,
+                    lines: new[]
+                    {
+                        (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف: {expense.Title}"),
+                        (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
+                    });
+                je.IsPosted = true;
+                je.PostedAt = DateTime.UtcNow;
+
+                // Blocker 1: Atomically decrement Treasury.Balance for the outflow
+                await treasuryResolution.DecrementTreasuryBalanceAsync(branchId.Value, expense.PaymentMethod, expense.Amount, activeSession?.Id);
             }
 
             // If linked to lab order, update lab order status to "paid"
@@ -309,44 +340,106 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
     [Authorize(Policy = "AdminAccess")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveExpenseRequest req)
     {
-        var expense = await db.OperationalExpenses.FindAsync(id);
-        if (expense == null || !expense.IsActive)
+        var userId = currentUser.UserId ?? Guid.Empty;
+
+        // Blocker 2: Cash expense approval MUST require an open cashier session
+        //   Pre-check session BEFORE starting the transaction to fail fast.
+        CashierSession? activeSession = null;
+        // We need the expense to know the payment method; load it first without tracking
+        var expenseSnapshot = await db.OperationalExpenses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == id && e.IsActive);
+        if (expenseSnapshot == null)
             return NotFound(new { message = "المصروف غير موجود" });
 
-        if (expense.ApprovalStatus != ApprovalStatus.Pending)
+        if (expenseSnapshot.ApprovalStatus != ApprovalStatus.Pending)
             return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
 
-        var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = expense.BranchId;
+        var branchId = expenseSnapshot.BranchId;
 
-        // Phase 0A: When approving a cash expense, find the active session to link
-        CashierSession? activeSession = null;
-        if (string.Equals(expense.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        // Guard: reject if branch is invalid
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، الفرع غير محدد لهذا المصروف. تواصل مع الإدارة." });
+
+        if (string.Equals(expenseSnapshot.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
             activeSession = await db.CashierSessions
                 .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
-            // Note: We do NOT block approval if no session is open — the expense was already
-            // created. The approved expense will still post to the ledger, but without a
-            // session link it won't affect the current drawer reconciliation. This is safe
-            // because approved expenses may be processed after session closing.
+            if (activeSession == null)
+                return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل اعتماد المصروف النقدي." });
         }
 
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, expenseSnapshot.PaymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the source row and re-check eligibility.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            // Acquire transaction-scoped pessimistic lock on the expense row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""OperationalExpenses"" WHERE ""Id"" = {0} FOR UPDATE",
+                    id);
+            }
+
+            // Reload the expense inside the lock and re-check eligibility
+            var expense = await db.OperationalExpenses.FindAsync(id);
+            if (expense == null || !expense.IsActive)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "المصروف غير موجود" });
+            }
+
+            if (expense.ApprovalStatus != ApprovalStatus.Pending)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
+            }
+
             expense.ApprovalStatus = ApprovalStatus.Approved;
             expense.ApprovedById = userId;
             expense.ApprovedAt = DateTime.UtcNow;
             expense.ApprovalNotes = req.Notes?.Trim();
 
-            // Post to GL now that it's approved — Phase 0A: link to session if cash
+            // Dual-write: CashFlowTransaction (transitional) + JournalEntry (canonical)
             var datePart = expense.ExpenseDate.ToString("yyyyMMdd");
             var seqSuffix = expense.ExpenseNumber.Split('-').LastOrDefault() ?? "001";
             if (!int.TryParse(seqSuffix, out var seq)) seq = 1;
 
-            var cashflow = await PostToLedgerAsync(db, expense, seq, datePart, userId, branchId, activeSession?.Id);
+            var cashflow = CreateCashFlowTransaction(expense, seq, datePart, userId, branchId, activeSession?.Id, treasury.Id);
+            db.CashFlowTransactions.Add(cashflow);
             expense.IsPostedToLedger = true;
             expense.CashFlowTransactionId = cashflow.Id;
+
+            // JournalEntry: Debit Expense / Credit Treasury
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.Expense,
+                financialDocumentId: expense.Id,
+                description: $"قيد مصروف تشغيلي (معتمد): {expense.Title} ({GetCategoryArabic(expense.Category)})",
+                entryDate: expense.ExpenseDate,
+                branchId: branchId,
+                performedBy: userId,
+                cashierSessionId: activeSession?.Id,
+                treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف معتمد: {expense.Title}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true;
+            je.PostedAt = DateTime.UtcNow;
+
+            // Blocker 1: Atomically decrement Treasury.Balance for the approved outflow
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, expense.PaymentMethod, expense.Amount, activeSession?.Id);
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -391,7 +484,7 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         expense.ApprovedAt = DateTime.UtcNow;
         expense.ApprovalNotes = req.Reason.Trim();
 
-        // Soft-delete the expense since it's rejected
+        // Soft-delete the expense since it's rejected (never posted, so no reversal needed)
         expense.IsActive = false;
         expense.DeletedAt = DateTime.UtcNow;
         expense.DeletedBy = userId;
@@ -417,61 +510,25 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
         if (expense == null || !expense.IsActive)
             return NotFound(new { message = "المصروف غير موجود" });
 
+        // Only admin can delete posted expenses
         if (expense.ApprovalStatus == ApprovalStatus.Approved && expense.IsPostedToLedger)
         {
-            // Only admin can delete posted expenses
             if (!currentUser.IsAdmin)
                 return Forbid();
         }
 
-        var userId = currentUser.UserId;
+        var userId = currentUser.UserId ?? Guid.Empty;
 
+        // If the expense was posted to ledger, we must create reversal entries instead of soft-deleting
+        if (expense.IsPostedToLedger)
+        {
+            return await ReversePostedExpenseAsync(expense, userId);
+        }
+
+        // Unposted expense: safe to soft-delete (no financial records to reverse)
         expense.IsActive = false;
         expense.DeletedAt = DateTime.UtcNow;
         expense.DeletedBy = userId;
-
-        // Deactivate the linked cashflow ledger outflow transaction (if posted)
-        if (expense.CashFlowTransactionId.HasValue)
-        {
-            var cashflow = await db.CashFlowTransactions.FindAsync(expense.CashFlowTransactionId.Value);
-            if (cashflow != null)
-            {
-                // Phase 0A: Guard — do not corrupt a closed or reconciled session by removing
-                // a transaction that was part of its reconciliation calculation.
-                if (cashflow.CashierSessionId.HasValue)
-                {
-                    var linkedSession = await db.CashierSessions.FindAsync(cashflow.CashierSessionId.Value);
-                    if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
-                    {
-                        return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." });
-                    }
-                }
-                cashflow.IsActive = false;
-                cashflow.DeletedAt = DateTime.UtcNow;
-                cashflow.DeletedBy = userId;
-            }
-        }
-        else
-        {
-            // Fallback: search by reference for legacy expenses not linked via CashFlowTransactionId
-            var cashflow = await db.CashFlowTransactions
-                .FirstOrDefaultAsync(t => t.ReferenceId == expense.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
-            if (cashflow != null)
-            {
-                // Phase 0A: Guard — same closed session protection
-                if (cashflow.CashierSessionId.HasValue)
-                {
-                    var linkedSession = await db.CashierSessions.FindAsync(cashflow.CashierSessionId.Value);
-                    if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
-                    {
-                        return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." });
-                    }
-                }
-                cashflow.IsActive = false;
-                cashflow.DeletedAt = DateTime.UtcNow;
-                cashflow.DeletedBy = userId;
-            }
-        }
 
         // If linked to lab order, restore lab order status back to "received"
         if (expense.LabOrderId.HasValue)
@@ -483,16 +540,160 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
 
         await db.SaveChangesAsync();
 
-        return Ok(new { message = "تم حذف قيد المصروف وإلغاء الترحيل المالي بنجاح" });
+        return Ok(new { message = "تم حذف قيد المصروف بنجاح" });
     }
 
     // --------------- Helpers ---------------
 
-    private static async Task<CashFlowTransaction> PostToLedgerAsync(
-        AppDbContext db, OperationalExpense expense, int seq, string datePart, Guid userId, Guid branchId,
-        Guid? cashierSessionId = null)
+    /// <summary>
+    /// Reverses a posted expense by creating reversal CashFlowTransaction + JournalEntry.
+    /// NEVER soft-deletes posted financial history — all corrections go through reversal entries.
+    /// </summary>
+    private async Task<IActionResult> ReversePostedExpenseAsync(OperationalExpense expenseSnapshot, Guid userId)
     {
-        var cashflow = new CashFlowTransaction
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the source row.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Acquire transaction-scoped pessimistic lock on the expense row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""OperationalExpenses"" WHERE ""Id"" = {0} FOR UPDATE",
+                    expenseSnapshot.Id);
+            }
+
+            // Reload the expense inside the lock
+            var expense = await db.OperationalExpenses.FindAsync(expenseSnapshot.Id);
+            if (expense == null || !expense.IsActive)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "المصروف غير موجود" });
+            }
+
+            // Guard: do not corrupt a closed or reconciled session
+            CashFlowTransaction? originalCashflow = null;
+            if (expense.CashFlowTransactionId.HasValue)
+            {
+                originalCashflow = await db.CashFlowTransactions.FindAsync(expense.CashFlowTransactionId.Value);
+            }
+            else
+            {
+                originalCashflow = await db.CashFlowTransactions
+                    .FirstOrDefaultAsync(t => t.ReferenceId == expense.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
+            }
+
+            if (originalCashflow != null && originalCashflow.CashierSessionId.HasValue)
+            {
+                var linkedSession = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId.Value);
+                if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." });
+                }
+            }
+
+            // Check if already reversed — prevents double-restore (re-checked inside lock)
+            if (originalCashflow?.ReversedByTransactionId != null)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذا المصروف تم عكسه مسبقاً." });
+            }
+
+            // Blocker 1: For posted expense reversal, we MUST restore balance to the exact original treasury.
+            if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "عذراً، لا يمكن عكس القيد — سجل التدفق النقدي الأصلي غير مرتبط بخزينة. تواصل مع المحاسب." });
+            }
+
+            var originalTreasuryId = originalCashflow.TreasuryId.Value;
+
+            // Verify the original treasury exists and is active before writing any reversal records
+            var originalTreasury = await db.Treasuries.FindAsync(originalTreasuryId);
+            if (originalTreasury == null || !originalTreasury.IsActive)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." });
+            }
+            // Create reversal CashFlowTransaction (Inflow, Category=Reversal)
+            var reversalCashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-OUT-REV-{Guid.NewGuid().ToString()[..8]}",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.Reversal,
+                Amount = expense.Amount,
+                PaymentMethod = expense.PaymentMethod,
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = expense.Id,
+                ReferenceNumber = expense.ExpenseNumber,
+                Description = $"عكس قيد مصروف تشغيلي: {expense.Title}",
+                PerformedBy = userId,
+                BranchId = expense.BranchId,
+                IsReversal = true,
+                ReversalOfTransactionId = originalCashflow.Id,
+                CashierSessionId = originalCashflow.CashierSessionId,
+                TreasuryId = originalTreasuryId
+            };
+            db.CashFlowTransactions.Add(reversalCashflow);
+
+            // Link original to reversal — prevents double-restore on retry
+            originalCashflow.ReversedByTransactionId = reversalCashflow.Id;
+
+            // Create reversal JournalEntry via service
+            var originalJe = await db.JournalEntries
+                .FirstOrDefaultAsync(e => e.FinancialDocumentId == expense.Id
+                    && e.FinancialDocumentType == FinancialDocumentType.Expense
+                    && !e.IsReversal);
+
+            if (originalJe != null)
+            {
+                var reversalJe = await journalEntryService.CreateReversalEntryAsync(
+                    originalEntryId: originalJe.Id,
+                    reason: $"حذف مصروف: {expense.Title}",
+                    performedBy: userId);
+                reversalJe.IsPosted = true;
+                reversalJe.PostedAt = DateTime.UtcNow;
+            }
+
+            // Blocker 1: Atomically increment Treasury.Balance on the EXACT original treasury.
+            // Uses the original CashFlowTransaction.TreasuryId — never re-resolves by payment method.
+            // Double-restore is prevented because originalCashflow.ReversedByTransactionId is set above,
+            // and the check at the top of this method rejects if it's already non-null.
+            await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(originalTreasuryId, expense.Amount);
+
+            // Mark the expense as deactivated (but DO NOT soft-delete posted financial history)
+            expense.IsActive = false;
+            expense.DeletedAt = DateTime.UtcNow;
+            expense.DeletedBy = userId;
+
+            // If linked to lab order, restore lab order status back to "received"
+            if (expense.LabOrderId.HasValue)
+            {
+                var labOrder = await db.LabOrders.FindAsync(expense.LabOrderId.Value);
+                if (labOrder != null)
+                    labOrder.Status = "received";
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Update, "OperationalExpense", expense.Id, details: "Posted expense reversed via cashflow + journal entry reversal");
+
+            return Ok(new { message = "تم عكس قيد المصروف وترحيل القيد العكسي بنجاح" });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static CashFlowTransaction CreateCashFlowTransaction(
+        OperationalExpense expense, int seq, string datePart, Guid userId, Guid branchId,
+        Guid? cashierSessionId, Guid treasuryId)
+    {
+        return new CashFlowTransaction
         {
             TransactionNumber = $"TX-{datePart}-OUT-{seq:D3}",
             Type = TransactionType.Outflow,
@@ -505,12 +706,9 @@ public class OperationalExpensesController(AppDbContext db, ICurrentUserService 
             Description = $"قيد مصروف تشغيلي: {expense.Title} ({GetCategoryArabic(expense.Category)})",
             PerformedBy = userId,
             BranchId = branchId,
-            // Phase 0A: Link to cashier session for cash expenses so drawer reconciliation
-            // correctly subtracts cash outflows from expected closing amounts.
-            CashierSessionId = cashierSessionId
+            CashierSessionId = cashierSessionId,
+            TreasuryId = treasuryId
         };
-        db.CashFlowTransactions.Add(cashflow);
-        return cashflow;
     }
 
     private static string GetCategoryArabic(ExpenseCategory category) => category switch

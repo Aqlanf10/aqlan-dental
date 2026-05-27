@@ -46,4 +46,12 @@ public class VaultTransfer : BaseEntity, ISoftDeletable
 
     /// <summary>Reconciliation notes or comments (e.g., discrepancy explanation).</summary>
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Finance V3: Classification source for external deposits.
+    /// Required when SourceTreasuryId is null (external deposit).
+    /// Must be one of: OwnerCapital, OpeningBalance, OtherReceivable, AuthorizedRevenueDocument.
+    /// Null for internal transfers between existing treasuries.
+    /// </summary>
+    public string? DepositSource { get; set; }
 }

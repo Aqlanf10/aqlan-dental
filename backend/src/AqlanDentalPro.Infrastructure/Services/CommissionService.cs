@@ -11,6 +11,8 @@ namespace AqlanDentalPro.Infrastructure.Services;
 
 public class CommissionService(
     AppDbContext db,
+    IJournalEntryService journalEntryService,
+    ITreasuryResolutionService treasuryResolution,
     ILogger<CommissionService> logger) : ICommissionService
 {
     // ── Line item commission ──────────────────────────────────────────────────
@@ -215,7 +217,45 @@ public class CommissionService(
         var doctor = await db.Doctors.FindAsync(req.DoctorId)
             ?? throw new ArgumentException("الطبيب غير موجود");
 
-        // Enforce payment cap: cannot pay more than (approved + paid) − already-paid
+        // FIX: Determine valid BranchId from doctor — never write Guid.Empty
+        var branchId = doctor.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+        {
+            // Fallback: try to get branch from doctor's user account
+            if (doctor.UserId != Guid.Empty)
+            {
+                var user = await db.Users.FindAsync(doctor.UserId);
+                if (user?.BranchId.HasValue == true)
+                    branchId = user.BranchId.Value;
+            }
+        }
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("عذراً، لا يمكن صرف العمولة — الفرع غير محدد للطبيب. تواصل مع الإدارة.");
+
+        // Resolve treasury by payment method
+        var paymentMethod = req.PaymentMethod ?? "cash";
+
+        // Blocker 2: Require open cashier session for cash commission payments
+        CashierSession? activeSession = null;
+        if (string.Equals(paymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        {
+            activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == recordedBy && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل صرف العمولات النقدية.");
+        }
+
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ArgumentException(ex.Message);
+        }
+
+        // Pre-check remaining (fast-fail before starting transaction; re-checked inside lock)
         var earned = await db.InvoiceLineItems
             .Where(i => i.DoctorId == req.DoctorId
                      && i.IsActive
@@ -232,67 +272,130 @@ public class CommissionService(
             throw new ArgumentException(
                 $"المبلغ ({req.Amount:N2}) يتجاوز المتبقي المستحق للطبيب ({remaining:N2})");
 
-        var payment = new DoctorCommissionPayment
+        // Blocker 3: Wrap all commission payment operations in a single transaction
+        // so that DoctorCommissionPayment + CashFlowTransaction + Treasury.Balance +
+        // JournalEntry + InvoiceLineItem status updates all commit or roll back together.
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
         {
-            DoctorId        = req.DoctorId,
-            Amount          = req.Amount,
-            PaymentDate     = req.PaymentDate,
-            PaymentMethod   = req.PaymentMethod,
-            ReferenceNumber = req.ReferenceNumber,
-            Notes           = req.Notes,
-            PaidBy          = recordedBy,
-        };
-
-        db.DoctorCommissionPayments.Add(payment);
-
-        // Auto-create central ledger cashflow transaction (Outflow / Doctor Commission)
-        var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
-        var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.DoctorCommission) + 1;
-        var cashflow = new CashFlowTransaction
-        {
-            TransactionNumber = $"TX-{datePart}-COM-{nextSeq:D3}",
-            Type = TransactionType.Outflow,
-            Category = FinancialCategory.DoctorCommission,
-            Amount = req.Amount,
-            PaymentMethod = req.PaymentMethod ?? "cash",
-            TransactionDate = req.PaymentDate,
-            ReferenceId = payment.Id,
-            ReferenceNumber = req.ReferenceNumber ?? $"COM-{doctor.Id.ToString()[..4]}",
-            Description = $"صرف عمولة الطبيب: {doctor.Name}",
-            PerformedBy = recordedBy,
-            BranchId = Guid.Empty
-        };
-        db.CashFlowTransactions.Add(cashflow);
-
-        // Mark specified line items as Paid
-        if (req.LineItemIds is { Count: > 0 })
-        {
-            var lineItems = await db.InvoiceLineItems
-                .Where(i => req.LineItemIds.Contains(i.Id) && i.IsActive)
-                .ToListAsync();
-
-            foreach (var item in lineItems)
+            // CONCURRENCY SAFETY: Acquire advisory lock scoped to the doctor to serialize
+            // all commission payments for the same doctor within the transaction.
+            // Uses a stable bigint derived from the doctor Guid (not .NET GetHashCode).
+            if (useTx)
             {
-                if (item.CommissionStatus == CommissionStatus.Approved)
-                    item.CommissionStatus = CommissionStatus.Paid;
+                var doctorLockKey = StableLockKeyHelper.StableGuidToLong(req.DoctorId);
+                await db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", doctorLockKey);
             }
+
+            // Re-calculate remaining approved commission inside the lock
+            var lockedEarned = await db.InvoiceLineItems
+                .Where(i => i.DoctorId == req.DoctorId
+                         && i.IsActive
+                         && (i.CommissionStatus == CommissionStatus.Approved
+                          || i.CommissionStatus == CommissionStatus.Paid))
+                .SumAsync(i => (decimal?)i.DoctorCommissionAmount) ?? 0m;
+
+            var lockedAlreadyPaid = await db.DoctorCommissionPayments
+                .Where(p => p.DoctorId == req.DoctorId && p.IsActive)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+            remaining = lockedEarned - lockedAlreadyPaid;
+            if (req.Amount > remaining)
+                throw new ArgumentException(
+                    $"المبلغ ({req.Amount:N2}) يتجاوز المتبقي المستحق للطبيب ({remaining:N2})");
+            var payment = new DoctorCommissionPayment
+            {
+                DoctorId        = req.DoctorId,
+                Amount          = req.Amount,
+                PaymentDate     = req.PaymentDate,
+                PaymentMethod   = req.PaymentMethod,
+                ReferenceNumber = req.ReferenceNumber,
+                Notes           = req.Notes,
+                PaidBy          = recordedBy,
+            };
+
+            db.DoctorCommissionPayments.Add(payment);
+
+            // Dual-write: CashFlowTransaction (transitional) — BranchId now resolved correctly
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.DoctorCommission) + 1;
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-COM-{nextSeq:D3}",
+                Type = TransactionType.Outflow,
+                Category = FinancialCategory.DoctorCommission,
+                Amount = req.Amount,
+                PaymentMethod = req.PaymentMethod ?? "cash",
+                TransactionDate = req.PaymentDate,
+                ReferenceId = payment.Id,
+                ReferenceNumber = req.ReferenceNumber ?? $"COM-{doctor.Id.ToString()[..4]}",
+                Description = $"صرف عمولة الطبيب: {doctor.Name}",
+                PerformedBy = recordedBy,
+                BranchId = branchId,
+                TreasuryId = treasury.Id,
+                CashierSessionId = activeSession?.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+
+            // Dual-write: JournalEntry (canonical) — Debit Expense / Credit Treasury
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.CommissionPayment,
+                financialDocumentId: payment.Id,
+                description: $"صرف عمولة طبيب: {doctor.Name}",
+                entryDate: req.PaymentDate,
+                branchId: branchId,
+                performedBy: recordedBy,
+                cashierSessionId: activeSession?.Id,
+                treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Expense, payment.Id, req.Amount, 0m, (string?)$"عمولة: {doctor.Name}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true;
+            je.PostedAt = DateTime.UtcNow;
+
+            // Blocker 1: Atomically decrement Treasury.Balance for the commission outflow
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, req.Amount, activeSession?.Id);
+
+            // Mark specified line items as Paid
+            if (req.LineItemIds is { Count: > 0 })
+            {
+                var lineItems = await db.InvoiceLineItems
+                    .Where(i => req.LineItemIds.Contains(i.Id) && i.IsActive)
+                    .ToListAsync();
+
+                foreach (var item in lineItems)
+                {
+                    if (item.CommissionStatus == CommissionStatus.Approved)
+                        item.CommissionStatus = CommissionStatus.Paid;
+                }
+            }
+
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+
+            await LogAuditAsync(payment.Id, "RecordCommissionPayment", recordedBy,
+                $"DoctorId={req.DoctorId} Amount={req.Amount} Method={req.PaymentMethod}");
+
+            return new DoctorCommissionPaymentDto(
+                Id: payment.Id,
+                DoctorId: payment.DoctorId,
+                DoctorName: doctor.Name,
+                Amount: payment.Amount,
+                PaymentDate: payment.PaymentDate,
+                PaymentMethod: payment.PaymentMethod,
+                ReferenceNumber: payment.ReferenceNumber,
+                Notes: payment.Notes,
+                CreatedAt: payment.CreatedAt);
         }
-
-        await db.SaveChangesAsync();
-
-        await LogAuditAsync(payment.Id, "RecordCommissionPayment", recordedBy,
-            $"DoctorId={req.DoctorId} Amount={req.Amount} Method={req.PaymentMethod}");
-
-        return new DoctorCommissionPaymentDto(
-            Id: payment.Id,
-            DoctorId: payment.DoctorId,
-            DoctorName: doctor.Name,
-            Amount: payment.Amount,
-            PaymentDate: payment.PaymentDate,
-            PaymentMethod: payment.PaymentMethod,
-            ReferenceNumber: payment.ReferenceNumber,
-            Notes: payment.Notes,
-            CreatedAt: payment.CreatedAt);
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<List<DoctorCommissionPaymentDto>> GetPaymentsAsync(Guid? doctorId)
@@ -585,4 +688,6 @@ public class CommissionService(
             logger.LogWarning(ex, "Audit log failed for {Action} on {EntityId}", action, entityId);
         }
     }
+
+    // StableGuidToLong moved to StableLockKeyHelper — shared across all finance services.
 }

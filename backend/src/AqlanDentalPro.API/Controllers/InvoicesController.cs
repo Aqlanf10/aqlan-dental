@@ -3,9 +3,11 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -57,7 +59,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = (int)(DateTime.UtcNow.ToString("yyyyMMdd").GetHashCode() % 100000);
+            var lockKey = StableLockKeyHelper.InvoiceNumber;
             await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
             var invoiceNumber = await GenerateInvoiceNumberAsync(db);
@@ -555,7 +557,27 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         // IMPORTANT: No Payment is created. No Contract is changed.
         // No patient balance is altered. Payments module remains source of truth.
 
-        await db.SaveChangesAsync();
+        // Finance V3: Post accrual journal entry for invoice issuance
+        // Wrap status change + accrual journal creation + journal posting in one
+        // explicit transaction so any failure rolls everything back and the invoice
+        // remains Draft (atomic operation, Blocker 1).
+        var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            // Reload invoice from DB to discard the in-memory status change
+            await db.Entry(invoice).ReloadAsync();
+            throw;
+        }
 
         // H3: Audit logging for invoice issue
         await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice issued");
@@ -571,7 +593,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
     }
 
     // ─── 6. PATCH /api/invoices/{id}/cancel — Cancel invoice ────────
-    /// <summary>Changes invoice status to Cancelled. Draft and Issued invoices can be cancelled. Paid invoices cannot.</summary>
+    /// <summary>Changes invoice status to Cancelled atomically with its reversal JE. Draft→Cancelled: status only. Issued→Cancelled: status + reversal must both succeed. Paid: rejected.</summary>
     [HttpPatch("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelInvoiceRequest? req = null)
     {
@@ -584,12 +606,22 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         if (!invoice.IsActive)
             return BadRequest(new { message = "الفاتورة محذوفة" });
 
-        // Phase 0B: Allow cancelling Draft invoices (simple cancel) and Issued invoices (void).
+        // Capture original status before any changes
+        var originalStatus = invoice.Status;
+
         // Paid invoices cannot be cancelled — payments must be refunded first.
-        if (invoice.Status == InvoiceStatus.Paid)
+        if (originalStatus == InvoiceStatus.Paid)
             return BadRequest(new { message = "لا يمكن إلغاء فاتورة مدفوعة. يجب استرداد المدفوعات أولاً." });
-        if (invoice.Status == InvoiceStatus.Cancelled)
+        if (originalStatus == InvoiceStatus.Cancelled)
             return BadRequest(new { message = "الفاتورة ملغاة بالفعل" });
+
+        // For Issued invoices, reject cancellation if there are active payments
+        if (originalStatus == InvoiceStatus.Issued)
+        {
+            var hasActivePayments = invoice.Payments.Any(p => p.IsActive);
+            if (hasActivePayments)
+                return BadRequest(new { message = "لا يمكن إلغاء فاتورة مصدرة بها مدفوعات نشطة. يجب استرداد أو حذف المدفوعات أولاً." });
+        }
 
         var userId = GetCurrentUserId();
         invoice.Status = InvoiceStatus.Cancelled;
@@ -600,7 +632,49 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 ? $"[إلغاء] {req.Notes}"
                 : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
 
-        await db.SaveChangesAsync();
+        // Blocker 1: Atomic cancellation — only reverse for Issued invoices
+        // Draft -> Cancelled: no reversal needed (no accrual was posted), status-only
+        // Issued -> Cancelled: status change + reversal MUST both succeed atomically,
+        //   otherwise we do NOT persist the cancellation and invoice remains Issued.
+        if (originalStatus == InvoiceStatus.Issued)
+        {
+            // Check if a reversal already exists to prevent double reversal on retry
+            var existingReversal = await db.JournalEntries
+                .AnyAsync(e => e.FinancialDocumentId == invoice.Id
+                    && e.FinancialDocumentType == FinancialDocumentType.Invoice
+                    && e.IsReversal);
+
+            if (!existingReversal)
+            {
+                var financeService = HttpContext.RequestServices.GetRequiredService<IFinanceService>();
+
+                var useCancelTx = db.Database.IsRelational();
+                var cancelTx = useCancelTx ? await db.Database.BeginTransactionAsync() : null;
+                try
+                {
+                    // Status change + reversal creation + linking + posting + save — all atomic
+                    await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+                    await db.SaveChangesAsync();
+                    if (useCancelTx) await cancelTx!.CommitAsync();
+                }
+                catch
+                {
+                    if (useCancelTx) await cancelTx!.RollbackAsync();
+                    // Reload invoice to discard the in-memory status change
+                    await db.Entry(invoice).ReloadAsync();
+                    throw;
+                }
+            }
+            else
+            {
+                await db.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            // Draft -> Cancelled: status-only, no JE reversal needed
+            await db.SaveChangesAsync();
+        }
 
         // H3: Audit logging for invoice cancellation
         await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice cancelled");

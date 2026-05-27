@@ -2,6 +2,7 @@ using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -25,7 +26,7 @@ public sealed class CloseSessionRequest
 [ApiController]
 [Route("api/cashier-sessions")]
 [Authorize(Policy = "FinanceAccess")] // Admin, Accountant, Reception
-public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ILogger<CashierSessionsController> logger) : ControllerBase
+public class CashierSessionsController(AppDbContext db, ICurrentUserService currentUser, IAuditService audit, ITreasuryResolutionService treasuryResolution, ILogger<CashierSessionsController> logger) : ControllerBase
 {
     [HttpPost("open")]
     public async Task<IActionResult> OpenSession([FromBody] OpenSessionRequest req)
@@ -37,22 +38,40 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         if (branchId == null || branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل فتح صندوق الكاشير." });
 
-        // Check if there is already an open session for this user
-        var hasOpenSession = await db.CashierSessions
-            .AnyAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
-
-        if (hasOpenSession)
-            return BadRequest(new { message = "لديك وردية مفتوحة بالفعل. يجب إقفال الوردية الحالية أولاً قبل فتح وردية جديدة." });
-
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "لا يمكن أن يكون رصيد العهدة الافتتاحية سالباً" });
 
-        // Generate sequential SessionNumber CS-yyyyMMdd-NNN using advisory lock
+        // CONCURRENCY SAFETY: Begin the transaction BEFORE the authoritative open-session
+        // eligibility check, then acquire a deterministic lock scoped to the cashier identity
+        // to prevent two concurrent requests (or two Railway replicas) from creating two
+        // open sessions for the same cashier.
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            var lockKey = Math.Abs("CashierSessionNumber".GetHashCode()) % 100000;
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            // Acquire a deterministic transaction-scoped PostgreSQL lock for the cashier identity.
+            // Uses StableGuidToLong(cashierId) which is deterministic across processes and restarts.
+            // Do NOT use .NET GetHashCode which is not stable across app domains.
+            if (db.Database.IsRelational())
+            {
+                var cashierLockKey = StableLockKeyHelper.StableGuidToLong(userId);
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", cashierLockKey);
+            }
+
+            // AUTHORITATIVE RE-CHECK inside the lock: verify no open session exists for this cashier.
+            // This check must happen after acquiring the lock to prevent concurrent OpenSession calls
+            // from both passing the eligibility check before either creates a session.
+            var hasOpenSession = await db.CashierSessions
+                .AnyAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+
+            if (hasOpenSession)
+                return BadRequest(new { message = "لديك وردية مفتوحة بالفعل. يجب إقفال الوردية الحالية أولاً قبل فتح وردية جديدة." });
+
+            // Generate sequential SessionNumber CS-yyyyMMdd-NNN using advisory lock
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", StableLockKeyHelper.CashierSessionNumber);
+            }
 
             var today = DateTime.UtcNow;
             var datePart = today.ToString("yyyyMMdd");
@@ -86,7 +105,16 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 ExpectedClosingCard = 0,
                 ExpectedClosingBank = 0,
                 Status = SessionStatus.Open,
-                Notes = req.Notes?.Trim()
+                Notes = req.Notes?.Trim(),
+                // Explicitly resolve and set the cash vault TreasuryId when opening
+                // the session so all subsequent cash movements tied to this session are routed
+                // to the same treasury. OpeningBalance is a drawer-reconciliation seed only — it
+                // does NOT adjust Treasury.Balance. Treasury.Balance reflects actual cash
+                // movements (CashFlowTransaction outflows/inflows), not the cashier's opening
+                // float. Double-counting would occur if we also incremented Treasury.Balance by
+                // the opening balance, since patient cash receipts during the session already
+                // increment it via CashFlowTransaction inflows.
+                TreasuryId = await ResolveSessionTreasuryIdAsync(branchId.Value)
             };
 
             db.CashierSessions.Add(session);
@@ -103,6 +131,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 session.SessionNumber,
                 session.OpeningTime,
                 session.OpeningBalance,
+                session.TreasuryId,
                 Status = session.Status.ToString(),
                 message = "تم فتح صندوق الكاشير والوردية اليومية بنجاح"
             });
@@ -235,6 +264,17 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     private static bool IsBankMethod(string method) =>
         string.Equals(method, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(method, "bank", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Resolves the branch cash Vault treasury for a CashierSession.
+    /// Uses the centralized TreasuryResolutionService to find or auto-create
+    /// the vault treasury for the branch. Returns the TreasuryId.
+    /// </summary>
+    private async Task<Guid> ResolveSessionTreasuryIdAsync(Guid branchId)
+    {
+        var treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, "cash", null);
+        return treasury.Id;
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetAll(

@@ -1,6 +1,7 @@
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +29,7 @@ public sealed class PaySalaryRequest
 [ApiController]
 [Route("api/salaries")]
 [Authorize]
-public class SalaryController(AppDbContext db) : ControllerBase
+public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>
     /// Get salary records with filters
@@ -251,53 +252,136 @@ public class SalaryController(AppDbContext db) : ControllerBase
     }
 
     /// <summary>
-    /// Mark salary as paid
+    /// Mark salary as paid — dual-writes CashFlowTransaction + JournalEntry atomically.
+    /// Rejects if the employee's branch cannot be resolved (never writes Guid.Empty).
     /// </summary>
     [HttpPut("{id:guid}/pay")]
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> PaySalary(Guid id, [FromBody] PaySalaryRequest req)
     {
-        var salary = await db.SalaryRecords.FindAsync(id);
-        if (salary is null)
+        var salarySnapshot = await db.SalaryRecords.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
+        if (salarySnapshot is null)
             return NotFound(new { message = "كشف الراتب غير موجود" });
 
-        if (salary.PaidAt.HasValue)
+        if (salarySnapshot.PaidAt.HasValue)
             return BadRequest(new { message = "تم صرف هذا الراتب مسبقاً" });
 
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var paidByUid = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
 
-        salary.PaidAt = DateTime.UtcNow;
-        salary.PaidBy = paidByUid == Guid.Empty ? null : paidByUid;
-        salary.PaymentMethod = req.PaymentMethod?.Trim();
-        salary.Notes = req.Notes?.Trim();
+        // Fetch employee details — reject if branch is unknown
+        var employee = await db.Employees.FindAsync(salarySnapshot.EmployeeId);
+        if (employee is null)
+            return BadRequest(new { message = "الموظف غير موجود" });
 
-        // Fetch employee details to log the branch and name
-        var employee = await db.Employees.FindAsync(salary.EmployeeId);
-        var branchId = employee?.BranchId ?? Guid.Empty;
+        var branchId = employee.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، لا يمكن صرف الراتب — الفرع غير محدد للموظف. تواصل مع الإدارة." });
 
-        // Auto-create central ledger cashflow transaction (Outflow / Salary)
-        var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
-        var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.SalaryPayment) + 1;
-        var cashflow = new CashFlowTransaction
+        // Resolve payment method and cashier session
+        var paymentMethod = req.PaymentMethod?.Trim() ?? "cash";
+        CashierSession? activeSession = null;
+        if (string.Equals(paymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
         {
-            TransactionNumber = $"TX-{datePart}-SAL-{nextSeq:D3}",
-            Type = TransactionType.Outflow,
-            Category = FinancialCategory.SalaryPayment,
-            Amount = salary.NetSalary,
-            PaymentMethod = req.PaymentMethod?.Trim() ?? "cash",
-            TransactionDate = DateOnly.FromDateTime(DateTime.Today),
-            ReferenceId = salary.Id,
-            ReferenceNumber = $"SAL-{salary.Year}{salary.Month:D2}",
-            Description = $"صرف راتب الموظف: {employee?.FullName ?? "موظف"} لشهر {salary.Month}/{salary.Year}",
-            PerformedBy = paidByUid,
-            BranchId = branchId
-        };
-        db.CashFlowTransactions.Add(cashflow);
+            activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == paidByUid && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل صرف الرواتب النقدية." });
+        }
 
-        await db.SaveChangesAsync();
+        // Resolve treasury by payment method for JournalEntry posting
+        Treasury treasury;
+        try
+        {
+            treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, activeSession?.Id);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
 
-        return Ok(new { message = "تم تسجيل صرف الراتب بنجاح" });
+        // CONCURRENCY SAFETY: Begin transaction FIRST, then lock the salary row and re-check eligibility.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Acquire transaction-scoped pessimistic lock on the salary row
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""SalaryRecords"" WHERE ""Id"" = {0} FOR UPDATE",
+                    id);
+            }
+
+            // Reload inside the lock and re-check PaidAt
+            var salary = await db.SalaryRecords.FindAsync(id);
+            if (salary is null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "كشف الراتب غير موجود" });
+            }
+
+            if (salary.PaidAt.HasValue)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "تم صرف هذا الراتب مسبقاً" });
+            }
+            salary.PaidAt = DateTime.UtcNow;
+            salary.PaidBy = paidByUid == Guid.Empty ? null : paidByUid;
+            salary.PaymentMethod = paymentMethod;
+            salary.Notes = req.Notes?.Trim();
+
+            // Dual-write: CashFlowTransaction (transitional)
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.SalaryPayment) + 1;
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-SAL-{nextSeq:D3}",
+                Type = TransactionType.Outflow,
+                Category = FinancialCategory.SalaryPayment,
+                Amount = salary.NetSalary,
+                PaymentMethod = paymentMethod,
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = salary.Id,
+                ReferenceNumber = $"SAL-{salary.Year}{salary.Month:D2}",
+                Description = $"صرف راتب الموظف: {employee.FullName} لشهر {salary.Month}/{salary.Year}",
+                PerformedBy = paidByUid,
+                BranchId = branchId,
+                TreasuryId = treasury.Id,
+                CashierSessionId = activeSession?.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+
+            // JournalEntry: Debit Expense / Credit Treasury
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.SalaryPayment,
+                financialDocumentId: salary.Id,
+                description: $"صرف راتب: {employee.FullName} — {salary.Month}/{salary.Year}",
+                entryDate: DateOnly.FromDateTime(DateTime.Today),
+                branchId: branchId,
+                performedBy: paidByUid == Guid.Empty ? Guid.Empty : paidByUid,
+                cashierSessionId: activeSession?.Id,
+                treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Expense, salary.Id, salary.NetSalary, 0m, (string?)$"راتب: {employee.FullName}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, salary.NetSalary, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true;
+            je.PostedAt = DateTime.UtcNow;
+
+            // Blocker 1: Atomically decrement Treasury.Balance for the salary outflow
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, salary.NetSalary, activeSession?.Id);
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new { message = "تم تسجيل صرف الراتب وترحيله للأستاذ العام بنجاح" });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>

@@ -54,6 +54,10 @@ public class CashierSession : BaseEntity
 
     public string? Notes { get; set; }
 
+    /// <summary>FK to the treasury (cash drawer) this session is operating against.</summary>
+    public Guid? TreasuryId { get; set; }
+    public Treasury? Treasury { get; set; }
+
     // Navigation properties for bidirectional relationships
     public ICollection<CashFlowTransaction> Transactions { get; set; } = [];
 }

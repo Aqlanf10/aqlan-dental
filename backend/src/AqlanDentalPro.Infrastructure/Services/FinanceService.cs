@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.Infrastructure.Services;
 
-public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService)
+public class FinanceService(AppDbContext db, ICurrentUserService currentUser, INotificationService notifications, ILogger<FinanceService> logger, ICommissionService commissionService, IJournalEntryService journalEntryService)
     : IFinanceService
 {
     public async Task<List<ContractListDto>> GetContractsAsync(int page, int pageSize, Guid? patientId, string? status)
@@ -270,9 +270,28 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         };
         db.CashFlowTransactions.Add(cashflow);
 
-        await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, payment.Amount, payment.PaymentMethod);
-
-        await db.SaveChangesAsync();
+        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
+        // so that Payment, Receipt, CashFlow, Treasury, and JournalEntry are all committed
+        // together or rolled back together. Previously, UpdateTreasuryBalanceAsync called
+        // SaveChangesAsync independently, committing entities before the JE transaction started.
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, payment.Amount, payment.PaymentMethod);
+            await DualWritePaymentEntryAsync(payment, cashflow, invoice);
+            // CreateEntryAsync (inside DualWrite) calls SaveChangesAsync, which persists
+            // ALL tracked entities within the transaction (Payment, Receipt, CashFlow, Treasury, JE).
+            // The auto-post SaveChangesAsync inside DualWrite also happens within this tx.
+            // A final SaveChangesAsync ensures any remaining tracked changes are persisted.
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
 
         // Auto-transition invoice to Paid if payments cover the total
         if (invoice != null)
@@ -405,6 +424,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 }
                 // Reverse treasury balance
                 await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
+
+                // Finance V3: Dual-write reversal entry for each reversed payment
+                await DualWriteReversalEntryAsync(payment.Id, "إلغاء عقد");
             }
 
             // H8 FIX: Re-evaluate linked invoice statuses after cancelling payments
@@ -688,9 +710,21 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             // Keep original's IsActive = true (never soft-delete CashFlowTransactions)
         }
 
-        await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
-
-        await db.SaveChangesAsync();
+        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
+        var useDeleteTx = db.Database.IsRelational();
+        var deleteTx = useDeleteTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
+            await DualWriteReversalEntryAsync(payment.Id, "حذف دفعة");
+            await db.SaveChangesAsync();
+            if (useDeleteTx) await deleteTx!.CommitAsync();
+        }
+        catch
+        {
+            if (useDeleteTx) await deleteTx!.RollbackAsync();
+            throw;
+        }
 
         // H3 FIX: Re-evaluate invoice status after deleting a payment.
         if (invoiceId.HasValue)
@@ -792,9 +826,21 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         };
         db.CashFlowTransactions.Add(refundCashflow);
 
-        await UpdateTreasuryBalanceAsync(refund.BranchId ?? Guid.Empty, refund.Amount, refund.PaymentMethod);
-
-        await db.SaveChangesAsync();
+        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
+        var useRefundTx = db.Database.IsRelational();
+        var refundTx = useRefundTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await UpdateTreasuryBalanceNoSaveAsync(refund.BranchId ?? Guid.Empty, refund.Amount, refund.PaymentMethod);
+            await DualWriteRefundEntryAsync(payment, refund, refundAmount);
+            await db.SaveChangesAsync();
+            if (useRefundTx) await refundTx!.CommitAsync();
+        }
+        catch
+        {
+            if (useRefundTx) await refundTx!.RollbackAsync();
+            throw;
+        }
 
         // H3 FIX: Re-evaluate invoice status after creating a refund.
         if (payment.InvoiceId.HasValue)
@@ -967,7 +1013,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             return $"{prefix}{nextSeq:D3}";
         }
 
-        var lockKey = Math.Abs("ReceiptNumber".GetHashCode()) % 100000;
+        var lockKey = StableLockKeyHelper.ReceiptNumber;
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -1030,7 +1076,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             return $"{prefix}{nextSeq:D3}";
         }
 
-        var lockKey = Math.Abs("RefundReceiptNumber".GetHashCode()) % 100000;
+        var lockKey = StableLockKeyHelper.RefundReceiptNumber;
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -1187,5 +1233,357 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         {
             throw new ArgumentException("تعارض في تحديث رصيد الخزينة. يرجى المحاولة مرة أخرى.");
         }
+    }
+
+    /// <summary>
+    /// Same as UpdateTreasuryBalanceAsync but does NOT call SaveChangesAsync.
+    /// Used within atomic dual-write transactions (CreatePaymentAsync, DeletePaymentAsync, RefundPaymentAsync)
+    /// where all entity changes must be tracked in the DbContext and persisted together
+    /// at the end of the transaction.
+    /// </summary>
+    private async Task UpdateTreasuryBalanceNoSaveAsync(Guid branchId, decimal amount, string? paymentMethod)
+    {
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("BranchId is required for treasury balance update");
+
+        var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank")
+            ? TreasuryType.Bank
+            : TreasuryType.Vault;
+
+        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
+
+        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
+        var treasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+
+        if (treasury == null)
+        {
+            // Check ChangeTracker for a locally added treasury not yet persisted
+            treasury = db.ChangeTracker.Entries<Treasury>()
+                .Where(e => e.State == EntityState.Added
+                    && e.Entity.BranchId == branchId
+                    && e.Entity.Type == type
+                    && e.Entity.Name == name
+                    && e.Entity.IsActive)
+                .Select(e => e.Entity)
+                .FirstOrDefault();
+        }
+
+        var isNewTreasury = false;
+        if (treasury == null)
+        {
+            treasury = new Treasury
+            {
+                Name = name,
+                Type = type,
+                Balance = 0,
+                BranchId = branchId,
+                IsActive = true
+            };
+            db.Treasuries.Add(treasury);
+            isNewTreasury = true;
+        }
+
+        // For relational DB: use raw SQL update ONLY if the treasury already exists in DB
+        if (db.Database.IsRelational() && !isNewTreasury)
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                @"UPDATE ""Treasuries"" SET ""Balance"" = ""Balance"" + {0} WHERE ""Id"" = {1}",
+                amount, treasury.Id);
+
+            // Refresh the entity to get the latest balance from DB
+            await db.Entry(treasury).ReloadAsync();
+        }
+        else
+        {
+            // InMemory provider or newly created treasury — direct balance update is safe
+            treasury.Balance += amount;
+        }
+
+        // Do NOT call SaveChangesAsync — the caller persists all changes together
+    }
+
+    // ─── Finance V3 Dual-Write Methods ─────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the treasury for a given branch and payment method.
+    /// MUST throw if branchId is Guid.Empty or if no treasury can be found/created.
+    /// Sets TreasuryId on the CashFlowTransaction.
+    /// </summary>
+    private async Task<Treasury> ResolveTreasuryAsync(Guid branchId, string? paymentMethod)
+    {
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("BranchId is required for treasury resolution and cannot be Guid.Empty");
+
+        var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank")
+            ? TreasuryType.Bank
+            : TreasuryType.Vault;
+
+        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
+
+        var treasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+
+        if (treasury == null)
+        {
+            treasury = new Treasury
+            {
+                Name = name,
+                Type = type,
+                Balance = 0,
+                BranchId = branchId,
+                IsActive = true
+            };
+            db.Treasuries.Add(treasury);
+            await db.SaveChangesAsync();
+        }
+
+        return treasury;
+    }
+
+    /// <summary>
+    /// Same as ResolveTreasuryAsync but does NOT call SaveChangesAsync.
+    /// Used within atomic dual-write transactions where the caller persists all changes.
+    /// </summary>
+    private async Task<Treasury> ResolveTreasuryNoSaveAsync(Guid branchId, string? paymentMethod)
+    {
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("BranchId is required for treasury resolution and cannot be Guid.Empty");
+
+        var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank")
+            ? TreasuryType.Bank
+            : TreasuryType.Vault;
+
+        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
+
+        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
+        var treasury = await db.Treasuries
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+
+        if (treasury == null)
+        {
+            // Check ChangeTracker for a locally added treasury not yet persisted
+            treasury = db.ChangeTracker.Entries<Treasury>()
+                .Where(e => e.State == EntityState.Added
+                    && e.Entity.BranchId == branchId
+                    && e.Entity.Type == type
+                    && e.Entity.Name == name
+                    && e.Entity.IsActive)
+                .Select(e => e.Entity)
+                .FirstOrDefault();
+        }
+
+        if (treasury == null)
+        {
+            treasury = new Treasury
+            {
+                Name = name,
+                Type = type,
+                Balance = 0,
+                BranchId = branchId,
+                IsActive = true
+            };
+            db.Treasuries.Add(treasury);
+            // Do NOT call SaveChangesAsync — the caller will save all tracked entities together
+        }
+
+        return treasury;
+    }
+
+    /// <summary>
+    /// Dual-write journal entry for a patient payment.
+    /// - If allocated to an Issued invoice: Debit Treasury / Credit PatientReceivable (settles AR, no revenue)
+    /// - If unallocated advance: Debit Treasury / Credit PatientAdvance (records liability)
+    /// MUST be atomic — if JE fails, the entire operation must fail.
+    /// </summary>
+    private async Task DualWritePaymentEntryAsync(Payment payment, CashFlowTransaction cashflow, Invoice? invoice)
+    {
+        if (payment.PatientId == Guid.Empty)
+            throw new ArgumentException("PatientId cannot be Guid.Empty for dual-write journal entry");
+        if (payment.BranchId == null || payment.BranchId == Guid.Empty)
+            throw new ArgumentException("BranchId cannot be Guid.Empty for dual-write journal entry");
+
+        var treasury = await ResolveTreasuryNoSaveAsync(payment.BranchId.Value, payment.PaymentMethod);
+        cashflow.TreasuryId = treasury.Id;
+
+        var isAllocatedToInvoice = invoice != null && invoice.Status == InvoiceStatus.Issued;
+        var creditAccountType = isAllocatedToInvoice ? JournalAccountType.PatientReceivable : JournalAccountType.PatientAdvance;
+        var creditDescription = isAllocatedToInvoice
+            ? $"تسوية ذمم مريض - سند قبض {payment.ReceiptNumber}"
+            : $"دفعة مقدمة غير مخصصة - سند قبض {payment.ReceiptNumber}";
+
+        var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+        {
+            (JournalAccountType.Treasury, treasury.Id, payment.Amount, 0m, $"تحصيل دفعة - سند قبض {payment.ReceiptNumber}"),
+            (creditAccountType, payment.PatientId, 0m, payment.Amount, creditDescription)
+        };
+
+        var entry = await journalEntryService.CreateEntryAsync(
+            documentType: FinancialDocumentType.Payment,
+            financialDocumentId: payment.Id,
+            description: isAllocatedToInvoice
+                ? $"تحصيل دفعة مستحقة - سند قبض {payment.ReceiptNumber}"
+                : $"تحصيل دفعة مقدمة - سند قبض {payment.ReceiptNumber}",
+            entryDate: payment.PaymentDate,
+            branchId: payment.BranchId.Value,
+            performedBy: payment.ReceivedBy ?? Guid.Empty,
+            cashierSessionId: cashflow.CashierSessionId,
+            treasuryId: treasury.Id,
+            lines: lines);
+
+        // Auto-post since this is an operational posting
+        entry.IsPosted = true;
+        entry.PostedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Dual-write journal entry for invoice issuance (accrual basis).
+    /// Debit PatientReceivable / Credit Revenue.
+    /// Only for InvoiceStatus.Issued, NOT for Draft.
+    /// </summary>
+    public async Task PostInvoiceIssuedEntryAsync(Guid invoiceId)
+    {
+        var invoice = await db.Invoices
+            .Include(i => i.Patient)
+            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+
+        if (invoice == null)
+            throw new ArgumentException($"Invoice {invoiceId} not found");
+
+        if (invoice.Status != InvoiceStatus.Issued)
+            throw new ArgumentException($"Invoice {invoiceId} is not in Issued status — cannot post issuance entry");
+
+        if (invoice.PatientId == Guid.Empty)
+            throw new ArgumentException("PatientId cannot be Guid.Empty for invoice issuance entry");
+
+        var branchId = invoice.Patient?.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("Cannot determine BranchId for invoice issuance entry — patient has no branch");
+
+        var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+        {
+            (JournalAccountType.PatientReceivable, invoice.PatientId, invoice.TotalAmount, 0m, $"إصدار فاتورة {invoice.InvoiceNumber} - ذمم مدينة"),
+            (JournalAccountType.Revenue, invoice.Id, 0m, invoice.TotalAmount, $"إيراد فاتورة {invoice.InvoiceNumber}")
+        };
+
+        var entry = await journalEntryService.CreateEntryAsync(
+            documentType: FinancialDocumentType.Invoice,
+            financialDocumentId: invoice.Id,
+            description: $"إصدار فاتورة {invoice.InvoiceNumber} - إثبات الإيراد المستحق",
+            entryDate: DateOnly.FromDateTime(invoice.CreatedAt),
+            branchId: branchId,
+            performedBy: invoice.UpdatedBy ?? invoice.CreatedBy ?? Guid.Empty,
+            cashierSessionId: null,
+            treasuryId: null,
+            lines: lines);
+
+        // Auto-post
+        entry.IsPosted = true;
+        entry.PostedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Reverses the original invoice issuance JournalEntry for a cancelled invoice.
+    /// Finds the original issuance JE (Debit PatientReceivable / Credit Revenue)
+    /// and creates a reversal entry (Credit PatientReceivable / Debit Revenue).
+    /// Auto-posts the reversal. Used when cancelling an Issued invoice.
+    /// </summary>
+    public async Task ReverseInvoiceIssuedEntryAsync(Guid invoiceId)
+    {
+        var originalEntry = await db.JournalEntries
+            .FirstOrDefaultAsync(e => e.FinancialDocumentId == invoiceId
+                && e.FinancialDocumentType == FinancialDocumentType.Invoice
+                && !e.IsReversal);
+
+        if (originalEntry == null)
+        {
+            logger.LogWarning("No original issuance JournalEntry found for invoice {InvoiceId} — skipping reversal", invoiceId);
+            return;
+        }
+
+        var reversal = await journalEntryService.CreateReversalEntryAsync(
+            originalEntryId: originalEntry.Id,
+            reason: "إلغاء فاتورة مصدرة",
+            performedBy: currentUser.UserId ?? Guid.Empty);
+
+        // Auto-post the reversal
+        reversal.IsPosted = true;
+        reversal.PostedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Dual-write reversal entry for deleted/cancelled payments.
+    /// Finds the original JournalEntry by FinancialDocumentId and creates a mirrored reversal.
+    /// MUST NOT silently swallow exceptions.
+    /// </summary>
+    private async Task DualWriteReversalEntryAsync(Guid paymentId, string reason)
+    {
+        var originalEntry = await db.JournalEntries
+            .FirstOrDefaultAsync(e => e.FinancialDocumentId == paymentId && e.FinancialDocumentType == FinancialDocumentType.Payment && !e.IsReversal);
+
+        if (originalEntry == null)
+        {
+            logger.LogWarning("No original JournalEntry found for payment {PaymentId} — skipping JE reversal", paymentId);
+            return;
+        }
+
+        var reversal = await journalEntryService.CreateReversalEntryAsync(
+            originalEntryId: originalEntry.Id,
+            reason: reason,
+            performedBy: currentUser.UserId ?? Guid.Empty);
+
+        // Auto-post the reversal
+        reversal.IsPosted = true;
+        reversal.PostedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Dual-write refund entry.
+    /// - If original payment was allocated to an invoice: Debit PatientReceivable / Credit Treasury
+    /// - If original payment was unallocated advance: Debit PatientAdvance / Credit Treasury
+    /// MUST NOT silently swallow exceptions.
+    /// </summary>
+    private async Task DualWriteRefundEntryAsync(Payment originalPayment, Payment refundPayment, decimal refundAmount)
+    {
+        if (originalPayment.PatientId == Guid.Empty)
+            throw new ArgumentException("PatientId cannot be Guid.Empty for refund journal entry");
+        if (originalPayment.BranchId == null || originalPayment.BranchId == Guid.Empty)
+            throw new ArgumentException("BranchId cannot be Guid.Empty for refund journal entry");
+
+        var treasury = await ResolveTreasuryNoSaveAsync(originalPayment.BranchId.Value, refundPayment.PaymentMethod);
+
+        var wasAllocatedToInvoice = originalPayment.InvoiceId.HasValue;
+        var debitAccountType = wasAllocatedToInvoice ? JournalAccountType.PatientReceivable : JournalAccountType.PatientAdvance;
+        var debitDescription = wasAllocatedToInvoice
+            ? $"إعادة ذمم مدينة - استرداد سند قبض {refundPayment.ReceiptNumber}"
+            : $"تخفيض دفعات مقدمة - استرداد سند قبض {refundPayment.ReceiptNumber}";
+
+        var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+        {
+            (debitAccountType, originalPayment.PatientId, refundAmount, 0m, debitDescription),
+            (JournalAccountType.Treasury, treasury.Id, 0m, refundAmount, $"صرف استرداد - سند قبض {refundPayment.ReceiptNumber}")
+        };
+
+        var entry = await journalEntryService.CreateEntryAsync(
+            documentType: FinancialDocumentType.Refund,
+            financialDocumentId: refundPayment.Id,
+            description: wasAllocatedToInvoice
+                ? $"استرداد دفعة مستحقة - سند قبض {refundPayment.ReceiptNumber}"
+                : $"استرداد دفعة مقدمة - سند قبض {refundPayment.ReceiptNumber}",
+            entryDate: refundPayment.PaymentDate,
+            branchId: originalPayment.BranchId.Value,
+            performedBy: refundPayment.ReceivedBy ?? Guid.Empty,
+            cashierSessionId: null,
+            treasuryId: treasury.Id,
+            lines: lines);
+
+        // Auto-post
+        entry.IsPosted = true;
+        entry.PostedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
     }
 }

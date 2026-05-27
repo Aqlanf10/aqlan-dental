@@ -1,9 +1,9 @@
 # Finance V3 — Foundation Specification
 
-> **Status:** DRAFT — Phase 1 (Audit & Foundation)  
+> **Status:** PHASE 2 COMPLETE — Ready for Phase 3  
 > **Last Updated:** 2026-05-26  
 > **Owner:** Aqlan Dental Clinic  
-> **Review:** Required before Phase 2 implementation
+> **Review:** Required before Phase 3 implementation
 
 ---
 
@@ -1001,7 +1001,7 @@ Phase 1 does not add any backend validation guards, migrations, or data integrit
 
 ## 12. Phase Roadmap
 
-### Phase 1: Audit & Foundation (Current PR)
+### Phase 1: Audit & Foundation (COMPLETED)
 - [x] Inventory all finance routes, APIs, entities, tables
 - [x] Document confirmed defects
 - [x] Create this specification document
@@ -1016,14 +1016,23 @@ Phase 1 does not add any backend validation guards, migrations, or data integrit
 - [ ] **NO** data deletion
 - [ ] **NO** disabling of /api/payments (Daily Operations depends on it)
 
-### Phase 2: Canonical Double-Entry Ledger & Database Model
-- Create `JournalEntry` and `JournalLine` entities with EF Core
-- Add `TreasuryId` to all CashFlowTransactions
-- Fix all BranchId issues (reject null BranchId instead of Guid.Empty)
-- Create proper EF Core migrations
-- Implement the reversal pattern consistently across all controllers
-- Add validation guards for null BranchId/UserId
-- Dual-write: new operations write to both CashFlowTransaction and JournalEntry+JournalLine
+### Phase 2: Canonical Double-Entry Ledger & Database Model (COMPLETED)
+- [x] Create `JournalEntry` and `JournalLine` entities with EF Core
+- [x] Add `TreasuryId` to CashFlowTransaction entity + configuration + migration with backfill
+- [x] Fix all BranchId issues (reject null BranchId instead of Guid.Empty)
+- [x] Create proper EF Core migrations (`20260614000000_AddJournalEntryAndJournalLine`)
+- [x] Implement the reversal pattern consistently across all controllers (Defects #1, #5)
+- [x] Add validation guards for null BranchId/UserId (6 controllers + CommissionService)
+- [x] Create `IJournalEntryService` + `JournalEntryService` with dual-write support
+- [x] Fix Defect #3: SalaryController now uses `[Authorize(Policy = "ReportsAccess")]`
+- [x] Full dual-write integration: wire JournalEntryService into all existing financial flows
+  - [x] FinanceService: CreatePayment, DeletePayment, RefundPayment
+  - [x] OperationalExpensesController: Create, Approve, Delete
+  - [x] SalaryController: PaySalary
+  - [x] AdvancePaymentController: Approve, Delete
+  - [x] VaultTransfersController: Approve (internal transfer + external deposit)
+  - [x] SupplierBillsController: Pay
+  - [x] CommissionService: RecordPaymentAsync
 
 ### Phase 3: Patient Invoices, Receipts, Discounts, Refunds, and Balances
 - Rebuild invoice lifecycle (Draft → Issued → Paid/Cancelled)

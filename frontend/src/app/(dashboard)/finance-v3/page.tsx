@@ -570,7 +570,7 @@ function PatientAccountsTab() {
   const [showPayment, setShowPayment] = useState(false);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data } = await api.get<PatientBalance[]>("/api/finance-v3/patient-balances"); setData(data); } catch { toast.error("فشل في تحميل حسابات المرضى"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: PatientBalance[]; total: number }>("/api/finance-v3/patient-accounts"); setData(responseData.data); } catch { toast.error("فشل في تحميل حسابات المرضى"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -578,7 +578,7 @@ function PatientAccountsTab() {
   const openDetail = async (patient: PatientBalance) => {
     try {
       setDetailLoading(true);
-      const { data } = await api.get<PatientBalanceDetail>(`/api/finance-v3/patient-balances/${patient.PatientId}`);
+      const { data } = await api.get<PatientBalanceDetail>(`/api/finance-v3/patient-balance/${patient.PatientId}`);
       setSelected(data);
     } catch { toast.error("فشل في تحميل تفاصيل الحساب"); } finally { setDetailLoading(false); }
   };
@@ -661,7 +661,7 @@ function InvoicesTab() {
   const [cancelling, setCancelling] = useState(false);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data } = await api.get<InvoiceListItem[]>("/api/invoices"); setData(data); } catch { toast.error("فشل في تحميل الفواتير"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: InvoiceListItem[]; total: number }>("/api/finance-v3/invoices"); setData(responseData.data); } catch { toast.error("فشل في تحميل الفواتير"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -678,7 +678,7 @@ function InvoicesTab() {
     if (!confirmCancel) return;
     try {
       setCancelling(true);
-      await api.post(`/api/invoices/${confirmCancel}/cancel`);
+      await api.patch(`/api/invoices/${confirmCancel}/cancel`);
       toast.success("تم إلغاء الفاتورة بنجاح");
       setConfirmCancel(null);
       setDetail(null);
@@ -799,7 +799,7 @@ function CollectionsTab() {
   const [payNotes, setPayNotes] = useState("");
 
   const fetchPayments = useCallback(async () => {
-    try { setLoading(true); const { data } = await api.get<PaymentListItem[]>("/api/payments"); setPayments(data); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData.data); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
@@ -1064,7 +1064,7 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
-    try { setLoading(true); const { data } = await api.get<CashierSession[]>("/api/cashier-sessions"); setSessions(data); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions"); setSessions(responseData.data); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
@@ -1085,7 +1085,7 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         ActualClosingCard: Number(actualCard) || 0,
         ActualClosingBank: Number(actualBank) || 0,
       };
-      await api.post(`/api/cashier-sessions/${closeSession.Id}/close`, payload);
+      await api.post(`/api/cashier-sessions/close`, payload);
       toast.success("تم إقفال الوردية بنجاح");
       setCloseSession(null);
       fetchSessions();
@@ -1096,7 +1096,7 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     if (!confirmReconcile) return;
     try {
       setSubmitting(true);
-      await api.post(`/api/cashier-sessions/${confirmReconcile}/reconcile`);
+      await api.patch(`/api/cashier-sessions/${confirmReconcile}/reconcile`);
       toast.success("تم تسوية الوردية بنجاح");
       setConfirmReconcile(null);
       fetchSessions();
@@ -1243,7 +1243,7 @@ function TreasuriesTab() {
 
   // Create treasury form
   const [tName, setTName] = useState("");
-  const [tType, setTType] = useState("Cash");
+  const [tType, setTType] = useState("Vault");
   const [tBalance, setTBalance] = useState("0");
 
   // Create transfer form
@@ -1257,11 +1257,11 @@ function TreasuriesTab() {
     try {
       setLoading(true);
       const [tRes, trRes] = await Promise.all([
-        api.get<Treasury[]>("/api/treasuries"),
-        api.get<VaultTransfer[]>("/api/vault-transfers"),
+        api.get<{ data: Treasury[] }>("/api/treasuries"),
+        api.get<{ data: VaultTransfer[] }>("/api/vault-transfers"),
       ]);
-      setTreasuries(tRes.data);
-      setTransfers(trRes.data);
+      setTreasuries(tRes.data.data ?? tRes.data as unknown as Treasury[]);
+      setTransfers(trRes.data.data ?? trRes.data as unknown as VaultTransfer[]);
     } catch { toast.error("فشل في تحميل بيانات الخزائن"); } finally { setLoading(false); }
   }, []);
 
@@ -1275,7 +1275,7 @@ function TreasuriesTab() {
       await api.post("/api/treasuries", payload);
       toast.success("تم إنشاء الخزينة بنجاح");
       setShowCreateTreasury(false);
-      setTName(""); setTType("Cash"); setTBalance("0");
+      setTName(""); setTType("Vault"); setTBalance("0");
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إنشاء الخزينة")); } finally { setSubmitting(false); }
   };
@@ -1445,7 +1445,7 @@ function ExpensesTab() {
   const [eDate, setEDate] = useState(new Date().toISOString().slice(0, 10));
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data } = await api.get<ExpenseListItem[]>("/api/expenses"); setData(data); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/expenses"); setData(responseData.data); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -1579,11 +1579,11 @@ function SuppliersTab() {
     try {
       setLoading(true);
       const [sRes, bRes] = await Promise.all([
-        api.get<SupplierListItem[]>("/api/suppliers"),
-        api.get<SupplierBill[]>("/api/supplier-bills"),
+        api.get<{ data: SupplierListItem[]; total: number }>("/api/suppliers"),
+        api.get<{ data: SupplierBill[]; total: number }>("/api/supplier-bills"),
       ]);
-      setSuppliers(sRes.data);
-      setBills(bRes.data);
+      setSuppliers(sRes.data.data ?? sRes.data as unknown as SupplierListItem[]);
+      setBills(bRes.data.data ?? bRes.data as unknown as SupplierBill[]);
     } catch { toast.error("فشل في تحميل بيانات الموردين"); } finally { setLoading(false); }
   }, []);
 

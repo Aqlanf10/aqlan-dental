@@ -32,7 +32,10 @@ export interface PatientBalance {
   PatientNumber: string;
   TotalInvoiced: number;
   TotalPaid: number;
+  TotalRefunds: number;
   Balance: number;
+  OutstandingInvoices: number;
+  ActiveContracts: number;
   HasOutstanding: boolean;
 }
 
@@ -376,7 +379,6 @@ export const PAYMENT_METHODS = [
 
 /* ── Treasury types ─────────────────────────────────────────────────────────────── */
 export const TREASURY_TYPES = [
-  { value: "Cash", label: "نقدي" },
-  { value: "Bank", label: "بنكي" },
-  { value: "Card", label: "بطاقة" },
+  { value: "Vault", label: "خزنة نقدية" },
+  { value: "Bank", label: "حساب بنكي" },
 ] as const;

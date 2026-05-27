@@ -28,7 +28,7 @@ public sealed class PaySalaryRequest
 
 [ApiController]
 [Route("api/salaries")]
-[Authorize(Policy = "FinanceAccess")]
+[Authorize(Policy = "ReportsAccess")]
 public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, IAuditService audit) : ControllerBase
 {
     /// <summary>
@@ -478,10 +478,25 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 return BadRequest(new { message = "تم عكس هذا الراتب مسبقاً" });
             }
 
-            // Session guard: cannot reverse if linked session is closed/reconciled
+            // Blocker 5: REQUIRE original CashFlow and JournalEntry to exist and be complete
             var originalCashflow = await db.CashFlowTransactions
                 .FirstOrDefaultAsync(c => c.ReferenceId == salary.Id && c.Category == FinancialCategory.SalaryPayment && !c.IsReversal);
-            if (originalCashflow?.CashierSessionId != null)
+            if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس الراتب — السجلات المالية الأصلية غير مكتملة. يجب مراجعة المحاسب لمعالجة هذا السجل." });
+            }
+
+            var originalJe = await db.JournalEntries
+                .FirstOrDefaultAsync(j => j.FinancialDocumentId == salary.Id && j.FinancialDocumentType == FinancialDocumentType.SalaryPayment && !j.IsReversal);
+            if (originalJe == null || !originalJe.IsPosted)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس الراتب — السجلات المالية الأصلية غير مكتملة. يجب مراجعة المحاسب لمعالجة هذا السجل." });
+            }
+
+            // Session guard: cannot reverse if linked session is closed/reconciled
+            if (originalCashflow.CashierSessionId != null)
             {
                 var session = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId);
                 if (session != null && (session.Status == SessionStatus.Closed || session.Status == SessionStatus.Reconciled))
@@ -491,14 +506,14 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 }
             }
 
-            // Un-mark salary as paid
+            // Un-mark salary as paid — only after all validation passes
             salary.PaidAt = null;
             salary.PaidBy = null;
             salary.PaymentMethod = null;
 
             var employee = await db.Employees.FindAsync(salary.EmployeeId);
             var branchId = employee?.BranchId ?? Guid.Empty;
-            var treasuryId = originalCashflow?.TreasuryId;
+            var treasuryId = originalCashflow.TreasuryId;
 
             // Dual-write: CashFlow reversal
             var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
@@ -509,7 +524,7 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 Type = TransactionType.Inflow,
                 Category = FinancialCategory.Reversal,
                 Amount = salary.NetSalary,
-                PaymentMethod = originalCashflow?.PaymentMethod ?? "cash",
+                PaymentMethod = originalCashflow.PaymentMethod ?? "cash",
                 TransactionDate = DateOnly.FromDateTime(DateTime.Today),
                 ReferenceId = salary.Id,
                 ReferenceNumber = $"REV-SAL-{salary.Year}{salary.Month:D2}",
@@ -518,26 +533,18 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
                 BranchId = branchId,
                 TreasuryId = treasuryId,
                 IsReversal = true,
-                ReversalOfTransactionId = originalCashflow?.Id,
-                CashierSessionId = originalCashflow?.CashierSessionId
+                ReversalOfTransactionId = originalCashflow.Id,
+                CashierSessionId = originalCashflow.CashierSessionId
             };
             db.CashFlowTransactions.Add(reversalCashflow);
 
-            // Dual-write: JournalEntry reversal
-            var originalJe = await db.JournalEntries
-                .FirstOrDefaultAsync(j => j.FinancialDocumentId == salary.Id && j.FinancialDocumentType == FinancialDocumentType.SalaryPayment && !j.IsReversal);
-            if (originalJe != null)
-            {
-                var reversalJe = await journalEntryService.CreateReversalEntryAsync(originalJe.Id, $"عكس صرف راتب: {employee?.FullName}", performedBy);
-                reversalJe.IsPosted = true;
-                reversalJe.PostedAt = DateTime.UtcNow;
-            }
+            // Dual-write: JournalEntry reversal (originalJe already validated above)
+            var reversalJe = await journalEntryService.CreateReversalEntryAsync(originalJe.Id, $"عكس صرف راتب: {employee?.FullName}", performedBy);
+            reversalJe.IsPosted = true;
+            reversalJe.PostedAt = DateTime.UtcNow;
 
             // Restore Treasury balance
-            if (treasuryId.HasValue && treasuryId.Value != Guid.Empty)
-            {
-                await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(treasuryId.Value, salary.NetSalary);
-            }
+            await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(treasuryId.Value, salary.NetSalary);
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();

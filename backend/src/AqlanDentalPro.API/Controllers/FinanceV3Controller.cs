@@ -811,6 +811,10 @@ public class FinanceV3Controller(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null)
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -831,16 +835,15 @@ public class FinanceV3Controller(
             .Take(pageSize)
             .Select(p => new
             {
-                p.Id,
+                PatientId = p.Id,
                 p.PatientNumber,
-                Name = (p.FirstName + " " + p.MiddleName + " " + p.LastName).Trim(),
+                PatientName = (p.FirstName + " " + p.MiddleName + " " + p.LastName).Trim(),
                 Phone = p.Phone,
                 TotalInvoiced = db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0,
                 TotalPaid = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount > 0).Sum(pay => (decimal?)pay.Amount) ?? 0,
                 TotalRefunds = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount < 0).Sum(pay => (decimal?)Math.Abs(pay.Amount)) ?? 0,
                 Balance = (db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
-                         - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount > 0).Sum(pay => (decimal?)pay.Amount) ?? 0)
-                         + (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount < 0).Sum(pay => (decimal?)pay.Amount) ?? 0),
+                         - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive).Sum(pay => (decimal?)pay.Amount) ?? 0),
                 OutstandingInvoices = db.Invoices.Count(i => i.PatientId == p.Id && i.IsActive && i.Status == InvoiceStatus.Issued),
                 ActiveContracts = db.Contracts.Count(c => c.PatientId == p.Id && c.IsActive && c.Status == ContractStatus.Active),
                 HasOutstanding = ((db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
@@ -954,6 +957,10 @@ public class FinanceV3Controller(
         [FromQuery] string? fromDate = null,
         [FromQuery] string? toDate = null)
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -1015,6 +1022,10 @@ public class FinanceV3Controller(
         [FromQuery] string? fromDate = null,
         [FromQuery] string? toDate = null)
     {
+        // Blocker 6: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 

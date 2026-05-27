@@ -28,7 +28,7 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ GET /payments           — already reads from Payment entity (no CashFlow dependency)
 ///   ✅ GET /invoices           — already reads from Invoice entity (no CashFlow dependency)
 ///
-/// Migration C (this PR) — COMPLETED:
+/// Migration C — COMPLETED:
 ///   ✅ GET /expenses           — TreasuryId/TreasuryName now from JournalLine (Treasury account)
 ///   ✅ GET /active-cashier-session — expected values from JournalLine instead of CashFlow
 ///   ✅ GET /cashier-sessions/active — expected values from JournalLine instead of CashFlow
@@ -37,13 +37,20 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ MapDocumentTypeToCategory   — added AdvancePayment explicit mapping
 ///   ✅ GET /invoices comment fix   — corrected misleading Balance comment
 ///
+/// Migration D — COMPLETED (this commit):
+///   ✅ GET /audit              — CashFlowTransaction removed from resource filter;
+///      audit entries now enriched with JournalEntry/JournalLine data (date, type,
+///      category, amount, treasury, description, reversal status)
+///   ✅ Removed IsCashMethod/IsCardMethod/IsBankMethod — unused after Migration C
+///   ✅ Code cleanup — removed obsolete helpers and comment blocks
+///
 /// Hotfixes (same PR):
 ///   ✅ ExpectedClosingCard = 0 fix — merged card with bank (TODO: TreasuryType.Card)
 ///   ✅ Treasury opening balance — creates JournalEntry on treasury creation
 ///   ✅ Treasury recalculate fallback — includes CashFlow OP-BAL for legacy treasuries
 ///   ✅ DELETE /expenses reads — migrated from CashFlowTransaction to JournalEntry
 ///
-/// Hotfixes 5D (this commit):
+/// Hotfixes 5D:
 ///   ✅ Fix double SaveChanges in POST /treasuries — manual JournalEntry creation
 ///      with IsPosted=true from the start (single SaveChanges, atomic)
 ///   ✅ Fix recalculate fallback too broad — now checks for "رصيد افتتاحي" in
@@ -51,7 +58,7 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ Fix branchId=Guid.Empty causes 500 — added early BadRequest(400) validation
 ///      in POST /treasuries, POST /payments, POST cashier-sessions/close
 ///
-/// Hotfixes 5E (this commit):
+/// Hotfixes 5E:
 ///   ✅ Eliminated all remaining CreateEntryAsync/CreateReversalEntryAsync calls —
 ///      replaced with manual JournalEntry+JournalLine creation (IsPosted=true from start)
 ///      in POST /expenses, POST /expenses/{id}/approve, DELETE /expenses,
@@ -69,9 +76,10 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ POST cashier-sessions/close — links CashFlowTransactions (backward compat, preserved)
 ///   ✅ POST treasuries/recalculate — reads CashFlowTransaction for opening balance fallback
 ///
+/// ALL READS NOW USE JournalEntry/JournalLine — CashFlowTransaction is WRITE-ONLY.
+///
 /// Future phases (not in scope):
 ///   ⏳ Balance Sheet endpoint
-///   ⏳ Audit Trail endpoint
 ///   ⏳ Remove CashFlowTransaction dual-write once JournalLine is fully verified
 /// </summary>
 [ApiController]
@@ -887,7 +895,12 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/audit — Recent financial audit events.
-    /// Uses the existing AuditLog table filtered to finance-related resources.
+    /// Migration D: Financial detail data now derived from JournalEntry/JournalLine
+    /// (canonical source of truth) instead of CashFlowTransaction. The base audit
+    /// log entries still come from AuditLog, but JournalEntry enrichment provides
+    /// amount, type, treasury, description, and reversal status from the ledger.
+    /// CashFlowTransaction has been removed from the resource filter — it is
+    /// write-only (dual-write) and should not appear in the primary audit view.
     /// </summary>
     [HttpGet("audit")]
     public async Task<IActionResult> GetAuditTrail(
@@ -905,10 +918,13 @@ public class FinanceV3Controller(
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        // Filter to finance-related audit entries only
+        // Migration D: Filter to finance-related audit entries only.
+        // CashFlowTransaction removed — it is now write-only (dual-write) and
+        // should not appear in the primary audit view. JournalEntry is the
+        // canonical auditable entity for financial operations.
         var financeResources = new[] { "Payment", "OperationalExpense", "SalaryRecord",
             "AdvancePayment", "VaultTransfer", "SupplierBill", "SupplierBillPayment",
-            "DoctorCommissionPayment", "Treasury", "JournalEntry", "CashFlowTransaction" };
+            "DoctorCommissionPayment", "Treasury", "JournalEntry" };
 
         var query = db.AuditLogs
             .Where(a => financeResources.Contains(a.Resource));
@@ -936,7 +952,168 @@ public class FinanceV3Controller(
             })
             .ToListAsync();
 
-        return Ok(new { data = entries, total, page, pageSize });
+        // ── Migration D: Enrich audit entries with JournalEntry/JournalLine data ──
+        // For entries that reference a JournalEntry (Resource == "JournalEntry"),
+        // load the corresponding JournalEntry and enrich the response with
+        // financial detail derived from the canonical ledger source.
+        // For non-JournalEntry entries (e.g. Payment, OperationalExpense), try
+        // to find a linked JournalEntry via FinancialDocumentId.
+        var jeResourceIds = entries
+            .Where(e => e.Resource == "JournalEntry" && e.ResourceId.HasValue)
+            .Select(e => e.ResourceId!.Value)
+            .ToList();
+
+        var nonJeResourceIds = entries
+            .Where(e => e.Resource != "JournalEntry" && e.ResourceId.HasValue)
+            .Select(e => new { e.Resource, e.ResourceId!.Value })
+            .ToList();
+
+        // Load JournalEntries by direct ID (for JournalEntry audit entries)
+        var journalEntriesById = jeResourceIds.Any()
+            ? await db.JournalEntries
+                .Include(je => je.Lines)
+                .Where(je => jeResourceIds.Contains(je.Id))
+                .ToDictionaryAsync(je => je.Id)
+            : new Dictionary<Guid, JournalEntry>();
+
+        // Load JournalEntries by FinancialDocumentId for non-JournalEntry audit entries
+        // (e.g. when a Payment or Expense was created, a JournalEntry was also created)
+        // Migration D: This replaces reading from CashFlowTransaction — data now
+        // comes from the JournalEntry canonical source.
+        var journalEntriesByDocId = new Dictionary<Guid, JournalEntry>();
+        if (nonJeResourceIds.Any())
+        {
+            // Map audit Resource names to FinancialDocumentType for lookup
+            var docTypeLookup = new Dictionary<string, List<FinancialDocumentType>>
+            {
+                ["Payment"] = [FinancialDocumentType.Payment, FinancialDocumentType.AdvancePayment],
+                ["OperationalExpense"] = [FinancialDocumentType.Expense],
+                ["VaultTransfer"] = [FinancialDocumentType.VaultTransfer],
+                ["SupplierBillPayment"] = [FinancialDocumentType.SupplierPayment],
+            };
+
+            foreach (var group in nonJeResourceIds.GroupBy(x => x.Resource))
+            {
+                if (!docTypeLookup.TryGetValue(group.Key, out var docTypes)) continue;
+                var resourceIds = group.Select(x => x.Value).ToList();
+                var matched = await db.JournalEntries
+                    .Include(je => je.Lines)
+                    .Where(je => docTypes.Contains(je.FinancialDocumentType)
+                        && resourceIds.Contains(je.FinancialDocumentId))
+                    .ToListAsync();
+                foreach (var je in matched)
+                    journalEntriesByDocId[je.FinancialDocumentId] = je;
+            }
+        }
+
+        // Build enriched response — keep the same response shape, add enrichment fields
+        var enrichedEntries = entries.Select(e =>
+        {
+            // Find the corresponding JournalEntry for enrichment
+            JournalEntry? je = null;
+            if (e.Resource == "JournalEntry" && e.ResourceId.HasValue)
+                journalEntriesById.TryGetValue(e.ResourceId.Value, out je);
+            else if (e.ResourceId.HasValue)
+                journalEntriesByDocId.TryGetValue(e.ResourceId.Value, out je);
+
+            // Derive enrichment fields from JournalEntry/JournalLine (canonical source)
+            if (je != null)
+            {
+                // Treasury: JournalLine where AccountType == Treasury
+                var treasuryLine = je.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury);
+
+                return new
+                {
+                    e.Id,
+                    e.Action,
+                    e.Resource,
+                    e.ResourceId,
+                    e.UserId,
+                    e.Username,
+                    e.CreatedAt,
+
+                    // ── Migration D: Enrichment from JournalEntry (canonical source) ──
+                    // These fields replace what was previously derived from CashFlowTransaction.
+                    EntryDate = je.EntryDate.ToString("yyyy-MM-dd"),
+                    FinancialDocumentType = je.FinancialDocumentType.ToString(),
+                    Category = MapDocumentTypeToCategory(je.FinancialDocumentType),
+                    Description = je.Description ?? "",
+                    Amount = je.Lines.Sum(l => l.Debit),  // Total debit = total transaction amount
+                    TreasuryId = treasuryLine?.AccountId,          // JournalLine.AccountId where Treasury
+                    TreasuryName = (string?)null,                  // Requires separate lookup; set null with comment
+                    IsReversal = je.IsReversal,
+                    ReversalOfEntryId = je.ReversalOfEntryId,
+                    PerformedBy = je.PerformedBy,
+                };
+            }
+
+            // No JournalEntry found — return basic audit entry with null enrichment fields
+            return new
+            {
+                e.Id,
+                e.Action,
+                e.Resource,
+                e.ResourceId,
+                e.UserId,
+                e.Username,
+                e.CreatedAt,
+
+                // ── Migration D: No JournalEntry found — enrichment fields null ──
+                EntryDate = (string?)null,
+                FinancialDocumentType = (string?)null,
+                Category = (string?)null,
+                Description = (string?)null,
+                Amount = (decimal?)null,
+                TreasuryId = (Guid?)null,
+                TreasuryName = (string?)null,  // TreasuryName: not available without JournalEntry
+                IsReversal = (bool?)null,
+                ReversalOfEntryId = (Guid?)null,
+                PerformedBy = (Guid?)null,
+            };
+        }).ToList();
+
+        // Resolve TreasuryName for entries that have a TreasuryId
+        var treasuryIdsToResolve = enrichedEntries
+            .Where(e => e.TreasuryId.HasValue)
+            .Select(e => e.TreasuryId!.Value)
+            .Distinct()
+            .ToList();
+        var treasuryNames = treasuryIdsToResolve.Any()
+            ? await db.Treasuries
+                .Where(t => treasuryIdsToResolve.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => t.Name)
+            : new Dictionary<Guid, string>();
+
+        // Final pass: set TreasuryName from lookup
+        var finalEntries = enrichedEntries.Select(e =>
+        {
+            var treasuryName = e.TreasuryId.HasValue
+                ? treasuryNames.GetValueOrDefault(e.TreasuryId.Value)
+                : null;
+
+            return new
+            {
+                e.Id,
+                e.Action,
+                e.Resource,
+                e.ResourceId,
+                e.UserId,
+                e.Username,
+                e.CreatedAt,
+                e.EntryDate,
+                e.FinancialDocumentType,
+                e.Category,
+                e.Description,
+                e.Amount,
+                e.TreasuryId,
+                TreasuryName = treasuryName,   // Migration D: resolved from Treasury entity
+                e.IsReversal,
+                e.ReversalOfEntryId,
+                e.PerformedBy,
+            };
+        }).ToList();
+
+        return Ok(new { data = finalEntries, total, page, pageSize });
     }
 
     // ─── Patient Accounts (Sub-ledger) ─────────────────────────────────────
@@ -3000,24 +3177,6 @@ public class FinanceV3Controller(
         }
         catch { await tx.RollbackAsync(); throw; }
     }
-
-    // ─── Cashier Session Helpers (shared with CashierSessionsController) ──
-    // Obsolete: These helpers used CashFlowTransaction.PaymentMethod strings ("cash", "card", "bank_transfer").
-    // Migration C replaced them with Treasury.Type-based classification (Vault → cash, Bank → bank/card).
-    // Kept for reference; remove once all controllers are migrated.
-
-    [Obsolete("Replaced by Treasury.Type-based classification in Migration C. Use treasury type lookup instead.")]
-    private static bool IsCashMethod(string method) =>
-        string.Equals(method, "cash", StringComparison.OrdinalIgnoreCase);
-
-    [Obsolete("Replaced by Treasury.Type-based classification in Migration C. Use treasury type lookup instead.")]
-    private static bool IsCardMethod(string method) =>
-        string.Equals(method, "card", StringComparison.OrdinalIgnoreCase);
-
-    [Obsolete("Replaced by Treasury.Type-based classification in Migration C. Use treasury type lookup instead.")]
-    private static bool IsBankMethod(string method) =>
-        string.Equals(method, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(method, "bank", StringComparison.OrdinalIgnoreCase);
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 

@@ -274,7 +274,7 @@ export function CephCanvas({
       ctx.beginPath(); ctx.moveTo(c.width / 2, 0); ctx.lineTo(c.width / 2, c.height); ctx.stroke();
       ctx.restore();
     }
-  }, [landmarks, lmMap, img, imageWidth, imageHeight, selectedKey, hovered, showPlanes, showSimulation, simulationScenario, getT]);
+  }, [landmarks, lmMap, img, selectedKey, hovered, showPlanes, showSimulation, simulationScenario, getT]);
 
   useEffect(() => { draw(); }, [draw]);
 

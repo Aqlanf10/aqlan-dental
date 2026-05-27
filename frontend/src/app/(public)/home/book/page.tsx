@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
+import { useClinicBranding } from "@/hooks/useClinicBranding";
 import {
   CheckCircle2,
   Loader2,
@@ -130,7 +131,11 @@ const STEPS = [
   { label: "تأكيد الحجز", icon: ClipboardCheck },
 ] as const;
 
+const FALLBACK_WHATSAPP = "967770245745";
+
 export default function BookPage() {
+  const { whatsApp: clinicWhatsApp } = useClinicBranding();
+  const waNumber = clinicWhatsApp || FALLBACK_WHATSAPP;
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormData>({
     patientName: "",
@@ -515,7 +520,7 @@ export default function BookPage() {
               <ChevronLeft className="w-4 h-4" />
             </Link>
             <a
-              href="https://wa.me/967770245745"
+              href={`https://wa.me/${waNumber}`}
               target="_blank"
               rel="noopener noreferrer"
               className="bg-green-500 hover:bg-green-600 text-white font-semibold px-6 py-3.5 rounded-xl transition-colors inline-flex items-center justify-center gap-2"
@@ -1163,7 +1168,7 @@ export default function BookPage() {
                 </div>
                 {isConflict && (
                   <a
-                    href="https://wa.me/967770245745?text=مرحباً، بخصوص طلب الحجز"
+                    href={`https://wa.me/${waNumber}?text=${encodeURIComponent("مرحباً، بخصوص طلب الحجز")}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block bg-green-50 border border-green-200 rounded-xl p-3 text-green-700 text-sm text-center hover:bg-green-100 transition-colors"
@@ -1248,7 +1253,7 @@ export default function BookPage() {
               04-253028
             </a>
             <a
-              href="https://wa.me/967770245745"
+              href={`https://wa.me/${waNumber}`}
               target="_blank"
               rel="noopener noreferrer"
               className="bg-green-500 hover:bg-green-600 text-white font-semibold px-4 py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"

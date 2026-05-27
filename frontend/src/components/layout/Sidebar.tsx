@@ -2,14 +2,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, Users, Calendar, GitBranch, Activity,
+  LayoutDashboard, Users, GitBranch, Activity,
   Stethoscope, Scissors, ArrowLeftRight, Wallet,
   BarChart2, Package, FlaskConical, Settings, LogOut,
-  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Globe, Clock,
-  UserRound, Building2, Monitor, UserCog,
+  Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Clock,
+  UserRound, Building2, UserCog,
   Truck, ShoppingCart, ChevronDown,
   Smartphone, Banknote, CalendarOff, Shield,
-  HeartPulse,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";

@@ -342,7 +342,7 @@ export default function GeneralPage() {
                   const { data: newChart } = await api.get(`/api/general/${selectedPatient.id}/chart`);
                   setChartTeeth(newChart?.teeth || []);
                   setSelectedTooth(null);
-                } catch {}
+                } catch (e) { console.error("[DentalChart] Failed to save tooth data:", e); }
               }}
               onClose={() => setSelectedTooth(null)}
             />

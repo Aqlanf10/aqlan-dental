@@ -259,6 +259,12 @@ export default function FinanceV2Page() {
 
   const { data: doctors } = useDoctors();
 
+  /** Centralized error handler — logs with prefix, optionally toasts */
+  const handleError = (ctx: string, err: unknown, fallback?: string, title?: string) => {
+    console.error(`[FinanceV2::${ctx}]`, err);
+    if (fallback) toast.error(getBackendError(err, fallback), title);
+  };
+
   // Treasuries & Vault Transfers States
   interface TreasuryDto {
     id: string;
@@ -387,8 +393,7 @@ export default function FinanceV2Page() {
       const res = await api.get<TreasuryDto[]>("/api/treasuries");
       setTreasuries(res.data ?? []);
     } catch (err) {
-      console.error("Failed to fetch treasuries", err);
-      toast.error("خطأ أثناء تحميل أرصدة الخزائن");
+      handleError("fetchTreasuries", err, "خطأ أثناء تحميل أرصدة الخزائن");
     } finally {
       setLoadingTreasuries(false);
     }
@@ -400,8 +405,7 @@ export default function FinanceV2Page() {
       const res = await api.get<{ data: VaultTransferDto[] }>("/api/vault-transfers");
       setVaultTransfers(res.data?.data ?? []);
     } catch (err) {
-      console.error("Failed to fetch transfers", err);
-      toast.error("خطأ أثناء تحميل كشف تحويلات السيولة");
+      handleError("fetchVaultTransfers", err, "خطأ أثناء تحميل كشف تحويلات السيولة");
     } finally {
       setLoadingTransfers(false);
     }
@@ -415,8 +419,7 @@ export default function FinanceV2Page() {
       setBillsTotalUnpaid(res.data?.totalUnpaid ?? 0);
       setBillsOverdueCount(res.data?.overdueCount ?? 0);
     } catch (err) {
-      console.error("Failed to fetch supplier bills", err);
-      toast.error("خطأ أثناء تحميل فواتير الموردين");
+      handleError("fetchSupplierBills", err, "خطأ أثناء تحميل فواتير الموردين");
     } finally {
       setLoadingBills(false);
     }
@@ -427,7 +430,7 @@ export default function FinanceV2Page() {
       const res = await api.get<SupplierItem[]>("/api/suppliers?pageSize=100");
       setSuppliersList(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      console.error("Failed to fetch suppliers", err);
+      handleError("fetchSuppliers", err);
     }
   };
 
@@ -437,8 +440,7 @@ export default function FinanceV2Page() {
       const res = await api.get<PendingExpenseItem[]>("/api/expenses/pending");
       setPendingExpenses(res.data ?? []);
     } catch (err) {
-      console.error("Failed to fetch pending expenses", err);
-      toast.error("خطأ أثناء تحميل المصروفات قيد الاعتماد");
+      handleError("fetchPendingExpenses", err, "خطأ أثناء تحميل المصروفات قيد الاعتماد");
     } finally {
       setLoadingPending(false);
     }
@@ -464,9 +466,7 @@ export default function FinanceV2Page() {
       setShowNewBillModal(false);
       fetchSupplierBills();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل تسجيل فاتورة المورد");
+      handleError("handleCreateBill", err, "فشل تسجيل فاتورة المورد");
     } finally {
       setIsSubmittingBill(false);
     }
@@ -490,9 +490,7 @@ export default function FinanceV2Page() {
       setSelectedBill(null);
       fetchSupplierBills();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل تسجيل الدفعة");
+      handleError("handlePayInstallment", err, "فشل تسجيل الدفعة");
     } finally {
       setIsSubmittingInstallment(false);
     }
@@ -509,9 +507,7 @@ export default function FinanceV2Page() {
       setSelectedExpense(null);
       fetchPendingExpenses();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل اعتماد المصروف");
+      handleError("handleApproveExpense", err, "فشل اعتماد المصروف");
     } finally {
       setIsProcessingExpense(false);
     }
@@ -529,9 +525,7 @@ export default function FinanceV2Page() {
       setSelectedExpense(null);
       fetchPendingExpenses();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل رفض المصروف");
+      handleError("handleRejectExpense", err, "فشل رفض المصروف");
     } finally {
       setIsProcessingExpense(false);
     }
@@ -547,9 +541,7 @@ export default function FinanceV2Page() {
       await fetchTreasuries();
       await fetchVaultTransfers();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل تأكيد استلام التحويل المالي");
+      handleError("handleApproveTransfer", err, "فشل تأكيد استلام التحويل المالي");
     }
   };
 
@@ -571,9 +563,7 @@ export default function FinanceV2Page() {
       await fetchTreasuries();
       await fetchVaultTransfers();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل رفض التحويل المالي");
+      handleError("handleRejectTransfer", err, "فشل رفض التحويل المالي");
     } finally {
       setIsSubmittingTransfer(false);
     }
@@ -603,9 +593,7 @@ export default function FinanceV2Page() {
       await fetchTreasuries();
       await fetchVaultTransfers();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل تقديم طلب ترحيل السيولة");
+      handleError("handleCreateTransfer", err, "فشل تقديم طلب ترحيل السيولة");
     } finally {
       setIsSubmittingTransfer(false);
     }
@@ -633,9 +621,7 @@ export default function FinanceV2Page() {
       setShowNewTreasuryModal(false);
       await fetchTreasuries();
     } catch (err) {
-      console.error(err);
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message ?? "فشل إنشاء الخزنة/الحساب المالي");
+      handleError("handleCreateTreasury", err, "فشل إنشاء الخزنة/الحساب المالي");
     } finally {
       setIsSubmittingTreasury(false);
     }
@@ -677,7 +663,7 @@ export default function FinanceV2Page() {
       const res = await api.get<FinanceV2Summary>("/api/finance/summary");
       setSummary(res.data);
     } catch (err) {
-      console.error(err);
+      handleError("fetchSummary", err);
       setSummaryError("تعذر تحميل الملخص المالي. الرجاء التحقق من اتصالك بالخادم.");
     } finally {
       setLoadingSummary(false);
@@ -690,7 +676,7 @@ export default function FinanceV2Page() {
       const res = await api.get<CashierSession>("/api/cashier-sessions/active");
       setActiveSession(res.data);
     } catch (err) {
-      console.warn("No active cashier session found.");
+      console.warn("[FinanceV2::fetchActiveSession] No active cashier session found.");
       setActiveSession(null);
     } finally {
       setLoadingSession(false);
@@ -714,8 +700,7 @@ export default function FinanceV2Page() {
       setOpeningBalance("");
       fetchActiveSession();
     } catch (err) {
-      console.error(err);
-      toast.error(getBackendError(err, "تعذر فتح وردية الصندوق اليومي."), "فشل الإجراء");
+      handleError("handleOpenSession", err, "تعذر فتح وردية الصندوق اليومي.", "فشل الإجراء");
     } finally {
       setIsOpeningSession(false);
     }
@@ -753,8 +738,7 @@ export default function FinanceV2Page() {
       setActiveSession(null);
       fetchSummary();
     } catch (err) {
-      console.error(err);
-      toast.error(getBackendError(err, "تعذر إقفال وردية الصندوق."), "فشل الإجراء");
+      handleError("handleCloseSession", err, "تعذر إقفال وردية الصندوق.", "فشل الإجراء");
     } finally {
       setIsClosingSession(false);
     }
@@ -766,7 +750,7 @@ export default function FinanceV2Page() {
       const res = await api.get<{ data: ExpenseItem[] }>("/api/expenses?pageSize=50");
       setExpensesList(res.data.data ?? []);
     } catch (err) {
-      console.error("Failed to load expenses list", err);
+      handleError("fetchExpenses", err);
     } finally {
       setLoadingExpenses(false);
     }
@@ -796,8 +780,7 @@ export default function FinanceV2Page() {
       fetchExpenses();
       fetchSummary();
     } catch (err) {
-      console.error(err);
-      toast.error(getBackendError(err, "تعذر قيد المصروف التشغيلي."), "فشل قيد المصروف");
+      handleError("handleRegisterExpense", err, "تعذر قيد المصروف التشغيلي.", "فشل قيد المصروف");
     } finally {
       setIsSubmittingExpense(false);
     }
@@ -811,8 +794,7 @@ export default function FinanceV2Page() {
       fetchExpenses();
       fetchSummary();
     } catch (err) {
-      console.error(err);
-      toast.error(getBackendError(err, "تعذر حذف قيد المصروف."), "فشل الحذف");
+      handleError("handleDeleteExpense", err, "تعذر حذف قيد المصروف.", "فشل الحذف");
     }
   };
 
@@ -823,7 +805,7 @@ export default function FinanceV2Page() {
       const res = await api.get<ProfitLossReport>(url);
       setPlReport(res.data);
     } catch (err) {
-      console.error("Failed to fetch P&L report", err);
+      handleError("fetchPLReport", err);
     } finally {
       setLoadingPLReport(false);
     }
@@ -880,7 +862,7 @@ export default function FinanceV2Page() {
           fetchPendingExpenses();
         }
       } catch (err) {
-        console.error("Failed to fetch listings", err);
+        handleError("fetchListings", err);
       } finally {
         setLoadingListings(false);
       }
@@ -902,8 +884,7 @@ export default function FinanceV2Page() {
       link.click();
       link.remove();
     } catch (err) {
-      console.error("PDF Print error", err);
-      toast.error("تعذر تحميل ملف PDF الخاص بسند القبض.", "خطأ في الطباعة");
+      handleError("handlePrintReceipt", err, "تعذر تحميل ملف PDF الخاص بسند القبض.", "خطأ في الطباعة");
     }
   };
 
@@ -924,7 +905,7 @@ export default function FinanceV2Page() {
       }));
       setPatientsList(mapped);
     } catch (err) {
-      console.error(err);
+      handleError("handleSearchPatient", err);
     } finally {
       setSearchingPatients(false);
     }
@@ -955,8 +936,7 @@ export default function FinanceV2Page() {
       const contractsRes = await api.get<ContractListItem[]>(`/api/finance/contracts?patientId=${patient.id}`);
       setPatientContracts(contractsRes.data ?? []);
     } catch (err) {
-      console.error(err);
-      toast.error("تعذر تحميل البيانات المالية للمريض المحدد.", "خطأ في التحميل");
+      handleError("handleSelectPatient", err, "تعذر تحميل البيانات المالية للمريض المحدد.", "خطأ في التحميل");
     } finally {
       setLoadingPatientFinance(false);
     }
@@ -1038,9 +1018,7 @@ export default function FinanceV2Page() {
       handlePrintReceipt(res.data.id, res.data.receiptNumber);
 
     } catch (err) {
-      console.error(err);
-      const apiError = err as { response?: { data?: { message?: string } } };
-      toast.error(apiError.response?.data?.message ?? "حدث خطأ غير متوقع أثناء المعالجة.", "فشل تسجيل الدفعة");
+      handleError("handleRegisterPayment", err, "حدث خطأ غير متوقع أثناء المعالجة.", "فشل تسجيل الدفعة");
     } finally {
       setIsSubmittingPayment(false);
     }

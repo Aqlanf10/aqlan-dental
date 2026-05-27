@@ -125,14 +125,14 @@ export function PatientTable() {
     try {
       await api.put(`/api/patients/${patient.id}/archive`);
       await fetchPatients();
-    } catch { /* ignore */ }
+    } catch (e) { console.error("[Patients] Failed to archive patient:", e); }
   };
 
   const doRestore = async (patient: PatientListItem) => {
     try {
       await api.put(`/api/patients/${patient.id}/restore`);
       await fetchPatients();
-    } catch { /* ignore */ }
+    } catch (e) { console.error("[Patients] Failed to restore patient:", e); }
   };
 
   const handleConfirm = () => {

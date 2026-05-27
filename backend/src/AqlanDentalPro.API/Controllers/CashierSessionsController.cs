@@ -149,21 +149,48 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         var userId = currentUser.UserId ?? Guid.Empty;
 
         var session = await db.CashierSessions
-            .Where(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive)
-            .Select(s => new
-            {
-                s.Id,
-                s.SessionNumber,
-                s.OpeningTime,
-                s.OpeningBalance,
-                Status = s.Status.ToString()
-            })
-            .FirstOrDefaultAsync();
+            .Include(s => s.Cashier)
+            .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
 
         if (session == null)
             return NotFound(new { message = "لا يوجد صندوق كاشير مفتوح حالياً لهذه الجلسة." });
 
-        return Ok(session);
+        // Calculate expected closing values from CashFlowTransactions for the session
+        var sessionTransactions = await db.CashFlowTransactions
+            .Where(t => t.CashierSessionId == session.Id && t.IsActive)
+            .ToListAsync();
+
+        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && string.Equals(t.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && string.Equals(t.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && string.Equals(t.PaymentMethod, "card", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && string.Equals(t.PaymentMethod, "card", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && (string.Equals(t.PaymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(t.PaymentMethod, "bank", StringComparison.OrdinalIgnoreCase))).Sum(t => t.Amount);
+        var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && (string.Equals(t.PaymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(t.PaymentMethod, "bank", StringComparison.OrdinalIgnoreCase))).Sum(t => t.Amount);
+
+        var totalCollections = sessionTransactions.Where(t => t.Type == TransactionType.Inflow).Sum(t => t.Amount);
+
+        return Ok(new
+        {
+            session.Id,
+            session.SessionNumber,
+            CashierId = session.CashierId,
+            CashierName = session.Cashier?.Username ?? "",
+            session.BranchId,
+            OpenedAt = session.OpeningTime,
+            session.ClosingTime,
+            session.OpeningBalance,
+            ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows,
+            ExpectedClosingCard = cardInflows - cardOutflows,
+            ExpectedClosingBank = bankInflows - bankOutflows,
+            ActualClosingCash = (decimal?)session.ActualClosingCash,
+            ActualClosingCard = (decimal?)session.ActualClosingCard,
+            ActualClosingBank = (decimal?)session.ActualClosingBank,
+            session.ShortageOrSurplus,
+            Status = session.Status.ToString(),
+            session.Notes,
+            session.TreasuryId,
+            TotalCollections = totalCollections
+        });
     }
 
     [HttpPost("close")]

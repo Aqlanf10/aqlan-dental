@@ -1075,6 +1075,365 @@ public class FinanceV3Controller(
         return Ok(new { data = invoices, total, page, pageSize });
     }
 
+    // ─── Contracts List ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/contracts — List contracts with branch isolation for Finance V3.
+    /// </summary>
+    [HttpGet("contracts")]
+    public async Task<IActionResult> GetContracts(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] Guid? patientId = null,
+        [FromQuery] string? status = null)
+    {
+        // Branch isolation guard
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.Contracts
+            .Include(c => c.Patient)
+            .Include(c => c.Payments)
+            .Where(c => c.IsActive);
+
+        if (branchId.HasValue)
+            query = query.Where(c => c.Patient.BranchId == branchId.Value);
+
+        if (patientId.HasValue)
+            query = query.Where(c => c.PatientId == patientId.Value);
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ContractStatus>(status, true, out var s))
+            query = query.Where(c => c.Status == s);
+
+        var total = await query.CountAsync();
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        var contracts = await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new
+            {
+                c.Id,
+                c.PatientId,
+                PatientName = (c.Patient.FirstName + " " + c.Patient.LastName).Trim(),
+                PatientNumber = c.Patient.PatientNumber,
+                c.TotalAmount,
+                c.DiscountAmount,
+                PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                OutstandingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                Status = c.Status.ToString(),
+                StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : (string?)null,
+                IsOverdue = false
+            })
+            .ToListAsync();
+
+        return Ok(new { data = contracts, total, page, pageSize });
+    }
+
+    // ─── Suppliers List ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/suppliers — List suppliers with balance info for Finance V3.
+    /// </summary>
+    [HttpGet("suppliers")]
+    public async Task<IActionResult> GetSuppliers(
+        [FromQuery] string? search = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 30)
+    {
+        // Branch isolation guard
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 30;
+
+        var query = db.Suppliers.Where(s => s.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(s => s.Name.Contains(search) ||
+                                     (s.ContactPerson != null && s.ContactPerson.Contains(search)) ||
+                                     (s.Phone != null && s.Phone.Contains(search)));
+
+        var total = await query.CountAsync();
+
+        var suppliers = await query
+            .OrderBy(s => s.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new
+            {
+                s.Id,
+                s.Name,
+                s.ContactPerson,
+                s.Phone,
+                TotalBilled = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0,
+                TotalPaid = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.PaidAmount) ?? 0,
+                Balance = (db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0)
+                         - (db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.PaidAmount) ?? 0)
+            })
+            .ToListAsync();
+
+        return Ok(new { data = suppliers, total, page, pageSize });
+    }
+
+    // ─── Supplier Bills List ────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/supplier-bills — List supplier bills with branch isolation for Finance V3.
+    /// </summary>
+    [HttpGet("supplier-bills")]
+    public async Task<IActionResult> GetSupplierBills(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] Guid? supplierId = null,
+        [FromQuery] string? status = null)
+    {
+        // Branch isolation guard
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.SupplierBills
+            .Include(b => b.Supplier)
+            .Where(b => b.IsActive);
+
+        if (branchId.HasValue)
+            query = query.Where(b => b.BranchId == branchId.Value);
+
+        if (supplierId.HasValue)
+            query = query.Where(b => b.SupplierId == supplierId.Value);
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<BillStatus>(status, true, out var s))
+            query = query.Where(b => b.Status == s);
+
+        var total = await query.CountAsync();
+
+        var bills = await query
+            .OrderByDescending(b => b.BillDate)
+            .ThenByDescending(b => b.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(b => new
+            {
+                b.Id,
+                b.SupplierId,
+                SupplierName = b.Supplier != null ? b.Supplier.Name : "",
+                b.Description,
+                b.TotalAmount,
+                b.PaidAmount,
+                Balance = b.TotalAmount - b.PaidAmount,
+                DueDate = b.DueDate.HasValue ? b.DueDate.Value.ToString("yyyy-MM-dd") : (string?)null,
+                Status = b.Status.ToString(),
+                b.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { data = bills, total, page, pageSize });
+    }
+
+    // ─── Vault Transfers List ───────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/vault-transfers — List vault transfers with branch isolation for Finance V3.
+    /// </summary>
+    [HttpGet("vault-transfers")]
+    public async Task<IActionResult> GetVaultTransfers(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null)
+    {
+        // Branch isolation guard
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.VaultTransfers
+            .Include(t => t.SourceTreasury)
+            .Include(t => t.DestinationTreasury)
+            .Include(t => t.PerformedByUser)
+            .Include(t => t.ApprovedByUser)
+            .Where(t => t.IsActive);
+
+        if (branchId.HasValue)
+            query = query.Where(t => t.DestinationTreasury.BranchId == branchId.Value);
+
+        if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<TransferStatus>(status, true, out var s))
+            query = query.Where(t => t.Status == s);
+
+        var total = await query.CountAsync();
+
+        var transfers = await query
+            .OrderByDescending(t => t.TransferDate)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(t => new
+            {
+                t.Id,
+                SourceTreasuryId = t.SourceTreasuryId,
+                SourceTreasuryName = t.SourceTreasury != null ? t.SourceTreasury.Name : "إيداع خارجي",
+                DestinationTreasuryId = t.DestinationTreasuryId,
+                DestinationTreasuryName = t.DestinationTreasury.Name,
+                t.Amount,
+                DepositSource = t.DepositSource,
+                Status = t.Status.ToString(),
+                RequestedBy = t.PerformedByUser.Username,
+                RequestedAt = t.TransferDate,
+                ApprovedBy = t.ApprovedByUser != null ? t.ApprovedByUser.Username : null,
+                ApprovedAt = t.ApprovalDate,
+                RejectedBy = (string?)null,
+                RejectedAt = (DateTime?)null,
+                RejectionReason = (string?)null
+            })
+            .ToListAsync();
+
+        return Ok(new { data = transfers, total, page, pageSize });
+    }
+
+    // ─── Expenses List ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/expenses — List operational expenses with branch isolation for Finance V3.
+    /// </summary>
+    [HttpGet("expenses")]
+    public async Task<IActionResult> GetExpenses(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? category = null,
+        [FromQuery] string? approvalStatus = null)
+    {
+        // Branch isolation guard
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        if (page < 1) page = 1;
+        if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        var query = db.OperationalExpenses
+            .Include(e => e.Supplier)
+            .Where(e => e.IsActive);
+
+        if (branchId.HasValue)
+            query = query.Where(e => e.BranchId == branchId.Value);
+
+        if (!string.IsNullOrWhiteSpace(category) && Enum.TryParse<ExpenseCategory>(category, true, out var catFilter))
+            query = query.Where(e => e.Category == catFilter);
+
+        if (!string.IsNullOrWhiteSpace(approvalStatus) && Enum.TryParse<ApprovalStatus>(approvalStatus, true, out var statusFilter))
+            query = query.Where(e => e.ApprovalStatus == statusFilter);
+
+        var total = await query.CountAsync();
+
+        // Determine reversal status by checking if a reversal CashFlowTransaction exists
+        var expenses = await query
+            .OrderByDescending(e => e.ExpenseDate)
+            .ThenByDescending(e => e.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(e => new
+            {
+                e.Id,
+                Title = e.Title,
+                Category = e.Category.ToString(),
+                e.Amount,
+                e.PaymentMethod,
+                ExpenseDate = e.ExpenseDate.ToString("yyyy-MM-dd"),
+                Status = e.ApprovalStatus.ToString(),
+                RequestedBy = e.PaidBy.ToString(),
+                ApprovedBy = e.ApprovedById,
+                ApprovedAt = e.ApprovedAt,
+                RejectedBy = (Guid?)null,
+                RejectedAt = (DateTime?)null,
+                RejectionReason = e.ApprovalNotes,
+                IsReversal = false,
+                TreasuryId = e.CashFlowTransactionId.HasValue
+                    ? db.CashFlowTransactions.Where(c => c.Id == e.CashFlowTransactionId.Value).Select(c => c.TreasuryId).FirstOrDefault()
+                    : (Guid?)null,
+                TreasuryName = e.CashFlowTransactionId.HasValue
+                    ? db.CashFlowTransactions.Where(c => c.Id == e.CashFlowTransactionId.Value)
+                        .Select(c => c.Treasury.Name).FirstOrDefault()
+                    : (string?)null
+            })
+            .ToListAsync();
+
+        return Ok(new { data = expenses, total, page, pageSize });
+    }
+
+    // ─── Cashier Sessions Active (Finance V3) ──────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/cashier-sessions/active — Get the active cashier session for the current user.
+    /// Returns the session with the proper shape expected by the Finance V3 frontend.
+    /// </summary>
+    [HttpGet("cashier-sessions/active")]
+    public async Task<IActionResult> GetActiveCashierSessionV3()
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var cashierId = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
+
+        var session = await db.CashierSessions
+            .Include(s => s.Cashier)
+            .Include(s => s.Treasury)
+            .FirstOrDefaultAsync(s => s.CashierId == cashierId && s.Status == SessionStatus.Open && s.IsActive);
+
+        if (session == null)
+            return Ok(new { hasActiveSession = false });
+
+        // Calculate expected values from CashFlowTransactions for the session
+        var sessionTransactions = await db.CashFlowTransactions
+            .Where(t => t.CashierSessionId == session.Id && t.IsActive)
+            .ToListAsync();
+
+        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && string.Equals(t.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && string.Equals(t.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && string.Equals(t.PaymentMethod, "card", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && string.Equals(t.PaymentMethod, "card", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
+        var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && (string.Equals(t.PaymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(t.PaymentMethod, "bank", StringComparison.OrdinalIgnoreCase))).Sum(t => t.Amount);
+        var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && (string.Equals(t.PaymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(t.PaymentMethod, "bank", StringComparison.OrdinalIgnoreCase))).Sum(t => t.Amount);
+
+        var totalCollections = sessionTransactions.Where(t => t.Type == TransactionType.Inflow).Sum(t => t.Amount);
+
+        return Ok(new
+        {
+            hasActiveSession = true,
+            session.Id,
+            CashierId = session.CashierId,
+            CashierName = session.Cashier?.Username ?? "",
+            session.BranchId,
+            OpenedAt = session.OpeningTime,
+            session.ClosingTime,
+            session.OpeningBalance,
+            ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows,
+            ExpectedClosingCard = cardInflows - cardOutflows,
+            ExpectedClosingBank = bankInflows - bankOutflows,
+            ActualClosingCash = (decimal?)session.ActualClosingCash,
+            ActualClosingCard = (decimal?)session.ActualClosingCard,
+            ActualClosingBank = (decimal?)session.ActualClosingBank,
+            ShortageOrSurplus = (decimal?)session.ShortageOrSurplus,
+            Status = session.Status.ToString(),
+            session.Notes,
+            session.TreasuryId,
+            TotalCollections = totalCollections
+        });
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private async Task<decimal> CalculateContractOutstandingAsync(Guid? branchId)

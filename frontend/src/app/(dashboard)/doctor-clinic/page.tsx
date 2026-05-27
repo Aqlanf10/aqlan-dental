@@ -433,10 +433,9 @@ export default function DoctorClinicPage() {
             ═══════════════════════════════════════════════════════════════ */}
         <div className="flex-1 flex flex-col overflow-hidden bg-[#f5f5f5]">
 
-          {/* ── ACTION BUTTONS BAR — sticky at top of workspace ── */}
-          <div className="flex-shrink-0 bg-white border-b border-[#e0e0e0] px-4 py-2">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <span className="text-[10px] font-bold text-[#9ca3af] flex-shrink-0 ml-2">إجراءات العلاج</span>
+          {/* ── ACTION BUTTONS BAR — compact, sticky at top of workspace ── */}
+          <div className="flex-shrink-0 bg-white border-b border-[#e0e0e0] px-3 py-1.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto">
               {ACTION_CARDS.map(card => {
                 const isDisabled = !selectedPatient ||
                   (card.key !== "handoff" && !card.requiredStatus.includes(selectedPatient.appointmentStatus) && !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
@@ -449,7 +448,7 @@ export default function DoctorClinicPage() {
                     key={card.key}
                     onClick={() => handleAction(card.key)}
                     disabled={isDisabled || isSentDisabled}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold flex-shrink-0 border transition-all whitespace-nowrap"
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[9px] font-semibold flex-shrink-0 border transition-all whitespace-nowrap"
                     style={{
                       background: isCurrentPanel ? card.bgColor : "#fff",
                       borderColor: isCurrentPanel ? card.color : "#e5e7eb",
@@ -458,7 +457,7 @@ export default function DoctorClinicPage() {
                       borderWidth: isCurrentPanel ? "1.5px" : "1px",
                     }}
                   >
-                    <CardIcon className="w-3.5 h-3.5" />
+                    <CardIcon className="w-3 h-3" />
                     <span>{card.label}</span>
                   </button>
                 );
@@ -552,112 +551,16 @@ export default function DoctorClinicPage() {
                   )}
                 </div>
               </div>
-            ) : selectedPatient ? (
-              /* ── Patient selected but no panel: show patient summary ── */
-              <div className="max-w-4xl mx-auto p-5 space-y-4">
-                {/* Patient summary card */}
-                <div className="rounded-xl border border-[#e5e7eb] bg-white p-5">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-base font-bold text-white flex-shrink-0" style={{ background: "linear-gradient(135deg, #1e3a8a, #2563eb)" }}>
-                      {getInitials(selectedPatient.patientName)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-base font-bold text-[#1a1a1a]">{selectedPatient.patientName}</h2>
-                        {selectedPatient.patientNumber && <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-[#f3f4f6] text-[#6b7280]">#{selectedPatient.patientNumber}</span>}
-                        <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full" style={{ background: STATUS_COLORS[selectedPatient.appointmentStatus]?.bg ?? "#f3f4f6", color: STATUS_COLORS[selectedPatient.appointmentStatus]?.text ?? "#6b7280" }}>
-                          {APPT_STATUS_LABELS[selectedPatient.appointmentStatus] ?? selectedPatient.appointmentStatus}
-                        </span>
-                        {isPatientSent && <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 bg-[#dcfce7] text-[#16a34a]"><CheckCircle className="w-2.5 h-2.5" /> تم الإرسال</span>}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-[11px] text-[#6b7280] flex-wrap">
-                        <span>{selectedPatient.serviceName ?? "—"}</span>
-                        <span className="text-[#d1d5db]">·</span>
-                        <span>{selectedPatient.roomName ?? "بدون غرفة"}</span>
-                        {isAdmin && selectedPatient.doctorName && <><span className="text-[#d1d5db]">·</span><span>{selectedPatient.doctorName}</span></>}
-                        {selectedPatient.inRoomSince && <><span className="text-[#d1d5db]">·</span><span className="font-semibold text-[#16a34a]">{fmtSessionDuration(selectedPatient.inRoomSince)}</span></>}
-                      </div>
-                      {/* Medical alerts */}
-                      {medicalAlerts.length > 0 && (
-                        <div className="flex gap-1 mt-2 flex-wrap">
-                          {medicalAlerts.map((alert, i) => (
-                            <span key={i} className="text-[9px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
-                              style={{ background: alert.severity === "danger" ? "#fef2f2" : "#fffbeb", color: alert.severity === "danger" ? "#dc2626" : "#d97706" }}>
-                              <AlertCircle className="w-2.5 h-2.5" />
-                              {alert.type === "allergy" ? "حساسية" : alert.type === "bleeding" ? "نزيف" : alert.type === "pregnancy" ? "حمل" : alert.label ?? "تنبيه"}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {selectedPatient.chiefComplaint && (
-                        <div className="mt-2 text-[11px] font-medium px-3 py-1.5 rounded-lg inline-block bg-[#fffbeb] text-[#92400e]">الشكوى: {selectedPatient.chiefComplaint}</div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Quick info tiles */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
-                    <div className="rounded-lg p-3 bg-[#f8fafc]">
-                      <p className="text-[9px] text-[#9ca3af] mb-0.5">الغرفة</p>
-                      <p className="text-xs font-bold text-[#1a1a1a]">{selectedPatient.roomName ?? "بدون غرفة"}</p>
-                    </div>
-                    <div className="rounded-lg p-3 bg-[#f8fafc]">
-                      <p className="text-[9px] text-[#9ca3af] mb-0.5">وقت الموعد</p>
-                      <p className="text-xs font-bold text-[#1a1a1a]">{fmtTime(selectedPatient.appointmentTime)}</p>
-                    </div>
-                    <div className="rounded-lg p-3 bg-[#faf5ff]">
-                      <p className="text-[9px] text-[#9ca3af] mb-0.5">الإجراءات</p>
-                      <p className="text-xs font-bold text-[#7c3aed]">
-                        {selectedServices.length} خدمة
-                        {clinicalNotes.amountDue > 0 && <span className="text-[9px] mr-1">({fmtRial(clinicalNotes.amountDue)})</span>}
-                      </p>
-                    </div>
-                    <div className="rounded-lg p-3 bg-[#f0fdf4]">
-                      <p className="text-[9px] text-[#9ca3af] mb-0.5">المعالجون</p>
-                      <p className="text-xs font-bold text-[#16a34a]">{sentPatients.size}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action cards grid */}
-                <div>
-                  <h3 className="text-xs font-bold text-[#9ca3af] mb-3">إجراءات العلاج</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                    {ACTION_CARDS.map(card => {
-                      const isDisabled = !selectedPatient ||
-                        (card.key !== "handoff" && !card.requiredStatus.includes(selectedPatient.appointmentStatus) && !card.requiredStatus.includes(selectedPatient.queueStatus ?? ""));
-                      const isSentDisabled = card.key === "handoff" && isPatientSent;
-                      const CardIcon = card.icon;
-
-                      return (
-                        <button key={card.key} onClick={() => handleAction(card.key)} disabled={isDisabled || isSentDisabled}
-                          className="flex flex-col items-center gap-2 p-3.5 rounded-xl border transition-all text-center group"
-                          style={{
-                            background: isDisabled || isSentDisabled ? "#fafafa" : "#fff",
-                            borderColor: isDisabled || isSentDisabled ? "#f3f4f6" : card.color + "25",
-                            opacity: isDisabled || isSentDisabled ? 0.35 : 1,
-                            cursor: isDisabled || isSentDisabled ? "not-allowed" : "pointer",
-                            boxShadow: !isDisabled && !isSentDisabled ? "0 1px 3px rgba(0,0,0,0.04)" : "none",
-                          }}>
-                          <div className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105"
-                            style={{ background: isDisabled || isSentDisabled ? "#e5e7eb" : card.color + "12" }}>
-                            <CardIcon className="w-4.5 h-4.5" style={{ color: isDisabled || isSentDisabled ? "#9ca3af" : card.color }} />
-                          </div>
-                          <span className="text-[10px] font-bold leading-tight" style={{ color: isDisabled || isSentDisabled ? "#9ca3af" : "#374151" }}>{card.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
             ) : (
-              /* ── Empty state — no patient selected ── */
+              /* ── Empty state — no patient selected or no panel open ── */
               <div className="flex flex-col items-center justify-center h-full min-h-[300px]">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-3 bg-[#1e3a8a]/5">
-                  <Stethoscope className="w-8 h-8 text-[#1e3a8a]/20" />
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3 bg-[#1e3a8a]/5">
+                  <Stethoscope className="w-7 h-7 text-[#1e3a8a]/20" />
                 </div>
-                <p className="text-sm font-bold text-[#1a1a1a]">اختر مريضاً من القائمة الجانبية</p>
-                <p className="text-xs mt-1 text-[#9ca3af]">اختر مريضاً ثم اضغط على أحد الإجراءات أعلاه</p>
+                <p className="text-sm font-bold text-[#1a1a1a]">
+                  {selectedPatient ? selectedPatient.patientName : "اختر مريضاً من القائمة الجانبية"}
+                </p>
+                <p className="text-xs mt-1 text-[#9ca3af]">اضغط على أحد الأزرار أعلاه لفتح الإجراء المطلوب</p>
               </div>
             )}
           </div>

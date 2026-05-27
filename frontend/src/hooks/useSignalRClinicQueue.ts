@@ -24,7 +24,7 @@ export function useSignalRClinicQueue() {
   // Sound ref — lazy loaded
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const playNotification = useCallback((_type: "queue" | "handoff" | "arrival" = "queue") => {
+  const playNotification = useCallback(() => {
     try {
       if (!audioRef.current) {
         audioRef.current = new Audio("/notify.mp3");
@@ -69,21 +69,21 @@ export function useSignalRClinicQueue() {
       connection.on("PatientCalled", () => {
         queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
         queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
-        playNotification("queue");
+        playNotification();
       });
 
       // وصول مريض جديد
       connection.on("PatientArrived", () => {
         queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
         queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
-        playNotification("arrival");
+        playNotification();
       });
 
       // تسليم من الطبيب للاستقبال (Handoff)
       connection.on("HandoffToReception", () => {
         queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
         queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
-        playNotification("handoff");
+        playNotification();
       });
 
       // اكتمال زيارة

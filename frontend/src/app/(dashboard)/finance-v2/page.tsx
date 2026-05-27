@@ -675,8 +675,7 @@ export default function FinanceV2Page() {
     try {
       const res = await api.get<CashierSession>("/api/cashier-sessions/active");
       setActiveSession(res.data);
-    } catch (err) {
-      console.warn("[FinanceV2::fetchActiveSession] No active cashier session found.");
+    } catch {
       setActiveSession(null);
     } finally {
       setLoadingSession(false);

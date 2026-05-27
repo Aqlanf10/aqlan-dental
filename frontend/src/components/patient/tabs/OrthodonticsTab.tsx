@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Activity, Camera, ClipboardCheck, ShieldCheck, Calendar,
-  Wrench, ChevronLeft, CheckCircle2, AlertCircle, Image
+  Wrench, ChevronLeft, CheckCircle2, AlertCircle, FileImage
 } from "lucide-react";
 import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
@@ -299,7 +299,7 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
                       ov.contractId ? "bg-[#3d7ab5]/10 text-[#3d7ab5]" : "bg-gray-50 text-gray-400"
                     )}
                   >
-                    <Image className="w-3.5 h-3.5" aria-hidden="true" />
+                    <FileImage className="w-3.5 h-3.5" />
                     <span className="truncate">
                       {ov.contractId
                         ? `متبقي ${((ov.contractRemaining ?? 0)).toLocaleString()}`

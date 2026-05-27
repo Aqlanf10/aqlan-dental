@@ -1184,17 +1184,21 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank") 
             ? TreasuryType.Bank 
             : TreasuryType.Vault;
-            
-        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
         
+        // Phase 6: Lookup by BranchId + Type instead of hardcoded name.
+        // Previously used hardcoded names ("حساب بنك التضامن", "درج كاشير الاستقبال")
+        // which would fail if the treasury was renamed. Now we find the first active
+        // treasury of the correct type for the branch, regardless of its name.
         var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.IsActive);
             
         if (treasury == null)
         {
+            // Only use default name when auto-creating a new treasury
+            var defaultName = type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير";
             treasury = new Treasury
             {
-                Name = name,
+                Name = defaultName,
                 Type = type,
                 Balance = 0,
                 BranchId = branchId,
@@ -1250,11 +1254,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ? TreasuryType.Bank
             : TreasuryType.Vault;
 
-        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
-
-        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
+        // Phase 6: Lookup by BranchId + Type instead of hardcoded name.
+        // Previously used hardcoded names ("حساب بنك التضامن", "درج كاشير الاستقبال")
+        // which would fail if the treasury was renamed. Now we find the first active
+        // treasury of the correct type for the branch, regardless of its name.
         var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.IsActive);
 
         if (treasury == null)
         {
@@ -1263,7 +1268,6 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 .Where(e => e.State == EntityState.Added
                     && e.Entity.BranchId == branchId
                     && e.Entity.Type == type
-                    && e.Entity.Name == name
                     && e.Entity.IsActive)
                 .Select(e => e.Entity)
                 .FirstOrDefault();
@@ -1272,9 +1276,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var isNewTreasury = false;
         if (treasury == null)
         {
+            // Only use default name when auto-creating a new treasury
+            var defaultName = type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير";
             treasury = new Treasury
             {
-                Name = name,
+                Name = defaultName,
                 Type = type,
                 Balance = 0,
                 BranchId = branchId,
@@ -1319,16 +1325,16 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ? TreasuryType.Bank
             : TreasuryType.Vault;
 
-        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
-
+        // Phase 6: Lookup by BranchId + Type instead of hardcoded name.
         var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.IsActive);
 
         if (treasury == null)
         {
+            var defaultName = type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير";
             treasury = new Treasury
             {
-                Name = name,
+                Name = defaultName,
                 Type = type,
                 Balance = 0,
                 BranchId = branchId,
@@ -1354,11 +1360,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ? TreasuryType.Bank
             : TreasuryType.Vault;
 
-        var name = type == TreasuryType.Bank ? "حساب بنك التضامن" : "درج كاشير الاستقبال";
-
-        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
+        // Phase 6: Lookup by BranchId + Type instead of hardcoded name.
         var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.Name == name && t.IsActive);
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == type && t.IsActive);
 
         if (treasury == null)
         {
@@ -1367,7 +1371,6 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 .Where(e => e.State == EntityState.Added
                     && e.Entity.BranchId == branchId
                     && e.Entity.Type == type
-                    && e.Entity.Name == name
                     && e.Entity.IsActive)
                 .Select(e => e.Entity)
                 .FirstOrDefault();
@@ -1375,9 +1378,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         if (treasury == null)
         {
+            var defaultName = type == TreasuryType.Bank ? "حساب بنكي" : "درج كاشير";
             treasury = new Treasury
             {
-                Name = name,
+                Name = defaultName,
                 Type = type,
                 Balance = 0,
                 BranchId = branchId,

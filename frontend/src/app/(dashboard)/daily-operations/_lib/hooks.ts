@@ -461,13 +461,25 @@ export function useWalkInPatient() {
   });
 }
 
-// ─── Finance Summary ────────────────────────────────────────────────────────
+// ─── Finance Summary (migrated to FinanceV3 dashboard endpoint) ────────────
 export function useFinanceSummary() {
   return useQuery<FinanceSummaryData>({
     queryKey: ["daily-ops", "finance-summary"],
     queryFn: async () => {
-      const { data } = await api.get("/api/finance/summary");
-      return data as FinanceSummaryData;
+      const { data } = await api.get("/api/finance-v3/dashboard");
+      // Map V3 dashboard response to FinanceSummaryData shape
+      return {
+        todayCollected: data.todayInflow ?? 0,
+        monthCollected: data.monthInflow ?? 0,
+        totalOutstanding: data.totalOutstanding ?? 0,
+        activeContracts: data.activeContracts ?? 0,
+        unpaidInvoicesCount: data.unpaidInvoicesCount ?? 0,
+        draftInvoicesCount: data.draftInvoicesCount ?? 0,
+        overdueAmount: data.overdueAmount ?? 0,
+        pendingCommissionsAmount: data.pendingCommissionsAmount ?? 0,
+        recentPayments: data.recentPayments ?? [],
+        recentInvoices: data.recentInvoices ?? [],
+      } as FinanceSummaryData;
     },
     staleTime: 30_000,
     refetchInterval: 60_000,

@@ -98,20 +98,6 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
         return result == null ? NotFound(new { message = "الدفعة غير موجودة أو ملغاة" }) : Ok(result);
     }
 
-    [HttpGet("finance/summary")]
-    public async Task<IActionResult> GetSummary()
-    {
-        var result = await service.GetSummaryAsync();
-        return Ok(result);
-    }
-
-    [HttpGet("finance/overdue")]
-    public async Task<IActionResult> GetOverdue()
-    {
-        var result = await service.GetOverdueContractsAsync();
-        return Ok(result);
-    }
-
     [HttpGet("patients/{patientId:guid}/finance-summary")]
     public async Task<IActionResult> GetPatientFinanceSummary(Guid patientId)
     {

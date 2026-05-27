@@ -20,9 +20,10 @@ public class TreasuryResolutionService(
     AppDbContext db,
     ILogger<TreasuryResolutionService> logger) : ITreasuryResolutionService
 {
-    // Standard treasury names (must match FinanceService convention)
-    private const string VaultTreasuryName = "درج كاشير الاستقبال";
-    private const string BankTreasuryName = "حساب بنك التضامن";
+    // Phase 6: Default treasury names for auto-creation only.
+    // Lookup is now by BranchId + Type (not name), so renamed treasuries are still found.
+    private const string DefaultVaultName = "درج كاشير";
+    private const string DefaultBankName = "حساب بنكي";
 
     /// <inheritdoc />
     public async Task<Treasury> ResolveTreasuryAsync(
@@ -55,11 +56,10 @@ public class TreasuryResolutionService(
 
         // Fall back to standard treasury resolution by type
         var treasuryType = isBankPayment ? TreasuryType.Bank : TreasuryType.Vault;
-        var treasuryName = isBankPayment ? BankTreasuryName : VaultTreasuryName;
 
-        // Check DB first, then ChangeTracker for locally-tracked (unsaved) entities
+        // Phase 6: Lookup by BranchId + Type instead of hardcoded name.
         var treasury = await db.Treasuries
-            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == treasuryType && t.Name == treasuryName && t.IsActive, ct);
+            .FirstOrDefaultAsync(t => t.BranchId == branchId && t.Type == treasuryType && t.IsActive, ct);
 
         if (treasury == null)
         {
@@ -68,7 +68,6 @@ public class TreasuryResolutionService(
                 .Where(e => e.State == EntityState.Added
                     && e.Entity.BranchId == branchId
                     && e.Entity.Type == treasuryType
-                    && e.Entity.Name == treasuryName
                     && e.Entity.IsActive)
                 .Select(e => e.Entity)
                 .FirstOrDefault();
@@ -77,9 +76,10 @@ public class TreasuryResolutionService(
         if (treasury == null)
         {
             // Auto-create the treasury for the branch (same behavior as FinanceService)
+            var defaultName = isBankPayment ? DefaultBankName : DefaultVaultName;
             treasury = new Treasury
             {
-                Name = treasuryName,
+                Name = defaultName,
                 Type = treasuryType,
                 Balance = 0,
                 BranchId = branchId,
@@ -87,7 +87,7 @@ public class TreasuryResolutionService(
             };
             db.Treasuries.Add(treasury);
             // Do NOT call SaveChangesAsync — caller persists all changes together
-            logger.LogInformation("Auto-creating {Type} treasury '{Name}' for branch {BranchId}", treasuryType, treasuryName, branchId);
+            logger.LogInformation("Auto-creating {Type} treasury '{Name}' for branch {BranchId}", treasuryType, defaultName, branchId);
         }
 
         return treasury;

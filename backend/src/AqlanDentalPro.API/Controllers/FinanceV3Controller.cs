@@ -1255,89 +1255,9 @@ public class FinanceV3Controller(
     }
 
     // ─── Active Cashier Session ─────────────────────────────────────────────
-
-    /// <summary>
-    /// GET /api/finance-v3/active-cashier-session — Current user's active cashier session with computed expected values.
-    /// Migration C: Expected values now calculated from JournalLine (Treasury account type)
-    /// instead of CashFlowTransaction. Payment method determined by Treasury.Type.
-    /// </summary>
-    [HttpGet("active-cashier-session")]
-    public async Task<IActionResult> GetActiveCashierSession()
-    {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var cashierId = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
-
-        var session = await db.CashierSessions
-            .Include(s => s.Treasury)
-            .FirstOrDefaultAsync(s => s.CashierId == cashierId && s.Status == SessionStatus.Open && s.IsActive);
-
-        if (session == null)
-            return Ok(new { hasActiveSession = false });
-
-        // Migration C: Calculate expected values from JournalLine instead of CashFlowTransaction
-        var sessionJournalLines = await db.JournalLines
-            .Where(l => l.AccountType == JournalAccountType.Treasury
-                && l.JournalEntry.IsPosted
-                && l.JournalEntry.PerformedBy == cashierId
-                && l.JournalEntry.CreatedAt >= session.OpeningTime
-                && l.JournalEntry.CreatedAt <= DateTime.UtcNow)
-            .Select(l => new
-            {
-                l.Debit,
-                l.Credit,
-                l.AccountId // TreasuryId
-            })
-            .ToListAsync();
-
-        // Load treasury types for payment method mapping
-        var treasuryIds = sessionJournalLines.Select(l => l.AccountId).Distinct().ToList();
-        var treasuryTypes = await db.Treasuries
-            .Where(t => treasuryIds.Contains(t.Id))
-            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
-
-        decimal cashInflows = 0, cashOutflows = 0;
-        decimal bankInflows = 0, bankOutflows = 0;
-
-        foreach (var line in sessionJournalLines)
-        {
-            var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
-            var isCash = tType != TreasuryType.Bank;
-            var isBank = tType == TreasuryType.Bank;
-
-            if (line.Debit > 0) // Inflow
-            {
-                if (isCash) cashInflows += line.Debit;
-                else if (isBank) bankInflows += line.Debit;
-            }
-            else if (line.Credit > 0) // Outflow
-            {
-                if (isCash) cashOutflows += line.Credit;
-                else if (isBank) bankOutflows += line.Credit;
-            }
-        }
-
-        // TODO: Separate card from bank when TreasuryType.Card is introduced
-        // Currently card and bank are merged since both go through Bank-type treasuries
-        var cardInflows = bankInflows;
-        var cardOutflows = bankOutflows;
-
-        return Ok(new
-        {
-            hasActiveSession = true,
-            session.Id,
-            session.SessionNumber,
-            session.CashierId,
-            session.BranchId,
-            OpeningTime = session.OpeningTime.ToString("yyyy-MM-dd HH:mm"),
-            session.OpeningBalance,
-            session.TreasuryId,
-            TreasuryName = session.Treasury?.Name ?? "",
-            Status = session.Status.ToString(),
-            ExpectedCash = session.OpeningBalance + cashInflows - cashOutflows,
-            ExpectedCard = cardInflows - cardOutflows,
-            TransactionCount = sessionJournalLines.Count
-        });
-    }
+    // NOTE: GET /api/finance-v3/active-cashier-session was REMOVED (Phase 6 cleanup).
+    // It was a duplicate of GET /api/finance-v3/cashier-sessions/active below.
+    // Use cashier-sessions/active for the canonical Finance V3 active session endpoint.
 
     // ─── Payments List ──────────────────────────────────────────────────────
 

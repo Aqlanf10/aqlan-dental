@@ -144,6 +144,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     }
 
     [HttpGet("active")]
+    [Obsolete("Use GET /api/finance-v3/cashier-sessions/active instead — reads from JournalLine (canonical source) instead of CashFlowTransaction.")]
     public async Task<IActionResult> GetActiveSession()
     {
         var userId = currentUser.UserId ?? Guid.Empty;

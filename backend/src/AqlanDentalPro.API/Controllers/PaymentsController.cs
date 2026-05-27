@@ -99,6 +99,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     }
 
     [HttpGet("finance/summary")]
+    [Obsolete("Use GET /api/finance-v3/dashboard for comprehensive finance KPIs (Migration A).")]
     public async Task<IActionResult> GetSummary()
     {
         var result = await service.GetSummaryAsync();
@@ -106,6 +107,7 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
     }
 
     [HttpGet("finance/overdue")]
+    [Obsolete("Use GET /api/finance-v3/contracts for contract listing with outstanding amounts (Migration B).")]
     public async Task<IActionResult> GetOverdue()
     {
         var result = await service.GetOverdueContractsAsync();

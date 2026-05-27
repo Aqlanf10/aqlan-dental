@@ -1058,13 +1058,16 @@ public class FinanceV3Controller(
             {
                 i.Id,
                 i.InvoiceNumber,
+                i.PatientId,
                 Status = i.Status.ToString(),
                 i.Subtotal,
                 i.DiscountAmount,
                 i.TotalAmount,
                 PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
+                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 PatientName = (i.Patient.FirstName + " " + i.Patient.LastName).Trim(),
                 PatientNumber = i.Patient.PatientNumber,
+                IssueDate = i.CreatedAt,
                 i.CreatedAt
             })
             .ToListAsync();

@@ -390,6 +390,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
 
         var invoices = await db.Invoices
             .Include(i => i.LineItems)
+            .Include(i => i.Payments)
             .Where(i => i.PatientId == patientId)
             .OrderByDescending(i => i.CreatedAt)
             .Select(i => new
@@ -399,6 +400,8 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 Status = i.Status.ToString(),
                 StatusArabic = GetStatusArabic(i.Status),
                 i.TotalAmount,
+                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
+                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 LineItemCount = i.LineItems.Count,
                 i.CreatedAt,
                 i.UpdatedAt

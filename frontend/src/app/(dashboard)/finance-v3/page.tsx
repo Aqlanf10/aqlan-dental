@@ -795,7 +795,7 @@ function CollectionsTab() {
   const [selectedInvoice, setSelectedInvoice] = useState("");
   const [selectedContract, setSelectedContract] = useState("");
   const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("Cash");
+  const [payMethod, setPayMethod] = useState("cash");
   const [payNotes, setPayNotes] = useState("");
 
   const fetchPayments = useCallback(async () => {
@@ -878,7 +878,7 @@ function CollectionsTab() {
     setPatientSearch(""); setSelectedPatient(""); setPatientOptions([]);
     setInvoiceOptions([]); setContractOptions([]);
     setSelectedInvoice(""); setSelectedContract("");
-    setPayAmount(""); setPayMethod("Cash"); setPayNotes("");
+    setPayAmount(""); setPayMethod("cash"); setPayNotes("");
   };
 
   return (
@@ -1069,11 +1069,25 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
 
-  const openCloseSession = (s: CashierSession) => {
+  const openCloseSession = async (s: CashierSession) => {
     setCloseSession(s);
-    setActualCash(String(s.ExpectedClosingCash));
-    setActualCard(String(s.ExpectedClosingCard));
-    setActualBank(String(s.ExpectedClosingBank));
+    // Fetch session detail to get accurate per-bucket expected values
+    // Never initialize actual amounts from undefined — fetch first
+    try {
+      const { data: detail } = await api.get<{
+        ExpectedClosingCash: number;
+        ExpectedClosingCard: number;
+        ExpectedClosingBank: number;
+      }>(`/api/cashier-sessions/${s.Id}`);
+      setActualCash(String(detail.ExpectedClosingCash ?? 0));
+      setActualCard(String(detail.ExpectedClosingCard ?? 0));
+      setActualBank(String(detail.ExpectedClosingBank ?? 0));
+    } catch {
+      // Fallback: use list values if available
+      setActualCash(String(s.ExpectedClosingCash ?? 0));
+      setActualCard(String(s.ExpectedClosingCard ?? 0));
+      setActualBank(String(s.ExpectedClosingBank ?? 0));
+    }
   };
 
   const handleClose = async () => {
@@ -1128,7 +1142,7 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.CashierName}</span></div>
             <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{new Date(openSession.OpenedAt).toLocaleString("ar-SA")}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>التحصيلات:</span> <span className="font-bold">{formatYER(openSession.TotalCollections)}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.OpeningBalance)}</span></div>
           </div>
         </div>
       )}
@@ -1140,16 +1154,15 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
           columns={[
             { key: "CashierName", label: "الكاشر" },
             { key: "OpenedAt", label: "وقت الافتتاح", render: (r) => new Date(r.OpenedAt).toLocaleString("ar-SA") },
-            { key: "ClosedAt", label: "وقت الإقفال", render: (r) => r.ClosedAt ? new Date(r.ClosedAt).toLocaleString("ar-SA") : "—" },
-            { key: "TotalCollections", label: "التحصيلات", render: (r) => formatYER(r.TotalCollections) },
-            { key: "TotalExpenses", label: "المصروفات", render: (r) => formatYER(r.TotalExpenses) },
-            { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
-            { key: "CashShortage", label: "عجز/فائض نقدي", render: (r) => {
-              if (r.CashShortage == null && r.CashSurplus == null) return "—";
-              if (r.CashShortage && r.CashShortage > 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(r.CashShortage)}</span>;
-              if (r.CashSurplus && r.CashSurplus > 0) return <span style={{ color: tokens.successBorder, fontWeight: 700 }}>فائض {formatYER(r.CashSurplus)}</span>;
+            { key: "ClosingTime", label: "وقت الإقفال", render: (r) => r.ClosingTime ? new Date(r.ClosingTime).toLocaleString("ar-SA") : "—" },
+            { key: "OpeningBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.OpeningBalance) },
+            { key: "ShortageOrSurplus", label: "عجز/فائض", render: (r) => {
+              if (r.ShortageOrSurplus == null) return "—";
+              if (r.ShortageOrSurplus < 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(Math.abs(r.ShortageOrSurplus))}</span>;
+              if (r.ShortageOrSurplus > 0) return <span style={{ color: tokens.successBorder, fontWeight: 700 }}>فائض {formatYER(r.ShortageOrSurplus)}</span>;
               return <span style={{ color: tokens.successBorder }}>✓</span>;
             }},
+            { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (
               <div className="flex items-center gap-1">
                 {r.Status === "Open" && <button onClick={(e) => { e.stopPropagation(); openCloseSession(r); }} style={{ color: tokens.dangerBorder }} className="w-7 h-7 rounded-md flex items-center justify-center" title="إقفال"><Lock className="w-3.5 h-3.5" /></button>}
@@ -1260,8 +1273,8 @@ function TreasuriesTab() {
         api.get<{ data: Treasury[] }>("/api/treasuries"),
         api.get<{ data: VaultTransfer[] }>("/api/vault-transfers"),
       ]);
-      setTreasuries(tRes.data.data ?? tRes.data as unknown as Treasury[]);
-      setTransfers(trRes.data.data ?? trRes.data as unknown as VaultTransfer[]);
+      setTreasuries(tRes.data.data ?? []);
+      setTransfers(trRes.data.data ?? (Array.isArray(trRes.data) ? trRes.data as unknown as VaultTransfer[] : []));
     } catch { toast.error("فشل في تحميل بيانات الخزائن"); } finally { setLoading(false); }
   }, []);
 
@@ -1345,7 +1358,6 @@ function TreasuriesTab() {
                   <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{TREASURY_TYPES.find((x) => x.value === t.Type)?.label ?? t.Type}</span>
                 </div>
                 <p className="text-lg font-bold mb-1" style={{ color: tokens.successBorder }}>{formatYER(t.Balance)}</p>
-                <p className="text-[11px] mb-2" style={{ color: tokens.textTertiary }}>رصيد افتتاحي: {formatYER(t.OpeningBalance)}</p>
                 <button onClick={() => handleRecalculate(t.Id)} className="text-xs flex items-center gap-1" style={{ color: tokens.brand }}>
                   <Calculator className="w-3 h-3" /> إعادة حساب
                 </button>
@@ -1441,7 +1453,7 @@ function ExpensesTab() {
   const [eTitle, setETitle] = useState("");
   const [eCategory, setECategory] = useState("Other");
   const [eAmount, setEAmount] = useState("");
-  const [eMethod, setEMethod] = useState("Cash");
+  const [eMethod, setEMethod] = useState("cash");
   const [eDate, setEDate] = useState(new Date().toISOString().slice(0, 10));
 
   const fetchData = useCallback(async () => {
@@ -1467,7 +1479,7 @@ function ExpensesTab() {
       await api.post("/api/expenses", payload);
       toast.success("تم إنشاء المصروف بنجاح");
       setShowCreate(false);
-      setETitle(""); setECategory("Other"); setEAmount(""); setEMethod("Cash"); setEDate(new Date().toISOString().slice(0, 10));
+      setETitle(""); setECategory("Other"); setEAmount(""); setEMethod("cash"); setEDate(new Date().toISOString().slice(0, 10));
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إنشاء المصروف")); } finally { setSubmitting(false); }
   };
@@ -1573,7 +1585,7 @@ function SuppliersTab() {
 
   // Pay installment form
   const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("Cash");
+  const [payMethod, setPayMethod] = useState("cash");
 
   const fetchData = useCallback(async () => {
     try {
@@ -1582,8 +1594,8 @@ function SuppliersTab() {
         api.get<{ data: SupplierListItem[]; total: number }>("/api/suppliers"),
         api.get<{ data: SupplierBill[]; total: number }>("/api/supplier-bills"),
       ]);
-      setSuppliers(sRes.data.data ?? sRes.data as unknown as SupplierListItem[]);
-      setBills(bRes.data.data ?? bRes.data as unknown as SupplierBill[]);
+      setSuppliers(sRes.data.data ?? (Array.isArray(sRes.data) ? sRes.data as unknown as SupplierListItem[] : []));
+      setBills(bRes.data.data ?? (Array.isArray(bRes.data) ? bRes.data as unknown as SupplierBill[] : []));
     } catch { toast.error("فشل في تحميل بيانات الموردين"); } finally { setLoading(false); }
   }, []);
 
@@ -1628,7 +1640,7 @@ function SuppliersTab() {
       await api.post(`/api/supplier-bills/${showPayBill.Id}/pay`, payload);
       toast.success("تم سداد القسط بنجاح");
       setShowPayBill(null);
-      setPayAmount(""); setPayMethod("Cash");
+      setPayAmount(""); setPayMethod("cash");
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في سداد القسط")); } finally { setSubmitting(false); }
   };

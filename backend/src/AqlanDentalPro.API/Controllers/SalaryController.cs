@@ -512,7 +512,13 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
             salary.PaymentMethod = null;
 
             var employee = await db.Employees.FindAsync(salary.EmployeeId);
-            var branchId = employee?.BranchId ?? Guid.Empty;
+            // Blocker 6: Use original CashFlow's BranchId, NOT current employee branch
+            var branchId = originalCashflow.BranchId;
+            if (branchId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس الراتب — الفرع الأصلي غير محدد في السجل المالي. تواصل مع المحاسب." });
+            }
             var treasuryId = originalCashflow.TreasuryId;
 
             // Dual-write: CashFlow reversal

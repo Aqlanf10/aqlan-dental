@@ -65,7 +65,7 @@ export interface InvoiceListItem {
   Balance: number;
   Status: string;
   IssueDate: string;
-  DueDate: string | null;
+  CreatedAt: string;
 }
 
 export interface InvoiceLineItem {
@@ -144,29 +144,23 @@ export interface ContractListItem {
 /* ── Cashier Sessions ───────────────────────────────────────────────────────────── */
 export interface CashierSession {
   Id: string;
-  CashierUserId: string;
+  CashierUserId?: string;
+  CashierId?: string;
   CashierName: string;
   BranchId: string;
   OpenedAt: string;
-  ClosedAt: string | null;
-  OpeningCash: number;
-  OpeningCard: number;
-  OpeningBank: number;
+  ClosingTime: string | null;
+  OpeningBalance: number;
   ExpectedClosingCash: number;
   ExpectedClosingCard: number;
   ExpectedClosingBank: number;
   ActualClosingCash: number | null;
   ActualClosingCard: number | null;
   ActualClosingBank: number | null;
-  CashShortage: number | null;
-  CashSurplus: number | null;
-  CardShortage: number | null;
-  CardSurplus: number | null;
-  BankShortage: number | null;
-  BankSurplus: number | null;
+  ShortageOrSurplus: number | null;
   Status: string;
-  TotalCollections: number;
-  TotalExpenses: number;
+  Notes: string | null;
+  TreasuryId: string | null;
 }
 
 export interface CloseSessionRequest {
@@ -180,11 +174,9 @@ export interface Treasury {
   Id: string;
   Name: string;
   Type: string;
+  TypeArabic?: string;
   Balance: number;
-  OpeningBalance: number;
   BranchId: string;
-  BranchName: string;
-  IsActive: boolean;
 }
 
 export interface CreateTreasuryRequest {
@@ -372,9 +364,9 @@ export const DEPOSIT_SOURCES = [
 
 /* ── Payment methods ────────────────────────────────────────────────────────────── */
 export const PAYMENT_METHODS = [
-  { value: "Cash", label: "نقدي" },
-  { value: "Card", label: "بطاقة" },
-  { value: "BankTransfer", label: "تحويل بنكي" },
+  { value: "cash", label: "نقدي" },
+  { value: "card", label: "بطاقة" },
+  { value: "bank_transfer", label: "تحويل بنكي" },
 ] as const;
 
 /* ── Treasury types ─────────────────────────────────────────────────────────────── */

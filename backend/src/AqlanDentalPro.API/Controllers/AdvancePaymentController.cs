@@ -134,53 +134,95 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> Approve(Guid id, [FromBody] ApproveAdvanceRequest req)
     {
-        var advance = await db.AdvancePayments.FindAsync(id);
-        if (advance is null)
-            return NotFound(new { message = "طلب السلفة غير موجود" });
-
-        if (advance.Status != RequestStatus.Pending)
-            return BadRequest(new { message = "تم معالجة هذا الطلب مسبقاً" });
-
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userIdGuid = Guid.TryParse(userId, out var uidParsed) ? uidParsed : Guid.Empty;
 
-        if (req.Approve)
+        // Rejection path — state-only, no transaction needed
+        if (!req.Approve)
         {
+            var advance = await db.AdvancePayments.FindAsync(id);
+            if (advance is null)
+                return NotFound(new { message = "طلب السلفة غير موجود" });
+            if (advance.Status != RequestStatus.Pending)
+                return BadRequest(new { message = "تم معالجة هذا الطلب مسبقاً" });
+
+            advance.Status = RequestStatus.Rejected;
+            advance.RejectionReason = req.RejectionReason?.Trim();
+            advance.ApprovedBy = userIdGuid == Guid.Empty ? null : userIdGuid;
+            advance.ApprovedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            await audit.LogAsync(AuditAction.Update, "AdvancePayment", id, details: "Advance rejected");
+            return Ok(new { message = "تم رفض السلفة", Status = advance.Status.ToString() });
+        }
+
+        // ── Approval path — fully atomic ──────────────────────────────
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Pessimistic lock for concurrency safety
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""AdvancePayments"" WHERE ""Id"" = {0} FOR UPDATE", id);
+            }
+
+            var advance = await db.AdvancePayments.FindAsync(id);
+            if (advance is null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "طلب السلفة غير موجود" });
+            }
+
+            // Re-check Pending status INSIDE the transaction (concurrency guard)
+            if (advance.Status != RequestStatus.Pending)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "تم معالجة هذا الطلب مسبقاً" });
+            }
+
             var employee = await db.Employees.FindAsync(advance.EmployeeId);
             if (employee is null)
             {
+                await tx.RollbackAsync();
                 return BadRequest(new { message = "الموظف غير موجود" });
             }
 
             var branchId = employee.BranchId ?? Guid.Empty;
             if (branchId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
                 return BadRequest(new { message = "عذراً، لا يمكن الموافقة على السلفة — الفرع غير محدد للموظف. تواصل مع الإدارة." });
-
-            var userIdGuid = Guid.TryParse(userId, out var uid2) ? uid2 : Guid.Empty;
+            }
 
             // Resolve payment method and cashier session
             var paymentMethod = "cash"; // Advances are typically cash
             CashierSession? activeSession = await db.CashierSessions
                 .FirstOrDefaultAsync(s => s.CashierId == userIdGuid && s.Status == SessionStatus.Open && s.IsActive);
             if (activeSession == null)
+            {
+                await tx.RollbackAsync();
                 return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل الموافقة على السلف النقدية." });
+            }
 
             // Resolve treasury via TreasuryResolutionService
             Treasury treasury;
             try
             {
-                treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, activeSession?.Id);
+                treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, paymentMethod, activeSession.Id);
             }
             catch (ArgumentException ex)
             {
+                await tx.RollbackAsync();
                 return BadRequest(new { message = ex.Message });
             }
 
+            // 1. Update advance status
             advance.Status = RequestStatus.Approved;
-            advance.ApprovedBy = Guid.TryParse(userId, out var uid) ? uid : null;
+            advance.ApprovedBy = userIdGuid == Guid.Empty ? null : userIdGuid;
             advance.ApprovedAt = DateTime.UtcNow;
 
-            // Phase 0B: Create CashFlowTransaction (Outflow) for the advance payment
-            // WITH TreasuryId for proper dual-write
+            // 2. Create CashFlowTransaction (Outflow) for the advance payment
             var cashflow = new CashFlowTransaction
             {
                 TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-ADV-{advance.Id.ToString()[..8]}",
@@ -195,19 +237,19 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
                 PerformedBy = userIdGuid,
                 BranchId = branchId,
                 TreasuryId = treasury.Id,
-                CashierSessionId = activeSession?.Id
+                CashierSessionId = activeSession.Id
             };
             db.CashFlowTransactions.Add(cashflow);
 
-            // Blocker 3: Create JournalEntry: Debit OtherReceivable/SalaryAdvance, Credit Treasury
+            // 3. Create JournalEntry: Debit OtherReceivable, Credit Treasury
             var je = await journalEntryService.CreateEntryAsync(
                 documentType: FinancialDocumentType.AdvancePayment,
                 financialDocumentId: advance.Id,
                 description: $"سلفة موظف: {employee.FullName}",
                 entryDate: DateOnly.FromDateTime(DateTime.Today),
                 branchId: branchId,
-                performedBy: userIdGuid == Guid.Empty ? Guid.Empty : userIdGuid,
-                cashierSessionId: activeSession?.Id,
+                performedBy: userIdGuid,
+                cashierSessionId: activeSession.Id,
                 treasuryId: treasury.Id,
                 lines: new[]
                 {
@@ -217,30 +259,26 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
             je.IsPosted = true;
             je.PostedAt = DateTime.UtcNow;
 
-            // Atomically decrement Treasury.Balance
-            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, advance.Amount, activeSession?.Id);
-        }
-        else
-        {
-            advance.Status = RequestStatus.Rejected;
-            advance.RejectionReason = req.RejectionReason?.Trim();
-            advance.ApprovedBy = Guid.TryParse(userId, out var uid) ? uid : null;
-            advance.ApprovedAt = DateTime.UtcNow;
-        }
+            // 4. Atomically decrement Treasury.Balance
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, paymentMethod, advance.Amount, activeSession.Id);
 
-        await db.SaveChangesAsync();
+            // 5. Save all changes atomically
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
 
-        // H3: Audit logging for advance payment approval/rejection
-        if (req.Approve)
             await audit.LogAsync(AuditAction.Approve, "AdvancePayment", id);
-        else
-            await audit.LogAsync(AuditAction.Update, "AdvancePayment", id, details: "Advance rejected");
 
-        return Ok(new
+            return Ok(new
+            {
+                message = "تم الموافقة على السلفة",
+                Status = advance.Status.ToString(),
+            });
+        }
+        catch
         {
-            message = req.Approve ? "تم الموافقة على السلفة" : "تم رفض السلفة",
-            Status = advance.Status.ToString(),
-        });
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     /// <summary>
@@ -346,7 +384,13 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
             advance.IsDeducted = false;
 
             var employee = await db.Employees.FindAsync(advance.EmployeeId);
-            var branchId = employee?.BranchId ?? Guid.Empty;
+            // Blocker 6: Use original CashFlow's BranchId, NOT current employee branch
+            var branchId = originalCashflow.BranchId;
+            if (branchId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس السلفة — الفرع الأصلي غير محدد في السجل المالي. تواصل مع المحاسب." });
+            }
             var treasuryId = originalCashflow.TreasuryId;
 
             // Dual-write: CashFlow reversal

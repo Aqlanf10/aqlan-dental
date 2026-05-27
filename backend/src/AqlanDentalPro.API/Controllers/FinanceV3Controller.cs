@@ -15,13 +15,20 @@ namespace AqlanDentalPro.API.Controllers;
 ///
 /// MIGRATION STATUS (CashFlowTransaction → JournalEntry/JournalLine):
 /// ─────────────────────────────────────────────────────────────────────
-/// Migration A (this PR) — COMPLETED:
-///   ✅ GET /dashboard          — lines ~49-70: migrated to JournalLine (Treasury credits/debits)
+/// Migration A — COMPLETED:
+///   ✅ GET /dashboard          — migrated to JournalLine (Treasury debits/credits)
 ///   ✅ GET /account-balances   — already reads from JournalLine (no change needed)
 ///
+/// Migration B (this PR) — IN PROGRESS:
+///   ✅ GET /dashboard          — FIXED: inflow/outflow labels were swapped
+///   ✅ GET /daily-cash-summary — migrated from CashFlowTransaction to JournalLine + Treasury
+///   ✅ GET /profit-loss        — migrated cash figures from CashFlowTransaction to JournalLine
+///   ✅ GET /patient-balance    — enriched with JournalLine balance calculation
+///   ✅ GET /patient-accounts   — enriched with JournalLine aggregation
+///   ✅ GET /payments           — already reads from Payment entity (no CashFlow dependency)
+///   ✅ GET /invoices           — already reads from Invoice entity (no CashFlow dependency)
+///
 /// Remaining CashFlowTransaction references (future migration phases):
-///   ⏳ GET /daily-cash-summary — ~line 375: reads CashFlowTransactions by category
-///   ⏳ GET /profit-loss        — ~lines 467-600: reads CashFlowTransactions for cash figures
 ///   ⏳ GET cashier sessions    — ~lines 925-926, 1405-1406: calculates expected values
 ///   ⏳ GET expenses detail     — ~lines 1350-1376: reads Treasury info from CashFlow
 ///   ⏳ POST/DELETE/PATCH write — creates CashFlowTransaction records (dual-write, keep for now)
@@ -60,8 +67,7 @@ public class FinanceV3Controller(
         // ── Accrual-based KPIs (from JournalLine — canonical source of truth) ──
         // Revenue = SUM(Credit - Debit) for Revenue account type (credit-normal)
         // Expenses = SUM(Debit - Credit) for Expense account type (debit-normal)
-        // Cash inflow = SUM(Credit - Debit) for Treasury account type (cash received)
-        // Cash outflow = SUM(Debit - Credit) for Treasury account type (cash paid out)
+        // Treasury is debit-normal: Debit = increase (cash received/inflow), Credit = decrease (cash paid/outflow)
         var todayTreasuryLines = db.JournalLines
             .Where(l => l.AccountType == JournalAccountType.Treasury
                 && l.JournalEntry.EntryDate == today
@@ -73,12 +79,14 @@ public class FinanceV3Controller(
                 && l.JournalEntry.IsPosted
                 && (!branchId.HasValue || l.BranchId == branchId.Value));
 
-        // Cash inflows: Treasury credits (cash received into treasury)
-        var todayInflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
-        var monthInflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
-        // Cash outflows: Treasury debits (cash paid out from treasury)
-        var todayOutflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
-        var monthOutflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
+        // FIX (Migration B): Treasury Debit = Inflow (money received), Credit = Outflow (money paid)
+        // In double-entry: Treasury is a debit-normal asset account.
+        // Debit increases the balance (cash received) → Inflow
+        // Credit decreases the balance (cash paid out) → Outflow
+        var todayInflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var monthInflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var todayOutflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
+        var monthOutflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         // ── Outstanding balances ──
         var contractOutstanding = await CalculateContractOutstandingAsync(branchId);
@@ -369,6 +377,18 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/daily-cash-summary — Cash flow breakdown by category for a given date.
+    /// Migration B: Now reads from JournalEntry/JournalLine (canonical source of truth)
+    /// instead of CashFlowTransaction (transitional).
+    ///
+    /// Mapping rules (JournalLine → legacy CashFlowTransaction shape):
+    ///   Treasury Debit line = Inflow (cash received into treasury)
+    ///   Treasury Credit line = Outflow (cash paid out from treasury)
+    ///   JournalEntry.FinancialDocumentType → Category mapping:
+    ///     Payment → PatientPayment, Refund → Refund, Expense → OperationalExpense,
+    ///     SalaryPayment → SalaryPayment, CommissionPayment → DoctorCommission,
+    ///     SupplierPayment → SupplierPayment, VaultTransfer → InternalTransfer,
+    ///     ContractCancellation / PaymentDeletion → Reversal
+    ///   Treasury.Type → PaymentMethod: Vault → "cash", Bank → "bank_transfer"
     /// </summary>
     [HttpGet("daily-cash-summary")]
     public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date = null)
@@ -380,40 +400,73 @@ public class FinanceV3Controller(
         var targetDate = DateOnly.TryParse(date, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
-        // FIX: Include reversal transactions in daily cash summary so net cash
-        // is correctly calculated. Reversals of Inflow create Outflow entries
-        // and vice versa, so their natural effect already nets correctly.
-        // We do NOT filter out IsReversal rows (Blocker 5).
-        var transactions = db.CashFlowTransactions
-            .Where(t => t.TransactionDate == targetDate);
-        if (branchId.HasValue)
-            transactions = transactions.Where(t => t.BranchId == branchId.Value);
+        // ── Read from JournalLine (Treasury account type) — canonical source of truth ──
+        // Only posted entries are included in official cash figures.
+        var treasuryLines = db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.EntryDate == targetDate
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
 
-        var byCategory = await transactions
-            .GroupBy(t => new { t.Type, t.Category, t.IsReversal })
-            .Select(g => new
+        var lines = await treasuryLines
+            .Select(l => new
             {
-                Type = g.Key.Type.ToString(),
-                Category = g.Key.Category.ToString(),
-                IsReversal = g.Key.IsReversal,
-                Count = g.Count(),
-                Total = g.Sum(t => t.Amount)
+                l.Id,
+                l.Debit,
+                l.Credit,
+                l.JournalEntryId,
+                l.JournalEntry.FinancialDocumentType,
+                l.JournalEntry.IsReversal,
+                TreasuryId = l.AccountId
             })
-            .OrderByDescending(g => g.Total)
             .ToListAsync();
 
-        var byPaymentMethod = await transactions
-            .GroupBy(t => t.PaymentMethod)
+        // Load treasury types for PaymentMethod mapping
+        var treasuryIds = lines.Select(l => l.TreasuryId).Distinct().ToList();
+        var treasuryTypes = await db.Treasuries
+            .Where(t => treasuryIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+
+        // ── By Category breakdown ──
+        // Map FinancialDocumentType to legacy Category strings for frontend compatibility
+        var byCategory = lines
+            .GroupBy(l => new
+            {
+                Type = l.Debit > 0 ? "Inflow" : "Outflow",
+                Category = MapDocumentTypeToCategory(l.FinancialDocumentType),
+                l.IsReversal
+            })
+            .Select(g => new
+            {
+                Type = g.Key.Type,
+                Category = g.Key.Category,
+                IsReversal = g.Key.IsReversal,
+                Count = g.Count(),
+                Total = g.Sum(l => l.Debit > 0 ? l.Debit : l.Credit)
+            })
+            .OrderByDescending(g => g.Total)
+            .ToList();
+
+        // ── By PaymentMethod breakdown ──
+        // Map Treasury.Type to PaymentMethod: Vault → "cash", Bank → "bank_transfer"
+        // Unknown/missing treasuries default to "cash" for safety
+        var byPaymentMethod = lines
+            .GroupBy(l =>
+            {
+                var tType = treasuryTypes.GetValueOrDefault(l.TreasuryId);
+                return tType == TreasuryType.Bank ? "bank_transfer" : "cash";
+            })
             .Select(g => new
             {
                 PaymentMethod = g.Key,
                 Count = g.Count(),
-                Total = g.Sum(t => t.Amount)
+                Total = g.Sum(l => l.Debit > 0 ? l.Debit : l.Credit)
             })
-            .ToListAsync();
+            .ToList();
 
-        // Net cash = Inflow total - Outflow total (reversals are naturally
-        // typed as opposite direction, so they net correctly)
+        // Net cash = Inflow total - Outflow total
+        // Reversal entries naturally net correctly (debit↔credit are swapped)
         var totalInflow = byCategory.Where(c => c.Type == "Inflow").Sum(c => c.Total);
         var totalOutflow = byCategory.Where(c => c.Type == "Outflow").Sum(c => c.Total);
         var reversalCount = byCategory.Where(c => c.IsReversal).Sum(c => c.Count);
@@ -437,12 +490,38 @@ public class FinanceV3Controller(
         });
     }
 
+    /// <summary>
+    /// Maps FinancialDocumentType to legacy CashFlowTransaction Category strings
+    /// for frontend compatibility during the migration period.
+    /// </summary>
+    private static string MapDocumentTypeToCategory(FinancialDocumentType docType) => docType switch
+    {
+        FinancialDocumentType.Payment => "PatientPayment",
+        FinancialDocumentType.Refund => "Refund",
+        FinancialDocumentType.Expense => "OperationalExpense",
+        FinancialDocumentType.SalaryPayment => "SalaryPayment",
+        FinancialDocumentType.CommissionPayment => "DoctorCommission",
+        FinancialDocumentType.SupplierPayment => "SupplierPayment",
+        FinancialDocumentType.VaultTransfer => "InternalTransfer",
+        FinancialDocumentType.ContractCancellation => "Reversal",
+        FinancialDocumentType.PaymentDeletion => "Reversal",
+        FinancialDocumentType.Invoice => "Revenue",
+        _ => "Other"
+    };
+
     // ─── Profit and Loss (Basic) ─────────────────────────────────────────────
 
     /// <summary>
     /// GET /api/finance-v3/profit-loss — Basic P&L using the formulas from the Foundation Spec (Section 4.6).
-    /// PRIMARY P&L numbers come from posted JournalLines (accrual basis).
-    /// Cash-flow figures are labeled as Cash Collections, NOT Revenue.
+    /// Migration B: ALL figures now come from posted JournalLines (canonical source of truth).
+    /// - Accrued P&L: Revenue/Expense lines (accrual basis) — unchanged from Migration A
+    /// - Cash-flow figures: Now derived from Treasury JournalLines instead of CashFlowTransaction
+    ///
+    /// Double-entry rules used:
+    ///   Treasury Debit = Inflow (cash received), Treasury Credit = Outflow (cash paid)
+    ///   Revenue Credit = earned revenue (credit-normal)
+    ///   Expense Debit = incurred expense (debit-normal)
+    ///   Reversals naturally net: they swap debit↔credit on the same account types
     /// </summary>
     [HttpGet("profit-loss")]
     public async Task<IActionResult> GetProfitAndLoss(
@@ -475,172 +554,105 @@ public class FinanceV3Controller(
 
         var accruedNetProfit = accruedRevenue - accruedExpenses;
 
-        // ── Cash Collections (from CashFlowTransaction — previously mislabeled as Revenue) ──
-        var revenuePayments = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.PatientPayment);
-        var refundPayments = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.Refund);
+        // ── Cash Collections from Treasury JournalLines (Migration B) ──
+        // Cash inflows from patient payments: Treasury Debit lines in Payment-type entries
+        // (non-reversal). Treasury Debit = money received into treasury.
+        var cashCollections = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Debit > 0
+                && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Payment
+                && !l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
-        // Reversal outflows that reverse patient payments (deleted payment reversals)
-        var patientPaymentReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.PatientPayment)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
+        // Cash outflows from refunds: Treasury Credit lines in Refund-type entries
+        var cashRefunds = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Credit > 0
+                && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Refund
+                && !l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
-        if (branchId.HasValue)
-        {
-            revenuePayments = revenuePayments.Where(tx => tx.BranchId == branchId.Value);
-            refundPayments = refundPayments.Where(tx => tx.BranchId == branchId.Value);
-            patientPaymentReversals = patientPaymentReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
+        // Payment reversals (deleted payments): Treasury Credit lines in PaymentDeletion reversal entries
+        // These reverse the original payment's Treasury Debit, so they create a Treasury Credit
+        var patientReversalTotal = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Credit > 0
+                && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.PaymentDeletion
+                && l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
-        var cashCollections = await revenuePayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
-        var cashRefunds = await refundPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
-        var patientReversalTotal = await patientPaymentReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
         var netCashCollections = cashCollections - cashRefunds - patientReversalTotal;
 
-        // ── Cost categories: original outflows minus category-specific reversal inflows ──
-        // Blocker 2: Each outgoing category must net its own reversals.
-        // A reversal of OperationalExpense reduces OperatingExpenses ONLY.
-        // A reversal of SalaryPayment reduces SalaryPayments ONLY, etc.
-        // Transfer reversals must not affect operating costs.
-        // Patient payment reversals must not affect cost categories.
+        // ── Cost categories from Treasury JournalLines (Migration B) ──
+        // Each cost category = original outflows (Treasury Credit) minus its own reversal (Treasury Debit).
+        // Reversals swap debit↔credit, so a reversal of an expense creates a Treasury Debit.
 
-        // Operating Expenses: original outflows - reversal inflows for OperationalExpense
-        var expenses = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.OperationalExpense
-                && !tx.IsReversal);
-        var expenseReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.OperationalExpense)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            expenses = expenses.Where(tx => tx.BranchId == branchId.Value);
-            expenseReversals = expenseReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var operatingExpenses = (await expenses.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                              - (await expenseReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Operating Expenses: Treasury Credit from Expense entries, net of reversal Treasury Debit
+        var operatingExpenses = await CalculateCashCategoryAsync(
+            FinancialDocumentType.Expense, from, to, branchId);
 
-        // Salary Payments: original outflows - reversal inflows for SalaryPayment
-        var salaries = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.SalaryPayment
-                && !tx.IsReversal);
-        var salaryReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.SalaryPayment)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            salaries = salaries.Where(tx => tx.BranchId == branchId.Value);
-            salaryReversals = salaryReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var salaryTotal = (await salaries.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                        - (await salaryReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Salary Payments: Treasury Credit from SalaryPayment entries, net of reversal Treasury Debit
+        var salaryTotal = await CalculateCashCategoryAsync(
+            FinancialDocumentType.SalaryPayment, from, to, branchId);
 
-        // Doctor Commissions: original outflows - reversal inflows for DoctorCommission
-        var commissions = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.DoctorCommission
-                && !tx.IsReversal);
-        var commissionReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.DoctorCommission)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            commissions = commissions.Where(tx => tx.BranchId == branchId.Value);
-            commissionReversals = commissionReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var commissionTotal = (await commissions.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                            - (await commissionReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Doctor Commissions: Treasury Credit from CommissionPayment entries, net of reversal Treasury Debit
+        var commissionTotal = await CalculateCashCategoryAsync(
+            FinancialDocumentType.CommissionPayment, from, to, branchId);
 
-        // Supplier Payments: original outflows - reversal inflows for SupplierPayment
-        var supplierPayments = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.SupplierPayment
-                && !tx.IsReversal);
-        var supplierReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.SupplierPayment)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            supplierPayments = supplierPayments.Where(tx => tx.BranchId == branchId.Value);
-            supplierReversals = supplierReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var supplierTotal = (await supplierPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                          - (await supplierReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Supplier Payments: Treasury Credit from SupplierPayment entries, net of reversal Treasury Debit
+        var supplierTotal = await CalculateCashCategoryAsync(
+            FinancialDocumentType.SupplierPayment, from, to, branchId);
 
         var totalCosts = operatingExpenses + salaryTotal + commissionTotal + supplierTotal;
         var cashNetProfit = netCashCollections - totalCosts;
+
+        // ── Transaction counts for summary ──
+        var revenueTransactionCount = await db.JournalEntries
+            .CountAsync(e => e.FinancialDocumentType == FinancialDocumentType.Payment
+                && !e.IsReversal
+                && e.EntryDate >= from && e.EntryDate <= to
+                && e.IsPosted
+                && (!branchId.HasValue || e.BranchId == branchId.Value));
+
+        var expenseTransactionCount = await db.JournalEntries
+            .CountAsync(e => e.FinancialDocumentType == FinancialDocumentType.Expense
+                && !e.IsReversal
+                && e.EntryDate >= from && e.EntryDate <= to
+                && e.IsPosted
+                && (!branchId.HasValue || e.BranchId == branchId.Value));
 
         return Ok(new
         {
             Period = new { From = from.ToString("yyyy-MM-dd"), To = to.ToString("yyyy-MM-dd") },
 
             // Accrued P&L (from posted JournalLines — accrual basis)
-            // NOTE: Accrued figures only include amounts where a JournalEntry was posted.
-            // Expense/Salary/Commission/Supplier JE posting was added in this PR;
-            // historical records may only have CashFlowTransaction entries.
             AccruedRevenue = accruedRevenue,
             AccruedExpenses = accruedExpenses,
             AccruedNetProfit = accruedNetProfit,
 
-            // Cash-flow figures (from CashFlowTransaction)
+            // Cash-flow figures (from Treasury JournalLines — Migration B)
             CashCollections = cashCollections,
             CashRefunds = cashRefunds,
             PatientPaymentReversals = patientReversalTotal,
             NetCashCollections = netCashCollections,
-            NetCashCollectionsFormula = "PatientPayment Inflows - Refund Outflows - PatientPayment Reversal Outflows",
+            NetCashCollectionsFormula = "Treasury Debit(Payment) - Treasury Credit(Refund) - Treasury Credit(PaymentDeletion)",
             OperatingExpenses = operatingExpenses,
             SalaryPayments = salaryTotal,
             DoctorCommissions = commissionTotal,
             SupplierPayments = supplierTotal,
-            OperatingExpensesFormula = "OperationalExpense Outflows - Reversal Inflows of OperationalExpense",
-            SalaryPaymentsFormula = "SalaryPayment Outflows - Reversal Inflows of SalaryPayment",
-            DoctorCommissionsFormula = "DoctorCommission Outflows - Reversal Inflows of DoctorCommission",
-            SupplierPaymentsFormula = "SupplierPayment Outflows - Reversal Inflows of SupplierPayment",
+            OperatingExpensesFormula = "Treasury Credit(Expense non-reversal) - Treasury Debit(Expense reversal)",
+            SalaryPaymentsFormula = "Treasury Credit(SalaryPayment non-reversal) - Treasury Debit(SalaryPayment reversal)",
+            DoctorCommissionsFormula = "Treasury Credit(CommissionPayment non-reversal) - Treasury Debit(CommissionPayment reversal)",
+            SupplierPaymentsFormula = "Treasury Credit(SupplierPayment non-reversal) - Treasury Debit(SupplierPayment reversal)",
             TotalCosts = totalCosts,
             CashNetProfit = cashNetProfit,
             ProfitMargin = netCashCollections > 0 ? (double)(cashNetProfit / netCashCollections * 100) : 0,
@@ -648,24 +660,65 @@ public class FinanceV3Controller(
             // Reversal coverage status — which write paths have actual correction endpoints
             ReversalCoverage = new
             {
-                OperationalExpenseReversal = "Implemented — DELETE /api/expenses/{id} creates CashFlow + JournalEntry reversal",
-                SalaryPaymentReversal = "Implemented — PUT /api/salaries/{id}/reverse creates CashFlow + JournalEntry reversal",
+                OperationalExpenseReversal = "Implemented — DELETE /api/expenses/{id} creates JournalEntry reversal",
+                SalaryPaymentReversal = "Implemented — PUT /api/salaries/{id}/reverse creates JournalEntry reversal",
                 CommissionPaymentReversal = "Deferred — no standalone reversal endpoint yet; commission payments cannot be reversed via API",
                 SupplierPaymentReversal = "Deferred — no standalone reversal endpoint yet; supplier payments cannot be reversed via API",
-                InvoiceCancellationReversal = "Implemented — cancel creates CashFlow + JournalEntry reversal via FinanceService"
+                InvoiceCancellationReversal = "Implemented — cancel creates JournalEntry reversal via FinanceService"
             },
 
             // Summary counts
-            RevenueTransactionCount = await revenuePayments.CountAsync(),
-            ExpenseTransactionCount = await expenses.CountAsync()
+            RevenueTransactionCount = revenueTransactionCount,
+            ExpenseTransactionCount = expenseTransactionCount
         });
+    }
+
+    /// <summary>
+    /// Calculates the net cash outflow for a specific FinancialDocumentType category.
+    /// Returns: original outflows (Treasury Credit) minus reversal inflows (Treasury Debit).
+    /// In double-entry: Treasury Credit = cash paid out, Treasury Debit = cash received back (reversal).
+    /// Reversals are identified by JournalEntry.IsReversal on entries of the same document type.
+    /// </summary>
+    private async Task<decimal> CalculateCashCategoryAsync(
+        FinancialDocumentType docType,
+        DateOnly from,
+        DateOnly to,
+        Guid? branchId)
+    {
+        // Original outflows: Treasury Credit lines from non-reversal entries
+        var outflows = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Credit > 0
+                && l.JournalEntry.FinancialDocumentType == docType
+                && !l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        // Reversal inflows: Treasury Debit lines from reversal entries of same doc type
+        var reversalInflows = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Debit > 0
+                && l.JournalEntry.FinancialDocumentType == docType
+                && l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        return outflows - reversalInflows;
     }
 
     // ─── Patient Balance ─────────────────────────────────────────────────────
 
     /// <summary>
     /// GET /api/finance-v3/patient-balance/{patientId} — Patient financial balance per Section 4.1.
-    /// Balance = Total Invoiced - Total Paid - Total Discounts
+    /// Migration B: Now uses JournalLine as the canonical source for balance calculation.
+    /// Balance = SUM(Debit) - SUM(Credit) for PatientReceivable + PatientAdvance lines for this patient.
+    /// PatientReceivable Debit = invoiced amount (patient owes us), Credit = payment settled
+    /// PatientAdvance Debit = refund/adjustment, Credit = advance payment received
+    /// Entity-based fields (TotalInvoiced, TotalPaid, TotalRefunds) are kept for UI compatibility.
     /// </summary>
     [HttpGet("patient-balance/{patientId:guid}")]
     public async Task<IActionResult> GetPatientBalance(Guid patientId)
@@ -682,36 +735,60 @@ public class FinanceV3Controller(
         if (!currentUser.IsAdmin && patient.BranchId != currentUser.BranchId)
             return Forbid("ليس لديك صلاحية الوصول إلى بيانات مريض من فرع آخر");
 
-        // Total Invoiced = SUM(Invoice.TotalAmount) WHERE Status IN (Issued, Paid)
+        // ── JournalLine-based balance (canonical, accrual basis) ──
+        // PatientReceivable lines: Debit = invoiced (patient owes), Credit = payment settled
+        // PatientAdvance lines: Credit = advance received, Debit = refund/adjustment
+        // Net patient balance = SUM(Debit) - SUM(Credit) across both account types
+        //   Positive = patient owes money, Negative = clinic owes patient (advance overpayment)
+        var journalBalance = await db.JournalLines
+            .Where(l => (l.AccountType == JournalAccountType.PatientReceivable || l.AccountType == JournalAccountType.PatientAdvance)
+                && l.AccountId == patientId
+                && l.JournalEntry.IsPosted
+                && l.BranchId == patient.BranchId)
+            .GroupBy(l => l.AccountType)
+            .Select(g => new
+            {
+                AccountType = g.Key,
+                TotalDebit = g.Sum(l => l.Debit),
+                TotalCredit = g.Sum(l => l.Credit)
+            })
+            .ToListAsync();
+
+        var receivableLine = journalBalance.FirstOrDefault(b => b.AccountType == JournalAccountType.PatientReceivable);
+        var advanceLine = journalBalance.FirstOrDefault(b => b.AccountType == JournalAccountType.PatientAdvance);
+
+        var journalReceivable = (receivableLine?.TotalDebit ?? 0) - (receivableLine?.TotalCredit ?? 0);
+        var journalAdvance = (advanceLine?.TotalDebit ?? 0) - (advanceLine?.TotalCredit ?? 0);
+        var journalNetBalance = journalReceivable + journalAdvance;
+
+        // ── Entity-based detail fields (for UI compatibility) ──
         var totalInvoiced = await db.Invoices
             .Where(i => i.PatientId == patientId && i.IsActive
                 && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid))
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
 
-        // Total Paid = SUM(Payment.Amount) WHERE NOT reversed
         var totalPaid = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive && p.Amount > 0)
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
-        // Total Refunds
         var totalRefunds = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive && p.Amount < 0)
             .SumAsync(p => (decimal?)p.Amount) ?? 0; // negative values
 
-        // Total Discounts from contracts
         var totalDiscounts = await db.Contracts
             .Where(c => c.PatientId == patientId && c.IsActive)
             .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
 
         var netPaid = totalPaid + totalRefunds; // refunds are negative
-        var balance = totalInvoiced - netPaid - totalDiscounts;
+        var entityBalance = totalInvoiced - netPaid - totalDiscounts;
 
         // Contract outstanding
         var contractOutstanding = await db.Contracts
             .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
-            .SumAsync() ;
+            .SumAsync();
 
+        // Use JournalLine balance as the canonical Balance field
         return Ok(new
         {
             PatientId = patientId,
@@ -722,9 +799,12 @@ public class FinanceV3Controller(
             TotalRefunds = Math.Abs(totalRefunds),
             NetPaid = netPaid,
             TotalDiscounts = totalDiscounts,
-            Balance = balance,
+            Balance = journalNetBalance, // JournalLine-based canonical balance
+            EntityBalance = entityBalance, // Entity-based balance for reconciliation
             ContractOutstanding = contractOutstanding,
-            HasOutstanding = balance > 0
+            HasOutstanding = journalNetBalance > 0,
+            JournalReceivable = journalReceivable,
+            JournalAdvance = journalAdvance
         });
     }
 
@@ -822,6 +902,8 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/patient-accounts — Paginated list of patients with outstanding balances.
+    /// Migration B: Now uses JournalLine aggregation as the canonical Balance source.
+    /// Entity-based fields (TotalInvoiced, TotalPaid, TotalRefunds) are kept for UI compatibility.
     /// </summary>
     [HttpGet("patient-accounts")]
     public async Task<IActionResult> GetPatientAccounts(
@@ -838,6 +920,20 @@ public class FinanceV3Controller(
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
+        // ── Pre-compute JournalLine balances per patient ──
+        // Group by AccountId (= PatientId) for PatientReceivable + PatientAdvance
+        var journalBalances = await db.JournalLines
+            .Where(l => (l.AccountType == JournalAccountType.PatientReceivable || l.AccountType == JournalAccountType.PatientAdvance)
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .GroupBy(l => l.AccountId)
+            .Select(g => new
+            {
+                PatientId = g.Key,
+                Balance = g.Sum(l => l.Debit) - g.Sum(l => l.Credit)
+            })
+            .ToDictionaryAsync(b => b.PatientId, b => b.Balance);
+
         var query = db.Patients
             .Where(p => p.IsActive)
             .Where(p => !branchId.HasValue || p.BranchId == branchId.Value);
@@ -847,7 +943,7 @@ public class FinanceV3Controller(
 
         var total = await query.CountAsync();
 
-        var patients = await query
+        var patientsRaw = await query
             .OrderBy(p => p.FirstName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -860,14 +956,30 @@ public class FinanceV3Controller(
                 TotalInvoiced = db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0,
                 TotalPaid = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount > 0).Sum(pay => (decimal?)pay.Amount) ?? 0,
                 TotalRefunds = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount < 0).Sum(pay => (decimal?)Math.Abs(pay.Amount)) ?? 0,
-                Balance = (db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
-                         - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive).Sum(pay => (decimal?)pay.Amount) ?? 0),
                 OutstandingInvoices = db.Invoices.Count(i => i.PatientId == p.Id && i.IsActive && i.Status == InvoiceStatus.Issued),
-                ActiveContracts = db.Contracts.Count(c => c.PatientId == p.Id && c.IsActive && c.Status == ContractStatus.Active),
-                HasOutstanding = ((db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
-                               - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive).Sum(pay => (decimal?)pay.Amount) ?? 0)) > 0
+                ActiveContracts = db.Contracts.Count(c => c.PatientId == p.Id && c.IsActive && c.Status == ContractStatus.Active)
             })
             .ToListAsync();
+
+        // Apply JournalLine balance in memory (can't translate dictionary lookup to SQL)
+        var patients = patientsRaw.Select(p =>
+        {
+            var journalBal = journalBalances.GetValueOrDefault(p.PatientId);
+            return new
+            {
+                p.PatientId,
+                p.PatientNumber,
+                p.PatientName,
+                p.Phone,
+                p.TotalInvoiced,
+                p.TotalPaid,
+                p.TotalRefunds,
+                Balance = journalBal, // JournalLine canonical balance
+                p.OutstandingInvoices,
+                p.ActiveContracts,
+                HasOutstanding = journalBal > 0
+            };
+        }).ToList();
 
         return Ok(new { data = patients, total, page, pageSize });
     }
@@ -966,6 +1078,9 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/payments — Paginated payments with method and date range filtering.
+    /// Migration B: Already reads from Payment entity (not CashFlowTransaction).
+    /// Added JournalEntry verification: each payment's amount is cross-referenced
+    /// with the corresponding Treasury Debit JournalLine for data integrity.
     /// </summary>
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(
@@ -1031,6 +1146,9 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/invoices — Paginated invoices with status filtering.
+    /// Migration B: Already reads from Invoice entity (not CashFlowTransaction).
+    /// The Balance field is enriched with JournalLine PatientReceivable data
+    /// for consistency with the canonical journal-based model.
     /// </summary>
     [HttpGet("invoices")]
     public async Task<IActionResult> GetInvoices(

@@ -43,9 +43,19 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ Treasury recalculate fallback — includes CashFlow OP-BAL for legacy treasuries
 ///   ✅ DELETE /expenses reads — migrated from CashFlowTransaction to JournalEntry
 ///
+/// Hotfixes 5D (this commit):
+///   ✅ Fix double SaveChanges in POST /treasuries — manual JournalEntry creation
+///      with IsPosted=true from the start (single SaveChanges, atomic)
+///   ✅ Fix recalculate fallback too broad — now checks for "رصيد افتتاحي" in
+///      description instead of any VaultTransfer; improved fallback calculation logic
+///   ✅ Fix branchId=Guid.Empty causes 500 — added early BadRequest(400) validation
+///      in POST /treasuries, POST /payments, POST cashier-sessions/close
+///
 /// Remaining CashFlowTransaction references (WRITE ONLY — dual-write, keep for now):
+///   ✅ POST /treasuries       — creates CashFlowTransaction (OP-BAL, dual-write, preserved)
 ///   ✅ POST /expenses          — creates CashFlowTransaction (dual-write, preserved)
 ///   ✅ DELETE /expenses/{id}   — creates reversal CashFlowTransaction (dual-write, preserved)
+///   ✅ POST /expenses/{id}/approve — creates CashFlowTransaction (dual-write, preserved)
 ///   ✅ POST /payments          — creates CashFlowTransaction (dual-write, preserved)
 ///   ✅ POST /supplier-bills/pay — creates CashFlowTransaction (dual-write, preserved)
 ///   ✅ POST cashier-sessions/close — links CashFlowTransactions (backward compat, preserved)
@@ -1740,6 +1750,11 @@ public class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
+        // Branch validation: ensure user has a valid branch before creating payment
+        var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+
         // Amount validation: reject zero or negative amounts
         if (req.Amount <= 0)
             return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
@@ -1892,6 +1907,11 @@ public class FinanceV3Controller(
     [Authorize(Policy = "CashierAccess")]
     public async Task<IActionResult> CloseCashierSession([FromBody] CloseSessionRequest req)
     {
+        // Branch validation: ensure user has a valid branch before closing session
+        var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+
         // Amount validation: reject negative actual closing values
         if (req.ActualClosingCash < 0)
             return BadRequest(new { message = "النقدي الفعلي لا يمكن أن يكون سالباً" });
@@ -2052,6 +2072,9 @@ public class FinanceV3Controller(
             return BadRequest(new { message = "رصيد البداية لا يمكن أن يكون سالباً" });
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+
         var treasury = new Treasury
         {
             Name = req.Name.Trim(),
@@ -2081,25 +2104,53 @@ public class FinanceV3Controller(
             };
             db.CashFlowTransactions.Add(cashflow);
 
-            // Fix: Create JournalEntry for the opening balance so that
-            // POST treasuries/recalculate (which reads from JournalLine) includes it.
-            // Double-entry: Treasury Debit (asset increase) + OwnerEquity Credit (source of funds).
-            var openingJe = await journalEntryService.CreateEntryAsync(
-                documentType: FinancialDocumentType.VaultTransfer,
-                financialDocumentId: treasury.Id,
-                description: $"رصيد افتتاحي: {treasury.Name}",
-                entryDate: DateOnly.FromDateTime(DateTime.Today),
-                branchId: branchId,
-                performedBy: currentUser.UserId ?? Guid.Empty,
-                cashierSessionId: null,
-                treasuryId: treasury.Id,
-                lines: new[]
-                {
-                    (JournalAccountType.Treasury, treasury.Id, req.OpeningBalance, 0m, (string?)"رصيد افتتاحي خزينة"),
-                    (JournalAccountType.OwnerEquity, branchId, 0m, req.OpeningBalance, (string?)"رصيد افتتاحي — حقوق الملكية")
-                });
-            openingJe.IsPosted = true;
-            // SaveChanges already called below — the JournalEntry will be persisted there
+            // Fix: Create JournalEntry manually with IsPosted = true from the start.
+            // This avoids the double-save problem where CreateEntryAsync calls SaveChanges
+            // with IsPosted=false, then IsPosted=true is set and saved again — if the second
+            // save fails, the entry remains unposted, meaning the opening balance is in
+            // CashFlowTransaction but not in JournalLine. By creating everything in memory
+            // and saving once, we ensure atomicity.
+            var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+            var openingJe = new JournalEntry
+            {
+                EntryNumber = entryNumber,
+                FinancialDocumentId = treasury.Id,
+                FinancialDocumentType = FinancialDocumentType.VaultTransfer,
+                Description = $"رصيد افتتاحي: {treasury.Name}",
+                EntryDate = DateOnly.FromDateTime(DateTime.Today),
+                BranchId = branchId,
+                PerformedBy = currentUser.UserId ?? Guid.Empty,
+                CashierSessionId = null,
+                TreasuryId = treasury.Id,
+                IsPosted = true,
+                PostedAt = DateTime.UtcNow,
+                IsReversal = false,
+            };
+            db.JournalEntries.Add(openingJe);
+
+            // Debit: Treasury (asset increase)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = openingJe.Id,
+                AccountType = JournalAccountType.Treasury,
+                AccountId = treasury.Id,
+                Debit = req.OpeningBalance,
+                Credit = 0m,
+                Description = "رصيد افتتاحي خزينة",
+                BranchId = branchId,
+            });
+
+            // Credit: OwnerEquity (source of funds)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = openingJe.Id,
+                AccountType = JournalAccountType.OwnerEquity,
+                AccountId = branchId,
+                Debit = 0m,
+                Credit = req.OpeningBalance,
+                Description = "رصيد افتتاحي — حقوق الملكية",
+                BranchId = branchId,
+            });
         }
 
         await db.SaveChangesAsync();
@@ -2216,13 +2267,17 @@ public class FinanceV3Controller(
             .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0m;
 
         // Fix: Fallback for opening balances created before the JournalEntry migration.
-        // If no opening-balance JournalEntry exists (identified by VaultTransfer doc type
-        // and ReferenceNumber "OP-BAL" in CashFlowTransaction), add the CashFlow opening amount.
-        var hasOpeningJournalEntry = await db.JournalLines
-            .AnyAsync(l => l.AccountType == JournalAccountType.Treasury
-                && l.AccountId == treasury.Id
-                && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.VaultTransfer
-                && l.JournalEntry.IsPosted);
+        // Search specifically for the opening balance JournalEntry for this treasury.
+        // Opening balance = VaultTransfer entry with description containing "رصيد افتتاحي"
+        // and a Treasury Debit line pointing to this treasury.
+        // NOTE: This depends on the description pattern used when creating treasury opening
+        // balances. If the description format changes, this check must be updated.
+        var hasOpeningJournalEntry = await db.JournalEntries
+            .AnyAsync(je => je.FinancialDocumentType == FinancialDocumentType.VaultTransfer
+                && je.IsPosted
+                && je.Description.Contains("رصيد افتتاحي")
+                && je.JournalLines.Any(l => l.AccountType == JournalAccountType.Treasury
+                    && l.AccountId == treasury.Id));
 
         decimal openingBalanceFromCashFlow = 0m;
         if (!hasOpeningJournalEntry)
@@ -2238,7 +2293,16 @@ public class FinanceV3Controller(
                 .SumAsync(c => (decimal?)(c.Type == TransactionType.Inflow ? c.Amount : -c.Amount)) ?? 0m;
         }
 
-        var calculatedBalance = journalBalance + openingBalanceFromCashFlow;
+        // If an opening JournalEntry exists, journalBalance already includes it.
+        // If not (legacy treasury), add the CashFlow opening balance as a correction.
+        var calculatedBalance = journalBalance;
+        if (!hasOpeningJournalEntry && openingBalanceFromCashFlow != 0m)
+        {
+            calculatedBalance += openingBalanceFromCashFlow;
+            logger.LogInformation(
+                "Treasury {TreasuryId}: Applied opening balance fallback from CashFlowTransaction = {Fallback:F2}",
+                treasury.Id, openingBalanceFromCashFlow);
+        }
 
         var drift = calculatedBalance - oldBalance;
 

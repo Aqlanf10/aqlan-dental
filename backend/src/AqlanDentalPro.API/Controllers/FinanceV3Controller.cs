@@ -1450,6 +1450,38 @@ public class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
+        // Amount validation: reject zero or negative amounts
+        if (req.Amount <= 0)
+            return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
+
+        // Overpayment guard: reject payment exceeding outstanding balance
+        if (req.InvoiceId.HasValue)
+        {
+            var invoice = await db.Invoices
+                .Where(i => i.Id == req.InvoiceId.Value && i.IsActive)
+                .Select(i => new { i.TotalAmount, PaidAmount = i.Payments.Where(p => p.IsActive).Sum(p => p.Amount) })
+                .FirstOrDefaultAsync();
+            if (invoice != null)
+            {
+                var outstanding = invoice.TotalAmount - invoice.PaidAmount;
+                if (outstanding > 0 && req.Amount > outstanding)
+                    return BadRequest(new { message = $"المبلغ يتجاوز الرصيد المتبقي ({outstanding:N0} ر.ي)" });
+            }
+        }
+        else if (req.ContractId.HasValue)
+        {
+            var contract = await db.Contracts
+                .Where(c => c.Id == req.ContractId.Value && c.IsActive)
+                .Select(c => new { c.TotalAmount, c.DiscountAmount, PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount) })
+                .FirstOrDefaultAsync();
+            if (contract != null)
+            {
+                var outstanding = contract.TotalAmount - contract.DiscountAmount - contract.PaidAmount;
+                if (outstanding > 0 && req.Amount > outstanding)
+                    return BadRequest(new { message = $"المبلغ يتجاوز الرصيد المتبقي ({outstanding:N0} ر.ي)" });
+            }
+        }
+
         try
         {
             var result = await financeService.CreatePaymentAsync(req);
@@ -1568,6 +1600,14 @@ public class FinanceV3Controller(
     [Authorize(Policy = "CashierAccess")]
     public async Task<IActionResult> CloseCashierSession([FromBody] CloseSessionRequest req)
     {
+        // Amount validation: reject negative actual closing values
+        if (req.ActualClosingCash < 0)
+            return BadRequest(new { message = "النقدي الفعلي لا يمكن أن يكون سالباً" });
+        if (req.ActualClosingCard < 0)
+            return BadRequest(new { message = "البطاقة الفعلية لا يمكن أن تكون سالبة" });
+        if (req.ActualClosingBank < 0)
+            return BadRequest(new { message = "البنكي الفعلي لا يمكن أن يكون سالباً" });
+
         var userId = currentUser.UserId ?? Guid.Empty;
         var session = await db.CashierSessions
             .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);

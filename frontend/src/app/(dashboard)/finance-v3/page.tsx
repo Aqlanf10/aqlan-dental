@@ -955,7 +955,7 @@ function CollectionsTab() {
           {/* Amount */}
           <div>
             <label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label>
-            <input type="number" min="0" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="0" dir="ltr" style={inputStyle} />
+            <input type="number" min="0" max={maxAmount || undefined} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="0" dir="ltr" style={inputStyle} />
             {maxAmount > 0 && Number(payAmount) > maxAmount && (
               <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المستحق ({formatYER(maxAmount)})</p>
             )}
@@ -977,7 +977,7 @@ function CollectionsTab() {
 
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
             <button onClick={() => setShowRegister(false)} style={btnGhost}>إلغاء</button>
-            <button onClick={handleRegister} disabled={submitting} style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}>
+            <button onClick={handleRegister} disabled={submitting || (maxAmount > 0 && Number(payAmount) > maxAmount)} style={{ ...btnPrimary, opacity: submitting || (maxAmount > 0 && Number(payAmount) > maxAmount) ? 0.6 : 1 }}>
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {submitting ? "جارٍ الحفظ..." : "تسجيل الدفعة"}
             </button>
@@ -1413,7 +1413,7 @@ function TreasuriesTab() {
         <div className="space-y-4">
           <div><label style={labelStyle}>الخزينة المصدر <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={srcId} onChange={(e) => setSrcId(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{treasuries.map((t) => (<option key={t.Id} value={t.Id}>{t.Name} ({formatYER(t.Balance)})</option>))}</select></div>
           <div><label style={labelStyle}>الخزينة الوجهة <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={dstId} onChange={(e) => setDstId(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{treasuries.map((t) => (<option key={t.Id} value={t.Id}>{t.Name} ({formatYER(t.Balance)})</option>))}</select></div>
-          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" step="0.01" value={trAmount} onChange={(e) => setTrAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
+          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0.01" max={srcId ? treasuries.find((t) => t.Id === srcId)?.Balance : undefined} step="0.01" value={trAmount} onChange={(e) => setTrAmount(e.target.value)} dir="ltr" style={inputStyle} />{srcId && Number(trAmount) > (treasuries.find((t) => t.Id === srcId)?.Balance ?? 0) && (<p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز رصيد الخزينة المصدر</p>)}</div>
           {/* Deposit source for external transfers */}
           {(() => { const srcT = treasuries.find((t) => t.Id === srcId); return srcT?.Type === "External" || (srcId && !treasuries.find((t) => t.Id === srcId)); })() ? (
             <div><label style={labelStyle}>مصدر الإيداع</label><select value={trDepositSource} onChange={(e) => setTrDepositSource(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{DEPOSIT_SOURCES.map((d) => (<option key={d.value} value={d.value}>{d.label}</option>))}</select></div>
@@ -1421,7 +1421,7 @@ function TreasuriesTab() {
           <div><label style={labelStyle}>ملاحظات</label><input value={trNotes} onChange={(e) => setTrNotes(e.target.value)} placeholder="ملاحظات اختيارية..." style={inputStyle} /></div>
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
             <button onClick={() => setShowCreateTransfer(false)} style={btnGhost}>إلغاء</button>
-            <button onClick={handleCreateTransfer} disabled={submitting} style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}>{submitting ? "جارٍ الحفظ..." : "إنشاء تحويل"}</button>
+            <button onClick={handleCreateTransfer} disabled={submitting || (srcId ? Number(trAmount) > (treasuries.find((t) => t.Id === srcId)?.Balance ?? 0) : false)} style={{ ...btnPrimary, opacity: submitting || (srcId ? Number(trAmount) > (treasuries.find((t) => t.Id === srcId)?.Balance ?? 0) : false) ? 0.6 : 1 }}>{submitting ? "جارٍ الحفظ..." : "إنشاء تحويل"}</button>
           </div>
         </div>
       </Modal>
@@ -1543,7 +1543,7 @@ function ExpensesTab() {
         <div className="space-y-4">
           <div><label style={labelStyle}>العنوان <span style={{ color: tokens.dangerBorder }}>*</span></label><input value={eTitle} onChange={(e) => setETitle(e.target.value)} placeholder="وصف المصروف" style={inputStyle} /></div>
           <div><label style={labelStyle}>الفئة</label><select value={eCategory} onChange={(e) => setECategory(e.target.value)} style={inputStyle}>{EXPENSE_CATEGORIES.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}</select></div>
-          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" step="0.01" value={eAmount} onChange={(e) => setEAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
+          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0.01" step="0.01" value={eAmount} onChange={(e) => setEAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
           <div><label style={labelStyle}>طريقة الدفع</label><select value={eMethod} onChange={(e) => setEMethod(e.target.value)} style={inputStyle}>{PAYMENT_METHODS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}</select></div>
           <div><label style={labelStyle}>تاريخ المصروف</label><input type="date" value={eDate} onChange={(e) => setEDate(e.target.value)} style={inputStyle} /></div>
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
@@ -1698,7 +1698,7 @@ function SuppliersTab() {
         <div className="space-y-4">
           <div><label style={labelStyle}>المورد <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={bSupplier} onChange={(e) => setBSupplier(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{suppliers.map((s) => (<option key={s.Id} value={s.Id}>{s.Name}</option>))}</select></div>
           <div><label style={labelStyle}>الوصف <span style={{ color: tokens.dangerBorder }}>*</span></label><input value={bDesc} onChange={(e) => setBDesc(e.target.value)} placeholder="وصف الفاتورة" style={inputStyle} /></div>
-          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" step="0.01" value={bAmount} onChange={(e) => setBAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
+          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0.01" step="0.01" value={bAmount} onChange={(e) => setBAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
           <div><label style={labelStyle}>تاريخ الاستحقاق <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="date" value={bDueDate} onChange={(e) => setBDueDate(e.target.value)} style={inputStyle} /></div>
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
             <button onClick={() => setShowCreateBill(false)} style={btnGhost}>إلغاء</button>
@@ -1714,11 +1714,11 @@ function SuppliersTab() {
             <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
               <p className="text-xs" style={{ color: tokens.infoText }}>المتبقي: <strong>{formatYER(showPayBill.Balance)}</strong></p>
             </div>
-            <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" max={showPayBill.Balance} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
+            <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" max={showPayBill.Balance} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} dir="ltr" style={inputStyle} />{Number(payAmount) > showPayBill.Balance && (<p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المبلغ المتبقي ({formatYER(showPayBill.Balance)})</p>)}</div>
             <div><label style={labelStyle}>طريقة الدفع</label><select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} style={inputStyle}>{PAYMENT_METHODS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}</select></div>
             <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
               <button onClick={() => setShowPayBill(null)} style={btnGhost}>إلغاء</button>
-              <button onClick={handlePayBill} disabled={submitting} style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}>{submitting ? "جارٍ السداد..." : "سداد"}</button>
+              <button onClick={handlePayBill} disabled={submitting || Number(payAmount) > showPayBill.Balance} style={{ ...btnPrimary, opacity: submitting || Number(payAmount) > showPayBill.Balance ? 0.6 : 1 }}>{submitting ? "جارٍ السداد..." : "سداد"}</button>
             </div>
           </div>
         )}

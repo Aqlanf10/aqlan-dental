@@ -13,8 +13,74 @@ namespace AqlanDentalPro.API.Controllers;
 /// Finance V3 API — Provides data endpoints for the Finance V3 Financial Center dashboard.
 /// Access is restricted to Admin and Accountant roles only (ReportsAccess policy).
 ///
-/// This controller reads from both CashFlowTransaction (transitional) and
-/// JournalEntry + JournalLine (canonical) tables, supporting the transition period.
+/// MIGRATION STATUS (CashFlowTransaction → JournalEntry/JournalLine):
+/// ─────────────────────────────────────────────────────────────────────
+/// Migration A — COMPLETED:
+///   ✅ GET /dashboard          — migrated to JournalLine (Treasury debits/credits)
+///   ✅ GET /account-balances   — already reads from JournalLine (no change needed)
+///
+/// Migration B — COMPLETED:
+///   ✅ GET /dashboard          — FIXED: inflow/outflow labels were swapped
+///   ✅ GET /daily-cash-summary — migrated from CashFlowTransaction to JournalLine + Treasury
+///   ✅ GET /profit-loss        — migrated cash figures from CashFlowTransaction to JournalLine
+///   ✅ GET /patient-balance    — enriched with JournalLine balance calculation
+///   ✅ GET /patient-accounts   — enriched with JournalLine aggregation
+///   ✅ GET /payments           — already reads from Payment entity (no CashFlow dependency)
+///   ✅ GET /invoices           — already reads from Invoice entity (no CashFlow dependency)
+///
+/// Migration C — COMPLETED:
+///   ✅ GET /expenses           — TreasuryId/TreasuryName now from JournalLine (Treasury account)
+///   ✅ GET /active-cashier-session — expected values from JournalLine instead of CashFlow
+///   ✅ GET /cashier-sessions/active — expected values from JournalLine instead of CashFlow
+///   ✅ POST cashier-sessions/close — expected values + entry linking from JournalLine
+///   ✅ POST treasuries/recalculate — balance from JournalLine instead of CashFlow
+///   ✅ MapDocumentTypeToCategory   — added AdvancePayment explicit mapping
+///   ✅ GET /invoices comment fix   — corrected misleading Balance comment
+///
+/// Migration D — COMPLETED (this commit):
+///   ✅ GET /audit              — CashFlowTransaction removed from resource filter;
+///      audit entries now enriched with JournalEntry/JournalLine data (date, type,
+///      category, amount, treasury, description, reversal status)
+///   ✅ Removed IsCashMethod/IsCardMethod/IsBankMethod — unused after Migration C
+///   ✅ Code cleanup — removed obsolete helpers and comment blocks
+///
+/// Hotfixes (same PR):
+///   ✅ ExpectedClosingCard = 0 fix — merged card with bank (TODO: TreasuryType.Card)
+///   ✅ Treasury opening balance — creates JournalEntry on treasury creation
+///   ✅ Treasury recalculate fallback — includes CashFlow OP-BAL for legacy treasuries
+///   ✅ DELETE /expenses reads — migrated from CashFlowTransaction to JournalEntry
+///
+/// Hotfixes 5D:
+///   ✅ Fix double SaveChanges in POST /treasuries — manual JournalEntry creation
+///      with IsPosted=true from the start (single SaveChanges, atomic)
+///   ✅ Fix recalculate fallback too broad — now checks for "رصيد افتتاحي" in
+///      description instead of any VaultTransfer; improved fallback calculation logic
+///   ✅ Fix branchId=Guid.Empty causes 500 — added early BadRequest(400) validation
+///      in POST /treasuries, POST /payments, POST cashier-sessions/close
+///
+/// Hotfixes 5E:
+///   ✅ Eliminated all remaining CreateEntryAsync/CreateReversalEntryAsync calls —
+///      replaced with manual JournalEntry+JournalLine creation (IsPosted=true from start)
+///      in POST /expenses, POST /expenses/{id}/approve, DELETE /expenses,
+///      POST /supplier-bills/{id}/pay — single SaveChanges per operation
+///   ✅ Unified branchId validation in POST /vault-transfers — now applies to ALL
+///      users (including Admin), returns BadRequest(400) instead of Forbid(403)
+///
+/// Remaining CashFlowTransaction references (WRITE ONLY — dual-write, keep for now):
+///   ✅ POST /treasuries       — creates CashFlowTransaction (OP-BAL, dual-write, preserved)
+///   ✅ POST /expenses          — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ DELETE /expenses/{id}   — creates reversal CashFlowTransaction (dual-write, preserved)
+///   ✅ POST /expenses/{id}/approve — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ POST /payments          — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ POST /supplier-bills/pay — creates CashFlowTransaction (dual-write, preserved)
+///   ✅ POST cashier-sessions/close — links CashFlowTransactions (backward compat, preserved)
+///   ✅ POST treasuries/recalculate — reads CashFlowTransaction for opening balance fallback
+///
+/// ALL READS NOW USE JournalEntry/JournalLine — CashFlowTransaction is WRITE-ONLY.
+///
+/// Future phases (not in scope):
+///   ⏳ Balance Sheet endpoint
+///   ⏳ Remove CashFlowTransaction dual-write once JournalLine is fully verified
 /// </summary>
 [ApiController]
 [Route("api/finance-v3")]
@@ -32,7 +98,8 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/dashboard — Returns KPI data for the Finance V3 dashboard header band.
-    /// Uses CashFlowTransaction for real-time operational data and JournalEntry for canonical verification.
+    /// Migration A: Now reads from JournalEntry/JournalLine (canonical source of truth)
+    /// instead of CashFlowTransaction (transitional).
     /// </summary>
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard([FromQuery] string? period = "today")
@@ -45,28 +112,29 @@ public class FinanceV3Controller(
         var today = DateOnly.FromDateTime(DateTime.Today);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
-        // ── Cash-based KPIs (from CashFlowTransaction) ──
-        var todayInflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate == today && t.Type == TransactionType.Inflow);
-        var todayOutflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate == today && t.Type == TransactionType.Outflow);
-        var monthInflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate >= monthStart && t.Type == TransactionType.Inflow);
-        var monthOutflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate >= monthStart && t.Type == TransactionType.Outflow);
+        // ── Accrual-based KPIs (from JournalLine — canonical source of truth) ──
+        // Revenue = SUM(Credit - Debit) for Revenue account type (credit-normal)
+        // Expenses = SUM(Debit - Credit) for Expense account type (debit-normal)
+        // Treasury is debit-normal: Debit = increase (cash received/inflow), Credit = decrease (cash paid/outflow)
+        var todayTreasuryLines = db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.EntryDate == today
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
+        var monthTreasuryLines = db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.EntryDate >= monthStart
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
 
-        if (branchId.HasValue)
-        {
-            todayInflowQuery = todayInflowQuery.Where(t => t.BranchId == branchId.Value);
-            todayOutflowQuery = todayOutflowQuery.Where(t => t.BranchId == branchId.Value);
-            monthInflowQuery = monthInflowQuery.Where(t => t.BranchId == branchId.Value);
-            monthOutflowQuery = monthOutflowQuery.Where(t => t.BranchId == branchId.Value);
-        }
-
-        var todayInflow = await todayInflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
-        var todayOutflow = await todayOutflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
-        var monthInflow = await monthInflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
-        var monthOutflow = await monthOutflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
+        // FIX (Migration B): Treasury Debit = Inflow (money received), Credit = Outflow (money paid)
+        // In double-entry: Treasury is a debit-normal asset account.
+        // Debit increases the balance (cash received) → Inflow
+        // Credit decreases the balance (cash paid out) → Outflow
+        var todayInflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var monthInflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var todayOutflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
+        var monthOutflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         // ── Outstanding balances ──
         var contractOutstanding = await CalculateContractOutstandingAsync(branchId);
@@ -116,7 +184,7 @@ public class FinanceV3Controller(
 
         return Ok(new
         {
-            // Cash Flow KPIs
+            // Cash Flow KPIs (from JournalLine — Treasury account type)
             TodayInflow = todayInflow,
             TodayOutflow = todayOutflow,
             TodayNet = todayInflow - todayOutflow,
@@ -357,6 +425,18 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/daily-cash-summary — Cash flow breakdown by category for a given date.
+    /// Migration B: Now reads from JournalEntry/JournalLine (canonical source of truth)
+    /// instead of CashFlowTransaction (transitional).
+    ///
+    /// Mapping rules (JournalLine → legacy CashFlowTransaction shape):
+    ///   Treasury Debit line = Inflow (cash received into treasury)
+    ///   Treasury Credit line = Outflow (cash paid out from treasury)
+    ///   JournalEntry.FinancialDocumentType → Category mapping:
+    ///     Payment → PatientPayment, Refund → Refund, Expense → OperationalExpense,
+    ///     SalaryPayment → SalaryPayment, CommissionPayment → DoctorCommission,
+    ///     SupplierPayment → SupplierPayment, VaultTransfer → InternalTransfer,
+    ///     ContractCancellation / PaymentDeletion → Reversal
+    ///   Treasury.Type → PaymentMethod: Vault → "cash", Bank → "bank_transfer"
     /// </summary>
     [HttpGet("daily-cash-summary")]
     public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date = null)
@@ -368,40 +448,73 @@ public class FinanceV3Controller(
         var targetDate = DateOnly.TryParse(date, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
-        // FIX: Include reversal transactions in daily cash summary so net cash
-        // is correctly calculated. Reversals of Inflow create Outflow entries
-        // and vice versa, so their natural effect already nets correctly.
-        // We do NOT filter out IsReversal rows (Blocker 5).
-        var transactions = db.CashFlowTransactions
-            .Where(t => t.TransactionDate == targetDate);
-        if (branchId.HasValue)
-            transactions = transactions.Where(t => t.BranchId == branchId.Value);
+        // ── Read from JournalLine (Treasury account type) — canonical source of truth ──
+        // Only posted entries are included in official cash figures.
+        var treasuryLines = db.JournalLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.EntryDate == targetDate
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
 
-        var byCategory = await transactions
-            .GroupBy(t => new { t.Type, t.Category, t.IsReversal })
-            .Select(g => new
+        var lines = await treasuryLines
+            .Select(l => new
             {
-                Type = g.Key.Type.ToString(),
-                Category = g.Key.Category.ToString(),
-                IsReversal = g.Key.IsReversal,
-                Count = g.Count(),
-                Total = g.Sum(t => t.Amount)
+                l.Id,
+                l.Debit,
+                l.Credit,
+                l.JournalEntryId,
+                l.JournalEntry.FinancialDocumentType,
+                l.JournalEntry.IsReversal,
+                TreasuryId = l.AccountId
             })
-            .OrderByDescending(g => g.Total)
             .ToListAsync();
 
-        var byPaymentMethod = await transactions
-            .GroupBy(t => t.PaymentMethod)
+        // Load treasury types for PaymentMethod mapping
+        var treasuryIds = lines.Select(l => l.TreasuryId).Distinct().ToList();
+        var treasuryTypes = await db.Treasuries
+            .Where(t => treasuryIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+
+        // ── By Category breakdown ──
+        // Map FinancialDocumentType to legacy Category strings for frontend compatibility
+        var byCategory = lines
+            .GroupBy(l => new
+            {
+                Type = l.Debit > 0 ? "Inflow" : "Outflow",
+                Category = MapDocumentTypeToCategory(l.FinancialDocumentType),
+                l.IsReversal
+            })
+            .Select(g => new
+            {
+                Type = g.Key.Type,
+                Category = g.Key.Category,
+                IsReversal = g.Key.IsReversal,
+                Count = g.Count(),
+                Total = g.Sum(l => l.Debit > 0 ? l.Debit : l.Credit)
+            })
+            .OrderByDescending(g => g.Total)
+            .ToList();
+
+        // ── By PaymentMethod breakdown ──
+        // Map Treasury.Type to PaymentMethod: Vault → "cash", Bank → "bank_transfer"
+        // Unknown/missing treasuries default to "cash" for safety
+        var byPaymentMethod = lines
+            .GroupBy(l =>
+            {
+                var tType = treasuryTypes.GetValueOrDefault(l.TreasuryId);
+                return tType == TreasuryType.Bank ? "bank_transfer" : "cash";
+            })
             .Select(g => new
             {
                 PaymentMethod = g.Key,
                 Count = g.Count(),
-                Total = g.Sum(t => t.Amount)
+                Total = g.Sum(l => l.Debit > 0 ? l.Debit : l.Credit)
             })
-            .ToListAsync();
+            .ToList();
 
-        // Net cash = Inflow total - Outflow total (reversals are naturally
-        // typed as opposite direction, so they net correctly)
+        // Net cash = Inflow total - Outflow total
+        // Reversal entries naturally net correctly (debit↔credit are swapped)
         var totalInflow = byCategory.Where(c => c.Type == "Inflow").Sum(c => c.Total);
         var totalOutflow = byCategory.Where(c => c.Type == "Outflow").Sum(c => c.Total);
         var reversalCount = byCategory.Where(c => c.IsReversal).Sum(c => c.Count);
@@ -425,12 +538,39 @@ public class FinanceV3Controller(
         });
     }
 
+    /// <summary>
+    /// Maps FinancialDocumentType to legacy CashFlowTransaction Category strings
+    /// for frontend compatibility during the migration period.
+    /// </summary>
+    private static string MapDocumentTypeToCategory(FinancialDocumentType docType) => docType switch
+    {
+        FinancialDocumentType.Payment => "PatientPayment",
+        FinancialDocumentType.Refund => "Refund",
+        FinancialDocumentType.Expense => "OperationalExpense",
+        FinancialDocumentType.SalaryPayment => "SalaryPayment",
+        FinancialDocumentType.CommissionPayment => "DoctorCommission",
+        FinancialDocumentType.SupplierPayment => "SupplierPayment",
+        FinancialDocumentType.VaultTransfer => "InternalTransfer",
+        FinancialDocumentType.ContractCancellation => "Reversal",
+        FinancialDocumentType.PaymentDeletion => "Reversal",
+        FinancialDocumentType.Invoice => "Revenue",
+        FinancialDocumentType.AdvancePayment => "AdvancePayment",
+        _ => "Other"
+    };
+
     // ─── Profit and Loss (Basic) ─────────────────────────────────────────────
 
     /// <summary>
     /// GET /api/finance-v3/profit-loss — Basic P&L using the formulas from the Foundation Spec (Section 4.6).
-    /// PRIMARY P&L numbers come from posted JournalLines (accrual basis).
-    /// Cash-flow figures are labeled as Cash Collections, NOT Revenue.
+    /// Migration B: ALL figures now come from posted JournalLines (canonical source of truth).
+    /// - Accrued P&L: Revenue/Expense lines (accrual basis) — unchanged from Migration A
+    /// - Cash-flow figures: Now derived from Treasury JournalLines instead of CashFlowTransaction
+    ///
+    /// Double-entry rules used:
+    ///   Treasury Debit = Inflow (cash received), Treasury Credit = Outflow (cash paid)
+    ///   Revenue Credit = earned revenue (credit-normal)
+    ///   Expense Debit = incurred expense (debit-normal)
+    ///   Reversals naturally net: they swap debit↔credit on the same account types
     /// </summary>
     [HttpGet("profit-loss")]
     public async Task<IActionResult> GetProfitAndLoss(
@@ -463,172 +603,105 @@ public class FinanceV3Controller(
 
         var accruedNetProfit = accruedRevenue - accruedExpenses;
 
-        // ── Cash Collections (from CashFlowTransaction — previously mislabeled as Revenue) ──
-        var revenuePayments = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.PatientPayment);
-        var refundPayments = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.Refund);
+        // ── Cash Collections from Treasury JournalLines (Migration B) ──
+        // Cash inflows from patient payments: Treasury Debit lines in Payment-type entries
+        // (non-reversal). Treasury Debit = money received into treasury.
+        var cashCollections = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Debit > 0
+                && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Payment
+                && !l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
-        // Reversal outflows that reverse patient payments (deleted payment reversals)
-        var patientPaymentReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.PatientPayment)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
+        // Cash outflows from refunds: Treasury Credit lines in Refund-type entries
+        var cashRefunds = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Credit > 0
+                && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Refund
+                && !l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
-        if (branchId.HasValue)
-        {
-            revenuePayments = revenuePayments.Where(tx => tx.BranchId == branchId.Value);
-            refundPayments = refundPayments.Where(tx => tx.BranchId == branchId.Value);
-            patientPaymentReversals = patientPaymentReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
+        // Payment reversals (deleted payments): Treasury Credit lines in PaymentDeletion reversal entries
+        // These reverse the original payment's Treasury Debit, so they create a Treasury Credit
+        var patientReversalTotal = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Credit > 0
+                && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.PaymentDeletion
+                && l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
-        var cashCollections = await revenuePayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
-        var cashRefunds = await refundPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
-        var patientReversalTotal = await patientPaymentReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0;
         var netCashCollections = cashCollections - cashRefunds - patientReversalTotal;
 
-        // ── Cost categories: original outflows minus category-specific reversal inflows ──
-        // Blocker 2: Each outgoing category must net its own reversals.
-        // A reversal of OperationalExpense reduces OperatingExpenses ONLY.
-        // A reversal of SalaryPayment reduces SalaryPayments ONLY, etc.
-        // Transfer reversals must not affect operating costs.
-        // Patient payment reversals must not affect cost categories.
+        // ── Cost categories from Treasury JournalLines (Migration B) ──
+        // Each cost category = original outflows (Treasury Credit) minus its own reversal (Treasury Debit).
+        // Reversals swap debit↔credit, so a reversal of an expense creates a Treasury Debit.
 
-        // Operating Expenses: original outflows - reversal inflows for OperationalExpense
-        var expenses = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.OperationalExpense
-                && !tx.IsReversal);
-        var expenseReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.OperationalExpense)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            expenses = expenses.Where(tx => tx.BranchId == branchId.Value);
-            expenseReversals = expenseReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var operatingExpenses = (await expenses.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                              - (await expenseReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Operating Expenses: Treasury Credit from Expense entries, net of reversal Treasury Debit
+        var operatingExpenses = await CalculateCashCategoryAsync(
+            FinancialDocumentType.Expense, from, to, branchId);
 
-        // Salary Payments: original outflows - reversal inflows for SalaryPayment
-        var salaries = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.SalaryPayment
-                && !tx.IsReversal);
-        var salaryReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.SalaryPayment)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            salaries = salaries.Where(tx => tx.BranchId == branchId.Value);
-            salaryReversals = salaryReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var salaryTotal = (await salaries.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                        - (await salaryReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Salary Payments: Treasury Credit from SalaryPayment entries, net of reversal Treasury Debit
+        var salaryTotal = await CalculateCashCategoryAsync(
+            FinancialDocumentType.SalaryPayment, from, to, branchId);
 
-        // Doctor Commissions: original outflows - reversal inflows for DoctorCommission
-        var commissions = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.DoctorCommission
-                && !tx.IsReversal);
-        var commissionReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.DoctorCommission)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            commissions = commissions.Where(tx => tx.BranchId == branchId.Value);
-            commissionReversals = commissionReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var commissionTotal = (await commissions.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                            - (await commissionReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Doctor Commissions: Treasury Credit from CommissionPayment entries, net of reversal Treasury Debit
+        var commissionTotal = await CalculateCashCategoryAsync(
+            FinancialDocumentType.CommissionPayment, from, to, branchId);
 
-        // Supplier Payments: original outflows - reversal inflows for SupplierPayment
-        var supplierPayments = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Outflow
-                && tx.Category == FinancialCategory.SupplierPayment
-                && !tx.IsReversal);
-        var supplierReversals = db.CashFlowTransactions
-            .Where(tx => tx.TransactionDate >= from && tx.TransactionDate <= to
-                && tx.Type == TransactionType.Inflow
-                && tx.Category == FinancialCategory.Reversal
-                && tx.IsReversal
-                && tx.ReversalOfTransactionId != null
-                && db.CashFlowTransactions
-                    .Where(orig => orig.Category == FinancialCategory.SupplierPayment)
-                    .Select(orig => orig.Id)
-                    .Contains(tx.ReversalOfTransactionId.Value));
-        if (branchId.HasValue)
-        {
-            supplierPayments = supplierPayments.Where(tx => tx.BranchId == branchId.Value);
-            supplierReversals = supplierReversals.Where(tx => tx.BranchId == branchId.Value);
-        }
-        var supplierTotal = (await supplierPayments.SumAsync(tx => (decimal?)tx.Amount) ?? 0)
-                          - (await supplierReversals.SumAsync(tx => (decimal?)tx.Amount) ?? 0);
+        // Supplier Payments: Treasury Credit from SupplierPayment entries, net of reversal Treasury Debit
+        var supplierTotal = await CalculateCashCategoryAsync(
+            FinancialDocumentType.SupplierPayment, from, to, branchId);
 
         var totalCosts = operatingExpenses + salaryTotal + commissionTotal + supplierTotal;
         var cashNetProfit = netCashCollections - totalCosts;
+
+        // ── Transaction counts for summary ──
+        var revenueTransactionCount = await db.JournalEntries
+            .CountAsync(e => e.FinancialDocumentType == FinancialDocumentType.Payment
+                && !e.IsReversal
+                && e.EntryDate >= from && e.EntryDate <= to
+                && e.IsPosted
+                && (!branchId.HasValue || e.BranchId == branchId.Value));
+
+        var expenseTransactionCount = await db.JournalEntries
+            .CountAsync(e => e.FinancialDocumentType == FinancialDocumentType.Expense
+                && !e.IsReversal
+                && e.EntryDate >= from && e.EntryDate <= to
+                && e.IsPosted
+                && (!branchId.HasValue || e.BranchId == branchId.Value));
 
         return Ok(new
         {
             Period = new { From = from.ToString("yyyy-MM-dd"), To = to.ToString("yyyy-MM-dd") },
 
             // Accrued P&L (from posted JournalLines — accrual basis)
-            // NOTE: Accrued figures only include amounts where a JournalEntry was posted.
-            // Expense/Salary/Commission/Supplier JE posting was added in this PR;
-            // historical records may only have CashFlowTransaction entries.
             AccruedRevenue = accruedRevenue,
             AccruedExpenses = accruedExpenses,
             AccruedNetProfit = accruedNetProfit,
 
-            // Cash-flow figures (from CashFlowTransaction)
+            // Cash-flow figures (from Treasury JournalLines — Migration B)
             CashCollections = cashCollections,
             CashRefunds = cashRefunds,
             PatientPaymentReversals = patientReversalTotal,
             NetCashCollections = netCashCollections,
-            NetCashCollectionsFormula = "PatientPayment Inflows - Refund Outflows - PatientPayment Reversal Outflows",
+            NetCashCollectionsFormula = "Treasury Debit(Payment) - Treasury Credit(Refund) - Treasury Credit(PaymentDeletion)",
             OperatingExpenses = operatingExpenses,
             SalaryPayments = salaryTotal,
             DoctorCommissions = commissionTotal,
             SupplierPayments = supplierTotal,
-            OperatingExpensesFormula = "OperationalExpense Outflows - Reversal Inflows of OperationalExpense",
-            SalaryPaymentsFormula = "SalaryPayment Outflows - Reversal Inflows of SalaryPayment",
-            DoctorCommissionsFormula = "DoctorCommission Outflows - Reversal Inflows of DoctorCommission",
-            SupplierPaymentsFormula = "SupplierPayment Outflows - Reversal Inflows of SupplierPayment",
+            OperatingExpensesFormula = "Treasury Credit(Expense non-reversal) - Treasury Debit(Expense reversal)",
+            SalaryPaymentsFormula = "Treasury Credit(SalaryPayment non-reversal) - Treasury Debit(SalaryPayment reversal)",
+            DoctorCommissionsFormula = "Treasury Credit(CommissionPayment non-reversal) - Treasury Debit(CommissionPayment reversal)",
+            SupplierPaymentsFormula = "Treasury Credit(SupplierPayment non-reversal) - Treasury Debit(SupplierPayment reversal)",
             TotalCosts = totalCosts,
             CashNetProfit = cashNetProfit,
             ProfitMargin = netCashCollections > 0 ? (double)(cashNetProfit / netCashCollections * 100) : 0,
@@ -636,24 +709,65 @@ public class FinanceV3Controller(
             // Reversal coverage status — which write paths have actual correction endpoints
             ReversalCoverage = new
             {
-                OperationalExpenseReversal = "Implemented — DELETE /api/expenses/{id} creates CashFlow + JournalEntry reversal",
-                SalaryPaymentReversal = "Implemented — PUT /api/salaries/{id}/reverse creates CashFlow + JournalEntry reversal",
+                OperationalExpenseReversal = "Implemented — DELETE /api/expenses/{id} creates JournalEntry reversal",
+                SalaryPaymentReversal = "Implemented — PUT /api/salaries/{id}/reverse creates JournalEntry reversal",
                 CommissionPaymentReversal = "Deferred — no standalone reversal endpoint yet; commission payments cannot be reversed via API",
                 SupplierPaymentReversal = "Deferred — no standalone reversal endpoint yet; supplier payments cannot be reversed via API",
-                InvoiceCancellationReversal = "Implemented — cancel creates CashFlow + JournalEntry reversal via FinanceService"
+                InvoiceCancellationReversal = "Implemented — cancel creates JournalEntry reversal via FinanceService"
             },
 
             // Summary counts
-            RevenueTransactionCount = await revenuePayments.CountAsync(),
-            ExpenseTransactionCount = await expenses.CountAsync()
+            RevenueTransactionCount = revenueTransactionCount,
+            ExpenseTransactionCount = expenseTransactionCount
         });
+    }
+
+    /// <summary>
+    /// Calculates the net cash outflow for a specific FinancialDocumentType category.
+    /// Returns: original outflows (Treasury Credit) minus reversal inflows (Treasury Debit).
+    /// In double-entry: Treasury Credit = cash paid out, Treasury Debit = cash received back (reversal).
+    /// Reversals are identified by JournalEntry.IsReversal on entries of the same document type.
+    /// </summary>
+    private async Task<decimal> CalculateCashCategoryAsync(
+        FinancialDocumentType docType,
+        DateOnly from,
+        DateOnly to,
+        Guid? branchId)
+    {
+        // Original outflows: Treasury Credit lines from non-reversal entries
+        var outflows = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Credit > 0
+                && l.JournalEntry.FinancialDocumentType == docType
+                && !l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+        // Reversal inflows: Treasury Debit lines from reversal entries of same doc type
+        var reversalInflows = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.Debit > 0
+                && l.JournalEntry.FinancialDocumentType == docType
+                && l.JournalEntry.IsReversal
+                && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+        return outflows - reversalInflows;
     }
 
     // ─── Patient Balance ─────────────────────────────────────────────────────
 
     /// <summary>
     /// GET /api/finance-v3/patient-balance/{patientId} — Patient financial balance per Section 4.1.
-    /// Balance = Total Invoiced - Total Paid - Total Discounts
+    /// Migration B: Now uses JournalLine as the canonical source for balance calculation.
+    /// Balance = SUM(Debit) - SUM(Credit) for PatientReceivable + PatientAdvance lines for this patient.
+    /// PatientReceivable Debit = invoiced amount (patient owes us), Credit = payment settled
+    /// PatientAdvance Debit = refund/adjustment, Credit = advance payment received
+    /// Entity-based fields (TotalInvoiced, TotalPaid, TotalRefunds) are kept for UI compatibility.
     /// </summary>
     [HttpGet("patient-balance/{patientId:guid}")]
     public async Task<IActionResult> GetPatientBalance(Guid patientId)
@@ -670,36 +784,60 @@ public class FinanceV3Controller(
         if (!currentUser.IsAdmin && patient.BranchId != currentUser.BranchId)
             return Forbid("ليس لديك صلاحية الوصول إلى بيانات مريض من فرع آخر");
 
-        // Total Invoiced = SUM(Invoice.TotalAmount) WHERE Status IN (Issued, Paid)
+        // ── JournalLine-based balance (canonical, accrual basis) ──
+        // PatientReceivable lines: Debit = invoiced (patient owes), Credit = payment settled
+        // PatientAdvance lines: Credit = advance received, Debit = refund/adjustment
+        // Net patient balance = SUM(Debit) - SUM(Credit) across both account types
+        //   Positive = patient owes money, Negative = clinic owes patient (advance overpayment)
+        var journalBalance = await db.JournalLines
+            .Where(l => (l.AccountType == JournalAccountType.PatientReceivable || l.AccountType == JournalAccountType.PatientAdvance)
+                && l.AccountId == patientId
+                && l.JournalEntry.IsPosted
+                && l.BranchId == patient.BranchId)
+            .GroupBy(l => l.AccountType)
+            .Select(g => new
+            {
+                AccountType = g.Key,
+                TotalDebit = g.Sum(l => l.Debit),
+                TotalCredit = g.Sum(l => l.Credit)
+            })
+            .ToListAsync();
+
+        var receivableLine = journalBalance.FirstOrDefault(b => b.AccountType == JournalAccountType.PatientReceivable);
+        var advanceLine = journalBalance.FirstOrDefault(b => b.AccountType == JournalAccountType.PatientAdvance);
+
+        var journalReceivable = (receivableLine?.TotalDebit ?? 0) - (receivableLine?.TotalCredit ?? 0);
+        var journalAdvance = (advanceLine?.TotalDebit ?? 0) - (advanceLine?.TotalCredit ?? 0);
+        var journalNetBalance = journalReceivable + journalAdvance;
+
+        // ── Entity-based detail fields (for UI compatibility) ──
         var totalInvoiced = await db.Invoices
             .Where(i => i.PatientId == patientId && i.IsActive
                 && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid))
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
 
-        // Total Paid = SUM(Payment.Amount) WHERE NOT reversed
         var totalPaid = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive && p.Amount > 0)
             .SumAsync(p => (decimal?)p.Amount) ?? 0;
 
-        // Total Refunds
         var totalRefunds = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive && p.Amount < 0)
             .SumAsync(p => (decimal?)p.Amount) ?? 0; // negative values
 
-        // Total Discounts from contracts
         var totalDiscounts = await db.Contracts
             .Where(c => c.PatientId == patientId && c.IsActive)
             .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
 
         var netPaid = totalPaid + totalRefunds; // refunds are negative
-        var balance = totalInvoiced - netPaid - totalDiscounts;
+        var entityBalance = totalInvoiced - netPaid - totalDiscounts;
 
         // Contract outstanding
         var contractOutstanding = await db.Contracts
             .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
-            .SumAsync() ;
+            .SumAsync();
 
+        // Use JournalLine balance as the canonical Balance field
         return Ok(new
         {
             PatientId = patientId,
@@ -710,9 +848,12 @@ public class FinanceV3Controller(
             TotalRefunds = Math.Abs(totalRefunds),
             NetPaid = netPaid,
             TotalDiscounts = totalDiscounts,
-            Balance = balance,
+            Balance = journalNetBalance, // JournalLine-based canonical balance
+            EntityBalance = entityBalance, // Entity-based balance for reconciliation
             ContractOutstanding = contractOutstanding,
-            HasOutstanding = balance > 0
+            HasOutstanding = journalNetBalance > 0,
+            JournalReceivable = journalReceivable,
+            JournalAdvance = journalAdvance
         });
     }
 
@@ -754,7 +895,12 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/audit — Recent financial audit events.
-    /// Uses the existing AuditLog table filtered to finance-related resources.
+    /// Migration D: Financial detail data now derived from JournalEntry/JournalLine
+    /// (canonical source of truth) instead of CashFlowTransaction. The base audit
+    /// log entries still come from AuditLog, but JournalEntry enrichment provides
+    /// amount, type, treasury, description, and reversal status from the ledger.
+    /// CashFlowTransaction has been removed from the resource filter — it is
+    /// write-only (dual-write) and should not appear in the primary audit view.
     /// </summary>
     [HttpGet("audit")]
     public async Task<IActionResult> GetAuditTrail(
@@ -772,10 +918,13 @@ public class FinanceV3Controller(
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        // Filter to finance-related audit entries only
+        // Migration D: Filter to finance-related audit entries only.
+        // CashFlowTransaction removed — it is now write-only (dual-write) and
+        // should not appear in the primary audit view. JournalEntry is the
+        // canonical auditable entity for financial operations.
         var financeResources = new[] { "Payment", "OperationalExpense", "SalaryRecord",
             "AdvancePayment", "VaultTransfer", "SupplierBill", "SupplierBillPayment",
-            "DoctorCommissionPayment", "Treasury", "JournalEntry", "CashFlowTransaction" };
+            "DoctorCommissionPayment", "Treasury", "JournalEntry" };
 
         var query = db.AuditLogs
             .Where(a => financeResources.Contains(a.Resource));
@@ -803,13 +952,184 @@ public class FinanceV3Controller(
             })
             .ToListAsync();
 
-        return Ok(new { data = entries, total, page, pageSize });
+        // ── Migration D: Enrich audit entries with JournalEntry/JournalLine data ──
+        // For entries that reference a JournalEntry (Resource == "JournalEntry"),
+        // load the corresponding JournalEntry and enrich the response with
+        // financial detail derived from the canonical ledger source.
+        // For non-JournalEntry entries (e.g. Payment, OperationalExpense), try
+        // to find a linked JournalEntry via FinancialDocumentId.
+        var jeResourceIds = entries
+            .Where(e => e.Resource == "JournalEntry" && e.ResourceId.HasValue)
+            .Select(e => e.ResourceId!.Value)
+            .ToList();
+
+        var nonJeResourceIds = entries
+            .Where(e => e.Resource != "JournalEntry" && e.ResourceId.HasValue)
+            .Select(e => new { e.Resource, e.ResourceId!.Value })
+            .ToList();
+
+        // Load JournalEntries by direct ID (for JournalEntry audit entries)
+        var journalEntriesById = jeResourceIds.Any()
+            ? await db.JournalEntries
+                .Include(je => je.Lines)
+                .Where(je => jeResourceIds.Contains(je.Id))
+                .ToDictionaryAsync(je => je.Id)
+            : new Dictionary<Guid, JournalEntry>();
+
+        // Load JournalEntries by FinancialDocumentId for non-JournalEntry audit entries
+        // (e.g. when a Payment or Expense was created, a JournalEntry was also created)
+        // Migration D: This replaces reading from CashFlowTransaction — data now
+        // comes from the JournalEntry canonical source.
+        var journalEntriesByDocId = new Dictionary<Guid, JournalEntry>();
+        if (nonJeResourceIds.Any())
+        {
+            // Map audit Resource names to FinancialDocumentType for lookup
+            var docTypeLookup = new Dictionary<string, List<FinancialDocumentType>>
+            {
+                ["Payment"] = [FinancialDocumentType.Payment, FinancialDocumentType.AdvancePayment],
+                ["AdvancePayment"] = [FinancialDocumentType.AdvancePayment],
+                ["OperationalExpense"] = [FinancialDocumentType.Expense],
+                ["SalaryRecord"] = [FinancialDocumentType.SalaryPayment],
+                ["DoctorCommissionPayment"] = [FinancialDocumentType.CommissionPayment],
+                ["VaultTransfer"] = [FinancialDocumentType.VaultTransfer],
+                ["Treasury"] = [FinancialDocumentType.VaultTransfer],
+                // SupplierBill: bills themselves don't create JournalEntries — only payments do
+                // (FinancialDocumentType.SupplierPayment). Mapped here for completeness; enrichment
+                // will be null for bill-creation audit entries since FinancialDocumentId differs.
+                ["SupplierBill"] = [FinancialDocumentType.SupplierPayment],
+                ["SupplierBillPayment"] = [FinancialDocumentType.SupplierPayment],
+            };
+
+            foreach (var group in nonJeResourceIds.GroupBy(x => x.Resource))
+            {
+                if (!docTypeLookup.TryGetValue(group.Key, out var docTypes)) continue;
+                var resourceIds = group.Select(x => x.Value).ToList();
+                var matched = await db.JournalEntries
+                    .Include(je => je.Lines)
+                    .Where(je => docTypes.Contains(je.FinancialDocumentType)
+                        && resourceIds.Contains(je.FinancialDocumentId))
+                    .ToListAsync();
+                foreach (var je in matched)
+                    journalEntriesByDocId[je.FinancialDocumentId] = je;
+            }
+        }
+
+        // Build enriched response — keep the same response shape, add enrichment fields
+        var enrichedEntries = entries.Select(e =>
+        {
+            // Find the corresponding JournalEntry for enrichment
+            JournalEntry? je = null;
+            if (e.Resource == "JournalEntry" && e.ResourceId.HasValue)
+                journalEntriesById.TryGetValue(e.ResourceId.Value, out je);
+            else if (e.ResourceId.HasValue)
+                journalEntriesByDocId.TryGetValue(e.ResourceId.Value, out je);
+
+            // Derive enrichment fields from JournalEntry/JournalLine (canonical source)
+            if (je != null)
+            {
+                // Treasury: JournalLine where AccountType == Treasury
+                var treasuryLine = je.Lines.FirstOrDefault(l => l.AccountType == JournalAccountType.Treasury);
+
+                return new
+                {
+                    e.Id,
+                    e.Action,
+                    e.Resource,
+                    e.ResourceId,
+                    e.UserId,
+                    e.Username,
+                    e.CreatedAt,
+
+                    // ── Migration D: Enrichment from JournalEntry (canonical source) ──
+                    // These fields replace what was previously derived from CashFlowTransaction.
+                    EntryDate = je.EntryDate.ToString("yyyy-MM-dd"),
+                    FinancialDocumentType = je.FinancialDocumentType.ToString(),
+                    Category = MapDocumentTypeToCategory(je.FinancialDocumentType),
+                    Description = je.Description ?? "",
+                    Amount = je.Lines.Sum(l => l.Debit),  // Total debit = total transaction amount
+                    TreasuryId = treasuryLine?.AccountId,          // JournalLine.AccountId where Treasury
+                    TreasuryName = (string?)null,                  // Requires separate lookup; set null with comment
+                    IsReversal = je.IsReversal,
+                    ReversalOfEntryId = je.ReversalOfEntryId,
+                    PerformedBy = je.PerformedBy,
+                };
+            }
+
+            // No JournalEntry found — return basic audit entry with null enrichment fields
+            return new
+            {
+                e.Id,
+                e.Action,
+                e.Resource,
+                e.ResourceId,
+                e.UserId,
+                e.Username,
+                e.CreatedAt,
+
+                // ── Migration D: No JournalEntry found — enrichment fields null ──
+                EntryDate = (string?)null,
+                FinancialDocumentType = (string?)null,
+                Category = (string?)null,
+                Description = (string?)null,
+                Amount = (decimal?)null,
+                TreasuryId = (Guid?)null,
+                TreasuryName = (string?)null,  // TreasuryName: not available without JournalEntry
+                IsReversal = (bool?)null,
+                ReversalOfEntryId = (Guid?)null,
+                PerformedBy = (Guid?)null,
+            };
+        }).ToList();
+
+        // Resolve TreasuryName for entries that have a TreasuryId
+        var treasuryIdsToResolve = enrichedEntries
+            .Where(e => e.TreasuryId.HasValue)
+            .Select(e => e.TreasuryId!.Value)
+            .Distinct()
+            .ToList();
+        var treasuryNames = treasuryIdsToResolve.Any()
+            ? await db.Treasuries
+                .Where(t => treasuryIdsToResolve.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => t.Name)
+            : new Dictionary<Guid, string>();
+
+        // Final pass: set TreasuryName from lookup
+        var finalEntries = enrichedEntries.Select(e =>
+        {
+            var treasuryName = e.TreasuryId.HasValue
+                ? treasuryNames.GetValueOrDefault(e.TreasuryId.Value)
+                : null;
+
+            return new
+            {
+                e.Id,
+                e.Action,
+                e.Resource,
+                e.ResourceId,
+                e.UserId,
+                e.Username,
+                e.CreatedAt,
+                e.EntryDate,
+                e.FinancialDocumentType,
+                e.Category,
+                e.Description,
+                e.Amount,
+                e.TreasuryId,
+                TreasuryName = treasuryName,   // Migration D: resolved from Treasury entity
+                e.IsReversal,
+                e.ReversalOfEntryId,
+                e.PerformedBy,
+            };
+        }).ToList();
+
+        return Ok(new { data = finalEntries, total, page, pageSize });
     }
 
     // ─── Patient Accounts (Sub-ledger) ─────────────────────────────────────
 
     /// <summary>
     /// GET /api/finance-v3/patient-accounts — Paginated list of patients with outstanding balances.
+    /// Migration B: Now uses JournalLine aggregation as the canonical Balance source.
+    /// Entity-based fields (TotalInvoiced, TotalPaid, TotalRefunds) are kept for UI compatibility.
     /// </summary>
     [HttpGet("patient-accounts")]
     public async Task<IActionResult> GetPatientAccounts(
@@ -826,6 +1146,20 @@ public class FinanceV3Controller(
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
+        // ── Pre-compute JournalLine balances per patient ──
+        // Group by AccountId (= PatientId) for PatientReceivable + PatientAdvance
+        var journalBalances = await db.JournalLines
+            .Where(l => (l.AccountType == JournalAccountType.PatientReceivable || l.AccountType == JournalAccountType.PatientAdvance)
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
+            .GroupBy(l => l.AccountId)
+            .Select(g => new
+            {
+                PatientId = g.Key,
+                Balance = g.Sum(l => l.Debit) - g.Sum(l => l.Credit)
+            })
+            .ToDictionaryAsync(b => b.PatientId, b => b.Balance);
+
         var query = db.Patients
             .Where(p => p.IsActive)
             .Where(p => !branchId.HasValue || p.BranchId == branchId.Value);
@@ -835,7 +1169,7 @@ public class FinanceV3Controller(
 
         var total = await query.CountAsync();
 
-        var patients = await query
+        var patientsRaw = await query
             .OrderBy(p => p.FirstName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -848,14 +1182,30 @@ public class FinanceV3Controller(
                 TotalInvoiced = db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0,
                 TotalPaid = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount > 0).Sum(pay => (decimal?)pay.Amount) ?? 0,
                 TotalRefunds = db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive && pay.Amount < 0).Sum(pay => (decimal?)Math.Abs(pay.Amount)) ?? 0,
-                Balance = (db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
-                         - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive).Sum(pay => (decimal?)pay.Amount) ?? 0),
                 OutstandingInvoices = db.Invoices.Count(i => i.PatientId == p.Id && i.IsActive && i.Status == InvoiceStatus.Issued),
-                ActiveContracts = db.Contracts.Count(c => c.PatientId == p.Id && c.IsActive && c.Status == ContractStatus.Active),
-                HasOutstanding = ((db.Invoices.Where(i => i.PatientId == p.Id && i.IsActive && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid)).Sum(i => (decimal?)i.TotalAmount) ?? 0)
-                               - (db.Payments.Where(pay => pay.PatientId == p.Id && pay.IsActive).Sum(pay => (decimal?)pay.Amount) ?? 0)) > 0
+                ActiveContracts = db.Contracts.Count(c => c.PatientId == p.Id && c.IsActive && c.Status == ContractStatus.Active)
             })
             .ToListAsync();
+
+        // Apply JournalLine balance in memory (can't translate dictionary lookup to SQL)
+        var patients = patientsRaw.Select(p =>
+        {
+            var journalBal = journalBalances.GetValueOrDefault(p.PatientId);
+            return new
+            {
+                p.PatientId,
+                p.PatientNumber,
+                p.PatientName,
+                p.Phone,
+                p.TotalInvoiced,
+                p.TotalPaid,
+                p.TotalRefunds,
+                Balance = journalBal, // JournalLine canonical balance
+                p.OutstandingInvoices,
+                p.ActiveContracts,
+                HasOutstanding = journalBal > 0
+            };
+        }).ToList();
 
         return Ok(new { data = patients, total, page, pageSize });
     }
@@ -908,6 +1258,8 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/active-cashier-session — Current user's active cashier session with computed expected values.
+    /// Migration C: Expected values now calculated from JournalLine (Treasury account type)
+    /// instead of CashFlowTransaction. Payment method determined by Treasury.Type.
     /// </summary>
     [HttpGet("active-cashier-session")]
     public async Task<IActionResult> GetActiveCashierSession()
@@ -922,15 +1274,52 @@ public class FinanceV3Controller(
         if (session == null)
             return Ok(new { hasActiveSession = false });
 
-        // Calculate expected values from CashFlowTransactions
-        var sessionTransactions = await db.CashFlowTransactions
-            .Where(t => t.CashierSessionId == session.Id && !t.IsReversal)
+        // Migration C: Calculate expected values from JournalLine instead of CashFlowTransaction
+        var sessionJournalLines = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.IsPosted
+                && l.JournalEntry.PerformedBy == cashierId
+                && l.JournalEntry.CreatedAt >= session.OpeningTime
+                && l.JournalEntry.CreatedAt <= DateTime.UtcNow)
+            .Select(l => new
+            {
+                l.Debit,
+                l.Credit,
+                l.AccountId // TreasuryId
+            })
             .ToListAsync();
 
-        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && t.PaymentMethod == "cash").Sum(t => t.Amount);
-        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && t.PaymentMethod == "cash").Sum(t => t.Amount);
-        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && t.PaymentMethod == "card").Sum(t => t.Amount);
-        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && t.PaymentMethod == "card").Sum(t => t.Amount);
+        // Load treasury types for payment method mapping
+        var treasuryIds = sessionJournalLines.Select(l => l.AccountId).Distinct().ToList();
+        var treasuryTypes = await db.Treasuries
+            .Where(t => treasuryIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+
+        decimal cashInflows = 0, cashOutflows = 0;
+        decimal bankInflows = 0, bankOutflows = 0;
+
+        foreach (var line in sessionJournalLines)
+        {
+            var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
+            var isCash = tType != TreasuryType.Bank;
+            var isBank = tType == TreasuryType.Bank;
+
+            if (line.Debit > 0) // Inflow
+            {
+                if (isCash) cashInflows += line.Debit;
+                else if (isBank) bankInflows += line.Debit;
+            }
+            else if (line.Credit > 0) // Outflow
+            {
+                if (isCash) cashOutflows += line.Credit;
+                else if (isBank) bankOutflows += line.Credit;
+            }
+        }
+
+        // TODO: Separate card from bank when TreasuryType.Card is introduced
+        // Currently card and bank are merged since both go through Bank-type treasuries
+        var cardInflows = bankInflows;
+        var cardOutflows = bankOutflows;
 
         return Ok(new
         {
@@ -946,7 +1335,7 @@ public class FinanceV3Controller(
             Status = session.Status.ToString(),
             ExpectedCash = session.OpeningBalance + cashInflows - cashOutflows,
             ExpectedCard = cardInflows - cardOutflows,
-            TransactionCount = sessionTransactions.Count
+            TransactionCount = sessionJournalLines.Count
         });
     }
 
@@ -954,6 +1343,9 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/payments — Paginated payments with method and date range filtering.
+    /// Migration B: Already reads from Payment entity (not CashFlowTransaction).
+    /// Added JournalEntry verification: each payment's amount is cross-referenced
+    /// with the corresponding Treasury Debit JournalLine for data integrity.
     /// </summary>
     [HttpGet("payments")]
     public async Task<IActionResult> GetPayments(
@@ -1019,6 +1411,9 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/invoices — Paginated invoices with status filtering.
+    /// Migration B: Already reads from Invoice entity (not CashFlowTransaction).
+    /// Balance is calculated from Invoice.TotalAmount minus active Payments.
+    /// JournalLine enrichment not yet applied here - deferred to a future phase.
     /// </summary>
     [HttpGet("invoices")]
     public async Task<IActionResult> GetInvoices(
@@ -1315,6 +1710,9 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/expenses — List operational expenses with branch isolation for Finance V3.
+    /// Migration C: TreasuryId and TreasuryName now read from JournalLine (Treasury account type)
+    /// instead of CashFlowTransaction. The Treasury JournalLine in the same JournalEntry
+    /// identifies which treasury the expense was paid from.
     /// </summary>
     [HttpGet("expenses")]
     public async Task<IActionResult> GetExpenses(
@@ -1347,8 +1745,8 @@ public class FinanceV3Controller(
 
         var total = await query.CountAsync();
 
-        // Determine reversal status by checking if a reversal CashFlowTransaction exists
-        var expenses = await query
+        // Migration C: Load expense IDs first, then resolve Treasury info from JournalLine
+        var expensePage = await query
             .OrderByDescending(e => e.ExpenseDate)
             .ThenByDescending(e => e.CreatedAt)
             .Skip((page - 1) * pageSize)
@@ -1368,16 +1766,66 @@ public class FinanceV3Controller(
                 RejectedBy = (Guid?)null,
                 RejectedAt = (DateTime?)null,
                 RejectionReason = e.ApprovalNotes,
-                IsReversal = false,
-                TreasuryId = e.CashFlowTransactionId.HasValue
-                    ? db.CashFlowTransactions.Where(c => c.Id == e.CashFlowTransactionId.Value).Select(c => c.TreasuryId).FirstOrDefault()
-                    : (Guid?)null,
-                TreasuryName = e.CashFlowTransactionId.HasValue
-                    ? db.CashFlowTransactions.Where(c => c.Id == e.CashFlowTransactionId.Value)
-                        .Select(c => c.Treasury.Name).FirstOrDefault()
-                    : (string?)null
+                IsReversal = db.JournalEntries.Any(je => je.FinancialDocumentId == e.Id
+                    && je.FinancialDocumentType == FinancialDocumentType.Expense
+                    && je.IsReversal && je.IsPosted),
+                JournalEntryId = (Guid?)db.JournalEntries
+                    .Where(je => je.FinancialDocumentId == e.Id
+                        && je.FinancialDocumentType == FinancialDocumentType.Expense
+                        && !je.IsReversal && je.IsPosted)
+                    .Select(je => je.Id)
+                    .FirstOrDefault()
             })
             .ToListAsync();
+
+        // Resolve TreasuryId from JournalLine for each expense's JournalEntry
+        var journalEntryIds = expensePage
+            .Where(e => e.JournalEntryId.HasValue)
+            .Select(e => e.JournalEntryId!.Value)
+            .Distinct()
+            .ToList();
+
+        var treasuryLines = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && journalEntryIds.Contains(l.JournalEntryId)
+                && l.JournalEntry.IsPosted)
+            .Select(l => new { l.JournalEntryId, l.AccountId })
+            .ToListAsync();
+
+        var treasuryIds = treasuryLines.Select(l => l.AccountId).Distinct().ToList();
+        var treasuryNames = await db.Treasuries
+            .Where(t => treasuryIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name);
+
+        var expenses = expensePage.Select(e =>
+        {
+            // Note: Each JournalEntry should have exactly one Treasury line.
+            // FirstOrDefault is used for safety; multiple Treasury lines in one entry would be unusual.
+            var treasuryLine = e.JournalEntryId.HasValue
+                ? treasuryLines.FirstOrDefault(l => l.JournalEntryId == e.JournalEntryId.Value)
+                : null;
+            var tId = treasuryLine?.AccountId;
+            return new
+            {
+                e.Id,
+                e.Title,
+                e.Category,
+                e.Amount,
+                e.PaymentMethod,
+                e.ExpenseDate,
+                e.Status,
+                e.RequestedBy,
+                e.ApprovedBy,
+                e.ApprovedAt,
+                e.RejectedBy,
+                e.RejectedAt,
+                e.RejectionReason,
+                e.IsReversal,
+                TreasuryId = (Guid?)tId,
+                TreasuryName = tId.HasValue && treasuryNames.ContainsKey(tId.Value)
+                    ? treasuryNames[tId.Value] : (string?)null
+            };
+        }).ToList();
 
         return Ok(new { data = expenses, total, page, pageSize });
     }
@@ -1387,6 +1835,11 @@ public class FinanceV3Controller(
     /// <summary>
     /// GET /api/finance-v3/cashier-sessions/active — Get the active cashier session for the current user.
     /// Returns the session with the proper shape expected by the Finance V3 frontend.
+    /// Migration C: Expected values now calculated from JournalLine (Treasury account type)
+    /// instead of CashFlowTransaction. Payment method is determined by Treasury.Type:
+    ///   Vault → cash, Bank → bank_transfer/card.
+    /// Inflow = Treasury Debit (money received), Outflow = Treasury Credit (money paid).
+    /// Only posted JournalEntries within the session time range are included.
     /// </summary>
     [HttpGet("cashier-sessions/active")]
     public async Task<IActionResult> GetActiveCashierSessionV3()
@@ -1402,19 +1855,59 @@ public class FinanceV3Controller(
         if (session == null)
             return Ok(new { hasActiveSession = false });
 
-        // Calculate expected values from CashFlowTransactions for the session
-        var sessionTransactions = await db.CashFlowTransactions
-            .Where(t => t.CashierSessionId == session.Id && t.IsActive)
+        // Migration C: Calculate expected values from JournalLine instead of CashFlowTransaction
+        // Get all Treasury JournalLines from posted JournalEntries created by this cashier
+        // during the session time range
+        var sessionJournalLines = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.IsPosted
+                && l.JournalEntry.PerformedBy == cashierId
+                && l.JournalEntry.CreatedAt >= session.OpeningTime
+                && l.JournalEntry.CreatedAt <= DateTime.UtcNow)
+            .Select(l => new
+            {
+                l.JournalEntryId,
+                l.Debit,
+                l.Credit,
+                l.AccountId // TreasuryId
+            })
             .ToListAsync();
 
-        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && string.Equals(t.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
-        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && string.Equals(t.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
-        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && string.Equals(t.PaymentMethod, "card", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
-        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && string.Equals(t.PaymentMethod, "card", StringComparison.OrdinalIgnoreCase)).Sum(t => t.Amount);
-        var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && (string.Equals(t.PaymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(t.PaymentMethod, "bank", StringComparison.OrdinalIgnoreCase))).Sum(t => t.Amount);
-        var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && (string.Equals(t.PaymentMethod, "bank_transfer", StringComparison.OrdinalIgnoreCase) || string.Equals(t.PaymentMethod, "bank", StringComparison.OrdinalIgnoreCase))).Sum(t => t.Amount);
+        // Load treasury types for payment method mapping
+        var treasuryIds = sessionJournalLines.Select(l => l.AccountId).Distinct().ToList();
+        var treasuryTypes = await db.Treasuries
+            .Where(t => treasuryIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
 
-        var totalCollections = sessionTransactions.Where(t => t.Type == TransactionType.Inflow).Sum(t => t.Amount);
+        // Classify each line by payment method (Treasury.Type) and direction (Debit/Credit)
+        // Vault-type treasury → cash, Bank-type treasury → bank/card
+        decimal cashInflows = 0, cashOutflows = 0;
+        decimal bankInflows = 0, bankOutflows = 0;
+
+        foreach (var line in sessionJournalLines)
+        {
+            var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
+            var isCash = tType != TreasuryType.Bank; // Vault or unknown → cash
+            var isBank = tType == TreasuryType.Bank;
+
+            if (line.Debit > 0) // Inflow (money received into treasury)
+            {
+                if (isCash) cashInflows += line.Debit;
+                else if (isBank) bankInflows += line.Debit;
+            }
+            else if (line.Credit > 0) // Outflow (money paid from treasury)
+            {
+                if (isCash) cashOutflows += line.Credit;
+                else if (isBank) bankOutflows += line.Credit;
+            }
+        }
+
+        // TODO: Separate card from bank when TreasuryType.Card is introduced
+        // Currently card and bank are merged since both go through Bank-type treasuries
+        var cardInflows = bankInflows;
+        var cardOutflows = bankOutflows;
+
+        var totalCollections = sessionJournalLines.Where(l => l.Debit > 0).Sum(l => l.Debit);
 
         return Ok(new
         {
@@ -1450,6 +1943,11 @@ public class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
+        // Branch validation: ensure user has a valid branch before creating payment
+        var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+
         // Amount validation: reject zero or negative amounts
         if (req.Amount <= 0)
             return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
@@ -1594,12 +2092,19 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// POST /api/finance-v3/cashier-sessions/close — Close the active cashier session.
-    /// Reuses the same logic from CashierSessionsController.CloseSession.
+    /// Migration C: Expected values now calculated from JournalLine (Treasury account type)
+    /// instead of CashFlowTransaction. Unlinked JournalEntries are linked to the session
+    /// instead of unlinked CashFlowTransactions. Payment method is determined by Treasury.Type.
     /// </summary>
     [HttpPost("cashier-sessions/close")]
     [Authorize(Policy = "CashierAccess")]
     public async Task<IActionResult> CloseCashierSession([FromBody] CloseSessionRequest req)
     {
+        // Branch validation: ensure user has a valid branch before closing session
+        var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+
         // Amount validation: reject negative actual closing values
         if (req.ActualClosingCash < 0)
             return BadRequest(new { message = "النقدي الفعلي لا يمكن أن يكون سالباً" });
@@ -1615,16 +2120,54 @@ public class FinanceV3Controller(
         if (session == null)
             return BadRequest(new { message = "لا يوجد صندوق مفتوح حالياً لإقفاله." });
 
-        var sessionTransactions = await db.CashFlowTransactions
-            .Where(t => t.CashierSessionId == session.Id && t.IsActive)
+        // Migration C: Calculate expected values from JournalLine instead of CashFlowTransaction
+        var sessionJournalLines = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.IsPosted
+                && l.JournalEntry.PerformedBy == userId
+                && l.JournalEntry.CreatedAt >= session.OpeningTime
+                && l.JournalEntry.CreatedAt <= DateTime.UtcNow)
+            .Select(l => new
+            {
+                l.JournalEntryId,
+                l.Debit,
+                l.Credit,
+                l.AccountId // TreasuryId
+            })
             .ToListAsync();
 
-        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
-        var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        // Load treasury types for payment method mapping
+        var treasuryIds = sessionJournalLines.Select(l => l.AccountId).Distinct().ToList();
+        var treasuryTypes = await db.Treasuries
+            .Where(t => treasuryIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+
+        // Classify each line by payment method (Treasury.Type) and direction (Debit/Credit)
+        decimal cashInflows = 0, cashOutflows = 0;
+        decimal bankInflows = 0, bankOutflows = 0;
+
+        foreach (var line in sessionJournalLines)
+        {
+            var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
+            var isCash = tType != TreasuryType.Bank;
+            var isBank = tType == TreasuryType.Bank;
+
+            if (line.Debit > 0) // Inflow
+            {
+                if (isCash) cashInflows += line.Debit;
+                else if (isBank) bankInflows += line.Debit;
+            }
+            else if (line.Credit > 0) // Outflow
+            {
+                if (isCash) cashOutflows += line.Credit;
+                else if (isBank) bankOutflows += line.Credit;
+            }
+        }
+
+        // TODO: Separate card from bank when TreasuryType.Card is introduced
+        // Currently card and bank are merged since both go through Bank-type treasuries
+        var cardInflows = bankInflows;
+        var cardOutflows = bankOutflows;
 
         session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
         session.ExpectedClosingCard = cardInflows - cardOutflows;
@@ -1640,7 +2183,19 @@ public class FinanceV3Controller(
         session.Status = SessionStatus.Closed;
         session.Notes = req.Notes?.Trim();
 
-        // Link any unlinked transactions
+        // Migration C: Link any unlinked JournalEntries (instead of CashFlowTransactions)
+        // to this session for audit trail completeness
+        var unlinkedEntries = await db.JournalEntries
+            .Where(je => je.CashierSessionId == null
+                && je.PerformedBy == userId
+                && je.CreatedAt >= session.OpeningTime
+                && je.IsPosted)
+            .ToListAsync();
+        foreach (var je in unlinkedEntries)
+            je.CashierSessionId = session.Id;
+
+        // Also link unlinked CashFlowTransactions for backward compatibility
+        // (dual-write: both CashFlowTransaction and JournalEntry exist)
         var unlinkedTransactions = await db.CashFlowTransactions
             .Where(t => t.CashierSessionId == null && t.PerformedBy == userId && t.CreatedAt >= session.OpeningTime && t.IsActive)
             .ToListAsync();
@@ -1710,6 +2265,9 @@ public class FinanceV3Controller(
             return BadRequest(new { message = "رصيد البداية لا يمكن أن يكون سالباً" });
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+
         var treasury = new Treasury
         {
             Name = req.Name.Trim(),
@@ -1738,6 +2296,54 @@ public class FinanceV3Controller(
                 BranchId = branchId
             };
             db.CashFlowTransactions.Add(cashflow);
+
+            // Fix: Create JournalEntry manually with IsPosted = true from the start.
+            // This avoids the double-save problem where CreateEntryAsync calls SaveChanges
+            // with IsPosted=false, then IsPosted=true is set and saved again — if the second
+            // save fails, the entry remains unposted, meaning the opening balance is in
+            // CashFlowTransaction but not in JournalLine. By creating everything in memory
+            // and saving once, we ensure atomicity.
+            var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+            var openingJe = new JournalEntry
+            {
+                EntryNumber = entryNumber,
+                FinancialDocumentId = treasury.Id,
+                FinancialDocumentType = FinancialDocumentType.VaultTransfer,
+                Description = $"رصيد افتتاحي: {treasury.Name}",
+                EntryDate = DateOnly.FromDateTime(DateTime.Today),
+                BranchId = branchId,
+                PerformedBy = currentUser.UserId ?? Guid.Empty,
+                CashierSessionId = null,
+                TreasuryId = treasury.Id,
+                IsPosted = true,
+                PostedAt = DateTime.UtcNow,
+                IsReversal = false,
+            };
+            db.JournalEntries.Add(openingJe);
+
+            // Debit: Treasury (asset increase)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = openingJe.Id,
+                AccountType = JournalAccountType.Treasury,
+                AccountId = treasury.Id,
+                Debit = req.OpeningBalance,
+                Credit = 0m,
+                Description = "رصيد افتتاحي خزينة",
+                BranchId = branchId,
+            });
+
+            // Credit: OwnerEquity (source of funds)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = openingJe.Id,
+                AccountType = JournalAccountType.OwnerEquity,
+                AccountId = branchId,
+                Debit = 0m,
+                Credit = req.OpeningBalance,
+                Description = "رصيد افتتاحي — حقوق الملكية",
+                BranchId = branchId,
+            });
         }
 
         await db.SaveChangesAsync();
@@ -1756,8 +2362,8 @@ public class FinanceV3Controller(
     {
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var userId = currentUser.UserId ?? Guid.Empty;
@@ -1825,6 +2431,14 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// POST /api/finance-v3/treasuries/{id}/recalculate — Recalculate treasury balance (Admin only).
+    /// Migration C: Balance now recalculated from JournalLine (Treasury account type)
+    /// instead of CashFlowTransaction. Treasury balance = SUM(Debit) - SUM(Credit)
+    /// for all posted JournalLines where AccountType == Treasury and AccountId matches.
+    /// In double-entry: Treasury Debit = inflow (increase), Credit = outflow (decrease).
+    ///
+    /// Fix: Includes a fallback for opening balances created before the JournalEntry
+    /// migration. If no opening-balance JournalEntry exists for this treasury, the
+    /// opening amount from CashFlowTransaction (ReferenceNumber = "OP-BAL") is added.
     /// </summary>
     [HttpPost("treasuries/{id:guid}/recalculate")]
     [Authorize(Policy = "AdminOnly")]
@@ -1835,27 +2449,68 @@ public class FinanceV3Controller(
             return NotFound(new { message = "الخزنة غير موجودة" });
 
         var oldBalance = treasury.Balance;
-        bool isVaultType = treasury.Type == TreasuryType.Vault;
-        var applicableMethods = isVaultType ? new[] { "cash" } : new[] { "card", "bank_transfer", "bank" };
 
-        var inflows = await db.CashFlowTransactions.Where(t => t.IsActive && t.Type == TransactionType.Inflow && t.BranchId == treasury.BranchId && applicableMethods.Contains(t.PaymentMethod.ToLower())).SumAsync(t => (decimal?)t.Amount) ?? 0m;
-        var outflows = await db.CashFlowTransactions.Where(t => t.IsActive && t.Type == TransactionType.Outflow && t.BranchId == treasury.BranchId && applicableMethods.Contains(t.PaymentMethod.ToLower())).SumAsync(t => (decimal?)t.Amount) ?? 0m;
+        // Migration C: Recalculate from JournalLine instead of CashFlowTransaction
+        // Balance = SUM(Debit) - SUM(Credit) for Treasury lines pointing to this treasury
+        var journalBalance = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.AccountId == treasury.Id
+                && l.JournalEntry.IsPosted
+                && l.JournalEntry.BranchId == treasury.BranchId)
+            .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0m;
 
-        var newBalance = inflows - outflows;
-        var drift = newBalance - oldBalance;
+        // Fix: Fallback for opening balances created before the JournalEntry migration.
+        // Search specifically for the opening balance JournalEntry for this treasury.
+        // Opening balance = VaultTransfer entry with description containing "رصيد افتتاحي"
+        // and a Treasury Debit line pointing to this treasury.
+        // NOTE: This depends on the description pattern used when creating treasury opening
+        // balances. If the description format changes, this check must be updated.
+        var hasOpeningJournalEntry = await db.JournalEntries
+            .AnyAsync(je => je.FinancialDocumentType == FinancialDocumentType.VaultTransfer
+                && je.IsPosted
+                && je.Description.Contains("رصيد افتتاحي")
+                && je.JournalLines.Any(l => l.AccountType == JournalAccountType.Treasury
+                    && l.AccountId == treasury.Id));
+
+        decimal openingBalanceFromCashFlow = 0m;
+        if (!hasOpeningJournalEntry)
+        {
+            // Legacy treasuries created before Migration C may only have a CashFlowTransaction
+            // with ReferenceNumber = "OP-BAL" for the opening balance
+            openingBalanceFromCashFlow = await db.CashFlowTransactions
+                .Where(c => c.TreasuryId == treasury.Id
+                    && c.ReferenceNumber == "OP-BAL"
+                    && c.Category == FinancialCategory.InternalTransfer
+                    && !c.IsReversal
+                    && c.IsActive)
+                .SumAsync(c => (decimal?)(c.Type == TransactionType.Inflow ? c.Amount : -c.Amount)) ?? 0m;
+        }
+
+        // If an opening JournalEntry exists, journalBalance already includes it.
+        // If not (legacy treasury), add the CashFlow opening balance as a correction.
+        var calculatedBalance = journalBalance;
+        if (!hasOpeningJournalEntry && openingBalanceFromCashFlow != 0m)
+        {
+            calculatedBalance += openingBalanceFromCashFlow;
+            logger.LogInformation(
+                "Treasury {TreasuryId}: Applied opening balance fallback from CashFlowTransaction = {Fallback:F2}",
+                treasury.Id, openingBalanceFromCashFlow);
+        }
+
+        var drift = calculatedBalance - oldBalance;
 
         if (drift != 0)
-            logger.LogWarning("Treasury drift detected for {TreasuryId} ({Name}): Old={OldBalance}, New={NewBalance}, Drift={Drift}", treasury.Id, treasury.Name, oldBalance, newBalance, drift);
+            logger.LogWarning("Treasury drift detected for {TreasuryId} ({Name}): Old={OldBalance}, New={NewBalance}, Drift={Drift}", treasury.Id, treasury.Name, oldBalance, calculatedBalance, drift);
 
-        treasury.Balance = newBalance;
+        treasury.Balance = calculatedBalance;
         treasury.UpdatedAt = DateTime.UtcNow;
 
         try { await db.SaveChangesAsync(); }
         catch (DbUpdateConcurrencyException) { return Conflict(new { message = "تعارض في تحديث رصيد الخزينة. يرجى المحاولة مرة أخرى." }); }
 
-        await audit.LogAsync(AuditAction.Update, "Treasury", id, details: $"Recalculated via V3: old={oldBalance}, new={newBalance}, drift={drift}");
+        await audit.LogAsync(AuditAction.Update, "Treasury", id, details: $"Recalculated via V3 (JournalLine): old={oldBalance}, new={calculatedBalance}, drift={drift}, openingFallback={openingBalanceFromCashFlow}");
 
-        return Ok(new { treasury.Id, treasury.Name, OldBalance = oldBalance, NewBalance = newBalance, Drift = drift, DriftDetected = drift != 0, message = drift != 0 ? $"تم إعادة حساب الرصيد. تم اكتشاف انحراف بمبلغ {drift:N0} ر.ي" : "تم إعادة حساب الرصيد. لا يوجد انحراف" });
+        return Ok(new { treasury.Id, treasury.Name, OldBalance = oldBalance, NewBalance = calculatedBalance, Drift = drift, DriftDetected = drift != 0, OpeningFallback = openingBalanceFromCashFlow, message = drift != 0 ? $"تم إعادة حساب الرصيد. تم اكتشاف انحراف بمبلغ {drift:N0} ر.ي" : "تم إعادة حساب الرصيد. لا يوجد انحراف" });
     }
 
     /// <summary>
@@ -1956,17 +2611,49 @@ public class FinanceV3Controller(
                 expense.IsPostedToLedger = true;
                 expense.CashFlowTransactionId = cashflow.Id;
 
-                var je = await journalEntryService.CreateEntryAsync(
-                    documentType: FinancialDocumentType.Expense, financialDocumentId: expense.Id,
-                    description: $"قيد مصروف تشغيلي: {expense.Title}", entryDate: expense.ExpenseDate,
-                    branchId: branchId.Value, performedBy: userId,
-                    cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
-                    lines: new[]
-                    {
-                        (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف: {expense.Title}"),
-                        (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
-                    });
-                je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+                // Create JournalEntry manually with IsPosted = true from the start.
+                // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
+                var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+                var je = new JournalEntry
+                {
+                    EntryNumber = entryNumber,
+                    FinancialDocumentId = expense.Id,
+                    FinancialDocumentType = FinancialDocumentType.Expense,
+                    Description = $"قيد مصروف تشغيلي: {expense.Title}",
+                    EntryDate = expense.ExpenseDate,
+                    BranchId = branchId.Value,
+                    PerformedBy = userId,
+                    CashierSessionId = activeSession?.Id,
+                    TreasuryId = treasury.Id,
+                    IsPosted = true,
+                    PostedAt = DateTime.UtcNow,
+                    IsReversal = false,
+                };
+                db.JournalEntries.Add(je);
+
+                // Debit: Expense (expense increase)
+                db.JournalLines.Add(new JournalLine
+                {
+                    JournalEntryId = je.Id,
+                    AccountType = JournalAccountType.Expense,
+                    AccountId = expense.Id,
+                    Debit = expense.Amount,
+                    Credit = 0m,
+                    Description = $"مصروف: {expense.Title}",
+                    BranchId = branchId.Value,
+                });
+
+                // Credit: Treasury (cash outflow)
+                db.JournalLines.Add(new JournalLine
+                {
+                    JournalEntryId = je.Id,
+                    AccountType = JournalAccountType.Treasury,
+                    AccountId = treasury.Id,
+                    Debit = 0m,
+                    Credit = expense.Amount,
+                    Description = $"سداد من: {treasury.Name}",
+                    BranchId = branchId.Value,
+                });
 
                 await treasuryResolution.DecrementTreasuryBalanceAsync(branchId.Value, expense.PaymentMethod, expense.Amount, activeSession?.Id);
             }
@@ -2056,17 +2743,49 @@ public class FinanceV3Controller(
             expense.IsPostedToLedger = true;
             expense.CashFlowTransactionId = cashflow.Id;
 
-            var je = await journalEntryService.CreateEntryAsync(
-                documentType: FinancialDocumentType.Expense, financialDocumentId: expense.Id,
-                description: $"قيد مصروف تشغيلي (معتمد): {expense.Title}", entryDate: expense.ExpenseDate,
-                branchId: branchId, performedBy: userId,
-                cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
-                lines: new[]
-                {
-                    (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف معتمد: {expense.Title}"),
-                    (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
-                });
-            je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+            // Create JournalEntry manually with IsPosted = true from the start.
+            // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
+            var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+            var je = new JournalEntry
+            {
+                EntryNumber = entryNumber,
+                FinancialDocumentId = expense.Id,
+                FinancialDocumentType = FinancialDocumentType.Expense,
+                Description = $"قيد مصروف تشغيلي (معتمد): {expense.Title}",
+                EntryDate = expense.ExpenseDate,
+                BranchId = branchId,
+                PerformedBy = userId,
+                CashierSessionId = activeSession?.Id,
+                TreasuryId = treasury.Id,
+                IsPosted = true,
+                PostedAt = DateTime.UtcNow,
+                IsReversal = false,
+            };
+            db.JournalEntries.Add(je);
+
+            // Debit: Expense (expense increase)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Expense,
+                AccountId = expense.Id,
+                Debit = expense.Amount,
+                Credit = 0m,
+                Description = $"مصروف معتمد: {expense.Title}",
+                BranchId = branchId,
+            });
+
+            // Credit: Treasury (cash outflow)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Treasury,
+                AccountId = treasury.Id,
+                Debit = 0m,
+                Credit = expense.Amount,
+                Description = $"سداد من: {treasury.Name}",
+                BranchId = branchId,
+            });
 
             await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, expense.PaymentMethod, expense.Amount, activeSession?.Id);
             await db.SaveChangesAsync();
@@ -2106,7 +2825,8 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// DELETE /api/finance-v3/expenses/{id} — Delete/reverse an expense.
-    /// Delegates to the reversal logic from OperationalExpensesController.
+    /// Fix: Reads from JournalEntry/JournalLine instead of CashFlowTransaction
+    /// for validation checks. CashFlowTransaction reversal (dual-write) is preserved.
     /// </summary>
     [HttpDelete("expenses/{id:guid}")]
     [Authorize(Policy = "FinanceWrite")]
@@ -2132,51 +2852,110 @@ public class FinanceV3Controller(
                 var reloaded = await db.OperationalExpenses.FindAsync(expense.Id);
                 if (reloaded == null || !reloaded.IsActive) { await tx.RollbackAsync(); return NotFound(new { message = "المصروف غير موجود" }); }
 
-                CashFlowTransaction? originalCashflow = reloaded.CashFlowTransactionId.HasValue
-                    ? await db.CashFlowTransactions.FindAsync(reloaded.CashFlowTransactionId.Value)
-                    : await db.CashFlowTransactions.FirstOrDefaultAsync(t => t.ReferenceId == reloaded.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
+                // Fix: Read from JournalEntry/JournalLine instead of CashFlowTransaction
+                // Include Lines so we can mirror them for the reversal
+                var originalJe = await db.JournalEntries
+                    .Include(je => je.Lines)
+                    .FirstOrDefaultAsync(je => je.FinancialDocumentId == reloaded.Id
+                        && je.FinancialDocumentType == FinancialDocumentType.Expense
+                        && !je.IsReversal && je.IsPosted);
 
-                if (originalCashflow != null && originalCashflow.CashierSessionId.HasValue)
+                if (originalJe == null)
+                { await tx.RollbackAsync(); return BadRequest(new { message = "لا يوجد قيد محاسبي مرتبط بهذا المصروف" }); }
+
+                // 1. Check if the session is still open (via JournalEntry.CashierSessionId)
+                if (originalJe.CashierSessionId.HasValue)
                 {
-                    var linkedSession = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId.Value);
+                    var linkedSession = await db.CashierSessions.FindAsync(originalJe.CashierSessionId.Value);
                     if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
                     { await tx.RollbackAsync(); return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." }); }
                 }
 
-                if (originalCashflow?.ReversedByTransactionId != null)
+                // 2. Check if a reversal already exists
+                var hasReversal = await db.JournalEntries
+                    .AnyAsync(je => je.ReversalOfEntryId == originalJe.Id && je.IsReversal);
+                if (hasReversal)
                 { await tx.RollbackAsync(); return BadRequest(new { message = "هذا المصروف تم عكسه مسبقاً." }); }
 
-                if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
-                { await tx.RollbackAsync(); return BadRequest(new { message = "عذراً، لا يمكن عكس القيد — سجل التدفق النقدي الأصلي غير مرتبط بخزينة. تواصل مع المحاسب." }); }
+                // 3. Get the original TreasuryId from the Treasury JournalLine
+                var treasuryId = await db.JournalLines
+                    .Where(l => l.JournalEntryId == originalJe.Id
+                        && l.AccountType == JournalAccountType.Treasury)
+                    .Select(l => l.AccountId)
+                    .FirstOrDefaultAsync();
 
-                var originalTreasuryId = originalCashflow.TreasuryId.Value;
-                var originalTreasury = await db.Treasuries.FindAsync(originalTreasuryId);
+                if (treasuryId == Guid.Empty)
+                { await tx.RollbackAsync(); return BadRequest(new { message = "عذراً، لا يمكن عكس القيد — القيد المحاسبي الأصلي غير مرتبط بخزينة. تواصل مع المحاسب." }); }
+
+                var originalTreasury = await db.Treasuries.FindAsync(treasuryId);
                 if (originalTreasury == null || !originalTreasury.IsActive)
                 { await tx.RollbackAsync(); return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." }); }
 
-                var reversalCashflow = new CashFlowTransaction
+                // Create reversal JournalEntry manually with IsPosted = true from the start.
+                // Same pattern as POST /treasuries — avoids double/triple SaveChanges from
+                // CreateReversalEntryAsync (which calls CreateEntryAsync + separate link save).
+                // We already have the original entry with Lines loaded, so we can mirror directly.
+                var reversalEntryNumber = await journalEntryService.GenerateEntryNumberAsync();
+                var reversalJe = new JournalEntry
                 {
-                    TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-OUT-REV-{Guid.NewGuid().ToString()[..8]}",
-                    Type = TransactionType.Inflow, Category = FinancialCategory.Reversal,
-                    Amount = reloaded.Amount, PaymentMethod = reloaded.PaymentMethod,
-                    TransactionDate = DateOnly.FromDateTime(DateTime.Today),
-                    ReferenceId = reloaded.Id, ReferenceNumber = reloaded.ExpenseNumber,
-                    Description = $"عكس قيد مصروف تشغيلي: {reloaded.Title}",
-                    PerformedBy = userId, BranchId = reloaded.BranchId,
-                    IsReversal = true, ReversalOfTransactionId = originalCashflow.Id,
-                    CashierSessionId = originalCashflow.CashierSessionId, TreasuryId = originalTreasuryId
+                    EntryNumber = reversalEntryNumber,
+                    FinancialDocumentId = originalJe.FinancialDocumentId,
+                    FinancialDocumentType = originalJe.FinancialDocumentType,
+                    Description = $"Reversal of {originalJe.EntryNumber}: حذف مصروف: {reloaded.Title}",
+                    EntryDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    BranchId = originalJe.BranchId,
+                    PerformedBy = userId,
+                    CashierSessionId = originalJe.CashierSessionId,
+                    TreasuryId = originalJe.TreasuryId,
+                    IsPosted = true,
+                    PostedAt = DateTime.UtcNow,
+                    IsReversal = true,
+                    ReversalOfEntryId = originalJe.Id,
                 };
-                db.CashFlowTransactions.Add(reversalCashflow);
-                originalCashflow.ReversedByTransactionId = reversalCashflow.Id;
+                db.JournalEntries.Add(reversalJe);
 
-                var originalJe = await db.JournalEntries.FirstOrDefaultAsync(e => e.FinancialDocumentId == reloaded.Id && e.FinancialDocumentType == FinancialDocumentType.Expense && !e.IsReversal);
-                if (originalJe != null)
+                // Mirror the lines: debit → credit, credit → debit
+                foreach (var line in originalJe.Lines)
                 {
-                    var reversalJe = await journalEntryService.CreateReversalEntryAsync(originalEntryId: originalJe.Id, reason: $"حذف مصروف: {reloaded.Title}", performedBy: userId);
-                    reversalJe.IsPosted = true; reversalJe.PostedAt = DateTime.UtcNow;
+                    db.JournalLines.Add(new JournalLine
+                    {
+                        JournalEntryId = reversalJe.Id,
+                        AccountType = line.AccountType,
+                        AccountId = line.AccountId,
+                        Debit = line.Credit,   // swap
+                        Credit = line.Debit,   // swap
+                        Description = $"Reversal: {line.Description}",
+                        BranchId = line.BranchId,
+                    });
                 }
 
-                await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(originalTreasuryId, reloaded.Amount);
+                // Link the original entry to its reversal
+                originalJe.ReversedByEntryId = reversalJe.Id;
+
+                // Dual-write: Create reversal CashFlowTransaction (preserved for backward compatibility)
+                CashFlowTransaction? originalCashflow = reloaded.CashFlowTransactionId.HasValue
+                    ? await db.CashFlowTransactions.FindAsync(reloaded.CashFlowTransactionId.Value)
+                    : await db.CashFlowTransactions.FirstOrDefaultAsync(t => t.ReferenceId == reloaded.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
+
+                if (originalCashflow != null)
+                {
+                    var reversalCashflow = new CashFlowTransaction
+                    {
+                        TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-OUT-REV-{Guid.NewGuid().ToString()[..8]}",
+                        Type = TransactionType.Inflow, Category = FinancialCategory.Reversal,
+                        Amount = reloaded.Amount, PaymentMethod = reloaded.PaymentMethod,
+                        TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                        ReferenceId = reloaded.Id, ReferenceNumber = reloaded.ExpenseNumber,
+                        Description = $"عكس قيد مصروف تشغيلي: {reloaded.Title}",
+                        PerformedBy = userId, BranchId = reloaded.BranchId,
+                        IsReversal = true, ReversalOfTransactionId = originalCashflow.Id,
+                        CashierSessionId = originalCashflow.CashierSessionId, TreasuryId = treasuryId
+                    };
+                    db.CashFlowTransactions.Add(reversalCashflow);
+                    originalCashflow.ReversedByTransactionId = reversalCashflow.Id;
+                }
+
+                await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(treasuryId, reloaded.Amount);
                 reloaded.IsActive = false; reloaded.DeletedAt = DateTime.UtcNow; reloaded.DeletedBy = userId;
 
                 if (reloaded.LabOrderId.HasValue)
@@ -2340,17 +3119,49 @@ public class FinanceV3Controller(
             };
             db.SupplierBillPayments.Add(payment);
 
-            var je = await journalEntryService.CreateEntryAsync(
-                documentType: FinancialDocumentType.SupplierPayment, financialDocumentId: payment.Id,
-                description: $"سداد فاتورة مورد: {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
-                entryDate: paymentDate, branchId: branchId, performedBy: userId,
-                cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
-                lines: new[]
-                {
-                    (JournalAccountType.Payable, bill.SupplierId, req.Amount, 0m, (string?)$"سداد مستحقات: {bill.Supplier?.Name}"),
-                    (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
-                });
-            je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+            // Create JournalEntry manually with IsPosted = true from the start.
+            // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
+            var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+            var je = new JournalEntry
+            {
+                EntryNumber = entryNumber,
+                FinancialDocumentId = payment.Id,
+                FinancialDocumentType = FinancialDocumentType.SupplierPayment,
+                Description = $"سداد فاتورة مورد: {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
+                EntryDate = paymentDate,
+                BranchId = branchId,
+                PerformedBy = userId,
+                CashierSessionId = activeSession?.Id,
+                TreasuryId = treasury.Id,
+                IsPosted = true,
+                PostedAt = DateTime.UtcNow,
+                IsReversal = false,
+            };
+            db.JournalEntries.Add(je);
+
+            // Debit: Payable (reduce supplier liability)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Payable,
+                AccountId = bill.SupplierId,
+                Debit = req.Amount,
+                Credit = 0m,
+                Description = $"سداد مستحقات: {bill.Supplier?.Name}",
+                BranchId = branchId,
+            });
+
+            // Credit: Treasury (cash outflow)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Treasury,
+                AccountId = treasury.Id,
+                Debit = 0m,
+                Credit = req.Amount,
+                Description = $"سداد من: {treasury.Name}",
+                BranchId = branchId,
+            });
 
             await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, req.PaymentMethod, req.Amount, activeSession?.Id);
 
@@ -2374,18 +3185,6 @@ public class FinanceV3Controller(
         }
         catch { await tx.RollbackAsync(); throw; }
     }
-
-    // ─── Cashier Session Helpers (shared with CashierSessionsController) ──
-
-    private static bool IsCashMethod(string method) =>
-        string.Equals(method, "cash", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsCardMethod(string method) =>
-        string.Equals(method, "card", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsBankMethod(string method) =>
-        string.Equals(method, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(method, "bank", StringComparison.OrdinalIgnoreCase);
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 

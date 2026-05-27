@@ -49,8 +49,11 @@ export interface PatientBalanceDetail {
   NetPaid: number;
   TotalDiscounts: number;
   Balance: number;
+  EntityBalance?: number;
   ContractOutstanding: number;
   HasOutstanding: boolean;
+  JournalReceivable?: number;
+  JournalAdvance?: number;
 }
 
 /* ── Invoices ───────────────────────────────────────────────────────────────────── */
@@ -151,9 +154,9 @@ export interface CashierSession {
   OpenedAt: string;
   ClosingTime: string | null;
   OpeningBalance: number;
-  ExpectedClosingCash: number;
-  ExpectedClosingCard: number;
-  ExpectedClosingBank: number;
+  ExpectedClosingCash: number;   // Migration C: calculated from JournalLine (Treasury Vault)
+  ExpectedClosingCard: number;   // Migration C: merged with bank; TODO: TreasuryType.Card
+  ExpectedClosingBank: number;   // Migration C: calculated from JournalLine (Treasury Bank)
   ActualClosingCash: number | null;
   ActualClosingCard: number | null;
   ActualClosingBank: number | null;
@@ -228,8 +231,8 @@ export interface ExpenseListItem {
   RejectedAt: string | null;
   RejectionReason: string | null;
   IsReversal: boolean;
-  TreasuryId: string | null;
-  TreasuryName: string | null;
+  TreasuryId: string | null;     // Migration C: now sourced from JournalLine (Treasury account)
+  TreasuryName: string | null;   // Migration C: now sourced from JournalLine (Treasury account)
 }
 
 export interface CreateExpenseRequest {
@@ -289,6 +292,7 @@ export interface ProfitLossData {
   AccruedNetProfit: number;
   CashCollections: number;
   CashRefunds: number;
+  PatientPaymentReversals?: number;
   NetCashCollections: number;
   OperatingExpenses: number;
   SalaryPayments: number;
@@ -298,13 +302,17 @@ export interface ProfitLossData {
   CashNetProfit: number;
   ProfitMargin: number;
   ReversalCoverage: Record<string, string>;
+  RevenueTransactionCount?: number;
+  ExpenseTransactionCount?: number;
 }
 
 /* ── Daily Cash Summary ─────────────────────────────────────────────────────────── */
+// Migration B: All fields now derived from JournalEntry/JournalLine (canonical source)
+// instead of CashFlowTransaction.
 export interface DailyCashCategory {
-  Type: string;
-  Category: string;
-  IsReversal: boolean;
+  Type: string;           // "Inflow" or "Outflow" — Migration B: from JournalLine Debit/Credit
+  Category: string;       // Migration B: mapped from JournalEntry.FinancialDocumentType via MapDocumentTypeToCategory
+  IsReversal: boolean;    // Migration B: from JournalEntry.IsReversal
   Count: number;
   Total: number;
 }
@@ -322,6 +330,7 @@ export interface DailyCashSummary {
 }
 
 /* ── Account Balances ───────────────────────────────────────────────────────────── */
+// Migration A: All balance calculations now derived from JournalLine (canonical source).
 export interface AccountBalance {
   AccountType: string;
   TotalDebit: number;

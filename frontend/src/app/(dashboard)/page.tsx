@@ -179,7 +179,7 @@ export default function DashboardPage() {
               icon={AlertTriangle}
               color={stats?.overdueContractsCount ? "red" : "green"}
               description="أقساط متأخرة السداد"
-              href="/finance/overdue"
+              href="/finance-v3?tab=contracts"
             />
           </div>
 

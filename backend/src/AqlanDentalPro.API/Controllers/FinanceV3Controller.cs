@@ -66,6 +66,16 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ Unified branchId validation in POST /vault-transfers — now applies to ALL
 ///      users (including Admin), returns BadRequest(400) instead of Forbid(403)
 ///
+/// Phase 6 — Final Cleanup (this commit):
+///   ✅ GET /dashboard — extended with legacy summary fields for daily-operations
+///      FinanceView migration: ActiveContracts, UnpaidInvoicesCount, DraftInvoicesCount,
+///      OverdueAmount, PendingCommissionsAmount, RecentPayments, RecentInvoices
+///   ✅ Frontend migrated: useFinanceSummary now calls GET /api/finance-v3/dashboard
+///   ✅ Deleted GET /api/finance/summary from PaymentsController (was [Obsolete])
+///   ✅ Deleted GET /api/finance/overdue from PaymentsController (was [Obsolete])
+///   ✅ Frontend link /finance/overdue → /finance-v3?tab=contracts
+///   ✅ Deleted GET /api/cashier-sessions/active from CashierSessionsController (was [Obsolete])
+///
 /// Remaining CashFlowTransaction references (WRITE ONLY — dual-write, keep for now):
 ///   ✅ POST /treasuries       — creates CashFlowTransaction (OP-BAL, dual-write, preserved)
 ///   ✅ POST /expenses          — creates CashFlowTransaction (dual-write, preserved)
@@ -182,6 +192,73 @@ public class FinanceV3Controller(
         var pendingExpenses = await pendingExpensesQuery.CountAsync();
         var pendingTransfers = await pendingTransfersQuery.CountAsync();
 
+        // ── Legacy summary fields (added for daily-operations FinanceView migration) ──
+        // Active contracts count
+        var activeContractsQuery = db.Contracts.Where(c => c.Status == ContractStatus.Active);
+        if (branchId.HasValue) activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == branchId.Value);
+        var activeContracts = await activeContractsQuery.CountAsync();
+
+        // Unpaid (issued) invoices count
+        var unpaidInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
+        if (branchId.HasValue) unpaidInvoicesQuery = unpaidInvoicesQuery.Where(i => i.Patient.BranchId == branchId.Value);
+        var unpaidInvoicesCount = await unpaidInvoicesQuery.CountAsync();
+
+        // Draft invoices count
+        var draftInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Draft && i.IsActive);
+        if (branchId.HasValue) draftInvoicesQuery = draftInvoicesQuery.Where(i => i.Patient.BranchId == branchId.Value);
+        var draftInvoicesCount = await draftInvoicesQuery.CountAsync();
+
+        // Overdue amount — contracts with installments past due
+        var overdueContracts = await db.Contracts
+            .Include(c => c.Patient)
+            .Include(c => c.Payments)
+            .Where(c => c.Status == ContractStatus.Active && c.InstallmentAmount > 0 && c.StartDate != null)
+            .ToListAsync();
+        var overdueAmount = 0m;
+        foreach (var c in overdueContracts)
+        {
+            if (branchId.HasValue && c.Patient?.BranchId != branchId.Value) continue;
+            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
+            if (monthsElapsed <= 0) continue;
+            var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
+            var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
+            var overAmt = expectedPaid - actualPaid;
+            if (overAmt > 0) overdueAmount += overAmt;
+        }
+
+        // Pending doctor commissions (calculated/approved/pending but not paid)
+        var commissionQuery = db.InvoiceLineItems
+            .Where(l => l.IsActive && l.CommissionStatus != CommissionStatus.Paid && l.DoctorCommissionAmount > 0);
+        if (branchId.HasValue) commissionQuery = commissionQuery.Where(l => l.Invoice.Patient.BranchId == branchId.Value);
+        var pendingCommissionsAmount = await commissionQuery.SumAsync(l => (decimal?)l.DoctorCommissionAmount) ?? 0;
+
+        // Recent payments (last 10)
+        var recentPaymentsQuery = db.Payments
+            .Include(p => p.Patient)
+            .Where(p => p.IsActive);
+        if (branchId.HasValue) recentPaymentsQuery = recentPaymentsQuery.Where(p => p.BranchId == branchId);
+        var recentPaymentsRaw = await recentPaymentsQuery
+            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
+            .Take(10)
+            .ToListAsync();
+        var recentPayments = recentPaymentsRaw.Select(p => new
+        {
+            p.Id, p.Amount, PaymentDate = p.PaymentDate.ToString(),
+            PatientName = (p.Patient != null ? (p.Patient.FirstName + " " + p.Patient.LastName).Trim() : ""),
+            p.PaymentMethod
+        }).ToList();
+
+        // Recent invoices (last 10)
+        var recentInvoicesQuery = db.Invoices
+            .Include(i => i.Patient)
+            .Where(i => i.IsActive);
+        if (branchId.HasValue) recentInvoicesQuery = recentInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
+        var recentInvoices = await recentInvoicesQuery
+            .OrderByDescending(i => i.CreatedAt)
+            .Take(10)
+            .Select(i => new { i.Id, i.InvoiceNumber, TotalAmount = i.TotalAmount, Status = i.Status.ToString() })
+            .ToListAsync();
+
         return Ok(new
         {
             // Cash Flow KPIs (from JournalLine — Treasury account type)
@@ -215,6 +292,15 @@ public class FinanceV3Controller(
             // Pending actions
             PendingExpenses = pendingExpenses,
             PendingTransfers = pendingTransfers,
+
+            // Legacy summary fields (for daily-operations FinanceView migration)
+            ActiveContracts = activeContracts,
+            UnpaidInvoicesCount = unpaidInvoicesCount,
+            DraftInvoicesCount = draftInvoicesCount,
+            OverdueAmount = overdueAmount,
+            PendingCommissionsAmount = pendingCommissionsAmount,
+            RecentPayments = recentPayments,
+            RecentInvoices = recentInvoices,
 
             // Period info
             Date = today.ToString("yyyy-MM-dd"),

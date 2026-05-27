@@ -51,6 +51,14 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ Fix branchId=Guid.Empty causes 500 — added early BadRequest(400) validation
 ///      in POST /treasuries, POST /payments, POST cashier-sessions/close
 ///
+/// Hotfixes 5E (this commit):
+///   ✅ Eliminated all remaining CreateEntryAsync/CreateReversalEntryAsync calls —
+///      replaced with manual JournalEntry+JournalLine creation (IsPosted=true from start)
+///      in POST /expenses, POST /expenses/{id}/approve, DELETE /expenses,
+///      POST /supplier-bills/{id}/pay — single SaveChanges per operation
+///   ✅ Unified branchId validation in POST /vault-transfers — now applies to ALL
+///      users (including Admin), returns BadRequest(400) instead of Forbid(403)
+///
 /// Remaining CashFlowTransaction references (WRITE ONLY — dual-write, keep for now):
 ///   ✅ POST /treasuries       — creates CashFlowTransaction (OP-BAL, dual-write, preserved)
 ///   ✅ POST /expenses          — creates CashFlowTransaction (dual-write, preserved)
@@ -2169,8 +2177,8 @@ public class FinanceV3Controller(
     {
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
 
         var branchId = currentUser.BranchId ?? Guid.Empty;
         var userId = currentUser.UserId ?? Guid.Empty;
@@ -2418,17 +2426,49 @@ public class FinanceV3Controller(
                 expense.IsPostedToLedger = true;
                 expense.CashFlowTransactionId = cashflow.Id;
 
-                var je = await journalEntryService.CreateEntryAsync(
-                    documentType: FinancialDocumentType.Expense, financialDocumentId: expense.Id,
-                    description: $"قيد مصروف تشغيلي: {expense.Title}", entryDate: expense.ExpenseDate,
-                    branchId: branchId.Value, performedBy: userId,
-                    cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
-                    lines: new[]
-                    {
-                        (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف: {expense.Title}"),
-                        (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
-                    });
-                je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+                // Create JournalEntry manually with IsPosted = true from the start.
+                // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
+                var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+                var je = new JournalEntry
+                {
+                    EntryNumber = entryNumber,
+                    FinancialDocumentId = expense.Id,
+                    FinancialDocumentType = FinancialDocumentType.Expense,
+                    Description = $"قيد مصروف تشغيلي: {expense.Title}",
+                    EntryDate = expense.ExpenseDate,
+                    BranchId = branchId.Value,
+                    PerformedBy = userId,
+                    CashierSessionId = activeSession?.Id,
+                    TreasuryId = treasury.Id,
+                    IsPosted = true,
+                    PostedAt = DateTime.UtcNow,
+                    IsReversal = false,
+                };
+                db.JournalEntries.Add(je);
+
+                // Debit: Expense (expense increase)
+                db.JournalLines.Add(new JournalLine
+                {
+                    JournalEntryId = je.Id,
+                    AccountType = JournalAccountType.Expense,
+                    AccountId = expense.Id,
+                    Debit = expense.Amount,
+                    Credit = 0m,
+                    Description = $"مصروف: {expense.Title}",
+                    BranchId = branchId.Value,
+                });
+
+                // Credit: Treasury (cash outflow)
+                db.JournalLines.Add(new JournalLine
+                {
+                    JournalEntryId = je.Id,
+                    AccountType = JournalAccountType.Treasury,
+                    AccountId = treasury.Id,
+                    Debit = 0m,
+                    Credit = expense.Amount,
+                    Description = $"سداد من: {treasury.Name}",
+                    BranchId = branchId.Value,
+                });
 
                 await treasuryResolution.DecrementTreasuryBalanceAsync(branchId.Value, expense.PaymentMethod, expense.Amount, activeSession?.Id);
             }
@@ -2518,17 +2558,49 @@ public class FinanceV3Controller(
             expense.IsPostedToLedger = true;
             expense.CashFlowTransactionId = cashflow.Id;
 
-            var je = await journalEntryService.CreateEntryAsync(
-                documentType: FinancialDocumentType.Expense, financialDocumentId: expense.Id,
-                description: $"قيد مصروف تشغيلي (معتمد): {expense.Title}", entryDate: expense.ExpenseDate,
-                branchId: branchId, performedBy: userId,
-                cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
-                lines: new[]
-                {
-                    (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف معتمد: {expense.Title}"),
-                    (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
-                });
-            je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+            // Create JournalEntry manually with IsPosted = true from the start.
+            // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
+            var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+            var je = new JournalEntry
+            {
+                EntryNumber = entryNumber,
+                FinancialDocumentId = expense.Id,
+                FinancialDocumentType = FinancialDocumentType.Expense,
+                Description = $"قيد مصروف تشغيلي (معتمد): {expense.Title}",
+                EntryDate = expense.ExpenseDate,
+                BranchId = branchId,
+                PerformedBy = userId,
+                CashierSessionId = activeSession?.Id,
+                TreasuryId = treasury.Id,
+                IsPosted = true,
+                PostedAt = DateTime.UtcNow,
+                IsReversal = false,
+            };
+            db.JournalEntries.Add(je);
+
+            // Debit: Expense (expense increase)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Expense,
+                AccountId = expense.Id,
+                Debit = expense.Amount,
+                Credit = 0m,
+                Description = $"مصروف معتمد: {expense.Title}",
+                BranchId = branchId,
+            });
+
+            // Credit: Treasury (cash outflow)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Treasury,
+                AccountId = treasury.Id,
+                Debit = 0m,
+                Credit = expense.Amount,
+                Description = $"سداد من: {treasury.Name}",
+                BranchId = branchId,
+            });
 
             await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, expense.PaymentMethod, expense.Amount, activeSession?.Id);
             await db.SaveChangesAsync();
@@ -2596,7 +2668,9 @@ public class FinanceV3Controller(
                 if (reloaded == null || !reloaded.IsActive) { await tx.RollbackAsync(); return NotFound(new { message = "المصروف غير موجود" }); }
 
                 // Fix: Read from JournalEntry/JournalLine instead of CashFlowTransaction
+                // Include Lines so we can mirror them for the reversal
                 var originalJe = await db.JournalEntries
+                    .Include(je => je.Lines)
                     .FirstOrDefaultAsync(je => je.FinancialDocumentId == reloaded.Id
                         && je.FinancialDocumentType == FinancialDocumentType.Expense
                         && !je.IsReversal && je.IsPosted);
@@ -2632,9 +2706,46 @@ public class FinanceV3Controller(
                 if (originalTreasury == null || !originalTreasury.IsActive)
                 { await tx.RollbackAsync(); return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." }); }
 
-                // Create reversal JournalEntry (canonical)
-                var reversalJe = await journalEntryService.CreateReversalEntryAsync(originalEntryId: originalJe.Id, reason: $"حذف مصروف: {reloaded.Title}", performedBy: userId);
-                reversalJe.IsPosted = true; reversalJe.PostedAt = DateTime.UtcNow;
+                // Create reversal JournalEntry manually with IsPosted = true from the start.
+                // Same pattern as POST /treasuries — avoids double/triple SaveChanges from
+                // CreateReversalEntryAsync (which calls CreateEntryAsync + separate link save).
+                // We already have the original entry with Lines loaded, so we can mirror directly.
+                var reversalEntryNumber = await journalEntryService.GenerateEntryNumberAsync();
+                var reversalJe = new JournalEntry
+                {
+                    EntryNumber = reversalEntryNumber,
+                    FinancialDocumentId = originalJe.FinancialDocumentId,
+                    FinancialDocumentType = originalJe.FinancialDocumentType,
+                    Description = $"Reversal of {originalJe.EntryNumber}: حذف مصروف: {reloaded.Title}",
+                    EntryDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    BranchId = originalJe.BranchId,
+                    PerformedBy = userId,
+                    CashierSessionId = originalJe.CashierSessionId,
+                    TreasuryId = originalJe.TreasuryId,
+                    IsPosted = true,
+                    PostedAt = DateTime.UtcNow,
+                    IsReversal = true,
+                    ReversalOfEntryId = originalJe.Id,
+                };
+                db.JournalEntries.Add(reversalJe);
+
+                // Mirror the lines: debit → credit, credit → debit
+                foreach (var line in originalJe.Lines)
+                {
+                    db.JournalLines.Add(new JournalLine
+                    {
+                        JournalEntryId = reversalJe.Id,
+                        AccountType = line.AccountType,
+                        AccountId = line.AccountId,
+                        Debit = line.Credit,   // swap
+                        Credit = line.Debit,   // swap
+                        Description = $"Reversal: {line.Description}",
+                        BranchId = line.BranchId,
+                    });
+                }
+
+                // Link the original entry to its reversal
+                originalJe.ReversedByEntryId = reversalJe.Id;
 
                 // Dual-write: Create reversal CashFlowTransaction (preserved for backward compatibility)
                 CashFlowTransaction? originalCashflow = reloaded.CashFlowTransactionId.HasValue
@@ -2823,17 +2934,49 @@ public class FinanceV3Controller(
             };
             db.SupplierBillPayments.Add(payment);
 
-            var je = await journalEntryService.CreateEntryAsync(
-                documentType: FinancialDocumentType.SupplierPayment, financialDocumentId: payment.Id,
-                description: $"سداد فاتورة مورد: {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
-                entryDate: paymentDate, branchId: branchId, performedBy: userId,
-                cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
-                lines: new[]
-                {
-                    (JournalAccountType.Payable, bill.SupplierId, req.Amount, 0m, (string?)$"سداد مستحقات: {bill.Supplier?.Name}"),
-                    (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
-                });
-            je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+            // Create JournalEntry manually with IsPosted = true from the start.
+            // Same pattern as POST /treasuries — avoids double SaveChanges from CreateEntryAsync.
+            var entryNumber = await journalEntryService.GenerateEntryNumberAsync();
+            var je = new JournalEntry
+            {
+                EntryNumber = entryNumber,
+                FinancialDocumentId = payment.Id,
+                FinancialDocumentType = FinancialDocumentType.SupplierPayment,
+                Description = $"سداد فاتورة مورد: {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
+                EntryDate = paymentDate,
+                BranchId = branchId,
+                PerformedBy = userId,
+                CashierSessionId = activeSession?.Id,
+                TreasuryId = treasury.Id,
+                IsPosted = true,
+                PostedAt = DateTime.UtcNow,
+                IsReversal = false,
+            };
+            db.JournalEntries.Add(je);
+
+            // Debit: Payable (reduce supplier liability)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Payable,
+                AccountId = bill.SupplierId,
+                Debit = req.Amount,
+                Credit = 0m,
+                Description = $"سداد مستحقات: {bill.Supplier?.Name}",
+                BranchId = branchId,
+            });
+
+            // Credit: Treasury (cash outflow)
+            db.JournalLines.Add(new JournalLine
+            {
+                JournalEntryId = je.Id,
+                AccountType = JournalAccountType.Treasury,
+                AccountId = treasury.Id,
+                Debit = 0m,
+                Credit = req.Amount,
+                Description = $"سداد من: {treasury.Name}",
+                BranchId = branchId,
+            });
 
             await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, req.PaymentMethod, req.Amount, activeSession?.Id);
 

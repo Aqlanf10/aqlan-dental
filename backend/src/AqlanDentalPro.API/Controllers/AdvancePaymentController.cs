@@ -26,7 +26,7 @@ public sealed class ApproveAdvanceRequest
 [ApiController]
 [Route("api/advances")]
 [Authorize(Policy = "ReportsAccess")]
-public class AdvancePaymentController(AppDbContext db, IAuditService audit) : ControllerBase
+public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
 {
     /// <summary>
     /// Get advance payment records with filters
@@ -217,4 +217,130 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit) : Co
 
         return Ok(new { message = "تم حذف طلب السلفة بنجاح" });
     }
+
+    /// <summary>
+    /// POST /api/advances/{id}/reverse — Reverse an approved advance with dual-write CashFlow + JournalEntry reversal.
+    /// Admin-only. Pessimistic locking, double-restore prevention, session guard.
+    /// </summary>
+    [HttpPost("{id:guid}/reverse")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> ReverseAdvance(Guid id, [FromBody] ReverseAdvanceRequest req)
+    {
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var performedBy = Guid.TryParse(userId, out var uid) ? uid : Guid.Empty;
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Pessimistic lock
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""AdvancePayments"" WHERE ""Id"" = {0} FOR UPDATE", id);
+            }
+
+            var advance = await db.AdvancePayments.FindAsync(id);
+            if (advance is null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "طلب السلفة غير موجود" });
+            }
+
+            if (advance.Status != RequestStatus.Approved)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن عكس سلفة لم يتم الموافقة عليها" });
+            }
+
+            // Double-restore prevention
+            var existingReversal = await db.CashFlowTransactions
+                .AnyAsync(c => c.ReversalOfTransactionId != null
+                    && c.Category == FinancialCategory.Reversal
+                    && c.IsReversal
+                    && c.ReferenceId == advance.Id);
+            if (existingReversal)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "تم عكس هذه السلفة مسبقاً" });
+            }
+
+            // Session guard
+            var originalCashflow = await db.CashFlowTransactions
+                .FirstOrDefaultAsync(c => c.ReferenceId == advance.Id && c.Category == FinancialCategory.SalaryAdvance && !c.IsReversal);
+            if (originalCashflow?.CashierSessionId != null)
+            {
+                var session = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId);
+                if (session != null && (session.Status == SessionStatus.Closed || session.Status == SessionStatus.Reconciled))
+                {
+                    await tx.RollbackAsync();
+                    return BadRequest(new { message = "لا يمكن عكس سلفة مرتبطة بوردية مقفلة أو مسواة." });
+                }
+            }
+
+            // Mark advance as rejected with reversal reason
+            advance.Status = RequestStatus.Rejected;
+            advance.RejectionReason = string.IsNullOrWhiteSpace(req.Reason) ? "عكس السلفة" : req.Reason;
+            advance.IsDeducted = false;
+
+            var employee = await db.Employees.FindAsync(advance.EmployeeId);
+            var branchId = employee?.BranchId ?? Guid.Empty;
+            var treasuryId = originalCashflow?.TreasuryId;
+
+            // Dual-write: CashFlow reversal
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var nextSeq = await db.CashFlowTransactions.CountAsync(t => t.Category == FinancialCategory.Reversal) + 1;
+            var reversalCashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-REV-ADV-{nextSeq:D3}",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.Reversal,
+                Amount = advance.Amount,
+                PaymentMethod = originalCashflow?.PaymentMethod ?? "cash",
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = advance.Id,
+                ReferenceNumber = $"REV-ADV-{advance.Id.ToString()[..8]}",
+                Description = $"عكس سلفة موظف: {employee?.FullName ?? "غير معروف"}",
+                PerformedBy = performedBy,
+                BranchId = branchId,
+                TreasuryId = treasuryId,
+                IsReversal = true,
+                ReversalOfTransactionId = originalCashflow?.Id,
+                CashierSessionId = originalCashflow?.CashierSessionId
+            };
+            db.CashFlowTransactions.Add(reversalCashflow);
+
+            // Dual-write: JournalEntry reversal
+            var originalJe = await db.JournalEntries
+                .FirstOrDefaultAsync(j => j.FinancialDocumentId == advance.Id && !j.IsReversal);
+            if (originalJe != null)
+            {
+                var reversalJe = await journalEntryService.CreateReversalEntryAsync(originalJe.Id, $"عكس سلفة: {employee?.FullName}", performedBy);
+                reversalJe.IsPosted = true;
+                reversalJe.PostedAt = DateTime.UtcNow;
+            }
+
+            // Restore Treasury balance
+            if (treasuryId.HasValue && treasuryId.Value != Guid.Empty)
+            {
+                await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(treasuryId.Value, advance.Amount);
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Update, "AdvancePayment", advance.Id, "Advance payment reversed");
+
+            return Ok(new { message = "تم عكس السلفة بنجاح واستعادة الرصيد للخزينة" });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+}
+
+public sealed class ReverseAdvanceRequest
+{
+    public string? Reason { get; init; }
 }

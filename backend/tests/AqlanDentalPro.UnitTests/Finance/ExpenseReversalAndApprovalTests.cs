@@ -609,7 +609,8 @@ public class ExpenseReversalAndApprovalTests
 
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        var controller = new SalaryController(db, journalEntryService, treasuryResolution);
+        var audit = new Mock<IAuditService>().Object;
+        var controller = new SalaryController(db, journalEntryService, treasuryResolution, audit);
 
         // We need to set up the controller's User claims for PaySalary
         controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext

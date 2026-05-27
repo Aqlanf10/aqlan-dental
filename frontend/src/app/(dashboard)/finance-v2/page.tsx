@@ -1037,12 +1037,26 @@ export default function FinanceV2Page() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      {/* V3 Migration Banner */}
+      <div className="flex items-center justify-between gap-3 p-3 rounded-xl border" style={{ backgroundColor: "#deecf9", borderColor: "#0078d4" }}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm" style={{ color: "#0b5fa5" }}>المركز المالي الجديد (Finance V3) متاح الآن — يتضمن القيد المزدوج وميزان المراجعة وتقارير الأرباح والخسائر</span>
+        </div>
+        <Link
+          href="/finance-v3"
+          className="px-4 py-1.5 rounded-md text-xs font-bold whitespace-nowrap"
+          style={{ backgroundColor: "#0078d4", color: "#ffffff" }}
+        >
+          الانتقال إلى V3
+        </Link>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-black text-gray-900">الإدارة المالية</h1>
-            <span className="bg-clinic-blue/10 text-clinic-blue text-[10px] font-bold px-2 py-0.5 rounded-full border border-clinic-blue/20">V2 جديد</span>
+            <span className="bg-clinic-blue/10 text-clinic-blue text-[10px] font-bold px-2 py-0.5 rounded-full border border-clinic-blue/20">V2</span>
           </div>
           <p className="text-xs text-gray-500 mt-1">مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان</p>
         </div>

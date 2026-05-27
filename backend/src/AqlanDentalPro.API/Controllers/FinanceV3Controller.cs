@@ -13,8 +13,19 @@ namespace AqlanDentalPro.API.Controllers;
 /// Finance V3 API — Provides data endpoints for the Finance V3 Financial Center dashboard.
 /// Access is restricted to Admin and Accountant roles only (ReportsAccess policy).
 ///
-/// This controller reads from both CashFlowTransaction (transitional) and
-/// JournalEntry + JournalLine (canonical) tables, supporting the transition period.
+/// MIGRATION STATUS (CashFlowTransaction → JournalEntry/JournalLine):
+/// ─────────────────────────────────────────────────────────────────────
+/// Migration A (this PR) — COMPLETED:
+///   ✅ GET /dashboard          — lines ~49-70: migrated to JournalLine (Treasury credits/debits)
+///   ✅ GET /account-balances   — already reads from JournalLine (no change needed)
+///
+/// Remaining CashFlowTransaction references (future migration phases):
+///   ⏳ GET /daily-cash-summary — ~line 375: reads CashFlowTransactions by category
+///   ⏳ GET /profit-loss        — ~lines 467-600: reads CashFlowTransactions for cash figures
+///   ⏳ GET cashier sessions    — ~lines 925-926, 1405-1406: calculates expected values
+///   ⏳ GET expenses detail     — ~lines 1350-1376: reads Treasury info from CashFlow
+///   ⏳ POST/DELETE/PATCH write — creates CashFlowTransaction records (dual-write, keep for now)
+///   ⏳ POST treasury recalc    — ~lines 1841-1842: recalculates balance from CashFlow
 /// </summary>
 [ApiController]
 [Route("api/finance-v3")]
@@ -32,7 +43,8 @@ public class FinanceV3Controller(
 
     /// <summary>
     /// GET /api/finance-v3/dashboard — Returns KPI data for the Finance V3 dashboard header band.
-    /// Uses CashFlowTransaction for real-time operational data and JournalEntry for canonical verification.
+    /// Migration A: Now reads from JournalEntry/JournalLine (canonical source of truth)
+    /// instead of CashFlowTransaction (transitional).
     /// </summary>
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard([FromQuery] string? period = "today")
@@ -45,28 +57,28 @@ public class FinanceV3Controller(
         var today = DateOnly.FromDateTime(DateTime.Today);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
-        // ── Cash-based KPIs (from CashFlowTransaction) ──
-        var todayInflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate == today && t.Type == TransactionType.Inflow);
-        var todayOutflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate == today && t.Type == TransactionType.Outflow);
-        var monthInflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate >= monthStart && t.Type == TransactionType.Inflow);
-        var monthOutflowQuery = db.CashFlowTransactions
-            .Where(t => t.TransactionDate >= monthStart && t.Type == TransactionType.Outflow);
+        // ── Accrual-based KPIs (from JournalLine — canonical source of truth) ──
+        // Revenue = SUM(Credit - Debit) for Revenue account type (credit-normal)
+        // Expenses = SUM(Debit - Credit) for Expense account type (debit-normal)
+        // Cash inflow = SUM(Credit - Debit) for Treasury account type (cash received)
+        // Cash outflow = SUM(Debit - Credit) for Treasury account type (cash paid out)
+        var todayTreasuryLines = db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.EntryDate == today
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
+        var monthTreasuryLines = db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.EntryDate >= monthStart
+                && l.JournalEntry.IsPosted
+                && (!branchId.HasValue || l.BranchId == branchId.Value));
 
-        if (branchId.HasValue)
-        {
-            todayInflowQuery = todayInflowQuery.Where(t => t.BranchId == branchId.Value);
-            todayOutflowQuery = todayOutflowQuery.Where(t => t.BranchId == branchId.Value);
-            monthInflowQuery = monthInflowQuery.Where(t => t.BranchId == branchId.Value);
-            monthOutflowQuery = monthOutflowQuery.Where(t => t.BranchId == branchId.Value);
-        }
-
-        var todayInflow = await todayInflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
-        var todayOutflow = await todayOutflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
-        var monthInflow = await monthInflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
-        var monthOutflow = await monthOutflowQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
+        // Cash inflows: Treasury credits (cash received into treasury)
+        var todayInflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
+        var monthInflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
+        // Cash outflows: Treasury debits (cash paid out from treasury)
+        var todayOutflow = await todayTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var monthOutflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         // ── Outstanding balances ──
         var contractOutstanding = await CalculateContractOutstandingAsync(branchId);
@@ -116,7 +128,7 @@ public class FinanceV3Controller(
 
         return Ok(new
         {
-            // Cash Flow KPIs
+            // Cash Flow KPIs (from JournalLine — Treasury account type)
             TodayInflow = todayInflow,
             TodayOutflow = todayOutflow,
             TodayNet = todayInflow - todayOutflow,

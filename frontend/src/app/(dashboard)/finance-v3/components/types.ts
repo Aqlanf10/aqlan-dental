@@ -49,8 +49,11 @@ export interface PatientBalanceDetail {
   NetPaid: number;
   TotalDiscounts: number;
   Balance: number;
+  EntityBalance?: number;
   ContractOutstanding: number;
   HasOutstanding: boolean;
+  JournalReceivable?: number;
+  JournalAdvance?: number;
 }
 
 /* ── Invoices ───────────────────────────────────────────────────────────────────── */
@@ -289,6 +292,7 @@ export interface ProfitLossData {
   AccruedNetProfit: number;
   CashCollections: number;
   CashRefunds: number;
+  PatientPaymentReversals?: number;
   NetCashCollections: number;
   OperatingExpenses: number;
   SalaryPayments: number;
@@ -298,6 +302,8 @@ export interface ProfitLossData {
   CashNetProfit: number;
   ProfitMargin: number;
   ReversalCoverage: Record<string, string>;
+  RevenueTransactionCount?: number;
+  ExpenseTransactionCount?: number;
 }
 
 /* ── Daily Cash Summary ─────────────────────────────────────────────────────────── */

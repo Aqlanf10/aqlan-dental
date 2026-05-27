@@ -57,7 +57,7 @@ export default function ReferralsPage() {
     try {
       await api.put(`/api/referrals/${id}/${action}`);
       load();
-    } catch {}
+    } catch (e) { console.error("[Referral] Failed to update referral status:", e); }
   };
 
   return (

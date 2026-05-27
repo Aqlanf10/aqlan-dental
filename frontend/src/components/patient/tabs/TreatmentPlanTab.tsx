@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  ClipboardList, Plus, Pencil, Trash2, X, GripVertical,
+  ClipboardList, Plus, Pencil, Trash2, X,
   ArrowUp, ArrowDown, CheckCircle2, Clock, AlertTriangle,
   Ban, Pause, Stethoscope, Save, Link2,
 } from "lucide-react";

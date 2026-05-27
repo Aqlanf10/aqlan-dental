@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { HubConnectionBuilder, HubConnection, LogLevel } from "@microsoft/signalr";
+import { HubConnectionBuilder, type HubConnection, LogLevel } from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -24,7 +24,7 @@ export function useSignalRClinicQueue() {
   // Sound ref — lazy loaded
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const playNotification = useCallback((type: "queue" | "handoff" | "arrival" = "queue") => {
+  const playNotification = useCallback((_type: "queue" | "handoff" | "arrival" = "queue") => {
     try {
       if (!audioRef.current) {
         audioRef.current = new Audio("/notify.mp3");

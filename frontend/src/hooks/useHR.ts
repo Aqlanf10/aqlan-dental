@@ -3,13 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import type {
-  AttendanceRecord,
   AttendanceSummary,
-  SalaryRecord,
-  AdvanceRecord,
-  LeaveRecord,
   LeaveBalance,
-  EmployeeDocument,
 } from '@/types/hr';
 
 // ==================== ATTENDANCE ====================

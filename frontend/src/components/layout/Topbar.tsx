@@ -158,14 +158,14 @@ export function Topbar() {
   };
 
   const markAllRead = async () => {
-    await api.put("/api/notifications/read-all").catch(() => {});
+    await api.put("/api/notifications/read-all").catch((e) => { console.error("[Topbar] Failed to mark all notifications read:", e); });
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     setUnreadCount(0);
     queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
   };
 
   const markRead = async (id: string) => {
-    await api.put(`/api/notifications/${id}/read`).catch(() => {});
+    await api.put(`/api/notifications/${id}/read`).catch((e) => { console.error("[Topbar] Failed to mark notification read:", e); });
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
     queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
@@ -183,7 +183,7 @@ export function Topbar() {
   };
 
   const deleteNotif = async (id: string) => {
-    await api.delete(`/api/notifications/${id}`).catch(() => {});
+    await api.delete(`/api/notifications/${id}`).catch((e) => { console.error("[Topbar] Failed to delete notification:", e); });
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 

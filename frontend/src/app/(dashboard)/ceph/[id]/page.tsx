@@ -138,7 +138,7 @@ export default function CephAnalysisPage() {
       doctorApproved: partial.doctorApproved ?? diagnosis?.doctorApproved ?? false,
     };
     setDiagnosis(updated);
-    await api.put(`/api/ceph/${id}/diagnosis`, updated).catch(() => {});
+    await api.put(`/api/ceph/${id}/diagnosis`, updated).catch((e) => { console.error("[Ceph] Failed to save diagnosis:", e); });
   };
 
   if (loading) return (

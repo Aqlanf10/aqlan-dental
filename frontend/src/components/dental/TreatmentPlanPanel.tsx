@@ -64,7 +64,7 @@ export function TreatmentPlanPanel({ patientId, existingPlans, onUpdate }: Treat
       setToothNumber(""); setTreatment(""); setPriority("medium"); setEstimatedCost(""); setNotes("");
       setShowForm(false);
       onUpdate();
-    } catch {} finally { setSaving(false); }
+    } catch (e) { console.error("[TreatmentPlan] Failed to create plan:", e); } finally { setSaving(false); }
   };
 
   const handleStatusChange = async (planId: string, status: string) => {
@@ -72,7 +72,7 @@ export function TreatmentPlanPanel({ patientId, existingPlans, onUpdate }: Treat
       await api.patch(`/api/general/treatment-plans/${planId}/status`, { status });
       setPlans((prev) => prev.map((p) => p.id === planId ? { ...p, status: status as TreatmentPlanItem["status"] } : p));
       onUpdate();
-    } catch {}
+    } catch (e) { console.error("[TreatmentPlan] Failed to update plan status:", e); }
   };
 
   const planned = plans.filter((p) => p.status === "planned").length;

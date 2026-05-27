@@ -70,7 +70,7 @@ export function DaySchedule({ date, doctorId }: Props) {
   useEffect(() => { reload(); }, [date, doctorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = async (id: string, status: string) => {
-    await api.put(`/api/appointments/${id}/status`, { status }).catch(() => {});
+    await api.put(`/api/appointments/${id}/status`, { status }).catch((e) => { console.error("[DaySchedule] Failed to update appointment status:", e); });
     setAppointments((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status } : a))
     );

@@ -70,7 +70,7 @@ export function CommissionBreakdown({ commission: c, canEdit, canApprove, onUpda
     try {
       await unlockMutation.mutateAsync(c.lineItemId);
       onUpdated?.();
-    } catch {}
+    } catch (e) { console.error("[Commission] Failed to unlock commission:", e); }
   }
 
   return (

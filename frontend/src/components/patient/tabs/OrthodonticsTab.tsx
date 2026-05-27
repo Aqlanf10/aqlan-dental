@@ -299,7 +299,7 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
                       ov.contractId ? "bg-[#3d7ab5]/10 text-[#3d7ab5]" : "bg-gray-50 text-gray-400"
                     )}
                   >
-                    <Image className="w-3.5 h-3.5" />
+                    <Image className="w-3.5 h-3.5" aria-hidden="true" />
                     <span className="truncate">
                       {ov.contractId
                         ? `متبقي ${((ov.contractRemaining ?? 0)).toLocaleString()}`

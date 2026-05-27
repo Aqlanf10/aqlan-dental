@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  Calendar, Activity, Wallet, Pill, Clock, Scissors,
+  Calendar, Activity, Wallet, Clock, Scissors,
   Phone, Stethoscope, AlertTriangle, FileText,
   CreditCard, Camera, FolderOpen, Plus, MessageCircle,
   ClipboardList, ChevronLeft, ScanLine, Printer,

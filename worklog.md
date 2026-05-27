@@ -169,3 +169,27 @@ Stage Summary:
 - All existing units remain untouched
 - PR: https://github.com/Aqlanf10/aqlan-dental/pull/218
 - Commit: 615cec0
+
+---
+Task ID: 6
+Agent: main
+Task: Phase 6 Final Cleanup — Migrate frontend to V3 endpoints, delete obsolete endpoints
+
+Work Log:
+- Explored codebase to find all references to /api/finance/summary, /api/finance/overdue, /api/cashier-sessions/active
+- Compared old endpoint response shapes with V3 dashboard response
+- Added 7 missing fields to GET /api/finance-v3/dashboard (ActiveContracts, UnpaidInvoicesCount, DraftInvoicesCount, OverdueAmount, PendingCommissionsAmount, RecentPayments, RecentInvoices)
+- Migrated useFinanceSummary hook from /api/finance/summary to /api/finance-v3/dashboard with field mapping
+- Updated /finance/overdue navigation link in page.tsx to /finance-v3?tab=contracts
+- Deleted GET /api/finance/summary from PaymentsController
+- Deleted GET /api/finance/overdue from PaymentsController
+- Deleted GET /api/cashier-sessions/active from CashierSessionsController
+- Verified zero remaining references to old endpoints in both frontend and backend
+- Updated FinanceV3Controller migration header with Phase 6 status
+- Committed as 7c4009a and pushed to origin
+- Updated PR #251 title and description
+
+Stage Summary:
+- All 3 obsolete endpoints deleted (finance/summary, finance/overdue, cashier-sessions/active)
+- Frontend fully migrated to V3 endpoints
+- PR #251 updated: https://github.com/Aqlanf10/aqlan-dental/pull/251

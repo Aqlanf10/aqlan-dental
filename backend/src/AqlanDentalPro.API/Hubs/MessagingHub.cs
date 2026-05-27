@@ -10,8 +10,10 @@ namespace AqlanDentalPro.API.Hubs;
 /// <summary>
 /// SignalR Hub للمراسلة والإشعارات الفورية.
 /// يتيح الدفع الفوري للرسائل والإشعارات بدلاً من الاعتماد الكامل على HTTP polling.
+/// يسمح بالاتصال المجهول لشاشات العرض (clinic-display) التي تحتاج فقط
+/// لاستقبال أحداث الطابور. الطرق المحمية (JoinConversation, LeaveConversation)
+/// تتطلب مصادقة صالحة.
 /// </summary>
-[Authorize]
 public class MessagingHub(AppDbContext db, ILogger<MessagingHub> logger) : Hub
 {
     /// <summary>
@@ -32,6 +34,14 @@ public class MessagingHub(AppDbContext db, ILogger<MessagingHub> logger) : Hub
         if (user != null)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, $"role-{user.Role}");
+
+            // Branch isolation: add to branch group so queue events are scoped per branch
+            // Admin sees all branches (no branch group), staff only see their branch
+            if (user.BranchId.HasValue && user.BranchId.Value != Guid.Empty)
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"branch-{user.BranchId.Value}");
+                logger.LogDebug("SignalR: User {UserId} added to branch group {BranchId}", userId, user.BranchId.Value);
+            }
         }
 
         await base.OnConnectedAsync();
@@ -48,6 +58,12 @@ public class MessagingHub(AppDbContext db, ILogger<MessagingHub> logger) : Hub
             if (user != null)
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"role-{user.Role}");
+
+                // Remove from branch group
+                if (user.BranchId.HasValue && user.BranchId.Value != Guid.Empty)
+                {
+                    await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"branch-{user.BranchId.Value}");
+                }
             }
         }
 
@@ -59,7 +75,9 @@ public class MessagingHub(AppDbContext db, ILogger<MessagingHub> logger) : Hub
 
     /// <summary>
     /// ينضم المستخدم إلى مجموعة المحادثة لاستقبال الرسائل الجديدة فورياً.
+    /// يتطلب مصادقة صالحة.
     /// </summary>
+    [Authorize]
     public async Task JoinConversation(Guid conversationId)
     {
         var userId = GetUserId();
@@ -77,8 +95,9 @@ public class MessagingHub(AppDbContext db, ILogger<MessagingHub> logger) : Hub
     }
 
     /// <summary>
-    /// يغادر المستخدم مجموعة المحادثة.
+    /// يغادر المستخدم مجموعة المحادثة. يتطلب مصادقة صالحة.
     /// </summary>
+    [Authorize]
     public async Task LeaveConversation(Guid conversationId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"conv-{conversationId}");

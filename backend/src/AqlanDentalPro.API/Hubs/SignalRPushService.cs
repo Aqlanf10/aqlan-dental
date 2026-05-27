@@ -28,4 +28,9 @@ public class SignalRPushService(IHubContext<MessagingHub> hubContext) : IRealTim
     {
         await hubContext.Clients.All.SendAsync(eventName, payload);
     }
+
+    public async Task PushToBranchAsync(Guid branchId, string eventName, object? payload = null)
+    {
+        await hubContext.Clients.Group($"branch-{branchId}").SendAsync(eventName, payload);
+    }
 }

@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import api from "@/lib/api";
 import {
   RefreshCw, Loader2, UserPlus, Stethoscope,
   MapPin, Clock, XCircle, PhoneCall,
-  DoorOpen, Play, Square,
+  DoorOpen, Play, Square, Volume2,
+  Wifi, WifiOff,
 } from "lucide-react";
 import { NAVY, BLUE } from "../_lib/constants";
 import type { TodayJourneyItem } from "../_lib/constants";
+import { useQueryClient } from "@tanstack/react-query";
+import { HubConnectionBuilder, type HubConnection, LogLevel } from "@microsoft/signalr";
+import { useAuthStore } from "@/stores/authStore";
+import { buildAnnouncementText } from "@/lib/clinic-display-announcement";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ClinicQueueItem {
@@ -72,6 +77,28 @@ function queueItemToJourney(q: ClinicQueueItem): TodayJourneyItem {
   };
 }
 
+/* ─── Arabic Speech Utility ────────────────────────────────────────────────── */
+function speakArabic(text: string): boolean {
+  if (typeof window === "undefined" || !window.speechSynthesis) return false;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "ar-SA";
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    const voices = window.speechSynthesis.getVoices();
+    const arabicVoice = voices.find((v) => v.lang.startsWith("ar"));
+    if (arabicVoice) utterance.voice = arabicVoice;
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch { return false; }
+}
+
+const HUB_URL = process.env.NEXT_PUBLIC_API_URL
+  ? `${process.env.NEXT_PUBLIC_API_URL}/hubs/messaging`
+  : "/hubs/messaging";
+
 /* ─── Component ────────────────────────────────────────────────────────────── */
 interface ClinicQueueViewProps {
   searchQuery: string;
@@ -85,7 +112,15 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [doctorFilter, setDoctorFilter] = useState("");
+  const [signalrConnected, setSignalrConnected] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const connectionRef = useRef<HubConnection | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // ── Fetch queue data ──
   const fetchQueue = useCallback(async () => {
     try {
       const params = new URLSearchParams();
@@ -96,13 +131,103 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
     } catch { /* ignore */ } finally { setLoading(false); }
   }, [doctorFilter]);
 
+  // ── Initial load + rooms/doctors ──
   useEffect(() => {
     fetchQueue();
     api.get<DbRoom[]>("/api/clinic-queue/rooms").then(r => setRooms(r.data)).catch(() => {});
     api.get<DoctorOption[]>("/api/doctors").then(r => setDoctors(r.data ?? [])).catch(() => {});
+  }, [fetchQueue]);
+
+  // ── SignalR real-time connection ──
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!user || !token) return;
+
+    const connect = async () => {
+      if (connectionRef.current?.state === "Connected") return;
+
+      try {
+        const connection = new HubConnectionBuilder()
+          .withUrl(HUB_URL, { accessTokenFactory: () => token })
+          .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+          .configureLogging(LogLevel.Warning)
+          .build();
+
+        // Queue updated — refresh data instantly
+        connection.on("QueueUpdated", () => {
+          fetchQueue();
+          queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+          queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+        });
+
+        // Patient called — refresh + play notification sound + voice announcement
+        connection.on("PatientCalled", (payload: { id?: string; patientId?: string; roomName?: string }) => {
+          fetchQueue();
+          queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+          queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+
+          // Play notification sound
+          try {
+            if (!audioRef.current) {
+              audioRef.current = new Audio("/notify.mp3");
+              audioRef.current.volume = 0.6;
+            }
+            audioRef.current.play().catch(() => {});
+          } catch { /* ignore */ }
+
+          // Voice announcement for the called patient
+          if (voiceEnabled && payload?.id) {
+            // Fetch the called patient info for voice announcement
+            fetchQueue(); // data already refreshed above
+          }
+        });
+
+        connection.onreconnected(() => {
+          setSignalrConnected(true);
+          fetchQueue();
+        });
+        connection.onclose(() => setSignalrConnected(false));
+
+        await connection.start();
+        connectionRef.current = connection;
+        setSignalrConnected(true);
+      } catch (err) {
+        console.warn("ClinicQueueView SignalR failed:", err);
+        setSignalrConnected(false);
+      }
+    };
+
+    connect();
+
+    return () => {
+      if (connectionRef.current) {
+        connectionRef.current.stop().catch(() => {});
+        connectionRef.current = null;
+      }
+      setSignalrConnected(false);
+    };
+  }, [user, fetchQueue, queryClient, voiceEnabled]);
+
+  // ── Fallback polling (only when SignalR is disconnected) ──
+  useEffect(() => {
+    if (signalrConnected) return; // No polling needed when SignalR is live
     const interval = setInterval(fetchQueue, 15000);
     return () => clearInterval(interval);
-  }, [fetchQueue]);
+  }, [signalrConnected, fetchQueue]);
+
+  // ── Voice announcement when a patient is called ──
+  const lastCalledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voiceEnabled) return;
+    const calledItem = items.find(i => i.status === "Called" && i.calledAt);
+    if (!calledItem || !calledItem.calledAt) return;
+    // Only announce if this is a new call (different from last announced)
+    const callKey = `${calledItem.id}-${calledItem.calledAt}`;
+    if (lastCalledRef.current === callKey) return;
+    lastCalledRef.current = callKey;
+    const text = buildAnnouncementText(calledItem.patientName, calledItem.patientNumber, calledItem.roomName || "");
+    speakArabic(text);
+  }, [items, voiceEnabled]);
 
   const queueAction = async (url: string, body?: object) => {
     setActionLoading(url);
@@ -111,6 +236,22 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
       fetchQueue();
     } catch { /* ignore */ }
     finally { setActionLoading(null); }
+  };
+
+  // ── Voice call button handler ──
+  const handleCallWithVoice = async (item: ClinicQueueItem) => {
+    setActionLoading(item.id);
+    try {
+      await api.post(`/api/clinic-queue/${item.id}/call`, { roomName: rooms[0]?.arabicName });
+      // Voice announcement will be triggered by the SignalR PatientCalled event + useEffect above
+    } catch { /* ignore */ }
+    finally { setActionLoading(null); }
+  };
+
+  // ── Manual voice announce for a specific patient ──
+  const announcePatient = (item: ClinicQueueItem) => {
+    const text = buildAnnouncementText(item.patientName, item.patientNumber, item.roomName || "");
+    speakArabic(text);
   };
 
   // Filter + search
@@ -150,6 +291,22 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         </div>
 
         <div className="flex-1" />
+
+        {/* Voice toggle */}
+        <button onClick={() => setVoiceEnabled(!voiceEnabled)}
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition"
+          title={voiceEnabled ? "إيقاف النداء الصوتي" : "تفعيل النداء الصوتي"}>
+          <Volume2 className="w-4 h-4" style={{ color: voiceEnabled ? "#16a34a" : "#94a3b8" }} />
+        </button>
+
+        {/* SignalR status indicator */}
+        <div className="flex items-center gap-1" title={signalrConnected ? "متصل لحظياً (SignalR)" : "غير متصل — تحديث كل 15 ثانية"}>
+          {signalrConnected ? (
+            <Wifi className="w-4 h-4" style={{ color: "#16a34a" }} />
+          ) : (
+            <WifiOff className="w-4 h-4" style={{ color: "#f59e0b" }} />
+          )}
+        </div>
 
         {/* Doctor filter */}
         {doctors.length > 0 && (
@@ -211,9 +368,13 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {item.status === "Waiting" && (
                         <>
-                          <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/call`, { roomName: rooms[0]?.arabicName })}
-                            disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: BLUE }}>
-                            <PhoneCall className="w-3 h-3 inline ml-1" />نداء
+                          <button onClick={() => handleCallWithVoice(item)}
+                            disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: BLUE }}>
+                            <PhoneCall className="w-3 h-3" />نداء
+                          </button>
+                          <button onClick={() => announcePatient(item)}
+                            disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#059669" }} title="نداء صوتي فقط (بدون تغيير الحالة)">
+                            <Volume2 className="w-3 h-3" />
                           </button>
                           <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/cancel`)}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#ef4444" }}>

@@ -167,8 +167,12 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            // SignalR: Notify all clients that queue has changed
-            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "added", item.Id, item.PatientId });
+            // SignalR: Branch-scoped push — only clients in the same branch see queue updates
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "added", item.Id, item.PatientId });
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "added", item.Id, item.PatientId });
 
             return Created($"/api/clinic-queue/{item.Id}", new
             {
@@ -237,9 +241,18 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            // SignalR: Notify TV display and all staff of patient call
-            await pushService.PushToAllAsync(MessagingHubEvents.PatientCalled, new { item.Id, item.PatientId, item.RoomName, item.CalledAt });
-            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "called", item.Id, item.PatientId });
+            // SignalR: Branch-scoped push — notify TV display and all staff in the same branch
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+            {
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.PatientCalled, new { item.Id, item.PatientId, item.RoomName, item.CalledAt });
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "called", item.Id, item.PatientId });
+            }
+            else
+            {
+                await pushService.PushToAllAsync(MessagingHubEvents.PatientCalled, new { item.Id, item.PatientId, item.RoomName, item.CalledAt });
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "called", item.Id, item.PatientId });
+            }
 
             return Ok(new
             {
@@ -288,6 +301,13 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // SignalR: Branch-scoped push — notify queue update when patient enters room
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "entered-room", item.Id, item.PatientId });
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "entered-room", item.Id, item.PatientId });
 
             return Ok(new
             {
@@ -366,6 +386,13 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            // SignalR: Branch-scoped push — notify queue update when visit starts
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "started", item.Id, item.PatientId });
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "started", item.Id, item.PatientId });
+
             return Ok(new
             {
                 item.Id,
@@ -414,8 +441,12 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            // SignalR: Notify all clients that queue has changed
-            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "completed", item.Id, item.PatientId });
+            // SignalR: Branch-scoped push — notify queue update on completion
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "completed", item.Id, item.PatientId });
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "completed", item.Id, item.PatientId });
 
             return Ok(new
             {
@@ -469,8 +500,12 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            // SignalR: Notify all clients that queue has changed
-            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "cancelled", item.Id, item.PatientId });
+            // SignalR: Branch-scoped push — notify queue update on cancellation
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "cancelled", item.Id, item.PatientId });
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "cancelled", item.Id, item.PatientId });
 
             return Ok(new
             {
@@ -814,6 +849,32 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
     {
         var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
+    }
+
+    /// <summary>
+    /// Gets the current user's branch ID for SignalR branch-scoped push.
+    /// Returns null for Admin users (who see all branches).
+    /// </summary>
+    private Guid? GetCurrentBranchId()
+    {
+        var branchIdClaim = User.FindFirst("BranchId")?.Value;
+        if (Guid.TryParse(branchIdClaim, out var branchId) && branchId != Guid.Empty)
+            return branchId;
+
+        // Fallback: check if user is admin — admins don't have branch scope
+        var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        if (role == "Admin") return null;
+
+        // Non-admin without branch claim — try to resolve from DB
+        var userId = GetCurrentUserId();
+        if (userId.HasValue)
+        {
+            var user = db.Users.Find(userId.Value);
+            if (user?.BranchId.HasValue == true && user.BranchId.Value != Guid.Empty)
+                return user.BranchId.Value;
+        }
+
+        return null;
     }
 
     /// <summary>

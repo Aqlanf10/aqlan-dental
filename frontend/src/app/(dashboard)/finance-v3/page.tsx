@@ -678,7 +678,7 @@ function InvoicesTab() {
     if (!confirmCancel) return;
     try {
       setCancelling(true);
-      await api.patch(`/api/invoices/${confirmCancel}/cancel`);
+      await api.patch(`/api/finance-v3/invoices/${confirmCancel}/cancel`);
       toast.success("تم إلغاء الفاتورة بنجاح");
       setConfirmCancel(null);
       setDetail(null);
@@ -855,7 +855,7 @@ function CollectionsTab() {
       };
       if (selectedInvoice) payload.InvoiceId = selectedInvoice;
       if (selectedContract) payload.ContractId = selectedContract;
-      await api.post("/api/payments", payload);
+      await api.post("/api/finance-v3/payments", payload);
       toast.success("تم تسجيل الدفعة بنجاح");
       resetForm();
       setShowRegister(false);
@@ -867,7 +867,7 @@ function CollectionsTab() {
     if (!confirmDelete) return;
     try {
       setSubmitting(true);
-      await api.delete(`/api/payments/${confirmDelete}`);
+      await api.delete(`/api/finance-v3/payments/${confirmDelete}`);
       toast.success("تم عكس الدفعة بنجاح");
       setConfirmDelete(null);
       fetchPayments();
@@ -1099,7 +1099,7 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         ActualClosingCard: Number(actualCard) || 0,
         ActualClosingBank: Number(actualBank) || 0,
       };
-      await api.post(`/api/cashier-sessions/close`, payload);
+      await api.post(`/api/finance-v3/cashier-sessions/close`, payload);
       toast.success("تم إقفال الوردية بنجاح");
       setCloseSession(null);
       fetchSessions();
@@ -1110,7 +1110,7 @@ function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     if (!confirmReconcile) return;
     try {
       setSubmitting(true);
-      await api.patch(`/api/cashier-sessions/${confirmReconcile}/reconcile`);
+      await api.patch(`/api/finance-v3/cashier-sessions/${confirmReconcile}/reconcile`);
       toast.success("تم تسوية الوردية بنجاح");
       setConfirmReconcile(null);
       fetchSessions();
@@ -1285,7 +1285,7 @@ function TreasuriesTab() {
     try {
       setSubmitting(true);
       const payload: CreateTreasuryRequest = { Name: tName, Type: tType, OpeningBalance: Number(tBalance) || 0 };
-      await api.post("/api/treasuries", payload);
+      await api.post("/api/finance-v3/treasuries", payload);
       toast.success("تم إنشاء الخزينة بنجاح");
       setShowCreateTreasury(false);
       setTName(""); setTType("Vault"); setTBalance("0");
@@ -1308,7 +1308,7 @@ function TreasuriesTab() {
         DepositSource: trDepositSource || undefined,
         Notes: trNotes || undefined,
       };
-      await api.post("/api/vault-transfers", payload);
+      await api.post("/api/finance-v3/vault-transfers", payload);
       toast.success("تم إنشاء التحويل بنجاح");
       setShowCreateTransfer(false);
       setSrcId(""); setDstId(""); setTrAmount(""); setTrDepositSource(""); setTrNotes("");
@@ -1321,8 +1321,8 @@ function TreasuriesTab() {
     try {
       setSubmitting(true);
       const url = confirmApprove.action === "approve"
-        ? `/api/vault-transfers/${confirmApprove.id}/approve`
-        : `/api/vault-transfers/${confirmApprove.id}/reject`;
+        ? `/api/finance-v3/vault-transfers/${confirmApprove.id}/approve`
+        : `/api/finance-v3/vault-transfers/${confirmApprove.id}/reject`;
       await api.post(url);
       toast.success(confirmApprove.action === "approve" ? "تم اعتماد التحويل" : "تم رفض التحويل");
       setConfirmApprove(null);
@@ -1332,7 +1332,7 @@ function TreasuriesTab() {
 
   const handleRecalculate = async (id: string) => {
     try {
-      await api.post(`/api/treasuries/${id}/recalculate`);
+      await api.post(`/api/finance-v3/treasuries/${id}/recalculate`);
       toast.success("تم إعادة حساب رصيد الخزينة");
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إعادة الحساب")); }
@@ -1476,7 +1476,7 @@ function ExpensesTab() {
         PaymentMethod: eMethod,
         ExpenseDate: eDate,
       };
-      await api.post("/api/expenses", payload);
+      await api.post("/api/finance-v3/expenses", payload);
       toast.success("تم إنشاء المصروف بنجاح");
       setShowCreate(false);
       setETitle(""); setECategory("Other"); setEAmount(""); setEMethod("cash"); setEDate(new Date().toISOString().slice(0, 10));
@@ -1489,13 +1489,13 @@ function ExpensesTab() {
     try {
       setSubmitting(true);
       if (confirmAction.action === "approve") {
-        await api.post(`/api/expenses/${confirmAction.id}/approve`);
+        await api.post(`/api/finance-v3/expenses/${confirmAction.id}/approve`);
         toast.success("تم اعتماد المصروف");
       } else if (confirmAction.action === "reject") {
-        await api.post(`/api/expenses/${confirmAction.id}/reject`);
+        await api.post(`/api/finance-v3/expenses/${confirmAction.id}/reject`);
         toast.success("تم رفض المصروف");
       } else if (confirmAction.action === "delete") {
-        await api.delete(`/api/expenses/${confirmAction.id}`);
+        await api.delete(`/api/finance-v3/expenses/${confirmAction.id}`);
         toast.success("تم حذف/عكس المصروف");
       }
       setConfirmAction(null);
@@ -1614,7 +1614,7 @@ function SuppliersTab() {
         TotalAmount: Number(bAmount),
         DueDate: bDueDate,
       };
-      await api.post("/api/supplier-bills", payload);
+      await api.post("/api/finance-v3/supplier-bills", payload);
       toast.success("تم إنشاء فاتورة المورد بنجاح");
       setShowCreateBill(false);
       setBSupplier(""); setBDesc(""); setBAmount(""); setBDueDate("");
@@ -1637,7 +1637,7 @@ function SuppliersTab() {
         Amount: Number(payAmount),
         PaymentMethod: payMethod,
       };
-      await api.post(`/api/supplier-bills/${showPayBill.Id}/pay`, payload);
+      await api.post(`/api/finance-v3/supplier-bills/${showPayBill.Id}/pay`, payload);
       toast.success("تم سداد القسط بنجاح");
       setShowPayBill(null);
       setPayAmount(""); setPayMethod("cash");

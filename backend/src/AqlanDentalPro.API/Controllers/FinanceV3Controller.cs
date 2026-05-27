@@ -1,3 +1,4 @@
+using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
@@ -20,7 +21,12 @@ namespace AqlanDentalPro.API.Controllers;
 [Authorize(Policy = "ReportsAccess")]
 public class FinanceV3Controller(
     AppDbContext db,
-    ICurrentUserService currentUser) : ControllerBase
+    ICurrentUserService currentUser,
+    IFinanceService financeService,
+    IAuditService audit,
+    IJournalEntryService journalEntryService,
+    ITreasuryResolutionService treasuryResolution,
+    ILogger<FinanceV3Controller> logger) : ControllerBase
 {
     // ─── Dashboard KPIs ─────────────────────────────────────────────────────
 
@@ -1434,6 +1440,913 @@ public class FinanceV3Controller(
         });
     }
 
+    // ─── Write Endpoints (Finance V3) ─────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/finance-v3/payments — Register a payment.
+    /// Delegates to FinanceService.CreatePaymentAsync (same logic as PaymentsController).
+    /// </summary>
+    [HttpPost("payments")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
+    {
+        try
+        {
+            var result = await financeService.CreatePaymentAsync(req);
+            await audit.LogAsync(AuditAction.Create, "Payment", result.Id,
+                newData: new { result.Amount, result.PatientId, result.PaymentMethod });
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Payment creation validation failed");
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// DELETE /api/finance-v3/payments/{id} — Delete a payment (Admin only).
+    /// Delegates to FinanceService.DeletePaymentAsync (same logic as PaymentsController).
+    /// </summary>
+    [HttpDelete("payments/{id:guid}")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> DeletePayment(Guid id)
+    {
+        var payment = await financeService.GetPaymentByIdAsync(id);
+        var deleted = await financeService.DeletePaymentAsync(id);
+        if (deleted && payment != null)
+        {
+            await audit.LogAsync(AuditAction.Delete, "Payment", id,
+                oldData: new { payment.Amount, payment.PatientId });
+        }
+        return deleted ? Ok(new { message = "تم حذف الدفعة بنجاح" }) : NotFound(new { message = "الدفعة غير موجودة" });
+    }
+
+    /// <summary>
+    /// PATCH /api/finance-v3/invoices/{id}/cancel — Cancel an invoice.
+    /// Reuses the same logic from InvoicesController.Cancel.
+    /// </summary>
+    [HttpPatch("invoices/{id:guid}/cancel")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> CancelInvoice(Guid id, [FromBody] CancelInvoiceRequest? req = null)
+    {
+        var invoice = await db.Invoices
+            .Include(i => i.Payments)
+            .FirstOrDefaultAsync(i => i.Id == id);
+
+        if (invoice == null)
+            return NotFound(new { message = "الفاتورة غير موجودة" });
+        if (!invoice.IsActive)
+            return BadRequest(new { message = "الفاتورة محذوفة" });
+
+        var originalStatus = invoice.Status;
+
+        if (originalStatus == InvoiceStatus.Paid)
+            return BadRequest(new { message = "لا يمكن إلغاء فاتورة مدفوعة. يجب استرداد المدفوعات أولاً." });
+        if (originalStatus == InvoiceStatus.Cancelled)
+            return BadRequest(new { message = "الفاتورة ملغاة بالفعل" });
+
+        if (originalStatus == InvoiceStatus.Issued)
+        {
+            var hasActivePayments = invoice.Payments.Any(p => p.IsActive);
+            if (hasActivePayments)
+                return BadRequest(new { message = "لا يمكن إلغاء فاتورة مصدرة بها مدفوعات نشطة. يجب استرداد أو حذف المدفوعات أولاً." });
+        }
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        invoice.Status = InvoiceStatus.Cancelled;
+        invoice.UpdatedBy = userId;
+
+        if (req?.Notes != null)
+            invoice.Notes = string.IsNullOrWhiteSpace(invoice.Notes)
+                ? $"[إلغاء] {req.Notes}"
+                : $"{invoice.Notes}\n[إلغاء] {req.Notes}";
+
+        if (originalStatus == InvoiceStatus.Issued)
+        {
+            var existingReversal = await db.JournalEntries
+                .AnyAsync(e => e.FinancialDocumentId == invoice.Id
+                    && e.FinancialDocumentType == FinancialDocumentType.Invoice
+                    && e.IsReversal);
+
+            if (!existingReversal)
+            {
+                var useCancelTx = db.Database.IsRelational();
+                var cancelTx = useCancelTx ? await db.Database.BeginTransactionAsync() : null;
+                try
+                {
+                    await financeService.ReverseInvoiceIssuedEntryAsync(invoice.Id);
+                    await db.SaveChangesAsync();
+                    if (useCancelTx) await cancelTx!.CommitAsync();
+                }
+                catch
+                {
+                    if (useCancelTx) await cancelTx!.RollbackAsync();
+                    await db.Entry(invoice).ReloadAsync();
+                    throw;
+                }
+            }
+            else
+            {
+                await db.SaveChangesAsync();
+            }
+        }
+        else
+        {
+            await db.SaveChangesAsync();
+        }
+
+        await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice cancelled via Finance V3");
+        return Ok(new { message = "تم إلغاء الفاتورة بنجاح", invoice.Id, Status = invoice.Status.ToString() });
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/cashier-sessions/close — Close the active cashier session.
+    /// Reuses the same logic from CashierSessionsController.CloseSession.
+    /// </summary>
+    [HttpPost("cashier-sessions/close")]
+    [Authorize(Policy = "CashierAccess")]
+    public async Task<IActionResult> CloseCashierSession([FromBody] CloseSessionRequest req)
+    {
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var session = await db.CashierSessions
+            .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+
+        if (session == null)
+            return BadRequest(new { message = "لا يوجد صندوق مفتوح حالياً لإقفاله." });
+
+        var sessionTransactions = await db.CashFlowTransactions
+            .Where(t => t.CashierSessionId == session.Id && t.IsActive)
+            .ToListAsync();
+
+        var cashInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cashOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankInflows = sessionTransactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankOutflows = sessionTransactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+
+        session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
+        session.ExpectedClosingCard = cardInflows - cardOutflows;
+        session.ExpectedClosingBank = bankInflows - bankOutflows;
+        session.ActualClosingCash = req.ActualClosingCash;
+        session.ActualClosingCard = req.ActualClosingCard;
+        session.ActualClosingBank = req.ActualClosingBank;
+
+        var expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
+        var actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
+        session.ShortageOrSurplus = actualTotal - expectedTotal;
+        session.ClosingTime = DateTime.UtcNow;
+        session.Status = SessionStatus.Closed;
+        session.Notes = req.Notes?.Trim();
+
+        // Link any unlinked transactions
+        var unlinkedTransactions = await db.CashFlowTransactions
+            .Where(t => t.CashierSessionId == null && t.PerformedBy == userId && t.CreatedAt >= session.OpeningTime && t.IsActive)
+            .ToListAsync();
+        foreach (var t in unlinkedTransactions)
+            t.CashierSessionId = session.Id;
+
+        await db.SaveChangesAsync();
+        await audit.LogAsync(AuditAction.Update, "CashierSession", session.Id,
+            details: $"Session closed via V3, surplus/shortage: {session.ShortageOrSurplus}");
+
+        return Ok(new
+        {
+            session.Id,
+            session.SessionNumber,
+            session.OpeningTime,
+            session.ClosingTime,
+            session.OpeningBalance,
+            session.ExpectedClosingCash,
+            session.ActualClosingCash,
+            session.ExpectedClosingCard,
+            session.ActualClosingCard,
+            session.ExpectedClosingBank,
+            session.ActualClosingBank,
+            session.ShortageOrSurplus,
+            Status = session.Status.ToString(),
+            message = "تم إقفال صندوق الاستقبال وترحيل المبالغ وتأمين القيود بنجاح"
+        });
+    }
+
+    /// <summary>
+    /// PATCH /api/finance-v3/cashier-sessions/{id}/reconcile — Reconcile a closed session.
+    /// </summary>
+    [HttpPatch("cashier-sessions/{id:guid}/reconcile")]
+    [Authorize(Policy = "ReportsAccess")]
+    public async Task<IActionResult> ReconcileCashierSession(Guid id, [FromBody] string? notes)
+    {
+        var session = await db.CashierSessions.FindAsync(id);
+        if (session == null || !session.IsActive)
+            return NotFound(new { message = "الوردية غير موجودة" });
+        if (session.Status != SessionStatus.Closed)
+            return BadRequest(new { message = "يمكن مطابقة الورديات المغلقة فقط" });
+
+        session.Status = SessionStatus.Reconciled;
+        if (!string.IsNullOrWhiteSpace(notes))
+            session.Notes = string.IsNullOrWhiteSpace(session.Notes)
+                ? $"[مطابقة] {notes}" : $"{session.Notes}\n[مطابقة] {notes}";
+
+        await db.SaveChangesAsync();
+        await audit.LogAsync(AuditAction.Update, "CashierSession", id, details: "Session reconciled via V3");
+
+        return Ok(new { session.Id, session.SessionNumber, Status = session.Status.ToString(), message = "تمت المطابقة والاعتماد المحاسبي للوردية اليومية بنجاح" });
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/treasuries — Create a treasury account (Admin only).
+    /// Reuses logic from TreasuriesController.Create.
+    /// </summary>
+    [HttpPost("treasuries")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> CreateTreasury([FromBody] CreateTreasuryRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest(new { message = "اسم الخزنة/الحساب مطلوب" });
+        if (!Enum.TryParse<TreasuryType>(req.Type, true, out var type))
+            return BadRequest(new { message = "نوع الخزنة غير صالح. المتاح: Vault أو Bank" });
+        if (req.OpeningBalance < 0)
+            return BadRequest(new { message = "رصيد البداية لا يمكن أن يكون سالباً" });
+
+        var branchId = currentUser.BranchId ?? Guid.Empty;
+        var treasury = new Treasury
+        {
+            Name = req.Name.Trim(),
+            Type = type,
+            Balance = req.OpeningBalance,
+            BranchId = branchId,
+            IsActive = true
+        };
+        db.Treasuries.Add(treasury);
+
+        if (req.OpeningBalance > 0)
+        {
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-IN-OP-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.InternalTransfer,
+                Amount = req.OpeningBalance,
+                PaymentMethod = type == TreasuryType.Bank ? "bank" : "cash",
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = treasury.Id,
+                ReferenceNumber = "OP-BAL",
+                Description = $"رصيد افتتاحي لبداية تشغيل {treasury.Name}",
+                PerformedBy = currentUser.UserId ?? Guid.Empty,
+                BranchId = branchId
+            };
+            db.CashFlowTransactions.Add(cashflow);
+        }
+
+        await db.SaveChangesAsync();
+        await audit.LogAsync(AuditAction.Create, "Treasury", treasury.Id);
+
+        return Ok(new { treasury.Id, treasury.Name, Type = treasury.Type.ToString(), treasury.Balance, message = "تم إنشاء الخزنة/الحساب المالي بنجاح" });
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/vault-transfers — Create a vault transfer.
+    /// Reuses logic from VaultTransfersController.Create.
+    /// </summary>
+    [HttpPost("vault-transfers")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> CreateVaultTransfer([FromBody] CreateTransferRequest req)
+    {
+        if (req.Amount <= 0)
+            return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        var branchId = currentUser.BranchId ?? Guid.Empty;
+        var userId = currentUser.UserId ?? Guid.Empty;
+
+        var destTreasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == req.DestinationTreasuryId && t.BranchId == branchId && t.IsActive);
+        if (destTreasury == null)
+            return BadRequest(new { message = "الخزنة المستهدفة غير موجودة أو غير تابعة للفرع" });
+
+        Treasury? sourceTreasury = null;
+        if (req.SourceTreasuryId.HasValue)
+        {
+            sourceTreasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == req.SourceTreasuryId.Value && t.BranchId == branchId && t.IsActive);
+            if (sourceTreasury == null)
+                return BadRequest(new { message = "الخزنة المصدر غير موجودة أو غير تابعة للفرع" });
+            if (sourceTreasury.Balance < req.Amount)
+                return BadRequest(new { message = $"عذراً، رصيد الخزنة المصدر ({sourceTreasury.Balance:N0} ر.ي) أقل من مبلغ التحويل المطلوب ({req.Amount:N0} ر.ي)" });
+        }
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var lockKey = StableLockKeyHelper.VaultTransferNumber;
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var prefix = $"TR-{datePart}-";
+            var lastTransfer = await db.VaultTransfers.IgnoreQueryFilters()
+                .Where(t => t.TransferNumber.StartsWith(prefix))
+                .OrderByDescending(t => t.TransferNumber).Select(t => t.TransferNumber).FirstOrDefaultAsync();
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastTransfer) && lastTransfer.Length > prefix.Length)
+            {
+                var seqPart = lastTransfer[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq)) nextSeq = lastSeq + 1;
+            }
+            var transferNumber = $"{prefix}{nextSeq:D3}";
+
+            var activeSession = await db.CashierSessions.FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+
+            var transfer = new VaultTransfer
+            {
+                TransferNumber = transferNumber,
+                SourceTreasuryId = req.SourceTreasuryId,
+                DestinationTreasuryId = req.DestinationTreasuryId,
+                CashierSessionId = activeSession?.Id,
+                Amount = req.Amount,
+                TransferDate = DateTime.UtcNow,
+                PerformedBy = userId,
+                Status = TransferStatus.Pending,
+                Notes = req.Notes?.Trim(),
+                DepositSource = req.DepositSource
+            };
+
+            if (sourceTreasury != null) sourceTreasury.Balance -= req.Amount;
+
+            db.VaultTransfers.Add(transfer);
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Create, "VaultTransfer", transfer.Id);
+            return Ok(new { transfer.Id, transfer.TransferNumber, transfer.Amount, Status = transfer.Status.ToString(), message = "تم إنشاء طلب ترحيل السيولة بنجاح وهو قيد المراجعة والاستلام الفعلي" });
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/treasuries/{id}/recalculate — Recalculate treasury balance (Admin only).
+    /// </summary>
+    [HttpPost("treasuries/{id:guid}/recalculate")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> RecalculateTreasuryBalance(Guid id)
+    {
+        var treasury = await db.Treasuries.FindAsync(id);
+        if (treasury == null || !treasury.IsActive)
+            return NotFound(new { message = "الخزنة غير موجودة" });
+
+        var oldBalance = treasury.Balance;
+        bool isVaultType = treasury.Type == TreasuryType.Vault;
+        var applicableMethods = isVaultType ? new[] { "cash" } : new[] { "card", "bank_transfer", "bank" };
+
+        var inflows = await db.CashFlowTransactions.Where(t => t.IsActive && t.Type == TransactionType.Inflow && t.BranchId == treasury.BranchId && applicableMethods.Contains(t.PaymentMethod.ToLower())).SumAsync(t => (decimal?)t.Amount) ?? 0m;
+        var outflows = await db.CashFlowTransactions.Where(t => t.IsActive && t.Type == TransactionType.Outflow && t.BranchId == treasury.BranchId && applicableMethods.Contains(t.PaymentMethod.ToLower())).SumAsync(t => (decimal?)t.Amount) ?? 0m;
+
+        var newBalance = inflows - outflows;
+        var drift = newBalance - oldBalance;
+
+        if (drift != 0)
+            logger.LogWarning("Treasury drift detected for {TreasuryId} ({Name}): Old={OldBalance}, New={NewBalance}, Drift={Drift}", treasury.Id, treasury.Name, oldBalance, newBalance, drift);
+
+        treasury.Balance = newBalance;
+        treasury.UpdatedAt = DateTime.UtcNow;
+
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateConcurrencyException) { return Conflict(new { message = "تعارض في تحديث رصيد الخزينة. يرجى المحاولة مرة أخرى." }); }
+
+        await audit.LogAsync(AuditAction.Update, "Treasury", id, details: $"Recalculated via V3: old={oldBalance}, new={newBalance}, drift={drift}");
+
+        return Ok(new { treasury.Id, treasury.Name, OldBalance = oldBalance, NewBalance = newBalance, Drift = drift, DriftDetected = drift != 0, message = drift != 0 ? $"تم إعادة حساب الرصيد. تم اكتشاف انحراف بمبلغ {drift:N0} ر.ي" : "تم إعادة حساب الرصيد. لا يوجد انحراف" });
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/expenses — Create an operational expense.
+    /// Reuses logic from OperationalExpensesController.Create.
+    /// </summary>
+    [HttpPost("expenses")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> CreateExpense([FromBody] CreateExpenseRequest req)
+    {
+        // Delegate to the existing OperationalExpensesController logic via service resolution
+        // We replicate the core logic here to keep it under V3 authorization policy
+        if (string.IsNullOrWhiteSpace(req.Title))
+            return BadRequest(new { message = "عنوان المصروف مطلوب" });
+        if (!Enum.TryParse<ExpenseCategory>(req.Category, true, out var category))
+            return BadRequest(new { message = "صنف المصروف غير صالح" });
+        if (req.Amount <= 0)
+            return BadRequest(new { message = "يجب أن يكون مبلغ المصروف أكبر من الصفر" });
+
+        var date = DateOnly.FromDateTime(DateTime.Today);
+        if (!string.IsNullOrWhiteSpace(req.ExpenseDate) && DateOnly.TryParse(req.ExpenseDate, out var parsedDate))
+            date = parsedDate;
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var branchId = currentUser.BranchId;
+        if (branchId == null || branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل المصروف." });
+
+        CashierSession? activeSession = null;
+        if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        {
+            activeSession = await db.CashierSessions.FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل مصروف نقدي." });
+        }
+
+        Treasury treasury;
+        try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId.Value, req.PaymentMethod, activeSession?.Id); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+
+        if (req.SupplierId.HasValue)
+        {
+            var supplierExists = await db.Suppliers.AnyAsync(s => s.Id == req.SupplierId.Value && s.IsActive);
+            if (!supplierExists) return BadRequest(new { message = "المورد المحدد غير موجود" });
+        }
+
+        const decimal ApprovalThreshold = 50_000m;
+        var needsApproval = req.Amount > ApprovalThreshold;
+        var approvalStatus = needsApproval ? ApprovalStatus.Pending : ApprovalStatus.NotRequired;
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var prefix = $"EXP-{datePart}-";
+            if (db.Database.IsRelational())
+            {
+                var lockKey = StableLockKeyHelper.ExpenseNumber;
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
+
+            var lastExpense = await db.OperationalExpenses.IgnoreQueryFilters()
+                .Where(e => e.ExpenseNumber.StartsWith(prefix))
+                .OrderByDescending(e => e.ExpenseNumber).Select(e => e.ExpenseNumber).FirstOrDefaultAsync();
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastExpense) && lastExpense.Length > prefix.Length)
+            {
+                var seqPart = lastExpense[prefix.Length..];
+                if (int.TryParse(seqPart, out var lastSeq)) nextSeq = lastSeq + 1;
+            }
+            var expenseNumber = $"{prefix}{nextSeq:D3}";
+
+            var expense = new OperationalExpense
+            {
+                ExpenseNumber = expenseNumber, Title = req.Title.Trim(), Category = category,
+                Amount = req.Amount, ExpenseDate = date, PaymentMethod = req.PaymentMethod,
+                SupplierId = req.SupplierId, LabOrderId = req.LabOrderId,
+                Notes = req.Notes?.Trim(), ReceiptAttachmentUrl = req.ReceiptAttachmentUrl,
+                PaidBy = userId, BranchId = branchId.Value,
+                ApprovalStatus = approvalStatus, IsPostedToLedger = false
+            };
+            db.OperationalExpenses.Add(expense);
+
+            if (!needsApproval)
+            {
+                var cashflow = new CashFlowTransaction
+                {
+                    TransactionNumber = $"TX-{datePart}-OUT-{nextSeq:D3}",
+                    Type = TransactionType.Outflow, Category = FinancialCategory.OperationalExpense,
+                    Amount = expense.Amount, PaymentMethod = expense.PaymentMethod,
+                    TransactionDate = expense.ExpenseDate, ReferenceId = expense.Id,
+                    ReferenceNumber = expense.ExpenseNumber,
+                    Description = $"قيد مصروف تشغيلي: {expense.Title}",
+                    PerformedBy = userId, BranchId = branchId.Value,
+                    CashierSessionId = activeSession?.Id, TreasuryId = treasury.Id
+                };
+                db.CashFlowTransactions.Add(cashflow);
+                expense.IsPostedToLedger = true;
+                expense.CashFlowTransactionId = cashflow.Id;
+
+                var je = await journalEntryService.CreateEntryAsync(
+                    documentType: FinancialDocumentType.Expense, financialDocumentId: expense.Id,
+                    description: $"قيد مصروف تشغيلي: {expense.Title}", entryDate: expense.ExpenseDate,
+                    branchId: branchId.Value, performedBy: userId,
+                    cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
+                    lines: new[]
+                    {
+                        (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف: {expense.Title}"),
+                        (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
+                    });
+                je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+
+                await treasuryResolution.DecrementTreasuryBalanceAsync(branchId.Value, expense.PaymentMethod, expense.Amount, activeSession?.Id);
+            }
+
+            if (req.LabOrderId.HasValue)
+            {
+                var labOrder = await db.LabOrders.FindAsync(req.LabOrderId.Value);
+                if (labOrder != null) labOrder.Status = "paid";
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            await audit.LogAsync(AuditAction.Create, "OperationalExpense", expense.Id);
+
+            return Created($"/api/finance-v3/expenses/{expense.Id}", new
+            {
+                expense.Id, expense.ExpenseNumber, expense.Title,
+                Category = expense.Category.ToString(), expense.Amount,
+                ExpenseDate = expense.ExpenseDate.ToString("yyyy-MM-dd"), expense.PaymentMethod,
+                ApprovalStatus = expense.ApprovalStatus.ToString(), expense.IsPostedToLedger,
+                message = needsApproval
+                    ? $"تم تسجيل المصروف بنجاح. المبلغ ({req.Amount:N0} ريال) يتجاوز حد الاعتماد — في انتظار موافقة الإدارة قبل الترحيل."
+                    : "تم تسجيل المصروف والترحيل المالي بنجاح"
+            });
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/expenses/{id}/approve — Approve a pending expense (Admin only).
+    /// </summary>
+    [HttpPost("expenses/{id:guid}/approve")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> ApproveExpense(Guid id, [FromBody] ApproveExpenseRequest req)
+    {
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var expenseSnapshot = await db.OperationalExpenses.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id && e.IsActive);
+        if (expenseSnapshot == null) return NotFound(new { message = "المصروف غير موجود" });
+        if (expenseSnapshot.ApprovalStatus != ApprovalStatus.Pending)
+            return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
+
+        var branchId = expenseSnapshot.BranchId;
+        if (branchId == Guid.Empty) return BadRequest(new { message = "عذراً، الفرع غير محدد لهذا المصروف. تواصل مع الإدارة." });
+
+        CashierSession? activeSession = null;
+        if (string.Equals(expenseSnapshot.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        {
+            activeSession = await db.CashierSessions.FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null) return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير أولاً قبل اعتماد المصروف النقدي." });
+        }
+
+        Treasury treasury;
+        try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, expenseSnapshot.PaymentMethod, activeSession?.Id); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            if (db.Database.IsRelational())
+                await db.Database.ExecuteSqlRawAsync(@"SELECT 1 FROM ""OperationalExpenses"" WHERE ""Id"" = {0} FOR UPDATE", id);
+
+            var expense = await db.OperationalExpenses.FindAsync(id);
+            if (expense == null || !expense.IsActive) { await tx.RollbackAsync(); return NotFound(new { message = "المصروف غير موجود" }); }
+            if (expense.ApprovalStatus != ApprovalStatus.Pending) { await tx.RollbackAsync(); return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" }); }
+
+            expense.ApprovalStatus = ApprovalStatus.Approved;
+            expense.ApprovedById = userId;
+            expense.ApprovedAt = DateTime.UtcNow;
+            expense.ApprovalNotes = req.Notes?.Trim();
+
+            var datePart = expense.ExpenseDate.ToString("yyyyMMdd");
+            var seqSuffix = expense.ExpenseNumber.Split('-').LastOrDefault() ?? "001";
+            if (!int.TryParse(seqSuffix, out var seq)) seq = 1;
+
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-OUT-{seq:D3}",
+                Type = TransactionType.Outflow, Category = FinancialCategory.OperationalExpense,
+                Amount = expense.Amount, PaymentMethod = expense.PaymentMethod,
+                TransactionDate = expense.ExpenseDate, ReferenceId = expense.Id,
+                ReferenceNumber = expense.ExpenseNumber,
+                Description = $"قيد مصروف تشغيلي (معتمد): {expense.Title}",
+                PerformedBy = userId, BranchId = branchId,
+                CashierSessionId = activeSession?.Id, TreasuryId = treasury.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+            expense.IsPostedToLedger = true;
+            expense.CashFlowTransactionId = cashflow.Id;
+
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.Expense, financialDocumentId: expense.Id,
+                description: $"قيد مصروف تشغيلي (معتمد): {expense.Title}", entryDate: expense.ExpenseDate,
+                branchId: branchId, performedBy: userId,
+                cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Expense, expense.Id, expense.Amount, 0m, (string?)$"مصروف معتمد: {expense.Title}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, expense.Amount, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, expense.PaymentMethod, expense.Amount, activeSession?.Id);
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Approve, "OperationalExpense", id);
+            return Ok(new { message = "تم اعتماد المصروف وترحيله للأستاذ العام بنجاح", expense.Id, expense.ExpenseNumber, ApprovalStatus = expense.ApprovalStatus.ToString() });
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/expenses/{id}/reject — Reject a pending expense (Admin only).
+    /// </summary>
+    [HttpPost("expenses/{id:guid}/reject")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> RejectExpense(Guid id, [FromBody] RejectExpenseRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Reason)) return BadRequest(new { message = "سبب الرفض مطلوب" });
+        var expense = await db.OperationalExpenses.FindAsync(id);
+        if (expense == null || !expense.IsActive) return NotFound(new { message = "المصروف غير موجود" });
+        if (expense.ApprovalStatus != ApprovalStatus.Pending) return BadRequest(new { message = "هذا المصروف لا يحتاج إلى اعتماد أو تمت معالجته مسبقاً" });
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        expense.ApprovalStatus = ApprovalStatus.Rejected;
+        expense.ApprovedById = userId;
+        expense.ApprovedAt = DateTime.UtcNow;
+        expense.ApprovalNotes = req.Reason.Trim();
+        expense.IsActive = false;
+        expense.DeletedAt = DateTime.UtcNow;
+        expense.DeletedBy = userId;
+
+        await db.SaveChangesAsync();
+        await audit.LogAsync(AuditAction.Update, "OperationalExpense", id, details: "Expense rejected via V3");
+        return Ok(new { message = "تم رفض المصروف وإلغاؤه بنجاح", expense.Id, expense.ExpenseNumber, ApprovalStatus = expense.ApprovalStatus.ToString() });
+    }
+
+    /// <summary>
+    /// DELETE /api/finance-v3/expenses/{id} — Delete/reverse an expense.
+    /// Delegates to the reversal logic from OperationalExpensesController.
+    /// </summary>
+    [HttpDelete("expenses/{id:guid}")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> DeleteExpense(Guid id)
+    {
+        var expense = await db.OperationalExpenses.FindAsync(id);
+        if (expense == null || !expense.IsActive) return NotFound(new { message = "المصروف غير موجود" });
+
+        if (expense.ApprovalStatus == ApprovalStatus.Approved && expense.IsPostedToLedger && !currentUser.IsAdmin)
+            return Forbid();
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+
+        if (expense.IsPostedToLedger)
+        {
+            // Reversal path — replicate OperationalExpensesController.ReversePostedExpenseAsync
+            await using var tx = await db.Database.BeginTransactionAsync();
+            try
+            {
+                if (db.Database.IsRelational())
+                    await db.Database.ExecuteSqlRawAsync(@"SELECT 1 FROM ""OperationalExpenses"" WHERE ""Id"" = {0} FOR UPDATE", expense.Id);
+
+                var reloaded = await db.OperationalExpenses.FindAsync(expense.Id);
+                if (reloaded == null || !reloaded.IsActive) { await tx.RollbackAsync(); return NotFound(new { message = "المصروف غير موجود" }); }
+
+                CashFlowTransaction? originalCashflow = reloaded.CashFlowTransactionId.HasValue
+                    ? await db.CashFlowTransactions.FindAsync(reloaded.CashFlowTransactionId.Value)
+                    : await db.CashFlowTransactions.FirstOrDefaultAsync(t => t.ReferenceId == reloaded.Id && t.Category == FinancialCategory.OperationalExpense && t.IsActive);
+
+                if (originalCashflow != null && originalCashflow.CashierSessionId.HasValue)
+                {
+                    var linkedSession = await db.CashierSessions.FindAsync(originalCashflow.CashierSessionId.Value);
+                    if (linkedSession != null && linkedSession.Status != SessionStatus.Open)
+                    { await tx.RollbackAsync(); return BadRequest(new { message = "لا يمكن حذف مصروف مرتبط بوردية مقفلة أو مطابقة. تواصل مع المحاسب." }); }
+                }
+
+                if (originalCashflow?.ReversedByTransactionId != null)
+                { await tx.RollbackAsync(); return BadRequest(new { message = "هذا المصروف تم عكسه مسبقاً." }); }
+
+                if (originalCashflow == null || originalCashflow.TreasuryId == null || originalCashflow.TreasuryId == Guid.Empty)
+                { await tx.RollbackAsync(); return BadRequest(new { message = "عذراً، لا يمكن عكس القيد — سجل التدفق النقدي الأصلي غير مرتبط بخزينة. تواصل مع المحاسب." }); }
+
+                var originalTreasuryId = originalCashflow.TreasuryId.Value;
+                var originalTreasury = await db.Treasuries.FindAsync(originalTreasuryId);
+                if (originalTreasury == null || !originalTreasury.IsActive)
+                { await tx.RollbackAsync(); return BadRequest(new { message = "عذراً، الخزينة الأصلية غير موجودة أو غير مفعلة. لا يمكن عكس القيد المالي — تواصل مع المحاسب." }); }
+
+                var reversalCashflow = new CashFlowTransaction
+                {
+                    TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-OUT-REV-{Guid.NewGuid().ToString()[..8]}",
+                    Type = TransactionType.Inflow, Category = FinancialCategory.Reversal,
+                    Amount = reloaded.Amount, PaymentMethod = reloaded.PaymentMethod,
+                    TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                    ReferenceId = reloaded.Id, ReferenceNumber = reloaded.ExpenseNumber,
+                    Description = $"عكس قيد مصروف تشغيلي: {reloaded.Title}",
+                    PerformedBy = userId, BranchId = reloaded.BranchId,
+                    IsReversal = true, ReversalOfTransactionId = originalCashflow.Id,
+                    CashierSessionId = originalCashflow.CashierSessionId, TreasuryId = originalTreasuryId
+                };
+                db.CashFlowTransactions.Add(reversalCashflow);
+                originalCashflow.ReversedByTransactionId = reversalCashflow.Id;
+
+                var originalJe = await db.JournalEntries.FirstOrDefaultAsync(e => e.FinancialDocumentId == reloaded.Id && e.FinancialDocumentType == FinancialDocumentType.Expense && !e.IsReversal);
+                if (originalJe != null)
+                {
+                    var reversalJe = await journalEntryService.CreateReversalEntryAsync(originalEntryId: originalJe.Id, reason: $"حذف مصروف: {reloaded.Title}", performedBy: userId);
+                    reversalJe.IsPosted = true; reversalJe.PostedAt = DateTime.UtcNow;
+                }
+
+                await treasuryResolution.IncrementTreasuryBalanceByTreasuryIdAsync(originalTreasuryId, reloaded.Amount);
+                reloaded.IsActive = false; reloaded.DeletedAt = DateTime.UtcNow; reloaded.DeletedBy = userId;
+
+                if (reloaded.LabOrderId.HasValue)
+                {
+                    var labOrder = await db.LabOrders.FindAsync(reloaded.LabOrderId.Value);
+                    if (labOrder != null) labOrder.Status = "received";
+                }
+
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+                await audit.LogAsync(AuditAction.Update, "OperationalExpense", reloaded.Id, details: "Posted expense reversed via V3");
+                return Ok(new { message = "تم عكس قيد المصروف وترحيل القيد العكسي بنجاح" });
+            }
+            catch { await tx.RollbackAsync(); throw; }
+        }
+
+        // Unposted expense: safe to soft-delete
+        expense.IsActive = false; expense.DeletedAt = DateTime.UtcNow; expense.DeletedBy = userId;
+        if (expense.LabOrderId.HasValue)
+        {
+            var labOrder = await db.LabOrders.FindAsync(expense.LabOrderId.Value);
+            if (labOrder != null) labOrder.Status = "received";
+        }
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم حذف قيد المصروف بنجاح" });
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/supplier-bills — Create a supplier bill.
+    /// </summary>
+    [HttpPost("supplier-bills")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> CreateSupplierBill([FromBody] CreateSupplierBillRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Description)) return BadRequest(new { message = "وصف الفاتورة مطلوب" });
+        if (req.TotalAmount <= 0) return BadRequest(new { message = "يجب أن يكون إجمالي الفاتورة أكبر من الصفر" });
+
+        var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == req.SupplierId && s.IsActive);
+        if (supplier == null) return BadRequest(new { message = "المورد المحدد غير موجود" });
+
+        var billDate = DateOnly.FromDateTime(DateTime.Today);
+        if (!string.IsNullOrWhiteSpace(req.BillDate) && DateOnly.TryParse(req.BillDate, out var parsedBill)) billDate = parsedBill;
+        DateOnly? dueDate = null;
+        if (!string.IsNullOrWhiteSpace(req.DueDate) && DateOnly.TryParse(req.DueDate, out var parsedDue)) dueDate = parsedDue;
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (branchId == Guid.Empty) return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل فاتورة المورد." });
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var prefix = $"BILL-{datePart}-";
+            if (db.Database.IsRelational())
+            {
+                var lockKey = StableLockKeyHelper.BillNumber;
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            }
+
+            var lastBill = await db.SupplierBills.IgnoreQueryFilters()
+                .Where(b => b.BillNumber.StartsWith(prefix))
+                .OrderByDescending(b => b.BillNumber).Select(b => b.BillNumber).FirstOrDefaultAsync();
+            var nextSeq = 1;
+            if (!string.IsNullOrEmpty(lastBill) && lastBill.Length > prefix.Length)
+            { var seqPart = lastBill[prefix.Length..]; if (int.TryParse(seqPart, out var lastSeq)) nextSeq = lastSeq + 1; }
+            var billNumber = $"{prefix}{nextSeq:D3}";
+
+            var bill = new SupplierBill
+            {
+                BillNumber = billNumber, SupplierId = req.SupplierId,
+                Description = req.Description.Trim(), TotalAmount = req.TotalAmount,
+                PaidAmount = 0, Status = BillStatus.Unpaid, BillDate = billDate,
+                DueDate = dueDate, PurchaseOrderId = req.PurchaseOrderId,
+                LabOrderId = req.LabOrderId, AttachmentUrl = req.AttachmentUrl,
+                Notes = req.Notes?.Trim(), BranchId = branchId, CreatedBy = userId
+            };
+            db.SupplierBills.Add(bill);
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Create, "SupplierBill", bill.Id);
+            return Created($"/api/finance-v3/supplier-bills/{bill.Id}", new
+            {
+                bill.Id, bill.BillNumber, SupplierName = supplier.Name,
+                bill.Description, bill.TotalAmount, bill.PaidAmount,
+                RemainingAmount = bill.TotalAmount, Status = bill.Status.ToString(),
+                BillDate = bill.BillDate.ToString("yyyy-MM-dd"),
+                DueDate = bill.DueDate?.ToString("yyyy-MM-dd"),
+                message = "تم تسجيل فاتورة المورد بنجاح"
+            });
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/supplier-bills/{id}/pay — Pay a supplier bill installment.
+    /// </summary>
+    [HttpPost("supplier-bills/{id:guid}/pay")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> PaySupplierBill(Guid id, [FromBody] PayBillInstallmentRequest req)
+    {
+        if (req.Amount <= 0) return BadRequest(new { message = "يجب أن يكون مبلغ الدفعة أكبر من الصفر" });
+
+        var billSnapshot = await db.SupplierBills.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+        if (billSnapshot == null) return NotFound(new { message = "الفاتورة غير موجودة" });
+        if (billSnapshot.Status == BillStatus.FullyPaid) return BadRequest(new { message = "هذه الفاتورة مدفوعة بالكامل بالفعل" });
+        if (billSnapshot.Status == BillStatus.Cancelled) return BadRequest(new { message = "هذه الفاتورة ملغاة" });
+
+        var paymentDate = DateOnly.FromDateTime(DateTime.Today);
+        if (!string.IsNullOrWhiteSpace(req.PaymentDate) && DateOnly.TryParse(req.PaymentDate, out var parsedDate)) paymentDate = parsedDate;
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        var branchId = billSnapshot.BranchId;
+        if (branchId == Guid.Empty) return BadRequest(new { message = "عذراً، الفرع غير محدد لفاتورة المورد. تواصل مع الإدارة." });
+
+        CashierSession? activeSession = null;
+        if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
+        {
+            activeSession = await db.CashierSessions.FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null) return BadRequest(new { message = "عذراً، يجب فتح صندوق الكاشير أولاً قبل سداد فواتير المورد النقدية." });
+        }
+
+        Treasury treasury;
+        try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, activeSession?.Id); }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            if (db.Database.IsRelational())
+                await db.Database.ExecuteSqlRawAsync(@"SELECT 1 FROM ""SupplierBills"" WHERE ""Id"" = {0} FOR UPDATE", id);
+
+            var bill = await db.SupplierBills.Include(b => b.Supplier).FirstOrDefaultAsync(b => b.Id == id && b.IsActive);
+            if (bill == null) { await tx.RollbackAsync(); return NotFound(new { message = "الفاتورة غير موجودة" }); }
+            if (bill.Status == BillStatus.FullyPaid) { await tx.RollbackAsync(); return BadRequest(new { message = "هذه الفاتورة مدفوعة بالكامل بالفعل" }); }
+            if (bill.Status == BillStatus.Cancelled) { await tx.RollbackAsync(); return BadRequest(new { message = "هذه الفاتورة ملغاة" }); }
+
+            var remaining = bill.TotalAmount - bill.PaidAmount;
+            if (req.Amount > remaining) { await tx.RollbackAsync(); return BadRequest(new { message = $"مبلغ الدفعة ({req.Amount:N0}) يتجاوز المبلغ المتبقي ({remaining:N0} ريال)" }); }
+
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-BILL-{DateTime.UtcNow:HHmmss}",
+                Type = TransactionType.Outflow, Category = FinancialCategory.SupplierPayment,
+                Amount = req.Amount, PaymentMethod = req.PaymentMethod,
+                TransactionDate = paymentDate, ReferenceId = bill.Id,
+                ReferenceNumber = bill.BillNumber,
+                Description = $"دفعة على فاتورة مورد {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
+                PerformedBy = userId, BranchId = branchId,
+                CashierSessionId = activeSession?.Id, TreasuryId = treasury.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+
+            var payment = new SupplierBillPayment
+            {
+                SupplierBillId = bill.Id, Amount = req.Amount,
+                PaymentMethod = req.PaymentMethod, PaymentDate = paymentDate,
+                ReferenceNumber = req.ReferenceNumber, Notes = req.Notes?.Trim(),
+                PaidBy = userId, CashFlowTransactionId = cashflow.Id
+            };
+            db.SupplierBillPayments.Add(payment);
+
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.SupplierPayment, financialDocumentId: payment.Id,
+                description: $"سداد فاتورة مورد: {bill.BillNumber} — {bill.Supplier?.Name ?? ""}",
+                entryDate: paymentDate, branchId: branchId, performedBy: userId,
+                cashierSessionId: activeSession?.Id, treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Payable, bill.SupplierId, req.Amount, 0m, (string?)$"سداد مستحقات: {bill.Supplier?.Name}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true; je.PostedAt = DateTime.UtcNow;
+
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, req.PaymentMethod, req.Amount, activeSession?.Id);
+
+            bill.PaidAmount += req.Amount;
+            bill.Status = bill.PaidAmount >= bill.TotalAmount ? BillStatus.FullyPaid : BillStatus.PartiallyPaid;
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Create, "SupplierBillPayment", payment.Id, details: $"Bill {id} partial payment via V3");
+
+            return Ok(new
+            {
+                message = bill.Status == BillStatus.FullyPaid
+                    ? "تم سداد الفاتورة بالكامل! تم ترحيل القيد للأستاذ العام."
+                    : $"تم تسجيل الدفعة بنجاح. المبلغ المتبقي: {bill.TotalAmount - bill.PaidAmount:N0} ريال",
+                bill.Id, bill.BillNumber, bill.PaidAmount,
+                RemainingAmount = bill.TotalAmount - bill.PaidAmount,
+                Status = bill.Status.ToString()
+            });
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    // ─── Cashier Session Helpers (shared with CashierSessionsController) ──
+
+    private static bool IsCashMethod(string method) =>
+        string.Equals(method, "cash", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCardMethod(string method) =>
+        string.Equals(method, "card", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBankMethod(string method) =>
+        string.Equals(method, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(method, "bank", StringComparison.OrdinalIgnoreCase);
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private async Task<decimal> CalculateContractOutstandingAsync(Guid? branchId)
@@ -1462,3 +2375,8 @@ public class FinanceV3Controller(
         return invoices.Sum(i => i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
     }
 }
+
+/// <summary>
+/// DTO for cancelling an invoice via Finance V3 endpoint.
+/// </summary>
+public sealed class CancelInvoiceRequest { public string? Notes { get; init; } }

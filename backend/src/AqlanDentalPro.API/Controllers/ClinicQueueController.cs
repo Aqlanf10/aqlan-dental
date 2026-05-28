@@ -614,7 +614,6 @@ public class ClinicQueueController(
                     if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.NoShow))
                     {
                         appointment.Status = AppointmentStatus.NoShow;
-                        appointment.NoShowAt = DateTime.UtcNow;
                         appointment.UpdatedAt = DateTime.UtcNow;
                     }
                 }
@@ -823,8 +822,9 @@ public class ClinicQueueController(
                 {
                     await smsService.SendSmsAsync(new SendSmsRequest
                     {
-                        RecipientPhone = patient.Phone,
-                        Message = message
+                        PatientId = patient.Id,
+                        TemplateType = "custom",
+                        CustomMessage = message
                     });
                     results.Add(new { channel = "sms", status = "sent", phone = patient.Phone });
                 }
@@ -848,8 +848,9 @@ public class ClinicQueueController(
                 {
                     await whatsAppService.SendMessageAsync(new SendMessageRequest
                     {
-                        RecipientPhone = patient.Phone,
-                        Message = message
+                        PatientId = patient.Id,
+                        TemplateType = "custom",
+                        CustomMessage = message
                     });
                     results.Add(new { channel = "whatsapp", status = "sent", phone = patient.Phone });
                 }

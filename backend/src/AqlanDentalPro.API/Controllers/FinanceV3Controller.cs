@@ -761,6 +761,11 @@ public class FinanceV3Controller(
         [FromQuery] string? fromDate = null,
         [FromQuery] string? toDate = null)
     {
+        // Parse dates before try so they're available in catch fallback
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var from = DateOnly.TryParse(fromDate, out var f) ? f : new DateOnly(today.Year, today.Month, 1);
+        var to = DateOnly.TryParse(toDate, out var t) ? t : today;
+
         try
         {
         // Blocker 6: Branch isolation guard for non-admin users
@@ -768,9 +773,6 @@ public class FinanceV3Controller(
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var from = DateOnly.TryParse(fromDate, out var f) ? f : new DateOnly(today.Year, today.Month, 1);
-        var to = DateOnly.TryParse(toDate, out var t) ? t : today;
 
         // ── Accrued P&L from posted JournalLines (canonical, accrual basis) ──
         var accruedRevenueQuery = db.JournalLines
@@ -1049,7 +1051,7 @@ public class FinanceV3Controller(
         var entityBalance = totalInvoiced - netPaid - totalDiscounts;
 
         // Contract outstanding
-        var contractOutstanding = await db.Contracts
+        var contractOutstanding = (decimal?)await db.Contracts
             .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
             .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount ?? 0m))
             .SumAsync() ?? 0m;

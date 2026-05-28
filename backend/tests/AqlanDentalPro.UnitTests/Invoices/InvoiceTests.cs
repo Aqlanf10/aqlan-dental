@@ -73,7 +73,7 @@ public class InvoiceTests
         saved!.VisitId.Should().BeNull();
         saved.AppointmentId.Should().BeNull();
         saved.DiscountAmount.Should().BeNull();
-        saved.TaxAmount.Should().BeNull();
+        saved.TaxAmount.Should().Be(0m);
         saved.Notes.Should().BeNull();
         saved.CreatedBy.Should().BeNull();
         saved.UpdatedBy.Should().BeNull();

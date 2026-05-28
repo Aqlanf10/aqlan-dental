@@ -23,8 +23,19 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         // Decimal precision
         builder.Property(i => i.Subtotal).HasPrecision(12, 2);
         builder.Property(i => i.DiscountAmount).HasPrecision(12, 2).IsRequired(false);
-        builder.Property(i => i.TaxAmount).HasPrecision(12, 2).IsRequired(false);
+        builder.Property(i => i.TaxPercentage).HasPrecision(5, 2);
+        builder.Property(i => i.TaxAmount).HasPrecision(12, 2);
         builder.Property(i => i.TotalAmount).HasPrecision(12, 2);
+
+        // Multi-currency support
+        builder.Property(i => i.Currency).HasMaxLength(10).IsRequired();
+        builder.Property(i => i.ExchangeRate).HasPrecision(12, 6);
+
+        // COGS tracking
+        builder.Property(i => i.TotalCostOfGoodsSold).HasPrecision(12, 2);
+
+        // Insurance linkage (optional)
+        builder.Property(i => i.InsuranceClaimId).IsRequired(false);
 
         // Nullable FK fields
         builder.Property(i => i.VisitId).IsRequired(false);
@@ -59,5 +70,11 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             .WithOne(l => l.Invoice)
             .HasForeignKey(l => l.InvoiceId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Insurance relationship
+        builder.HasOne(i => i.InsuranceClaim)
+            .WithMany()
+            .HasForeignKey(i => i.InsuranceClaimId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

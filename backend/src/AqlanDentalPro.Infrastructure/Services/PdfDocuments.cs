@@ -540,7 +540,7 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
                 });
             }
 
-            if (Invoice.TaxAmount.HasValue && Invoice.TaxAmount > 0)
+            if (Invoice.TaxAmount > 0)
             {
                 column.Item().Row(row =>
                 {

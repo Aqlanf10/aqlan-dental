@@ -515,8 +515,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             .ToListAsync();
         invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
         var discount = invoice.DiscountAmount ?? 0;
-        var tax = invoice.TaxAmount ?? 0;
-        invoice.TotalAmount = invoice.Subtotal - discount + tax;
+        invoice.TotalAmount = invoice.Subtotal - discount + invoice.TaxAmount;
 
         await db.SaveChangesAsync();
 

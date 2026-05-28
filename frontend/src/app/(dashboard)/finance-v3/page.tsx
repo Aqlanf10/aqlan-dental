@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   Wallet,
   FileText,
@@ -14,12 +14,13 @@ import {
   ClipboardCheck,
   Bell,
   CircleDot,
-  CircleCheck,
+  Loader2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import { useBranches } from "@/hooks/useBranches";
+import { api } from "@/lib/api";
 import { AccessDenied, FinanceTabErrorBoundary, tokens } from "./components/FinanceSharedUI";
 import { todayArabic } from "./components/FinanceHelpers";
-import { api } from "@/lib/api";
 import { OverviewTab } from "./components/OverviewTab";
 import { PatientAccountsTab } from "./components/PatientAccountsTab";
 import { InvoicesTab } from "./components/InvoicesTab";
@@ -58,24 +59,55 @@ const TABS: TabDef[] = [
    ═══════════════════════════════════════════════════════════════════════════════ */
 export default function FinanceV3Page() {
   const { user } = useAuthStore();
+  const { data: branches } = useBranches("active");
   const [activeTab, setActiveTab] = useState("overview");
-  const [hasActiveShift, setHasActiveShift] = useState(false);
-
-  /* ── Check active shift status ── */
-  const checkActiveShift = useCallback(async () => {
-    try {
-      const { data } = await api.get<{ hasActiveShift: boolean }>("/api/finance-v3/shifts/active");
-      setHasActiveShift(data?.hasActiveShift === true);
-    } catch {
-      setHasActiveShift(false);
-    }
-  }, []);
-
-  useEffect(() => { checkActiveShift(); }, [checkActiveShift]);
+  const [activeSession, setActiveSession] = useState<{ sessionNumber: string; openedAt: string } | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
 
   /* ── Access gate: Admin / Accountant only ── */
   const isAuthorized = user?.role === "Admin" || user?.role === "Accountant";
   const isAdmin = user?.role === "Admin";
+
+  /* ── Fetch active session status ── */
+  useEffect(() => {
+    let cancelled = false;
+    const fetchActiveSession = async () => {
+      try {
+        setSessionLoading(true);
+        const { data } = await api.get<{
+          hasActiveSession: boolean;
+          id?: string;
+          sessionNumber?: string;
+          openedAt?: string;
+          openingTime?: string;
+        }>("/api/finance-v3/cashier-sessions/active");
+        if (!cancelled) {
+          if (data?.hasActiveSession) {
+            setActiveSession({
+              sessionNumber: data.sessionNumber ?? `CS-${data.id?.slice(0, 8)}`,
+              openedAt: data.openedAt ?? data.openingTime ?? "",
+            });
+          } else {
+            setActiveSession(null);
+          }
+        }
+      } catch {
+        if (!cancelled) setActiveSession(null);
+      } finally {
+        if (!cancelled) setSessionLoading(false);
+      }
+    };
+    fetchActiveSession();
+    // Poll every 60 seconds to keep status fresh
+    const interval = setInterval(fetchActiveSession, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  /* ── Resolve branch name ── */
+  const userBranchId = user?.branchId;
+  const branchName = userBranchId
+    ? (branches ?? []).find((b) => b.id === userBranchId)?.name ?? "فرع غير معروف"
+    : isAdmin ? "جميع الفروع" : "غير محدد";
 
   if (!isAuthorized) {
     return <AccessDenied />;
@@ -97,13 +129,15 @@ export default function FinanceV3Page() {
         <div className="flex-1" />
         <span className="text-xs" style={{ color: tokens.textSecondary }}>{todayArabic()}</span>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
-        <span className="text-xs font-medium" style={{ color: tokens.textSecondary }}>الفرع الرئيسي</span>
+        <span className="text-xs font-medium" style={{ color: tokens.textSecondary }}>{branchName}</span>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
         <div className="flex items-center gap-1.5">
-          {hasActiveShift ? (
+          {sessionLoading ? (
+            <Loader2 className="w-3 h-3 animate-spin" style={{ color: tokens.textTertiary }} />
+          ) : activeSession ? (
             <>
-              <CircleCheck className="w-3 h-3" style={{ color: tokens.successBorder }} />
-              <span className="text-xs font-medium" style={{ color: tokens.successBorder }}>وردية مفتوحة</span>
+              <CircleDot className="w-3 h-3" style={{ color: tokens.successBorder }} />
+              <span className="text-xs font-medium" style={{ color: tokens.successBorder }}>وردية مفتوحة: {activeSession.sessionNumber}</span>
             </>
           ) : (
             <>

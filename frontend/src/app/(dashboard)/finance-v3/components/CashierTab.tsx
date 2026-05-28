@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
+import { useAuthStore } from "@/stores/authStore";
+import { useBranches } from "@/hooks/useBranches";
 import type { CashierSession, CloseSessionRequest } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnDanger, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDateTime, safeArray } from "./FinanceHelpers";
@@ -21,18 +23,29 @@ import { formatYER, extractErrorMessage, safeFormatDateTime, safeArray } from ".
    Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
+  const { user } = useAuthStore();
+  const { data: branches } = useBranches("active");
   const [sessions, setSessions] = useState<CashierSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [closeSession, setCloseSession] = useState<CashierSession | null>(null);
-  const [showOpenShift, setShowOpenShift] = useState(false);
-  const [openingAmount, setOpeningAmount] = useState("0");
-  const [shiftNotes, setShiftNotes] = useState("");
   const [actualCash, setActualCash] = useState("");
   const [actualCard, setActualCard] = useState("");
   const [actualBank, setActualBank] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
+  // Open session state
+  const [showOpenSession, setShowOpenSession] = useState(false);
+  const [openBalance, setOpenBalance] = useState("0");
+  const [openBranchId, setOpenBranchId] = useState("");
+  const [openNotes, setOpenNotes] = useState("");
+  const [openSubmitting, setOpenSubmitting] = useState(false);
+
+  // Determine if user needs to select a branch (no branch in token)
+  const userBranchId = user?.branchId;
+  const needsBranchSelection = !userBranchId || userBranchId === "";
+  // Active branches for dropdown
+  const activeBranches = (branches ?? []).filter((b) => b.isActive);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -50,8 +63,6 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
   const openCloseSession = async (s: CashierSession) => {
     setCloseSession(s);
-    // Fetch session detail to get accurate per-bucket expected values
-    // Never initialize actual amounts from undefined — fetch first
     try {
       const { data: detail } = await api.get<{
         expectedClosingCash: number;
@@ -62,7 +73,6 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       setActualCard(String(detail.expectedClosingCard ?? 0));
       setActualBank(String(detail.expectedClosingBank ?? 0));
     } catch {
-      // Fallback: use list values if available
       setActualCash(String(s.expectedClosingCash ?? 0));
       setActualCard(String(s.expectedClosingCard ?? 0));
       setActualBank(String(s.expectedClosingBank ?? 0));
@@ -96,32 +106,43 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في التسوية")); } finally { setSubmitting(false); }
   };
 
-  const handleOpenShift = async () => {
+  const openSession = sessions.find((s) => s.status === "Open");
+
+  /** Open a new cashier session */
+  const handleOpenSession = useCallback(async () => {
+    if (needsBranchSelection && !openBranchId) {
+      toast.error("يرجى اختيار الفرع قبل فتح الوردية");
+      return;
+    }
     try {
-      setSubmitting(true);
-      const payload = {
-        openingBalance: Number(openingAmount) || 0,
-        notes: shiftNotes?.trim() || undefined,
+      setOpenSubmitting(true);
+      const payload: { openingBalance: number; branchId?: string; notes?: string } = {
+        openingBalance: Number(openBalance) || 0,
       };
-      await api.post("/api/finance-v3/shifts/open", payload);
+      if (needsBranchSelection && openBranchId) {
+        payload.branchId = openBranchId;
+      }
+      if (openNotes.trim()) payload.notes = openNotes.trim();
+      await api.post("/api/cashier-sessions/open", payload);
       toast.success("تم فتح الوردية بنجاح");
-      setShowOpenShift(false);
-      setOpeningAmount("0");
-      setShiftNotes("");
+      setShowOpenSession(false);
+      setOpenBalance("0");
+      setOpenBranchId("");
+      setOpenNotes("");
       fetchSessions();
     } catch (err) {
       toast.error(extractErrorMessage(err, "فشل في فتح الوردية"));
-    } finally { setSubmitting(false); }
-  };
-
-  const openSession = sessions.find((s) => s.status === "Open");
+    } finally {
+      setOpenSubmitting(false);
+    }
+  }, [needsBranchSelection, openBranchId, openBalance, openNotes, fetchSessions]);
 
   return (
     <div className="p-6 space-y-4">
       <SectionHeader title="الصندوق" action={
         <div className="flex items-center gap-2">
           {!openSession && (
-            <button onClick={() => setShowOpenShift(true)} style={btnPrimary}>
+            <button onClick={() => setShowOpenSession(true)} style={btnPrimary}>
               <Unlock className="w-4 h-4" /> فتح وردية
             </button>
           )}
@@ -258,27 +279,83 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         )}
       </Modal>
 
-      {/* Open Shift Modal */}
-      <Modal open={showOpenShift} onClose={() => setShowOpenShift(false)} title="فتح وردية جديدة">
+      {/* Open session modal */}
+      <Modal open={showOpenSession} onClose={() => setShowOpenSession(false)} title="فتح وردية جديدة">
         <div className="space-y-4">
           <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
             <p className="text-xs" style={{ color: tokens.infoText }}>
-              أدخل مبلغ العهدة الافتتاحية لبدء وردية الكاشير. لا يمكنك تسجيل مدفوعات بدون وردية مفتوحة.
+              فتح وردية جديد يتيح لك تسجيل المدفوعات والتحصيلات. تأكد من اختيار الفرع الصحيح إذا لم يكن معيناً في حسابك.
             </p>
           </div>
+
+          {/* Branch selector — only shown when user has no branch in token */}
+          {needsBranchSelection && (
+            <div>
+              <label style={labelStyle}>الفرع <span style={{ color: tokens.dangerBorder }}>*</span></label>
+              <select
+                value={openBranchId}
+                onChange={(e) => setOpenBranchId(e.target.value)}
+                style={inputStyle}
+              >
+                <option value="">— اختر الفرع —</option>
+                {activeBranches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}{b.isMain ? " (الرئيسي)" : ""}</option>
+                ))}
+              </select>
+              {activeBranches.length === 0 && (
+                <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>
+                  لا توجد فروع نشطة. يرجى إنشاء فرع أولاً من الإعدادات.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* If user has a branch in token, show it as read-only */}
+          {!needsBranchSelection && userBranchId && (
+            <div>
+              <label style={labelStyle}>الفرع</label>
+              <div className="rounded-md px-3 py-2 text-sm" style={{ backgroundColor: tokens.cardHover, color: tokens.textPrimary, border: `1px solid ${tokens.border}` }}>
+                {activeBranches.find((b) => b.id === userBranchId)?.name ?? `فرع (${userBranchId.slice(0, 8)}...)`}
+              </div>
+            </div>
+          )}
+
           <div>
-            <label style={labelStyle}>مبلغ العهدة الافتتاحية <span style={{ color: tokens.dangerBorder }}>*</span></label>
-            <input type="number" min="0" step="0.01" value={openingAmount} onChange={(e) => setOpeningAmount(e.target.value)} dir="ltr" placeholder="0" style={inputStyle} />
+            <label style={labelStyle}>رصيد العهدة الافتتاحية</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={openBalance}
+              onChange={(e) => setOpenBalance(e.target.value)}
+              dir="ltr"
+              style={inputStyle}
+              placeholder="0"
+            />
+            <p className="text-[11px] mt-1" style={{ color: tokens.textTertiary }}>
+              المبلغ النقدي الموجود في الدرج عند بداية الوردية
+            </p>
           </div>
+
           <div>
             <label style={labelStyle}>ملاحظات</label>
-            <input value={shiftNotes} onChange={(e) => setShiftNotes(e.target.value)} placeholder="ملاحظات اختيارية..." style={inputStyle} />
+            <input
+              value={openNotes}
+              onChange={(e) => setOpenNotes(e.target.value)}
+              placeholder="ملاحظات اختيارية..."
+              style={inputStyle}
+            />
           </div>
+
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
-            <button onClick={() => setShowOpenShift(false)} style={btnGhost}>إلغاء</button>
-            <button onClick={handleOpenShift} disabled={submitting} style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}>
-              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {submitting ? "جارٍ الفتح..." : "فتح الوردية"}
+            <button onClick={() => setShowOpenSession(false)} style={btnGhost}>إلغاء</button>
+            <button
+              onClick={handleOpenSession}
+              disabled={openSubmitting || (needsBranchSelection && !openBranchId)}
+              style={{ ...btnPrimary, opacity: openSubmitting || (needsBranchSelection && !openBranchId) ? 0.6 : 1 }}
+            >
+              {openSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {openSubmitting ? "جارٍ الفتح..." : "فتح الوردية"}
             </button>
           </div>
         </div>

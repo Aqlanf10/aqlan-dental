@@ -2121,6 +2121,7 @@ public class FinanceV3Controller(
         {
             hasActiveSession = true,
             session.Id,
+            session.SessionNumber,
             CashierId = session.CashierId,
             CashierName = session.Cashier?.Username ?? "",
             session.BranchId,

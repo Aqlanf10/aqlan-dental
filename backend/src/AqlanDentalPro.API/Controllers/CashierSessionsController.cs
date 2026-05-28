@@ -13,6 +13,7 @@ public sealed class OpenSessionRequest
 {
     public decimal OpeningBalance { get; init; } // مبلغ العهدة الافتتاحية
     public string? Notes { get; init; }
+    public Guid? BranchId { get; init; } // اختياري: للإدارة أو المستخدمين بدون فرع معين
 }
 
 public sealed class CloseSessionRequest
@@ -33,8 +34,17 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     {
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        // BranchId guard: must have a valid branch assignment before opening a cashier session
+        // BranchId resolution: prefer token claim, fall back to request body, then reject
+        // This allows Admins or users without a fixed branch to open sessions by selecting a branch in the UI
         var branchId = currentUser.BranchId;
+        if ((branchId == null || branchId == Guid.Empty) && req.BranchId.HasValue && req.BranchId != Guid.Empty)
+        {
+            // Verify the branch actually exists and is active
+            var branchExists = await db.Branches.AnyAsync(b => b.Id == req.BranchId.Value && b.IsActive);
+            if (!branchExists)
+                return BadRequest(new { message = "الفرع المحدد غير موجود أو غير نشط" });
+            branchId = req.BranchId.Value;
+        }
         if (branchId == null || branchId == Guid.Empty)
             return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل فتح صندوق الكاشير." });
 

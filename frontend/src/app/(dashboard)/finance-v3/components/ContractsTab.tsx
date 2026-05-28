@@ -26,8 +26,10 @@ export function ContractsTab() {
       setLoading(true);
       const params: Record<string, string> = {};
       if (statusFilter) params.status = statusFilter;
-      const { data } = await api.get<ContractListItem[]>("/api/finance-v3/contracts", { params });
-      setData(data);
+      const { data } = await api.get<{ data: ContractListItem[]; total: number }>("/api/finance-v3/contracts", { params });
+      // API wraps response in { data: [...], total: number }, handle both shapes
+      const contracts = data?.data ?? (Array.isArray(data) ? data as unknown as ContractListItem[] : []);
+      setData(contracts);
     } catch { toast.error("فشل في تحميل العقود"); } finally { setLoading(false); }
   }, [statusFilter]);
 

@@ -89,7 +89,7 @@ function PLSubTab() {
           <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>هامش الربح</span>
-              <span className="text-xl font-bold" style={{ color: data.profitMargin >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{data.profitMargin.toFixed(1)}%</span>
+              <span className="text-xl font-bold" style={{ color: (data.profitMargin ?? 0) >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{(data.profitMargin ?? 0).toFixed(1)}%</span>
             </div>
           </div>
         </div>

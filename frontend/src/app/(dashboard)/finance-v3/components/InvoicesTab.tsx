@@ -26,7 +26,7 @@ export function InvoicesTab() {
   const [cancelling, setCancelling] = useState(false);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: InvoiceListItem[]; total: number }>("/api/finance-v3/invoices"); setData(responseData.data); } catch { toast.error("فشل في تحميل الفواتير"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: InvoiceListItem[]; total: number }>("/api/finance-v3/invoices"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل الفواتير"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);

@@ -29,7 +29,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions"); setSessions(responseData.data); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions"); setSessions(responseData?.data ?? []); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
@@ -150,21 +150,21 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>النقدي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingCash)}</p></div>
+                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>النقدي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingCash ?? 0)}</p></div>
                 <div>
                   <label style={labelStyle}>النقدي الفعلي <span style={{ color: tokens.dangerBorder }}>*</span></label>
                   <input type="number" min="0" step="0.01" value={actualCash} onChange={(e) => setActualCash(e.target.value)} dir="ltr" style={inputStyle} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البطاقة المتوقعة</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingCard)}</p></div>
+                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البطاقة المتوقعة</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingCard ?? 0)}</p></div>
                 <div>
                   <label style={labelStyle}>البطاقة الفعلية <span style={{ color: tokens.dangerBorder }}>*</span></label>
                   <input type="number" min="0" step="0.01" value={actualCard} onChange={(e) => setActualCard(e.target.value)} dir="ltr" style={inputStyle} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البنكي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingBank)}</p></div>
+                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البنكي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingBank ?? 0)}</p></div>
                 <div>
                   <label style={labelStyle}>البنكي الفعلي <span style={{ color: tokens.dangerBorder }}>*</span></label>
                   <input type="number" min="0" step="0.01" value={actualBank} onChange={(e) => setActualBank(e.target.value)} dir="ltr" style={inputStyle} />
@@ -174,9 +174,9 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
             {/* Shortage/Surplus preview */}
             {(() => {
-              const cashDiff = (Number(actualCash) || 0) - closeSession.expectedClosingCash;
-              const cardDiff = (Number(actualCard) || 0) - closeSession.expectedClosingCard;
-              const bankDiff = (Number(actualBank) || 0) - closeSession.expectedClosingBank;
+              const cashDiff = (Number(actualCash) || 0) - (closeSession.expectedClosingCash ?? 0);
+              const cardDiff = (Number(actualCard) || 0) - (closeSession.expectedClosingCard ?? 0);
+              const bankDiff = (Number(actualBank) || 0) - (closeSession.expectedClosingBank ?? 0);
               const hasDiff = cashDiff !== 0 || cardDiff !== 0 || bankDiff !== 0;
               if (!hasDiff) return null;
               return (

@@ -39,7 +39,7 @@ export function CollectionsTab() {
   const [payNotes, setPayNotes] = useState("");
 
   const fetchPayments = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData.data); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData?.data ?? []); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);

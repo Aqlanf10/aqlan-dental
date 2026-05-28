@@ -11,12 +11,12 @@ export function todayArabic(): string {
   });
 }
 
-export function formatYER(amount: number): string {
-  return amount.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ر.ي";
+export function formatYER(amount: number | null | undefined): string {
+  return (amount ?? 0).toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + " ر.ي";
 }
 
-export function formatNumber(amount: number): string {
-  return amount.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+export function formatNumber(amount: number | null | undefined): string {
+  return (amount ?? 0).toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 export function safeFormatDate(dateStr: string | null | undefined, locale = "ar-SA"): string {

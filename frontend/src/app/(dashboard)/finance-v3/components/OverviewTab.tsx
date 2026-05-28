@@ -167,7 +167,7 @@ export function OverviewTab() {
             <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>التحصيلات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(plData.cashCollections)}</p></div>
             <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(plData.cashRefunds)}</p></div>
             <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي التكاليف</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.totalCosts)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>هامش الربح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{plData.profitMargin.toFixed(1)}%</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>هامش الربح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{(plData.profitMargin ?? 0).toFixed(1)}%</p></div>
           </div>
         ) : (
           <p className="text-xs" style={{ color: tokens.textTertiary }}>لم يتم تحميل بيانات الأرباح والخسائر</p>

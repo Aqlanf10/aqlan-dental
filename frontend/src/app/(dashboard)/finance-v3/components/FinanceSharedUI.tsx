@@ -133,6 +133,8 @@ export function StatusBadge({ status }: { status: string }) {
 
 /* ── Data table ── */
 export function DataTable<T>({ columns, data, onRowClick, keyField }: { columns: { key: string; label: string; render?: (row: T) => React.ReactNode }[]; data: T[]; onRowClick?: (row: T) => void; keyField: keyof T }) {
+  // Zero-state safety: guard against undefined/null data arrays
+  const safeData = data ?? [];
   return (
     <div className="overflow-x-auto rounded-lg border" style={{ borderColor: tokens.border }}>
       <table className="w-full text-sm">
@@ -144,7 +146,7 @@ export function DataTable<T>({ columns, data, onRowClick, keyField }: { columns:
           </tr>
         </thead>
         <tbody>
-          {data.map((row) => (
+          {safeData.map((row) => (
             <tr
               key={String(row[keyField])}
               className="transition-colors cursor-default"

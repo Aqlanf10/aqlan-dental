@@ -34,7 +34,7 @@ export function ExpensesTab() {
   const [eDate, setEDate] = useState(new Date().toISOString().slice(0, 10));
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/expenses"); setData(responseData.data); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/expenses"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);

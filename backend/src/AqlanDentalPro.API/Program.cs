@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Filters;
 using AqlanDentalPro.API.Hubs;
 using AqlanDentalPro.API.Middleware;
 using AqlanDentalPro.Application.Interfaces.Repositories;
@@ -436,6 +437,9 @@ builder.Services.AddHttpClient("Sms", client =>
 });
 
 builder.Services.AddHttpContextAccessor();
+
+// ── Action Filters ────────────────────────────────────────────────────────────
+builder.Services.AddScoped<ShiftEnforcerFilter>();
 
 // ── FluentValidation ──────────────────────────────────────────────────────────
 builder.Services.AddFluentValidationAutoValidation();

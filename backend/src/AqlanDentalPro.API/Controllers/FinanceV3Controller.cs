@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Filters;
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -2154,6 +2155,7 @@ public class FinanceV3Controller(
     /// </summary>
     [HttpPost("payments")]
     [Authorize(Policy = "FinanceWrite")]
+    [ServiceFilter(typeof(ShiftEnforcerFilter))]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
         // Sprint 1: Admin branchId fallback — if admin has no branch assigned,

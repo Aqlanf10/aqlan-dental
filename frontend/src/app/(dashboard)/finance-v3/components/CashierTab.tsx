@@ -8,11 +8,12 @@ import {
   Vault,
   Loader2,
   Calculator,
+  Unlock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { CashierSession, CloseSessionRequest } from "./types";
-import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnDanger, btnGhost } from "./FinanceSharedUI";
+import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnDanger, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDateTime, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -24,6 +25,9 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [closeSession, setCloseSession] = useState<CashierSession | null>(null);
+  const [showOpenShift, setShowOpenShift] = useState(false);
+  const [openingAmount, setOpeningAmount] = useState("0");
+  const [shiftNotes, setShiftNotes] = useState("");
   const [actualCash, setActualCash] = useState("");
   const [actualCard, setActualCard] = useState("");
   const [actualBank, setActualBank] = useState("");
@@ -92,12 +96,35 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في التسوية")); } finally { setSubmitting(false); }
   };
 
+  const handleOpenShift = async () => {
+    try {
+      setSubmitting(true);
+      const payload = {
+        openingBalance: Number(openingAmount) || 0,
+        notes: shiftNotes?.trim() || undefined,
+      };
+      await api.post("/api/finance-v3/shifts/open", payload);
+      toast.success("تم فتح الوردية بنجاح");
+      setShowOpenShift(false);
+      setOpeningAmount("0");
+      setShiftNotes("");
+      fetchSessions();
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل في فتح الوردية"));
+    } finally { setSubmitting(false); }
+  };
+
   const openSession = sessions.find((s) => s.status === "Open");
 
   return (
     <div className="p-6 space-y-4">
       <SectionHeader title="الصندوق" action={
         <div className="flex items-center gap-2">
+          {!openSession && (
+            <button onClick={() => setShowOpenShift(true)} style={btnPrimary}>
+              <Unlock className="w-4 h-4" /> فتح وردية
+            </button>
+          )}
           {openSession && (
             <button onClick={() => openCloseSession(openSession)} style={btnDanger}>
               <Lock className="w-4 h-4" /> إقفال الوردية
@@ -106,6 +133,19 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
           <button onClick={fetchSessions} className="w-8 h-8 rounded-md flex items-center justify-center" style={{ color: tokens.brand, border: `1px solid ${tokens.border}` }} title="تحديث"><RefreshCw className="w-4 h-4" /></button>
         </div>
       } />
+
+      {/* No open session warning */}
+      {!openSession && !loading && (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.warningBg, borderColor: tokens.warningBorder }}>
+          <div className="flex items-center gap-2 mb-2">
+            <CircleDot className="w-4 h-4" style={{ color: tokens.warningBorder }} />
+            <h4 className="text-sm font-bold" style={{ color: tokens.warningBorder }}>لا توجد وردية مفتوحة</h4>
+          </div>
+          <p className="text-xs" style={{ color: tokens.warningText }}>
+            يجب فتح وردية كاشير قبل تسجيل أي مدفوعات. اضغط على "فتح وردية" أعلاه لبدء الدورة النقدية.
+          </p>
+        </div>
+      )}
 
       {/* Current session info */}
       {openSession && (
@@ -216,6 +256,32 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Open Shift Modal */}
+      <Modal open={showOpenShift} onClose={() => setShowOpenShift(false)} title="فتح وردية جديدة">
+        <div className="space-y-4">
+          <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
+            <p className="text-xs" style={{ color: tokens.infoText }}>
+              أدخل مبلغ العهدة الافتتاحية لبدء وردية الكاشير. لا يمكنك تسجيل مدفوعات بدون وردية مفتوحة.
+            </p>
+          </div>
+          <div>
+            <label style={labelStyle}>مبلغ العهدة الافتتاحية <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <input type="number" min="0" step="0.01" value={openingAmount} onChange={(e) => setOpeningAmount(e.target.value)} dir="ltr" placeholder="0" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>ملاحظات</label>
+            <input value={shiftNotes} onChange={(e) => setShiftNotes(e.target.value)} placeholder="ملاحظات اختيارية..." style={inputStyle} />
+          </div>
+          <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
+            <button onClick={() => setShowOpenShift(false)} style={btnGhost}>إلغاء</button>
+            <button onClick={handleOpenShift} disabled={submitting} style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}>
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {submitting ? "جارٍ الفتح..." : "فتح الوردية"}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       <ConfirmDialog open={!!confirmReconcile} onClose={() => setConfirmReconcile(null)} onConfirm={handleReconcile} title="تسوية الوردية" message="هل أنت متأكد من تسوية هذه الوردية؟ هذا الإجراء متاح فقط للمسؤول." confirmLabel="تسوية" />

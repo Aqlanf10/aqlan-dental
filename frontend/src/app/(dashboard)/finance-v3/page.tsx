@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Wallet,
   FileText,
@@ -14,10 +14,12 @@ import {
   ClipboardCheck,
   Bell,
   CircleDot,
+  CircleCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { AccessDenied, FinanceTabErrorBoundary, tokens } from "./components/FinanceSharedUI";
 import { todayArabic } from "./components/FinanceHelpers";
+import { api } from "@/lib/api";
 import { OverviewTab } from "./components/OverviewTab";
 import { PatientAccountsTab } from "./components/PatientAccountsTab";
 import { InvoicesTab } from "./components/InvoicesTab";
@@ -57,6 +59,19 @@ const TABS: TabDef[] = [
 export default function FinanceV3Page() {
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState("overview");
+  const [hasActiveShift, setHasActiveShift] = useState(false);
+
+  /* ── Check active shift status ── */
+  const checkActiveShift = useCallback(async () => {
+    try {
+      const { data } = await api.get<{ hasActiveShift: boolean }>("/api/finance-v3/shifts/active");
+      setHasActiveShift(data?.hasActiveShift === true);
+    } catch {
+      setHasActiveShift(false);
+    }
+  }, []);
+
+  useEffect(() => { checkActiveShift(); }, [checkActiveShift]);
 
   /* ── Access gate: Admin / Accountant only ── */
   const isAuthorized = user?.role === "Admin" || user?.role === "Accountant";
@@ -85,8 +100,17 @@ export default function FinanceV3Page() {
         <span className="text-xs font-medium" style={{ color: tokens.textSecondary }}>الفرع الرئيسي</span>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
         <div className="flex items-center gap-1.5">
-          <CircleDot className="w-3 h-3" style={{ color: tokens.textTertiary }} />
-          <span className="text-xs" style={{ color: tokens.textTertiary }}>لا وردية مفتوحة</span>
+          {hasActiveShift ? (
+            <>
+              <CircleCheck className="w-3 h-3" style={{ color: tokens.successBorder }} />
+              <span className="text-xs font-medium" style={{ color: tokens.successBorder }}>وردية مفتوحة</span>
+            </>
+          ) : (
+            <>
+              <CircleDot className="w-3 h-3" style={{ color: tokens.textTertiary }} />
+              <span className="text-xs" style={{ color: tokens.textTertiary }}>لا وردية مفتوحة</span>
+            </>
+          )}
         </div>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
         <button className="w-7 h-7 rounded-md flex items-center justify-center transition-colors" style={{ color: tokens.textSecondary }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.cardHover; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }} title="الإشعارات"><Bell className="w-4 h-4" /></button>

@@ -3412,6 +3412,51 @@ public class FinanceV3Controller(
         catch { await tx.RollbackAsync(); throw; }
     }
 
+    // ─── Installment Plan Endpoints ──────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/finance-v3/contracts/{contractId}/installments
+    /// ينشئ خطة تقسيط جديدة لعقد تقويم ويولّد الأقساط الشهرية تلقائياً.
+    /// </summary>
+    [HttpPost("contracts/{contractId:guid}/installments")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<InstallmentPlanDto>> CreateInstallmentPlan(
+        Guid contractId,
+        [FromBody] CreateInstallmentPlanRequest request)
+    {
+        if (contractId != request.ContractId)
+            return BadRequest(new { message = "معرّف العقد في المسار لا يطابق المعرف في الطلب." });
+
+        try
+        {
+            var plan = await financeService.GenerateInstallmentPlanAsync(request);
+            return Ok(plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/contracts/{contractId}/installments
+    /// يسترجع خطة التقسيط المرتبطة بعقد معين مع جميع الأقساط المجدولة.
+    /// </summary>
+    [HttpGet("contracts/{contractId:guid}/installments")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<InstallmentPlanDto>> GetInstallmentPlan(Guid contractId)
+    {
+        try
+        {
+            var plan = await financeService.GetInstallmentPlanByContractIdAsync(contractId);
+            return Ok(plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

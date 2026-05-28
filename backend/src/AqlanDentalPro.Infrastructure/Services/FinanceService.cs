@@ -1602,4 +1602,123 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         entry.PostedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
     }
+
+    // ─── Installment Plan Logic ─────────────────────────────────────────
+
+    public async Task<InstallmentPlanDto> GenerateInstallmentPlanAsync(CreateInstallmentPlanRequest request)
+    {
+        // 1. التحقق من وجود العقد
+        var contract = await db.Contracts
+            .Include(c => c.Patient)
+            .FirstOrDefaultAsync(c => c.Id == request.ContractId);
+
+        if (contract == null)
+            throw new ArgumentException($"العقد بالمعرّف {request.ContractId} غير موجود.");
+
+        // التحقق من أن العقد نشط
+        if (contract.Status != ContractStatus.Active)
+            throw new ArgumentException("لا يمكن إنشاء خطة تقسيط لعقد غير نشط.");
+
+        // التحقق من عدم وجود خطة مسبقة لتجنب التكرار
+        var existingPlan = await db.InstallmentPlans
+            .AnyAsync(p => p.ContractId == request.ContractId && p.IsActive);
+        if (existingPlan)
+            throw new ArgumentException("توجد خطة تقسيط مسبقة لهذا العقد. لا يمكن إنشاء خطة مكررة.");
+
+        // 2. الحسابات الرياضية
+        if (request.NumberOfMonths <= 0)
+            throw new ArgumentException("عدد أشهر التقسيط يجب أن يكون أكبر من صفر.");
+
+        if (request.DownPayment < 0)
+            throw new ArgumentException("الدفعة المقدمة لا يمكن أن تكون سالبة.");
+
+        if (request.DownPayment >= contract.TotalAmount)
+            throw new ArgumentException("الدفعة المقدمة لا يمكن أن تساوي أو تتجاوز إجمالي مبلغ العقد.");
+
+        decimal remainingAmount = contract.TotalAmount - request.DownPayment;
+        decimal monthlyAmount = Math.Round(remainingAmount / request.NumberOfMonths, 2); // التقريب لخانتين عشريتين
+
+        // 3. إنشاء الخطة الأساسية
+        var plan = new InstallmentPlan
+        {
+            ContractId = request.ContractId,
+            PatientId = contract.PatientId,
+            TotalAmount = contract.TotalAmount,
+            DownPayment = request.DownPayment,
+            NumberOfMonths = request.NumberOfMonths,
+            MonthlyAmount = monthlyAmount,
+            StartDate = request.StartDate,
+            IsCompleted = false
+        };
+
+        // 4. توليد الأقساط الشهرية تلقائياً
+        // معالجة فروق التقريب: نوزع المبلغ بالتساوي ونضع الباقي في الشهر الأخير
+        decimal accumulatedAmount = 0;
+        for (int i = 0; i < request.NumberOfMonths; i++)
+        {
+            var installment = new Installment
+            {
+                InstallmentPlanId = plan.Id,
+                Amount = monthlyAmount,
+                DueDate = request.StartDate.AddMonths(i), // إضافة شهر لكل قسط
+                Status = InstallmentStatus.Pending
+            };
+
+            // معالجة فروق التقريب في الشهر الأخير
+            // هذا يضمن أن مجموع الأقساط = المبلغ المتبقي بالضبط
+            if (i == request.NumberOfMonths - 1)
+            {
+                installment.Amount = remainingAmount - accumulatedAmount;
+            }
+
+            accumulatedAmount += installment.Amount;
+            plan.Installments.Add(installment);
+        }
+
+        db.InstallmentPlans.Add(plan);
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("Installment plan {PlanId} created for contract {ContractId}: {Months} months × {MonthlyAmount:N2}, down payment: {DownPayment:N2}",
+            plan.Id, request.ContractId, request.NumberOfMonths, monthlyAmount, request.DownPayment);
+
+        return MapInstallmentPlan(plan);
+    }
+
+    public async Task<InstallmentPlanDto> GetInstallmentPlanByContractIdAsync(Guid contractId)
+    {
+        var plan = await db.InstallmentPlans
+            .Include(p => p.Installments)
+            .FirstOrDefaultAsync(p => p.ContractId == contractId && p.IsActive);
+
+        if (plan == null)
+            throw new ArgumentException("لا توجد خطة تقسيط لهذا العقد.");
+
+        return MapInstallmentPlan(plan);
+    }
+
+    // ─── Installment Mapping ────────────────────────────────────────────
+
+    private static InstallmentPlanDto MapInstallmentPlan(InstallmentPlan plan) => new()
+    {
+        Id = plan.Id,
+        ContractId = plan.ContractId,
+        PatientId = plan.PatientId,
+        TotalAmount = plan.TotalAmount,
+        DownPayment = plan.DownPayment,
+        NumberOfMonths = plan.NumberOfMonths,
+        MonthlyAmount = plan.MonthlyAmount,
+        StartDate = plan.StartDate,
+        IsCompleted = plan.IsCompleted,
+        Installments = plan.Installments
+            .OrderBy(i => i.DueDate)
+            .Select(i => new InstallmentDto
+            {
+                Id = i.Id,
+                Amount = i.Amount,
+                DueDate = i.DueDate,
+                PaidDate = i.PaidDate,
+                Status = i.Status,
+                PaymentId = i.PaymentId
+            }).ToList()
+    };
 }

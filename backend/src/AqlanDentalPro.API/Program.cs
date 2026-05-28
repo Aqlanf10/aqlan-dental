@@ -465,6 +465,12 @@ builder.Services.AddControllers()
         // FIX: Allow enum values as strings in JSON (e.g., "Consultation" instead of 0)
         // Without this, frontend sends category: "Other" but backend expects integer → 400 Bad Request
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+
+        // Sprint 1: Defensive safety net against circular JSON references.
+        // If any endpoint accidentally returns a raw EF entity with bidirectional
+        // navigation properties, IgnoreCycles will serialize the cycle as null
+        // instead of throwing JsonException and crashing the request pipeline.
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

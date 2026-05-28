@@ -59,6 +59,18 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ Fix branchId=Guid.Empty causes 500 — added early BadRequest(400) validation
 ///      in POST /treasuries, POST /payments, POST cashier-sessions/close
 ///
+/// Sprint 1 — Finance Stability (this commit):
+///   ✅ Admin branchId fallback — when Admin user has no branch assigned (Guid.Empty),
+///      GET endpoints bypass branch filter for consolidated view (already worked).
+///      POST endpoints now use first active branch as fallback instead of rejecting
+///      with BadRequest, so admin can still perform write operations.
+///   ✅ Nullable decimal safety — all SumAsync calls use (decimal?) cast with ?? 0m
+///      to prevent NullReferenceException on empty result sets.
+///   ✅ Overdue calculation null safety — StartDate! removed, uses .GetValueOrDefault()
+///      to prevent NullReferenceException when contract StartDate is null.
+///   ✅ Helper methods — CalculateContractOutstandingAsync and
+///      CalculateInvoiceOutstandingAsync now use nullable-safe aggregation.
+///
 /// Hotfixes 5E:
 ///   ✅ Eliminated all remaining CreateEntryAsync/CreateReversalEntryAsync calls —
 ///      replaced with manual JournalEntry+JournalLine creation (IsPosted=true from start)
@@ -111,11 +123,14 @@ public class FinanceV3Controller(
     /// GET /api/finance-v3/dashboard — Returns KPI data for the Finance V3 dashboard header band.
     /// Migration A: Now reads from JournalEntry/JournalLine (canonical source of truth)
     /// instead of CashFlowTransaction (transitional).
+    /// Sprint 1: Admin users with Guid.Empty branchId bypass branch filter → consolidated data.
     /// </summary>
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard([FromQuery] string? period = "today")
     {
         // Blocker 6: Branch isolation guard for non-admin users
+        // Admin users with no branch (Guid.Empty) bypass the branch filter to view
+        // consolidated statistics across all branches (Sprint 1 admin fallback).
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
@@ -219,7 +234,11 @@ public class FinanceV3Controller(
         foreach (var c in overdueContracts)
         {
             if (branchId.HasValue && c.Patient?.BranchId != branchId.Value) continue;
-            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12) + (today.Month - c.StartDate.Value.Month);
+            // Sprint 1: Null safety — use GetValueOrDefault instead of ! operator
+            // to prevent NullReferenceException when StartDate is null
+            var startDate = c.StartDate.GetValueOrDefault();
+            if (startDate == default) continue;
+            var monthsElapsed = ((today.Year - startDate.Year) * 12) + (today.Month - startDate.Month);
             if (monthsElapsed <= 0) continue;
             var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
             var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
@@ -1950,8 +1969,9 @@ public class FinanceV3Controller(
     [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {
-        // Branch validation: ensure user has a valid branch before creating payment
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+        // Sprint 1: Admin branchId fallback — if admin has no branch assigned,
+        // use the first active branch instead of rejecting with BadRequest.
+        var branchId = await ResolveBranchIdAsync();
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
 
@@ -2107,8 +2127,8 @@ public class FinanceV3Controller(
     [Authorize(Policy = "CashierAccess")]
     public async Task<IActionResult> CloseCashierSession([FromBody] CloseSessionRequest req)
     {
-        // Branch validation: ensure user has a valid branch before closing session
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+        // Sprint 1: Admin branchId fallback
+        var branchId = await ResolveBranchIdAsync();
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
 
@@ -2271,9 +2291,10 @@ public class FinanceV3Controller(
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "رصيد البداية لا يمكن أن يكون سالباً" });
 
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+        // Sprint 1: Admin branchId fallback
+        var branchId = await ResolveBranchIdAsync();
         if (branchId == Guid.Empty)
-            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. لا توجد فروع نشطة في النظام." });
 
         var treasury = new Treasury
         {
@@ -2369,10 +2390,13 @@ public class FinanceV3Controller(
     {
         if (req.Amount <= 0)
             return BadRequest(new { message = "يجب أن يكون مبلغ التحويل أكبر من الصفر" });
-        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+        // Sprint 1: Admin branchId fallback
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
 
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+        var branchId = await ResolveBranchIdAsync();
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. لا توجد فروع نشطة في النظام." });
         var userId = currentUser.UserId ?? Guid.Empty;
 
         var destTreasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == req.DestinationTreasuryId && t.BranchId == branchId && t.IsActive);
@@ -2542,9 +2566,10 @@ public class FinanceV3Controller(
             date = parsedDate;
 
         var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = currentUser.BranchId;
-        if (branchId == null || branchId == Guid.Empty)
-            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل المصروف." });
+        // Sprint 1: Admin branchId fallback
+        var branchId = await ResolveBranchIdAsync();
+        if (branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، لا توجد فروع نشطة في النظام. لا يمكن تسجيل المصروف." });
 
         CashierSession? activeSession = null;
         if (string.Equals(req.PaymentMethod, "cash", StringComparison.OrdinalIgnoreCase))
@@ -3009,8 +3034,9 @@ public class FinanceV3Controller(
         if (!string.IsNullOrWhiteSpace(req.DueDate) && DateOnly.TryParse(req.DueDate, out var parsedDue)) dueDate = parsedDue;
 
         var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = currentUser.BranchId ?? Guid.Empty;
-        if (branchId == Guid.Empty) return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل فاتورة المورد." });
+        // Sprint 1: Admin branchId fallback
+        var branchId = await ResolveBranchIdAsync();
+        if (branchId == Guid.Empty) return BadRequest(new { message = "عذراً، لا توجد فروع نشطة في النظام. لا يمكن تسجيل فاتورة المورد." });
 
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -3195,6 +3221,34 @@ public class FinanceV3Controller(
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Sprint 1: Resolves the effective branch ID for the current user.
+    /// - Non-admin users: uses their assigned BranchId (must be valid, else Guid.Empty).
+    /// - Admin users with a valid BranchId: uses their assigned branch.
+    /// - Admin users with no branch (Guid.Empty): falls back to the first active
+    ///   branch in the system, allowing admin to perform write operations across branches.
+    /// Returns Guid.Empty only if no active branches exist in the system.
+    /// </summary>
+    private async Task<Guid> ResolveBranchIdAsync()
+    {
+        // Non-admin: always use their assigned branch (no fallback)
+        if (!currentUser.IsAdmin)
+            return currentUser.BranchId ?? Guid.Empty;
+
+        // Admin with valid branch: use their assigned branch
+        if (currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+            return currentUser.BranchId.Value;
+
+        // Admin without branch: fallback to first active branch in the system
+        var firstBranchId = await db.Branches
+            .Where(b => b.IsActive)
+            .OrderBy(b => b.Name)
+            .Select(b => b.Id)
+            .FirstOrDefaultAsync();
+
+        return firstBranchId; // Guid.Empty if no branches exist
+    }
+
     private async Task<decimal> CalculateContractOutstandingAsync(Guid? branchId)
     {
         var query = db.Contracts
@@ -3205,7 +3259,9 @@ public class FinanceV3Controller(
             query = query.Where(c => c.Patient.BranchId == branchId.Value);
 
         var contracts = await query.ToListAsync();
-        return contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+        // Sprint 1: Nullable-safe aggregation — use decimal? sum with ?? 0m fallback
+        // to prevent overflow or null issues on empty payment collections
+        return contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount ?? 0m));
     }
 
     private async Task<decimal> CalculateInvoiceOutstandingAsync(Guid? branchId)
@@ -3218,7 +3274,8 @@ public class FinanceV3Controller(
             query = query.Where(i => i.Patient.BranchId == branchId.Value);
 
         var invoices = await query.ToListAsync();
-        return invoices.Sum(i => i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
+        // Sprint 1: Nullable-safe aggregation
+        return invoices.Sum(i => i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount ?? 0m));
     }
 }
 

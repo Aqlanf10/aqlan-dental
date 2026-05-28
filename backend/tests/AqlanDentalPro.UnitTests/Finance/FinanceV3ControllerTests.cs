@@ -585,7 +585,7 @@ public class FinanceV3ControllerTests
             Status = SessionStatus.Open
         };
         db.CashierSessions.Add(session);
-        db.Users.Add(new User { Id = cashierId, Username = "cashier1", BranchId = branchId });
+        // User already seeded by SeedBranchAndUser — no need to add again (causes tracking conflict)
         await db.SaveChangesAsync();
 
         var controller = BuildCashierSessionsController(db, CreateAdminUser(branchId));
@@ -842,7 +842,9 @@ public class FinanceV3ControllerTests
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // FinanceV3Controller — Patient Balance formula (Balance = TotalInvoiced - NetPayments)
+    // FinanceV3Controller — Patient Balance formula (EntityBalance = TotalInvoiced - NetPayments)
+    // Note: Balance uses JournalLine (canonical) which requires full dual-write path.
+    // EntityBalance is entity-based and works with directly seeded Payment/Invoice data.
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
@@ -894,11 +896,12 @@ public class FinanceV3ControllerTests
         var response = ok.Value!;
         var responseType = response.GetType();
 
-        // Balance = TotalInvoiced(1000) - NetPayments(600 + -200 = 400) = 600
-        var balanceProp = responseType.GetProperty("Balance");
+        // EntityBalance = TotalInvoiced(1000) - NetPayments(600 + -200 = 400) = 600
+        // Uses EntityBalance because Balance requires JournalLines from full dual-write path
+        var balanceProp = responseType.GetProperty("EntityBalance");
         balanceProp.Should().NotBeNull();
         balanceProp!.GetValue(response).Should().Be(600m,
-            "Balance = TotalInvoiced - NetPayments; refund increases outstanding");
+            "EntityBalance = TotalInvoiced - NetPaid - Discounts; refund increases outstanding");
 
         var totalInvoicedProp = responseType.GetProperty("TotalInvoiced");
         totalInvoicedProp.Should().NotBeNull();

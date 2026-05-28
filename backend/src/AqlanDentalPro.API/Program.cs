@@ -2840,7 +2840,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.28-camelcase-fix" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.28-db-migration-fix" }));
 
 // DIAGNOSTIC: Temporary debug endpoint to identify 500 error root cause (remove after fixing)
 app.MapGet("/api/debug/db-test", async (AppDbContext db, ICurrentUserService currentUser) =>

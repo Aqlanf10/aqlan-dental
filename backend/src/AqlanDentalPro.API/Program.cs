@@ -2842,6 +2842,23 @@ app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.28-camelcase-fix" }));
 
+// DIAGNOSTIC: Temporary debug endpoint to identify 500 error root cause (remove after fixing)
+app.MapGet("/api/debug/db-test", async (AppDbContext db, ICurrentUserService currentUser) =>
+{
+    var results = new Dictionary<string, object>();
+    try { results["treasuries_count"] = await db.Treasuries.CountAsync(); } catch (Exception ex) { results["treasuries_error"] = ex.Message; }
+    try { results["expenses_count"] = await db.OperationalExpenses.CountAsync(); } catch (Exception ex) { results["expenses_error"] = ex.Message; }
+    try { results["cashier_count"] = await db.CashierSessions.CountAsync(); } catch (Exception ex) { results["cashier_error"] = ex.Message; }
+    try { results["suppliers_count"] = await db.Suppliers.CountAsync(); } catch (Exception ex) { results["suppliers_error"] = ex.Message; }
+    try { results["supplier_bills_count"] = await db.SupplierBills.CountAsync(); } catch (Exception ex) { results["supplier_bills_error"] = ex.Message; }
+    try { results["journal_entries_count"] = await db.JournalEntries.CountAsync(); } catch (Exception ex) { results["journal_entries_error"] = ex.Message; }
+    try { results["journal_lines_count"] = await db.JournalLines.CountAsync(); } catch (Exception ex) { results["journal_lines_error"] = ex.Message; }
+    results["current_user_id"] = currentUser.UserId?.ToString() ?? "null";
+    results["current_user_branch"] = currentUser.BranchId?.ToString() ?? "null";
+    results["current_user_is_admin"] = currentUser.IsAdmin;
+    return Results.Ok(results);
+}).RequireAuthorization();
+
 // Serve uploaded files — resolve writable uploads directory
 // Priority: 1) UPLOADS_PATH env var (Railway persistent volume), 2) wwwroot/uploads, 3) /tmp fallback
 var uploadsPath = Environment.GetEnvironmentVariable("UPLOADS_PATH");

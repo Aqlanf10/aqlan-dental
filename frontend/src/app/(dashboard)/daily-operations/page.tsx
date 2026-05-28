@@ -680,11 +680,27 @@ export default function DailyOperationsPage() {
         } catch { /* PDF download optional */ }
       }
     } catch (err) {
-      // Extract backend Arabic error message
-      const msg = err && typeof err === "object" && "response" in err 
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
-        : err instanceof Error ? err.message : null;
+      // Extract backend Arabic error message — check all response data paths
+      let msg: string | null = null;
+      if (err && typeof err === "object" && "response" in err) {
+        const resp = (err as { response?: { data?: { message?: string; title?: string; errors?: Record<string, string[]> }; status?: number } }).response;
+        if (resp?.data?.message) msg = resp.data.message;
+        else if (resp?.data?.title) msg = resp.data.title;
+        else if (resp?.data?.errors) {
+          const firstErr = Object.values(resp.data.errors).find(e => e && e.length > 0);
+          if (firstErr && firstErr.length > 0) msg = firstErr[0];
+        }
+        else if (resp?.status === 401) msg = "ليس لديك صلاحية. يرجى تسجيل الدخول مجدداً.";
+        else if (resp?.status === 403) msg = "غير مصرح بهذا الإجراء.";
+      }
+      if (!msg && err instanceof Error && !err.message.startsWith("Request failed")) msg = err.message;
       toast.error(msg || "فشل تسجيل الدفعة");
+
+      // Debug-safe console log in development only
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("[IndependentPayment] error:", (err as { response?: { data?: unknown; status?: number } })?.response?.data ?? err);
+      }
     }
   }, [createPaymentMutation]);
 

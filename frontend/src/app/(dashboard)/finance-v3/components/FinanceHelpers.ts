@@ -83,11 +83,17 @@ export function safeFormatCurrency(amount: number | null | undefined): string {
 /** Safely extract error message from Axios error objects */
 export function extractErrorMessage(err: unknown, fallback = "حدث خطأ"): string {
   if (err && typeof err === "object" && "response" in err) {
-    const resp = (err as { response?: { data?: { message?: string }; status?: number } }).response;
+    const resp = (err as { response?: { data?: { message?: string; title?: string; errors?: Record<string, string[]> }; status?: number } }).response;
     if (resp?.data?.message) return resp.data.message;
+    if (resp?.data?.title) return resp.data.title;
+    if (resp?.data?.errors) {
+      const firstError = Object.values(resp.data.errors).find(e => e && e.length > 0);
+      if (firstError && firstError.length > 0) return firstError[0];
+    }
     if (resp?.status === 401) return "ليس لديك صلاحية. يرجى تسجيل الدخول مجدداً.";
     if (resp?.status === 403) return "غير مصرح بهذا الإجراء.";
   }
+  if (err instanceof Error && err.message && !err.message.startsWith("Request failed")) return err.message;
   return fallback;
 }
 

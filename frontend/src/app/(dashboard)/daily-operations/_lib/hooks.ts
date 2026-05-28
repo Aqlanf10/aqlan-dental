@@ -250,10 +250,18 @@ export function useCreatePayment() {
       doctorId?: string;
       notes?: string;
     }) => {
+      // Hotfix: Strip empty string Guid fields before sending to backend.
+      // ASP.NET cannot deserialize "" as Guid and would return 400.
+      const cleaned: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (value !== "" && value !== undefined && value !== null) {
+          cleaned[key] = value;
+        }
+      }
       // Sprint 3: Route through Finance V3 payment endpoint instead of legacy /api/payments.
       // This ensures ShiftEnforcerFilter, Arabic error messages, and cashier session
       // validation are all applied consistently.
-      const { data } = await api.post("/api/finance-v3/payments", body);
+      const { data } = await api.post("/api/finance-v3/payments", cleaned);
       return data;
     },
     onSuccess: () => {

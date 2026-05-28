@@ -18,7 +18,7 @@ public class ClinicQueueItemConfiguration : IEntityTypeConfiguration<ClinicQueue
         builder.Property(q => q.Priority)
             .HasConversion<string>()
             .HasMaxLength(20)
-            .HasDefaultValue("Normal");
+            .HasDefaultValue(ClinicQueuePriority.Normal);
 
         builder.Property(q => q.SortOrder)
             .HasDefaultValue(0);

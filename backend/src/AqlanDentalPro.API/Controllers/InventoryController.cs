@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -18,6 +19,7 @@ public sealed class CreateInventoryItemRequest
     public string? BatchNumber { get; init; }
     public string? ExpiryDate { get; init; }
     public Guid? DefaultSupplierId { get; init; }
+    public Guid? BranchId { get; init; }
 }
 
 public sealed class CreateInventoryItemRequestValidator : AbstractValidator<CreateInventoryItemRequest>
@@ -68,15 +70,43 @@ public sealed class AdjustQuantityRequestValidator : AbstractValidator<AdjustQua
 [Authorize(Policy = "AdminOnly")]
 public class InventoryController(AppDbContext db) : ControllerBase
 {
+    // ─── Branch resolution: Admin sees all branches; non-admin is restricted to their token branch ───
+    private Guid? ResolveBranchId(Guid? requestBranchId)
+    {
+        var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+        var userBranch = User.FindFirst("BranchId")?.Value;
+
+        // Admin with no specific branch request → see all (return null)
+        if (userRole == "Admin" && (!requestBranchId.HasValue || requestBranchId.Value == Guid.Empty))
+            return null;
+
+        // Non-admin: force their token branch
+        if (userRole != "Admin")
+        {
+            if (Guid.TryParse(userBranch, out Guid tokenBranchId))
+                return tokenBranchId;
+        }
+
+        return requestBranchId ?? Guid.Empty;
+    }
+
+    // ─── 1. GET /api/inventory — List inventory items (branch-scoped) ──────────
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? category,
         [FromQuery] bool? lowStock,
+        [FromQuery] Guid? branchId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
+        var resolvedBranchId = ResolveBranchId(branchId);
+
         var query = db.Inventory.AsQueryable();
+
+        // ─── Branch restriction ───
+        if (resolvedBranchId.HasValue)
+            query = query.Where(i => i.BranchId == resolvedBranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(category)) query = query.Where(i => i.Category == category);
         if (lowStock == true) query = query.Where(i => i.Quantity <= i.MinQuantity);
@@ -98,19 +128,27 @@ public class InventoryController(AppDbContext db) : ControllerBase
                 i.BatchNumber,
                 ExpiryDate = i.ExpiryDate != null ? i.ExpiryDate.Value.ToString("yyyy-MM-dd") : (string?)null,
                 i.DefaultSupplierId,
+                DefaultSupplierName = i.DefaultSupplier != null ? i.DefaultSupplier.Name : (string?)null,
                 IsLowStock = i.Quantity <= i.MinQuantity,
+                i.BranchId,
                 CreatedAt = i.CreatedAt.ToString("yyyy-MM-dd")
             })
             .ToListAsync();
 
-        return Ok(new { data = items, total, page, pageSize });
+        return Ok(new { data = items, total, page, pageSize, IsConsolidated = !resolvedBranchId.HasValue });
     }
 
+    // ─── 2. GET /api/inventory/categories ──────────────────────────────────────
     [HttpGet("categories")]
-    public async Task<IActionResult> GetCategories()
+    public async Task<IActionResult> GetCategories([FromQuery] Guid? branchId)
     {
-        var categories = await db.Inventory
-            .Where(i => i.Category != null)
+        var resolvedBranchId = ResolveBranchId(branchId);
+        var query = db.Inventory.Where(i => i.Category != null);
+
+        if (resolvedBranchId.HasValue)
+            query = query.Where(i => i.BranchId == resolvedBranchId.Value);
+
+        var categories = await query
             .Select(i => i.Category!)
             .Distinct()
             .OrderBy(c => c)
@@ -118,11 +156,17 @@ public class InventoryController(AppDbContext db) : ControllerBase
         return Ok(categories);
     }
 
+    // ─── 3. GET /api/inventory/low-stock ───────────────────────────────────────
     [HttpGet("low-stock")]
-    public async Task<IActionResult> GetLowStock()
+    public async Task<IActionResult> GetLowStock([FromQuery] Guid? branchId)
     {
-        var items = await db.Inventory
-            .Where(i => i.Quantity <= i.MinQuantity)
+        var resolvedBranchId = ResolveBranchId(branchId);
+        var query = db.Inventory.Where(i => i.Quantity <= i.MinQuantity);
+
+        if (resolvedBranchId.HasValue)
+            query = query.Where(i => i.BranchId == resolvedBranchId.Value);
+
+        var items = await query
             .OrderBy(i => i.Quantity)
             .Select(i => new
             {
@@ -139,35 +183,48 @@ public class InventoryController(AppDbContext db) : ControllerBase
 
     /// <summary>Returns total inventory valuation (sum of quantity * costPerUnit).</summary>
     [HttpGet("valuation")]
-    public async Task<IActionResult> GetValuation()
+    public async Task<IActionResult> GetValuation([FromQuery] Guid? branchId)
     {
-        var totalItems = await db.Inventory.CountAsync();
-        var totalQuantity = await db.Inventory.SumAsync(i => i.Quantity);
-        var totalValue = await db.Inventory
-            .Where(i => i.CostPerUnit.HasValue)
-            .SumAsync(i => i.Quantity * i.CostPerUnit!.Value);
+        var resolvedBranchId = ResolveBranchId(branchId);
+        var query = db.Inventory.AsQueryable();
 
-        var lowStockCount = await db.Inventory.CountAsync(i => i.Quantity <= i.MinQuantity);
+        if (resolvedBranchId.HasValue)
+            query = query.Where(i => i.BranchId == resolvedBranchId.Value);
+
+        var totalItems = await query.CountAsync();
+        var totalQuantity = await query.SumAsync(i => (int?)i.Quantity) ?? 0;
+        var totalValue = await query
+            .Where(i => i.CostPerUnit.HasValue)
+            .SumAsync(i => (decimal?)(i.Quantity * i.CostPerUnit!.Value)) ?? 0m;
+
+        var lowStockCount = await query.CountAsync(i => i.Quantity <= i.MinQuantity);
 
         return Ok(new
         {
             TotalItems = totalItems,
             TotalQuantity = totalQuantity,
             TotalValue = totalValue,
-            LowStockCount = lowStockCount
+            LowStockCount = lowStockCount,
+            IsConsolidated = !resolvedBranchId.HasValue
         });
     }
 
     /// <summary>Returns items expiring within the specified number of days.</summary>
     [HttpGet("expiring-soon")]
-    public async Task<IActionResult> GetExpiringSoon([FromQuery] int days = 30)
+    public async Task<IActionResult> GetExpiringSoon([FromQuery] int days = 30, [FromQuery] Guid? branchId = null)
     {
         if (days < 1) days = 30;
+
+        var resolvedBranchId = ResolveBranchId(branchId);
+        var query = db.Inventory.AsQueryable();
+
+        if (resolvedBranchId.HasValue)
+            query = query.Where(i => i.BranchId == resolvedBranchId.Value);
 
         var cutoffDate = DateOnly.FromDateTime(DateTime.Today.AddDays(days));
         var today = DateOnly.FromDateTime(DateTime.Today);
 
-        var items = await db.Inventory
+        var items = await query
             .Where(i => i.ExpiryDate != null && i.ExpiryDate <= cutoffDate)
             .OrderBy(i => i.ExpiryDate)
             .Select(i => new
@@ -199,6 +256,7 @@ public class InventoryController(AppDbContext db) : ControllerBase
         return Ok(result);
     }
 
+    // ─── 4. POST /api/inventory — Create inventory item ────────────────────────
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateInventoryItemRequest req)
     {
@@ -210,6 +268,9 @@ public class InventoryController(AppDbContext db) : ControllerBase
             expiryDate = parsed;
         }
 
+        // Resolve branch for the new item
+        var resolvedBranchId = ResolveBranchId(req.BranchId);
+
         var item = new Inventory
         {
             Name = req.Name,
@@ -220,14 +281,33 @@ public class InventoryController(AppDbContext db) : ControllerBase
             CostPerUnit = req.CostPerUnit,
             BatchNumber = req.BatchNumber,
             ExpiryDate = expiryDate,
-            DefaultSupplierId = req.DefaultSupplierId
+            DefaultSupplierId = req.DefaultSupplierId,
+            BranchId = resolvedBranchId
         };
 
         db.Inventory.Add(item);
+
+        // ─── Double-write: Create InventoryAdjustment for initial stock ───
+        if (req.Quantity > 0)
+        {
+            var adjustment = new InventoryAdjustment
+            {
+                InventoryItemId = item.Id,
+                PreviousQuantity = 0,
+                NewQuantity = req.Quantity,
+                Delta = req.Quantity,
+                Reason = "رصيد افتتاحي — إنشاء مادة جديدة",
+                AdjustmentType = "initial",
+                AdjustedBy = GetCurrentUserId()
+            };
+            db.InventoryAdjustments.Add(adjustment);
+        }
+
         await db.SaveChangesAsync();
         return CreatedAtAction(null, new { id = item.Id }, new { item.Id, item.Name });
     }
 
+    // ─── 5. PUT /api/inventory/{id} — Update inventory item ────────────────────
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] CreateInventoryItemRequest req)
     {
@@ -242,9 +322,10 @@ public class InventoryController(AppDbContext db) : ControllerBase
             expiryDate = parsed;
         }
 
+        // Note: Quantity changes should go through AdjustQuantity endpoint, not here
         item.Name = req.Name;
         item.Category = req.Category;
-        item.Quantity = req.Quantity;
+        // Quantity is NOT updated here — use /adjust endpoint for audit trail
         item.MinQuantity = req.MinQuantity;
         item.Unit = req.Unit;
         item.CostPerUnit = req.CostPerUnit;
@@ -256,6 +337,12 @@ public class InventoryController(AppDbContext db) : ControllerBase
         return NoContent();
     }
 
+    // ─── 6. PUT /api/inventory/{id}/adjust — Adjust quantity (double-write) ────
+    /// <summary>
+    /// Adjusts inventory quantity with full audit trail.
+    /// Every adjustment creates an InventoryAdjustment record describing:
+    /// previousQuantity, newQuantity, delta, reason, adjustedBy, adjustmentType.
+    /// </summary>
     [HttpPut("{id:guid}/adjust")]
     public async Task<IActionResult> AdjustQuantity(Guid id, [FromBody] AdjustQuantityRequest req)
     {
@@ -268,15 +355,17 @@ public class InventoryController(AppDbContext db) : ControllerBase
 
         item.Quantity = newQty;
 
-        // Create inventory adjustment record
+        // ─── Double-write: Create detailed inventory adjustment record ───
+        // Every stock increment/decrement MUST create an automatic log describing delta logic.
+        var adjustmentType = req.Delta > 0 ? "manual_add" : "manual_remove";
         var adjustment = new InventoryAdjustment
         {
             InventoryItemId = item.Id,
             PreviousQuantity = previousQty,
             NewQuantity = newQty,
             Delta = req.Delta,
-            Reason = req.Reason ?? "تعديل يدوي",
-            AdjustmentType = "manual",
+            Reason = req.Reason ?? (req.Delta > 0 ? "إضافة يدوية للمخزون" : "سحب يدوي من المخزون"),
+            AdjustmentType = adjustmentType,
             AdjustedBy = GetCurrentUserId()
         };
 
@@ -286,7 +375,10 @@ public class InventoryController(AppDbContext db) : ControllerBase
         return Ok(new
         {
             id,
+            previousQuantity = previousQty,
             newQuantity = item.Quantity,
+            delta = req.Delta,
+            reason = adjustment.Reason,
             isLowStock = item.Quantity <= item.MinQuantity
         });
     }
@@ -329,6 +421,7 @@ public class InventoryController(AppDbContext db) : ControllerBase
         return Ok(new { data = adjustments, total, page, pageSize });
     }
 
+    // ─── 7. DELETE /api/inventory/{id} — Soft-delete ──────────────────────────
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {

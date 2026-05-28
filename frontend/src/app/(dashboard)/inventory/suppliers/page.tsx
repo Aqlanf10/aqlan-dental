@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
@@ -13,6 +13,17 @@ import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { cn } from "@/lib/utils";
 import type { Supplier, CreateSupplierRequest, PaginatedResponse } from "@/types/inventory";
+import { safeArray } from "@/app/(dashboard)/finance-v3/components/FinanceHelpers";
+
+/* ─── Custom debounce hook — suppresses rapid API roundtrips ──────────────── */
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debouncedValue;
+}
 
 /* ─── Supplier Form Modal ──────────────────────────────────────────────────── */
 function SupplierFormModal({
@@ -159,6 +170,31 @@ function SupplierFormModal({
   );
 }
 
+/* ─── BillStatus Arabic Badge for Supplier Bills ───────────────────────────── */
+function BillStatusBadge({ status }: { status: string | number | undefined }) {
+  // Map both string and integer values to Arabic labels + colors
+  const statusMap: Record<string, { label: string; bg: string; text: string }> = {
+    "0":     { label: "مسودة",         bg: "bg-blue-50",    text: "text-blue-700" },
+    "1":     { label: "غير مدفوعة",    bg: "bg-red-50",     text: "text-red-700" },
+    "2":     { label: "مدفوعة جزئياً",  bg: "bg-amber-50",   text: "text-amber-700" },
+    "3":     { label: "مدفوعة بالكامل", bg: "bg-green-50",   text: "text-green-700" },
+    Draft:           { label: "مسودة",         bg: "bg-blue-50",    text: "text-blue-700" },
+    Unpaid:          { label: "غير مدفوعة",    bg: "bg-red-50",     text: "text-red-700" },
+    PartiallyPaid:   { label: "مدفوعة جزئياً",  bg: "bg-amber-50",   text: "text-amber-700" },
+    FullyPaid:       { label: "مدفوعة بالكامل", bg: "bg-green-50",   text: "text-green-700" },
+    Cancelled:       { label: "ملغاة",         bg: "bg-gray-100",   text: "text-gray-500" },
+  };
+
+  const key = String(status ?? "");
+  const cfg = statusMap[key] ?? { label: key || "—", bg: "bg-gray-100", text: "text-gray-500" };
+
+  return (
+    <span className={`inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.text}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
 /* ─── Main Suppliers Page ──────────────────────────────────────────────────── */
 export default function SuppliersPage() {
   const [search, setSearch] = useState("");
@@ -168,11 +204,16 @@ export default function SuppliersPage() {
 
   const queryClient = useQueryClient();
 
+  // Debounce search input to suppress rapid API roundtrips (300ms delay)
+  const debouncedSearch = useDebounce(search, 300);
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["suppliers"],
+    queryKey: ["suppliers", debouncedSearch],
     queryFn: async () => {
-      const res = await api.get<PaginatedResponse<Supplier>>("/api/suppliers?pageSize=100");
-      return res.data.data;
+      const params = new URLSearchParams({ pageSize: "100" });
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+      const res = await api.get<PaginatedResponse<Supplier>>(`/api/suppliers?${params}`);
+      return safeArray(res.data?.data ?? res.data);
     },
   });
 
@@ -186,12 +227,13 @@ export default function SuppliersPage() {
     onError: () => toast.error("فشل حذف المورد"),
   });
 
-  const suppliers = (data ?? []).filter(
+  // Client-side filter for instant response (debounced search already hit API)
+  const suppliers = safeArray(data).filter(
     (s) =>
       search.trim() === "" ||
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      (s.phone ?? "").includes(search) ||
-      (s.contactPerson ?? "").toLowerCase().includes(search.toLowerCase())
+      (s?.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (s?.phone ?? "").includes(search) ||
+      (s?.contactPerson ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -241,7 +283,7 @@ export default function SuppliersPage() {
           </button>
         </div>
 
-        {/* Search */}
+        {/* Search with debounce */}
         <div className="flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-52">
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -317,7 +359,7 @@ export default function SuppliersPage() {
                               <Truck className="w-4 h-4 text-clinic-blue" />
                             </div>
                             <span className="font-medium text-gray-900">
-                              {supplier.name}
+                              {supplier.name ?? "—"}
                             </span>
                             {!supplier.isActive && (
                               <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">

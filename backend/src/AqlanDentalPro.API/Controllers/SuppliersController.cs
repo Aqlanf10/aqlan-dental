@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -91,15 +92,39 @@ public sealed class UpdateSupplierRequestValidator : AbstractValidator<UpdateSup
 [Authorize(Policy = "AdminOnly")]
 public class SuppliersController(AppDbContext db) : ControllerBase
 {
+    // ─── Branch resolution: Admin sees all branches; non-admin is restricted to their token branch ───
+    private Guid? ResolveBranchId(Guid? requestBranchId)
+    {
+        var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+        var userBranch = User.FindFirst("BranchId")?.Value;
+
+        // Admin with no specific branch request → see all (return null)
+        if (userRole == "Admin" && (!requestBranchId.HasValue || requestBranchId.Value == Guid.Empty))
+            return null;
+
+        // Non-admin: force their token branch
+        if (userRole != "Admin")
+        {
+            if (Guid.TryParse(userBranch, out Guid tokenBranchId))
+                return tokenBranchId;
+        }
+
+        return requestBranchId ?? Guid.Empty;
+    }
     // ─── 1. GET /api/suppliers — List all suppliers ──────────────────────
-    /// <summary>Returns paginated list of suppliers with optional search.</summary>
+    /// <summary>Returns paginated list of suppliers with optional search.
+    /// Suppliers are branch-agnostic (shared), but PurchaseOrders are branch-scoped.
+    /// Non-admin users see only purchase orders from their branch.</summary>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search,
+        [FromQuery] Guid? branchId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
+        var resolvedBranchId = ResolveBranchId(branchId);
+
         var query = db.Suppliers.AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -121,19 +146,25 @@ public class SuppliersController(AppDbContext db) : ControllerBase
                 s.Email,
                 s.Address,
                 s.Notes,
-                PurchaseOrderCount = s.PurchaseOrders.Count,
+                // Branch-scoped purchase order count: non-admin only sees their branch POs
+                PurchaseOrderCount = resolvedBranchId.HasValue
+                    ? s.PurchaseOrders.Count(po => po.BranchId == resolvedBranchId.Value)
+                    : s.PurchaseOrders.Count,
                 CreatedAt = s.CreatedAt.ToString("yyyy-MM-dd")
             })
             .ToListAsync();
 
-        return Ok(new { data = suppliers, total, page, pageSize });
+        return Ok(new { data = suppliers, total, page, pageSize, IsConsolidated = !resolvedBranchId.HasValue });
     }
 
     // ─── 2. GET /api/suppliers/{id} — Get supplier by ID ────────────────
-    /// <summary>Returns supplier details with purchase order count and total spent.</summary>
+    /// <summary>Returns supplier details with purchase order count and total spent.
+    /// Branch-scoped: non-admin only sees PO totals from their branch.</summary>
     [HttpGet("{id:guid}")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id, [FromQuery] Guid? branchId)
     {
+        var resolvedBranchId = ResolveBranchId(branchId);
+
         var supplier = await db.Suppliers
             .Include(s => s.PurchaseOrders)
             .FirstOrDefaultAsync(s => s.Id == id);
@@ -141,8 +172,13 @@ public class SuppliersController(AppDbContext db) : ControllerBase
         if (supplier is null)
             return NotFound(new { message = "المورد غير موجود" });
 
-        var purchaseOrderCount = supplier.PurchaseOrders.Count;
-        var totalSpent = supplier.PurchaseOrders
+        // Filter POs by branch for non-admin users
+        var pos = resolvedBranchId.HasValue
+            ? supplier.PurchaseOrders.Where(po => po.BranchId == resolvedBranchId.Value)
+            : supplier.PurchaseOrders;
+
+        var purchaseOrderCount = pos.Count();
+        var totalSpent = pos
             .Where(po => po.Status != Domain.Enums.PurchaseOrderStatus.Cancelled)
             .Sum(po => po.TotalAmount);
 
@@ -158,7 +194,8 @@ public class SuppliersController(AppDbContext db) : ControllerBase
             PurchaseOrderCount = purchaseOrderCount,
             TotalSpent = totalSpent,
             CreatedAt = supplier.CreatedAt.ToString("yyyy-MM-dd"),
-            UpdatedAt = supplier.UpdatedAt.ToString("yyyy-MM-dd")
+            UpdatedAt = supplier.UpdatedAt.ToString("yyyy-MM-dd"),
+            IsConsolidated = !resolvedBranchId.HasValue
         });
     }
 

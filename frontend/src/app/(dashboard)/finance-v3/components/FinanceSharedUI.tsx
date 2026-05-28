@@ -112,6 +112,8 @@ export function StatusBadge({ status }: { status: string }) {
     Draft:           { bg: tokens.infoBg,     text: tokens.infoText,    label: "مسودة" },
     Issued:          { bg: tokens.brandLight,  text: tokens.brand,      label: "صادرة" },
     Paid:            { bg: tokens.successBg,   text: tokens.successBorder, label: "مدفوعة" },
+    Unpaid:          { bg: tokens.dangerBg,    text: tokens.dangerText, label: "غير مدفوعة" },
+    FullyPaid:       { bg: tokens.successBg,   text: tokens.successBorder, label: "مدفوعة بالكامل" },
     PartiallyPaid:   { bg: tokens.warningBg,   text: tokens.warningText, label: "مدفوعة جزئياً" },
     Cancelled:       { bg: tokens.cardHover,   text: tokens.textTertiary, label: "ملغاة" },
     Pending:         { bg: tokens.warningBg,   text: tokens.warningText, label: "قيد المراجعة" },

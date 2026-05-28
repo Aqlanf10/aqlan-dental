@@ -15,6 +15,7 @@ import { formatYemeniRiyal, formatArabicDate, cn } from "@/lib/utils";
 import type { InventoryItem, InventoryAdjustment } from "@/types/inventory";
 import { InventoryFormModal } from "@/components/inventory/InventoryFormModal";
 import { AdjustQuantityModal } from "@/components/inventory/AdjustQuantityModal";
+import { safeArray } from "@/app/(dashboard)/finance-v3/components/FinanceHelpers";
 
 /* ─── Adjustment History Modal ─────────────────────────────────────────────── */
 function AdjustmentHistoryModal({
@@ -27,10 +28,11 @@ function AdjustmentHistoryModal({
   const { data: adjustments, isLoading } = useQuery({
     queryKey: ["inventory-adjustments", item.id],
     queryFn: async () => {
-      const res = await api.get<InventoryAdjustment[]>(
+      const res = await api.get<{ data: InventoryAdjustment[]; total: number }>(
         `/api/inventory/${item.id}/adjustments`
       );
-      return res.data;
+      // API returns { data: [...], total, page, pageSize } — extract the array safely
+      return safeArray(res.data?.data ?? res.data);
     },
   });
 
@@ -54,14 +56,14 @@ function AdjustmentHistoryModal({
                 <div key={i} className="h-14 bg-gray-100 rounded-lg" />
               ))}
             </div>
-          ) : !adjustments || adjustments.length === 0 ? (
+          ) : (safeArray(adjustments)).length === 0 ? (
             <div className="text-center py-10 text-gray-400">
               <Clock className="w-8 h-8 mx-auto mb-2" />
               <p className="font-medium">لا يوجد تاريخ تعديلات</p>
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {adjustments.map((adj) => (
+              {safeArray(adjustments).map((adj) => (
                 <div
                   key={adj.id}
                   className="flex items-center justify-between border border-gray-100 rounded-lg p-3"
@@ -124,7 +126,7 @@ export default function InventoryPage() {
     queryKey: ["inventory-categories"],
     queryFn: async () => {
       const res = await api.get<string[]>("/api/inventory/categories");
-      return res.data;
+      return safeArray(res.data);
     },
   });
 
@@ -145,7 +147,7 @@ export default function InventoryPage() {
     queryKey: ["inventory-low-stock-count"],
     queryFn: async () => {
       const res = await api.get<InventoryItem[]>("/api/inventory/low-stock");
-      return res.data;
+      return safeArray(res.data);
     },
   });
 
@@ -159,20 +161,21 @@ export default function InventoryPage() {
     onError: () => toast.error("فشل الحذف"),
   });
 
-  const items = (data?.data ?? []).filter((i) =>
+  // Sprint 2: Defensive guard — safeArray ensures null/undefined never crashes .map()
+  const items = safeArray(data?.data).filter((i) =>
     search.trim() === "" ||
-    i.name.toLowerCase().includes(search.toLowerCase()) ||
-    (i.category ?? "").toLowerCase().includes(search.toLowerCase())
+    (i?.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (i?.category ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   const totalPages = Math.ceil((data?.total ?? 0) / 25);
   const lowStockCount = lowStockData?.length ?? 0;
 
   /* ── Valuation summary ──────────────────────────────────────────────────── */
-  const allItems = data?.data ?? [];
+  const allItems = safeArray(data?.data);
   const totalItems = data?.total ?? 0;
   const totalValue = allItems.reduce(
-    (sum, i) => sum + (i.costPerUnit ?? 0) * i.quantity,
+    (sum, i) => sum + (i?.costPerUnit ?? 0) * (i?.quantity ?? 0),
     0
   );
 
@@ -180,9 +183,11 @@ export default function InventoryPage() {
   const now = new Date();
   const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const expiringItems = allItems.filter((i) => {
-    if (!i.expiryDate) return false;
-    const exp = new Date(i.expiryDate);
-    return exp <= thirtyDays;
+    if (!i?.expiryDate) return false;
+    try {
+      const exp = new Date(i.expiryDate);
+      return !isNaN(exp.getTime()) && exp <= thirtyDays;
+    } catch { return false; }
   });
 
   return (
@@ -286,14 +291,14 @@ export default function InventoryPage() {
               className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
-          {categoriesData && categoriesData.length > 0 && (
+          {safeArray(categoriesData).length > 0 && (
             <select
               value={category}
               onChange={(e) => { setCategory(e.target.value); setPage(1); }}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             >
               <option value="">جميع الفئات</option>
-              {categoriesData.map((c) => (
+              {safeArray(categoriesData).map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>

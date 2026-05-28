@@ -138,9 +138,15 @@ public static class MessagingHubEvents
     /// <summary>تحديث قائمة المحادثات</summary>
     public const string ConversationsUpdated = "ConversationsUpdated";
 
-    /// <summary>تغيير حالة عنصر في الطابور (إضافة/استدعاء/دخول/بدء/إكمال/إلغاء)</summary>
+    /// <summary>تغيير حالة عنصر في الطابور (إضافة/استدعاء/دخول/بدء/إكمال/إلغاء/لم يحضر/أولوية/ترتيب)</summary>
     public const string QueueUpdated = "QueueUpdated";
 
     /// <summary>استدعاء مريض — للتحديث الفوري على شاشة العرض</summary>
     public const string PatientCalled = "PatientCalled";
+
+    /// <summary>تغيير أولوية عنصر في الطابور</summary>
+    public const string QueuePriorityChanged = "QueuePriorityChanged";
+
+    /// <summary>إعادة ترتيب الطابور (سحب وإفلات)</summary>
+    public const string QueueReordered = "QueueReordered";
 }

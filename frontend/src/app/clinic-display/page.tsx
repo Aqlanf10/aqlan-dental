@@ -14,6 +14,8 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
+  AlertTriangle,
+  UserCheck,
 } from "lucide-react";
 import {
   RECEPTION_FALLBACK,
@@ -31,6 +33,9 @@ interface DisplayData {
     roomName: string;
     calledAt: string;
     estimatedWaitMinutes?: number;
+    recallCount?: number;
+    priority?: string;
+    priorityArabic?: string;
   } | null;
   waitingCount: number;
   waitingList: {
@@ -40,6 +45,9 @@ interface DisplayData {
     doctorName: string;
     estimatedWaitMinutes?: number;
     status: string;
+    position?: number;
+    priority?: string;
+    priorityArabic?: string;
   }[];
   recentlyCalled: {
     queueItemId: string;
@@ -50,7 +58,16 @@ interface DisplayData {
     statusArabic: string;
     status: string;
     calledAt: string;
+    recallCount?: number;
   }[];
+  nowServing?: {
+    roomName: string;
+    doctorName: string;
+    patientName: string;
+    patientNumber: string;
+    startedAt: string;
+  }[];
+  averageServiceTimeMinutes?: number;
 }
 
 /* ─── Constants ────────────────────────────────────────────────────────────── */
@@ -87,6 +104,19 @@ function formatTimeAgo(dateStr: string): string {
 
 function getStatusDisplay(status: string) {
   return STATUS_DISPLAY[status] ?? { label: status, color: "text-gray-400", bg: "bg-gray-800/30", dotColor: "bg-gray-500" };
+}
+
+function toArabicNumerals(n: number): string {
+  const digits = "\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669";
+  return String(n).replace(/\d/g, (d) => digits[parseInt(d)]);
+}
+
+function getPriorityStyle(priority: string): { color: string; bg: string } {
+  switch (priority) {
+    case "Urgent":    return { color: "text-amber-300", bg: "bg-amber-900/40" };
+    case "Emergency": return { color: "text-red-300",   bg: "bg-red-900/40" };
+    default:          return { color: "text-orange-300", bg: "bg-orange-900/40" };
+  }
 }
 
 /* NOTE: buildAnnouncementText and formatRoomForSpeech are imported from
@@ -465,7 +495,7 @@ export default function ClinicDisplayPage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [rescanVoices]);
 
-  const isFullyEmpty = data && data.waitingCount === 0 && !data.latestCalled && data.recentlyCalled.length === 0;
+  const isFullyEmpty = data && data.waitingCount === 0 && !data.latestCalled && data.recentlyCalled.length === 0 && (data.nowServing?.length ?? 0) === 0;
 
   const voiceStatusText = voiceStatus === "active"
     ? "النداء الصوتي مفعل"
@@ -613,7 +643,31 @@ export default function ClinicDisplayPage() {
             <p className="text-lg text-gray-500 mt-2">سيتم تحديث الشاشة تلقائياً عند إضافة مرضى</p>
           </div>
         ) : data ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-full">
+          <div className="space-y-8">
+            {/* ── Now Serving ──────────────────────────────────────────── */}
+            {data.nowServing && data.nowServing.length > 0 && (
+              <div>
+                <div className="flex items-center gap-4 mb-4">
+                  <UserCheck className="w-7 h-7 text-teal-400" />
+                  <span className="text-2xl font-bold text-teal-300">يتم الخدمة الآن</span>
+                  {data.averageServiceTimeMinutes != null && data.averageServiceTimeMinutes > 0 && (
+                    <span className="text-sm text-gray-400">متوسط وقت الخدمة: {toArabicNumerals(data.averageServiceTimeMinutes)} دقيقة</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {data.nowServing.map((room, i) => (
+                    <div key={i} className="rounded-2xl bg-gradient-to-br from-teal-900/40 to-cyan-900/30 border border-teal-600/30 p-5 text-center">
+                      <div className="text-xl font-bold text-teal-300 mb-1">{room.roomName}</div>
+                      <div className="text-base text-gray-300">{room.doctorName}</div>
+                      <div className="text-lg font-bold text-white mt-2">{room.patientName || `ملف رقم ${room.patientNumber}`}</div>
+                      {room.patientName && <div className="text-sm text-gray-500 font-mono">{room.patientNumber}</div>}
+                      <div className="text-xs text-gray-500 mt-2 flex items-center justify-center gap-1"><Clock className="w-3 h-3" />{formatTimeAgo(room.startedAt)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* ── Left Column ── */}
             <div className="lg:col-span-1 space-y-8">
               {data.latestCalled ? (
@@ -627,6 +681,22 @@ export default function ClinicDisplayPage() {
                       <div className="flex items-center gap-3 bg-teal-800/60 px-6 py-3 rounded-2xl"><MapPin className="w-6 h-6 text-teal-300" /><span className="text-2xl font-bold text-teal-200">{data.latestCalled.roomName || RECEPTION_FALLBACK}</span></div>
                       {data.latestCalled.doctorName && <div className="flex items-center gap-3 bg-teal-800/60 px-6 py-3 rounded-2xl"><Stethoscope className="w-6 h-6 text-teal-300" /><span className="text-xl text-teal-200">{data.latestCalled.doctorName}</span></div>}
                     </div>
+                    {(data.latestCalled.recallCount ?? 0) > 0 && (
+                      <div className="flex items-center justify-center gap-2 mt-3">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold bg-orange-900/40 text-orange-300 border border-orange-600/20">
+                          <PhoneCall className="w-4 h-4" />
+                          نداء {toArabicNumerals(data.latestCalled.recallCount!)}
+                        </span>
+                      </div>
+                    )}
+                    {data.latestCalled.priority && data.latestCalled.priority !== "Normal" && (
+                      <div className="flex items-center justify-center gap-2 mt-2">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-bold ${getPriorityStyle(data.latestCalled.priority).bg} ${getPriorityStyle(data.latestCalled.priority).color} border border-current/20`}>
+                          <AlertTriangle className="w-4 h-4" />
+                          {data.latestCalled.priorityArabic}
+                        </span>
+                      </div>
+                    )}
                     {data.latestCalled.estimatedWaitMinutes != null && data.latestCalled.estimatedWaitMinutes > 0 && (
                       <div className="flex items-center justify-center gap-2 mt-3 text-lg text-amber-300">
                         <Clock className="w-5 h-5" />
@@ -651,12 +721,18 @@ export default function ClinicDisplayPage() {
                   <div className="mt-5 space-y-3 max-h-60 overflow-y-auto">
                     {data.waitingList.map((w, i) => (
                       <div key={w.queueItemId || i} className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/5">
-                        <div className="flex items-center gap-3"><span className="text-sm text-gray-500 w-7 text-center font-bold">{i + 1}</span><span className="text-lg font-medium text-gray-200">{w.patientName}</span><span className="text-sm text-gray-500 font-mono">{w.patientNumber}</span></div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-teal-400 font-bold whitespace-nowrap">رقم {toArabicNumerals(w.position ?? (i + 1))}{w.estimatedWaitMinutes != null && w.estimatedWaitMinutes > 0 ? ` \u2014 ~${toArabicNumerals(w.estimatedWaitMinutes)} دقيقة` : ""}</span>
+                          <span className="text-lg font-medium text-gray-200">{w.patientName}</span>
+                          <span className="text-sm text-gray-500 font-mono">{w.patientNumber}</span>
+                          {w.priority && w.priority !== "Normal" && (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${getPriorityStyle(w.priority).bg} ${getPriorityStyle(w.priority).color}`}>
+                              <AlertTriangle className="w-3 h-3" />{w.priorityArabic}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-3">
                           {w.doctorName && <span className="text-sm text-gray-400 flex items-center gap-1"><Stethoscope className="w-3 h-3" />{w.doctorName}</span>}
-                          {w.estimatedWaitMinutes != null && w.estimatedWaitMinutes > 0 && (
-                            <span className="text-xs text-amber-400 flex items-center gap-1"><Clock className="w-3 h-3" />~{w.estimatedWaitMinutes} د</span>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -686,6 +762,11 @@ export default function ClinicDisplayPage() {
                             <div className="flex items-center gap-3 flex-wrap">
                               <span className={`text-2xl font-bold text-white ${isCalled ? "animate-pulse" : ""}`}>{item.patientName}</span>
                               <span className="text-base text-gray-500 font-mono">{item.patientNumber}</span>
+                              {(item.recallCount ?? 0) > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-orange-900/40 text-orange-300">
+                                  نداء {toArabicNumerals(item.recallCount!)}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-4 mt-2">
                               {item.doctorName && <span className="flex items-center gap-1.5 text-base text-gray-400"><Stethoscope className="w-4 h-4" />{item.doctorName}</span>}
@@ -703,6 +784,7 @@ export default function ClinicDisplayPage() {
                 )}
               </div>
             </div>
+          </div>
           </div>
         ) : null}
       </main>

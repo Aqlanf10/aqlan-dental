@@ -15,6 +15,17 @@ public class ClinicQueueItemConfiguration : IEntityTypeConfiguration<ClinicQueue
             .HasConversion<string>()
             .HasMaxLength(30);
 
+        builder.Property(q => q.Priority)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue("Normal");
+
+        builder.Property(q => q.SortOrder)
+            .HasDefaultValue(0);
+
+        builder.Property(q => q.RecallCount)
+            .HasDefaultValue(0);
+
         builder.Property(q => q.RoomName)
             .HasMaxLength(50);
 
@@ -27,9 +38,12 @@ public class ClinicQueueItemConfiguration : IEntityTypeConfiguration<ClinicQueue
         // Index for querying today's queue efficiently
         builder.HasIndex(q => new { q.QueueDate, q.Status });
 
+        // Index for priority-based ordering
+        builder.HasIndex(q => new { q.QueueDate, q.Priority, q.SortOrder });
+
         // Prevent duplicate active queue items for the same patient on the same day
         builder.HasIndex(q => new { q.PatientId, q.QueueDate })
-            .HasFilter("\"Status\" NOT IN ('Completed', 'Cancelled')")
+            .HasFilter("\"Status\" NOT IN ('Completed', 'Cancelled', 'NoShow')")
             .IsUnique();
 
         // DB-01 FIX: Index for querying queue items by doctor

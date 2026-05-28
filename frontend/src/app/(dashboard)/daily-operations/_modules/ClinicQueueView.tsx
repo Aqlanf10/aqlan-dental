@@ -6,7 +6,8 @@ import {
   RefreshCw, Loader2, UserPlus, Stethoscope,
   MapPin, Clock, XCircle, PhoneCall,
   DoorOpen, Play, Square, Volume2,
-  Wifi, WifiOff,
+  Wifi, WifiOff, ArrowUp, ArrowDown,
+  ChevronDown, ChevronUp, BarChart3, Send, AlertTriangle,
 } from "lucide-react";
 import { NAVY, BLUE } from "../_lib/constants";
 import type { TodayJourneyItem } from "../_lib/constants";
@@ -28,17 +29,32 @@ interface ClinicQueueItem {
   doctorId?: string;
   roomName?: string;
   serviceName?: string;
-  status: "Waiting" | "Called" | "InRoom" | "InProgress" | "Completed" | "Cancelled";
+  status: "Waiting" | "Called" | "InRoom" | "InProgress" | "Completed" | "Cancelled" | "NoShow";
   statusArabic: string;
+  priority: "Normal" | "Urgent" | "VIP" | "Emergency";
+  priorityArabic: string;
+  sortOrder: number;
+  recallCount: number;
   calledAt?: string;
   inRoomAt?: string;
   startedAt?: string;
   completedAt?: string;
+  noShowAt?: string;
+  notes?: string;
+  position?: number;
+  estimatedWaitMinutes?: number;
   createdAt: string;
 }
 
 interface DbRoom { id: string; arabicName: string; }
 interface DoctorOption { id: string; name: string; specialty?: string; }
+
+interface QueueAnalytics {
+  avgServiceMinutes?: number;
+  avgWaitMinutes?: number;
+  completionRate?: number;
+  noShowRate?: number;
+}
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   Waiting:    { label: "في الانتظار",  color: "#b45309", bg: "#fffbeb" },
@@ -47,17 +63,25 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   InProgress: { label: "قيد المعالجة", color: "#059669", bg: "#ecfdf5" },
   Completed:  { label: "مكتمل",        color: "#6b7280", bg: "#f9fafb" },
   Cancelled:  { label: "ملغي",         color: "#dc2626", bg: "#fef2f2" },
+  NoShow:     { label: "لم يحضر",      color: "#9333ea", bg: "#faf5ff" },
+};
+
+const PRIORITY_CONFIG: Record<string, { label: string; color: string; bg: string; icon?: string }> = {
+  Normal:    { label: "عادي",   color: "#6b7280", bg: "#f3f4f6" },
+  Urgent:    { label: "عاجل",   color: "#d97706", bg: "#fffbeb" },
+  VIP:       { label: "مميز",   color: "#7c3aed", bg: "#f5f3ff" },
+  Emergency: { label: "طوارئ", color: "#dc2626", bg: "#fef2f2" },
 };
 
 /** Map ClinicQueueItem → TodayJourneyItem for context menu compatibility */
 function queueItemToJourney(q: ClinicQueueItem): TodayJourneyItem {
   const statusMap: Record<string, string> = {
     Waiting: "Waiting", Called: "Called", InRoom: "InRoom",
-    InProgress: "InProgress", Completed: "Completed", Cancelled: "Cancelled",
+    InProgress: "InProgress", Completed: "Completed", Cancelled: "Cancelled", NoShow: "NoShow",
   };
   const nextActionMap: Record<string, string> = {
     Waiting: "CallPatient", Called: "EnterRoom", InRoom: "StartVisit",
-    InProgress: "Checkout", Completed: "None", Cancelled: "None",
+    InProgress: "Checkout", Completed: "None", Cancelled: "None", NoShow: "None",
   };
   return {
     appointmentId: q.appointmentId ?? "",
@@ -95,6 +119,11 @@ function speakArabic(text: string): boolean {
   } catch { return false; }
 }
 
+/** Convert a number to Arabic-Indic digits */
+function toArabicNum(n: number): string {
+  return n.toString().replace(/\d/g, d => "٠١٢٣٤٥٦٧٨٩"[parseInt(d)]);
+}
+
 const HUB_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/hubs/messaging`
   : "/hubs/messaging";
@@ -115,10 +144,29 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
   const [signalrConnected, setSignalrConnected] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
+  // Analytics
+  const [analytics, setAnalytics] = useState<QueueAnalytics | null>(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+
+  // Priority dropdown open state (keyed by item id)
+  const [priorityDropdownOpen, setPriorityDropdownOpen] = useState<string | null>(null);
+
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const connectionRef = useRef<HubConnection | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const priorityDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // ── Close priority dropdown on outside click ──
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (priorityDropdownOpen && priorityDropdownRef.current && !priorityDropdownRef.current.contains(e.target as Node)) {
+        setPriorityDropdownOpen(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [priorityDropdownOpen]);
 
   // ── Fetch queue data ──
   const fetchQueue = useCallback(async () => {
@@ -131,12 +179,24 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
     } catch { /* ignore */ } finally { setLoading(false); }
   }, [doctorFilter]);
 
+  // ── Fetch analytics ──
+  const fetchAnalytics = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (doctorFilter) params.set("doctorId", doctorFilter);
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      const { data } = await api.get<QueueAnalytics>(`/api/clinic-queue/analytics${qs}`);
+      setAnalytics(data);
+    } catch { /* ignore */ }
+  }, [doctorFilter]);
+
   // ── Initial load + rooms/doctors ──
   useEffect(() => {
     fetchQueue();
+    fetchAnalytics();
     api.get<DbRoom[]>("/api/clinic-queue/rooms").then(r => setRooms(r.data)).catch(() => {});
     api.get<DoctorOption[]>("/api/doctors").then(r => setDoctors(r.data ?? [])).catch(() => {});
-  }, [fetchQueue]);
+  }, [fetchQueue, fetchAnalytics]);
 
   // ── SignalR real-time connection ──
   useEffect(() => {
@@ -156,6 +216,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         // Queue updated — refresh data instantly
         connection.on("QueueUpdated", () => {
           fetchQueue();
+          fetchAnalytics();
           queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
           queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
         });
@@ -185,6 +246,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         connection.onreconnected(() => {
           setSignalrConnected(true);
           fetchQueue();
+          fetchAnalytics();
         });
         connection.onclose(() => setSignalrConnected(false));
 
@@ -206,14 +268,14 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
       }
       setSignalrConnected(false);
     };
-  }, [user, fetchQueue, queryClient, voiceEnabled]);
+  }, [user, fetchQueue, fetchAnalytics, queryClient, voiceEnabled]);
 
   // ── Fallback polling (only when SignalR is disconnected) ──
   useEffect(() => {
     if (signalrConnected) return; // No polling needed when SignalR is live
-    const interval = setInterval(fetchQueue, 15000);
+    const interval = setInterval(() => { fetchQueue(); fetchAnalytics(); }, 15000);
     return () => clearInterval(interval);
-  }, [signalrConnected, fetchQueue]);
+  }, [signalrConnected, fetchQueue, fetchAnalytics]);
 
   // ── Voice announcement when a patient is called ──
   const lastCalledRef = useRef<string | null>(null);
@@ -229,11 +291,16 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
     speakArabic(text);
   }, [items, voiceEnabled]);
 
-  const queueAction = async (url: string, body?: object) => {
+  const queueAction = async (url: string, body?: object, method: "post" | "patch" = "post") => {
     setActionLoading(url);
     try {
-      await api.post(url, body);
+      if (method === "patch") {
+        await api.patch(url, body);
+      } else {
+        await api.post(url, body);
+      }
       fetchQueue();
+      fetchAnalytics();
     } catch { /* ignore */ }
     finally { setActionLoading(null); }
   };
@@ -254,8 +321,58 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
     speakArabic(text);
   };
 
+  // ── Move item up/down in waiting queue ──
+  const handleReorder = async (item: ClinicQueueItem, direction: "up" | "down") => {
+    const waitingItems = items
+      .filter(i => i.status === "Waiting")
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const idx = waitingItems.findIndex(i => i.id === item.id);
+    if (idx < 0) return;
+    if (direction === "up" && idx === 0) return;
+    if (direction === "down" && idx === waitingItems.length - 1) return;
+
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    const swapItem = waitingItems[swapIdx];
+
+    // Optimistically swap sort orders locally
+    const newItems = [...items];
+    const itemIdx = newItems.findIndex(i => i.id === item.id);
+    const swapItemIdx = newItems.findIndex(i => i.id === swapItem.id);
+    if (itemIdx >= 0 && swapItemIdx >= 0) {
+      const tempSort = newItems[itemIdx].sortOrder;
+      newItems[itemIdx] = { ...newItems[itemIdx], sortOrder: newItems[swapItemIdx].sortOrder };
+      newItems[swapItemIdx] = { ...newItems[swapItemIdx], sortOrder: tempSort };
+      setItems(newItems);
+    }
+
+    try {
+      await api.post("/api/clinic-queue/reorder", {
+        orders: [
+          { id: item.id, sortOrder: swapItem.sortOrder },
+          { id: swapItem.id, sortOrder: item.sortOrder },
+        ],
+      });
+      fetchQueue(); // sync with backend
+    } catch {
+      fetchQueue(); // revert on error
+    }
+  };
+
+  // ── Change priority ──
+  const handlePriorityChange = async (item: ClinicQueueItem, newPriority: string) => {
+    setPriorityDropdownOpen(null);
+    if (newPriority === item.priority) return;
+    await queueAction(`/api/clinic-queue/${item.id}/priority`, { priority: newPriority }, "patch");
+  };
+
+  // ── Send SMS notification ──
+  const handleNotify = async (item: ClinicQueueItem) => {
+    await queueAction(`/api/clinic-queue/${item.id}/notify`);
+  };
+
   // Filter + search
-  const activeItems = items.filter(i => !["Completed", "Cancelled"].includes(i.status));
+  const activeItems = items.filter(i => !["Completed", "Cancelled", "NoShow"].includes(i.status));
+  const noShowItems = items.filter(i => i.status === "NoShow");
   const completedItems = items.filter(i => ["Completed", "Cancelled"].includes(i.status));
 
   const filtered = (list: ClinicQueueItem[]) => {
@@ -269,7 +386,13 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
     called: items.filter(i => i.status === "Called").length,
     inRoom: items.filter(i => i.status === "InRoom").length,
     inProgress: items.filter(i => i.status === "InProgress").length,
+    noShow: items.filter(i => i.status === "NoShow").length,
   };
+
+  // Waiting items sorted by sortOrder for up/down logic
+  const waitingSorted = items
+    .filter(i => i.status === "Waiting")
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
     <div className="flex flex-col h-full">
@@ -282,6 +405,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
             { label: "نداء", count: counts.called, color: "#3b82f6" },
             { label: "غرفة", count: counts.inRoom, color: "#8b5cf6" },
             { label: "علاج", count: counts.inProgress, color: "#10b981" },
+            { label: "غياب", count: counts.noShow, color: "#9333ea" },
           ].map(c => (
             <span key={c.label} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold"
               style={{ background: c.color + "15", color: c.color }}>
@@ -291,6 +415,13 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         </div>
 
         <div className="flex-1" />
+
+        {/* Analytics toggle */}
+        <button onClick={() => { setShowAnalytics(!showAnalytics); if (!showAnalytics && !analytics) fetchAnalytics(); }}
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition"
+          title="إحصائيات الطابور">
+          <BarChart3 className="w-4 h-4" style={{ color: showAnalytics ? BLUE : "#94a3b8" }} />
+        </button>
 
         {/* Voice toggle */}
         <button onClick={() => setVoiceEnabled(!voiceEnabled)}
@@ -323,13 +454,52 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         </button>
       </div>
 
+      {/* Analytics panel (collapsible) */}
+      {showAnalytics && (
+        <div className="flex-shrink-0 px-3 py-2 border-b" style={{ borderColor: "#f1f5f9", background: "#f8fafc" }}>
+          <div className="flex items-center gap-2 mb-1">
+            <BarChart3 className="w-3.5 h-3.5" style={{ color: BLUE }} />
+            <span className="text-[11px] font-bold" style={{ color: NAVY }}>إحصائيات الطابور</span>
+            <button onClick={() => setShowAnalytics(false)} className="mr-auto">
+              <ChevronUp className="w-3.5 h-3.5" style={{ color: "#94a3b8" }} />
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <div className="rounded-lg p-2 text-center" style={{ background: "#fff" }}>
+              <div className="text-[10px] mb-0.5" style={{ color: "#64748b" }}>متوسط وقت الخدمة</div>
+              <div className="text-sm font-bold" style={{ color: NAVY }}>
+                {analytics?.avgServiceMinutes != null ? `${toArabicNum(Math.round(analytics.avgServiceMinutes))} د` : "—"}
+              </div>
+            </div>
+            <div className="rounded-lg p-2 text-center" style={{ background: "#fff" }}>
+              <div className="text-[10px] mb-0.5" style={{ color: "#64748b" }}>متوسط وقت الانتظار</div>
+              <div className="text-sm font-bold" style={{ color: NAVY }}>
+                {analytics?.avgWaitMinutes != null ? `${toArabicNum(Math.round(analytics.avgWaitMinutes))} د` : "—"}
+              </div>
+            </div>
+            <div className="rounded-lg p-2 text-center" style={{ background: "#fff" }}>
+              <div className="text-[10px] mb-0.5" style={{ color: "#64748b" }}>نسبة الإكمال</div>
+              <div className="text-sm font-bold" style={{ color: "#059669" }}>
+                {analytics?.completionRate != null ? `${toArabicNum(Math.round(analytics.completionRate))}%` : "—"}
+              </div>
+            </div>
+            <div className="rounded-lg p-2 text-center" style={{ background: "#fff" }}>
+              <div className="text-[10px] mb-0.5" style={{ color: "#64748b" }}>نسبة عدم الحضور</div>
+              <div className="text-sm font-bold" style={{ color: "#9333ea" }}>
+                {analytics?.noShowRate != null ? `${toArabicNum(Math.round(analytics.noShowRate))}%` : "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Queue list */}
       <div className="flex-1 overflow-auto p-3 space-y-2">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: BLUE }} />
           </div>
-        ) : filtered(activeItems).length === 0 && filtered(completedItems).length === 0 ? (
+        ) : filtered(activeItems).length === 0 && filtered(completedItems).length === 0 && filtered(noShowItems).length === 0 ? (
           <div className="text-center py-20" style={{ color: "#94a3b8" }}>
             <UserPlus className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="font-medium">لا توجد مرضى في الطابور</p>
@@ -338,10 +508,13 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
           <>
             {filtered(activeItems).map(item => {
               const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.Waiting;
+              const priCfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG.Normal;
               const isLoading = actionLoading !== null && actionLoading.includes(item.id);
+              const waitingIdx = waitingSorted.findIndex(i => i.id === item.id);
+              const isWaiting = item.status === "Waiting";
               return (
                 <div key={item.id} className="rounded-xl border p-3 hover:shadow-sm transition cursor-context-menu"
-                  style={{ background: "#fff", borderColor: "#e5e7eb" }}
+                  style={{ background: "#fff", borderColor: item.priority === "Emergency" ? "#fecaca" : item.priority === "Urgent" ? "#fde68a" : "#e5e7eb" }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     onContextMenu?.(e, queueItemToJourney(item));
@@ -349,8 +522,46 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        {/* Up/Down arrows for Waiting items */}
+                        {isWaiting && (
+                          <span className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => handleReorder(item, "up")}
+                              disabled={waitingIdx <= 0}
+                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 transition disabled:opacity-30"
+                              title="نقل لأعلى"
+                            >
+                              <ArrowUp className="w-3 h-3" style={{ color: NAVY }} />
+                            </button>
+                            <button
+                              onClick={() => handleReorder(item, "down")}
+                              disabled={waitingIdx < 0 || waitingIdx >= waitingSorted.length - 1}
+                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-gray-100 transition disabled:opacity-30"
+                              title="نقل لأسفل"
+                            >
+                              <ArrowDown className="w-3 h-3" style={{ color: NAVY }} />
+                            </button>
+                          </span>
+                        )}
+
                         <span className="font-bold text-sm" style={{ color: NAVY }}>{item.patientName}</span>
                         <span className="text-[11px] px-1.5 py-0.5 rounded-md font-mono" style={{ background: "#f1f5f9", color: "#64748b" }}>{item.patientNumber}</span>
+
+                        {/* Priority badge */}
+                        {item.priority !== "Normal" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5" style={{ background: priCfg.bg, color: priCfg.color }}>
+                            {item.priority === "Emergency" && <AlertTriangle className="w-2.5 h-2.5" />}
+                            {priCfg.label}
+                          </span>
+                        )}
+
+                        {/* Recall count badge */}
+                        {item.recallCount > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: "#fef3c7", color: "#d97706" }}>
+                            نداء {toArabicNum(item.recallCount)}
+                          </span>
+                        )}
+
                         {item.roomName && (
                           <span className="text-[11px] px-2 py-0.5 rounded-lg font-bold flex items-center gap-1" style={{ background: BLUE, color: "#fff" }}>
                             <MapPin className="w-3 h-3" />{item.roomName}
@@ -363,9 +574,16 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
                       <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: "#64748b" }}>
                         <span className="flex items-center gap-1"><Stethoscope className="w-3 h-3" />{item.doctorName || "—"}</span>
                         {item.appointmentTime && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{item.appointmentTime}</span>}
+                        {/* Position and estimated wait for waiting patients */}
+                        {isWaiting && item.position != null && (
+                          <span className="text-[11px] font-semibold" style={{ color: "#b45309" }}>
+                            رقم {toArabicNum(item.position)}
+                            {item.estimatedWaitMinutes != null ? ` — ~${toArabicNum(item.estimatedWaitMinutes)} دقيقة` : ""}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                       {item.status === "Waiting" && (
                         <>
                           <button onClick={() => handleCallWithVoice(item)}
@@ -376,6 +594,11 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#059669" }} title="نداء صوتي فقط (بدون تغيير الحالة)">
                             <Volume2 className="w-3 h-3" />
                           </button>
+                          {/* NoShow button for Waiting */}
+                          <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/no-show`)}
+                            disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: "#9333ea" }} title="لم يحضر">
+                            لم يحضر
+                          </button>
                           <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/cancel`)}
                             disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#ef4444" }}>
                             <XCircle className="w-3 h-3 inline ml-1" />إلغاء
@@ -383,10 +606,22 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
                         </>
                       )}
                       {item.status === "Called" && (
-                        <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/enter-room`)}
-                          disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#7c3aed" }}>
-                          <DoorOpen className="w-3 h-3 inline ml-1" />إدخال
-                        </button>
+                        <>
+                          <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/enter-room`)}
+                            disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50" style={{ background: "#7c3aed" }}>
+                            <DoorOpen className="w-3 h-3 inline ml-1" />إدخال
+                          </button>
+                          {/* Recall button */}
+                          <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/recall`)}
+                            disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: "#d97706" }} title="إعادة نداء">
+                            <PhoneCall className="w-3 h-3" />إعادة نداء
+                          </button>
+                          {/* NoShow button for Called */}
+                          <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/no-show`)}
+                            disabled={isLoading} className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1" style={{ background: "#9333ea" }} title="لم يحضر">
+                            لم يحضر
+                          </button>
+                        </>
                       )}
                       {item.status === "InRoom" && (
                         <button onClick={() => queueAction(`/api/clinic-queue/${item.id}/start`)}
@@ -400,14 +635,88 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
                           <Square className="w-3 h-3 inline ml-1" />إنهاء
                         </button>
                       )}
+
+                      {/* Priority change dropdown — for any active item */}
+                      <div className="relative" ref={priorityDropdownOpen === item.id ? priorityDropdownRef : null}>
+                        <button
+                          onClick={() => setPriorityDropdownOpen(priorityDropdownOpen === item.id ? null : item.id)}
+                          disabled={isLoading}
+                          className="px-2 py-1 rounded-lg text-[10px] font-bold transition hover:opacity-80 disabled:opacity-50 flex items-center gap-0.5"
+                          style={{ background: priCfg.bg, color: priCfg.color, border: `1px solid ${priCfg.color}30` }}
+                          title="تغيير الأولوية"
+                        >
+                          {priCfg.label}
+                          <ChevronDown className="w-2.5 h-2.5" />
+                        </button>
+                        {priorityDropdownOpen === item.id && (
+                          <div className="absolute top-full mt-1 left-0 z-50 rounded-lg shadow-lg border py-1 min-w-[100px]" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                            {Object.entries(PRIORITY_CONFIG).map(([key, val]) => (
+                              <button
+                                key={key}
+                                onClick={() => handlePriorityChange(item, key)}
+                                className="w-full text-right px-3 py-1.5 text-[11px] font-semibold hover:bg-gray-50 transition flex items-center gap-2"
+                                style={{ color: item.priority === key ? val.color : "#374151" }}
+                              >
+                                <span className="w-2 h-2 rounded-full" style={{ background: val.color }} />
+                                {val.label}
+                                {item.priority === key && <span className="mr-auto text-[10px]" style={{ color: val.color }}>✓</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* SMS notification button — for any active item */}
+                      <button onClick={() => handleNotify(item)}
+                        disabled={isLoading} className="px-2 py-1 rounded-lg text-[11px] font-bold transition hover:opacity-80 disabled:opacity-50 flex items-center gap-1"
+                        style={{ background: "#eff6ff", color: "#3b82f6", border: "1px solid #bfdbfe" }}
+                        title="إرسال إشعار SMS">
+                        <Send className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
                 </div>
               );
             })}
+
+            {/* NoShow section */}
+            {filtered(noShowItems).length > 0 && (
+              <div className="pt-3">
+                <div className="text-[11px] font-bold mb-2 flex items-center gap-1.5" style={{ color: "#9333ea" }}>
+                  <AlertTriangle className="w-3 h-3" />
+                  لم يحضروا ({toArabicNum(filtered(noShowItems).length)})
+                </div>
+                {filtered(noShowItems).map(item => {
+                  const cfg = STATUS_CONFIG.NoShow;
+                  return (
+                    <div key={item.id} className="rounded-xl border p-3 mb-2 opacity-60 cursor-context-menu" style={{ background: "#fff", borderColor: "#e5e7eb" }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        onContextMenu?.(e, queueItemToJourney(item));
+                      }}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm" style={{ color: NAVY }}>{item.patientName}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-md font-mono" style={{ background: "#f1f5f9", color: "#64748b" }}>{item.patientNumber}</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-bold" style={{ background: cfg.bg, color: cfg.color }}>
+                          {item.statusArabic || cfg.label}
+                        </span>
+                        {item.noShowAt && (
+                          <span className="text-[10px]" style={{ color: "#94a3b8" }}>
+                            <Clock className="w-3 h-3 inline ml-0.5" />
+                            {new Date(item.noShowAt).toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Completed section */}
             {filtered(completedItems).length > 0 && (
               <div className="pt-3">
-                <div className="text-[11px] font-bold mb-2" style={{ color: "#94a3b8" }}>المنتهون ({filtered(completedItems).length})</div>
+                <div className="text-[11px] font-bold mb-2" style={{ color: "#94a3b8" }}>المنتهون ({toArabicNum(filtered(completedItems).length)})</div>
                 {filtered(completedItems).map(item => {
                   const cfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.Completed;
                   return (

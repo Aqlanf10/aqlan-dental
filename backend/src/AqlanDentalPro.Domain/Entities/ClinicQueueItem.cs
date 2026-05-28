@@ -17,6 +17,15 @@ public class ClinicQueueItem : BaseEntity
     public string? RoomName { get; set; }
     public ClinicQueueStatus Status { get; set; } = ClinicQueueStatus.Waiting;
 
+    /// <summary>Priority level — higher priority items appear first in the queue.</summary>
+    public ClinicQueuePriority Priority { get; set; } = ClinicQueuePriority.Normal;
+
+    /// <summary>Manual sort order — used for drag-and-drop reordering. Lower = earlier.</summary>
+    public int SortOrder { get; set; } = 0;
+
+    /// <summary>How many times this patient has been called. Incremented on each recall.</summary>
+    public int RecallCount { get; set; } = 0;
+
     // Timestamps for queue flow
     public DateTime? CalledAt { get; set; }
     public Guid? CalledByUserId { get; set; }
@@ -24,6 +33,7 @@ public class ClinicQueueItem : BaseEntity
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public DateTime? CancelledAt { get; set; }
+    public DateTime? NoShowAt { get; set; }
 
     // Who added the patient to the queue
     public Guid? AddedByUserId { get; set; }

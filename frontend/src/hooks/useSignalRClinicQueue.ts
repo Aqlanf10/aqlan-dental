@@ -11,7 +11,7 @@ const HUB_URL = process.env.NEXT_PUBLIC_API_URL
 
 /**
  * Hook لإدارة اتصال SignalR لأحداث الطابور والعيادة.
- * يستمع لأحداث: نداء مريض، وصول مريض، تسليم للاستقبال، اكتمال زيارة.
+ * يستمع لأحداث: نداء مريض، تحديث الطابور، إشعارات جديدة.
  * يشغّل صوت تنبيه ويحدّث React Query cache تلقائياً.
  */
 export function useSignalRClinicQueue() {
@@ -70,27 +70,6 @@ export function useSignalRClinicQueue() {
         queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
         queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
         playNotification();
-      });
-
-      // وصول مريض جديد
-      connection.on("PatientArrived", () => {
-        queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
-        queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
-        playNotification();
-      });
-
-      // تسليم من الطبيب للاستقبال (Handoff)
-      connection.on("HandoffToReception", () => {
-        queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
-        queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
-        playNotification();
-      });
-
-      // اكتمال زيارة
-      connection.on("VisitCompleted", () => {
-        queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
-        queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
-        queryClient.invalidateQueries({ queryKey: ["finance"] });
       });
 
       // إشعار عام (نستخدم نفس الحدث من messaging hub)

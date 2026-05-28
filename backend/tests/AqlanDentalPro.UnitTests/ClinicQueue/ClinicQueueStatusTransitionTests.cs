@@ -222,7 +222,8 @@ public class ClinicQueueStatusTransitionTests
         allowed.Should().Contain(ClinicQueueStatus.Called);
         allowed.Should().Contain(ClinicQueueStatus.InRoom);
         allowed.Should().Contain(ClinicQueueStatus.Cancelled);
-        allowed.Count.Should().Be(4);
+        allowed.Should().Contain(ClinicQueueStatus.NoShow);
+        allowed.Count.Should().Be(5);
     }
 
     [Fact]
@@ -233,7 +234,8 @@ public class ClinicQueueStatusTransitionTests
         allowed.Should().Contain(ClinicQueueStatus.InRoom);
         allowed.Should().Contain(ClinicQueueStatus.Waiting);
         allowed.Should().Contain(ClinicQueueStatus.Cancelled);
-        allowed.Count.Should().Be(4);
+        allowed.Should().Contain(ClinicQueueStatus.NoShow);
+        allowed.Count.Should().Be(5);
     }
 
     [Fact]
@@ -244,7 +246,7 @@ public class ClinicQueueStatusTransitionTests
         allowed.Should().Contain(ClinicQueueStatus.InProgress);
         allowed.Should().Contain(ClinicQueueStatus.Called);
         allowed.Should().Contain(ClinicQueueStatus.Cancelled);
-        allowed.Count.Should().Be(4);
+        allowed.Count.Should().Be(4); // InRoom did not gain NoShow transition
     }
 
     [Fact]
@@ -424,8 +426,8 @@ public class ClinicQueueStatusTransitionTests
     // ─── Enum Count Test ─────────────────────────────────────────────────
 
     [Fact]
-    public void ClinicQueueStatus_HasExactlySixValues()
+    public void ClinicQueueStatus_HasExactlySevenValues()
     {
-        Enum.GetValues<ClinicQueueStatus>().Length.Should().Be(6);
+        Enum.GetValues<ClinicQueueStatus>().Length.Should().Be(7);
     }
 }

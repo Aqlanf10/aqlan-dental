@@ -123,7 +123,8 @@ public class ClinicQueueItemTests
         {
             ClinicQueueStatus.Waiting, ClinicQueueStatus.Called,
             ClinicQueueStatus.InRoom, ClinicQueueStatus.InProgress,
-            ClinicQueueStatus.Completed, ClinicQueueStatus.Cancelled
+            ClinicQueueStatus.Completed, ClinicQueueStatus.Cancelled,
+            ClinicQueueStatus.NoShow
         };
         Enum.GetValues<ClinicQueueStatus>().Should().BeEquivalentTo(expected);
     }

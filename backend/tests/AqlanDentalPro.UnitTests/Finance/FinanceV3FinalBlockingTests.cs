@@ -920,7 +920,7 @@ public class FinanceV3FinalBlockingTests
         var treasury = new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = 50_000m,
             BranchId = branchId,
@@ -995,7 +995,7 @@ public class FinanceV3FinalBlockingTests
         var treasury = new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = 50_000m,
             BranchId = branch1Id,
@@ -1029,7 +1029,7 @@ public class FinanceV3FinalBlockingTests
         var treasury = new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = 50_000m,
             BranchId = branchId,
@@ -1126,7 +1126,7 @@ public class FinanceV3FinalBlockingTests
         treasury!.Balance.Should().Be(10_000m, "treasury balance must equal the first payment amount");
 
         // Verify no duplicate treasuries exist
-        var treasuryCount = await db.Treasuries.CountAsync(t => t.BranchId == branchId && t.Type == TreasuryType.Vault && t.Name == "درج كاشير الاستقبال" && t.IsActive);
+        var treasuryCount = await db.Treasuries.CountAsync(t => t.BranchId == branchId && t.Type == TreasuryType.Vault && t.Name == "درج كاشير" && t.IsActive);
         treasuryCount.Should().Be(1, "must not create duplicate treasuries for the same branch/type/name");
 
         // NOTE: On PostgreSQL with relational provider, the UpdateTreasuryBalanceNoSaveAsync

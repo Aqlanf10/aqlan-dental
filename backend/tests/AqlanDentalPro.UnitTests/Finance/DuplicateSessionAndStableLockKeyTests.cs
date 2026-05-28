@@ -72,7 +72,7 @@ public class DuplicateSessionAndStableLockKeyTests
         var vault = new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = vaultBalance,
             BranchId = branchId,
@@ -81,7 +81,7 @@ public class DuplicateSessionAndStableLockKeyTests
         var bank = new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "حساب بنك التضامن",
+            Name = "حساب بنكي",
             Type = TreasuryType.Bank,
             Balance = 1_000_000m,
             BranchId = branchId,

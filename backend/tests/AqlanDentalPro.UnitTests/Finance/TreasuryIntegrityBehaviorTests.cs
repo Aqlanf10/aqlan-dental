@@ -58,7 +58,7 @@ public class TreasuryIntegrityBehaviorTests
         var vault = new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = 500_000m,
             BranchId = branchId,
@@ -67,7 +67,7 @@ public class TreasuryIntegrityBehaviorTests
         var bank = new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "حساب بنك التضامن",
+            Name = "حساب بنكي",
             Type = TreasuryType.Bank,
             Balance = 1_000_000m,
             BranchId = branchId,
@@ -134,7 +134,7 @@ public class TreasuryIntegrityBehaviorTests
         var treasury = await service.ResolveTreasuryAsync(branchId, "cash", session.Id);
 
         treasury.Type.Should().Be(TreasuryType.Vault, "cash payments must route to vault treasury");
-        treasury.Name.Should().Be("درج كاشير الاستقبال");
+        treasury.Name.Should().Be("درج كاشير");
         treasury.Id.Should().Be(vault.Id, "must resolve to the exact vault treasury, not any random one");
     }
 
@@ -149,7 +149,7 @@ public class TreasuryIntegrityBehaviorTests
         var treasury = await service.ResolveTreasuryAsync(branchId, "card");
 
         treasury.Type.Should().Be(TreasuryType.Bank, "card payments must route to bank treasury");
-        treasury.Name.Should().Be("حساب بنك التضامن");
+        treasury.Name.Should().Be("حساب بنكي");
         treasury.Id.Should().Be(bank.Id, "must resolve to the exact bank treasury, not any random one");
     }
 

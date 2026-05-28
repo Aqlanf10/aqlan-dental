@@ -249,8 +249,8 @@ public class CommissionServiceValidationTests
 
         var branchId = Guid.NewGuid();
         db.Branches.Add(new Branch { Id = branchId, Name = "الفرع" });
-        var vaultTreasury = new Treasury { Id = Guid.NewGuid(), Name = "درج كاشير الاستقبال", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
-        var bankTreasury = new Treasury { Id = Guid.NewGuid(), Name = "حساب بنك التضامن", Type = TreasuryType.Bank, Balance = 1_000_000m, BranchId = branchId, IsActive = true };
+        var vaultTreasury = new Treasury { Id = Guid.NewGuid(), Name = "درج كاشير", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
+        var bankTreasury = new Treasury { Id = Guid.NewGuid(), Name = "حساب بنكي", Type = TreasuryType.Bank, Balance = 1_000_000m, BranchId = branchId, IsActive = true };
         db.Treasuries.Add(vaultTreasury);
         db.Treasuries.Add(bankTreasury);
 
@@ -304,8 +304,8 @@ public class CommissionServiceValidationTests
 
         var branchId = Guid.NewGuid();
         db.Branches.Add(new Branch { Id = branchId, Name = "الفرع" });
-        var vaultTreasury = new Treasury { Id = Guid.NewGuid(), Name = "درج كاشير الاستقبال", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
-        var bankTreasury = new Treasury { Id = Guid.NewGuid(), Name = "حساب بنك التضامن", Type = TreasuryType.Bank, Balance = 1_000_000m, BranchId = branchId, IsActive = true };
+        var vaultTreasury = new Treasury { Id = Guid.NewGuid(), Name = "درج كاشير", Type = TreasuryType.Vault, Balance = 500_000m, BranchId = branchId, IsActive = true };
+        var bankTreasury = new Treasury { Id = Guid.NewGuid(), Name = "حساب بنكي", Type = TreasuryType.Bank, Balance = 1_000_000m, BranchId = branchId, IsActive = true };
         db.Treasuries.Add(vaultTreasury);
         db.Treasuries.Add(bankTreasury);
 

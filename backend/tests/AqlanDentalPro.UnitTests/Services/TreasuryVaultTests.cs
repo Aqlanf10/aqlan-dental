@@ -158,7 +158,7 @@ public class TreasuryVaultTests
 
         treasury.Should().NotBeNull();
         treasury!.Balance.Should().Be(50000m);
-        treasury.Name.Should().Be("درج كاشير الاستقبال");
+        treasury.Name.Should().Be("درج كاشير");
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public class TreasuryVaultTests
         db.Treasuries.Add(new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = 100000m,
             BranchId = branchId,
@@ -270,7 +270,7 @@ public class TreasuryVaultTests
         db.Treasuries.Add(new Treasury
         {
             Id = Guid.NewGuid(),
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = 100000m,
             BranchId = branchId,

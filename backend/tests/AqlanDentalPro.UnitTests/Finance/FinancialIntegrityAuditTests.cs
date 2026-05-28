@@ -70,7 +70,7 @@ public class FinancialIntegrityAuditTests
         // Create a Vault-type treasury
         var treasury = new Treasury
         {
-            Name = "درج كاشير الاستقبال",
+            Name = "درج كاشير",
             Type = TreasuryType.Vault,
             Balance = 999m, // incorrect balance
             BranchId = branchId

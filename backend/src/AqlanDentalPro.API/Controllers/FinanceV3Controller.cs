@@ -3,6 +3,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -1128,16 +1129,16 @@ public class FinanceV3Controller(
 
                     // ── Migration D: Enrichment from JournalEntry (canonical source) ──
                     // These fields replace what was previously derived from CashFlowTransaction.
-                    EntryDate = je.EntryDate.ToString("yyyy-MM-dd"),
-                    FinancialDocumentType = je.FinancialDocumentType.ToString(),
-                    Category = MapDocumentTypeToCategory(je.FinancialDocumentType),
-                    Description = je.Description ?? "",
-                    Amount = je.Lines.Sum(l => l.Debit),  // Total debit = total transaction amount
-                    TreasuryId = treasuryLine?.AccountId,          // JournalLine.AccountId where Treasury
+                    EntryDate = (string?)je.EntryDate.ToString("yyyy-MM-dd"),
+                    FinancialDocumentType = (string?)je.FinancialDocumentType.ToString(),
+                    Category = (string?)MapDocumentTypeToCategory(je.FinancialDocumentType),
+                    Description = (string?)je.Description,
+                    Amount = (decimal?)je.Lines.Sum(l => l.Debit),  // Total debit = total transaction amount
+                    TreasuryId = (Guid?)treasuryLine?.AccountId,          // JournalLine.AccountId where Treasury
                     TreasuryName = (string?)null,                  // Requires separate lookup; set null with comment
-                    IsReversal = je.IsReversal,
-                    ReversalOfEntryId = je.ReversalOfEntryId,
-                    PerformedBy = je.PerformedBy,
+                    IsReversal = (bool?)je.IsReversal,
+                    ReversalOfEntryId = (Guid?)je.ReversalOfEntryId,
+                    PerformedBy = (Guid?)je.PerformedBy,
                 };
             }
 
@@ -2475,7 +2476,7 @@ public class FinanceV3Controller(
             .AnyAsync(je => je.FinancialDocumentType == FinancialDocumentType.VaultTransfer
                 && je.IsPosted
                 && je.Description.Contains("رصيد افتتاحي")
-                && je.JournalLines.Any(l => l.AccountType == JournalAccountType.Treasury
+                && je.Lines.Any(l => l.AccountType == JournalAccountType.Treasury
                     && l.AccountId == treasury.Id));
 
         decimal openingBalanceFromCashFlow = 0m;

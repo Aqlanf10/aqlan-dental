@@ -2580,7 +2580,7 @@ public class FinanceV3Controller(
         }
 
         Treasury treasury;
-        try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId.Value, req.PaymentMethod, activeSession?.Id); }
+        try { treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, req.PaymentMethod, activeSession?.Id); }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
 
         if (req.SupplierId.HasValue)
@@ -2621,7 +2621,7 @@ public class FinanceV3Controller(
                 Amount = req.Amount, ExpenseDate = date, PaymentMethod = req.PaymentMethod,
                 SupplierId = req.SupplierId, LabOrderId = req.LabOrderId,
                 Notes = req.Notes?.Trim(), ReceiptAttachmentUrl = req.ReceiptAttachmentUrl,
-                PaidBy = userId, BranchId = branchId.Value,
+                PaidBy = userId, BranchId = branchId,
                 ApprovalStatus = approvalStatus, IsPostedToLedger = false
             };
             db.OperationalExpenses.Add(expense);
@@ -2636,7 +2636,7 @@ public class FinanceV3Controller(
                     TransactionDate = expense.ExpenseDate, ReferenceId = expense.Id,
                     ReferenceNumber = expense.ExpenseNumber,
                     Description = $"قيد مصروف تشغيلي: {expense.Title}",
-                    PerformedBy = userId, BranchId = branchId.Value,
+                    PerformedBy = userId, BranchId = branchId,
                     CashierSessionId = activeSession?.Id, TreasuryId = treasury.Id
                 };
                 db.CashFlowTransactions.Add(cashflow);
@@ -2653,7 +2653,7 @@ public class FinanceV3Controller(
                     FinancialDocumentType = FinancialDocumentType.Expense,
                     Description = $"قيد مصروف تشغيلي: {expense.Title}",
                     EntryDate = expense.ExpenseDate,
-                    BranchId = branchId.Value,
+                    BranchId = branchId,
                     PerformedBy = userId,
                     CashierSessionId = activeSession?.Id,
                     TreasuryId = treasury.Id,
@@ -2672,7 +2672,7 @@ public class FinanceV3Controller(
                     Debit = expense.Amount,
                     Credit = 0m,
                     Description = $"مصروف: {expense.Title}",
-                    BranchId = branchId.Value,
+                    BranchId = branchId,
                 });
 
                 // Credit: Treasury (cash outflow)
@@ -2684,10 +2684,10 @@ public class FinanceV3Controller(
                     Debit = 0m,
                     Credit = expense.Amount,
                     Description = $"سداد من: {treasury.Name}",
-                    BranchId = branchId.Value,
+                    BranchId = branchId,
                 });
 
-                await treasuryResolution.DecrementTreasuryBalanceAsync(branchId.Value, expense.PaymentMethod, expense.Amount, activeSession?.Id);
+                await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, expense.PaymentMethod, expense.Amount, activeSession?.Id);
             }
 
             if (req.LabOrderId.HasValue)

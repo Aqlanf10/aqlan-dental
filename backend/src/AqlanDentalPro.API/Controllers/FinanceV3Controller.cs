@@ -3419,8 +3419,8 @@ public class FinanceV3Controller(
     private async Task<Guid?> ResolveBranchIdAsync(Guid? requestBranchId)
     {
         // 1. البحث عن هوية المستخدم الحالي وصلاحياته
-        var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-        var userBranch = User.FindFirst("BranchId")?.Value;
+        var userRole = User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        var userBranch = User?.FindFirst("BranchId")?.Value;
 
         // 2. إذا كان المدقق هو المدير العام "Admin" وطلب رؤية عامة أو مرر Guid.Empty
         if (userRole == "Admin" && (!requestBranchId.HasValue || requestBranchId.Value == Guid.Empty))

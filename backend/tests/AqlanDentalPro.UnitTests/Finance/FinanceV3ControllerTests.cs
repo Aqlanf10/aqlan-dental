@@ -83,7 +83,22 @@ public class FinanceV3ControllerTests
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
-        return new FinanceV3Controller(db, currentUser, financeService, audit, journalEntryService, treasuryResolution, logger);
+        var controller = new FinanceV3Controller(db, currentUser, financeService, audit, journalEntryService, treasuryResolution, logger);
+
+        // Set up HttpContext with ClaimsPrincipal so ResolveBranchIdAsync(Guid?) can read claims
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.Role, currentUser.IsAdmin ? "Admin" : currentUser.Role.ToString()),
+            new Claim("BranchId", currentUser.BranchId?.ToString() ?? Guid.Empty.ToString())
+        };
+        var identity = new ClaimsIdentity(claims, "TestAuth");
+        var principal = new ClaimsPrincipal(identity);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = principal }
+        };
+
+        return controller;
     }
 
     private static TreasuriesController BuildTreasuriesController(AppDbContext db, ICurrentUserService? currentUser = null, IAuditService? audit = null)
@@ -263,7 +278,7 @@ public class FinanceV3ControllerTests
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task FinanceV3_Dashboard_BranchlessNonAdmin_ReturnsForbid()
+    public async Task FinanceV3_Dashboard_BranchlessNonAdmin_ReturnsEmptyData()
     {
         await using var db = CreateDb();
         var branchlessUser = CreateBranchUser(Guid.NewGuid(), Guid.Empty);
@@ -278,11 +293,13 @@ public class FinanceV3ControllerTests
         var controller = BuildFinanceV3Controller(db, mock.Object);
         var result = await controller.GetDashboard();
 
-        result.Should().BeOfType<ForbidResult>("non-admin with null BranchId must be forbidden");
+        // Sprint 1: ResolveBranchIdAsync now handles non-admin without branch gracefully
+        // Returns Ok with zero-value fallback data instead of Forbid
+        result.Should().BeOfType<OkObjectResult>("non-admin with null BranchId gets empty data, not Forbid");
     }
 
     [Fact]
-    public async Task FinanceV3_Dashboard_BranchlessNonAdmin_EmptyBranchId_ReturnsForbid()
+    public async Task FinanceV3_Dashboard_BranchlessNonAdmin_EmptyBranchId_ReturnsEmptyData()
     {
         await using var db = CreateDb();
         var mock = new Mock<ICurrentUserService>();
@@ -295,7 +312,8 @@ public class FinanceV3ControllerTests
         var controller = BuildFinanceV3Controller(db, mock.Object);
         var result = await controller.GetDashboard();
 
-        result.Should().BeOfType<ForbidResult>("non-admin with empty BranchId must be forbidden");
+        // Sprint 1: ResolveBranchIdAsync now handles non-admin with empty branch gracefully
+        result.Should().BeOfType<OkObjectResult>("non-admin with empty BranchId gets empty data, not Forbid");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

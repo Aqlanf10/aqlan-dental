@@ -396,3 +396,84 @@ export const TREASURY_TYPES = [
   { value: "Vault", label: "خزنة نقدية" },
   { value: "Bank", label: "حساب بنكي" },
 ] as const;
+
+/* ── Installment Plans (Phase 3) ───────────────────────────────────────────────── */
+export type InstallmentStatus = "Pending" | "Paid" | "Overdue";
+
+export interface InstallmentDto {
+  id: string;
+  amount: number;
+  dueDate: string;
+  paidDate: string | null;
+  status: InstallmentStatus;
+  paymentId: string | null;
+}
+
+export interface InstallmentPlanDto {
+  id: string;
+  contractId: string;
+  patientId: string;
+  totalAmount: number;
+  downPayment: number;
+  numberOfMonths: number;
+  monthlyAmount: number;
+  startDate: string;
+  isCompleted: boolean;
+  installments: InstallmentDto[];
+}
+
+export interface CreateInstallmentPlanRequest {
+  contractId: string;
+  downPayment: number;
+  numberOfMonths: number;
+  startDate: string;
+}
+
+export interface PayInstallmentRequest {
+  paymentMethod: string;
+  notes?: string;
+}
+
+/* ── Insurance (Phase 4) ────────────────────────────────────────────────────────── */
+export type ClaimStatus = "Pending" | "Approved" | "Rejected" | "Paid";
+
+export interface InsuranceCompanyDto {
+  id: string;
+  name: string;
+  contactEmail: string;
+  phone: string;
+  defaultCoveragePercentage: number;
+  isActive: boolean;
+}
+
+export interface InsuranceClaimDto {
+  id: string;
+  invoiceId: string;
+  insuranceCompanyId: string;
+  insuranceCompanyName: string | null;
+  patientId: string;
+  totalAmount: number;
+  coveredAmount: number;
+  patientCoPay: number;
+  status: string;
+  rejectionReason: string | null;
+}
+
+export interface SettleInsuranceClaimRequest {
+  referenceNotes?: string;
+}
+
+/* ── Claim status colors for UI rendering ──────────────────────────────────────── */
+export const CLAIM_STATUS_MAP: Record<string, { bg: string; text: string; label: string }> = {
+  Pending:  { bg: "#fff4ce", text: "#8a6914", label: "قيد الانتظار" },
+  Approved: { bg: "#deecf9", text: "#0b5fa5", label: "معتمدة" },
+  Rejected: { bg: "#fde7e9", text: "#a4262c", label: "مرفوضة" },
+  Paid:     { bg: "#dff6dd", text: "#107c10", label: "تم السداد" },
+};
+
+/* ── Installment status colors for UI rendering ────────────────────────────────── */
+export const INSTALLMENT_STATUS_MAP: Record<string, { bg: string; text: string; label: string }> = {
+  Pending: { bg: "#fff4ce", text: "#8a6914", label: "قيد الانتظار" },
+  Paid:    { bg: "#dff6dd", text: "#107c10", label: "مسدد" },
+  Overdue: { bg: "#fde7e9", text: "#a4262c", label: "متأخر" },
+};

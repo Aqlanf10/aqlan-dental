@@ -174,3 +174,81 @@ export const INVOICE_STATUS = {
   Cancelled: { label: "ملغاة", color: "bg-gray-100 text-gray-500" },
   Paid: { label: "مدفوعة", color: "bg-emerald-50 text-emerald-700" },
 } as const;
+
+// ─── V3+ Installment & Insurance Types (Phase 3 & 4) ────────────────────
+
+export type ClaimStatus = "Pending" | "Approved" | "Rejected" | "Paid";
+export type InstallmentStatus = "Pending" | "Paid" | "Overdue";
+
+export interface InstallmentDto {
+  id: string;
+  amount: number;
+  dueDate: string;
+  paidDate: string | null;
+  status: InstallmentStatus;
+  paymentId: string | null;
+}
+
+export interface InstallmentPlanDto {
+  id: string;
+  contractId: string;
+  patientId: string;
+  totalAmount: number;
+  downPayment: number;
+  numberOfMonths: number;
+  monthlyAmount: number;
+  startDate: string;
+  isCompleted: boolean;
+  installments: InstallmentDto[];
+}
+
+export interface CreateInstallmentPlanRequest {
+  contractId: string;
+  downPayment: number;
+  numberOfMonths: number;
+  startDate: string;
+}
+
+export interface PayInstallmentRequest {
+  paymentMethod: string;
+  notes?: string;
+}
+
+export interface InsuranceCompany {
+  id: string;
+  name: string;
+  contactEmail: string;
+  phone: string;
+  defaultCoveragePercentage: number;
+  isActive: boolean;
+}
+
+export interface InsuranceClaim {
+  id: string;
+  invoiceId: string;
+  insuranceCompanyId: string;
+  insuranceCompanyName: string | null;
+  patientId: string;
+  totalAmount: number;
+  coveredAmount: number;
+  patientCoPay: number;
+  status: ClaimStatus;
+  rejectionReason: string | null;
+}
+
+export interface SettleInsuranceClaimRequest {
+  referenceNotes?: string;
+}
+
+export const CLAIM_STATUS = {
+  Pending: { label: "قيد الانتظار", color: "bg-yellow-50 text-yellow-700" },
+  Approved: { label: "معتمدة", color: "bg-blue-50 text-blue-700" },
+  Rejected: { label: "مرفوضة", color: "bg-red-50 text-red-600" },
+  Paid: { label: "تم السداد", color: "bg-green-50 text-green-700" },
+} as const;
+
+export const INSTALLMENT_STATUS = {
+  Pending: { label: "قيد الانتظار", color: "bg-yellow-50 text-yellow-700" },
+  Paid: { label: "مسدد", color: "bg-green-50 text-green-700" },
+  Overdue: { label: "متأخر", color: "bg-red-50 text-red-600" },
+} as const;

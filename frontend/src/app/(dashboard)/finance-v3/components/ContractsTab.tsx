@@ -5,15 +5,17 @@ import {
   HandCoins,
   RefreshCw,
   AlertTriangle,
+  CalendarClock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { ContractListItem } from "./types";
-import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, StatusBadge, tokens, inputStyle } from "./FinanceSharedUI";
+import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, StatusBadge, tokens, inputStyle, btnPrimary } from "./FinanceSharedUI";
 import { formatYER, safeFormatDate, extractErrorMessage, safeArray } from "./FinanceHelpers";
+import CreateInstallmentModal from "./CreateInstallmentModal";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   Tab 5: Contracts
+   Tab 5: Contracts — مع زر إنشاء خطة تقسيط
    Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function ContractsTab() {
@@ -22,6 +24,12 @@ export function ContractsTab() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+
+  // ── نافذة إنشاء خطة تقسيط ──
+  const [installmentModal, setInstallmentModal] = useState<{
+    contractId: string;
+    totalAmount: number;
+  } | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -78,7 +86,45 @@ export function ContractsTab() {
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "isOverdue", label: "متأخرة", render: (r) => r.isOverdue ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.dangerBorder }} /> : "—" },
             { key: "startDate", label: "تاريخ البداية", render: (r) => safeFormatDate(r.startDate ?? "") },
+            {
+              key: "installment",
+              label: "تقسيط",
+              render: (r) => r.status === "Active" ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInstallmentModal({
+                      contractId: r.id,
+                      totalAmount: r.totalAmount ?? 0,
+                    });
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors"
+                  style={{
+                    color: tokens.brand,
+                    backgroundColor: tokens.brandLight,
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.brand; e.currentTarget.style.color = tokens.textOnBrand; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = tokens.brandLight; e.currentTarget.style.color = tokens.brand; }}
+                >
+                  <CalendarClock className="w-3 h-3" />
+                  تقسيط
+                </button>
+              ) : "—",
+            },
           ]}
+        />
+      )}
+
+      {/* ── نافذة إنشاء خطة التقسيط ── */}
+      {installmentModal && (
+        <CreateInstallmentModal
+          contractId={installmentModal.contractId}
+          totalAmount={installmentModal.totalAmount}
+          open={!!installmentModal}
+          onClose={() => setInstallmentModal(null)}
+          onCreated={fetchData}
         />
       )}
     </div>

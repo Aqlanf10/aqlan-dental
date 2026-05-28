@@ -579,3 +579,35 @@ export function useActiveCashierSession() {
     refetchInterval: 30_000,
   });
 }
+
+// ─── Patient Account Search (for independent walk-in payment) ────────────
+export interface PatientAccountItem {
+  patientId: string;
+  patientName: string;
+  patientNumber: string;
+  phone?: string;
+  balance: number;
+  totalInvoiced: number;
+  totalPaid: number;
+  totalRefunds: number;
+  outstandingInvoices: number;
+  activeContracts: number;
+  hasOutstanding: boolean;
+}
+
+export function useSearchPatientAccounts(query: string) {
+  return useQuery<PatientAccountItem[]>({
+    queryKey: ["daily-ops", "patient-accounts-search", query],
+    queryFn: async () => {
+      if (!query || query.length < 2) return [];
+      const { data } = await api.get("/api/finance-v3/patient-accounts", {
+        params: { search: query, page: 1, pageSize: 10 },
+      });
+      // API returns { data: PatientAccountItem[], total: number }
+      const items = (data?.data ?? data ?? []) as PatientAccountItem[];
+      return Array.isArray(items) ? items : [];
+    },
+    enabled: query.length >= 2,
+    staleTime: 10_000,
+  });
+}

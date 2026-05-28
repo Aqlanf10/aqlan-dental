@@ -53,6 +53,7 @@ import {
   useQueueWaitTime,
   useTomorrowAppointments,
   useSendBulkSmsReminders,
+  useActiveCashierSession,
 } from "./_lib/hooks";
 
 import AppointmentsTable from "./_components/AppointmentsTable";
@@ -69,6 +70,7 @@ import {
   UndoToast,
   KeyboardShortcutsHelp,
   BulkSmsModal,
+  IndependentPaymentModal,
 } from "./_components/Modals";
 
 // ── Embedded module views ──
@@ -214,6 +216,12 @@ export default function DailyOperationsPage() {
   // ── Bulk SMS modal ──
   const [bulkSmsModalOpen, setBulkSmsModalOpen] = useState(false);
 
+  // ── Independent payment modal ──
+  const [independentPaymentModalOpen, setIndependentPaymentModalOpen] = useState(false);
+
+  // ── Active cashier session ──
+  const { data: cashierSession } = useActiveCashierSession();
+
   // ── Sound toggle ──
   const [soundEnabled, setSoundEnabled] = useState(true);
 
@@ -279,6 +287,7 @@ export default function DailyOperationsPage() {
         if (whatsAppMenuOpen) { setWhatsAppMenuOpen(false); return; }
         if (changeRoomModalOpen) { setChangeRoomModalOpen(false); return; }
         if (walkInModalOpen) { setWalkInModalOpen(false); return; }
+        if (independentPaymentModalOpen) { setIndependentPaymentModalOpen(false); return; }
         if (sidePanelOpen) { setSidePanelOpen(false); return; }
         if (shortcutsHelpOpen) { setShortcutsHelpOpen(false); return; }
       }
@@ -320,7 +329,7 @@ export default function DailyOperationsPage() {
   }, [
     paymentModalOpen, completeVisitModalOpen, bookAppointmentModalOpen,
     confirmDialogOpen, whatsAppMenuOpen, changeRoomModalOpen,
-    walkInModalOpen, sidePanelOpen, shortcutsHelpOpen, ctxMenu, refetchItems,
+    walkInModalOpen, independentPaymentModalOpen, sidePanelOpen, shortcutsHelpOpen, ctxMenu, refetchItems,
   ]);
 
   // ── Action handlers ──
@@ -646,6 +655,39 @@ export default function DailyOperationsPage() {
     }
   }, [bulkSmsMutation, tomorrowItems]);
 
+  const handleIndependentPayment = useCallback(async (data: { patientId: string; amount: number; paymentMethod: string; notes: string }) => {
+    try {
+      const result = await createPaymentMutation.mutateAsync({
+        patientId: data.patientId,
+        amount: data.amount,
+        paymentMethod: data.paymentMethod,
+        serviceDescription: "دفعة مباشرة — بدون حجز",
+        notes: data.notes || undefined,
+      });
+      toast.success("تم تسجيل الدفعة بنجاح");
+      setIndependentPaymentModalOpen(false);
+      
+      // Download PDF receipt if available
+      if (result?.id) {
+        try {
+          const { data: pdfData } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, { responseType: "blob" }));
+          const url = window.URL.createObjectURL(new Blob([pdfData], { type: "application/pdf" }));
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `receipt-${result.receiptNumber || result.id}.pdf`;
+          link.click();
+          window.URL.revokeObjectURL(url);
+        } catch { /* PDF download optional */ }
+      }
+    } catch (err) {
+      // Extract backend Arabic error message
+      const msg = err && typeof err === "object" && "response" in err 
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+        : err instanceof Error ? err.message : null;
+      toast.error(msg || "فشل تسجيل الدفعة");
+    }
+  }, [createPaymentMutation]);
+
   // ── Available status filters ──
   const statusFilters = [
     { value: "", label: "الكل" },
@@ -749,6 +791,17 @@ export default function DailyOperationsPage() {
             <UserPlus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">مريض مشي</span>
           </button>
+
+          {/* Independent Payment (green) */}
+          {!isDoctor && (
+            <button onClick={() => setIndependentPaymentModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90"
+              style={{ background: "#16a34a" }}
+              title="تحصيل دفعة بدون موعد">
+              <Wallet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">تحصيل دفعة</span>
+            </button>
+          )}
 
           {/* SMS Reminders (blue outline) */}
           {!isDoctor && (
@@ -1200,6 +1253,14 @@ export default function DailyOperationsPage() {
         tomorrowItems={tomorrowItems}
         isPending={bulkSmsMutation.isPending}
         onConfirm={handleBulkSms}
+      />
+
+      <IndependentPaymentModal
+        open={independentPaymentModalOpen}
+        onClose={() => setIndependentPaymentModalOpen(false)}
+        isPending={createPaymentMutation.isPending}
+        hasActiveShift={!!cashierSession?.hasActiveSession}
+        onConfirm={handleIndependentPayment}
       />
 
       {/* ── Right-click Context Menu for Journey Items ── */}

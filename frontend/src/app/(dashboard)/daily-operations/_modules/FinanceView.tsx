@@ -5,14 +5,13 @@ import {
   CreditCard, TrendingUp, AlertTriangle,
   RefreshCw, Loader2, FileText, CheckCircle,
   DollarSign, ArrowUpRight, ArrowDownRight, Users,
-  Receipt, IndianRupee, X, UserPlus, Search,
+  Receipt, IndianRupee, X,
   Vault, CircleDot,
 } from "lucide-react";
 import { NAVY, BLUE, ORANGE, fmtRial, PAYMENT_METHODS } from "../_lib/constants";
 import type { FinanceSummaryData } from "../_lib/constants";
 import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout, useCreateDraftInvoice, useActiveCashierSession } from "../_lib/hooks";
 import { toast } from "@/stores/toastStore";
-import { api } from "@/lib/api";
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -106,17 +105,6 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   const [checkoutPatient, setCheckoutPatient] = useState<ReadyForCheckoutPatient | null>(null);
   const [checkoutNotes, setCheckoutNotes] = useState("");
   const [draftPendingId, setDraftPendingId] = useState<string | null>(null);
-
-  // Walk-in payment state
-  const [showWalkInPayment, setShowWalkInPayment] = useState(false);
-  const [walkInSearch, setWalkInSearch] = useState("");
-  const [walkInPatientOptions, setWalkInPatientOptions] = useState<{ id: string; fullName: string; patientNumber: string }[]>([]);
-  const [walkInPatientId, setWalkInPatientId] = useState("");
-  const [, setWalkInPatientName] = useState("");
-  const [walkInAmount, setWalkInAmount] = useState("");
-  const [walkInMethod, setWalkInMethod] = useState("Cash");
-  const [walkInDesc, setWalkInDesc] = useState("");
-  const [walkInNotes, setWalkInNotes] = useState("");
 
   // ── Derived data ──
   const summary: FinanceSummaryData | undefined = summaryRaw;
@@ -223,51 +211,6 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
     }
   }, [checkoutPatient, checkoutNotes, checkoutMutation, refetchSummary, refetchJourney]);
 
-  // ── Walk-in Payment Handlers ──
-  const searchWalkInPatient = useCallback(async (q: string) => {
-    setWalkInSearch(q);
-    if (q.length < 2) { setWalkInPatientOptions([]); return; }
-    try {
-      const { data } = await api.get<{ data: { id: string; fullName: string; patientNumber: string }[] }>("/api/patients", { params: { search: q, pageSize: 10 } });
-      setWalkInPatientOptions(data?.data ?? []);
-    } catch { /* ignore */ }
-  }, []);
-
-  const handleWalkInPayment = useCallback(async () => {
-    if (!walkInPatientId || !walkInAmount || Number(walkInAmount) <= 0) {
-      toast.error("يرجى اختيار المريض وإدخال المبلغ");
-      return;
-    }
-    try {
-      await createPaymentMutation.mutateAsync({
-        patientId: walkInPatientId,
-        amount: Number(walkInAmount),
-        paymentMethod: walkInMethod,
-        serviceDescription: walkInDesc?.trim() || "دفعة مباشرة — بدون حجز",
-        doctorId: undefined,
-        notes: walkInNotes?.trim() || undefined,
-      });
-      toast.success(`تم تسجيل الدفعة بنجاح — ${fmtRial(Number(walkInAmount))}`);
-      resetWalkInForm();
-      refetchSummary();
-      refetchCashierSession();
-    } catch (err) {
-      toast.error(extractBackendMessage(err, "فشل تسجيل الدفعة"));
-    }
-  }, [walkInPatientId, walkInAmount, walkInMethod, walkInDesc, walkInNotes, createPaymentMutation, refetchSummary, refetchCashierSession]);
-
-  const resetWalkInForm = () => {
-    setShowWalkInPayment(false);
-    setWalkInSearch("");
-    setWalkInPatientOptions([]);
-    setWalkInPatientId("");
-    setWalkInPatientName("");
-    setWalkInAmount("");
-    setWalkInMethod("Cash");
-    setWalkInDesc("");
-    setWalkInNotes("");
-  };
-
   // ── Loading ──
   if (summaryLoading && journeyLoading) {
     return (
@@ -280,7 +223,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   return (
     <div className="flex flex-col h-full overflow-auto p-4 gap-4" style={{ background: "#f8fafc" }}>
       {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard
           icon={DollarSign}
           label="تحصيل اليوم"
@@ -312,19 +255,6 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
           color="#7c3aed"
           bg="#f5f3ff"
         />
-        <button
-          onClick={() => { resetWalkInForm(); setShowWalkInPayment(true); }}
-          className="rounded-xl border p-4 flex items-center gap-3 cursor-pointer transition hover:shadow-md"
-          style={{ background: "#fff", borderColor: "#16a34a40" }}
-        >
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "#16a34a15" }}>
-            <UserPlus className="w-4 h-4" style={{ color: "#16a34a" }} />
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-medium" style={{ color: "#94a3b8" }}>دفعة مباشرة</p>
-            <p className="text-sm font-bold" style={{ color: "#16a34a" }}>مريض بدون حجز</p>
-          </div>
-        </button>
       </div>
 
       {/* ── Cashier Shift Status ── */}
@@ -638,141 +568,6 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
                 >
                   {checkoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                   تأكيد الخروج
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Two-column: Recent Payments + Recent Invoices ── */}
-
-      {/* ── Walk-in Payment Modal ── */}
-      {showWalkInPayment && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => resetWalkInForm()}>
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: "#e8f0f9" }}>
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: "#16a34a15" }}>
-                <UserPlus className="w-4 h-4" style={{ color: "#16a34a" }} />
-              </div>
-              <h3 className="flex-1 font-extrabold text-[15px]" style={{ color: NAVY }}>دفعة مباشرة — مريض بدون حجز</h3>
-              <button onClick={() => resetWalkInForm()} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition">
-                <X className="w-4 h-4 text-gray-400" />
-              </button>
-            </div>
-            {/* Body */}
-            <div className="p-5 space-y-3">
-              <div className="p-2.5 rounded-xl flex items-center gap-2" style={{ background: "#f0fdf4", border: "1px solid #16a34a30" }}>
-                <UserPlus className="w-4 h-4 flex-shrink-0" style={{ color: "#16a34a" }} />
-                <span className="text-[11px] font-medium" style={{ color: "#166534" }}>
-                  لهذا المريض حجز أو لا — يمكن تسجيل الدفعة مباشرة
-                </span>
-              </div>
-
-              {/* Patient search */}
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المريض *</label>
-                <div className="relative">
-                  <input
-                    value={walkInSearch}
-                    onChange={(e) => searchWalkInPatient(e.target.value)}
-                    placeholder="ابحث بالاسم أو الرقم..."
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20 pr-9"
-                  />
-                  <Search className="w-4 h-4 absolute right-3 top-2.5" style={{ color: "#94a3b8" }} />
-                </div>
-                {walkInPatientOptions.length > 0 && !walkInPatientId && (
-                  <div className="mt-1 rounded-md border max-h-40 overflow-y-auto" style={{ borderColor: "#e2e8f0" }}>
-                    {walkInPatientOptions.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          setWalkInSearch(`${p.fullName} (${p.patientNumber})`);
-                          setWalkInPatientId(p.id);
-                          setWalkInPatientName(p.fullName);
-                          setWalkInPatientOptions([]);
-                        }}
-                        className="w-full text-right px-3 py-2 text-sm transition-colors hover:bg-gray-50"
-                        style={{ color: NAVY }}
-                      >
-                        {p.fullName} ({p.patientNumber})
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Amount */}
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المبلغ *</label>
-                <input
-                  type="number"
-                  value={walkInAmount}
-                  onChange={(e) => setWalkInAmount(e.target.value)}
-                  placeholder="0"
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
-                  min={0}
-                  step={0.01}
-                  dir="ltr"
-                />
-              </div>
-
-              {/* Payment method */}
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>طريقة الدفع</label>
-                <select
-                  value={walkInMethod}
-                  onChange={(e) => setWalkInMethod(e.target.value)}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
-                >
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>وصف الخدمة</label>
-                <input
-                  value={walkInDesc}
-                  onChange={(e) => setWalkInDesc(e.target.value)}
-                  placeholder="مثال: استشارة، حشو، تنظيف..."
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
-                />
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>ملاحظات</label>
-                <input
-                  value={walkInNotes}
-                  onChange={(e) => setWalkInNotes(e.target.value)}
-                  placeholder="اختياري"
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none border-[#e2e8f0] bg-white focus:border-[#3d7ab5] focus:ring-1 focus:ring-[#3d7ab5]/20"
-                />
-              </div>
-
-              <div className="flex gap-2 mt-4">
-                <button
-                  onClick={() => resetWalkInForm()}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold"
-                  style={{ background: "#f1f5f9", color: "#64748b" }}
-                >
-                  إلغاء
-                </button>
-                <button
-                  onClick={handleWalkInPayment}
-                  disabled={!walkInPatientId || !walkInAmount || createPaymentMutation.isPending}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-                  style={{ background: "#22c55a", opacity: !walkInPatientId || !walkInAmount || createPaymentMutation.isPending ? 0.5 : 1 }}
-                >
-                  {createPaymentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-                  تسجيل الدفعة
                 </button>
               </div>
             </div>

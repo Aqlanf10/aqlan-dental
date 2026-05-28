@@ -14,6 +14,25 @@ import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout,
 import { toast } from "@/stores/toastStore";
 import { api } from "@/lib/api";
 
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
+
+/** Extract Arabic error message from Axios error response.
+ *  Backend returns { message: "Arabic text" } for all validation errors.
+ *  ShiftEnforcerFilter returns { errorCode, message }.
+ */
+function extractBackendMessage(err: unknown, fallback: string): string {
+  if (
+    err &&
+    typeof err === "object" &&
+    "response" in err
+  ) {
+    const resp = (err as { response?: { data?: { message?: string } } }).response;
+    if (resp?.data?.message) return resp.data.message;
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ReadyForCheckoutPatient {
   visitId?: string | null;
@@ -72,7 +91,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   // ── Data hooks ──
   const { data: summaryRaw, isLoading: summaryLoading, refetch: refetchSummary } = useFinanceSummary();
   const { data: journeyItems, isLoading: journeyLoading, refetch: refetchJourney } = useTodayJourneyItems({});
-  const { data: cashierSession } = useActiveCashierSession();
+  const { data: cashierSession, refetch: refetchCashierSession } = useActiveCashierSession();
 
   // ── Mutations ──
   const createPaymentMutation = useCreatePayment();
@@ -174,10 +193,11 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
       setPaymentPatient(null);
       refetchSummary();
       refetchJourney();
-    } catch {
-      toast.error("فشل تسجيل الدفع");
+      refetchCashierSession();
+    } catch (err) {
+      toast.error(extractBackendMessage(err, "فشل تسجيل الدفع"));
     }
-  }, [paymentPatient, paymentAmount, paymentMethod, paymentNotes, createPaymentMutation, refetchSummary, refetchJourney]);
+  }, [paymentPatient, paymentAmount, paymentMethod, paymentNotes, createPaymentMutation, refetchSummary, refetchJourney, refetchCashierSession]);
 
   /** Complete checkout */
   const handleOpenCheckout = useCallback((patient: ReadyForCheckoutPatient) => {
@@ -230,10 +250,11 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
       toast.success(`تم تسجيل الدفعة بنجاح — ${fmtRial(Number(walkInAmount))}`);
       resetWalkInForm();
       refetchSummary();
-    } catch {
-      toast.error("فشل تسجيل الدفعة");
+      refetchCashierSession();
+    } catch (err) {
+      toast.error(extractBackendMessage(err, "فشل تسجيل الدفعة"));
     }
-  }, [walkInPatientId, walkInAmount, walkInMethod, walkInDesc, walkInNotes, createPaymentMutation, refetchSummary]);
+  }, [walkInPatientId, walkInAmount, walkInMethod, walkInDesc, walkInNotes, createPaymentMutation, refetchSummary, refetchCashierSession]);
 
   const resetWalkInForm = () => {
     setShowWalkInPayment(false);

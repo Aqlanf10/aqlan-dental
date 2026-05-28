@@ -76,9 +76,11 @@ public class FinanceV3ControllerTests
     private static FinanceV3Controller BuildFinanceV3Controller(AppDbContext db, ICurrentUserService? currentUser = null)
     {
         currentUser ??= CreateAdminUser();
-        var financeService = new FinanceService(db, new Mock<ILogger<FinanceService>>().Object);
-        var audit = new Mock<IAuditService>().Object;
+        var notifications = new Mock<INotificationService>().Object;
+        var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
+        var financeService = new FinanceService(db, currentUser, notifications, new Mock<ILogger<FinanceService>>().Object, commissionService, journalEntryService);
+        var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
         return new FinanceV3Controller(db, currentUser, financeService, audit, journalEntryService, treasuryResolution, logger);

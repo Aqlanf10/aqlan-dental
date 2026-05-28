@@ -250,13 +250,18 @@ export function useCreatePayment() {
       doctorId?: string;
       notes?: string;
     }) => {
-      const { data } = await api.post("/api/payments", body);
+      // Sprint 3: Route through Finance V3 payment endpoint instead of legacy /api/payments.
+      // This ensures ShiftEnforcerFilter, Arabic error messages, and cashier session
+      // validation are all applied consistently.
+      const { data } = await api.post("/api/finance-v3/payments", body);
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
       queryClient.invalidateQueries({ queryKey: ["finance"] });
       queryClient.invalidateQueries({ queryKey: ["payments"] });
+      // Sprint 3: Refresh cashier session totals after payment
+      queryClient.invalidateQueries({ queryKey: ["daily-ops", "active-cashier-session"] });
     },
   });
 }

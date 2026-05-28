@@ -2153,9 +2153,12 @@ public class FinanceV3Controller(
     /// <summary>
     /// POST /api/finance-v3/payments — Register a payment.
     /// Delegates to FinanceService.CreatePaymentAsync (same logic as PaymentsController).
+    /// Sprint 3: Changed from FinanceWrite to FinanceAccess so Reception users
+    /// (who handle payment collection at the front desk) can also create payments
+    /// through this endpoint. DELETE remains AdminOnly separately.
     /// </summary>
     [HttpPost("payments")]
-    [Authorize(Policy = "FinanceWrite")]
+    [Authorize(Policy = "FinanceAccess")]
     [ServiceFilter(typeof(ShiftEnforcerFilter))]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest req)
     {

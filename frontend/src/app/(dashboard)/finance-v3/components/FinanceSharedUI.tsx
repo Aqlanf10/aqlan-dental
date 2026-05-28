@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { X, ShieldX } from "lucide-react";
+import { X, ShieldX, AlertTriangle, RefreshCw } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Microsoft Fluent 2 Design Tokens
@@ -275,4 +275,61 @@ export function AccessDenied() {
       </div>
     </div>
   );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Finance Tab Error Boundary — prevents a single tab crash from taking down
+   the entire Finance V3 Financial Center. Uses React class component as
+   required by the Error Boundary API.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class FinanceTabErrorBoundary extends React.Component<
+  { children: React.ReactNode; tabName?: string },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode; tabName?: string }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(`[FinanceTabErrorBoundary${this.props.tabName ? `:${this.props.tabName}` : ""}]`, error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 flex flex-col items-center justify-center" style={{ direction: "rtl" }}>
+          <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: tokens.dangerBg }}>
+            <AlertTriangle className="w-7 h-7" style={{ color: tokens.dangerBorder }} />
+          </div>
+          <h3 className="text-base font-bold mb-2" style={{ color: tokens.textPrimary }}>
+            حدث خطأ غير متوقع
+          </h3>
+          <p className="text-sm mb-4 text-center max-w-md" style={{ color: tokens.textSecondary }}>
+            {this.props.tabName
+              ? `فشل تحميل تبويب "${this.props.tabName}". يرجى تحديث الصفحة أو المحاولة لاحقاً.`
+              : "فشل تحميل هذا القسم. يرجى تحديث الصفحة أو المحاولة لاحقاً."}
+          </p>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium"
+            style={{ backgroundColor: tokens.brand, color: tokens.textOnBrand }}
+          >
+            <RefreshCw className="w-4 h-4" />
+            إعادة المحاولة
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

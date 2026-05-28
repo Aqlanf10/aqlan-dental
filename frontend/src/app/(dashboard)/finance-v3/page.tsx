@@ -16,7 +16,7 @@ import {
   CircleDot,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
-import { AccessDenied, tokens } from "./components/FinanceSharedUI";
+import { AccessDenied, FinanceTabErrorBoundary, tokens } from "./components/FinanceSharedUI";
 import { todayArabic } from "./components/FinanceHelpers";
 import { OverviewTab } from "./components/OverviewTab";
 import { PatientAccountsTab } from "./components/PatientAccountsTab";
@@ -107,16 +107,16 @@ export default function FinanceV3Page() {
 
       {/* ═══ Main Content ═══ */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === "overview" && <OverviewTab />}
-        {activeTab === "patient-acct" && <PatientAccountsTab />}
-        {activeTab === "invoices" && <InvoicesTab />}
-        {activeTab === "collections" && <CollectionsTab />}
-        {activeTab === "contracts" && <ContractsTab />}
-        {activeTab === "cashier" && <CashierTab isAdmin={isAdmin} />}
-        {activeTab === "treasuries" && <TreasuriesTab />}
-        {activeTab === "expenses" && <ExpensesTab />}
-        {activeTab === "suppliers" && <SuppliersTab />}
-        {activeTab === "audit" && <AuditTab />}
+        {activeTab === "overview" && <FinanceTabErrorBoundary tabName="نظرة عامة"><OverviewTab /></FinanceTabErrorBoundary>}
+        {activeTab === "patient-acct" && <FinanceTabErrorBoundary tabName="حسابات المرضى"><PatientAccountsTab /></FinanceTabErrorBoundary>}
+        {activeTab === "invoices" && <FinanceTabErrorBoundary tabName="الفواتير"><InvoicesTab /></FinanceTabErrorBoundary>}
+        {activeTab === "collections" && <FinanceTabErrorBoundary tabName="التحصيل"><CollectionsTab /></FinanceTabErrorBoundary>}
+        {activeTab === "contracts" && <FinanceTabErrorBoundary tabName="العقود"><ContractsTab /></FinanceTabErrorBoundary>}
+        {activeTab === "cashier" && <FinanceTabErrorBoundary tabName="الصندوق"><CashierTab isAdmin={isAdmin} /></FinanceTabErrorBoundary>}
+        {activeTab === "treasuries" && <FinanceTabErrorBoundary tabName="الخزائن"><TreasuriesTab /></FinanceTabErrorBoundary>}
+        {activeTab === "expenses" && <FinanceTabErrorBoundary tabName="المصروفات"><ExpensesTab /></FinanceTabErrorBoundary>}
+        {activeTab === "suppliers" && <FinanceTabErrorBoundary tabName="الموردون"><SuppliersTab /></FinanceTabErrorBoundary>}
+        {activeTab === "audit" && <FinanceTabErrorBoundary tabName="سجل المراجعة"><AuditTab /></FinanceTabErrorBoundary>}
       </div>
     </div>
   );

@@ -15,15 +15,17 @@ import { toast } from "@/stores/toastStore";
 import type { Treasury, CreateTreasuryRequest, VaultTransfer, CreateTransferRequest } from "./types";
 import { TREASURY_TYPES, DEPOSIT_SOURCES } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDateTime, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 7: Treasuries
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function TreasuriesTab() {
   const [treasuries, setTreasuries] = useState<Treasury[]>([]);
   const [transfers, setTransfers] = useState<VaultTransfer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCreateTreasury, setShowCreateTreasury] = useState(false);
   const [showCreateTransfer, setShowCreateTransfer] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -44,13 +46,17 @@ export function TreasuriesTab() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const [tRes, trRes] = await Promise.all([
-        api.get<{ data: Treasury[] }>("/api/treasuries"),
-        api.get<{ data: VaultTransfer[] }>("/api/vault-transfers"),
+        api.get<{ data: Treasury[] }>("/api/finance-v3/treasuries"),
+        api.get<{ data: VaultTransfer[] }>("/api/finance-v3/vault-transfers"),
       ]);
-      setTreasuries(tRes.data.data ?? []);
-      setTransfers(trRes.data.data ?? (Array.isArray(trRes.data) ? trRes.data as unknown as VaultTransfer[] : []));
-    } catch { toast.error("فشل في تحميل بيانات الخزائن"); } finally { setLoading(false); }
+      setTreasuries(safeArray(tRes.data?.data));
+      setTransfers(safeArray(trRes.data?.data ?? (Array.isArray(trRes.data) ? trRes.data as unknown as VaultTransfer[] : undefined)));
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل بيانات الخزائن"));
+      toast.error("فشل في تحميل بيانات الخزائن");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -96,8 +102,8 @@ export function TreasuriesTab() {
     try {
       setSubmitting(true);
       const url = confirmApprove.action === "approve"
-        ? `/api/vault-transfers/${confirmApprove.id}/approve`
-        : `/api/vault-transfers/${confirmApprove.id}/reject`;
+        ? `/api/finance-v3/vault-transfers/${confirmApprove.id}/approve`
+        : `/api/finance-v3/vault-transfers/${confirmApprove.id}/reject`;
       await api.post(url);
       toast.success(confirmApprove.action === "approve" ? "تم اعتماد التحويل" : "تم رفض التحويل");
       setConfirmApprove(null);

@@ -10,27 +10,33 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { ContractListItem } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, StatusBadge, tokens, inputStyle } from "./FinanceSharedUI";
-import { formatYER, safeFormatDate } from "./FinanceHelpers";
+import { formatYER, safeFormatDate, extractErrorMessage, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 5: Contracts
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function ContractsTab() {
   const [data, setData] = useState<ContractListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const params: Record<string, string> = {};
       if (statusFilter) params.status = statusFilter;
-      const { data } = await api.get<{ data: ContractListItem[]; total: number }>("/api/finance-v3/contracts", { params });
+      const { data: responseData } = await api.get<{ data: ContractListItem[]; total: number }>("/api/finance-v3/contracts", { params });
       // API wraps response in { data: [...], total: number }, handle both shapes
-      const contracts = data?.data ?? (Array.isArray(data) ? data as unknown as ContractListItem[] : []);
+      const contracts = safeArray(responseData?.data ?? (Array.isArray(responseData) ? responseData as unknown as ContractListItem[] : undefined));
       setData(contracts);
-    } catch { toast.error("فشل في تحميل العقود"); } finally { setLoading(false); }
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل العقود"));
+      toast.error("فشل في تحميل العقود");
+    } finally { setLoading(false); }
   }, [statusFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -54,7 +60,12 @@ export function ContractsTab() {
         </div>
       } />
 
-      {loading ? <LoadingSkeleton /> : filtered.length === 0 ? <EmptyState icon={HandCoins} message="لا توجد عقود" /> : (
+      {loading ? <LoadingSkeleton /> : error ? (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+          <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+          <button onClick={fetchData} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+        </div>
+      ) : filtered.length === 0 ? <EmptyState icon={HandCoins} message="لا توجد عقود" /> : (
         <DataTable<ContractListItem>
           keyField="id"
           data={filtered}

@@ -11,14 +11,16 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { InvoiceListItem, InvoiceDetail } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, StatusBadge, ConfirmDialog, tokens, inputStyle, btnDanger } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 3: Invoices
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function InvoicesTab() {
   const [data, setData] = useState<InvoiceListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -26,7 +28,15 @@ export function InvoicesTab() {
   const [cancelling, setCancelling] = useState(false);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: InvoiceListItem[]; total: number }>("/api/finance-v3/invoices"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل الفواتير"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      setError(null);
+      const { data: responseData } = await api.get<{ data: InvoiceListItem[]; total: number }>("/api/finance-v3/invoices");
+      setData(safeArray(responseData?.data));
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل الفواتير"));
+      toast.error("فشل في تحميل الفواتير");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -64,7 +74,12 @@ export function InvoicesTab() {
         </div>
       } />
 
-      {loading ? <LoadingSkeleton /> : filtered.length === 0 ? <EmptyState icon={FileText} message="لا توجد فواتير" /> : (
+      {loading ? <LoadingSkeleton /> : error ? (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+          <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+          <button onClick={fetchData} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+        </div>
+      ) : filtered.length === 0 ? <EmptyState icon={FileText} message="لا توجد فواتير" /> : (
         <DataTable<InvoiceListItem>
           keyField="id"
           data={filtered}

@@ -14,14 +14,16 @@ import { toast } from "@/stores/toastStore";
 import type { PaymentListItem, RegisterPaymentRequest, InvoiceListItem, ContractListItem } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 4: Collections
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function CollectionsTab() {
   const [payments, setPayments] = useState<PaymentListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showRegister, setShowRegister] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -39,7 +41,15 @@ export function CollectionsTab() {
   const [payNotes, setPayNotes] = useState("");
 
   const fetchPayments = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments"); setPayments(responseData?.data ?? []); } catch { toast.error("فشل في تحميل التحصيلات"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      setError(null);
+      const { data: responseData } = await api.get<{ data: PaymentListItem[]; total: number }>("/api/finance-v3/payments");
+      setPayments(safeArray(responseData?.data));
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل التحصيلات"));
+      toast.error("فشل في تحميل التحصيلات");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
@@ -130,7 +140,12 @@ export function CollectionsTab() {
         </div>
       } />
 
-      {loading ? <LoadingSkeleton /> : payments.length === 0 ? <EmptyState icon={Receipt} message="لا توجد تحصيلات" /> : (
+      {loading ? <LoadingSkeleton /> : error ? (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+          <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+          <button onClick={fetchPayments} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+        </div>
+      ) : payments.length === 0 ? <EmptyState icon={Receipt} message="لا توجد تحصيلات" /> : (
         <DataTable<PaymentListItem>
           keyField="id"
           data={payments}

@@ -14,14 +14,16 @@ import { toast } from "@/stores/toastStore";
 import type { ExpenseListItem, CreateExpenseRequest } from "./types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 8: Expenses
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function ExpensesTab() {
   const [data, setData] = useState<ExpenseListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ id: string; action: "approve" | "reject" | "delete" } | null>(null);
@@ -34,7 +36,15 @@ export function ExpensesTab() {
   const [eDate, setEDate] = useState(new Date().toISOString().slice(0, 10));
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/expenses"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      setError(null);
+      const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/finance-v3/expenses");
+      setData(safeArray(responseData?.data));
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل المصروفات"));
+      toast.error("فشل في تحميل المصروفات");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -89,7 +99,12 @@ export function ExpensesTab() {
         </div>
       } />
 
-      {loading ? <LoadingSkeleton /> : data.length === 0 ? <EmptyState icon={TrendingDown} message="لا توجد مصروفات" /> : (
+      {loading ? <LoadingSkeleton /> : error ? (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+          <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+          <button onClick={fetchData} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+        </div>
+      ) : data.length === 0 ? <EmptyState icon={TrendingDown} message="لا توجد مصروفات" /> : (
         <DataTable<ExpenseListItem>
           keyField="id"
           data={data}

@@ -13,15 +13,17 @@ import { toast } from "@/stores/toastStore";
 import type { SupplierListItem, SupplierBill, CreateSupplierBillRequest, PaySupplierBillRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 9: Suppliers
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function SuppliersTab() {
   const [suppliers, setSuppliers] = useState<SupplierListItem[]>([]);
   const [bills, setBills] = useState<SupplierBill[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCreateBill, setShowCreateBill] = useState(false);
   const [showPayBill, setShowPayBill] = useState<SupplierBill | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -39,13 +41,17 @@ export function SuppliersTab() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const [sRes, bRes] = await Promise.all([
-        api.get<{ data: SupplierListItem[]; total: number }>("/api/suppliers"),
-        api.get<{ data: SupplierBill[]; total: number }>("/api/supplier-bills"),
+        api.get<{ data: SupplierListItem[]; total: number }>("/api/finance-v3/suppliers"),
+        api.get<{ data: SupplierBill[]; total: number }>("/api/finance-v3/supplier-bills"),
       ]);
-      setSuppliers(sRes.data.data ?? (Array.isArray(sRes.data) ? sRes.data as unknown as SupplierListItem[] : []));
-      setBills(bRes.data.data ?? (Array.isArray(bRes.data) ? bRes.data as unknown as SupplierBill[] : []));
-    } catch { toast.error("فشل في تحميل بيانات الموردين"); } finally { setLoading(false); }
+      setSuppliers(safeArray(sRes.data?.data ?? (Array.isArray(sRes.data) ? sRes.data as unknown as SupplierListItem[] : undefined)));
+      setBills(safeArray(bRes.data?.data ?? (Array.isArray(bRes.data) ? bRes.data as unknown as SupplierBill[] : undefined)));
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل بيانات الموردين"));
+      toast.error("فشل في تحميل بيانات الموردين");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -96,6 +102,12 @@ export function SuppliersTab() {
 
   return (
     <div className="p-6 space-y-6">
+      {error && (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+          <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+          <button onClick={fetchData} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+        </div>
+      )}
       {/* Suppliers */}
       <div>
         <SectionHeader title="الموردون" action={

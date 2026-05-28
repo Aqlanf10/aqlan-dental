@@ -13,14 +13,16 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { CashierSession, CloseSessionRequest } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnDanger, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDateTime, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 6: Cashier
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [sessions, setSessions] = useState<CashierSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [closeSession, setCloseSession] = useState<CashierSession | null>(null);
   const [actualCash, setActualCash] = useState("");
   const [actualCard, setActualCard] = useState("");
@@ -29,7 +31,15 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions"); setSessions(responseData?.data ?? []); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      setError(null);
+      const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions");
+      setSessions(safeArray(responseData?.data));
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل ورديات الصندوق"));
+      toast.error("فشل في تحميل ورديات الصندوق");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
@@ -112,7 +122,12 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         </div>
       )}
 
-      {loading ? <LoadingSkeleton /> : sessions.length === 0 ? <EmptyState icon={Vault} message="لا توجد ورديات صندوق" /> : (
+      {loading ? <LoadingSkeleton /> : error ? (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+          <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+          <button onClick={fetchSessions} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+        </div>
+      ) : sessions.length === 0 ? <EmptyState icon={Vault} message="لا توجد ورديات صندوق" /> : (
         <DataTable<CashierSession>
           keyField="id"
           data={sessions}

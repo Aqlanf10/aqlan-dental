@@ -12,21 +12,31 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { PatientBalance, PatientBalanceDetail } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, tokens, inputStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeArray } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 2: Patient Accounts
+   Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function PatientAccountsTab() {
   const [data, setData] = useState<PatientBalance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<PatientBalanceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: PatientBalance[]; total: number }>("/api/finance-v3/patient-accounts"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل حسابات المرضى"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      setError(null);
+      const { data: responseData } = await api.get<{ data: PatientBalance[]; total: number }>("/api/finance-v3/patient-accounts");
+      setData(safeArray(responseData?.data));
+    } catch (err) {
+      setError(extractErrorMessage(err, "فشل في تحميل حسابات المرضى"));
+      toast.error("فشل في تحميل حسابات المرضى");
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -52,7 +62,12 @@ export function PatientAccountsTab() {
         </div>
       } />
 
-      {loading ? <LoadingSkeleton /> : filtered.length === 0 ? <EmptyState icon={Wallet} message="لا يوجد حسابات مرضى" /> : (
+      {loading ? <LoadingSkeleton /> : error ? (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+          <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+          <button onClick={fetchData} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+        </div>
+      ) : filtered.length === 0 ? <EmptyState icon={Wallet} message="لا يوجد حسابات مرضى" /> : (
         <DataTable<PatientBalance>
           keyField="patientId"
           data={filtered}

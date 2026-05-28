@@ -20,7 +20,7 @@ import { toast } from "@/stores/toastStore";
 import type { ProfitLossData, DailyCashSummary, AccountBalancesData } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { KpiCard, LoadingSkeleton, EmptyState, tokens, inputStyle, labelStyle, btnPrimary } from "./FinanceSharedUI";
-import { formatYER, formatNumber } from "./FinanceHelpers";
+import { formatYER, formatNumber, extractErrorMessage, safeArray } from "./FinanceHelpers";
 
 /* ── P&L Sub-tab ── */
 function PLSubTab() {
@@ -34,7 +34,7 @@ function PLSubTab() {
       setLoading(true);
       const { data } = await api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: { from, to } });
       setData(data);
-    } catch { toast.error("فشل في تحميل تقرير الأرباح والخسائر"); } finally { setLoading(false); }
+    } catch (err) { toast.error(extractErrorMessage(err, "فشل في تحميل تقرير الأرباح والخسائر")); } finally { setLoading(false); }
   }, [from, to]);
 
   useEffect(() => { fetchPL(); }, [fetchPL]);
@@ -111,7 +111,7 @@ function DailyCashSubTab() {
       setLoading(true);
       const { data } = await api.get<DailyCashSummary>("/api/finance-v3/daily-cash-summary", { params: { date } });
       setData(data);
-    } catch { toast.error("فشل في تحميل ملخص الكاش اليومي"); } finally { setLoading(false); }
+    } catch (err) { toast.error(extractErrorMessage(err, "فشل في تحميل ملخص الكاش اليومي")); } finally { setLoading(false); }
   }, [date]);
 
   useEffect(() => { fetchDaily(); }, [fetchDaily]);
@@ -205,7 +205,11 @@ function AccountBalancesSubTab() {
   const [loading, setLoading] = useState(false);
 
   const fetchBalances = useCallback(async () => {
-    try { setLoading(true); const { data } = await api.get<AccountBalancesData>("/api/finance-v3/account-balances"); setData(data); } catch { toast.error("فشل في تحميل أرصدة الحسابات"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const { data } = await api.get<AccountBalancesData>("/api/finance-v3/account-balances");
+      setData(data);
+    } catch (err) { toast.error(extractErrorMessage(err, "فشل في تحميل أرصدة الحسابات")); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchBalances(); }, [fetchBalances]);

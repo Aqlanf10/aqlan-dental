@@ -1462,6 +1462,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         var invoice = await db.Invoices
             .Include(i => i.Patient)
+            .Include(i => i.InsuranceClaim)
             .FirstOrDefaultAsync(i => i.Id == invoiceId);
 
         if (invoice == null)
@@ -1477,16 +1478,43 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (branchId == Guid.Empty)
             throw new ArgumentException("Cannot determine BranchId for invoice issuance entry — patient has no branch");
 
-        var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+        // V4: توجيه القيد المزدوج الشامل — تقسيم الجانب المدين بين المريض وشركة التأمين
+        var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>();
+
+        // الجانب الدائن: الإيرادات تزيد بإجمالي الفاتورة
+        lines.Add((JournalAccountType.Revenue, invoice.Id, 0m, invoice.TotalAmount,
+            $"إيراد فاتورة {invoice.InvoiceNumber}"));
+
+        // الجانب المدين: ذمم المريض (Co-pay فقط إذا وُجد تأمين)
+        var claim = invoice.InsuranceClaim;
+        if (claim != null)
         {
-            (JournalAccountType.PatientReceivable, invoice.PatientId, invoice.TotalAmount, 0m, $"إصدار فاتورة {invoice.InvoiceNumber} - ذمم مدينة"),
-            (JournalAccountType.Revenue, invoice.Id, 0m, invoice.TotalAmount, $"إيراد فاتورة {invoice.InvoiceNumber}")
-        };
+            // فاتورة تأمينية — تقسيم الجانب المدين
+            if (claim.PatientCoPay > 0)
+            {
+                lines.Add((JournalAccountType.PatientReceivable, invoice.PatientId, claim.PatientCoPay, 0m,
+                    $"إصدار فاتورة تأمين {invoice.InvoiceNumber} - تحمل المريض (Co-pay)"));
+            }
+
+            if (claim.CoveredAmount > 0)
+            {
+                lines.Add((JournalAccountType.InsuranceReceivable, claim.InsuranceCompanyId, claim.CoveredAmount, 0m,
+                    $"إصدار فاتورة تأمين {invoice.InvoiceNumber} - ذمم شركة التأمين"));
+            }
+        }
+        else
+        {
+            // فاتورة نقدية — المريض يتحمل المبلغ بالكامل
+            lines.Add((JournalAccountType.PatientReceivable, invoice.PatientId, invoice.TotalAmount, 0m,
+                $"إصدار فاتورة {invoice.InvoiceNumber} - ذمم مدينة"));
+        }
 
         var entry = await journalEntryService.CreateEntryAsync(
             documentType: FinancialDocumentType.Invoice,
             financialDocumentId: invoice.Id,
-            description: $"إصدار فاتورة {invoice.InvoiceNumber} - إثبات الإيراد المستحق",
+            description: claim != null
+                ? $"إصدار فاتورة تأمين {invoice.InvoiceNumber} - إثبات الإيراد المستحق (تحمل المريض: {claim.PatientCoPay:N2}، التأمين: {claim.CoveredAmount:N2})"
+                : $"إصدار فاتورة {invoice.InvoiceNumber} - إثبات الإيراد المستحق",
             entryDate: DateOnly.FromDateTime(invoice.CreatedAt),
             branchId: branchId,
             performedBy: invoice.UpdatedBy ?? invoice.CreatedBy ?? Guid.Empty,
@@ -1527,6 +1555,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // Auto-post the reversal
         reversal.IsPosted = true;
         reversal.PostedAt = DateTime.UtcNow;
+
+        // V4: رفض المطالبة التأمينية تلقائياً عند إلغاء الفاتورة
+        var claim = await db.Set<InsuranceClaim>()
+            .FirstOrDefaultAsync(c => c.InvoiceId == invoiceId && c.Status == ClaimStatus.Pending);
+        if (claim != null)
+        {
+            claim.Status = ClaimStatus.Rejected;
+            claim.RejectionReason = "إلغاء الفاتورة المرتبطة بالمطالبة.";
+            logger.LogInformation("Insurance claim {ClaimId} auto-rejected due to invoice {InvoiceId} cancellation", claim.Id, invoiceId);
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -1602,4 +1641,366 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         entry.PostedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
     }
+
+    // ─── Installment Plan Logic ─────────────────────────────────────────
+
+    public async Task<InstallmentPlanDto> GenerateInstallmentPlanAsync(CreateInstallmentPlanRequest request)
+    {
+        // 1. التحقق من وجود العقد
+        var contract = await db.Contracts
+            .Include(c => c.Patient)
+            .FirstOrDefaultAsync(c => c.Id == request.ContractId);
+
+        if (contract == null)
+            throw new ArgumentException($"العقد بالمعرّف {request.ContractId} غير موجود.");
+
+        // التحقق من أن العقد نشط
+        if (contract.Status != ContractStatus.Active)
+            throw new ArgumentException("لا يمكن إنشاء خطة تقسيط لعقد غير نشط.");
+
+        // التحقق من عدم وجود خطة مسبقة لتجنب التكرار
+        var existingPlan = await db.InstallmentPlans
+            .AnyAsync(p => p.ContractId == request.ContractId && p.IsActive);
+        if (existingPlan)
+            throw new ArgumentException("توجد خطة تقسيط مسبقة لهذا العقد. لا يمكن إنشاء خطة مكررة.");
+
+        // 2. الحسابات الرياضية
+        if (request.NumberOfMonths <= 0)
+            throw new ArgumentException("عدد أشهر التقسيط يجب أن يكون أكبر من صفر.");
+
+        if (request.DownPayment < 0)
+            throw new ArgumentException("الدفعة المقدمة لا يمكن أن تكون سالبة.");
+
+        if (request.DownPayment >= contract.TotalAmount)
+            throw new ArgumentException("الدفعة المقدمة لا يمكن أن تساوي أو تتجاوز إجمالي مبلغ العقد.");
+
+        decimal remainingAmount = contract.TotalAmount - request.DownPayment;
+        decimal monthlyAmount = Math.Round(remainingAmount / request.NumberOfMonths, 2); // التقريب لخانتين عشريتين
+
+        // 3. إنشاء الخطة الأساسية
+        var plan = new InstallmentPlan
+        {
+            ContractId = request.ContractId,
+            PatientId = contract.PatientId,
+            TotalAmount = contract.TotalAmount,
+            DownPayment = request.DownPayment,
+            NumberOfMonths = request.NumberOfMonths,
+            MonthlyAmount = monthlyAmount,
+            StartDate = request.StartDate,
+            IsCompleted = false
+        };
+
+        // 4. توليد الأقساط الشهرية تلقائياً
+        // معالجة فروق التقريب: نوزع المبلغ بالتساوي ونضع الباقي في الشهر الأخير
+        decimal accumulatedAmount = 0;
+        for (int i = 0; i < request.NumberOfMonths; i++)
+        {
+            var installment = new Installment
+            {
+                InstallmentPlanId = plan.Id,
+                Amount = monthlyAmount,
+                DueDate = request.StartDate.AddMonths(i), // إضافة شهر لكل قسط
+                Status = InstallmentStatus.Pending
+            };
+
+            // معالجة فروق التقريب في الشهر الأخير
+            // هذا يضمن أن مجموع الأقساط = المبلغ المتبقي بالضبط
+            if (i == request.NumberOfMonths - 1)
+            {
+                installment.Amount = remainingAmount - accumulatedAmount;
+            }
+
+            accumulatedAmount += installment.Amount;
+            plan.Installments.Add(installment);
+        }
+
+        db.InstallmentPlans.Add(plan);
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("Installment plan {PlanId} created for contract {ContractId}: {Months} months × {MonthlyAmount:N2}, down payment: {DownPayment:N2}",
+            plan.Id, request.ContractId, request.NumberOfMonths, monthlyAmount, request.DownPayment);
+
+        return MapInstallmentPlan(plan);
+    }
+
+    public async Task<InstallmentPlanDto> GetInstallmentPlanByContractIdAsync(Guid contractId)
+    {
+        var plan = await db.InstallmentPlans
+            .Include(p => p.Installments)
+            .FirstOrDefaultAsync(p => p.ContractId == contractId && p.IsActive);
+
+        if (plan == null)
+            throw new ArgumentException("لا توجد خطة تقسيط لهذا العقد.");
+
+        return MapInstallmentPlan(plan);
+    }
+
+    public async Task<PaymentDto> PayInstallmentAsync(Guid installmentId, PayInstallmentRequest request)
+    {
+        // 1. Transaction Lock — قفل تزامني صلب لمنع السداد المزدوج (Double-Spending)
+        // أي طلبين متزامنين لنفس القسط سيحصلان بالتتابع، والثاني سيرفض لأن الحالة تغيرت
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var installment = await db.Installments
+                .Include(i => i.InstallmentPlan)
+                    .ThenInclude(p => p.Patient)
+                .FirstOrDefaultAsync(i => i.Id == installmentId && i.IsActive);
+
+            if (installment == null)
+                throw new ArgumentException("القسط غير موجود.");
+
+            // 2. Concurrency / Double-Click Protection — حماية من السداد المزدوج
+            if (installment.Status == InstallmentStatus.Paid)
+                throw new ArgumentException("تم سداد هذا القسط مسبقاً. العملية مرفوضة.");
+
+            if (installment.Status == InstallmentStatus.Overdue)
+                throw new ArgumentException("القسط متأخر. يرجى تسويته من خلال قسم الأقساط المتأخرة أولاً.");
+
+            // 3. Require active open cashier session — نفس نمط CreatePaymentAsync
+            var userId = currentUser.UserId ?? Guid.Empty;
+            var activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل سداد الأقساط.");
+
+            // Hotfix: Resolve branch from active cashier session
+            var paymentBranchId = activeSession.BranchId;
+            if (paymentBranchId == Guid.Empty && currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+                paymentBranchId = currentUser.BranchId.Value;
+            if (paymentBranchId == Guid.Empty)
+                throw new ArgumentException("لم يتم تحديد فرع الوردية. يرجى إغلاق الوردية وفتح وردية جديدة بفرع صحيح.");
+
+            // 4. Generate receipt number
+            var receiptNumber = await GenerateReceiptNumberAsync();
+
+            // 5. Create Payment Record — سند قبض
+            var payment = new Payment
+            {
+                PatientId = installment.InstallmentPlan.PatientId,
+                ContractId = installment.InstallmentPlan.ContractId,
+                Amount = installment.Amount,
+                PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+                PaymentMethod = request.PaymentMethod ?? "cash",
+                ServiceDescription = $"سداد قسط تقويم - القسط {installment.DueDate:yyyy/MM}",
+                BranchId = paymentBranchId,
+                ReceivedBy = currentUser.UserId,
+                ReceiptNumber = receiptNumber,
+                Notes = request.Notes
+            };
+            db.Payments.Add(payment);
+
+            // Auto-create receipt record
+            db.Receipts.Add(new Receipt
+            {
+                PaymentId = payment.Id,
+                ReceiptNumber = receiptNumber,
+                PrintedBy = currentUser.UserId
+            });
+
+            // 6. Create central ledger cashflow transaction (Inflow — Installment)
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-INST-{payment.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.Installment,
+                Amount = installment.Amount,
+                PaymentMethod = request.PaymentMethod ?? "cash",
+                TransactionDate = payment.PaymentDate,
+                ReferenceId = payment.Id,
+                ReferenceNumber = payment.ReceiptNumber,
+                Description = $"سداد قسط تقويم - سند قبض {payment.ReceiptNumber}",
+                PerformedBy = userId,
+                BranchId = paymentBranchId,
+                CashierSessionId = activeSession.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+
+            // 7. Update Installment State — تحديث حالة القسط
+            installment.Status = InstallmentStatus.Paid;
+            installment.PaidDate = DateTime.UtcNow;
+            installment.PaymentId = payment.Id;
+
+            // 8. Update Treasury Balance (no-save — within same transaction)
+            await UpdateTreasuryBalanceNoSaveAsync(paymentBranchId, installment.Amount, request.PaymentMethod);
+
+            // 9. Double-Entry Journal — التوجيه المحاسبي المزدوج
+            // الجانب المدين: الصندوق (Treasury) يرتفع
+            // الجانب الدائن: ذمم المرضى (PatientReceivable) تنخفض
+            var treasury = await ResolveTreasuryNoSaveAsync(paymentBranchId, request.PaymentMethod ?? "cash");
+            var patientName = installment.InstallmentPlan.Patient.FirstName + " " + installment.InstallmentPlan.Patient.LastName;
+
+            var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+            {
+                (JournalAccountType.Treasury, treasury.Id, installment.Amount, 0m,
+                    $"تحصيل قسط تقويم - سند قبض {receiptNumber}"),
+                (JournalAccountType.PatientReceivable, installment.InstallmentPlan.PatientId, 0m, installment.Amount,
+                    $"سداد قسط مريض {patientName} - سند قبض {receiptNumber}")
+            };
+
+            var journalEntry = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.InstallmentPayment,
+                financialDocumentId: payment.Id,
+                description: $"سداد قسط تقويم - المريض: {patientName} - سند قبض {receiptNumber}",
+                entryDate: payment.PaymentDate,
+                branchId: paymentBranchId,
+                performedBy: userId,
+                cashierSessionId: activeSession.Id,
+                treasuryId: treasury.Id,
+                lines: journalLines);
+
+            // Auto-post the journal entry
+            journalEntry.IsPosted = true;
+            journalEntry.PostedAt = DateTime.UtcNow;
+
+            // 10. Check Plan Completion — التحقق من اكتمال الخطة
+            var hasPending = await db.Installments
+                .AnyAsync(i => i.InstallmentPlanId == installment.InstallmentPlanId
+                    && i.Id != installmentId
+                    && i.Status != InstallmentStatus.Paid
+                    && i.IsActive);
+            if (!hasPending)
+            {
+                installment.InstallmentPlan.IsCompleted = true;
+                logger.LogInformation("Installment plan {PlanId} marked as completed — all installments paid",
+                    installment.InstallmentPlanId);
+            }
+
+            // Save all changes atomically within the transaction
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+
+            // Post-commit: Load navigations for mapping
+            await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
+
+            logger.LogInformation("Installment {InstallmentId} paid: Payment {PaymentId}, Receipt {ReceiptNumber}, Amount {Amount:N2}",
+                installmentId, payment.Id, receiptNumber, installment.Amount);
+
+            return MapPayment(payment);
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+    }
+
+    // ─── Installment Mapping ────────────────────────────────────────────
+
+    private static InstallmentPlanDto MapInstallmentPlan(InstallmentPlan plan) => new()
+    {
+        Id = plan.Id,
+        ContractId = plan.ContractId,
+        PatientId = plan.PatientId,
+        TotalAmount = plan.TotalAmount,
+        DownPayment = plan.DownPayment,
+        NumberOfMonths = plan.NumberOfMonths,
+        MonthlyAmount = plan.MonthlyAmount,
+        StartDate = plan.StartDate,
+        IsCompleted = plan.IsCompleted,
+        Installments = plan.Installments
+            .OrderBy(i => i.DueDate)
+            .Select(i => new InstallmentDto
+            {
+                Id = i.Id,
+                Amount = i.Amount,
+                DueDate = i.DueDate,
+                PaidDate = i.PaidDate,
+                Status = i.Status,
+                PaymentId = i.PaymentId
+            }).ToList()
+    };
+
+    // ─── Insurance Claim Settlement (V4) ──────────────────────────────
+
+    /// <summary>
+    /// تسوية مطالبة تأمينية — تُنفّذ عندما تقوم شركة التأمين بتحويل المبلغ المستحق
+    /// إلى العيادة. تنشئ قيداً محاسبياً مزدوجاً (مدين: الصندوق، دائن: ذمم التأمين)
+    /// وتحدّث حالة المطالبة إلى مسددة (Paid).
+    /// </summary>
+    public async Task<InsuranceClaimDto> SettleInsuranceClaimAsync(Guid claimId, SettleInsuranceClaimRequest request)
+    {
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var claim = await db.Set<InsuranceClaim>()
+                .Include(c => c.InsuranceCompany)
+                .Include(c => c.Invoice)
+                    .ThenInclude(i => i!.Patient)
+                .FirstOrDefaultAsync(c => c.Id == claimId && c.IsActive);
+
+            if (claim == null)
+                throw new ArgumentException("المطالبة التأمينية غير موجودة.");
+
+            if (claim.Status == ClaimStatus.Paid)
+                throw new ArgumentException("المطالبة التأمينية مسددة مسبقاً.");
+
+            if (claim.Status == ClaimStatus.Rejected)
+                throw new ArgumentException("لا يمكن تسوية مطالبة مرفوضة.");
+
+            // تحديد الفرع من فاتورة المطالبة
+            var branchId = claim.Invoice?.Patient?.BranchId ?? Guid.Empty;
+            if (branchId == Guid.Empty)
+                throw new ArgumentException("لم يتم تحديد فرع الفاتورة المرتبطة بالمطالبة.");
+
+            // تحديث حالة المطالبة
+            claim.Status = ClaimStatus.Paid;
+
+            // تحديث رصيد الصندوق — التسوية التأمينية عادة عبر تحويل بنكي
+            await UpdateTreasuryBalanceNoSaveAsync(branchId, claim.CoveredAmount, "bank_transfer");
+
+            // استرجاع الصندوق لاستخدامه في القيد المحاسبي
+            var treasury = await ResolveTreasuryNoSaveAsync(branchId, "bank_transfer");
+
+            // قيد التسوية: النقدية (مدين) تزيد، وذمم التأمين (دائن) تنقص
+            var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+            {
+                (JournalAccountType.Treasury, treasury.Id, claim.CoveredAmount, 0m,
+                    $"تحصيل مطالبة تأمين - صندوق {treasury.Name}"),
+                (JournalAccountType.InsuranceReceivable, claim.InsuranceCompanyId, 0m, claim.CoveredAmount,
+                    $"تسوية مطالبة تأمين - شركة: {claim.InsuranceCompany?.Name ?? claim.InsuranceCompanyId.ToString()}")
+            };
+
+            await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.Invoice,
+                financialDocumentId: claim.InvoiceId,
+                description: $"تسوية مطالبة تأمين - شركة: {claim.InsuranceCompany?.Name ?? claim.InsuranceCompanyId.ToString()} | {request.ReferenceNotes ?? ""}",
+                entryDate: DateOnly.FromDateTime(DateTime.UtcNow),
+                branchId: branchId,
+                performedBy: currentUser.UserId ?? Guid.Empty,
+                cashierSessionId: null,
+                treasuryId: treasury.Id,
+                lines: journalLines);
+
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+
+            logger.LogInformation("Insurance claim {ClaimId} settled: Treasury {TreasuryId} +{Amount:N2}, Company {CompanyId}",
+                claimId, treasury.Id, claim.CoveredAmount, claim.InsuranceCompanyId);
+
+            return MapInsuranceClaim(claim);
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static InsuranceClaimDto MapInsuranceClaim(InsuranceClaim claim) => new()
+    {
+        Id = claim.Id,
+        InvoiceId = claim.InvoiceId,
+        InsuranceCompanyId = claim.InsuranceCompanyId,
+        InsuranceCompanyName = claim.InsuranceCompany?.Name,
+        PatientId = claim.PatientId,
+        TotalAmount = claim.TotalAmount,
+        CoveredAmount = claim.CoveredAmount,
+        PatientCoPay = claim.PatientCoPay,
+        Status = claim.Status.ToString(),
+        RejectionReason = claim.RejectionReason
+    };
 }

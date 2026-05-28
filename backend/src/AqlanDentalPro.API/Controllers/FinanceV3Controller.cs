@@ -3412,6 +3412,97 @@ public class FinanceV3Controller(
         catch { await tx.RollbackAsync(); throw; }
     }
 
+    // ─── Installment Plan Endpoints ──────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/finance-v3/contracts/{contractId}/installments
+    /// ينشئ خطة تقسيط جديدة لعقد تقويم ويولّد الأقساط الشهرية تلقائياً.
+    /// </summary>
+    [HttpPost("contracts/{contractId:guid}/installments")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<InstallmentPlanDto>> CreateInstallmentPlan(
+        Guid contractId,
+        [FromBody] CreateInstallmentPlanRequest request)
+    {
+        if (contractId != request.ContractId)
+            return BadRequest(new { message = "معرّف العقد في المسار لا يطابق المعرف في الطلب." });
+
+        try
+        {
+            var plan = await financeService.GenerateInstallmentPlanAsync(request);
+            return Ok(plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/contracts/{contractId}/installments
+    /// يسترجع خطة التقسيط المرتبطة بعقد معين مع جميع الأقساط المجدولة.
+    /// </summary>
+    [HttpGet("contracts/{contractId:guid}/installments")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<InstallmentPlanDto>> GetInstallmentPlan(Guid contractId)
+    {
+        try
+        {
+            var plan = await financeService.GetInstallmentPlanByContractIdAsync(contractId);
+            return Ok(plan);
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/installments/{installmentId}/pay
+    /// يسدد قسط تقسيط مع تطبيق قفل تزامني لمنع السداد المزدوج.
+    /// ينشئ سند قبض، يوجّه قيد محاسبي مزدوج، ويحدّث حالة القسط والخطة.
+    /// </summary>
+    [HttpPost("installments/{installmentId:guid}/pay")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<PaymentDto>> PayInstallment(
+        Guid installmentId,
+        [FromBody] PayInstallmentRequest request)
+    {
+        try
+        {
+            var payment = await financeService.PayInstallmentAsync(installmentId, request);
+            return Ok(payment);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // ─── V4: Insurance Claim Settlement ────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/finance-v3/insurance-claims/{claimId}/settle
+    /// تسوية مطالبة تأمينية — تُنفّذ عندما تقوم شركة التأمين بتحويل المبلغ المستحق
+    /// (شيك أو حوالة بنكية) إلى العيادة. تنشئ قيداً محاسبياً مزدوجاً وتحدّث حالة المطالبة.
+    /// </summary>
+    [HttpPost("insurance-claims/{claimId:guid}/settle")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<InsuranceClaimDto>> SettleInsuranceClaim(
+        Guid claimId,
+        [FromBody] SettleInsuranceClaimRequest request)
+    {
+        try
+        {
+            var result = await financeService.SettleInsuranceClaimAsync(claimId, request);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

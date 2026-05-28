@@ -15,6 +15,8 @@ import {
   Bell,
   CircleDot,
   Loader2,
+  CalendarClock,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useBranches } from "@/hooks/useBranches";
@@ -31,6 +33,8 @@ import { TreasuriesTab } from "./components/TreasuriesTab";
 import { ExpensesTab } from "./components/ExpensesTab";
 import { SuppliersTab } from "./components/SuppliersTab";
 import { AuditTab } from "./components/AuditTab";
+import { InstallmentsTab } from "./components/InstallmentsTab";
+import { InsuranceTab } from "./components/InsuranceTab";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab definition
@@ -47,6 +51,8 @@ const TABS: TabDef[] = [
   { key: "invoices",       label: "الفواتير",          icon: FileText },
   { key: "collections",    label: "التحصيل",           icon: Receipt },
   { key: "contracts",      label: "العقود",            icon: HandCoins },
+  { key: "installments",   label: "الأقساط",           icon: CalendarClock },
+  { key: "insurance",      label: "التأمين",           icon: ShieldCheck },
   { key: "cashier",        label: "الصندوق",           icon: Vault },
   { key: "treasuries",     label: "الخزائن",           icon: Landmark },
   { key: "expenses",       label: "المصروفات",         icon: TrendingDown },
@@ -171,6 +177,8 @@ export default function FinanceV3Page() {
         {activeTab === "invoices" && <FinanceTabErrorBoundary tabName="الفواتير"><InvoicesTab /></FinanceTabErrorBoundary>}
         {activeTab === "collections" && <FinanceTabErrorBoundary tabName="التحصيل"><CollectionsTab /></FinanceTabErrorBoundary>}
         {activeTab === "contracts" && <FinanceTabErrorBoundary tabName="العقود"><ContractsTab /></FinanceTabErrorBoundary>}
+        {activeTab === "installments" && <FinanceTabErrorBoundary tabName="الأقساط"><InstallmentsTab /></FinanceTabErrorBoundary>}
+        {activeTab === "insurance" && <FinanceTabErrorBoundary tabName="التأمين"><InsuranceTab /></FinanceTabErrorBoundary>}
         {activeTab === "cashier" && <FinanceTabErrorBoundary tabName="الصندوق"><CashierTab isAdmin={isAdmin} onSessionChange={() => setSessionRefreshKey(k => k + 1)} /></FinanceTabErrorBoundary>}
         {activeTab === "treasuries" && <FinanceTabErrorBoundary tabName="الخزائن"><TreasuriesTab /></FinanceTabErrorBoundary>}
         {activeTab === "expenses" && <FinanceTabErrorBoundary tabName="المصروفات"><ExpensesTab /></FinanceTabErrorBoundary>}

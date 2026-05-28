@@ -35,4 +35,30 @@ public interface IFinanceService
     /// Auto-posts the reversal. Used when cancelling an Issued invoice.
     /// </summary>
     Task ReverseInvoiceIssuedEntryAsync(Guid invoiceId);
+
+    /// <summary>
+    /// ينشئ خطة تقسيط جديدة لعقد تقويم ويولّد الأقساط الشهرية تلقائياً.
+    /// يتحقق من وجود العقد وعدم وجود خطة سابقة، ثم يحسب المبالغ ويوزعها
+    /// مع معالجة فروق التقريب في الشهر الأخير.
+    /// </summary>
+    Task<InstallmentPlanDto> GenerateInstallmentPlanAsync(CreateInstallmentPlanRequest request);
+
+    /// <summary>
+    /// يسترجع خطة التقسيط المرتبطة بعقد معين مع جميع الأقساط المجدولة.
+    /// </summary>
+    Task<InstallmentPlanDto> GetInstallmentPlanByContractIdAsync(Guid contractId);
+
+    /// <summary>
+    /// يسدد قسط تقسيط مع تطبيق قفل تزامني لمنع السداد المزدوج.
+    /// ينشئ سند قبض، يحديث حالة القسط، يوجّه قيد محاسبي مزدوج،
+    /// ويتحقق من اكتمال خطة التقسيط تلقائياً.
+    /// </summary>
+    Task<PaymentDto> PayInstallmentAsync(Guid installmentId, PayInstallmentRequest request);
+
+    /// <summary>
+    /// تسوية مطالبة تأمينية — تُنفّذ عندما تقوم شركة التأمين بتحويل المبلغ المستحق
+    /// (شيك أو حوالة بنكية) إلى العيادة. تنشئ قيداً محاسبياً مزدوجاً:
+    /// مدين: الصندوق (Treasury) يزيد، دائن: ذمم التأمين (InsuranceReceivable) تنقص.
+    /// </summary>
+    Task<InsuranceClaimDto> SettleInsuranceClaimAsync(Guid claimId, SettleInsuranceClaimRequest request);
 }

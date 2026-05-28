@@ -17,5 +17,6 @@ public enum FinancialDocumentType
     VaultTransfer,     // ترحيل سيولة — Vault transfer / external deposit
     ContractCancellation, // إلغاء عقد — Contract cancellation reversal
     PaymentDeletion,   // حذف دفعة — Payment deletion reversal
+    InstallmentPayment, // سداد قسط تقسيط — Installment payment
     Other              // أخرى — Unclassified
 }

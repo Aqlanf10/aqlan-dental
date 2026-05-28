@@ -10,6 +10,16 @@ public class CreateInvoiceRequest
     public decimal? DiscountAmount { get; set; }
     public decimal? TaxAmount { get; set; }
     public string? Notes { get; set; }
+
+    // ─── V4 إضافات التأمين والضرائب ───────────────────────────────
+    /// <summary>نسبة الضريبة كنسبة مئوية (مثال: 5 تعني 5%). إن لم تُحدد، يُستخدم TaxAmount مباشرة.</summary>
+    public decimal TaxPercentage { get; set; } = 0;
+
+    /// <summary>معرّف شركة التأمين. إن لم يُحدد، الفاتورة نقدية (بدون تأمين).</summary>
+    public Guid? InsuranceCompanyId { get; set; }
+
+    /// <summary>نسبة التغطية التأمينية المخصصة لتجاوز النسبة الافتراضية للشركة (مثال: 80 تعني 80%).</summary>
+    public decimal? CustomCoveragePercentage { get; set; }
 }
 
 public class CreateInvoiceLineItemRequest
@@ -47,4 +57,34 @@ public class UpdateInvoiceLineItemRequest
 public class CancelInvoiceRequest
 {
     public string? Notes { get; set; }
+}
+
+// ─── V4: Insurance & Settlement DTOs ───────────────────────────────
+
+/// <summary>
+/// بيانات المطالبة التأمينية المرتبطة بفاتورة.
+/// </summary>
+public class InsuranceClaimDto
+{
+    public Guid Id { get; set; }
+    public Guid InvoiceId { get; set; }
+    public Guid InsuranceCompanyId { get; set; }
+    public string? InsuranceCompanyName { get; set; }
+    public Guid PatientId { get; set; }
+    public decimal TotalAmount { get; set; }
+    public decimal CoveredAmount { get; set; }
+    public decimal PatientCoPay { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? RejectionReason { get; set; }
+}
+
+/// <summary>
+/// طلب تسوية مطالبة تأمينية - يُستخدم عندما تقوم شركة التأمين
+/// بتحويل المبلغ المستحق (شيك أو حوالة بنكية) إلى العيادة.
+/// يتم تحديد الصندوق تلقائياً بناءً على فرع الفاتورة (تحويل بنكي).
+/// </summary>
+public class SettleInsuranceClaimRequest
+{
+    /// <summary>ملاحظات مرجعية (رقم الشيك، رقم الحوالة، إلخ).</summary>
+    public string? ReferenceNotes { get; set; }
 }

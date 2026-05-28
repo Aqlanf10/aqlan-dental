@@ -6,10 +6,11 @@ import {
   RefreshCw, Loader2, FileText, CheckCircle,
   DollarSign, ArrowUpRight, ArrowDownRight, Users,
   Receipt, IndianRupee, X, UserPlus, Search,
+  Vault, CircleDot,
 } from "lucide-react";
 import { NAVY, BLUE, ORANGE, fmtRial, PAYMENT_METHODS } from "../_lib/constants";
 import type { FinanceSummaryData } from "../_lib/constants";
-import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout, useCreateDraftInvoice } from "../_lib/hooks";
+import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout, useCreateDraftInvoice, useActiveCashierSession } from "../_lib/hooks";
 import { toast } from "@/stores/toastStore";
 import { api } from "@/lib/api";
 
@@ -71,6 +72,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   // ── Data hooks ──
   const { data: summaryRaw, isLoading: summaryLoading, refetch: refetchSummary } = useFinanceSummary();
   const { data: journeyItems, isLoading: journeyLoading, refetch: refetchJourney } = useTodayJourneyItems({});
+  const { data: cashierSession } = useActiveCashierSession();
 
   // ── Mutations ──
   const createPaymentMutation = useCreatePayment();
@@ -91,7 +93,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   const [walkInSearch, setWalkInSearch] = useState("");
   const [walkInPatientOptions, setWalkInPatientOptions] = useState<{ id: string; fullName: string; patientNumber: string }[]>([]);
   const [walkInPatientId, setWalkInPatientId] = useState("");
-  const [walkInPatientName, setWalkInPatientName] = useState("");
+  const [, setWalkInPatientName] = useState("");
   const [walkInAmount, setWalkInAmount] = useState("");
   const [walkInMethod, setWalkInMethod] = useState("Cash");
   const [walkInDesc, setWalkInDesc] = useState("");
@@ -302,6 +304,62 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
             <p className="text-sm font-bold" style={{ color: "#16a34a" }}>مريض بدون حجز</p>
           </div>
         </button>
+      </div>
+
+      {/* ── Cashier Shift Status ── */}
+      <div
+        className="rounded-xl border p-3 flex items-center justify-between"
+        style={{
+          background: cashierSession?.hasActiveSession
+            ? "linear-gradient(135deg, #f0fdf4, #dcfce7)"
+            : "linear-gradient(135deg, #fef2f2, #fee2e2)",
+          borderColor: cashierSession?.hasActiveSession ? "#16a34a30" : "#dc262630",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{
+              background: cashierSession?.hasActiveSession ? "#16a34a15" : "#dc262615",
+            }}
+          >
+            {cashierSession?.hasActiveSession ? (
+              <CircleDot className="w-4 h-4" style={{ color: "#16a34a" }} />
+            ) : (
+              <Vault className="w-4 h-4" style={{ color: "#dc2626" }} />
+            )}
+          </div>
+          <div>
+            {cashierSession?.hasActiveSession ? (
+              <>
+                <p className="text-xs font-bold" style={{ color: NAVY }}>
+                  وردية مفتوحة: {cashierSession.sessionNumber ?? ""}
+                </p>
+                <p className="text-[10px]" style={{ color: "#64748b" }}>
+                  أمين الصندوق: {cashierSession.cashierName ?? ""} · التحصيلات: {fmtRial(cashierSession.totalCollections ?? 0)}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-bold" style={{ color: "#dc2626" }}>
+                  لا توجد وردية صندوق مفتوحة
+                </p>
+                <p className="text-[10px]" style={{ color: "#991b1b" }}>
+                  يجب فتح وردية قبل تسجيل التحصيلات النقدية
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+        {!cashierSession?.hasActiveSession && (
+          <a
+            href="/finance-v3"
+            className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white no-underline"
+            style={{ background: "#dc2626" }}
+          >
+            فتح وردية صندوق
+          </a>
+        )}
       </div>
 
       {/* ── Ready for Checkout Banner ── */}

@@ -543,3 +543,34 @@ export function useCreateDraftInvoice() {
     },
   });
 }
+
+// ─── Active Cashier Session ────────────────────────────────────────────────
+export interface ActiveCashierSessionData {
+  hasActiveSession: boolean;
+  id?: string;
+  sessionNumber?: string;
+  cashierName?: string;
+  openedAt?: string;
+  openingBalance?: number;
+  expectedClosingCash?: number;
+  expectedClosingCard?: number;
+  expectedClosingBank?: number;
+  treasuryId?: string;
+  totalCollections?: number;
+}
+
+export function useActiveCashierSession() {
+  return useQuery<ActiveCashierSessionData>({
+    queryKey: ["daily-ops", "active-cashier-session"],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get("/api/finance-v3/cashier-sessions/active");
+        return data;
+      } catch {
+        return { hasActiveSession: false } as ActiveCashierSessionData;
+      }
+    },
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}

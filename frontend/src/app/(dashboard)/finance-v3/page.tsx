@@ -63,6 +63,7 @@ export default function FinanceV3Page() {
   const [activeTab, setActiveTab] = useState("overview");
   const [activeSession, setActiveSession] = useState<{ sessionNumber: string; openedAt: string } | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
+  const [sessionRefreshKey, setSessionRefreshKey] = useState(0);
 
   /* ── Access gate: Admin / Accountant only ── */
   const isAuthorized = user?.role === "Admin" || user?.role === "Accountant";
@@ -101,7 +102,7 @@ export default function FinanceV3Page() {
     // Poll every 60 seconds to keep status fresh
     const interval = setInterval(fetchActiveSession, 60_000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  }, [sessionRefreshKey]);
 
   /* ── Resolve branch name ── */
   const userBranchId = user?.branchId;
@@ -170,7 +171,7 @@ export default function FinanceV3Page() {
         {activeTab === "invoices" && <FinanceTabErrorBoundary tabName="الفواتير"><InvoicesTab /></FinanceTabErrorBoundary>}
         {activeTab === "collections" && <FinanceTabErrorBoundary tabName="التحصيل"><CollectionsTab /></FinanceTabErrorBoundary>}
         {activeTab === "contracts" && <FinanceTabErrorBoundary tabName="العقود"><ContractsTab /></FinanceTabErrorBoundary>}
-        {activeTab === "cashier" && <FinanceTabErrorBoundary tabName="الصندوق"><CashierTab isAdmin={isAdmin} /></FinanceTabErrorBoundary>}
+        {activeTab === "cashier" && <FinanceTabErrorBoundary tabName="الصندوق"><CashierTab isAdmin={isAdmin} onSessionChange={() => setSessionRefreshKey(k => k + 1)} /></FinanceTabErrorBoundary>}
         {activeTab === "treasuries" && <FinanceTabErrorBoundary tabName="الخزائن"><TreasuriesTab /></FinanceTabErrorBoundary>}
         {activeTab === "expenses" && <FinanceTabErrorBoundary tabName="المصروفات"><ExpensesTab /></FinanceTabErrorBoundary>}
         {activeTab === "suppliers" && <FinanceTabErrorBoundary tabName="الموردون"><SuppliersTab /></FinanceTabErrorBoundary>}

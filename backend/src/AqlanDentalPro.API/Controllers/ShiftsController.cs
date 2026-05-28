@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
+using AqlanDentalPro.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,9 @@ public sealed class OpenShiftDto
 
     /// <summary>ملاحظات اختيارية</summary>
     public string? Notes { get; init; }
+
+    /// <summary>اختياري: للإدارة أو المستخدمين بدون فرع معين</summary>
+    public Guid? BranchId { get; init; }
 }
 
 // ─── ShiftsController — واجهة Finance V3 لإدارة الورديات ─────────────
@@ -37,17 +41,20 @@ public class ShiftsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditService _audit;
+    private readonly ITreasuryResolutionService _treasuryResolution;
     private readonly ILogger<ShiftsController> _logger;
 
     public ShiftsController(
         AppDbContext context,
         ICurrentUserService currentUser,
         IAuditService audit,
+        ITreasuryResolutionService treasuryResolution,
         ILogger<ShiftsController> logger)
     {
         _context = context;
         _currentUser = currentUser;
         _audit = audit;
+        _treasuryResolution = treasuryResolution;
         _logger = logger;
     }
 
@@ -63,64 +70,101 @@ public class ShiftsController : ControllerBase
     public async Task<IActionResult> OpenShift([FromBody] OpenShiftDto dto)
     {
         var userId = _currentUser.UserId ?? Guid.Empty;
-        var branchId = _currentUser.BranchId;
 
-        // التحقق من وجود فرع صالح
+        // BranchId resolution: prefer token claim, fall back to request body, then reject
+        // This allows Admins or users without a fixed branch to open sessions by selecting a branch in the UI
+        var branchId = _currentUser.BranchId;
+        if ((branchId == null || branchId == Guid.Empty) && dto.BranchId.HasValue && dto.BranchId != Guid.Empty)
+        {
+            // Verify the branch actually exists and is active
+            var branchExists = await _context.Branches.AnyAsync(b => b.Id == dto.BranchId.Value && b.IsActive);
+            if (!branchExists)
+                return BadRequest(new { Message = "الفرع المحدد غير موجود أو غير نشط" });
+            branchId = dto.BranchId.Value;
+        }
         if (branchId == null || branchId == Guid.Empty)
             return BadRequest(new { Message = "عذراً، يجب تحديد الفرع قبل فتح وردية الكاشير." });
-
-        // التحقق من عدم وجود وردية مفتوحة سابقة لنفس المستخدم
-        var activeShift = await _context.CashierSessions
-            .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
-
-        if (activeShift != null)
-        {
-            return BadRequest(new
-            {
-                Message = "لديك وردية مفتوحة بالفعل برقم " + activeShift.SessionNumber + ". يجب إقفال الوردية الحالية أولاً.",
-                ShiftId = activeShift.Id
-            });
-        }
 
         // التحقق من صحة المبلغ الافتتاحي
         if (dto.OpeningAmount < 0)
             return BadRequest(new { Message = "لا يمكن أن يكون رصيد العهدة الافتتاحية سالباً." });
 
-        // إنشاء الوردية الجديدة
-        var newShift = new CashierSession
+        // CONCURRENCY SAFETY: Begin the transaction BEFORE the authoritative open-shift
+        // eligibility check, then acquire a deterministic lock scoped to the cashier identity
+        // to prevent two concurrent requests from creating two open sessions for the same cashier.
+        await using var tx = await _context.Database.BeginTransactionAsync();
+        try
         {
-            Id = Guid.NewGuid(),
-            CashierId = userId,
-            BranchId = branchId.Value,
-            OpeningTime = DateTime.UtcNow,
-            OpeningBalance = dto.OpeningAmount,
-            ExpectedClosingCash = dto.OpeningAmount, // يبدأ بالمبلغ الافتتاحي فقط
-            ExpectedClosingCard = 0,
-            ExpectedClosingBank = 0,
-            Status = SessionStatus.Open,
-            Notes = dto.Notes?.Trim(),
-            SessionNumber = await GenerateSessionNumberAsync()
-        };
+            // Acquire a deterministic transaction-scoped PostgreSQL lock for the cashier identity.
+            if (_context.Database.IsRelational())
+            {
+                var cashierLockKey = StableLockKeyHelper.StableGuidToLong(userId);
+                await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", cashierLockKey);
+            }
 
-        _context.CashierSessions.Add(newShift);
-        await _context.SaveChangesAsync();
+            // AUTHORITATIVE RE-CHECK inside the lock: verify no open session exists for this cashier.
+            var hasOpenSession = await _context.CashierSessions
+                .AnyAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
 
-        // تسجيل العملية في سجل المراجعة
-        await _audit.LogAsync(AuditAction.Create, "CashierSession", newShift.Id,
-            details: $"Shift {newShift.SessionNumber} opened via Finance V3 API with opening balance {dto.OpeningAmount}");
+            if (hasOpenSession)
+                return BadRequest(new { Message = "لديك وردية مفتوحة بالفعل. يجب إقفال الوردية الحالية أولاً قبل فتح وردية جديدة." });
 
-        _logger.LogInformation("Shift {SessionNumber} opened for cashier {UserId} at branch {BranchId}",
-            newShift.SessionNumber, userId, branchId.Value);
+            // Generate sequential SessionNumber SH-yyyyMMdd-NN using advisory lock
+            if (_context.Database.IsRelational())
+            {
+                await _context.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", StableLockKeyHelper.CashierSessionNumber);
+            }
 
-        return Ok(new
+            var sessionNumber = await GenerateSessionNumberAsync();
+
+            // Resolve the cash vault treasury for this branch
+            var treasury = await _treasuryResolution.ResolveTreasuryAsync(branchId.Value, "cash", null);
+
+            // إنشاء الوردية الجديدة
+            var newShift = new CashierSession
+            {
+                Id = Guid.NewGuid(),
+                SessionNumber = sessionNumber,
+                CashierId = userId,
+                BranchId = branchId.Value,
+                OpeningTime = DateTime.UtcNow,
+                OpeningBalance = dto.OpeningAmount,
+                ExpectedClosingCash = dto.OpeningAmount, // يبدأ بالمبلغ الافتتاحي فقط
+                ExpectedClosingCard = 0,
+                ExpectedClosingBank = 0,
+                Status = SessionStatus.Open,
+                Notes = dto.Notes?.Trim(),
+                TreasuryId = treasury.Id
+            };
+
+            _context.CashierSessions.Add(newShift);
+            await _context.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            // تسجيل العملية في سجل المراجعة
+            await _audit.LogAsync(AuditAction.Create, "CashierSession", newShift.Id,
+                details: $"Shift {newShift.SessionNumber} opened via Finance V3 API with opening balance {dto.OpeningAmount}");
+
+            _logger.LogInformation("Shift {SessionNumber} opened for cashier {UserId} at branch {BranchId}",
+                newShift.SessionNumber, userId, branchId.Value);
+
+            return Ok(new
+            {
+                Message = "تم فتح الوردية بنجاح بنقود افتتاحية قيمتها " + dto.OpeningAmount.ToString("N0") + " ر.ي",
+                ShiftId = newShift.Id,
+                SessionNumber = newShift.SessionNumber,
+                OpeningTime = newShift.OpeningTime,
+                OpeningBalance = newShift.OpeningBalance,
+                TreasuryId = newShift.TreasuryId,
+                Status = newShift.Status.ToString()
+            });
+        }
+        catch
         {
-            Message = "تم فتح الوردية بنجاح بنقود افتتاحية قيمتها " + dto.OpeningAmount.ToString("N0") + " ر.ي",
-            ShiftId = newShift.Id,
-            SessionNumber = newShift.SessionNumber,
-            OpeningTime = newShift.OpeningTime,
-            OpeningBalance = newShift.OpeningBalance,
-            Status = newShift.Status.ToString()
-        });
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 
     // ─── جلب الوردية النشطة للمستخدم الحالي ──────────────────────────
@@ -149,6 +193,7 @@ public class ShiftsController : ControllerBase
                 s.ExpectedClosingBank,
                 CashierName = s.Cashier.Username,
                 s.BranchId,
+                s.TreasuryId,
                 Status = s.Status.ToString()
             })
             .FirstOrDefaultAsync();
@@ -156,7 +201,30 @@ public class ShiftsController : ControllerBase
         if (activeShift == null)
             return Ok(new { hasActiveShift = false });
 
-        return Ok(new { hasActiveShift = true, shift = activeShift });
+        // Calculate totalCollections from CashFlowTransactions
+        var totalCollections = await _context.CashFlowTransactions
+            .Where(t => t.CashierSessionId == activeShift.Id && t.Type == TransactionType.Inflow && t.IsActive)
+            .SumAsync(t => t.Amount);
+
+        return Ok(new
+        {
+            hasActiveShift = true,
+            shift = new
+            {
+                activeShift.Id,
+                activeShift.SessionNumber,
+                activeShift.OpeningTime,
+                activeShift.OpeningBalance,
+                activeShift.ExpectedClosingCash,
+                activeShift.ExpectedClosingCard,
+                activeShift.ExpectedClosingBank,
+                CashierName = activeShift.CashierName,
+                activeShift.BranchId,
+                activeShift.TreasuryId,
+                TotalCollections = totalCollections,
+                Status = activeShift.Status.ToString()
+            }
+        });
     }
 
     // ─── إقفال الوردية الحالية ────────────────────────────────────────

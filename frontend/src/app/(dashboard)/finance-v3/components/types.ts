@@ -162,6 +162,7 @@ export interface ContractListItem {
 /* ── Cashier Sessions ───────────────────────────────────────────────────────────── */
 export interface CashierSession {
   id: string;
+  sessionNumber?: string;
   cashierUserId?: string;
   cashierId?: string;
   cashierName: string;

@@ -20,7 +20,7 @@ import { toast } from "@/stores/toastStore";
 import type { ProfitLossData, DailyCashSummary, AccountBalancesData } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { KpiCard, LoadingSkeleton, EmptyState, tokens, inputStyle, labelStyle, btnPrimary } from "./FinanceSharedUI";
-import { formatYER, formatNumber, extractErrorMessage, safeArray } from "./FinanceHelpers";
+import { formatYER, formatNumber, extractErrorMessage } from "./FinanceHelpers";
 
 /* ── P&L Sub-tab ── */
 function PLSubTab() {

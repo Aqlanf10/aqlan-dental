@@ -96,8 +96,8 @@ export function TreasuriesTab() {
     try {
       setSubmitting(true);
       const url = confirmApprove.action === "approve"
-        ? `/api/finance-v3/vault-transfers/${confirmApprove.id}/approve`
-        : `/api/finance-v3/vault-transfers/${confirmApprove.id}/reject`;
+        ? `/api/vault-transfers/${confirmApprove.id}/approve`
+        : `/api/vault-transfers/${confirmApprove.id}/reject`;
       await api.post(url);
       toast.success(confirmApprove.action === "approve" ? "تم اعتماد التحويل" : "تم رفض التحويل");
       setConfirmApprove(null);

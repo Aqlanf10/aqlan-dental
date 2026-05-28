@@ -194,6 +194,10 @@ builder.Services.AddAuthorization(opts =>
     opts.AddPolicy("ReportsAccess", policy =>
         policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
 
+    // Finance write access: Admin + Accountant (used for POST/DELETE/PATCH in FinanceV3)
+    opts.AddPolicy("FinanceWrite", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
+
     // Doctors (any medical role) + Admin
     opts.AddPolicy("DoctorAccess", policy =>
         policy.RequireRole(
@@ -2072,6 +2076,202 @@ if (enableStartupDbMaintenance)
     catch (Exception ex)
     {
         logger.LogError(ex, "Failed to ensure Sprint 5 DoctorSchedules table");
+    }
+
+    // ── Finance V3: Ensure JournalEntries & JournalLines tables exist ────────
+    // These tables are required by the double-entry ledger migration. Without them,
+    // ALL FinanceV3 endpoints fail with PostgresException: relation does not exist.
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "JournalEntries" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "EntryNumber" character varying(100) NOT NULL,
+                "FinancialDocumentId" uuid NOT NULL,
+                "FinancialDocumentType" character varying(30) NOT NULL,
+                "Description" character varying(500) NOT NULL,
+                "EntryDate" date NOT NULL,
+                "BranchId" uuid NOT NULL,
+                "CashierSessionId" uuid NULL,
+                "TreasuryId" uuid NULL,
+                "PerformedBy" uuid NOT NULL,
+                "IsReversal" boolean NOT NULL DEFAULT FALSE,
+                "ReversalOfEntryId" uuid NULL,
+                "ReversedByEntryId" uuid NULL,
+                "IsPosted" boolean NOT NULL DEFAULT FALSE,
+                "PostedAt" timestamp with time zone NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+
+        // FKs for JournalEntries
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalEntries_Branches_BranchId') THEN
+                    ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_Branches_BranchId"
+                        FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE RESTRICT;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalEntries_CashierSessions_CashierSessionId') THEN
+                    ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_CashierSessions_CashierSessionId"
+                        FOREIGN KEY ("CashierSessionId") REFERENCES "CashierSessions"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalEntries_Treasuries_TreasuryId') THEN
+                    ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_Treasuries_TreasuryId"
+                        FOREIGN KEY ("TreasuryId") REFERENCES "Treasuries"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalEntries_Users_PerformedBy') THEN
+                    ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_Users_PerformedBy"
+                        FOREIGN KEY ("PerformedBy") REFERENCES "Users"("Id") ON DELETE RESTRICT;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalEntries_JournalEntries_ReversalOfEntryId') THEN
+                    ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_JournalEntries_ReversalOfEntryId"
+                        FOREIGN KEY ("ReversalOfEntryId") REFERENCES "JournalEntries"("Id") ON DELETE RESTRICT;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalEntries_JournalEntries_ReversedByEntryId') THEN
+                    ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_JournalEntries_ReversedByEntryId"
+                        FOREIGN KEY ("ReversedByEntryId") REFERENCES "JournalEntries"("Id") ON DELETE RESTRICT;
+                END IF;
+            END $$;
+        """);
+
+        // Indexes for JournalEntries
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_JournalEntries_EntryNumber" ON "JournalEntries" ("EntryNumber")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_BranchId" ON "JournalEntries" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_EntryDate" ON "JournalEntries" ("EntryDate")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_FinancialDocumentType" ON "JournalEntries" ("FinancialDocumentType")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_IsPosted" ON "JournalEntries" ("IsPosted")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_IsReversal" ON "JournalEntries" ("IsReversal")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_CashierSessionId" ON "JournalEntries" ("CashierSessionId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_TreasuryId" ON "JournalEntries" ("TreasuryId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_PerformedBy" ON "JournalEntries" ("PerformedBy")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_BranchId_EntryDate" ON "JournalEntries" ("BranchId", "EntryDate")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_ReversalOfEntryId" ON "JournalEntries" ("ReversalOfEntryId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalEntries_ReversedByEntryId" ON "JournalEntries" ("ReversedByEntryId")""");
+
+        // JournalLines table
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "JournalLines" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "JournalEntryId" uuid NOT NULL,
+                "AccountType" character varying(30) NOT NULL,
+                "AccountId" uuid NOT NULL,
+                "Debit" numeric(12,2) NOT NULL DEFAULT 0,
+                "Credit" numeric(12,2) NOT NULL DEFAULT 0,
+                "Description" character varying(500) NULL,
+                "BranchId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+
+        // FKs for JournalLines
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalLines_JournalEntries_JournalEntryId') THEN
+                    ALTER TABLE "JournalLines" ADD CONSTRAINT "FK_JournalLines_JournalEntries_JournalEntryId"
+                        FOREIGN KEY ("JournalEntryId") REFERENCES "JournalEntries"("Id") ON DELETE CASCADE;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalLines_Branches_BranchId') THEN
+                    ALTER TABLE "JournalLines" ADD CONSTRAINT "FK_JournalLines_Branches_BranchId"
+                        FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE RESTRICT;
+                END IF;
+            END $$;
+        """);
+
+        // Check constraint for Debit/Credit mutual exclusivity
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'CK_JournalLines_DebitCreditMutual') THEN
+                    ALTER TABLE "JournalLines" ADD CONSTRAINT "CK_JournalLines_DebitCreditMutual"
+                        CHECK ("Debit" >= 0 AND "Credit" >= 0 AND ("Debit" > 0 OR "Credit" > 0));
+                END IF;
+            END $$;
+        """);
+
+        // Indexes for JournalLines
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalLines_JournalEntryId" ON "JournalLines" ("JournalEntryId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalLines_AccountType" ON "JournalLines" ("AccountType")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalLines_AccountId" ON "JournalLines" ("AccountId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalLines_BranchId" ON "JournalLines" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_JournalLines_AccountType_AccountId" ON "JournalLines" ("AccountType", "AccountId")""");
+
+        // Ensure VaultTransfers.DepositSource column exists
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'VaultTransfers' AND column_name = 'DepositSource') THEN
+                    ALTER TABLE "VaultTransfers" ADD COLUMN "DepositSource" text NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Ensure CashierSessions.TreasuryId column exists
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'CashierSessions' AND column_name = 'TreasuryId') THEN
+                    ALTER TABLE "CashierSessions" ADD COLUMN "TreasuryId" uuid NULL;
+                END IF;
+            END $$;
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CashierSessions_TreasuryId" ON "CashierSessions" ("TreasuryId")""");
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_CashierSessions_Treasuries_TreasuryId') THEN
+                    ALTER TABLE "CashierSessions" ADD CONSTRAINT "FK_CashierSessions_Treasuries_TreasuryId"
+                        FOREIGN KEY ("TreasuryId") REFERENCES "Treasuries"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        // Ensure CashFlowTransactions.TreasuryId column exists
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "TreasuryId" uuid NULL
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_TreasuryId" ON "CashFlowTransactions" ("TreasuryId")""");
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_CashFlowTransactions_Treasuries_TreasuryId') THEN
+                    ALTER TABLE "CashFlowTransactions" ADD CONSTRAINT "FK_CashFlowTransactions_Treasuries_TreasuryId"
+                        FOREIGN KEY ("TreasuryId") REFERENCES "Treasuries"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        logger.LogInformation("Finance V3 JournalEntries/JournalLines tables and columns ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Finance V3 tables");
     }
 
     // NOTE: Conversation RecipientType/RecipientUserId columns, BookingRequests table,

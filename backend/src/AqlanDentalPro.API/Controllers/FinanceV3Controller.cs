@@ -3479,6 +3479,30 @@ public class FinanceV3Controller(
         }
     }
 
+    // ─── V4: Insurance Claim Settlement ────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/finance-v3/insurance-claims/{claimId}/settle
+    /// تسوية مطالبة تأمينية — تُنفّذ عندما تقوم شركة التأمين بتحويل المبلغ المستحق
+    /// (شيك أو حوالة بنكية) إلى العيادة. تنشئ قيداً محاسبياً مزدوجاً وتحدّث حالة المطالبة.
+    /// </summary>
+    [HttpPost("insurance-claims/{claimId:guid}/settle")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<InsuranceClaimDto>> SettleInsuranceClaim(
+        Guid claimId,
+        [FromBody] SettleInsuranceClaimRequest request)
+    {
+        try
+        {
+            var result = await financeService.SettleInsuranceClaimAsync(claimId, request);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

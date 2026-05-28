@@ -1462,6 +1462,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
     {
         var invoice = await db.Invoices
             .Include(i => i.Patient)
+            .Include(i => i.InsuranceClaim)
             .FirstOrDefaultAsync(i => i.Id == invoiceId);
 
         if (invoice == null)
@@ -1477,16 +1478,43 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (branchId == Guid.Empty)
             throw new ArgumentException("Cannot determine BranchId for invoice issuance entry — patient has no branch");
 
-        var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+        // V4: توجيه القيد المزدوج الشامل — تقسيم الجانب المدين بين المريض وشركة التأمين
+        var lines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>();
+
+        // الجانب الدائن: الإيرادات تزيد بإجمالي الفاتورة
+        lines.Add((JournalAccountType.Revenue, invoice.Id, 0m, invoice.TotalAmount,
+            $"إيراد فاتورة {invoice.InvoiceNumber}"));
+
+        // الجانب المدين: ذمم المريض (Co-pay فقط إذا وُجد تأمين)
+        var claim = invoice.InsuranceClaim;
+        if (claim != null)
         {
-            (JournalAccountType.PatientReceivable, invoice.PatientId, invoice.TotalAmount, 0m, $"إصدار فاتورة {invoice.InvoiceNumber} - ذمم مدينة"),
-            (JournalAccountType.Revenue, invoice.Id, 0m, invoice.TotalAmount, $"إيراد فاتورة {invoice.InvoiceNumber}")
-        };
+            // فاتورة تأمينية — تقسيم الجانب المدين
+            if (claim.PatientCoPay > 0)
+            {
+                lines.Add((JournalAccountType.PatientReceivable, invoice.PatientId, claim.PatientCoPay, 0m,
+                    $"إصدار فاتورة تأمين {invoice.InvoiceNumber} - تحمل المريض (Co-pay)"));
+            }
+
+            if (claim.CoveredAmount > 0)
+            {
+                lines.Add((JournalAccountType.InsuranceReceivable, claim.InsuranceCompanyId, claim.CoveredAmount, 0m,
+                    $"إصدار فاتورة تأمين {invoice.InvoiceNumber} - ذمم شركة التأمين"));
+            }
+        }
+        else
+        {
+            // فاتورة نقدية — المريض يتحمل المبلغ بالكامل
+            lines.Add((JournalAccountType.PatientReceivable, invoice.PatientId, invoice.TotalAmount, 0m,
+                $"إصدار فاتورة {invoice.InvoiceNumber} - ذمم مدينة"));
+        }
 
         var entry = await journalEntryService.CreateEntryAsync(
             documentType: FinancialDocumentType.Invoice,
             financialDocumentId: invoice.Id,
-            description: $"إصدار فاتورة {invoice.InvoiceNumber} - إثبات الإيراد المستحق",
+            description: claim != null
+                ? $"إصدار فاتورة تأمين {invoice.InvoiceNumber} - إثبات الإيراد المستحق (تحمل المريض: {claim.PatientCoPay:N2}، التأمين: {claim.CoveredAmount:N2})"
+                : $"إصدار فاتورة {invoice.InvoiceNumber} - إثبات الإيراد المستحق",
             entryDate: DateOnly.FromDateTime(invoice.CreatedAt),
             branchId: branchId,
             performedBy: invoice.UpdatedBy ?? invoice.CreatedBy ?? Guid.Empty,
@@ -1527,6 +1555,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // Auto-post the reversal
         reversal.IsPosted = true;
         reversal.PostedAt = DateTime.UtcNow;
+
+        // V4: رفض المطالبة التأمينية تلقائياً عند إلغاء الفاتورة
+        var claim = await db.Set<InsuranceClaim>()
+            .FirstOrDefaultAsync(c => c.InvoiceId == invoiceId && c.Status == ClaimStatus.Pending);
+        if (claim != null)
+        {
+            claim.Status = ClaimStatus.Rejected;
+            claim.RejectionReason = "إلغاء الفاتورة المرتبطة بالمطالبة.";
+            logger.LogInformation("Insurance claim {ClaimId} auto-rejected due to invoice {InvoiceId} cancellation", claim.Id, invoiceId);
+        }
+
         await db.SaveChangesAsync();
     }
 
@@ -1872,5 +1911,96 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 Status = i.Status,
                 PaymentId = i.PaymentId
             }).ToList()
+    };
+
+    // ─── Insurance Claim Settlement (V4) ──────────────────────────────
+
+    /// <summary>
+    /// تسوية مطالبة تأمينية — تُنفّذ عندما تقوم شركة التأمين بتحويل المبلغ المستحق
+    /// إلى العيادة. تنشئ قيداً محاسبياً مزدوجاً (مدين: الصندوق، دائن: ذمم التأمين)
+    /// وتحدّث حالة المطالبة إلى مسددة (Paid).
+    /// </summary>
+    public async Task<InsuranceClaimDto> SettleInsuranceClaimAsync(Guid claimId, SettleInsuranceClaimRequest request)
+    {
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var claim = await db.Set<InsuranceClaim>()
+                .Include(c => c.InsuranceCompany)
+                .Include(c => c.Invoice)
+                    .ThenInclude(i => i!.Patient)
+                .FirstOrDefaultAsync(c => c.Id == claimId && c.IsActive);
+
+            if (claim == null)
+                throw new ArgumentException("المطالبة التأمينية غير موجودة.");
+
+            if (claim.Status == ClaimStatus.Paid)
+                throw new ArgumentException("المطالبة التأمينية مسددة مسبقاً.");
+
+            if (claim.Status == ClaimStatus.Rejected)
+                throw new ArgumentException("لا يمكن تسوية مطالبة مرفوضة.");
+
+            // تحديد الفرع من فاتورة المطالبة
+            var branchId = claim.Invoice?.Patient?.BranchId ?? Guid.Empty;
+            if (branchId == Guid.Empty)
+                throw new ArgumentException("لم يتم تحديد فرع الفاتورة المرتبطة بالمطالبة.");
+
+            // تحديث حالة المطالبة
+            claim.Status = ClaimStatus.Paid;
+
+            // تحديث رصيد الصندوق — التسوية التأمينية عادة عبر تحويل بنكي
+            await UpdateTreasuryBalanceNoSaveAsync(branchId, claim.CoveredAmount, "bank_transfer");
+
+            // استرجاع الصندوق لاستخدامه في القيد المحاسبي
+            var treasury = await ResolveTreasuryNoSaveAsync(branchId, "bank_transfer");
+
+            // قيد التسوية: النقدية (مدين) تزيد، وذمم التأمين (دائن) تنقص
+            var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+            {
+                (JournalAccountType.Treasury, treasury.Id, claim.CoveredAmount, 0m,
+                    $"تحصيل مطالبة تأمين - صندوق {treasury.Name}"),
+                (JournalAccountType.InsuranceReceivable, claim.InsuranceCompanyId, 0m, claim.CoveredAmount,
+                    $"تسوية مطالبة تأمين - شركة: {claim.InsuranceCompany?.Name ?? claim.InsuranceCompanyId.ToString()}")
+            };
+
+            await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.Invoice,
+                financialDocumentId: claim.InvoiceId,
+                description: $"تسوية مطالبة تأمين - شركة: {claim.InsuranceCompany?.Name ?? claim.InsuranceCompanyId.ToString()} | {request.ReferenceNotes ?? ""}",
+                entryDate: DateOnly.FromDateTime(DateTime.UtcNow),
+                branchId: branchId,
+                performedBy: currentUser.UserId ?? Guid.Empty,
+                cashierSessionId: null,
+                treasuryId: treasury.Id,
+                lines: journalLines);
+
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+
+            logger.LogInformation("Insurance claim {ClaimId} settled: Treasury {TreasuryId} +{Amount:N2}, Company {CompanyId}",
+                claimId, treasury.Id, claim.CoveredAmount, claim.InsuranceCompanyId);
+
+            return MapInsuranceClaim(claim);
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static InsuranceClaimDto MapInsuranceClaim(InsuranceClaim claim) => new()
+    {
+        Id = claim.Id,
+        InvoiceId = claim.InvoiceId,
+        InsuranceCompanyId = claim.InsuranceCompanyId,
+        InsuranceCompanyName = claim.InsuranceCompany?.Name,
+        PatientId = claim.PatientId,
+        TotalAmount = claim.TotalAmount,
+        CoveredAmount = claim.CoveredAmount,
+        PatientCoPay = claim.PatientCoPay,
+        Status = claim.Status.ToString(),
+        RejectionReason = claim.RejectionReason
     };
 }

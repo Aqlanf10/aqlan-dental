@@ -21,6 +21,7 @@ public enum JournalAccountType
     Expense,           // مصروفات — Operational costs
     OwnerEquity,       // حقوق الملكية — Owner's equity (capital deposits, opening balances)
     OtherReceivable,   // ذمم مدينة أخرى — Classified external deposits awaiting allocation
+    InsuranceReceivable, // ذمم شركات التأمين — Amounts owed to the clinic by insurance companies
     ContraRevenue,     // إيرادات مقابلة — Deductions from revenue (discounts, allowances)
     ContraExpense      // مصروفات مقابلة — Reductions to expenses
 }

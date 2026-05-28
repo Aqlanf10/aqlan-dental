@@ -148,6 +148,15 @@ public sealed class CreateInvoiceRequestValidator : AbstractValidator<CreateInvo
             .GreaterThanOrEqualTo(0).WithMessage("مبلغ الضريبة يجب أن يكون صفراً أو أكثر")
             .When(x => x.TaxAmount.HasValue);
 
+        // V4: التحقق من نسبة الضريبة
+        RuleFor(x => x.TaxPercentage)
+            .InclusiveBetween(0, 100).WithMessage("نسبة الضريبة يجب أن تكون بين 0 و 100");
+
+        // V4: التحقق من نسبة التغطية المخصصة
+        RuleFor(x => x.CustomCoveragePercentage)
+            .InclusiveBetween(0, 100).WithMessage("نسبة التغطية التأمينية يجب أن تكون بين 0 و 100")
+            .When(x => x.CustomCoveragePercentage.HasValue);
+
         RuleFor(x => x.Notes)
             .MaximumLength(1000).WithMessage("الملاحظات يجب ألا تتجاوز 1000 حرف")
             .When(x => x.Notes != null);

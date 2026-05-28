@@ -54,4 +54,11 @@ public interface IFinanceService
     /// ويتحقق من اكتمال خطة التقسيط تلقائياً.
     /// </summary>
     Task<PaymentDto> PayInstallmentAsync(Guid installmentId, PayInstallmentRequest request);
+
+    /// <summary>
+    /// تسوية مطالبة تأمينية — تُنفّذ عندما تقوم شركة التأمين بتحويل المبلغ المستحق
+    /// (شيك أو حوالة بنكية) إلى العيادة. تنشئ قيداً محاسبياً مزدوجاً:
+    /// مدين: الصندوق (Treasury) يزيد، دائن: ذمم التأمين (InsuranceReceivable) تنقص.
+    /// </summary>
+    Task<InsuranceClaimDto> SettleInsuranceClaimAsync(Guid claimId, SettleInsuranceClaimRequest request);
 }

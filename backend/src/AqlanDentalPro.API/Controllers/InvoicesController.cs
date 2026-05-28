@@ -148,10 +148,54 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 .ToListAsync();
             invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
             var discount = req.DiscountAmount ?? 0;
-            var tax = req.TaxAmount ?? 0;
+
+            // V4: حساب الضريبة — إذا وُجدت نسبة ضريبية، نحسب المبلغ منها؛ وإلا نستخدم المبلغ الثابت
+            decimal tax;
+            if (req.TaxPercentage > 0)
+            {
+                tax = Math.Round(invoice.Subtotal * (req.TaxPercentage / 100m), 2);
+                invoice.TaxPercentage = req.TaxPercentage;
+            }
+            else
+            {
+                tax = req.TaxAmount ?? 0;
+                invoice.TaxPercentage = 0;
+            }
+
             invoice.DiscountAmount = discount;
             invoice.TaxAmount = tax;
             invoice.TotalAmount = invoice.Subtotal - discount + tax;
+
+            // V4: معالجة التأمين — إن وُجدت شركة تأمين، ننشئ مطالبة تأمينية
+            InsuranceClaim? claim = null;
+            if (req.InsuranceCompanyId.HasValue)
+            {
+                var insuranceCo = await db.Set<InsuranceCompany>()
+                    .FirstOrDefaultAsync(ic => ic.Id == req.InsuranceCompanyId.Value && ic.IsActive);
+
+                if (insuranceCo == null)
+                    return BadRequest(new { message = "شركة التأمين غير صالحة أو غير نشطة." });
+
+                // حساب نسبة التغطية (المخصصة أو الافتراضية للشركة)
+                decimal coveragePercent = req.CustomCoveragePercentage ?? insuranceCo.DefaultCoveragePercentage;
+                decimal coveredAmount = Math.Round(invoice.TotalAmount * (coveragePercent / 100m), 2);
+                decimal patientCoPay = invoice.TotalAmount - coveredAmount;
+
+                claim = new InsuranceClaim
+                {
+                    InvoiceId = invoice.Id,
+                    InsuranceCompanyId = insuranceCo.Id,
+                    PatientId = req.PatientId,
+                    TotalAmount = invoice.TotalAmount,
+                    CoveredAmount = coveredAmount,
+                    PatientCoPay = patientCoPay,
+                    Status = ClaimStatus.Pending
+                };
+                db.Set<InsuranceClaim>().Add(claim);
+
+                // ربط المطالبة بالفاتورة
+                invoice.InsuranceClaim = claim;
+            }
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();
@@ -171,9 +215,13 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 invoice.Subtotal,
                 invoice.DiscountAmount,
                 invoice.TaxAmount,
+                invoice.TaxPercentage,
                 invoice.TotalAmount,
                 invoice.Notes,
-                message = "تم إنشاء الفاتورة بنجاح"
+                InsuranceClaimId = claim?.Id,
+                CoveredAmount = claim?.CoveredAmount,
+                PatientCoPay = claim?.PatientCoPay,
+                message = claim != null ? "تم إنشاء الفاتورة التأمينية بنجاح" : "تم إنشاء الفاتورة بنجاح"
             });
         }
         catch

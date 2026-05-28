@@ -76,7 +76,12 @@ public class FinanceV3ControllerTests
     private static FinanceV3Controller BuildFinanceV3Controller(AppDbContext db, ICurrentUserService? currentUser = null)
     {
         currentUser ??= CreateAdminUser();
-        return new FinanceV3Controller(db, currentUser);
+        var financeService = new FinanceService(db, new Mock<ILogger<FinanceService>>().Object);
+        var audit = new Mock<IAuditService>().Object;
+        var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
+        var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
+        var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
+        return new FinanceV3Controller(db, currentUser, financeService, audit, journalEntryService, treasuryResolution, logger);
     }
 
     private static TreasuriesController BuildTreasuriesController(AppDbContext db, ICurrentUserService? currentUser = null, IAuditService? audit = null)
@@ -194,7 +199,7 @@ public class FinanceV3ControllerTests
 
         var balanceProp = dtoType.GetProperty("Balance");
         balanceProp.Should().NotBeNull("invoice DTO must have Balance field");
-        (decimal)balanceProp!.GetValue(invoiceDto)!.Should().Be(300m, "Balance = 500 - 200");
+        balanceProp!.GetValue(invoiceDto).Should().Be(300m, "Balance = 500 - 200");
 
         var issueDateProp = dtoType.GetProperty("IssueDate");
         issueDateProp.Should().NotBeNull("invoice DTO must have IssueDate field");
@@ -268,7 +273,7 @@ public class FinanceV3ControllerTests
         mock.Setup(u => u.IsAuthenticated).Returns(true);
         mock.Setup(u => u.BranchId).Returns((Guid?)null);
 
-        var controller = new FinanceV3Controller(db, mock.Object);
+        var controller = BuildFinanceV3Controller(db, mock.Object);
         var result = await controller.GetDashboard();
 
         result.Should().BeOfType<ForbidResult>("non-admin with null BranchId must be forbidden");
@@ -285,7 +290,7 @@ public class FinanceV3ControllerTests
         mock.Setup(u => u.IsAuthenticated).Returns(true);
         mock.Setup(u => u.BranchId).Returns(Guid.Empty);
 
-        var controller = new FinanceV3Controller(db, mock.Object);
+        var controller = BuildFinanceV3Controller(db, mock.Object);
         var result = await controller.GetDashboard();
 
         result.Should().BeOfType<ForbidResult>("non-admin with empty BranchId must be forbidden");
@@ -344,12 +349,12 @@ public class FinanceV3ControllerTests
         // Verify Balance field exists and is correct
         var balanceProp = dtoType.GetProperty("Balance");
         balanceProp.Should().NotBeNull("patient invoices DTO must have Balance field");
-        (decimal)balanceProp!.GetValue(dto)!.Should().Be(600m, "Balance = 1000 - 400");
+        balanceProp!.GetValue(dto).Should().Be(600m, "Balance = 1000 - 400");
 
         // Verify PaidAmount field
         var paidAmountProp = dtoType.GetProperty("PaidAmount");
         paidAmountProp.Should().NotBeNull("patient invoices DTO must have PaidAmount field");
-        (decimal)paidAmountProp!.GetValue(dto)!.Should().Be(400m);
+        paidAmountProp!.GetValue(dto).Should().Be(400m);
     }
 
     [Fact]
@@ -411,13 +416,13 @@ public class FinanceV3ControllerTests
         // Simulate frontend filter: i.Balance > 0
         var openInvoices = items.Where(i =>
         {
-            var balance = (decimal)i.GetType().GetProperty("Balance")!.GetValue(i)!;
+            var balance = Convert.ToDecimal(i.GetType().GetProperty("Balance")!.GetValue(i));
             return balance > 0;
         }).ToList();
 
         openInvoices.Should().HaveCount(1, "only partially paid invoice should appear");
         var openInv = openInvoices[0];
-        (decimal)openInv.GetType().GetProperty("Balance")!.GetValue(openInv)!.Should().Be(500m);
+        openInv.GetType().GetProperty("Balance")!.GetValue(openInv).Should().Be(500m);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -890,20 +895,20 @@ public class FinanceV3ControllerTests
         // Balance = TotalInvoiced(1000) - NetPayments(600 + -200 = 400) = 600
         var balanceProp = responseType.GetProperty("Balance");
         balanceProp.Should().NotBeNull();
-        (decimal)balanceProp!.GetValue(response)!.Should().Be(600m,
+        balanceProp!.GetValue(response).Should().Be(600m,
             "Balance = TotalInvoiced - NetPayments; refund increases outstanding");
 
         var totalInvoicedProp = responseType.GetProperty("TotalInvoiced");
         totalInvoicedProp.Should().NotBeNull();
-        (decimal)totalInvoicedProp!.GetValue(response)!.Should().Be(1000m);
+        totalInvoicedProp!.GetValue(response).Should().Be(1000m);
 
         var totalPaidProp = responseType.GetProperty("TotalPaid");
         totalPaidProp.Should().NotBeNull();
-        (decimal)totalPaidProp!.GetValue(response)!.Should().Be(600m);
+        totalPaidProp!.GetValue(response).Should().Be(600m);
 
         var totalRefundsProp = responseType.GetProperty("TotalRefunds");
         totalRefundsProp.Should().NotBeNull();
-        (decimal)totalRefundsProp!.GetValue(response)!.Should().Be(200m);
+        totalRefundsProp!.GetValue(response).Should().Be(200m);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

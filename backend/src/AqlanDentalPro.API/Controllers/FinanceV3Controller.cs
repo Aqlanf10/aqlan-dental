@@ -931,7 +931,7 @@ public class FinanceV3Controller(
                 && !l.JournalEntry.IsReversal
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
             .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         // Reversal inflows: Treasury Debit lines from reversal entries of same doc type
@@ -942,7 +942,7 @@ public class FinanceV3Controller(
                 && l.JournalEntry.IsReversal
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
+                && (!branchId.HasValue || l.BranchId == branchId.Value))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         return outflows - reversalInflows;
@@ -1515,7 +1515,8 @@ public class FinanceV3Controller(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? method = null,
         [FromQuery] string? fromDate = null,
-        [FromQuery] string? toDate = null)
+        [FromQuery] string? toDate = null,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {
@@ -1588,7 +1589,8 @@ public class FinanceV3Controller(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? status = null,
         [FromQuery] string? fromDate = null,
-        [FromQuery] string? toDate = null)
+        [FromQuery] string? toDate = null,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {
@@ -1658,7 +1660,8 @@ public class FinanceV3Controller(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? patientId = null,
-        [FromQuery] string? status = null)
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {
@@ -1779,7 +1782,8 @@ public class FinanceV3Controller(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] Guid? supplierId = null,
-        [FromQuery] string? status = null)
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {
@@ -1914,7 +1918,8 @@ public class FinanceV3Controller(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? category = null,
-        [FromQuery] string? approvalStatus = null)
+        [FromQuery] string? approvalStatus = null,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {

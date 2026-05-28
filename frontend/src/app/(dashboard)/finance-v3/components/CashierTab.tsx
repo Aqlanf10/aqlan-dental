@@ -137,9 +137,10 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             { key: "closingTime", label: "وقت الإقفال", render: (r) => safeFormatDateTime(r.closingTime ?? "") },
             { key: "openingBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.openingBalance ?? 0) },
             { key: "shortageOrSurplus", label: "عجز/فائض", render: (r) => {
-              if ((r.shortageOrSurplus ?? null) == null) return "—";
-              if (r.shortageOrSurplus < 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(Math.abs(r.shortageOrSurplus))}</span>;
-              if (r.shortageOrSurplus > 0) return <span style={{ color: tokens.successBorder, fontWeight: 700 }}>فائض {formatYER(r.shortageOrSurplus)}</span>;
+              const val = r.shortageOrSurplus ?? null;
+              if (val == null) return "—";
+              if (val < 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(Math.abs(val))}</span>;
+              if (val > 0) return <span style={{ color: tokens.successBorder, fontWeight: 700 }}>فائض {formatYER(val)}</span>;
               return <span style={{ color: tokens.successBorder }}>✓</span>;
             }},
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },

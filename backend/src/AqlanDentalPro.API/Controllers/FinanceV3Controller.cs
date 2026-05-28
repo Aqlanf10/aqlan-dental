@@ -3457,6 +3457,28 @@ public class FinanceV3Controller(
         }
     }
 
+    /// <summary>
+    /// POST /api/finance-v3/installments/{installmentId}/pay
+    /// يسدد قسط تقسيط مع تطبيق قفل تزامني لمنع السداد المزدوج.
+    /// ينشئ سند قبض، يوجّه قيد محاسبي مزدوج، ويحدّث حالة القسط والخطة.
+    /// </summary>
+    [HttpPost("installments/{installmentId:guid}/pay")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<ActionResult<PaymentDto>> PayInstallment(
+        Guid installmentId,
+        [FromBody] PayInstallmentRequest request)
+    {
+        try
+        {
+            var payment = await financeService.PayInstallmentAsync(installmentId, request);
+            return Ok(payment);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>

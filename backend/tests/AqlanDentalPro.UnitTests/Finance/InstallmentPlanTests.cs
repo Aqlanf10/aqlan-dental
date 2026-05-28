@@ -490,4 +490,206 @@ public class InstallmentPlanTests
         result.Installments.Should().HaveCount(1);
         result.Installments[0].Amount.Should().Be(40_000m); // 50000 - 10000
     }
+
+    // ─── Payment Execution Tests ────────────────────────────────────────
+
+    private static (Guid planId, List<Guid> installmentIds) SeedInstallmentPlan(
+        AppDbContext db, FinanceService service, Guid branchId, Guid patientId,
+        decimal totalAmount = 60_000m, decimal downPayment = 0, int months = 3)
+    {
+        var contractId = SeedContract(db, patientId, totalAmount);
+        var plan = service.GenerateInstallmentPlanAsync(new CreateInstallmentPlanRequest
+        {
+            ContractId = contractId,
+            DownPayment = downPayment,
+            NumberOfMonths = months,
+            StartDate = DateTime.Today
+        }).GetAwaiter().GetResult();
+
+        return (plan.Id, plan.Installments.Select(i => i.Id).ToList());
+    }
+
+    private static void SeedCashierSession(AppDbContext db, Guid cashierId, Guid branchId)
+    {
+        // Check if session already exists for this cashier
+        var existing = db.CashierSessions.FirstOrDefault(s => s.CashierId == cashierId && s.Status == SessionStatus.Open);
+        if (existing != null) return;
+
+        db.CashierSessions.Add(new CashierSession
+        {
+            SessionNumber = $"CS-{DateTime.UtcNow:yyyyMMdd}-01",
+            CashierId = cashierId,
+            BranchId = branchId,
+            OpeningTime = DateTime.UtcNow.AddHours(-2),
+            OpeningBalance = 100_000m,
+            ExpectedClosingCash = 100_000m,
+            ExpectedClosingCard = 0,
+            ExpectedClosingBank = 0,
+            Status = SessionStatus.Open
+        });
+        db.SaveChanges();
+    }
+
+    private static void SeedTreasury(AppDbContext db, Guid branchId)
+    {
+        if (db.Treasuries.Any(t => t.BranchId == branchId)) return;
+
+        db.Treasuries.Add(new Treasury
+        {
+            Name = "الصندوق الرئيسي",
+            BranchId = branchId,
+            Type = TreasuryType.Vault,
+            Balance = 500_000m
+        });
+        db.SaveChanges();
+    }
+
+    [Fact]
+    public async Task PayInstallment_CreatesPayment_WithCorrectAmount()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateService(db);
+        var patientId = SeedPatient(db, branchId);
+        SeedCashierSession(db, cashierId, branchId);
+        SeedTreasury(db, branchId);
+
+        var (_, installmentIds) = SeedInstallmentPlan(db, service, branchId, patientId, 60_000m, 0, 3);
+
+        var result = await service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest
+        {
+            PaymentMethod = "cash"
+        });
+
+        result.Should().NotBeNull();
+        result.Amount.Should().Be(20_000m); // 60000 / 3
+        result.PatientId.Should().Be(patientId);
+        result.ReceiptNumber.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task PayInstallment_UpdatesInstallmentStatus_ToPaid()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateService(db);
+        var patientId = SeedPatient(db, branchId);
+        SeedCashierSession(db, cashierId, branchId);
+        SeedTreasury(db, branchId);
+
+        var (_, installmentIds) = SeedInstallmentPlan(db, service, branchId, patientId, 60_000m, 0, 3);
+
+        await service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        var installment = await db.Installments.FindAsync(installmentIds[0]);
+        installment!.Status.Should().Be(InstallmentStatus.Paid);
+        installment.PaidDate.Should().NotBeNull();
+        installment.PaymentId.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task PayInstallment_Rejects_DoublePayment()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateService(db);
+        var patientId = SeedPatient(db, branchId);
+        SeedCashierSession(db, cashierId, branchId);
+        SeedTreasury(db, branchId);
+
+        var (_, installmentIds) = SeedInstallmentPlan(db, service, branchId, patientId, 60_000m, 0, 3);
+
+        // First payment succeeds
+        await service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        // Second payment on same installment should be rejected
+        var act = () => service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*سداد هذا القسط مسبقاً*");
+    }
+
+    [Fact]
+    public async Task PayInstallment_Throws_WhenInstallmentNotFound()
+    {
+        await using var db = CreateContext();
+        var (service, _, _) = CreateService(db);
+
+        var act = () => service.PayInstallmentAsync(Guid.NewGuid(), new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*القسط غير موجود*");
+    }
+
+    [Fact]
+    public async Task PayInstallment_MarksPlanCompleted_WhenAllInstallmentsPaid()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateService(db);
+        var patientId = SeedPatient(db, branchId);
+        SeedCashierSession(db, cashierId, branchId);
+        SeedTreasury(db, branchId);
+
+        var (planId, installmentIds) = SeedInstallmentPlan(db, service, branchId, patientId, 60_000m, 0, 3);
+
+        // Pay all 3 installments
+        await service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest { PaymentMethod = "cash" });
+        await service.PayInstallmentAsync(installmentIds[1], new PayInstallmentRequest { PaymentMethod = "cash" });
+        await service.PayInstallmentAsync(installmentIds[2], new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        var plan = await db.InstallmentPlans.FindAsync(planId);
+        plan!.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PayInstallment_DoesNotMarkPlanCompleted_WhenInstallmentsRemain()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateService(db);
+        var patientId = SeedPatient(db, branchId);
+        SeedCashierSession(db, cashierId, branchId);
+        SeedTreasury(db, branchId);
+
+        var (planId, installmentIds) = SeedInstallmentPlan(db, service, branchId, patientId, 60_000m, 0, 3);
+
+        // Pay only first installment
+        await service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        var plan = await db.InstallmentPlans.FindAsync(planId);
+        plan!.IsCompleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PayInstallment_CreatesCashFlowTransaction()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateService(db);
+        var patientId = SeedPatient(db, branchId);
+        SeedCashierSession(db, cashierId, branchId);
+        SeedTreasury(db, branchId);
+
+        var (_, installmentIds) = SeedInstallmentPlan(db, service, branchId, patientId, 60_000m, 0, 3);
+        var payment = await service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        var cashflow = await db.CashFlowTransactions
+            .FirstOrDefaultAsync(t => t.ReferenceId == Guid.Parse(payment.Id.ToString()!) && t.Category == FinancialCategory.Installment);
+
+        cashflow.Should().NotBeNull();
+        cashflow!.Type.Should().Be(TransactionType.Inflow);
+        cashflow.Amount.Should().Be(20_000m);
+    }
+
+    [Fact]
+    public async Task PayInstallment_CreatesReceipt()
+    {
+        await using var db = CreateContext();
+        var (service, branchId, cashierId) = CreateService(db);
+        var patientId = SeedPatient(db, branchId);
+        SeedCashierSession(db, cashierId, branchId);
+        SeedTreasury(db, branchId);
+
+        var (_, installmentIds) = SeedInstallmentPlan(db, service, branchId, patientId, 60_000m, 0, 3);
+        var payment = await service.PayInstallmentAsync(installmentIds[0], new PayInstallmentRequest { PaymentMethod = "cash" });
+
+        var receipt = await db.Receipts.FirstOrDefaultAsync(r => r.PaymentId == Guid.Parse(payment.Id.ToString()!));
+        receipt.Should().NotBeNull();
+        receipt!.ReceiptNumber.Should().NotBeNullOrEmpty();
+    }
 }

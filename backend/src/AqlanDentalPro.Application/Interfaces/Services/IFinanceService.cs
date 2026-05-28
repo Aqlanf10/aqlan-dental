@@ -47,4 +47,11 @@ public interface IFinanceService
     /// يسترجع خطة التقسيط المرتبطة بعقد معين مع جميع الأقساط المجدولة.
     /// </summary>
     Task<InstallmentPlanDto> GetInstallmentPlanByContractIdAsync(Guid contractId);
+
+    /// <summary>
+    /// يسدد قسط تقسيط مع تطبيق قفل تزامني لمنع السداد المزدوج.
+    /// ينشئ سند قبض، يحديث حالة القسط، يوجّه قيد محاسبي مزدوج،
+    /// ويتحقق من اكتمال خطة التقسيط تلقائياً.
+    /// </summary>
+    Task<PaymentDto> PayInstallmentAsync(Guid installmentId, PayInstallmentRequest request);
 }

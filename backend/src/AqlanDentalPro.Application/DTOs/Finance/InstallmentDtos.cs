@@ -54,3 +54,17 @@ public class InstallmentDto
     /// <summary>معرّف سند القبض المرتبط بسداد هذا القسط (إذا تم السداد).</summary>
     public Guid? PaymentId { get; set; }
 }
+
+/// <summary>
+/// طلب سداد قسط تقسيط.
+/// يتضمن طريقة الدفع والصندوق المستلم وملاحظات اختيارية.
+/// النظام يطبق قفلاً تزامنياً (Transaction) لمنع السداد المزدوج.
+/// </summary>
+public class PayInstallmentRequest
+{
+    /// <summary>طريقة الدفع (cash, card, bank_transfer).</summary>
+    public string PaymentMethod { get; set; } = "cash";
+
+    /// <summary>ملاحظات اختيارية على عملية السداد.</summary>
+    public string? Notes { get; set; }
+}

@@ -14,5 +14,6 @@ public enum FinancialCategory
     GeneralCost,        // تكاليف عامة
     InternalTransfer,   // تحويل سيولة داخلي بين الخزائن
     SalaryAdvance,      // سلفة موظف
+    Installment,        // سداد قسط تقسيط
     Reversal            // قيد عكسي (reversal of a previous transaction)
 }

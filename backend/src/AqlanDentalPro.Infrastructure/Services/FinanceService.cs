@@ -1696,6 +1696,158 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         return MapInstallmentPlan(plan);
     }
 
+    public async Task<PaymentDto> PayInstallmentAsync(Guid installmentId, PayInstallmentRequest request)
+    {
+        // 1. Transaction Lock — قفل تزامني صلب لمنع السداد المزدوج (Double-Spending)
+        // أي طلبين متزامنين لنفس القسط سيحصلان بالتتابع، والثاني سيرفض لأن الحالة تغيرت
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            var installment = await db.Installments
+                .Include(i => i.InstallmentPlan)
+                    .ThenInclude(p => p.Patient)
+                .FirstOrDefaultAsync(i => i.Id == installmentId && i.IsActive);
+
+            if (installment == null)
+                throw new ArgumentException("القسط غير موجود.");
+
+            // 2. Concurrency / Double-Click Protection — حماية من السداد المزدوج
+            if (installment.Status == InstallmentStatus.Paid)
+                throw new ArgumentException("تم سداد هذا القسط مسبقاً. العملية مرفوضة.");
+
+            if (installment.Status == InstallmentStatus.Overdue)
+                throw new ArgumentException("القسط متأخر. يرجى تسويته من خلال قسم الأقساط المتأخرة أولاً.");
+
+            // 3. Require active open cashier session — نفس نمط CreatePaymentAsync
+            var userId = currentUser.UserId ?? Guid.Empty;
+            var activeSession = await db.CashierSessions
+                .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+            if (activeSession == null)
+                throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل سداد الأقساط.");
+
+            // Hotfix: Resolve branch from active cashier session
+            var paymentBranchId = activeSession.BranchId;
+            if (paymentBranchId == Guid.Empty && currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+                paymentBranchId = currentUser.BranchId.Value;
+            if (paymentBranchId == Guid.Empty)
+                throw new ArgumentException("لم يتم تحديد فرع الوردية. يرجى إغلاق الوردية وفتح وردية جديدة بفرع صحيح.");
+
+            // 4. Generate receipt number
+            var receiptNumber = await GenerateReceiptNumberAsync();
+
+            // 5. Create Payment Record — سند قبض
+            var payment = new Payment
+            {
+                PatientId = installment.InstallmentPlan.PatientId,
+                ContractId = installment.InstallmentPlan.ContractId,
+                Amount = installment.Amount,
+                PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+                PaymentMethod = request.PaymentMethod ?? "cash",
+                ServiceDescription = $"سداد قسط تقويم - القسط {installment.DueDate:yyyy/MM}",
+                BranchId = paymentBranchId,
+                ReceivedBy = currentUser.UserId,
+                ReceiptNumber = receiptNumber,
+                Notes = request.Notes
+            };
+            db.Payments.Add(payment);
+
+            // Auto-create receipt record
+            db.Receipts.Add(new Receipt
+            {
+                PaymentId = payment.Id,
+                ReceiptNumber = receiptNumber,
+                PrintedBy = currentUser.UserId
+            });
+
+            // 6. Create central ledger cashflow transaction (Inflow — Installment)
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-INST-{payment.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.Installment,
+                Amount = installment.Amount,
+                PaymentMethod = request.PaymentMethod ?? "cash",
+                TransactionDate = payment.PaymentDate,
+                ReferenceId = payment.Id,
+                ReferenceNumber = payment.ReceiptNumber,
+                Description = $"سداد قسط تقويم - سند قبض {payment.ReceiptNumber}",
+                PerformedBy = userId,
+                BranchId = paymentBranchId,
+                CashierSessionId = activeSession.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+
+            // 7. Update Installment State — تحديث حالة القسط
+            installment.Status = InstallmentStatus.Paid;
+            installment.PaidDate = DateTime.UtcNow;
+            installment.PaymentId = payment.Id;
+
+            // 8. Update Treasury Balance (no-save — within same transaction)
+            await UpdateTreasuryBalanceNoSaveAsync(paymentBranchId, installment.Amount, request.PaymentMethod);
+
+            // 9. Double-Entry Journal — التوجيه المحاسبي المزدوج
+            // الجانب المدين: الصندوق (Treasury) يرتفع
+            // الجانب الدائن: ذمم المرضى (PatientReceivable) تنخفض
+            var treasury = await ResolveTreasuryNoSaveAsync(paymentBranchId, request.PaymentMethod ?? "cash");
+            var patientName = installment.InstallmentPlan.Patient.FirstName + " " + installment.InstallmentPlan.Patient.LastName;
+
+            var journalLines = new List<(JournalAccountType, Guid, decimal, decimal, string?)>
+            {
+                (JournalAccountType.Treasury, treasury.Id, installment.Amount, 0m,
+                    $"تحصيل قسط تقويم - سند قبض {receiptNumber}"),
+                (JournalAccountType.PatientReceivable, installment.InstallmentPlan.PatientId, 0m, installment.Amount,
+                    $"سداد قسط مريض {patientName} - سند قبض {receiptNumber}")
+            };
+
+            var journalEntry = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.InstallmentPayment,
+                financialDocumentId: payment.Id,
+                description: $"سداد قسط تقويم - المريض: {patientName} - سند قبض {receiptNumber}",
+                entryDate: payment.PaymentDate,
+                branchId: paymentBranchId,
+                performedBy: userId,
+                cashierSessionId: activeSession.Id,
+                treasuryId: treasury.Id,
+                lines: journalLines);
+
+            // Auto-post the journal entry
+            journalEntry.IsPosted = true;
+            journalEntry.PostedAt = DateTime.UtcNow;
+
+            // 10. Check Plan Completion — التحقق من اكتمال الخطة
+            var hasPending = await db.Installments
+                .AnyAsync(i => i.InstallmentPlanId == installment.InstallmentPlanId
+                    && i.Id != installmentId
+                    && i.Status != InstallmentStatus.Paid
+                    && i.IsActive);
+            if (!hasPending)
+            {
+                installment.InstallmentPlan.IsCompleted = true;
+                logger.LogInformation("Installment plan {PlanId} marked as completed — all installments paid",
+                    installment.InstallmentPlanId);
+            }
+
+            // Save all changes atomically within the transaction
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+
+            // Post-commit: Load navigations for mapping
+            await db.Entry(payment).Reference(p => p.Patient).LoadAsync();
+
+            logger.LogInformation("Installment {InstallmentId} paid: Payment {PaymentId}, Receipt {ReceiptNumber}, Amount {Amount:N2}",
+                installmentId, payment.Id, receiptNumber, installment.Amount);
+
+            return MapPayment(payment);
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            throw;
+        }
+    }
+
     // ─── Installment Mapping ────────────────────────────────────────────
 
     private static InstallmentPlanDto MapInstallmentPlan(InstallmentPlan plan) => new()

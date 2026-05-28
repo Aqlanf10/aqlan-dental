@@ -142,7 +142,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             <h4 className="text-sm font-bold" style={{ color: tokens.warningBorder }}>لا توجد وردية مفتوحة</h4>
           </div>
           <p className="text-xs" style={{ color: tokens.warningText }}>
-            يجب فتح وردية كاشير قبل تسجيل أي مدفوعات. اضغط على "فتح وردية" أعلاه لبدء الدورة النقدية.
+            يجب فتح وردية كاشير قبل تسجيل أي مدفوعات. اضغط على &ldquo;فتح وردية&rdquo; أعلاه لبدء الدورة النقدية.
           </p>
         </div>
       )}

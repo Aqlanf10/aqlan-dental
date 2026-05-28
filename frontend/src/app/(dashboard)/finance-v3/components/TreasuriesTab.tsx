@@ -71,12 +71,13 @@ export function TreasuriesTab() {
       setShowCreateTreasury(false);
       setTName(""); setTType("Vault"); setTBalance("0");
       fetchData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const msg = extractErrorMessage(err, "فشل في إنشاء الخزينة");
+      const axiosErr = err as { response?: { status?: number } } | null;
       // Common errors: unique constraint, admin-only, no branch
       if (msg.includes("unique") || msg.includes("مكرر") || msg.includes("IX_Treasuries")) {
         toast.error("يوجد خزينة بنفس الاسم والنوع في هذا الفرع. يرجى تغيير الاسم أو النوع.");
-      } else if (msg.includes("Admin") || msg.includes("مسؤول") || msg.includes("403") || err?.response?.status === 403) {
+      } else if (msg.includes("Admin") || msg.includes("مسؤول") || msg.includes("403") || axiosErr?.response?.status === 403) {
         toast.error("فقط المسؤول يمكنه إنشاء خزائن جديدة.");
       } else if (msg.includes("فرع") || msg.includes("branch")) {
         toast.error("لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح.");

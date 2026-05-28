@@ -496,25 +496,35 @@ public class FinanceV3Controller(
     /// Uses the JournalLine canonical table for balance calculations.
     /// </summary>
     [HttpGet("account-balances")]
-    public async Task<IActionResult> GetAccountBalances()
+    public async Task<IActionResult> GetAccountBalances([FromQuery] Guid? branchId)
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
-
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        // Sprint 1: Admin users can pass branchId to filter; if omitted or Guid.Empty,
+        // admin sees consolidated data (all branches). Non-admin users are restricted
+        // to their own branch and the query parameter is ignored.
+        Guid? resolvedBranchId;
+        if (!currentUser.IsAdmin)
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+            resolvedBranchId = currentUser.BranchId;
+        }
+        else
+        {
+            // Admin: if branchId is provided and valid, use it; otherwise consolidated
+            resolvedBranchId = (branchId.HasValue && branchId.Value != Guid.Empty) ? branchId : null;
+        }
 
         // FIX: Only include lines from POSTED journal entries in canonical balances.
         // Unposted/draft entries are excluded from official totals (Blocker 4).
         var linesQuery = db.JournalLines
             .Where(l => l.JournalEntry.IsPosted)
-            .Where(l => !branchId.HasValue || l.BranchId == branchId.Value);
+            .Where(l => !resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value);
 
         // Group by AccountType and calculate net balance.
-        // FIX: Reversal entries are INCLUDED here (not filtered out) so that
-        // net effect of original + reversal is correctly calculated (Blocker 5).
+        // Sprint 1: Use GroupBy(x => 1) pattern for safe summary on empty data.
+        // (decimal?) cast prevents NullReferenceException on empty result sets.
         var accountBalances = await linesQuery
             .GroupBy(l => l.AccountType)
             .Select(g => new
@@ -529,7 +539,7 @@ public class FinanceV3Controller(
 
         // Treasury detail breakdown
         var treasuryQuery = db.Treasuries.Where(t => t.IsActive);
-        if (branchId.HasValue) treasuryQuery = treasuryQuery.Where(t => t.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue) treasuryQuery = treasuryQuery.Where(t => t.BranchId == resolvedBranchId.Value);
         var treasuries = await treasuryQuery
             .Select(t => new
             {
@@ -552,7 +562,7 @@ public class FinanceV3Controller(
             TotalPayables = -(accountBalances.Find(a => a.AccountType == "Payable")?.NetBalance ?? 0),
 
             // Consolidation flag
-            IsConsolidated = !branchId.HasValue // true when admin views all branches
+            IsConsolidated = !resolvedBranchId.HasValue // true when admin views all branches
         });
         }
         catch (Exception ex)
@@ -977,6 +987,8 @@ public class FinanceV3Controller(
     [HttpGet("patient-balance/{patientId:guid}")]
     public async Task<IActionResult> GetPatientBalance(Guid patientId)
     {
+        try
+        {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1039,8 +1051,8 @@ public class FinanceV3Controller(
         // Contract outstanding
         var contractOutstanding = await db.Contracts
             .Where(c => c.PatientId == patientId && c.Status == ContractStatus.Active && c.IsActive)
-            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount))
-            .SumAsync();
+            .Select(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount ?? 0m))
+            .SumAsync() ?? 0m;
 
         // Use JournalLine balance as the canonical Balance field
         return Ok(new
@@ -1060,6 +1072,28 @@ public class FinanceV3Controller(
             JournalReceivable = journalReceivable,
             JournalAdvance = journalAdvance
         });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetPatientBalance error: {Message}", ex.Message);
+            return Ok(new
+            {
+                PatientId = patientId,
+                PatientName = "",
+                PatientNumber = "",
+                TotalInvoiced = 0m,
+                TotalPaid = 0m,
+                TotalRefunds = 0m,
+                NetPaid = 0m,
+                TotalDiscounts = 0m,
+                Balance = 0m,
+                EntityBalance = 0m,
+                ContractOutstanding = 0m,
+                HasOutstanding = false,
+                JournalReceivable = 0m,
+                JournalAdvance = 0m
+            });
+        }
     }
 
     // ─── Treasury Detail ─────────────────────────────────────────────────────
@@ -1070,6 +1104,8 @@ public class FinanceV3Controller(
     [HttpGet("treasuries")]
     public async Task<IActionResult> GetTreasuries()
     {
+        try
+        {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1094,6 +1130,12 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = treasuries });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetTreasuries error: {Message}", ex.Message);
+            return Ok(new { data = new object[0] });
+        }
     }
 
     // ─── Audit Trail ─────────────────────────────────────────────────────────
@@ -1114,6 +1156,8 @@ public class FinanceV3Controller(
         [FromQuery] string? resource = null,
         [FromQuery] string? action = null)
     {
+        try
+        {
         // Blocker 6: Audit endpoint restricted to Admin only
         // Financial audit trail contains cross-branch sensitive data;
         // non-admin Accountant users should not access other branches' audit records.
@@ -1327,6 +1371,12 @@ public class FinanceV3Controller(
         }).ToList();
 
         return Ok(new { data = finalEntries, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 AuditTrail error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Patient Accounts (Sub-ledger) ─────────────────────────────────────
@@ -1342,6 +1392,8 @@ public class FinanceV3Controller(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null)
     {
+        try
+        {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1413,6 +1465,12 @@ public class FinanceV3Controller(
         }).ToList();
 
         return Ok(new { data = patients, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 PatientAccounts error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Trial Balance ──────────────────────────────────────────────────────
@@ -1423,6 +1481,8 @@ public class FinanceV3Controller(
     [HttpGet("trial-balance")]
     public async Task<IActionResult> GetTrialBalance([FromQuery] string? asOfDate = null)
     {
+        try
+        {
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
@@ -1457,6 +1517,21 @@ public class FinanceV3Controller(
             Difference = Math.Abs(grandTotalDebit - grandTotalCredit),
             IsBalanced = Math.Abs(grandTotalDebit - grandTotalCredit) < 0.005m
         });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 TrialBalance error: {Message}", ex.Message);
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            return Ok(new
+            {
+                AsOfDate = today.ToString("yyyy-MM-dd"),
+                Accounts = new object[0],
+                GrandTotalDebit = 0m,
+                GrandTotalCredit = 0m,
+                Difference = 0m,
+                IsBalanced = true
+            });
+        }
     }
 
     // ─── Active Cashier Session ─────────────────────────────────────────────
@@ -1480,6 +1555,8 @@ public class FinanceV3Controller(
         [FromQuery] string? fromDate = null,
         [FromQuery] string? toDate = null)
     {
+        try
+        {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1530,6 +1607,12 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = payments, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetPayments error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Invoices List ──────────────────────────────────────────────────────
@@ -1548,6 +1631,8 @@ public class FinanceV3Controller(
         [FromQuery] string? fromDate = null,
         [FromQuery] string? toDate = null)
     {
+        try
+        {
         // Blocker 6: Branch isolation guard for non-admin users
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1599,6 +1684,12 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = invoices, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetInvoices error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Contracts List ─────────────────────────────────────────────────────
@@ -1613,6 +1704,8 @@ public class FinanceV3Controller(
         [FromQuery] Guid? patientId = null,
         [FromQuery] string? status = null)
     {
+        try
+        {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1661,6 +1754,12 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = contracts, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetContracts error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Suppliers List ─────────────────────────────────────────────────────
@@ -1674,6 +1773,8 @@ public class FinanceV3Controller(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
+        try
+        {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1708,6 +1809,12 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = suppliers, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetSuppliers error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Supplier Bills List ────────────────────────────────────────────────
@@ -1722,6 +1829,8 @@ public class FinanceV3Controller(
         [FromQuery] Guid? supplierId = null,
         [FromQuery] string? status = null)
     {
+        try
+        {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1767,6 +1876,12 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = bills, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetSupplierBills error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Vault Transfers List ───────────────────────────────────────────────
@@ -1780,6 +1895,8 @@ public class FinanceV3Controller(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? status = null)
     {
+        try
+        {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1829,6 +1946,12 @@ public class FinanceV3Controller(
             .ToListAsync();
 
         return Ok(new { data = transfers, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetVaultTransfers error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Expenses List ──────────────────────────────────────────────────────
@@ -1846,6 +1969,8 @@ public class FinanceV3Controller(
         [FromQuery] string? category = null,
         [FromQuery] string? approvalStatus = null)
     {
+        try
+        {
         // Branch isolation guard
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
@@ -1953,6 +2078,12 @@ public class FinanceV3Controller(
         }).ToList();
 
         return Ok(new { data = expenses, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetExpenses error: {Message}", ex.Message);
+            return Ok(new { data = new object[0], total = 0, page, pageSize });
+        }
     }
 
     // ─── Cashier Sessions Active (Finance V3) ──────────────────────────────

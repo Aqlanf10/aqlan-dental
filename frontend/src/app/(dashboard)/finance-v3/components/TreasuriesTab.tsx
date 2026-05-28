@@ -135,10 +135,10 @@ export function TreasuriesTab() {
             {treasuries.map((t) => (
               <div key={t.id} className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{t.name}</h4>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{TREASURY_TYPES.find((x) => x.value === t.type)?.label ?? t.type}</span>
+                  <h4 className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{t.name ?? ""}</h4>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{TREASURY_TYPES.find((x) => x.value === (t.type ?? ""))?.label ?? t.type}</span>
                 </div>
-                <p className="text-lg font-bold mb-1" style={{ color: tokens.successBorder }}>{formatYER(t.balance)}</p>
+                <p className="text-lg font-bold mb-1" style={{ color: tokens.successBorder }}>{formatYER(t.balance ?? 0)}</p>
                 <button onClick={() => handleRecalculate(t.id)} className="text-xs flex items-center gap-1" style={{ color: tokens.brand }}>
                   <Calculator className="w-3 h-3" /> إعادة حساب
                 </button>
@@ -159,12 +159,12 @@ export function TreasuriesTab() {
             keyField="id"
             data={transfers}
             columns={[
-              { key: "sourceTreasuryName", label: "من" },
-              { key: "destinationTreasuryName", label: "إلى" },
-              { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
+              { key: "sourceTreasuryName", label: "من", render: (r) => r.sourceTreasuryName ?? "" },
+              { key: "destinationTreasuryName", label: "إلى", render: (r) => r.destinationTreasuryName ?? "" },
+              { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount ?? 0) },
               { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
-              { key: "requestedBy", label: "بواسطة" },
-              { key: "requestedAt", label: "التاريخ", render: (r) => safeFormatDateTime(r.requestedAt) },
+              { key: "requestedBy", label: "بواسطة", render: (r) => r.requestedBy ?? "" },
+              { key: "requestedAt", label: "التاريخ", render: (r) => safeFormatDateTime(r.requestedAt ?? "") },
               { key: "actions", label: "إجراءات", render: (r) => r.status === "Pending" ? (
                 <div className="flex items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); setConfirmApprove({ id: r.id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>

@@ -150,11 +150,11 @@ export function CollectionsTab() {
           keyField="id"
           data={payments}
           columns={[
-            { key: "paymentNumber", label: "رقم الإيصال" },
+            { key: "paymentNumber", label: "رقم الإيصال", render: (r) => r.paymentNumber ?? "" },
             { key: "patientName", label: "المريض" },
-            { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
-            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
-            { key: "paymentDate", label: "التاريخ", render: (r) => safeFormatDate(r.paymentDate) },
+            { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount ?? 0) },
+            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === (r.paymentMethod ?? ""))?.label ?? r.paymentMethod },
+            { key: "paymentDate", label: "التاريخ", render: (r) => safeFormatDate(r.paymentDate ?? "") },
             { key: "isReversal", label: "عكسي", render: (r) => r.isReversal ? <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>نعم</span> : "—" },
             { key: "actions", label: "إجراءات", render: (r) => !r.isReversal && !r.reversedById ? (
               <div className="flex items-center gap-1">

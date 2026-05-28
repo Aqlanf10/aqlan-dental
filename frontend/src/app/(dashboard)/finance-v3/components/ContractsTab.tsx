@@ -42,7 +42,7 @@ export function ContractsTab() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtered = data.filter((c) =>
-    c.patientName.includes(search) || c.contractNumber.includes(search) || c.patientNumber.includes(search)
+    (c.patientName ?? "").includes(search) || (c.contractNumber ?? "").includes(search) || (c.patientNumber ?? "").includes(search)
   );
 
   return (
@@ -72,12 +72,12 @@ export function ContractsTab() {
           columns={[
             { key: "contractNumber", label: "رقم العقد" },
             { key: "patientName", label: "المريض" },
-            { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
-            { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
-            { key: "outstandingAmount", label: "المستحق", render: (r) => <span style={{ color: r.outstandingAmount > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.outstandingAmount)}</span> },
+            { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount ?? 0) },
+            { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount ?? 0) },
+            { key: "outstandingAmount", label: "المستحق", render: (r) => <span style={{ color: (r.outstandingAmount ?? 0) > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.outstandingAmount ?? 0)}</span> },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "isOverdue", label: "متأخرة", render: (r) => r.isOverdue ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.dangerBorder }} /> : "—" },
-            { key: "startDate", label: "تاريخ البداية", render: (r) => safeFormatDate(r.startDate) },
+            { key: "startDate", label: "تاريخ البداية", render: (r) => safeFormatDate(r.startDate ?? "") },
           ]}
         />
       )}

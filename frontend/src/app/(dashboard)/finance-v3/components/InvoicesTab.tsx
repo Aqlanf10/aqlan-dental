@@ -62,7 +62,7 @@ export function InvoicesTab() {
   };
 
   const filtered = data.filter((i) =>
-    i.invoiceNumber.includes(search) || i.patientName.includes(search) || i.patientNumber.includes(search)
+    (i.invoiceNumber ?? "").includes(search) || (i.patientName ?? "").includes(search) || (i.patientNumber ?? "").includes(search)
   );
 
   return (
@@ -87,11 +87,11 @@ export function InvoicesTab() {
           columns={[
             { key: "invoiceNumber", label: "رقم الفاتورة" },
             { key: "patientName", label: "المريض" },
-            { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
-            { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
-            { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
+            { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount ?? 0) },
+            { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount ?? 0) },
+            { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: (r.balance ?? 0) > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance ?? 0)}</span> },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
-            { key: "issueDate", label: "التاريخ", render: (r) => safeFormatDate(r.issueDate) },
+            { key: "issueDate", label: "التاريخ", render: (r) => safeFormatDate(r.issueDate ?? "") },
           ]}
         />
       )}
@@ -103,12 +103,12 @@ export function InvoicesTab() {
             <div className="grid grid-cols-2 gap-3">
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المريض</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{detail.patientName} ({detail.patientNumber})</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الحالة</p><StatusBadge status={detail.status} /></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإجمالي</p><p className="text-sm font-bold">{formatYER(detail.totalAmount)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(detail.paidAmount)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإجمالي</p><p className="text-sm font-bold">{formatYER(detail.totalAmount ?? 0)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(detail.paidAmount ?? 0)}</p></div>
             </div>
 
             {/* Line items */}
-            {detail.lineItems && detail.lineItems.length > 0 && (
+            {(detail.lineItems ?? []).length > 0 && (
               <div>
                 <h4 className="text-xs font-semibold mb-2" style={{ color: tokens.textSecondary }}>البنود</h4>
                 <div className="overflow-x-auto rounded-md border" style={{ borderColor: tokens.border }}>
@@ -122,7 +122,7 @@ export function InvoicesTab() {
                       <th className="text-right px-3 py-2">الإجمالي</th>
                     </tr></thead>
                     <tbody>
-                      {detail.lineItems.map((li) => (
+                      {(detail.lineItems ?? []).map((li) => (
                         <tr key={li.id} style={{ borderBottom: `1px solid ${tokens.border}` }}>
                           <td className="px-3 py-2">{li.treatmentName}</td>
                           <td className="px-3 py-2">{li.toothNumber ?? "—"}</td>

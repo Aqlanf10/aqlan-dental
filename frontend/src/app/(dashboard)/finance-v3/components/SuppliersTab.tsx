@@ -82,8 +82,8 @@ export function SuppliersTab() {
       toast.error("يرجى إدخال المبلغ");
       return;
     }
-    if (Number(payAmount) > showPayBill.balance) {
-      toast.error(`المبلغ يتجاوز المستحق (${formatYER(showPayBill.balance)})`);
+    if (Number(payAmount) > (showPayBill.balance ?? 0)) {
+      toast.error(`المبلغ يتجاوز المستحق (${formatYER(showPayBill.balance ?? 0)})`);
       return;
     }
     try {
@@ -121,9 +121,9 @@ export function SuppliersTab() {
               { key: "name", label: "الاسم" },
               { key: "contactPerson", label: "جهة الاتصال", render: (r) => r.contactPerson ?? "—" },
               { key: "phone", label: "الهاتف", render: (r) => r.phone ?? "—" },
-              { key: "totalBilled", label: "إجمالي الفواتير", render: (r) => formatYER(r.totalBilled) },
-              { key: "totalPaid", label: "المدفوع", render: (r) => formatYER(r.totalPaid) },
-              { key: "balance", label: "الرصيد", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
+              { key: "totalBilled", label: "إجمالي الفواتير", render: (r) => formatYER(r.totalBilled ?? 0) },
+              { key: "totalPaid", label: "المدفوع", render: (r) => formatYER(r.totalPaid ?? 0) },
+              { key: "balance", label: "الرصيد", render: (r) => <span style={{ color: (r.balance ?? 0) > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance ?? 0)}</span> },
             ]}
           />
         )}
@@ -139,14 +139,14 @@ export function SuppliersTab() {
             keyField="id"
             data={bills}
             columns={[
-              { key: "supplierName", label: "المورد" },
-              { key: "description", label: "الوصف" },
-              { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
-              { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
-              { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
-              { key: "dueDate", label: "تاريخ الاستحقاق", render: (r) => safeFormatDate(r.dueDate) },
+              { key: "supplierName", label: "المورد", render: (r) => r.supplierName ?? "" },
+              { key: "description", label: "الوصف", render: (r) => r.description ?? "" },
+              { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount ?? 0) },
+              { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount ?? 0) },
+              { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: (r.balance ?? 0) > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance ?? 0)}</span> },
+              { key: "dueDate", label: "تاريخ الاستحقاق", render: (r) => safeFormatDate(r.dueDate ?? "") },
               { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
-              { key: "actions", label: "إجراءات", render: (r) => r.balance > 0 ? (
+              { key: "actions", label: "إجراءات", render: (r) => (r.balance ?? 0) > 0 ? (
                 <button onClick={(e) => { e.stopPropagation(); setShowPayBill(r); setPayAmount(""); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="سداد قسط"><DollarSign className="w-3.5 h-3.5" /></button>
               ) : null },
             ]}
@@ -173,13 +173,13 @@ export function SuppliersTab() {
         {showPayBill && (
           <div className="space-y-4">
             <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
-              <p className="text-xs" style={{ color: tokens.infoText }}>المتبقي: <strong>{formatYER(showPayBill.balance)}</strong></p>
+              <p className="text-xs" style={{ color: tokens.infoText }}>المتبقي: <strong>{formatYER(showPayBill.balance ?? 0)}</strong></p>
             </div>
-            <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" max={showPayBill.balance} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} dir="ltr" style={inputStyle} />{Number(payAmount) > showPayBill.balance && (<p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المبلغ المتبقي ({formatYER(showPayBill.balance)})</p>)}</div>
+            <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" max={showPayBill.balance ?? 0} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} dir="ltr" style={inputStyle} />{Number(payAmount) > (showPayBill.balance ?? 0) && (<p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المبلغ المتبقي ({formatYER(showPayBill.balance ?? 0)})</p>)}</div>
             <div><label style={labelStyle}>طريقة الدفع</label><select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} style={inputStyle}>{PAYMENT_METHODS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}</select></div>
             <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
               <button onClick={() => setShowPayBill(null)} style={btnGhost}>إلغاء</button>
-              <button onClick={handlePayBill} disabled={submitting || Number(payAmount) > showPayBill.balance} style={{ ...btnPrimary, opacity: submitting || Number(payAmount) > showPayBill.balance ? 0.6 : 1 }}>{submitting ? "جارٍ السداد..." : "سداد"}</button>
+              <button onClick={handlePayBill} disabled={submitting || Number(payAmount) > (showPayBill.balance ?? 0)} style={{ ...btnPrimary, opacity: submitting || Number(payAmount) > (showPayBill.balance ?? 0) ? 0.6 : 1 }}>{submitting ? "جارٍ السداد..." : "سداد"}</button>
             </div>
           </div>
         )}

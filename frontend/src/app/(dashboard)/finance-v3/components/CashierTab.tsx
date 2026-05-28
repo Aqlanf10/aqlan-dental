@@ -132,12 +132,12 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
           keyField="id"
           data={sessions}
           columns={[
-            { key: "cashierName", label: "الكاشر" },
-            { key: "openedAt", label: "وقت الافتتاح", render: (r) => safeFormatDateTime(r.openedAt) },
-            { key: "closingTime", label: "وقت الإقفال", render: (r) => safeFormatDateTime(r.closingTime) },
-            { key: "openingBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.openingBalance) },
+            { key: "cashierName", label: "الكاشر", render: (r) => r.cashierName ?? "" },
+            { key: "openedAt", label: "وقت الافتتاح", render: (r) => safeFormatDateTime(r.openedAt ?? "") },
+            { key: "closingTime", label: "وقت الإقفال", render: (r) => safeFormatDateTime(r.closingTime ?? "") },
+            { key: "openingBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.openingBalance ?? 0) },
             { key: "shortageOrSurplus", label: "عجز/فائض", render: (r) => {
-              if (r.shortageOrSurplus == null) return "—";
+              if ((r.shortageOrSurplus ?? null) == null) return "—";
               if (r.shortageOrSurplus < 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(Math.abs(r.shortageOrSurplus))}</span>;
               if (r.shortageOrSurplus > 0) return <span style={{ color: tokens.successBorder, fontWeight: 700 }}>فائض {formatYER(r.shortageOrSurplus)}</span>;
               return <span style={{ color: tokens.successBorder }}>✓</span>;

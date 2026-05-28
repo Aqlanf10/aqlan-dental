@@ -53,9 +53,9 @@ function PLSubTab() {
           <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
             <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>الأساس المستحق</h4>
             <div className="grid grid-cols-3 gap-4">
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.AccruedRevenue)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المصروفات المستحقة</p><p className="text-lg font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.AccruedExpenses)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح المستحق</p><p className="text-lg font-bold" style={{ color: data.AccruedNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.AccruedNetProfit)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.accruedRevenue)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المصروفات المستحقة</p><p className="text-lg font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.accruedExpenses)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح المستحق</p><p className="text-lg font-bold" style={{ color: data.accruedNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.accruedNetProfit)}</p></div>
             </div>
           </div>
 
@@ -63,10 +63,10 @@ function PLSubTab() {
           <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
             <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>الأساس النقدي</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>التحصيلات</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.CashCollections)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(data.CashRefunds)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي التحصيل</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(data.NetCashCollections)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح النقدي</p><p className="text-sm font-bold" style={{ color: data.CashNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.CashNetProfit)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>التحصيلات</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.cashCollections)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(data.cashRefunds)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي التحصيل</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(data.netCashCollections)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح النقدي</p><p className="text-sm font-bold" style={{ color: data.cashNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.cashNetProfit)}</p></div>
             </div>
           </div>
 
@@ -74,14 +74,14 @@ function PLSubTab() {
           <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
             <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>تفصيل التكاليف</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مصروفات تشغيلية</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.OperatingExpenses)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>رواتب</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.SalaryPayments)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>عمولات أطباء</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.DoctorCommissions)}</p></div>
-              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مدفوعات موردين</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.SupplierPayments)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مصروفات تشغيلية</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.operatingExpenses)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>رواتب</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.salaryPayments)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>عمولات أطباء</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.doctorCommissions)}</p></div>
+              <div className="text-center"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مدفوعات موردين</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.supplierPayments)}</p></div>
             </div>
             <div className="mt-3 pt-3 border-t text-center" style={{ borderColor: tokens.border }}>
               <p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي التكاليف</p>
-              <p className="text-base font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.TotalCosts)}</p>
+              <p className="text-base font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.totalCosts)}</p>
             </div>
           </div>
 
@@ -89,7 +89,7 @@ function PLSubTab() {
           <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>هامش الربح</span>
-              <span className="text-xl font-bold" style={{ color: data.ProfitMargin >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{data.ProfitMargin.toFixed(1)}%</span>
+              <span className="text-xl font-bold" style={{ color: data.profitMargin >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{data.profitMargin.toFixed(1)}%</span>
             </div>
           </div>
         </div>
@@ -127,19 +127,19 @@ function DailyCashSubTab() {
         <div className="space-y-4">
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-4">
-            <KpiCard label="التدفقات الداخلة" value={formatYER(data.TotalInflow)} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
-            <KpiCard label="التدفقات الخارجة" value={formatYER(data.TotalOutflow)} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
-            <KpiCard label="صافي الكاش" value={formatYER(data.NetCash)} color={data.NetCash >= 0 ? tokens.successBorder : tokens.dangerBorder} icon={<Vault className="w-4 h-4" />} />
+            <KpiCard label="التدفقات الداخلة" value={formatYER(data.totalInflow)} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="التدفقات الخارجة" value={formatYER(data.totalOutflow)} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
+            <KpiCard label="صافي الكاش" value={formatYER(data.netCash)} color={data.netCash >= 0 ? tokens.successBorder : tokens.dangerBorder} icon={<Vault className="w-4 h-4" />} />
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <KpiCard label="عدد المعاملات" value={formatNumber(data.TransactionCount)} color={tokens.brand} icon={<ClipboardCheck className="w-4 h-4" />} />
-            <KpiCard label="معاملات عكسية" value={formatNumber(data.ReversalCount)} color={tokens.warningBorder} icon={<AlertTriangle className="w-4 h-4" />} />
-            <KpiCard label="قيود محاسبية" value={formatNumber(data.JournalEntryCount)} color={tokens.brand} icon={<FileText className="w-4 h-4" />} />
+            <KpiCard label="عدد المعاملات" value={formatNumber(data.transactionCount)} color={tokens.brand} icon={<ClipboardCheck className="w-4 h-4" />} />
+            <KpiCard label="معاملات عكسية" value={formatNumber(data.reversalCount)} color={tokens.warningBorder} icon={<AlertTriangle className="w-4 h-4" />} />
+            <KpiCard label="قيود محاسبية" value={formatNumber(data.journalEntryCount)} color={tokens.brand} icon={<FileText className="w-4 h-4" />} />
           </div>
 
           {/* By category */}
-          {data.ByCategory && data.ByCategory.length > 0 && (
+          {data.byCategory && data.byCategory.length > 0 && (
             <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
               <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>حسب الفئة</h4>
               <div className="overflow-x-auto">
@@ -152,13 +152,13 @@ function DailyCashSubTab() {
                     <th className="text-right px-3 py-2">الإجمالي</th>
                   </tr></thead>
                   <tbody>
-                    {data.ByCategory.map((cat, idx) => (
+                    {data.byCategory.map((cat, idx) => (
                       <tr key={idx} style={{ borderBottom: `1px solid ${tokens.border}` }}>
-                        <td className="px-3 py-2">{cat.Type}</td>
-                        <td className="px-3 py-2">{cat.Category}</td>
-                        <td className="px-3 py-2">{cat.IsReversal ? "نعم" : "—"}</td>
-                        <td className="px-3 py-2">{cat.Count}</td>
-                        <td className="px-3 py-2 font-bold" style={{ color: cat.IsReversal ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(cat.Total)}</td>
+                        <td className="px-3 py-2">{cat.type}</td>
+                        <td className="px-3 py-2">{cat.category}</td>
+                        <td className="px-3 py-2">{cat.isReversal ? "نعم" : "—"}</td>
+                        <td className="px-3 py-2">{cat.count}</td>
+                        <td className="px-3 py-2 font-bold" style={{ color: cat.isReversal ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(cat.total)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -168,7 +168,7 @@ function DailyCashSubTab() {
           )}
 
           {/* By payment method */}
-          {data.ByPaymentMethod && data.ByPaymentMethod.length > 0 && (
+          {data.byPaymentMethod && data.byPaymentMethod.length > 0 && (
             <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
               <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>حسب طريقة الدفع</h4>
               <div className="overflow-x-auto">
@@ -179,11 +179,11 @@ function DailyCashSubTab() {
                     <th className="text-right px-3 py-2">الإجمالي</th>
                   </tr></thead>
                   <tbody>
-                    {data.ByPaymentMethod.map((pm, idx) => (
+                    {data.byPaymentMethod.map((pm, idx) => (
                       <tr key={idx} style={{ borderBottom: `1px solid ${tokens.border}` }}>
-                        <td className="px-3 py-2">{PAYMENT_METHODS.find((m) => m.value === pm.PaymentMethod)?.label ?? pm.PaymentMethod}</td>
-                        <td className="px-3 py-2">{pm.Count}</td>
-                        <td className="px-3 py-2 font-bold">{formatYER(pm.Total)}</td>
+                        <td className="px-3 py-2">{PAYMENT_METHODS.find((m) => m.value === pm.paymentMethod)?.label ?? pm.paymentMethod}</td>
+                        <td className="px-3 py-2">{pm.count}</td>
+                        <td className="px-3 py-2 font-bold">{formatYER(pm.total)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -220,15 +220,15 @@ function AccountBalancesSubTab() {
         <div className="space-y-4">
           {/* Summary cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <KpiCard label="إجمالي الأصول" value={formatYER(data.TotalAssets)} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
-            <KpiCard label="إجمالي الإيرادات" value={formatYER(data.TotalRevenue)} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
-            <KpiCard label="إجمالي المصروفات" value={formatYER(data.TotalExpenses)} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
-            <KpiCard label="إجمالي المستحقات" value={formatYER(data.TotalReceivables)} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
-            <KpiCard label="إجمالي الالتزامات" value={formatYER(data.TotalPayables)} color={tokens.dangerBorder} icon={<Truck className="w-4 h-4" />} />
+            <KpiCard label="إجمالي الأصول" value={formatYER(data.totalAssets)} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
+            <KpiCard label="إجمالي الإيرادات" value={formatYER(data.totalRevenue)} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="إجمالي المصروفات" value={formatYER(data.totalExpenses)} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
+            <KpiCard label="إجمالي المستحقات" value={formatYER(data.totalReceivables)} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
+            <KpiCard label="إجمالي الالتزامات" value={formatYER(data.totalPayables)} color={tokens.dangerBorder} icon={<Truck className="w-4 h-4" />} />
           </div>
 
           {/* Account balances table */}
-          {data.AccountBalances && data.AccountBalances.length > 0 && (
+          {data.accountBalances && data.accountBalances.length > 0 && (
             <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
               <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>أرصدة الحسابات</h4>
               <div className="overflow-x-auto">
@@ -241,13 +241,13 @@ function AccountBalancesSubTab() {
                     <th className="text-right px-3 py-2">عدد القيود</th>
                   </tr></thead>
                   <tbody>
-                    {data.AccountBalances.map((ab, idx) => (
+                    {data.accountBalances.map((ab, idx) => (
                       <tr key={idx} style={{ borderBottom: `1px solid ${tokens.border}` }}>
-                        <td className="px-3 py-2 font-medium">{ab.AccountType}</td>
-                        <td className="px-3 py-2">{formatYER(ab.TotalDebit)}</td>
-                        <td className="px-3 py-2">{formatYER(ab.TotalCredit)}</td>
-                        <td className="px-3 py-2 font-bold" style={{ color: ab.NetBalance >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(ab.NetBalance)}</td>
-                        <td className="px-3 py-2">{ab.EntryCount}</td>
+                        <td className="px-3 py-2 font-medium">{ab.accountType}</td>
+                        <td className="px-3 py-2">{formatYER(ab.totalDebit)}</td>
+                        <td className="px-3 py-2">{formatYER(ab.totalCredit)}</td>
+                        <td className="px-3 py-2 font-bold" style={{ color: ab.netBalance >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(ab.netBalance)}</td>
+                        <td className="px-3 py-2">{ab.entryCount}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -257,17 +257,17 @@ function AccountBalancesSubTab() {
           )}
 
           {/* Treasuries */}
-          {data.Treasuries && data.Treasuries.length > 0 && (
+          {data.treasuries && data.treasuries.length > 0 && (
             <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
               <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>الخزائن</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {data.Treasuries.map((t) => (
-                  <div key={t.Id} className="rounded-md border p-3" style={{ borderColor: tokens.border }}>
+                {data.treasuries.map((t) => (
+                  <div key={t.id} className="rounded-md border p-3" style={{ borderColor: tokens.border }}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium" style={{ color: tokens.textPrimary }}>{t.Name}</span>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{t.Type}</span>
+                      <span className="text-sm font-medium" style={{ color: tokens.textPrimary }}>{t.name}</span>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{t.type}</span>
                     </div>
-                    <p className="text-base font-bold" style={{ color: tokens.successBorder }}>{formatYER(t.Balance)}</p>
+                    <p className="text-base font-bold" style={{ color: tokens.successBorder }}>{formatYER(t.balance)}</p>
                   </div>
                 ))}
               </div>

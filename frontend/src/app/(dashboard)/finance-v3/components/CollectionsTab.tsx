@@ -63,9 +63,9 @@ export function CollectionsTab() {
         api.get<ContractListItem[]>(`/api/patients/${patientId}/contracts`),
       ]);
       const invData = invRes.data?.data ?? invRes.data as unknown as InvoiceListItem[];
-      setInvoiceOptions((Array.isArray(invData) ? invData : []).filter((i) => i.Balance > 0).map((i) => ({ id: i.Id, invoiceNumber: i.InvoiceNumber, balance: i.Balance })));
+      setInvoiceOptions((Array.isArray(invData) ? invData : []).filter((i) => i.balance > 0).map((i) => ({ id: i.id, invoiceNumber: i.invoiceNumber, balance: i.balance })));
       const conData = Array.isArray(conRes.data) ? conRes.data : (conRes.data as { data?: ContractListItem[] }).data ?? [];
-      setContractOptions(conData.filter((c) => c.OutstandingAmount > 0).map((c) => ({ id: c.Id, contractNumber: c.ContractNumber, outstandingAmount: c.OutstandingAmount })));
+      setContractOptions(conData.filter((c) => c.outstandingAmount > 0).map((c) => ({ id: c.id, contractNumber: c.contractNumber, outstandingAmount: c.outstandingAmount })));
     } catch { /* ignore */ }
   };
 
@@ -88,13 +88,13 @@ export function CollectionsTab() {
     try {
       setSubmitting(true);
       const payload: RegisterPaymentRequest = {
-        PatientId: selectedPatient,
-        Amount: Number(payAmount),
-        PaymentMethod: payMethod,
-        Notes: payNotes || undefined,
+        patientId: selectedPatient,
+        amount: Number(payAmount),
+        paymentMethod: payMethod,
+        notes: payNotes || undefined,
       };
-      if (selectedInvoice) payload.InvoiceId = selectedInvoice;
-      if (selectedContract) payload.ContractId = selectedContract;
+      if (selectedInvoice) payload.invoiceId = selectedInvoice;
+      if (selectedContract) payload.contractId = selectedContract;
       await api.post("/api/finance-v3/payments", payload);
       toast.success("تم تسجيل الدفعة بنجاح");
       resetForm();
@@ -132,18 +132,18 @@ export function CollectionsTab() {
 
       {loading ? <LoadingSkeleton /> : payments.length === 0 ? <EmptyState icon={Receipt} message="لا توجد تحصيلات" /> : (
         <DataTable<PaymentListItem>
-          keyField="Id"
+          keyField="id"
           data={payments}
           columns={[
-            { key: "PaymentNumber", label: "رقم الإيصال" },
-            { key: "PatientName", label: "المريض" },
-            { key: "Amount", label: "المبلغ", render: (r) => formatYER(r.Amount) },
-            { key: "PaymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.PaymentMethod)?.label ?? r.PaymentMethod },
-            { key: "PaymentDate", label: "التاريخ", render: (r) => new Date(r.PaymentDate).toLocaleDateString("ar-SA") },
-            { key: "IsReversal", label: "عكسي", render: (r) => r.IsReversal ? <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>نعم</span> : "—" },
-            { key: "actions", label: "إجراءات", render: (r) => !r.IsReversal && !r.ReversedById ? (
+            { key: "paymentNumber", label: "رقم الإيصال" },
+            { key: "patientName", label: "المريض" },
+            { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
+            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
+            { key: "paymentDate", label: "التاريخ", render: (r) => new Date(r.paymentDate).toLocaleDateString("ar-SA") },
+            { key: "isReversal", label: "عكسي", render: (r) => r.isReversal ? <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>نعم</span> : "—" },
+            { key: "actions", label: "إجراءات", render: (r) => !r.isReversal && !r.reversedById ? (
               <div className="flex items-center gap-1">
-                <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(r.Id); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="عكس الدفعة"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(r.id); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="عكس الدفعة"><Trash2 className="w-3.5 h-3.5" /></button>
                 <button onClick={(e) => { e.stopPropagation(); window.print(); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="طباعة إيصال"><Printer className="w-3.5 h-3.5" /></button>
               </div>
             ) : null },

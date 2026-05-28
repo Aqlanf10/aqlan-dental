@@ -47,11 +47,11 @@ export function ExpensesTab() {
     try {
       setSubmitting(true);
       const payload: CreateExpenseRequest = {
-        Title: eTitle,
-        Category: eCategory,
-        Amount: Number(eAmount),
-        PaymentMethod: eMethod,
-        ExpenseDate: eDate,
+        title: eTitle,
+        category: eCategory,
+        amount: Number(eAmount),
+        paymentMethod: eMethod,
+        expenseDate: eDate,
       };
       await api.post("/api/finance-v3/expenses", payload);
       toast.success("تم إنشاء المصروف بنجاح");
@@ -91,24 +91,24 @@ export function ExpensesTab() {
 
       {loading ? <LoadingSkeleton /> : data.length === 0 ? <EmptyState icon={TrendingDown} message="لا توجد مصروفات" /> : (
         <DataTable<ExpenseListItem>
-          keyField="Id"
+          keyField="id"
           data={data}
           columns={[
-            { key: "Title", label: "العنوان" },
-            { key: "Category", label: "الفئة", render: (r) => EXPENSE_CATEGORIES.find((c) => c.value === r.Category)?.label ?? r.Category },
-            { key: "Amount", label: "المبلغ", render: (r) => formatYER(r.Amount) },
-            { key: "PaymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.PaymentMethod)?.label ?? r.PaymentMethod },
-            { key: "ExpenseDate", label: "التاريخ", render: (r) => new Date(r.ExpenseDate).toLocaleDateString("ar-SA") },
-            { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
+            { key: "title", label: "العنوان" },
+            { key: "category", label: "الفئة", render: (r) => EXPENSE_CATEGORIES.find((c) => c.value === r.category)?.label ?? r.category },
+            { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
+            { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
+            { key: "expenseDate", label: "التاريخ", render: (r) => new Date(r.expenseDate).toLocaleDateString("ar-SA") },
+            { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (
               <div className="flex items-center gap-1">
-                {r.Status === "Pending" && (
+                {r.status === "Pending" && (
                   <>
-                    <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.Id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.Id, action: "reject" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="رفض"><ThumbsDown className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "reject" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="رفض"><ThumbsDown className="w-3.5 h-3.5" /></button>
                   </>
                 )}
-                {!r.IsReversal && <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.Id, action: "delete" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="حذف/عكس"><Trash2 className="w-3.5 h-3.5" /></button>}
+                {!r.isReversal && <button onClick={(e) => { e.stopPropagation(); setConfirmAction({ id: r.id, action: "delete" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="حذف/عكس"><Trash2 className="w-3.5 h-3.5" /></button>}
               </div>
             )},
           ]}

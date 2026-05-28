@@ -40,18 +40,18 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     // Never initialize actual amounts from undefined — fetch first
     try {
       const { data: detail } = await api.get<{
-        ExpectedClosingCash: number;
-        ExpectedClosingCard: number;
-        ExpectedClosingBank: number;
-      }>(`/api/cashier-sessions/${s.Id}`);
-      setActualCash(String(detail.ExpectedClosingCash ?? 0));
-      setActualCard(String(detail.ExpectedClosingCard ?? 0));
-      setActualBank(String(detail.ExpectedClosingBank ?? 0));
+        expectedClosingCash: number;
+        expectedClosingCard: number;
+        expectedClosingBank: number;
+      }>(`/api/cashier-sessions/${s.id}`);
+      setActualCash(String(detail.expectedClosingCash ?? 0));
+      setActualCard(String(detail.expectedClosingCard ?? 0));
+      setActualBank(String(detail.expectedClosingBank ?? 0));
     } catch {
       // Fallback: use list values if available
-      setActualCash(String(s.ExpectedClosingCash ?? 0));
-      setActualCard(String(s.ExpectedClosingCard ?? 0));
-      setActualBank(String(s.ExpectedClosingBank ?? 0));
+      setActualCash(String(s.expectedClosingCash ?? 0));
+      setActualCard(String(s.expectedClosingCard ?? 0));
+      setActualBank(String(s.expectedClosingBank ?? 0));
     }
   };
 
@@ -60,9 +60,9 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     try {
       setSubmitting(true);
       const payload: CloseSessionRequest = {
-        ActualClosingCash: Number(actualCash) || 0,
-        ActualClosingCard: Number(actualCard) || 0,
-        ActualClosingBank: Number(actualBank) || 0,
+        actualClosingCash: Number(actualCash) || 0,
+        actualClosingCard: Number(actualCard) || 0,
+        actualClosingBank: Number(actualBank) || 0,
       };
       await api.post(`/api/finance-v3/cashier-sessions/close`, payload);
       toast.success("تم إقفال الوردية بنجاح");
@@ -82,7 +82,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في التسوية")); } finally { setSubmitting(false); }
   };
 
-  const openSession = sessions.find((s) => s.Status === "Open");
+  const openSession = sessions.find((s) => s.status === "Open");
 
   return (
     <div className="p-6 space-y-4">
@@ -105,33 +105,33 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             <h4 className="text-sm font-bold" style={{ color: tokens.successBorder }}>وردية مفتوحة</h4>
           </div>
           <div className="grid grid-cols-3 gap-4 text-sm">
-            <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.CashierName}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{new Date(openSession.OpenedAt).toLocaleString("ar-SA")}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.OpeningBalance)}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.cashierName}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{new Date(openSession.openedAt).toLocaleString("ar-SA")}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.openingBalance)}</span></div>
           </div>
         </div>
       )}
 
       {loading ? <LoadingSkeleton /> : sessions.length === 0 ? <EmptyState icon={Vault} message="لا توجد ورديات صندوق" /> : (
         <DataTable<CashierSession>
-          keyField="Id"
+          keyField="id"
           data={sessions}
           columns={[
-            { key: "CashierName", label: "الكاشر" },
-            { key: "OpenedAt", label: "وقت الافتتاح", render: (r) => new Date(r.OpenedAt).toLocaleString("ar-SA") },
-            { key: "ClosingTime", label: "وقت الإقفال", render: (r) => r.ClosingTime ? new Date(r.ClosingTime).toLocaleString("ar-SA") : "—" },
-            { key: "OpeningBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.OpeningBalance) },
-            { key: "ShortageOrSurplus", label: "عجز/فائض", render: (r) => {
-              if (r.ShortageOrSurplus == null) return "—";
-              if (r.ShortageOrSurplus < 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(Math.abs(r.ShortageOrSurplus))}</span>;
-              if (r.ShortageOrSurplus > 0) return <span style={{ color: tokens.successBorder, fontWeight: 700 }}>فائض {formatYER(r.ShortageOrSurplus)}</span>;
+            { key: "cashierName", label: "الكاشر" },
+            { key: "openedAt", label: "وقت الافتتاح", render: (r) => new Date(r.openedAt).toLocaleString("ar-SA") },
+            { key: "closingTime", label: "وقت الإقفال", render: (r) => r.closingTime ? new Date(r.closingTime).toLocaleString("ar-SA") : "—" },
+            { key: "openingBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.openingBalance) },
+            { key: "shortageOrSurplus", label: "عجز/فائض", render: (r) => {
+              if (r.shortageOrSurplus == null) return "—";
+              if (r.shortageOrSurplus < 0) return <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>عجز {formatYER(Math.abs(r.shortageOrSurplus))}</span>;
+              if (r.shortageOrSurplus > 0) return <span style={{ color: tokens.successBorder, fontWeight: 700 }}>فائض {formatYER(r.shortageOrSurplus)}</span>;
               return <span style={{ color: tokens.successBorder }}>✓</span>;
             }},
-            { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
+            { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (
               <div className="flex items-center gap-1">
-                {r.Status === "Open" && <button onClick={(e) => { e.stopPropagation(); openCloseSession(r); }} style={{ color: tokens.dangerBorder }} className="w-7 h-7 rounded-md flex items-center justify-center" title="إقفال"><Lock className="w-3.5 h-3.5" /></button>}
-                {r.Status === "Closed" && isAdmin && <button onClick={(e) => { e.stopPropagation(); setConfirmReconcile(r.Id); }} style={{ color: tokens.brand }} className="w-7 h-7 rounded-md flex items-center justify-center" title="تسوية"><Calculator className="w-3.5 h-3.5" /></button>}
+                {r.status === "Open" && <button onClick={(e) => { e.stopPropagation(); openCloseSession(r); }} style={{ color: tokens.dangerBorder }} className="w-7 h-7 rounded-md flex items-center justify-center" title="إقفال"><Lock className="w-3.5 h-3.5" /></button>}
+                {r.status === "Closed" && isAdmin && <button onClick={(e) => { e.stopPropagation(); setConfirmReconcile(r.id); }} style={{ color: tokens.brand }} className="w-7 h-7 rounded-md flex items-center justify-center" title="تسوية"><Calculator className="w-3.5 h-3.5" /></button>}
               </div>
             )},
           ]}
@@ -150,21 +150,21 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>النقدي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.ExpectedClosingCash)}</p></div>
+                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>النقدي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingCash)}</p></div>
                 <div>
                   <label style={labelStyle}>النقدي الفعلي <span style={{ color: tokens.dangerBorder }}>*</span></label>
                   <input type="number" min="0" step="0.01" value={actualCash} onChange={(e) => setActualCash(e.target.value)} dir="ltr" style={inputStyle} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البطاقة المتوقعة</span><p className="text-sm font-bold">{formatYER(closeSession.ExpectedClosingCard)}</p></div>
+                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البطاقة المتوقعة</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingCard)}</p></div>
                 <div>
                   <label style={labelStyle}>البطاقة الفعلية <span style={{ color: tokens.dangerBorder }}>*</span></label>
                   <input type="number" min="0" step="0.01" value={actualCard} onChange={(e) => setActualCard(e.target.value)} dir="ltr" style={inputStyle} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البنكي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.ExpectedClosingBank)}</p></div>
+                <div><span className="text-xs" style={{ color: tokens.textTertiary }}>البنكي المتوقع</span><p className="text-sm font-bold">{formatYER(closeSession.expectedClosingBank)}</p></div>
                 <div>
                   <label style={labelStyle}>البنكي الفعلي <span style={{ color: tokens.dangerBorder }}>*</span></label>
                   <input type="number" min="0" step="0.01" value={actualBank} onChange={(e) => setActualBank(e.target.value)} dir="ltr" style={inputStyle} />
@@ -174,9 +174,9 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
             {/* Shortage/Surplus preview */}
             {(() => {
-              const cashDiff = (Number(actualCash) || 0) - closeSession.ExpectedClosingCash;
-              const cardDiff = (Number(actualCard) || 0) - closeSession.ExpectedClosingCard;
-              const bankDiff = (Number(actualBank) || 0) - closeSession.ExpectedClosingBank;
+              const cashDiff = (Number(actualCash) || 0) - closeSession.expectedClosingCash;
+              const cardDiff = (Number(actualCard) || 0) - closeSession.expectedClosingCard;
+              const bankDiff = (Number(actualBank) || 0) - closeSession.expectedClosingBank;
               const hasDiff = cashDiff !== 0 || cardDiff !== 0 || bankDiff !== 0;
               if (!hasDiff) return null;
               return (

@@ -198,6 +198,14 @@ builder.Services.AddAuthorization(opts =>
     opts.AddPolicy("FinanceWrite", policy =>
         policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
 
+    // Admin access: Admin only (used by OperationalExpenses approve/reject, SupplierBills cancel)
+    opts.AddPolicy("AdminAccess", policy =>
+        policy.RequireRole(nameof(UserRole.Admin)));
+
+    // Cashier access: Admin + Reception + Accountant (used by FinanceV3 cashier session endpoints)
+    opts.AddPolicy("CashierAccess", policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Reception), nameof(UserRole.Accountant)));
+
     // Doctors (any medical role) + Admin
     opts.AddPolicy("DoctorAccess", policy =>
         policy.RequireRole(

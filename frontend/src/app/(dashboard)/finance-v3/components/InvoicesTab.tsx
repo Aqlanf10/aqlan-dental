@@ -34,7 +34,7 @@ export function InvoicesTab() {
   const openDetail = async (inv: InvoiceListItem) => {
     try {
       setDetailLoading(true);
-      const { data } = await api.get<InvoiceDetail>(`/api/invoices/${inv.Id}`);
+      const { data } = await api.get<InvoiceDetail>(`/api/invoices/${inv.id}`);
       setDetail(data);
     } catch { toast.error("فشل في تحميل تفاصيل الفاتورة"); } finally { setDetailLoading(false); }
   };
@@ -52,7 +52,7 @@ export function InvoicesTab() {
   };
 
   const filtered = data.filter((i) =>
-    i.InvoiceNumber.includes(search) || i.PatientName.includes(search) || i.PatientNumber.includes(search)
+    i.invoiceNumber.includes(search) || i.patientName.includes(search) || i.patientNumber.includes(search)
   );
 
   return (
@@ -66,34 +66,34 @@ export function InvoicesTab() {
 
       {loading ? <LoadingSkeleton /> : filtered.length === 0 ? <EmptyState icon={FileText} message="لا توجد فواتير" /> : (
         <DataTable<InvoiceListItem>
-          keyField="Id"
+          keyField="id"
           data={filtered}
           onRowClick={openDetail}
           columns={[
-            { key: "InvoiceNumber", label: "رقم الفاتورة" },
-            { key: "PatientName", label: "المريض" },
-            { key: "TotalAmount", label: "الإجمالي", render: (r) => formatYER(r.TotalAmount) },
-            { key: "PaidAmount", label: "المدفوع", render: (r) => formatYER(r.PaidAmount) },
-            { key: "Balance", label: "المتبقي", render: (r) => <span style={{ color: r.Balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.Balance)}</span> },
-            { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
-            { key: "IssueDate", label: "التاريخ", render: (r) => new Date(r.IssueDate).toLocaleDateString("ar-SA") },
+            { key: "invoiceNumber", label: "رقم الفاتورة" },
+            { key: "patientName", label: "المريض" },
+            { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
+            { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
+            { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
+            { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
+            { key: "issueDate", label: "التاريخ", render: (r) => new Date(r.issueDate).toLocaleDateString("ar-SA") },
           ]}
         />
       )}
 
       {/* Invoice detail modal */}
-      <Modal open={!!detail} onClose={() => setDetail(null)} title={`فاتورة ${detail?.InvoiceNumber ?? ""}`} wide>
+      <Modal open={!!detail} onClose={() => setDetail(null)} title={`فاتورة ${detail?.invoiceNumber ?? ""}`} wide>
         {detailLoading ? <LoadingSkeleton rows={4} /> : detail ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المريض</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{detail.PatientName} ({detail.PatientNumber})</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الحالة</p><StatusBadge status={detail.Status} /></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإجمالي</p><p className="text-sm font-bold">{formatYER(detail.TotalAmount)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(detail.PaidAmount)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المريض</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{detail.patientName} ({detail.patientNumber})</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الحالة</p><StatusBadge status={detail.status} /></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإجمالي</p><p className="text-sm font-bold">{formatYER(detail.totalAmount)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(detail.paidAmount)}</p></div>
             </div>
 
             {/* Line items */}
-            {detail.LineItems && detail.LineItems.length > 0 && (
+            {detail.lineItems && detail.lineItems.length > 0 && (
               <div>
                 <h4 className="text-xs font-semibold mb-2" style={{ color: tokens.textSecondary }}>البنود</h4>
                 <div className="overflow-x-auto rounded-md border" style={{ borderColor: tokens.border }}>
@@ -107,14 +107,14 @@ export function InvoicesTab() {
                       <th className="text-right px-3 py-2">الإجمالي</th>
                     </tr></thead>
                     <tbody>
-                      {detail.LineItems.map((li) => (
-                        <tr key={li.Id} style={{ borderBottom: `1px solid ${tokens.border}` }}>
-                          <td className="px-3 py-2">{li.TreatmentName}</td>
-                          <td className="px-3 py-2">{li.ToothNumber ?? "—"}</td>
-                          <td className="px-3 py-2">{li.Quantity}</td>
-                          <td className="px-3 py-2">{formatYER(li.UnitPrice)}</td>
-                          <td className="px-3 py-2">{formatYER(li.DiscountAmount)}</td>
-                          <td className="px-3 py-2 font-bold">{formatYER(li.TotalPrice)}</td>
+                      {detail.lineItems.map((li) => (
+                        <tr key={li.id} style={{ borderBottom: `1px solid ${tokens.border}` }}>
+                          <td className="px-3 py-2">{li.treatmentName}</td>
+                          <td className="px-3 py-2">{li.toothNumber ?? "—"}</td>
+                          <td className="px-3 py-2">{li.quantity}</td>
+                          <td className="px-3 py-2">{formatYER(li.unitPrice)}</td>
+                          <td className="px-3 py-2">{formatYER(li.discountAmount)}</td>
+                          <td className="px-3 py-2 font-bold">{formatYER(li.totalPrice)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -124,9 +124,9 @@ export function InvoicesTab() {
             )}
 
             {/* Cancel action */}
-            {detail.Status === "Draft" && (
+            {detail.status === "Draft" && (
               <div className="flex justify-end pt-2 border-t" style={{ borderColor: tokens.border }}>
-                <button onClick={() => setConfirmCancel(detail.Id)} style={btnDanger}>
+                <button onClick={() => setConfirmCancel(detail.id)} style={btnDanger}>
                   <XCircle className="w-4 h-4" /> إلغاء الفاتورة
                 </button>
               </div>

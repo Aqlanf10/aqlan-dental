@@ -34,13 +34,13 @@ export function PatientAccountsTab() {
   const openDetail = async (patient: PatientBalance) => {
     try {
       setDetailLoading(true);
-      const { data } = await api.get<PatientBalanceDetail>(`/api/finance-v3/patient-balance/${patient.PatientId}`);
+      const { data } = await api.get<PatientBalanceDetail>(`/api/finance-v3/patient-balance/${patient.patientId}`);
       setSelected(data);
     } catch { toast.error("فشل في تحميل تفاصيل الحساب"); } finally { setDetailLoading(false); }
   };
 
   const filtered = data.filter((p) =>
-    p.PatientName.includes(search) || p.PatientNumber.includes(search)
+    p.patientName.includes(search) || p.patientNumber.includes(search)
   );
 
   return (
@@ -54,32 +54,32 @@ export function PatientAccountsTab() {
 
       {loading ? <LoadingSkeleton /> : filtered.length === 0 ? <EmptyState icon={Wallet} message="لا يوجد حسابات مرضى" /> : (
         <DataTable<PatientBalance>
-          keyField="PatientId"
+          keyField="patientId"
           data={filtered}
           onRowClick={openDetail}
           columns={[
-            { key: "PatientNumber", label: "رقم المريض" },
-            { key: "PatientName", label: "الاسم" },
-            { key: "TotalInvoiced", label: "إجمالي الفواتير", render: (r) => formatYER(r.TotalInvoiced) },
-            { key: "TotalPaid", label: "إجمالي المدفوع", render: (r) => formatYER(r.TotalPaid) },
-            { key: "Balance", label: "الرصيد", render: (r) => <span style={{ color: r.Balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.Balance)}</span> },
-            { key: "HasOutstanding", label: "معلّق", render: (r) => r.HasOutstanding ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.warningBorder }} /> : <CheckCircle2 className="w-4 h-4" style={{ color: tokens.successBorder }} /> },
+            { key: "patientNumber", label: "رقم المريض" },
+            { key: "patientName", label: "الاسم" },
+            { key: "totalInvoiced", label: "إجمالي الفواتير", render: (r) => formatYER(r.totalInvoiced) },
+            { key: "totalPaid", label: "إجمالي المدفوع", render: (r) => formatYER(r.totalPaid) },
+            { key: "balance", label: "الرصيد", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
+            { key: "hasOutstanding", label: "معلّق", render: (r) => r.hasOutstanding ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.warningBorder }} /> : <CheckCircle2 className="w-4 h-4" style={{ color: tokens.successBorder }} /> },
           ]}
         />
       )}
 
       {/* Detail modal */}
-      <Modal open={!!selected} onClose={() => { setSelected(null); setShowPayment(false); }} title={selected?.PatientName ?? "تفاصيل الحساب"} wide>
+      <Modal open={!!selected} onClose={() => { setSelected(null); setShowPayment(false); }} title={selected?.patientName ?? "تفاصيل الحساب"} wide>
         {detailLoading ? <LoadingSkeleton rows={4} /> : selected ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>رقم المريض</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{selected.PatientNumber}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي الفواتير</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{formatYER(selected.TotalInvoiced)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(selected.NetPaid)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.TotalRefunds)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الخصومات</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(selected.TotalDiscounts)}</p></div>
-              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد</p><p className="text-sm font-bold" style={{ color: selected.Balance > 0 ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(selected.Balance)}</p></div>
-              {selected.ContractOutstanding > 0 && <div className="col-span-2"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مستحقات العقود</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.ContractOutstanding)}</p></div>}
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>رقم المريض</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{selected.patientNumber}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي الفواتير</p><p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{formatYER(selected.totalInvoiced)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي المدفوع</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(selected.netPaid)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.totalRefunds)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الخصومات</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(selected.totalDiscounts)}</p></div>
+              <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد</p><p className="text-sm font-bold" style={{ color: selected.balance > 0 ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(selected.balance)}</p></div>
+              {selected.contractOutstanding > 0 && <div className="col-span-2"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مستحقات العقود</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.contractOutstanding)}</p></div>}
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: tokens.border }}>
               <button onClick={() => setShowPayment(true)} style={btnPrimary}>

@@ -59,7 +59,7 @@ export function TreasuriesTab() {
     if (!tName.trim()) { toast.error("يرجى إدخال اسم الخزينة"); return; }
     try {
       setSubmitting(true);
-      const payload: CreateTreasuryRequest = { Name: tName, Type: tType, OpeningBalance: Number(tBalance) || 0 };
+      const payload: CreateTreasuryRequest = { name: tName, type: tType, openingBalance: Number(tBalance) || 0 };
       await api.post("/api/finance-v3/treasuries", payload);
       toast.success("تم إنشاء الخزينة بنجاح");
       setShowCreateTreasury(false);
@@ -77,11 +77,11 @@ export function TreasuriesTab() {
     try {
       setSubmitting(true);
       const payload: CreateTransferRequest = {
-        SourceTreasuryId: srcId,
-        DestinationTreasuryId: dstId,
-        Amount: Number(trAmount),
-        DepositSource: trDepositSource || undefined,
-        Notes: trNotes || undefined,
+        sourceTreasuryId: srcId,
+        destinationTreasuryId: dstId,
+        amount: Number(trAmount),
+        depositSource: trDepositSource || undefined,
+        notes: trNotes || undefined,
       };
       await api.post("/api/finance-v3/vault-transfers", payload);
       toast.success("تم إنشاء التحويل بنجاح");
@@ -127,13 +127,13 @@ export function TreasuriesTab() {
         {loading ? <LoadingSkeleton /> : treasuries.length === 0 ? <EmptyState icon={Landmark} message="لا توجد خزائن" /> : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {treasuries.map((t) => (
-              <div key={t.Id} className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+              <div key={t.id} className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{t.Name}</h4>
-                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{TREASURY_TYPES.find((x) => x.value === t.Type)?.label ?? t.Type}</span>
+                  <h4 className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{t.name}</h4>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: tokens.brandLight, color: tokens.brand }}>{TREASURY_TYPES.find((x) => x.value === t.type)?.label ?? t.type}</span>
                 </div>
-                <p className="text-lg font-bold mb-1" style={{ color: tokens.successBorder }}>{formatYER(t.Balance)}</p>
-                <button onClick={() => handleRecalculate(t.Id)} className="text-xs flex items-center gap-1" style={{ color: tokens.brand }}>
+                <p className="text-lg font-bold mb-1" style={{ color: tokens.successBorder }}>{formatYER(t.balance)}</p>
+                <button onClick={() => handleRecalculate(t.id)} className="text-xs flex items-center gap-1" style={{ color: tokens.brand }}>
                   <Calculator className="w-3 h-3" /> إعادة حساب
                 </button>
               </div>
@@ -150,19 +150,19 @@ export function TreasuriesTab() {
 
         {loading ? <LoadingSkeleton /> : transfers.length === 0 ? <EmptyState icon={ArrowRightLeft} message="لا توجد تحويلات" /> : (
           <DataTable<VaultTransfer>
-            keyField="Id"
+            keyField="id"
             data={transfers}
             columns={[
-              { key: "SourceTreasuryName", label: "من" },
-              { key: "DestinationTreasuryName", label: "إلى" },
-              { key: "Amount", label: "المبلغ", render: (r) => formatYER(r.Amount) },
-              { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
-              { key: "RequestedBy", label: "بواسطة" },
-              { key: "RequestedAt", label: "التاريخ", render: (r) => new Date(r.RequestedAt).toLocaleString("ar-SA") },
-              { key: "actions", label: "إجراءات", render: (r) => r.Status === "Pending" ? (
+              { key: "sourceTreasuryName", label: "من" },
+              { key: "destinationTreasuryName", label: "إلى" },
+              { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
+              { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
+              { key: "requestedBy", label: "بواسطة" },
+              { key: "requestedAt", label: "التاريخ", render: (r) => new Date(r.requestedAt).toLocaleString("ar-SA") },
+              { key: "actions", label: "إجراءات", render: (r) => r.status === "Pending" ? (
                 <div className="flex items-center gap-1">
-                  <button onClick={(e) => { e.stopPropagation(); setConfirmApprove({ id: r.Id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setConfirmApprove({ id: r.Id, action: "reject" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="رفض"><ThumbsDown className="w-3.5 h-3.5" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setConfirmApprove({ id: r.id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setConfirmApprove({ id: r.id, action: "reject" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="رفض"><ThumbsDown className="w-3.5 h-3.5" /></button>
                 </div>
               ) : null },
             ]}
@@ -186,17 +186,17 @@ export function TreasuriesTab() {
       {/* Create Transfer Modal */}
       <Modal open={showCreateTransfer} onClose={() => setShowCreateTransfer(false)} title="تحويل جديد">
         <div className="space-y-4">
-          <div><label style={labelStyle}>الخزينة المصدر <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={srcId} onChange={(e) => setSrcId(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{treasuries.map((t) => (<option key={t.Id} value={t.Id}>{t.Name} ({formatYER(t.Balance)})</option>))}</select></div>
-          <div><label style={labelStyle}>الخزينة الوجهة <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={dstId} onChange={(e) => setDstId(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{treasuries.map((t) => (<option key={t.Id} value={t.Id}>{t.Name} ({formatYER(t.Balance)})</option>))}</select></div>
-          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0.01" max={srcId ? treasuries.find((t) => t.Id === srcId)?.Balance : undefined} step="0.01" value={trAmount} onChange={(e) => setTrAmount(e.target.value)} dir="ltr" style={inputStyle} />{srcId && Number(trAmount) > (treasuries.find((t) => t.Id === srcId)?.Balance ?? 0) && (<p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز رصيد الخزينة المصدر</p>)}</div>
+          <div><label style={labelStyle}>الخزينة المصدر <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={srcId} onChange={(e) => setSrcId(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{treasuries.map((t) => (<option key={t.id} value={t.id}>{t.name} ({formatYER(t.balance)})</option>))}</select></div>
+          <div><label style={labelStyle}>الخزينة الوجهة <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={dstId} onChange={(e) => setDstId(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{treasuries.map((t) => (<option key={t.id} value={t.id}>{t.name} ({formatYER(t.balance)})</option>))}</select></div>
+          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0.01" max={srcId ? treasuries.find((t) => t.id === srcId)?.balance : undefined} step="0.01" value={trAmount} onChange={(e) => setTrAmount(e.target.value)} dir="ltr" style={inputStyle} />{srcId && Number(trAmount) > (treasuries.find((t) => t.id === srcId)?.balance ?? 0) && (<p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز رصيد الخزينة المصدر</p>)}</div>
           {/* Deposit source for external transfers */}
-          {(() => { const srcT = treasuries.find((t) => t.Id === srcId); return srcT?.Type === "External" || (srcId && !treasuries.find((t) => t.Id === srcId)); })() ? (
+          {(() => { const srcT = treasuries.find((t) => t.id === srcId); return srcT?.type === "External" || (srcId && !treasuries.find((t) => t.id === srcId)); })() ? (
             <div><label style={labelStyle}>مصدر الإيداع</label><select value={trDepositSource} onChange={(e) => setTrDepositSource(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{DEPOSIT_SOURCES.map((d) => (<option key={d.value} value={d.value}>{d.label}</option>))}</select></div>
           ) : null}
           <div><label style={labelStyle}>ملاحظات</label><input value={trNotes} onChange={(e) => setTrNotes(e.target.value)} placeholder="ملاحظات اختيارية..." style={inputStyle} /></div>
           <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
             <button onClick={() => setShowCreateTransfer(false)} style={btnGhost}>إلغاء</button>
-            <button onClick={handleCreateTransfer} disabled={submitting || (srcId ? Number(trAmount) > (treasuries.find((t) => t.Id === srcId)?.Balance ?? 0) : false)} style={{ ...btnPrimary, opacity: submitting || (srcId ? Number(trAmount) > (treasuries.find((t) => t.Id === srcId)?.Balance ?? 0) : false) ? 0.6 : 1 }}>{submitting ? "جارٍ الحفظ..." : "إنشاء تحويل"}</button>
+            <button onClick={handleCreateTransfer} disabled={submitting || (srcId ? Number(trAmount) > (treasuries.find((t) => t.id === srcId)?.balance ?? 0) : false)} style={{ ...btnPrimary, opacity: submitting || (srcId ? Number(trAmount) > (treasuries.find((t) => t.id === srcId)?.balance ?? 0) : false) ? 0.6 : 1 }}>{submitting ? "جارٍ الحفظ..." : "إنشاء تحويل"}</button>
           </div>
         </div>
       </Modal>

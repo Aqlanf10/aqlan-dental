@@ -103,10 +103,10 @@ export function OverviewTab() {
           </div>
         ) : data ? (
           <>
-            <KpiCard label="إيراد اليوم (مستحق)" value={formatYER(data.TodayAccruedRevenue)} sublabel={`التدفقات الداخلة: ${formatYER(data.TodayInflow)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
-            <KpiCard label="التدفقات الخارجة اليوم" value={formatYER(data.TodayOutflow)} sublabel={`شهري: ${formatYER(data.MonthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
-            <KpiCard label="رصيد الخزائن" value={formatYER(data.TotalTreasuryBalance)} sublabel={`${data.JournalEntryCount} قيد محاسبي`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
-            <KpiCard label="المستحقات المعلقة" value={formatYER(data.TotalOutstanding)} sublabel={`عقود: ${formatYER(data.ContractOutstanding)}`} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
+            <KpiCard label="إيراد اليوم (مستحق)" value={formatYER(data.todayAccruedRevenue)} sublabel={`التدفقات الداخلة: ${formatYER(data.todayInflow)}`} color={tokens.successBorder} icon={<Receipt className="w-4 h-4" />} />
+            <KpiCard label="التدفقات الخارجة اليوم" value={formatYER(data.todayOutflow)} sublabel={`شهري: ${formatYER(data.monthOutflow)}`} color={tokens.dangerBorder} icon={<TrendingDown className="w-4 h-4" />} />
+            <KpiCard label="رصيد الخزائن" value={formatYER(data.totalTreasuryBalance)} sublabel={`${data.journalEntryCount} قيد محاسبي`} color={tokens.brand} icon={<Vault className="w-4 h-4" />} />
+            <KpiCard label="المستحقات المعلقة" value={formatYER(data.totalOutstanding)} sublabel={`عقود: ${formatYER(data.contractOutstanding)}`} color={tokens.warningBorder} icon={<HandCoins className="w-4 h-4" />} />
           </>
         ) : null}
       </div>
@@ -120,10 +120,10 @@ export function OverviewTab() {
               <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>حالة الكتابة المزدوجة</h4>
             </div>
             <div className="space-y-2">
-              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>إجمالي القيود</span><span className="font-bold" style={{ color: tokens.textPrimary }}>{data.JournalEntryCount}</span></div>
-              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>قيود مرحّلة</span><span className="font-bold" style={{ color: tokens.successBorder }}>{data.PostedEntryCount}</span></div>
-              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>قيود عكسية</span><span className="font-bold" style={{ color: tokens.warningText }}>{data.ReversalEntryCount}</span></div>
-              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>نسبة التغطية</span><span className="font-bold" style={{ color: tokens.brand }}>{data.DualWriteCoverage}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>إجمالي القيود</span><span className="font-bold" style={{ color: tokens.textPrimary }}>{data.journalEntryCount}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>قيود مرحّلة</span><span className="font-bold" style={{ color: tokens.successBorder }}>{data.postedEntryCount}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>قيود عكسية</span><span className="font-bold" style={{ color: tokens.warningText }}>{data.reversalEntryCount}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>نسبة التغطية</span><span className="font-bold" style={{ color: tokens.brand }}>{data.dualWriteCoverage}</span></div>
             </div>
           </div>
           <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
@@ -132,9 +132,9 @@ export function OverviewTab() {
               <h4 className="text-sm font-semibold" style={{ color: tokens.textPrimary }}>إجراءات معلقة</h4>
             </div>
             <div className="space-y-2">
-              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>مصروفات بانتظار الاعتماد</span><span className="font-bold" style={{ color: data.PendingExpenses > 0 ? tokens.warningText : tokens.textPrimary }}>{data.PendingExpenses}</span></div>
-              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>تحويلات معلقة</span><span className="font-bold" style={{ color: data.PendingTransfers > 0 ? tokens.warningText : tokens.textPrimary }}>{data.PendingTransfers}</span></div>
-              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>فواتير غير مدفوعة</span><span className="font-bold" style={{ color: tokens.textPrimary }}>{formatYER(data.InvoiceOutstanding)}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>مصروفات بانتظار الاعتماد</span><span className="font-bold" style={{ color: data.pendingExpenses > 0 ? tokens.warningText : tokens.textPrimary }}>{data.pendingExpenses}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>تحويلات معلقة</span><span className="font-bold" style={{ color: data.pendingTransfers > 0 ? tokens.warningText : tokens.textPrimary }}>{data.pendingTransfers}</span></div>
+              <div className="flex justify-between text-xs"><span style={{ color: tokens.textSecondary }}>فواتير غير مدفوعة</span><span className="font-bold" style={{ color: tokens.textPrimary }}>{formatYER(data.invoiceOutstanding)}</span></div>
             </div>
           </div>
         </div>
@@ -153,14 +153,14 @@ export function OverviewTab() {
           </div>
         ) : plData ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(plData.AccruedRevenue)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المصروفات المستحقة</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.AccruedExpenses)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح المستحق</p><p className="text-sm font-bold" style={{ color: plData.AccruedNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(plData.AccruedNetProfit)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح النقدي</p><p className="text-sm font-bold" style={{ color: plData.CashNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(plData.CashNetProfit)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>التحصيلات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(plData.CashCollections)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(plData.CashRefunds)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي التكاليف</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.TotalCosts)}</p></div>
-            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>هامش الربح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{plData.ProfitMargin.toFixed(1)}%</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-sm font-bold" style={{ color: tokens.successBorder }}>{formatYER(plData.accruedRevenue)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المصروفات المستحقة</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.accruedExpenses)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح المستحق</p><p className="text-sm font-bold" style={{ color: plData.accruedNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(plData.accruedNetProfit)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>صافي الربح النقدي</p><p className="text-sm font-bold" style={{ color: plData.cashNetProfit >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(plData.cashNetProfit)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>التحصيلات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(plData.cashCollections)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>المرتجعات النقدية</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(plData.cashRefunds)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>إجمالي التكاليف</p><p className="text-sm font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(plData.totalCosts)}</p></div>
+            <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>هامش الربح</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{plData.profitMargin.toFixed(1)}%</p></div>
           </div>
         ) : (
           <p className="text-xs" style={{ color: tokens.textTertiary }}>لم يتم تحميل بيانات الأرباح والخسائر</p>
@@ -172,9 +172,9 @@ export function OverviewTab() {
         <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
           <h4 className="text-sm font-semibold mb-3" style={{ color: tokens.textPrimary }}>ملخص الشهر</h4>
           <div className="grid grid-cols-3 gap-4 text-center">
-            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.MonthAccruedRevenue)}</p></div>
-            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>التدفقات الخارجة</p><p className="text-lg font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.MonthOutflow)}</p></div>
-            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>صافي التدفق</p><p className="text-lg font-bold" style={{ color: data.MonthNet >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.MonthNet)}</p></div>
+            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>الإيرادات المستحقة</p><p className="text-lg font-bold" style={{ color: tokens.successBorder }}>{formatYER(data.monthAccruedRevenue)}</p></div>
+            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>التدفقات الخارجة</p><p className="text-lg font-bold" style={{ color: tokens.dangerBorder }}>{formatYER(data.monthOutflow)}</p></div>
+            <div><p className="text-xs" style={{ color: tokens.textTertiary }}>صافي التدفق</p><p className="text-lg font-bold" style={{ color: data.monthNet >= 0 ? tokens.successBorder : tokens.dangerBorder }}>{formatYER(data.monthNet)}</p></div>
           </div>
         </div>
       )}

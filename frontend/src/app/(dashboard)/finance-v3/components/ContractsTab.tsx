@@ -34,7 +34,7 @@ export function ContractsTab() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const filtered = data.filter((c) =>
-    c.PatientName.includes(search) || c.ContractNumber.includes(search) || c.PatientNumber.includes(search)
+    c.patientName.includes(search) || c.contractNumber.includes(search) || c.patientNumber.includes(search)
   );
 
   return (
@@ -54,17 +54,17 @@ export function ContractsTab() {
 
       {loading ? <LoadingSkeleton /> : filtered.length === 0 ? <EmptyState icon={HandCoins} message="لا توجد عقود" /> : (
         <DataTable<ContractListItem>
-          keyField="Id"
+          keyField="id"
           data={filtered}
           columns={[
-            { key: "ContractNumber", label: "رقم العقد" },
-            { key: "PatientName", label: "المريض" },
-            { key: "TotalAmount", label: "الإجمالي", render: (r) => formatYER(r.TotalAmount) },
-            { key: "PaidAmount", label: "المدفوع", render: (r) => formatYER(r.PaidAmount) },
-            { key: "OutstandingAmount", label: "المستحق", render: (r) => <span style={{ color: r.OutstandingAmount > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.OutstandingAmount)}</span> },
-            { key: "Status", label: "الحالة", render: (r) => <StatusBadge status={r.Status} /> },
-            { key: "IsOverdue", label: "متأخرة", render: (r) => r.IsOverdue ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.dangerBorder }} /> : "—" },
-            { key: "StartDate", label: "تاريخ البداية", render: (r) => new Date(r.StartDate).toLocaleDateString("ar-SA") },
+            { key: "contractNumber", label: "رقم العقد" },
+            { key: "patientName", label: "المريض" },
+            { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
+            { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
+            { key: "outstandingAmount", label: "المستحق", render: (r) => <span style={{ color: r.outstandingAmount > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.outstandingAmount)}</span> },
+            { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
+            { key: "isOverdue", label: "متأخرة", render: (r) => r.isOverdue ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.dangerBorder }} /> : "—" },
+            { key: "startDate", label: "تاريخ البداية", render: (r) => new Date(r.startDate).toLocaleDateString("ar-SA") },
           ]}
         />
       )}

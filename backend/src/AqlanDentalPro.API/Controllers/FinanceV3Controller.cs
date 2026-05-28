@@ -126,17 +126,11 @@ public class FinanceV3Controller(
     /// Sprint 1: Admin users with Guid.Empty branchId bypass branch filter → consolidated data.
     /// </summary>
     [HttpGet("dashboard")]
-    public async Task<IActionResult> GetDashboard([FromQuery] string? period = "today")
+    public async Task<IActionResult> GetDashboard([FromQuery] string? period = "today", [FromQuery] Guid? branchId = null)
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        // Admin users with no branch (Guid.Empty) bypass the branch filter to view
-        // consolidated statistics across all branches (Sprint 1 admin fallback).
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
-
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
         var today = DateOnly.FromDateTime(DateTime.Today);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
@@ -148,12 +142,12 @@ public class FinanceV3Controller(
             .Where(l => l.AccountType == JournalAccountType.Treasury
                 && l.JournalEntry.EntryDate == today
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value));
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value));
         var monthTreasuryLines = db.JournalLines
             .Where(l => l.AccountType == JournalAccountType.Treasury
                 && l.JournalEntry.EntryDate >= monthStart
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value));
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value));
 
         // FIX (Migration B): Treasury Debit = Inflow (money received), Credit = Outflow (money paid)
         // In double-entry: Treasury is a debit-normal asset account.
@@ -165,20 +159,20 @@ public class FinanceV3Controller(
         var monthOutflow = await monthTreasuryLines.SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         // ── Outstanding balances ──
-        var contractOutstanding = await CalculateContractOutstandingAsync(branchId);
-        var invoiceOutstanding = await CalculateInvoiceOutstandingAsync(branchId);
+        var contractOutstanding = await CalculateContractOutstandingAsync(resolvedBranchId);
+        var invoiceOutstanding = await CalculateInvoiceOutstandingAsync(resolvedBranchId);
 
         // ── Journal Entry stats (canonical verification) ──
         var journalEntryCount = await db.JournalEntries.CountAsync(e =>
-            !branchId.HasValue || e.BranchId == branchId.Value);
+            !resolvedBranchId.HasValue || e.BranchId == resolvedBranchId.Value);
         var postedEntryCount = await db.JournalEntries.CountAsync(e =>
-            e.IsPosted && (!branchId.HasValue || e.BranchId == branchId.Value));
+            e.IsPosted && (!resolvedBranchId.HasValue || e.BranchId == resolvedBranchId.Value));
         var reversalEntryCount = await db.JournalEntries.CountAsync(e =>
-            e.IsReversal && (!branchId.HasValue || e.BranchId == branchId.Value));
+            e.IsReversal && (!resolvedBranchId.HasValue || e.BranchId == resolvedBranchId.Value));
 
         // ── Treasury summary ──
         var treasuryQuery = db.Treasuries.Where(t => t.IsActive);
-        if (branchId.HasValue) treasuryQuery = treasuryQuery.Where(t => t.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue) treasuryQuery = treasuryQuery.Where(t => t.BranchId == resolvedBranchId.Value);
         var totalTreasuryBalance = await treasuryQuery.SumAsync(t => (decimal?)t.Balance) ?? 0;
 
         // ── Accrued revenue from posted JournalLines ──
@@ -186,14 +180,14 @@ public class FinanceV3Controller(
             .Where(l => l.AccountType == JournalAccountType.Revenue
                 && l.JournalEntry.EntryDate == today
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         var monthAccruedRevenue = await db.JournalLines
             .Where(l => l.AccountType == JournalAccountType.Revenue
                 && l.JournalEntry.EntryDate >= monthStart
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         // ── Pending approvals ──
@@ -202,10 +196,10 @@ public class FinanceV3Controller(
         var pendingTransfersQuery = db.VaultTransfers
             .Where(t => t.Status == TransferStatus.Pending && t.IsActive);
         // Blocker 6: Branch filter for pending approvals
-        if (branchId.HasValue)
+        if (resolvedBranchId.HasValue)
         {
-            pendingExpensesQuery = pendingExpensesQuery.Where(e => e.BranchId == branchId.Value);
-            pendingTransfersQuery = pendingTransfersQuery.Where(t => t.DestinationTreasury.BranchId == branchId.Value);
+            pendingExpensesQuery = pendingExpensesQuery.Where(e => e.BranchId == resolvedBranchId.Value);
+            pendingTransfersQuery = pendingTransfersQuery.Where(t => t.DestinationTreasury.BranchId == resolvedBranchId.Value);
         }
         var pendingExpenses = await pendingExpensesQuery.CountAsync();
         var pendingTransfers = await pendingTransfersQuery.CountAsync();
@@ -213,17 +207,17 @@ public class FinanceV3Controller(
         // ── Legacy summary fields (added for daily-operations FinanceView migration) ──
         // Active contracts count
         var activeContractsQuery = db.Contracts.Where(c => c.Status == ContractStatus.Active);
-        if (branchId.HasValue) activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue) activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == resolvedBranchId.Value);
         var activeContracts = await activeContractsQuery.CountAsync();
 
         // Unpaid (issued) invoices count
         var unpaidInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
-        if (branchId.HasValue) unpaidInvoicesQuery = unpaidInvoicesQuery.Where(i => i.Patient.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue) unpaidInvoicesQuery = unpaidInvoicesQuery.Where(i => i.Patient.BranchId == resolvedBranchId.Value);
         var unpaidInvoicesCount = await unpaidInvoicesQuery.CountAsync();
 
         // Draft invoices count
         var draftInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Draft && i.IsActive);
-        if (branchId.HasValue) draftInvoicesQuery = draftInvoicesQuery.Where(i => i.Patient.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue) draftInvoicesQuery = draftInvoicesQuery.Where(i => i.Patient.BranchId == resolvedBranchId.Value);
         var draftInvoicesCount = await draftInvoicesQuery.CountAsync();
 
         // Overdue amount — contracts with installments past due
@@ -235,7 +229,7 @@ public class FinanceV3Controller(
         var overdueAmount = 0m;
         foreach (var c in overdueContracts)
         {
-            if (branchId.HasValue && c.Patient?.BranchId != branchId.Value) continue;
+            if (resolvedBranchId.HasValue && c.Patient?.BranchId != resolvedBranchId.Value) continue;
             // Sprint 1: Null safety — use GetValueOrDefault instead of ! operator
             // to prevent NullReferenceException when StartDate is null
             var startDate = c.StartDate.GetValueOrDefault();
@@ -251,14 +245,14 @@ public class FinanceV3Controller(
         // Pending doctor commissions (calculated/approved/pending but not paid)
         var commissionQuery = db.InvoiceLineItems
             .Where(l => l.IsActive && l.CommissionStatus != CommissionStatus.Paid && l.DoctorCommissionAmount > 0);
-        if (branchId.HasValue) commissionQuery = commissionQuery.Where(l => l.Invoice.Patient.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue) commissionQuery = commissionQuery.Where(l => l.Invoice.Patient.BranchId == resolvedBranchId.Value);
         var pendingCommissionsAmount = await commissionQuery.SumAsync(l => (decimal?)l.DoctorCommissionAmount) ?? 0;
 
         // Recent payments (last 10)
         var recentPaymentsQuery = db.Payments
             .Include(p => p.Patient)
             .Where(p => p.IsActive);
-        if (branchId.HasValue) recentPaymentsQuery = recentPaymentsQuery.Where(p => p.BranchId == branchId);
+        if (resolvedBranchId.HasValue) recentPaymentsQuery = recentPaymentsQuery.Where(p => p.BranchId == resolvedBranchId);
         var recentPaymentsRaw = await recentPaymentsQuery
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .Take(10)
@@ -274,7 +268,7 @@ public class FinanceV3Controller(
         var recentInvoicesQuery = db.Invoices
             .Include(i => i.Patient)
             .Where(i => i.IsActive);
-        if (branchId.HasValue) recentInvoicesQuery = recentInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
+        if (resolvedBranchId.HasValue) recentInvoicesQuery = recentInvoicesQuery.Where(i => i.Patient.BranchId == resolvedBranchId);
         var recentInvoices = await recentInvoicesQuery
             .OrderByDescending(i => i.CreatedAt)
             .Take(10)
@@ -329,7 +323,7 @@ public class FinanceV3Controller(
             Period = period,
 
             // Consolidation flag
-            IsConsolidated = !branchId.HasValue // true when admin views all branches
+            IsConsolidated = !resolvedBranchId.HasValue // true when admin views all branches
         });
         }
         catch (Exception ex)
@@ -367,16 +361,17 @@ public class FinanceV3Controller(
         [FromQuery] string? fromDate = null,
         [FromQuery] string? toDate = null,
         [FromQuery] bool? isPosted = null,
-        [FromQuery] bool? isReversal = null)
+        [FromQuery] bool? isReversal = null,
+        [FromQuery] Guid? branchId = null)
     {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.JournalEntries
             .Include(e => e.Lines)
-            .Where(e => !branchId.HasValue || e.BranchId == branchId.Value);
+            .Where(e => !resolvedBranchId.HasValue || e.BranchId == resolvedBranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(documentType) && Enum.TryParse<FinancialDocumentType>(documentType, true, out var dt))
             query = query.Where(e => e.FinancialDocumentType == dt);
@@ -439,9 +434,6 @@ public class FinanceV3Controller(
     [HttpGet("journal-entries/{id:guid}")]
     public async Task<IActionResult> GetJournalEntryById(Guid id)
     {
-        // Blocker 6: Reject non-admin with null/empty BranchId
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         var entry = await db.JournalEntries
             .Where(e => e.Id == id)
@@ -500,21 +492,7 @@ public class FinanceV3Controller(
     {
         try
         {
-        // Sprint 1: Admin users can pass branchId to filter; if omitted or Guid.Empty,
-        // admin sees consolidated data (all branches). Non-admin users are restricted
-        // to their own branch and the query parameter is ignored.
-        Guid? resolvedBranchId;
-        if (!currentUser.IsAdmin)
-        {
-            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
-                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
-            resolvedBranchId = currentUser.BranchId;
-        }
-        else
-        {
-            // Admin: if branchId is provided and valid, use it; otherwise consolidated
-            resolvedBranchId = (branchId.HasValue && branchId.Value != Guid.Empty) ? branchId : null;
-        }
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         // FIX: Only include lines from POSTED journal entries in canonical balances.
         // Unposted/draft entries are excluded from official totals (Blocker 4).
@@ -600,16 +578,13 @@ public class FinanceV3Controller(
     ///   Treasury.Type → PaymentMethod: Vault → "cash", Bank → "bank_transfer"
     /// </summary>
     [HttpGet("daily-cash-summary")]
-    public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date = null)
+    public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date = null, [FromQuery] Guid? branchId = null)
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         var targetDate = DateOnly.TryParse(date, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         // ── Read from JournalLine (Treasury account type) — canonical source of truth ──
         // Only posted entries are included in official cash figures.
@@ -618,7 +593,7 @@ public class FinanceV3Controller(
             .Where(l => l.AccountType == JournalAccountType.Treasury
                 && l.JournalEntry.EntryDate == targetDate
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value));
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value));
 
         var lines = await treasuryLines
             .Select(l => new
@@ -684,7 +659,7 @@ public class FinanceV3Controller(
 
         // Journal entries for the same day (posted only for accurate counts)
         var journalEntries = await db.JournalEntries
-            .Where(e => e.EntryDate == targetDate && e.IsPosted && (!branchId.HasValue || e.BranchId == branchId.Value))
+            .Where(e => e.EntryDate == targetDate && e.IsPosted && (!resolvedBranchId.HasValue || e.BranchId == resolvedBranchId.Value))
             .CountAsync();
 
         return Ok(new
@@ -700,7 +675,7 @@ public class FinanceV3Controller(
             JournalEntryCount = journalEntries,
 
             // Consolidation flag
-            IsConsolidated = !branchId.HasValue // true when admin views all branches
+            IsConsolidated = !resolvedBranchId.HasValue // true when admin views all branches
         });
         }
         catch (Exception ex)
@@ -759,7 +734,8 @@ public class FinanceV3Controller(
     [HttpGet("profit-loss")]
     public async Task<IActionResult> GetProfitAndLoss(
         [FromQuery] string? fromDate = null,
-        [FromQuery] string? toDate = null)
+        [FromQuery] string? toDate = null,
+        [FromQuery] Guid? branchId = null)
     {
         // Parse dates before try so they're available in catch fallback
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -768,25 +744,21 @@ public class FinanceV3Controller(
 
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
-
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         // ── Accrued P&L from posted JournalLines (canonical, accrual basis) ──
         var accruedRevenueQuery = db.JournalLines
             .Where(l => l.AccountType == JournalAccountType.Revenue
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value));
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value));
         var accruedRevenue = await accruedRevenueQuery.SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0;
 
         var accruedExpensesQuery = db.JournalLines
             .Where(l => l.AccountType == JournalAccountType.Expense
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value));
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value));
         var accruedExpenses = await accruedExpensesQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
 
         var accruedNetProfit = accruedRevenue - accruedExpenses;
@@ -801,7 +773,7 @@ public class FinanceV3Controller(
                 && !l.JournalEntry.IsReversal
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         // Cash outflows from refunds: Treasury Credit lines in Refund-type entries
@@ -812,7 +784,7 @@ public class FinanceV3Controller(
                 && !l.JournalEntry.IsReversal
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         // Payment reversals (deleted payments): Treasury Credit lines in PaymentDeletion reversal entries
@@ -824,7 +796,7 @@ public class FinanceV3Controller(
                 && l.JournalEntry.IsReversal
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         var netCashCollections = cashCollections - cashRefunds - patientReversalTotal;
@@ -835,19 +807,19 @@ public class FinanceV3Controller(
 
         // Operating Expenses: Treasury Credit from Expense entries, net of reversal Treasury Debit
         var operatingExpenses = await CalculateCashCategoryAsync(
-            FinancialDocumentType.Expense, from, to, branchId);
+            FinancialDocumentType.Expense, from, to, resolvedBranchId);
 
         // Salary Payments: Treasury Credit from SalaryPayment entries, net of reversal Treasury Debit
         var salaryTotal = await CalculateCashCategoryAsync(
-            FinancialDocumentType.SalaryPayment, from, to, branchId);
+            FinancialDocumentType.SalaryPayment, from, to, resolvedBranchId);
 
         // Doctor Commissions: Treasury Credit from CommissionPayment entries, net of reversal Treasury Debit
         var commissionTotal = await CalculateCashCategoryAsync(
-            FinancialDocumentType.CommissionPayment, from, to, branchId);
+            FinancialDocumentType.CommissionPayment, from, to, resolvedBranchId);
 
         // Supplier Payments: Treasury Credit from SupplierPayment entries, net of reversal Treasury Debit
         var supplierTotal = await CalculateCashCategoryAsync(
-            FinancialDocumentType.SupplierPayment, from, to, branchId);
+            FinancialDocumentType.SupplierPayment, from, to, resolvedBranchId);
 
         var totalCosts = operatingExpenses + salaryTotal + commissionTotal + supplierTotal;
         var cashNetProfit = netCashCollections - totalCosts;
@@ -858,14 +830,14 @@ public class FinanceV3Controller(
                 && !e.IsReversal
                 && e.EntryDate >= from && e.EntryDate <= to
                 && e.IsPosted
-                && (!branchId.HasValue || e.BranchId == branchId.Value));
+                && (!resolvedBranchId.HasValue || e.BranchId == resolvedBranchId.Value));
 
         var expenseTransactionCount = await db.JournalEntries
             .CountAsync(e => e.FinancialDocumentType == FinancialDocumentType.Expense
                 && !e.IsReversal
                 && e.EntryDate >= from && e.EntryDate <= to
                 && e.IsPosted
-                && (!branchId.HasValue || e.BranchId == branchId.Value));
+                && (!resolvedBranchId.HasValue || e.BranchId == resolvedBranchId.Value));
 
         return Ok(new
         {
@@ -909,7 +881,7 @@ public class FinanceV3Controller(
             ExpenseTransactionCount = expenseTransactionCount,
 
             // Consolidation flag
-            IsConsolidated = !branchId.HasValue // true when admin views all branches
+            IsConsolidated = !resolvedBranchId.HasValue // true when admin views all branches
         });
         }
         catch (Exception ex)
@@ -959,7 +931,7 @@ public class FinanceV3Controller(
                 && !l.JournalEntry.IsReversal
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .SumAsync(l => (decimal?)l.Credit) ?? 0;
 
         // Reversal inflows: Treasury Debit lines from reversal entries of same doc type
@@ -970,7 +942,7 @@ public class FinanceV3Controller(
                 && l.JournalEntry.IsReversal
                 && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .SumAsync(l => (decimal?)l.Debit) ?? 0;
 
         return outflows - reversalInflows;
@@ -991,9 +963,6 @@ public class FinanceV3Controller(
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         var patient = await db.Patients.FindAsync(patientId);
         if (patient == null)
@@ -1104,19 +1073,15 @@ public class FinanceV3Controller(
     /// GET /api/finance-v3/treasuries — Treasury accounts with recent transactions.
     /// </summary>
     [HttpGet("treasuries")]
-    public async Task<IActionResult> GetTreasuries()
+    public async Task<IActionResult> GetTreasuries([FromQuery] Guid? branchId = null)
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
-
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.Treasuries
             .Where(t => t.IsActive);
-        if (branchId.HasValue) query = query.Where(t => t.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue) query = query.Where(t => t.BranchId == resolvedBranchId.Value);
 
         var treasuries = await query
             .Select(t => new
@@ -1392,25 +1357,23 @@ public class FinanceV3Controller(
     public async Task<IActionResult> GetPatientAccounts(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         // ── Pre-compute JournalLine balances per patient ──
         // Group by AccountId (= PatientId) for PatientReceivable + PatientAdvance
         var journalBalances = await db.JournalLines
             .Where(l => (l.AccountType == JournalAccountType.PatientReceivable || l.AccountType == JournalAccountType.PatientAdvance)
                 && l.JournalEntry.IsPosted
-                && (!branchId.HasValue || l.BranchId == branchId.Value))
+                && (!resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value))
             .GroupBy(l => l.AccountId)
             .Select(g => new
             {
@@ -1421,7 +1384,7 @@ public class FinanceV3Controller(
 
         var query = db.Patients
             .Where(p => p.IsActive)
-            .Where(p => !branchId.HasValue || p.BranchId == branchId.Value);
+            .Where(p => !resolvedBranchId.HasValue || p.BranchId == resolvedBranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(p => p.FirstName.Contains(search) || p.LastName.Contains(search) || p.PatientNumber.Contains(search) || (p.Phone != null && p.Phone.Contains(search)));
@@ -1481,19 +1444,16 @@ public class FinanceV3Controller(
     /// GET /api/finance-v3/trial-balance — Trial balance from posted JournalLines.
     /// </summary>
     [HttpGet("trial-balance")]
-    public async Task<IActionResult> GetTrialBalance([FromQuery] string? asOfDate = null)
+    public async Task<IActionResult> GetTrialBalance([FromQuery] string? asOfDate = null, [FromQuery] Guid? branchId = null)
     {
         try
         {
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
-
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
         var cutoff = DateOnly.TryParse(asOfDate, out var d) ? d : DateOnly.FromDateTime(DateTime.Today);
 
         var linesQuery = db.JournalLines
             .Where(l => l.JournalEntry.IsPosted && l.JournalEntry.EntryDate <= cutoff)
-            .Where(l => !branchId.HasValue || l.BranchId == branchId.Value);
+            .Where(l => !resolvedBranchId.HasValue || l.BranchId == resolvedBranchId.Value);
 
         var accounts = await linesQuery
             .GroupBy(l => l.AccountType)
@@ -1559,22 +1519,19 @@ public class FinanceV3Controller(
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.Payments
             .Include(p => p.Patient)
             .Include(p => p.Doctor)
             .Where(p => p.IsActive && p.Amount > 0);
 
-        if (branchId.HasValue)
-            query = query.Where(p => p.Patient.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue)
+            query = query.Where(p => p.Patient.BranchId == resolvedBranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(method))
             query = query.Where(p => p.PaymentMethod == method);
@@ -1635,22 +1592,19 @@ public class FinanceV3Controller(
     {
         try
         {
-        // Blocker 6: Branch isolation guard for non-admin users
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.Invoices
             .Include(i => i.Patient)
             .Include(i => i.Payments)
             .Where(i => i.IsActive);
 
-        if (branchId.HasValue)
-            query = query.Where(i => i.Patient.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue)
+            query = query.Where(i => i.Patient.BranchId == resolvedBranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<InvoiceStatus>(status, true, out var s))
             query = query.Where(i => i.Status == s);
@@ -1708,22 +1662,19 @@ public class FinanceV3Controller(
     {
         try
         {
-        // Branch isolation guard
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.Contracts
             .Include(c => c.Patient)
             .Include(c => c.Payments)
             .Where(c => c.IsActive);
 
-        if (branchId.HasValue)
-            query = query.Where(c => c.Patient.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue)
+            query = query.Where(c => c.Patient.BranchId == resolvedBranchId.Value);
 
         if (patientId.HasValue)
             query = query.Where(c => c.PatientId == patientId.Value);
@@ -1773,13 +1724,12 @@ public class FinanceV3Controller(
     public async Task<IActionResult> GetSuppliers(
         [FromQuery] string? search = null,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 30)
+        [FromQuery] int pageSize = 30,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {
-        // Branch isolation guard
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 30;
@@ -1833,21 +1783,18 @@ public class FinanceV3Controller(
     {
         try
         {
-        // Branch isolation guard
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.SupplierBills
             .Include(b => b.Supplier)
             .Where(b => b.IsActive);
 
-        if (branchId.HasValue)
-            query = query.Where(b => b.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue)
+            query = query.Where(b => b.BranchId == resolvedBranchId.Value);
 
         if (supplierId.HasValue)
             query = query.Where(b => b.SupplierId == supplierId.Value);
@@ -1895,18 +1842,16 @@ public class FinanceV3Controller(
     public async Task<IActionResult> GetVaultTransfers(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? status = null)
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? branchId = null)
     {
         try
         {
-        // Branch isolation guard
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.VaultTransfers
             .Include(t => t.SourceTreasury)
@@ -1915,8 +1860,8 @@ public class FinanceV3Controller(
             .Include(t => t.ApprovedByUser)
             .Where(t => t.IsActive);
 
-        if (branchId.HasValue)
-            query = query.Where(t => t.DestinationTreasury.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue)
+            query = query.Where(t => t.DestinationTreasury.BranchId == resolvedBranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<TransferStatus>(status, true, out var s))
             query = query.Where(t => t.Status == s);
@@ -1973,21 +1918,18 @@ public class FinanceV3Controller(
     {
         try
         {
-        // Branch isolation guard
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var resolvedBranchId = await ResolveBranchIdAsync(branchId);
 
         var query = db.OperationalExpenses
             .Include(e => e.Supplier)
             .Where(e => e.IsActive);
 
-        if (branchId.HasValue)
-            query = query.Where(e => e.BranchId == branchId.Value);
+        if (resolvedBranchId.HasValue)
+            query = query.Where(e => e.BranchId == resolvedBranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(category) && Enum.TryParse<ExpenseCategory>(category, true, out var catFilter))
             query = query.Where(e => e.Category == catFilter);
@@ -3462,11 +3404,45 @@ public class FinanceV3Controller(
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Sprint 1: Resolves the effective branch ID for the current user.
+    /// Sprint 1: Resolves the effective branch ID for GET (read) endpoints.
+    /// Returns Guid? where null means "no branch filter" (consolidated view for Admin).
+    /// - Admin passing null/Empty → returns null (consolidated, all-branches view)
+    /// - Admin passing a valid Guid → returns that Guid (specific branch filter)
+    /// - Non-admin → always forced to their token BranchId (branch isolation)
+    /// Used by all GET endpoints so admins can see consolidated data.
+    /// </summary>
+    private async Task<Guid?> ResolveBranchIdAsync(Guid? requestBranchId)
+    {
+        // 1. البحث عن هوية المستخدم الحالي وصلاحياته
+        var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+        var userBranch = User.FindFirst("BranchId")?.Value;
+
+        // 2. إذا كان المدقق هو المدير العام "Admin" وطلب رؤية عامة أو مرر Guid.Empty
+        if (userRole == "Admin" && (!requestBranchId.HasValue || requestBranchId.Value == Guid.Empty))
+        {
+            // إرجاع خيار null لتعطيل فلاتر عزل الفروع في الاستعلام الاستعراضي (GET)
+            return null;
+        }
+
+        // 3. للمستخدم العادي، نقوم دائمًا بفرض هويته المسجلة بالتوكن
+        if (userRole != "Admin")
+        {
+            if (Guid.TryParse(userBranch, out Guid tokenBranchId))
+            {
+                return tokenBranchId;
+            }
+        }
+
+        return requestBranchId ?? Guid.Empty;
+    }
+
+    /// <summary>
+    /// Sprint 1: Resolves the effective branch ID for POST (write) endpoints.
+    /// Always returns a non-null Guid — write operations require a specific branch.
     /// - Non-admin users: uses their assigned BranchId (must be valid, else Guid.Empty).
     /// - Admin users with a valid BranchId: uses their assigned branch.
     /// - Admin users with no branch (Guid.Empty): falls back to the first active
-    ///   branch in the system, allowing admin to perform write operations across branches.
+    ///   branch in the system, allowing admin to perform write operations.
     /// Returns Guid.Empty only if no active branches exist in the system.
     /// </summary>
     private async Task<Guid> ResolveBranchIdAsync()

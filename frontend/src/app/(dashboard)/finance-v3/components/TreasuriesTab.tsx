@@ -15,7 +15,7 @@ import { toast } from "@/stores/toastStore";
 import type { Treasury, CreateTreasuryRequest, VaultTransfer, CreateTransferRequest } from "./types";
 import { TREASURY_TYPES, DEPOSIT_SOURCES } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 7: Treasuries
@@ -158,7 +158,7 @@ export function TreasuriesTab() {
               { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
               { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
               { key: "requestedBy", label: "بواسطة" },
-              { key: "requestedAt", label: "التاريخ", render: (r) => new Date(r.requestedAt).toLocaleString("ar-SA") },
+              { key: "requestedAt", label: "التاريخ", render: (r) => safeFormatDateTime(r.requestedAt) },
               { key: "actions", label: "إجراءات", render: (r) => r.status === "Pending" ? (
                 <div className="flex items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); setConfirmApprove({ id: r.id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>

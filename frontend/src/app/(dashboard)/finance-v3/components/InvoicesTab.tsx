@@ -11,7 +11,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { InvoiceListItem, InvoiceDetail } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, StatusBadge, ConfirmDialog, tokens, inputStyle, btnDanger } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 3: Invoices
@@ -76,7 +76,7 @@ export function InvoicesTab() {
             { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
             { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
-            { key: "issueDate", label: "التاريخ", render: (r) => new Date(r.issueDate).toLocaleDateString("ar-SA") },
+            { key: "issueDate", label: "التاريخ", render: (r) => safeFormatDate(r.issueDate) },
           ]}
         />
       )}

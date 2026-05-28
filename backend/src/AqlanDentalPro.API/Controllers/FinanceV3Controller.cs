@@ -324,7 +324,10 @@ public class FinanceV3Controller(
 
             // Period info
             Date = today.ToString("yyyy-MM-dd"),
-            Period = period
+            Period = period,
+
+            // Consolidation flag
+            IsConsolidated = !branchId.HasValue // true when admin views all branches
         });
     }
 
@@ -418,13 +421,40 @@ public class FinanceV3Controller(
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
         var entry = await db.JournalEntries
-            .Include(e => e.Lines)
-            .Include(e => e.Branch)
-            .Include(e => e.Treasury)
-            .Include(e => e.PerformedByUser)
-            .Include(e => e.ReversalOfEntry)
-            .Include(e => e.ReversedByEntry)
-            .FirstOrDefaultAsync(e => e.Id == id);
+            .Where(e => e.Id == id)
+            .Select(e => new
+            {
+                e.Id,
+                e.EntryNumber,
+                DocumentType = e.FinancialDocumentType.ToString(),
+                FinancialDocumentId = e.FinancialDocumentId,
+                e.Description,
+                EntryDate = e.EntryDate.ToString("yyyy-MM-dd"),
+                BranchName = e.Branch != null ? e.Branch.Name : "",
+                TreasuryName = e.Treasury != null ? e.Treasury.Name : "",
+                PerformedByName = e.PerformedByUser != null ? e.PerformedByUser.Username : "",
+                e.IsPosted,
+                e.IsReversal,
+                ReversalOfEntryNumber = e.ReversalOfEntry != null ? e.ReversalOfEntry.EntryNumber : (string?)null,
+                ReversedByEntryNumber = e.ReversedByEntry != null ? e.ReversedByEntry.EntryNumber : (string?)null,
+                e.CashierSessionId,
+                e.CreatedAt,
+                TotalDebit = e.Lines.Sum(l => l.Debit),
+                TotalCredit = e.Lines.Sum(l => l.Credit),
+                IsBalanced = e.Lines.Sum(l => l.Debit) == e.Lines.Sum(l => l.Credit),
+                Lines = e.Lines.Select(l => new
+                {
+                    l.Id,
+                    AccountType = l.AccountType.ToString(),
+                    l.AccountId,
+                    l.Debit,
+                    l.Credit,
+                    l.Description
+                }).ToList(),
+                BranchId = e.BranchId,
+                e.PerformedBy
+            })
+            .FirstOrDefaultAsync();
 
         if (entry == null)
             return NotFound(new { message = "القيد غير موجود" });
@@ -433,36 +463,7 @@ public class FinanceV3Controller(
         if (!currentUser.IsAdmin && currentUser.BranchId.HasValue && entry.BranchId != currentUser.BranchId.Value)
             return Forbid("ليس لديك صلاحية الوصول إلى قيود فرع آخر");
 
-        return Ok(new
-        {
-            entry.Id,
-            entry.EntryNumber,
-            DocumentType = entry.FinancialDocumentType.ToString(),
-            FinancialDocumentId = entry.FinancialDocumentId,
-            entry.Description,
-            EntryDate = entry.EntryDate.ToString("yyyy-MM-dd"),
-            BranchName = entry.Branch?.Name ?? "",
-            TreasuryName = entry.Treasury?.Name ?? "",
-            PerformedByName = entry.PerformedByUser?.Username ?? "",
-            entry.IsPosted,
-            entry.IsReversal,
-            ReversalOfEntryNumber = entry.ReversalOfEntry?.EntryNumber,
-            ReversedByEntryNumber = entry.ReversedByEntry?.EntryNumber,
-            CashierSessionId = entry.CashierSessionId,
-            entry.CreatedAt,
-            TotalDebit = entry.Lines.Sum(l => l.Debit),
-            TotalCredit = entry.Lines.Sum(l => l.Credit),
-            IsBalanced = entry.IsBalanced(),
-            Lines = entry.Lines.Select(l => new
-            {
-                l.Id,
-                AccountType = l.AccountType.ToString(),
-                l.AccountId,
-                l.Debit,
-                l.Credit,
-                l.Description
-            }).ToList()
-        });
+        return Ok(entry);
     }
 
     // ─── Account Balances ────────────────────────────────────────────────────
@@ -494,9 +495,9 @@ public class FinanceV3Controller(
             .Select(g => new
             {
                 AccountType = g.Key.ToString(),
-                TotalDebit = g.Sum(l => l.Debit),
-                TotalCredit = g.Sum(l => l.Credit),
-                NetBalance = g.Sum(l => l.Debit) - g.Sum(l => l.Credit), // Debit-normal balance
+                TotalDebit = (decimal?)g.Sum(l => l.Debit) ?? 0m,
+                TotalCredit = (decimal?)g.Sum(l => l.Credit) ?? 0m,
+                NetBalance = ((decimal?)g.Sum(l => l.Debit) ?? 0m) - ((decimal?)g.Sum(l => l.Credit) ?? 0m), // Debit-normal balance
                 EntryCount = g.Select(l => l.JournalEntryId).Distinct().Count()
             })
             .ToListAsync();
@@ -523,7 +524,10 @@ public class FinanceV3Controller(
             TotalRevenue = -(accountBalances.Find(a => a.AccountType == "Revenue")?.NetBalance ?? 0),
             TotalExpenses = accountBalances.Find(a => a.AccountType == "Expense")?.NetBalance ?? 0,
             TotalReceivables = accountBalances.Find(a => a.AccountType == "PatientReceivable")?.NetBalance ?? 0,
-            TotalPayables = -(accountBalances.Find(a => a.AccountType == "Payable")?.NetBalance ?? 0)
+            TotalPayables = -(accountBalances.Find(a => a.AccountType == "Payable")?.NetBalance ?? 0),
+
+            // Consolidation flag
+            IsConsolidated = !branchId.HasValue // true when admin views all branches
         });
     }
 
@@ -640,7 +644,10 @@ public class FinanceV3Controller(
             ByPaymentMethod = byPaymentMethod,
             TransactionCount = byCategory.Sum(c => c.Count),
             ReversalCount = reversalCount,
-            JournalEntryCount = journalEntries
+            JournalEntryCount = journalEntries,
+
+            // Consolidation flag
+            IsConsolidated = !branchId.HasValue // true when admin views all branches
         });
     }
 
@@ -824,7 +831,10 @@ public class FinanceV3Controller(
 
             // Summary counts
             RevenueTransactionCount = revenueTransactionCount,
-            ExpenseTransactionCount = expenseTransactionCount
+            ExpenseTransactionCount = expenseTransactionCount,
+
+            // Consolidation flag
+            IsConsolidated = !branchId.HasValue // true when admin views all branches
         });
     }
 
@@ -904,8 +914,8 @@ public class FinanceV3Controller(
             .Select(g => new
             {
                 AccountType = g.Key,
-                TotalDebit = g.Sum(l => l.Debit),
-                TotalCredit = g.Sum(l => l.Credit)
+                TotalDebit = (decimal?)g.Sum(l => l.Debit) ?? 0m,
+                TotalCredit = (decimal?)g.Sum(l => l.Credit) ?? 0m
             })
             .ToListAsync();
 
@@ -1262,7 +1272,7 @@ public class FinanceV3Controller(
             .Select(g => new
             {
                 PatientId = g.Key,
-                Balance = g.Sum(l => l.Debit) - g.Sum(l => l.Credit)
+                Balance = ((decimal?)g.Sum(l => l.Debit) ?? 0m) - ((decimal?)g.Sum(l => l.Credit) ?? 0m)
             })
             .ToDictionaryAsync(b => b.PatientId, b => b.Balance);
 
@@ -1339,9 +1349,9 @@ public class FinanceV3Controller(
             .Select(g => new
             {
                 AccountType = g.Key.ToString(),
-                TotalDebit = g.Sum(l => l.Debit),
-                TotalCredit = g.Sum(l => l.Credit),
-                NetBalance = g.Sum(l => l.Debit) - g.Sum(l => l.Credit),
+                TotalDebit = (decimal?)g.Sum(l => l.Debit) ?? 0m,
+                TotalCredit = (decimal?)g.Sum(l => l.Credit) ?? 0m,
+                NetBalance = ((decimal?)g.Sum(l => l.Debit) ?? 0m) - ((decimal?)g.Sum(l => l.Credit) ?? 0m),
                 EntryCount = g.Select(l => l.JournalEntryId).Distinct().Count()
             })
             .ToListAsync();

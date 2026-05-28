@@ -13,7 +13,7 @@ import { toast } from "@/stores/toastStore";
 import type { SupplierListItem, SupplierBill, CreateSupplierBillRequest, PaySupplierBillRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 9: Suppliers
@@ -132,7 +132,7 @@ export function SuppliersTab() {
               { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
               { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
               { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
-              { key: "dueDate", label: "تاريخ الاستحقاق", render: (r) => new Date(r.dueDate).toLocaleDateString("ar-SA") },
+              { key: "dueDate", label: "تاريخ الاستحقاق", render: (r) => safeFormatDate(r.dueDate) },
               { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
               { key: "actions", label: "إجراءات", render: (r) => r.balance > 0 ? (
                 <button onClick={(e) => { e.stopPropagation(); setShowPayBill(r); setPayAmount(""); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="سداد قسط"><DollarSign className="w-3.5 h-3.5" /></button>

@@ -19,6 +19,28 @@ export function formatNumber(amount: number): string {
   return amount.toLocaleString("ar-YE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+export function safeFormatDate(dateStr: string | null | undefined, locale = "ar-SA"): string {
+  if (!dateStr) return "—";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString(locale);
+  } catch {
+    return "—";
+  }
+}
+
+export function safeFormatDateTime(dateStr: string | null | undefined, locale = "ar-SA"): string {
+  if (!dateStr) return "—";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleString(locale);
+  } catch {
+    return "—";
+  }
+}
+
 export function extractErrorMessage(err: unknown, fallback = "حدث خطأ"): string {
   if (err && typeof err === "object" && "response" in err) {
     const resp = (err as { response?: { data?: { message?: string }; status?: number } }).response;

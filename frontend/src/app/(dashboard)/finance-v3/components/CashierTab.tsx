@@ -13,7 +13,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { CashierSession, CloseSessionRequest } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnDanger, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 6: Cashier
@@ -105,9 +105,9 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             <h4 className="text-sm font-bold" style={{ color: tokens.successBorder }}>وردية مفتوحة</h4>
           </div>
           <div className="grid grid-cols-3 gap-4 text-sm">
-            <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.cashierName}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{new Date(openSession.openedAt).toLocaleString("ar-SA")}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.openingBalance)}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.cashierName ?? "—"}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{safeFormatDateTime(openSession.openedAt)}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.openingBalance ?? 0)}</span></div>
           </div>
         </div>
       )}
@@ -118,8 +118,8 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
           data={sessions}
           columns={[
             { key: "cashierName", label: "الكاشر" },
-            { key: "openedAt", label: "وقت الافتتاح", render: (r) => new Date(r.openedAt).toLocaleString("ar-SA") },
-            { key: "closingTime", label: "وقت الإقفال", render: (r) => r.closingTime ? new Date(r.closingTime).toLocaleString("ar-SA") : "—" },
+            { key: "openedAt", label: "وقت الافتتاح", render: (r) => safeFormatDateTime(r.openedAt) },
+            { key: "closingTime", label: "وقت الإقفال", render: (r) => safeFormatDateTime(r.closingTime) },
             { key: "openingBalance", label: "رصيد الافتتاح", render: (r) => formatYER(r.openingBalance) },
             { key: "shortageOrSurplus", label: "عجز/فائض", render: (r) => {
               if (r.shortageOrSurplus == null) return "—";

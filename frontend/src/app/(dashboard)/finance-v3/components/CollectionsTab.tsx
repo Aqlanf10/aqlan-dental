@@ -14,7 +14,7 @@ import { toast } from "@/stores/toastStore";
 import type { PaymentListItem, RegisterPaymentRequest, InvoiceListItem, ContractListItem } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 4: Collections
@@ -139,7 +139,7 @@ export function CollectionsTab() {
             { key: "patientName", label: "المريض" },
             { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
             { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
-            { key: "paymentDate", label: "التاريخ", render: (r) => new Date(r.paymentDate).toLocaleDateString("ar-SA") },
+            { key: "paymentDate", label: "التاريخ", render: (r) => safeFormatDate(r.paymentDate) },
             { key: "isReversal", label: "عكسي", render: (r) => r.isReversal ? <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>نعم</span> : "—" },
             { key: "actions", label: "إجراءات", render: (r) => !r.isReversal && !r.reversedById ? (
               <div className="flex items-center gap-1">

@@ -10,7 +10,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { ContractListItem } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, StatusBadge, tokens, inputStyle } from "./FinanceSharedUI";
-import { formatYER } from "./FinanceHelpers";
+import { formatYER, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 5: Contracts
@@ -26,7 +26,7 @@ export function ContractsTab() {
       setLoading(true);
       const params: Record<string, string> = {};
       if (statusFilter) params.status = statusFilter;
-      const { data } = await api.get<ContractListItem[]>("/api/contracts", { params });
+      const { data } = await api.get<ContractListItem[]>("/api/finance-v3/contracts", { params });
       setData(data);
     } catch { toast.error("فشل في تحميل العقود"); } finally { setLoading(false); }
   }, [statusFilter]);
@@ -64,7 +64,7 @@ export function ContractsTab() {
             { key: "outstandingAmount", label: "المستحق", render: (r) => <span style={{ color: r.outstandingAmount > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.outstandingAmount)}</span> },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "isOverdue", label: "متأخرة", render: (r) => r.isOverdue ? <AlertTriangle className="w-4 h-4" style={{ color: tokens.dangerBorder }} /> : "—" },
-            { key: "startDate", label: "تاريخ البداية", render: (r) => new Date(r.startDate).toLocaleDateString("ar-SA") },
+            { key: "startDate", label: "تاريخ البداية", render: (r) => safeFormatDate(r.startDate) },
           ]}
         />
       )}

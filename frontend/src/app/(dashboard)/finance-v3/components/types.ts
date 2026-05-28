@@ -32,6 +32,12 @@ export interface DashboardData {
   pendingExpenses: number;
   pendingTransfers: number;
   date: string;
+  isConsolidated?: boolean;
+  activeContracts?: number;
+  unpaidInvoicesCount?: number;
+  draftInvoicesCount?: number;
+  overdueAmount?: number;
+  pendingCommissionsAmount?: number;
 }
 
 /* ── Patient Accounts ───────────────────────────────────────────────────────────── */

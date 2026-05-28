@@ -14,7 +14,7 @@ import { toast } from "@/stores/toastStore";
 import type { ExpenseListItem, CreateExpenseRequest } from "./types";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
-import { formatYER, extractErrorMessage } from "./FinanceHelpers";
+import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 8: Expenses
@@ -98,7 +98,7 @@ export function ExpensesTab() {
             { key: "category", label: "الفئة", render: (r) => EXPENSE_CATEGORIES.find((c) => c.value === r.category)?.label ?? r.category },
             { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
             { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
-            { key: "expenseDate", label: "التاريخ", render: (r) => new Date(r.expenseDate).toLocaleDateString("ar-SA") },
+            { key: "expenseDate", label: "التاريخ", render: (r) => safeFormatDate(r.expenseDate) },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (
               <div className="flex items-center gap-1">

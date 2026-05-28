@@ -14,7 +14,7 @@ import {
 import { api } from "@/lib/api";
 import type { DashboardData, ProfitLossData } from "./types";
 import { KpiCard, tokens } from "./FinanceSharedUI";
-import { formatYER } from "./FinanceHelpers";
+import { formatYER, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 1: Overview
@@ -110,6 +110,13 @@ export function OverviewTab() {
           </>
         ) : null}
       </div>
+
+      {/* Consolidated view indicator */}
+      {data?.isConsolidated && (
+        <div className="rounded-md px-3 py-2 text-xs" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}`, color: tokens.infoText }}>
+          📊 عرض مُجمّع — يجمع بيانات جميع الفروع
+        </div>
+      )}
 
       {/* Dual-write health + Pending actions */}
       {data && (

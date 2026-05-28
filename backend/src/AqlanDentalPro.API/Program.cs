@@ -2086,6 +2086,329 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to ensure Sprint 5 DoctorSchedules table");
     }
 
+    // ── Finance V2/V3: Ensure ALL missing finance tables exist ──────────────
+    // Production database on Railway is missing core finance tables because
+    // ENABLE_STARTUP_DB_MAINTENANCE was not set and EF migrations never ran.
+    // These must run BEFORE the JournalEntries block because JournalEntries
+    // has FK references to CashierSessions and Treasuries.
+
+    // ── Treasuries ─────────────────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "Treasuries" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "Name" text NOT NULL,
+                "Type" integer NOT NULL,
+                "Balance" numeric(12,2) NOT NULL DEFAULT 0,
+                "BranchId" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId" ON "Treasuries" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type" ON "Treasuries" ("BranchId", "Type")""");
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Treasuries_BranchId_Type_Name_Unique"
+                ON "Treasuries" ("BranchId", "Type", "Name")
+                WHERE "IsActive" = true
+        """);
+        logger.LogInformation("Treasuries table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Treasuries table");
+    }
+
+    // ── OperationalExpenses ────────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "OperationalExpenses" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "ExpenseNumber" character varying(50) NOT NULL,
+                "Title" character varying(300) NOT NULL,
+                "Category" integer NOT NULL,
+                "Amount" numeric(12,2) NOT NULL,
+                "ExpenseDate" date NOT NULL,
+                "PaymentMethod" character varying(50) NOT NULL DEFAULT 'cash',
+                "SupplierId" uuid NULL,
+                "LabOrderId" uuid NULL,
+                "Notes" text NULL,
+                "ReceiptAttachmentUrl" text NULL,
+                "PaidBy" uuid NOT NULL,
+                "BranchId" uuid NOT NULL,
+                "ApprovalStatus" integer NOT NULL DEFAULT 0,
+                "ApprovedById" uuid NULL,
+                "ApprovedAt" timestamp with time zone NULL,
+                "ApprovalNotes" text NULL,
+                "IsPostedToLedger" boolean NOT NULL DEFAULT FALSE,
+                "CashFlowTransactionId" uuid NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_OperationalExpenses_BranchId" ON "OperationalExpenses" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_OperationalExpenses_ExpenseDate" ON "OperationalExpenses" ("ExpenseDate")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_OperationalExpenses_ApprovalStatus" ON "OperationalExpenses" ("ApprovalStatus")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_OperationalExpenses_SupplierId" ON "OperationalExpenses" ("SupplierId")""");
+        logger.LogInformation("OperationalExpenses table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure OperationalExpenses table");
+    }
+
+    // ── CashierSessions ────────────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "CashierSessions" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "SessionNumber" character varying(100) NOT NULL,
+                "CashierId" uuid NOT NULL,
+                "BranchId" uuid NOT NULL,
+                "OpeningTime" timestamp with time zone NOT NULL,
+                "ClosingTime" timestamp with time zone NULL,
+                "OpeningBalance" numeric(12,2) NOT NULL DEFAULT 0,
+                "ExpectedClosingCash" numeric(12,2) NOT NULL DEFAULT 0,
+                "ActualClosingCash" numeric(12,2) NULL,
+                "ExpectedClosingCard" numeric(12,2) NOT NULL DEFAULT 0,
+                "ActualClosingCard" numeric(12,2) NULL,
+                "ExpectedClosingBank" numeric(12,2) NOT NULL DEFAULT 0,
+                "ActualClosingBank" numeric(12,2) NULL,
+                "ShortageOrSurplus" numeric(12,2) NULL,
+                "Status" integer NOT NULL DEFAULT 0,
+                "Notes" text NULL,
+                "TreasuryId" uuid NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CashierSessions_CashierId_Status" ON "CashierSessions" ("CashierId", "Status")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CashierSessions_BranchId" ON "CashierSessions" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CashierSessions_TreasuryId" ON "CashierSessions" ("TreasuryId")""");
+        logger.LogInformation("CashierSessions table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure CashierSessions table");
+    }
+
+    // ── Suppliers ──────────────────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "Suppliers" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "Name" character varying(200) NOT NULL,
+                "ContactPerson" character varying(100) NULL,
+                "Phone" character varying(30) NULL,
+                "Email" character varying(200) NULL,
+                "Address" character varying(500) NULL,
+                "Notes" text NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Suppliers_Name" ON "Suppliers" ("Name")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Suppliers_Phone" ON "Suppliers" ("Phone")""");
+        logger.LogInformation("Suppliers table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Suppliers table");
+    }
+
+    // ── SupplierBills ──────────────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "SupplierBills" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "BillNumber" character varying(50) NOT NULL,
+                "SupplierId" uuid NOT NULL,
+                "Description" character varying(500) NOT NULL,
+                "TotalAmount" numeric(12,2) NOT NULL,
+                "PaidAmount" numeric(12,2) NOT NULL DEFAULT 0,
+                "Status" integer NOT NULL DEFAULT 0,
+                "BillDate" date NOT NULL,
+                "DueDate" date NULL,
+                "PurchaseOrderId" uuid NULL,
+                "LabOrderId" uuid NULL,
+                "AttachmentUrl" text NULL,
+                "Notes" text NULL,
+                "BranchId" uuid NOT NULL,
+                "CreatedBy" uuid NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_SupplierBills_BranchId" ON "SupplierBills" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_SupplierBills_SupplierId" ON "SupplierBills" ("SupplierId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_SupplierBills_Status" ON "SupplierBills" ("Status")""");
+        logger.LogInformation("SupplierBills table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure SupplierBills table");
+    }
+
+    // ── SupplierBillPayments ───────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "SupplierBillPayments" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "SupplierBillId" uuid NOT NULL,
+                "Amount" numeric(12,2) NOT NULL,
+                "PaymentMethod" character varying(50) NOT NULL DEFAULT 'cash',
+                "PaymentDate" date NOT NULL,
+                "ReferenceNumber" character varying(100) NULL,
+                "Notes" text NULL,
+                "PaidBy" uuid NOT NULL,
+                "CashFlowTransactionId" uuid NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_SupplierBillPayments_SupplierBillId" ON "SupplierBillPayments" ("SupplierBillId")""");
+        logger.LogInformation("SupplierBillPayments table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure SupplierBillPayments table");
+    }
+
+    // ── VaultTransfers ─────────────────────────────────────────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "VaultTransfers" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "TransferNumber" character varying(100) NOT NULL,
+                "SourceTreasuryId" uuid NULL,
+                "DestinationTreasuryId" uuid NOT NULL,
+                "CashierSessionId" uuid NULL,
+                "Amount" numeric(12,2) NOT NULL,
+                "TransferDate" timestamp with time zone NOT NULL,
+                "PerformedBy" uuid NOT NULL,
+                "ApprovedBy" uuid NULL,
+                "ApprovalDate" timestamp with time zone NULL,
+                "Status" integer NOT NULL DEFAULT 0,
+                "Notes" text NULL,
+                "DepositSource" text NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_VaultTransfers_SourceTreasuryId" ON "VaultTransfers" ("SourceTreasuryId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_VaultTransfers_DestinationTreasuryId" ON "VaultTransfers" ("DestinationTreasuryId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_VaultTransfers_CashierSessionId" ON "VaultTransfers" ("CashierSessionId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_VaultTransfers_Status" ON "VaultTransfers" ("Status")""");
+        logger.LogInformation("VaultTransfers table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure VaultTransfers table");
+    }
+
+    // ── Contracts (ensure exists — used by finance module) ─────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "Contracts" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "PatientId" uuid NOT NULL,
+                "Specialty" character varying(100) NULL,
+                "RelatedCaseId" uuid NULL,
+                "TotalAmount" numeric(12,2) NOT NULL,
+                "DownPayment" numeric(12,2) NOT NULL DEFAULT 0,
+                "InstallmentsCount" integer NOT NULL DEFAULT 1,
+                "InstallmentAmount" numeric(12,2) NULL,
+                "StartDate" date NULL,
+                "DiscountAmount" numeric(12,2) NOT NULL DEFAULT 0,
+                "DiscountReason" character varying(300) NULL,
+                "Status" character varying(20) NOT NULL DEFAULT 'Active',
+                "Notes" character varying(1000) NULL,
+                "CreatedBy" uuid NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Contracts_PatientId" ON "Contracts" ("PatientId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Contracts_Status" ON "Contracts" ("Status")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Contracts_CreatedBy" ON "Contracts" ("CreatedBy")""");
+        logger.LogInformation("Contracts table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Contracts table");
+    }
+
+    // ── Payments (ensure exists — used by finance module) ──────────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "Payments" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "ContractId" uuid NULL,
+                "InvoiceId" uuid NULL,
+                "PatientId" uuid NOT NULL,
+                "Amount" numeric(12,2) NOT NULL,
+                "PaymentDate" date NOT NULL,
+                "PaymentMethod" character varying(30) NULL,
+                "Specialty" character varying(100) NULL,
+                "ServiceDescription" character varying(500) NULL,
+                "DoctorId" uuid NULL,
+                "BranchId" uuid NULL,
+                "ReceivedBy" uuid NULL,
+                "ReceiptNumber" character varying(50) NULL,
+                "Notes" character varying(1000) NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Payments_ContractId" ON "Payments" ("ContractId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Payments_InvoiceId" ON "Payments" ("InvoiceId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Payments_PatientId" ON "Payments" ("PatientId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Payments_DoctorId" ON "Payments" ("DoctorId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_Payments_BranchId" ON "Payments" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_Payments_ReceiptNumber" ON "Payments" ("ReceiptNumber") WHERE "ReceiptNumber" IS NOT NULL""");
+        logger.LogInformation("Payments table ensured");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Payments table");
+    }
+
     // ── Finance V3: Ensure JournalEntries & JournalLines tables exist ────────
     // These tables are required by the double-entry ledger migration. Without them,
     // ALL FinanceV3 endpoints fail with PostgresException: relation does not exist.
@@ -2116,13 +2439,16 @@ if (enableStartupDbMaintenance)
             );
         """);
 
-        // FKs for JournalEntries
+        // FKs for JournalEntries (each wrapped in EXCEPTION handler to prevent
+        // one failed FK from aborting the entire try block — root cause of JournalLines
+        // not being created: FK to CashierSessions threw because table didn't exist)
         await db.Database.ExecuteSqlRawAsync("""
             DO $$ BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalEntries_Branches_BranchId') THEN
                     ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_Branches_BranchId"
                         FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE RESTRICT;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""
@@ -2131,6 +2457,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_CashierSessions_CashierSessionId"
                         FOREIGN KEY ("CashierSessionId") REFERENCES "CashierSessions"("Id") ON DELETE SET NULL;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""
@@ -2139,6 +2466,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_Treasuries_TreasuryId"
                         FOREIGN KEY ("TreasuryId") REFERENCES "Treasuries"("Id") ON DELETE SET NULL;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""
@@ -2147,6 +2475,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_Users_PerformedBy"
                         FOREIGN KEY ("PerformedBy") REFERENCES "Users"("Id") ON DELETE RESTRICT;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""
@@ -2155,6 +2484,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_JournalEntries_ReversalOfEntryId"
                         FOREIGN KEY ("ReversalOfEntryId") REFERENCES "JournalEntries"("Id") ON DELETE RESTRICT;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""
@@ -2163,6 +2493,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "JournalEntries" ADD CONSTRAINT "FK_JournalEntries_JournalEntries_ReversedByEntryId"
                         FOREIGN KEY ("ReversedByEntryId") REFERENCES "JournalEntries"("Id") ON DELETE RESTRICT;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
 
@@ -2199,13 +2530,15 @@ if (enableStartupDbMaintenance)
             );
         """);
 
-        // FKs for JournalLines
+        // FKs for JournalLines (EXCEPTION handler prevents one failed FK from
+        // aborting the rest of the try block)
         await db.Database.ExecuteSqlRawAsync("""
             DO $$ BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_JournalLines_JournalEntries_JournalEntryId') THEN
                     ALTER TABLE "JournalLines" ADD CONSTRAINT "FK_JournalLines_JournalEntries_JournalEntryId"
                         FOREIGN KEY ("JournalEntryId") REFERENCES "JournalEntries"("Id") ON DELETE CASCADE;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""
@@ -2214,6 +2547,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "JournalLines" ADD CONSTRAINT "FK_JournalLines_Branches_BranchId"
                         FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE RESTRICT;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
 
@@ -2224,6 +2558,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "JournalLines" ADD CONSTRAINT "CK_JournalLines_DebitCreditMutual"
                         CHECK ("Debit" >= 0 AND "Credit" >= 0 AND ("Debit" > 0 OR "Credit" > 0));
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
 
@@ -2240,6 +2575,7 @@ if (enableStartupDbMaintenance)
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'VaultTransfers' AND column_name = 'DepositSource') THEN
                     ALTER TABLE "VaultTransfers" ADD COLUMN "DepositSource" text NULL;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
 
@@ -2249,6 +2585,7 @@ if (enableStartupDbMaintenance)
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'CashierSessions' AND column_name = 'TreasuryId') THEN
                     ALTER TABLE "CashierSessions" ADD COLUMN "TreasuryId" uuid NULL;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CashierSessions_TreasuryId" ON "CashierSessions" ("TreasuryId")""");
@@ -2258,12 +2595,16 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "CashierSessions" ADD CONSTRAINT "FK_CashierSessions_Treasuries_TreasuryId"
                         FOREIGN KEY ("TreasuryId") REFERENCES "Treasuries"("Id") ON DELETE SET NULL;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
 
         // Ensure CashFlowTransactions.TreasuryId column exists
         await db.Database.ExecuteSqlRawAsync("""
-            ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "TreasuryId" uuid NULL
+            DO $$ BEGIN
+                ALTER TABLE "CashFlowTransactions" ADD COLUMN IF NOT EXISTS "TreasuryId" uuid NULL;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END $$;
         """);
         await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CashFlowTransactions_TreasuryId" ON "CashFlowTransactions" ("TreasuryId")""");
         await db.Database.ExecuteSqlRawAsync("""
@@ -2272,6 +2613,7 @@ if (enableStartupDbMaintenance)
                     ALTER TABLE "CashFlowTransactions" ADD CONSTRAINT "FK_CashFlowTransactions_Treasuries_TreasuryId"
                         FOREIGN KEY ("TreasuryId") REFERENCES "Treasuries"("Id") ON DELETE SET NULL;
                 END IF;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END $$;
         """);
 
@@ -2840,7 +3182,7 @@ else
 // ── Middleware Pipeline ───────────────────────────────────────────────────────
 app.UseSecurityHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.28-db-migration-fix" }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow, version = "2026.05.28-table-hotfix" }));
 
 // DIAGNOSTIC: Temporary debug endpoint to identify 500 error root cause (remove after fixing)
 app.MapGet("/api/debug/db-test", async (AppDbContext db, ICurrentUserService currentUser) =>

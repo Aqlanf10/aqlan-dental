@@ -21,6 +21,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InProgress)]
     [InlineData(ClinicQueueStatus.Completed)]
     [InlineData(ClinicQueueStatus.Cancelled)]
+    [InlineData(ClinicQueueStatus.NoShow)]
     public void SameStatus_Transition_IsAlwaysValid(ClinicQueueStatus status)
     {
         ClinicQueueStatusTransitions.IsValidTransition(status, status)
@@ -178,6 +179,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InRoom)]
     [InlineData(ClinicQueueStatus.InProgress)]
     [InlineData(ClinicQueueStatus.Cancelled)]
+    [InlineData(ClinicQueueStatus.NoShow)]
     public void Completed_OnlyAllowsIdempotent(ClinicQueueStatus target)
     {
         if (target == ClinicQueueStatus.Completed)
@@ -198,6 +200,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InRoom)]
     [InlineData(ClinicQueueStatus.InProgress)]
     [InlineData(ClinicQueueStatus.Completed)]
+    [InlineData(ClinicQueueStatus.NoShow)]
     public void Cancelled_OnlyAllowsIdempotent(ClinicQueueStatus target)
     {
         if (target == ClinicQueueStatus.Cancelled)
@@ -222,7 +225,8 @@ public class ClinicQueueStatusTransitionTests
         allowed.Should().Contain(ClinicQueueStatus.Called);
         allowed.Should().Contain(ClinicQueueStatus.InRoom);
         allowed.Should().Contain(ClinicQueueStatus.Cancelled);
-        allowed.Count.Should().Be(4);
+        allowed.Should().Contain(ClinicQueueStatus.NoShow);
+        allowed.Count.Should().Be(5);
     }
 
     [Fact]
@@ -233,7 +237,8 @@ public class ClinicQueueStatusTransitionTests
         allowed.Should().Contain(ClinicQueueStatus.InRoom);
         allowed.Should().Contain(ClinicQueueStatus.Waiting);
         allowed.Should().Contain(ClinicQueueStatus.Cancelled);
-        allowed.Count.Should().Be(4);
+        allowed.Should().Contain(ClinicQueueStatus.NoShow);
+        allowed.Count.Should().Be(5);
     }
 
     [Fact]
@@ -244,7 +249,7 @@ public class ClinicQueueStatusTransitionTests
         allowed.Should().Contain(ClinicQueueStatus.InProgress);
         allowed.Should().Contain(ClinicQueueStatus.Called);
         allowed.Should().Contain(ClinicQueueStatus.Cancelled);
-        allowed.Count.Should().Be(4);
+        allowed.Count.Should().Be(4); // InRoom did not gain NoShow transition
     }
 
     [Fact]
@@ -416,6 +421,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InProgress, "قيد المعالجة")]
     [InlineData(ClinicQueueStatus.Completed, "مكتمل")]
     [InlineData(ClinicQueueStatus.Cancelled, "ملغي")]
+    [InlineData(ClinicQueueStatus.NoShow, "لم يحضر")]
     public void GetArabicLabel_ReturnsCorrectLabel(ClinicQueueStatus status, string expectedLabel)
     {
         ClinicQueueStatusTransitions.GetArabicLabel(status).Should().Be(expectedLabel);
@@ -424,8 +430,8 @@ public class ClinicQueueStatusTransitionTests
     // ─── Enum Count Test ─────────────────────────────────────────────────
 
     [Fact]
-    public void ClinicQueueStatus_HasExactlySixValues()
+    public void ClinicQueueStatus_HasExactlySevenValues()
     {
-        Enum.GetValues<ClinicQueueStatus>().Length.Should().Be(6);
+        Enum.GetValues<ClinicQueueStatus>().Length.Should().Be(7);
     }
 }

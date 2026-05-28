@@ -1,4 +1,6 @@
 using AqlanDentalPro.Application.DTOs.Appointments;
+using AqlanDentalPro.Application.DTOs.Sms;
+using AqlanDentalPro.Application.DTOs.WhatsApp;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Domain.Constants;
@@ -16,13 +18,17 @@ namespace AqlanDentalPro.API.Controllers;
 
 /// <summary>
 /// Clinic queue management — today's waiting list, patient calling, and TV display.
-/// Sprint 7: Full clinic queue with dedicated ClinicQueueItem entity,
-/// room assignment, patient calling, visit integration, and voice calling.
+/// Queue Enhancements: Priority, NoShow, Recall, SMS notification, Analytics, Reorder.
 /// </summary>
 [ApiController]
 [Route("api/clinic-queue")]
 [Authorize(Policy = "StaffOnly")]
-public class ClinicQueueController(AppDbContext db, IRealTimePushService pushService, ILogger<ClinicQueueController> logger) : ControllerBase
+public class ClinicQueueController(
+    AppDbContext db,
+    IRealTimePushService pushService,
+    ISmsService smsService,
+    IWhatsAppService whatsAppService,
+    ILogger<ClinicQueueController> logger) : ControllerBase
 {
     private static readonly HashSet<ClinicQueueStatus> ActiveStatuses =
     [
@@ -36,7 +42,8 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
     // The local StatusArabic dictionary has been removed to ensure single source of truth.
 
     // ─── GET /api/clinic-queue/today ─────────────────────────────────────────
-    /// <summary>Returns today's clinic queue items. Optional doctorId filter.</summary>
+    /// <summary>Returns today's clinic queue items. Optional doctorId filter.
+    /// Ordered by: Priority desc (Emergency first), then SortOrder, then CreatedAt.</summary>
     [HttpGet("today")]
     public async Task<IActionResult> GetTodayQueue([FromQuery] Guid? doctorId)
     {
@@ -52,29 +59,79 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
             query = query.Where(q => q.DoctorId == doctorId.Value);
 
         var items = await query
-            .OrderBy(q => q.CreatedAt)
+            .OrderByDescending(q => q.Priority)
+            .ThenBy(q => q.SortOrder)
+            .ThenBy(q => q.CreatedAt)
             .ToListAsync();
 
-        var result = items.Select(q => new
+        // Calculate average service time for per-patient estimated wait
+        var completedItems = await db.ClinicQueueItems
+            .Where(q => q.QueueDate == today
+                     && q.Status == ClinicQueueStatus.Completed
+                     && q.StartedAt.HasValue
+                     && q.CompletedAt.HasValue
+                     && q.IsActive)
+            .Select(q => new { q.StartedAt, q.CompletedAt })
+            .ToListAsync();
+
+        double avgServiceTime = 15; // Default fallback
+        if (completedItems.Count > 0)
         {
-            q.Id,
-            q.PatientId,
-            PatientName = BuildPatientDisplayName(q.Patient),
-            PatientNumber = q.Patient != null ? q.Patient.PatientNumber : "",
-            q.AppointmentId,
-            AppointmentTime = q.Appointment != null ? q.Appointment.StartTime.ToString("HH:mm") : (string?)null,
-            q.VisitId,
-            DoctorName = q.Doctor != null ? q.Doctor.Name : "",
-            q.DoctorId,
-            q.RoomName,
-            Status = q.Status.ToString(),
-            StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
-            q.CalledAt,
-            q.InRoomAt,
-            q.StartedAt,
-            q.CompletedAt,
-            q.Notes,
-            q.CreatedAt
+            avgServiceTime = Math.Max(1, completedItems
+                .Where(q => q.CompletedAt!.Value > q.StartedAt!.Value)
+                .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
+                .DefaultIfEmpty(15)
+                .Average());
+        }
+
+        // Count waiting patients for position calculation
+        var waitingItems = items
+            .Where(i => i.Status == ClinicQueueStatus.Waiting)
+            .OrderByDescending(i => i.Priority)
+            .ThenBy(i => i.SortOrder)
+            .ThenBy(i => i.CreatedAt)
+            .ToList();
+
+        var result = items.Select(q =>
+        {
+            // Calculate position for waiting patients
+            int? position = null;
+            int? estimatedWaitMinutes = null;
+            if (q.Status == ClinicQueueStatus.Waiting)
+            {
+                position = waitingItems.FindIndex(w => w.Id == q.Id) + 1;
+                if (position > 0)
+                    estimatedWaitMinutes = (int)Math.Ceiling(position.Value * avgServiceTime);
+            }
+
+            return new
+            {
+                q.Id,
+                q.PatientId,
+                PatientName = BuildPatientDisplayName(q.Patient),
+                PatientNumber = q.Patient != null ? q.Patient.PatientNumber : "",
+                q.AppointmentId,
+                AppointmentTime = q.Appointment != null ? q.Appointment.StartTime.ToString("HH:mm") : (string?)null,
+                q.VisitId,
+                DoctorName = q.Doctor != null ? q.Doctor.Name : "",
+                q.DoctorId,
+                q.RoomName,
+                Status = q.Status.ToString(),
+                StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
+                Priority = q.Priority.ToString(),
+                PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority),
+                q.SortOrder,
+                q.RecallCount,
+                q.CalledAt,
+                q.InRoomAt,
+                q.StartedAt,
+                q.CompletedAt,
+                q.NoShowAt,
+                q.Notes,
+                Position = position,
+                EstimatedWaitMinutes = estimatedWaitMinutes,
+                q.CreatedAt
+            };
         });
 
         return Ok(result);
@@ -523,6 +580,401 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
         }
     }
 
+    // ─── POST /api/clinic-queue/{id}/no-show ─────────────────────────────────
+    /// <summary>Marks a patient as NoShow — called but didn't respond.</summary>
+    [HttpPost("{id:guid}/no-show")]
+    public async Task<IActionResult> MarkNoShow(Guid id)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var lockKey = (int)(id.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            var item = await db.ClinicQueueItems.FindAsync(id);
+            if (item is null)
+                return NotFound(new { message = "عنصر الطابور غير موجود" });
+            if (!item.IsActive)
+                return BadRequest(new { message = "عنصر الطابور محذوف" });
+
+            var validationError = ClinicQueueStatusTransitions.GetValidationError(item.Status, ClinicQueueStatus.NoShow);
+            if (validationError != null)
+                return BadRequest(new { message = validationError });
+
+            item.Status = ClinicQueueStatus.NoShow;
+            item.NoShowAt = DateTime.UtcNow;
+            item.UpdatedAt = DateTime.UtcNow;
+
+            // Sync appointment to NoShow if linked
+            if (item.AppointmentId.HasValue)
+            {
+                var appointment = await db.Appointments.FindAsync(item.AppointmentId.Value);
+                if (appointment != null && appointment.IsActive)
+                {
+                    if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.NoShow))
+                    {
+                        appointment.Status = AppointmentStatus.NoShow;
+                        appointment.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "no-show", item.Id, item.PatientId });
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "no-show", item.Id, item.PatientId });
+
+            return Ok(new
+            {
+                item.Id,
+                Status = item.Status.ToString(),
+                StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(item.Status),
+                item.NoShowAt,
+                item.RecallCount,
+                message = "تم تسجيل عدم حضور المريض"
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // ─── POST /api/clinic-queue/{id}/recall ──────────────────────────────────
+    /// <summary>Re-calls a patient. Increments RecallCount and updates CalledAt.</summary>
+    [HttpPost("{id:guid}/recall")]
+    public async Task<IActionResult> RecallPatient(Guid id, [FromBody] CallQueuePatientRequest? req = null)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var lockKey = (int)(id.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            var item = await db.ClinicQueueItems.FindAsync(id);
+            if (item is null)
+                return NotFound(new { message = "عنصر الطابور غير موجود" });
+            if (!item.IsActive)
+                return BadRequest(new { message = "عنصر الطابور محذوف" });
+
+            // Can only recall patients in Called status (already called but not yet in room)
+            if (item.Status != ClinicQueueStatus.Called && item.Status != ClinicQueueStatus.Waiting)
+                return BadRequest(new { message = "لا يمكن إعادة نداء مريض بحالة " + ClinicQueueStatusTransitions.GetArabicLabel(item.Status) });
+
+            // Validate and assign room if provided
+            var roomName = req?.RoomName ?? item.RoomName;
+            if (!string.IsNullOrWhiteSpace(roomName))
+            {
+                var isValidRoom = await IsRoomValidAsync(roomName);
+                if (!isValidRoom)
+                    return BadRequest(new { message = "اسم الغرفة غير صالح" });
+            }
+
+            item.Status = ClinicQueueStatus.Called;
+            item.CalledAt = DateTime.UtcNow;
+            item.CalledByUserId = GetCurrentUserId();
+            item.RecallCount++;
+            item.RoomName = roomName;
+            item.UpdatedAt = DateTime.UtcNow;
+
+            await SyncAppointmentStatus(item, AppointmentStatus.Called);
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+            {
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.PatientCalled, new { item.Id, item.PatientId, item.RoomName, item.CalledAt, item.RecallCount });
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "recalled", item.Id, item.PatientId, item.RecallCount });
+            }
+            else
+            {
+                await pushService.PushToAllAsync(MessagingHubEvents.PatientCalled, new { item.Id, item.PatientId, item.RoomName, item.CalledAt, item.RecallCount });
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "recalled", item.Id, item.PatientId, item.RecallCount });
+            }
+
+            return Ok(new
+            {
+                item.Id,
+                Status = item.Status.ToString(),
+                StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(item.Status),
+                item.RoomName,
+                item.CalledAt,
+                item.RecallCount,
+                message = item.RecallCount >= 3
+                    ? $"تم إعادة النداء ({item.RecallCount} مرات) — يُنصح بتسجيل عدم الحضور"
+                    : $"تم إعادة النداء بنجاح (المرة {item.RecallCount})"
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // ─── PATCH /api/clinic-queue/{id}/priority ────────────────────────────────
+    /// <summary>Changes the priority level of a queue item.</summary>
+    [HttpPatch("{id:guid}/priority")]
+    public async Task<IActionResult> ChangePriority(Guid id, [FromBody] ChangePriorityRequest req)
+    {
+        var item = await db.ClinicQueueItems.FindAsync(id);
+        if (item is null)
+            return NotFound(new { message = "عنصر الطابور غير موجود" });
+
+        // Can only change priority for active items
+        if (!ActiveStatuses.Contains(item.Status))
+            return BadRequest(new { message = "لا يمكن تغيير الأولوية لعنصر غير نشط" });
+
+        item.Priority = req.Priority;
+        item.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        var branchId = GetCurrentBranchId();
+        if (branchId.HasValue)
+            await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "priority-changed", item.Id, item.PatientId, item.Priority });
+        else
+            await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "priority-changed", item.Id, item.PatientId, item.Priority });
+
+        return Ok(new
+        {
+            item.Id,
+            Priority = item.Priority.ToString(),
+            PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(item.Priority),
+            message = $"تم تغيير الأولوية إلى {ClinicQueueStatusTransitions.GetPriorityArabicLabel(item.Priority)}"
+        });
+    }
+
+    // ─── POST /api/clinic-queue/reorder ───────────────────────────────────────
+    /// <summary>Reorders queue items via drag-and-drop. Accepts array of {id, sortOrder}.</summary>
+    [HttpPost("reorder")]
+    public async Task<IActionResult> Reorder([FromBody] List<ReorderItemRequest> items)
+    {
+        if (items == null || items.Count == 0)
+            return BadRequest(new { message = "قائمة الترتيب فارغة" });
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            foreach (var req in items)
+            {
+                var item = await db.ClinicQueueItems.FindAsync(req.Id);
+                if (item == null || !item.IsActive || item.QueueDate != today) continue;
+                if (!ActiveStatuses.Contains(item.Status)) continue;
+
+                item.SortOrder = req.SortOrder;
+                item.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            var branchId = GetCurrentBranchId();
+            if (branchId.HasValue)
+                await pushService.PushToBranchAsync(branchId.Value, MessagingHubEvents.QueueUpdated, new { action = "reordered" });
+            else
+                await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "reordered" });
+
+            return Ok(new { message = "تم إعادة ترتيب الطابور بنجاح" });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // ─── POST /api/clinic-queue/{id}/notify ──────────────────────────────────
+    /// <summary>Sends SMS/WhatsApp notification to a patient when called.</summary>
+    [HttpPost("{id:guid}/notify")]
+    public async Task<IActionResult> NotifyPatient(Guid id, [FromBody] NotifyPatientRequest? req = null)
+    {
+        var item = await db.ClinicQueueItems
+            .Include(q => q.Patient)
+            .FirstOrDefaultAsync(q => q.Id == id);
+
+        if (item is null)
+            return NotFound(new { message = "عنصر الطابور غير موجود" });
+
+        if (item.Patient is null)
+            return BadRequest(new { message = "لا توجد بيانات مريض مرتبطة" });
+
+        var patient = item.Patient;
+        var channel = req?.Channel ?? "sms"; // sms or whatsapp
+        var roomDisplay = !string.IsNullOrWhiteSpace(item.RoomName) ? item.RoomName : "الاستقبال";
+        var message = $"مرحباً {BuildPatientDisplayName(patient)}، يرجى التوجه إلى {roomDisplay} — دورك الآن في العيادة.";
+
+        var results = new List<object>();
+
+        if (channel == "sms" || channel == "both")
+        {
+            if (!string.IsNullOrWhiteSpace(patient.Phone))
+            {
+                try
+                {
+                    await smsService.SendSmsAsync(new SendSmsRequest
+                    {
+                        PatientId = patient.Id,
+                        TemplateType = "custom",
+                        CustomMessage = message
+                    });
+                    results.Add(new { channel = "sms", status = "sent", phone = patient.Phone });
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send SMS to patient {PatientId}", patient.Id);
+                    results.Add(new { channel = "sms", status = "failed", error = ex.Message });
+                }
+            }
+            else
+            {
+                results.Add(new { channel = "sms", status = "skipped", reason = "لا يوجد رقم هاتف" });
+            }
+        }
+
+        if (channel == "whatsapp" || channel == "both")
+        {
+            if (!string.IsNullOrWhiteSpace(patient.Phone))
+            {
+                try
+                {
+                    await whatsAppService.SendMessageAsync(new SendMessageRequest
+                    {
+                        PatientId = patient.Id,
+                        TemplateType = "custom",
+                        CustomMessage = message
+                    });
+                    results.Add(new { channel = "whatsapp", status = "sent", phone = patient.Phone });
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send WhatsApp to patient {PatientId}", patient.Id);
+                    results.Add(new { channel = "whatsapp", status = "failed", error = ex.Message });
+                }
+            }
+            else
+            {
+                results.Add(new { channel = "whatsapp", status = "skipped", reason = "لا يوجد رقم هاتف" });
+            }
+        }
+
+        return Ok(new { item.Id, notifications = results, message = "تم إرسال الإشعارات" });
+    }
+
+    // ─── GET /api/clinic-queue/analytics ─────────────────────────────────────
+    /// <summary>Returns queue analytics for today or a date range.</summary>
+    [HttpGet("analytics")]
+    public async Task<IActionResult> GetAnalytics([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var from = DateOnly.FromDateTime(fromDate ?? DateTime.UtcNow);
+        var to = DateOnly.FromDateTime(toDate ?? DateTime.UtcNow);
+
+        var queueItems = await db.ClinicQueueItems
+            .Include(q => q.Doctor)
+            .Where(q => q.QueueDate >= from && q.QueueDate <= to && q.IsActive)
+            .ToListAsync();
+
+        // Overall stats
+        var totalItems = queueItems.Count;
+        var completedItems = queueItems.Where(q => q.Status == ClinicQueueStatus.Completed).ToList();
+        var noShowItems = queueItems.Where(q => q.Status == ClinicQueueStatus.NoShow).ToList();
+        var cancelledItems = queueItems.Where(q => q.Status == ClinicQueueStatus.Cancelled).ToList();
+
+        var completionRate = totalItems > 0 ? Math.Round((double)completedItems.Count / totalItems * 100, 1) : 0;
+        var noShowRate = totalItems > 0 ? Math.Round((double)noShowItems.Count / totalItems * 100, 1) : 0;
+
+        // Average service time (StartedAt → CompletedAt)
+        var serviceTimes = completedItems
+            .Where(q => q.StartedAt.HasValue && q.CompletedAt.HasValue && q.CompletedAt > q.StartedAt)
+            .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
+            .ToList();
+        var avgServiceTime = serviceTimes.Count > 0 ? Math.Round(serviceTimes.Average(), 1) : 0;
+
+        // Average wait time (CreatedAt → CalledAt) for called/completed items
+        var waitTimes = queueItems
+            .Where(q => q.CalledAt.HasValue && q.CalledAt.Value > q.CreatedAt)
+            .Select(q => (q.CalledAt!.Value - q.CreatedAt).TotalMinutes)
+            .ToList();
+        var avgWaitTime = waitTimes.Count > 0 ? Math.Round(waitTimes.Average(), 1) : 0;
+
+        // Time-in-status metrics
+        var calledToInRoom = queueItems
+            .Where(q => q.CalledAt.HasValue && q.InRoomAt.HasValue && q.InRoomAt > q.CalledAt)
+            .Select(q => (q.InRoomAt!.Value - q.CalledAt!.Value).TotalMinutes)
+            .ToList();
+        var avgCalledToInRoom = calledToInRoom.Count > 0 ? Math.Round(calledToInRoom.Average(), 1) : 0;
+
+        var inRoomToStart = queueItems
+            .Where(q => q.InRoomAt.HasValue && q.StartedAt.HasValue && q.StartedAt > q.InRoomAt)
+            .Select(q => (q.StartedAt!.Value - q.InRoomAt!.Value).TotalMinutes)
+            .ToList();
+        var avgInRoomToStart = inRoomToStart.Count > 0 ? Math.Round(inRoomToStart.Average(), 1) : 0;
+
+        // Per-doctor stats
+        var doctorStats = queueItems
+            .Where(q => q.Doctor != null)
+            .GroupBy(q => q.Doctor!.Name)
+            .Select(g => new
+            {
+                DoctorName = g.Key,
+                TotalPatients = g.Count(),
+                Completed = g.Count(q => q.Status == ClinicQueueStatus.Completed),
+                NoShow = g.Count(q => q.Status == ClinicQueueStatus.NoShow),
+                AvgServiceTime = g.Where(q => q.Status == ClinicQueueStatus.Completed && q.StartedAt.HasValue && q.CompletedAt.HasValue && q.CompletedAt > q.StartedAt)
+                    .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
+                    .DefaultIfEmpty(0)
+                    .Average() is double v ? Math.Round(v, 1) : 0
+            })
+            .OrderByDescending(d => d.TotalPatients)
+            .ToList();
+
+        // Peak hours analysis
+        var hourlyDistribution = queueItems
+            .Where(q => q.Status != ClinicQueueStatus.Cancelled)
+            .GroupBy(q => q.CreatedAt.Hour)
+            .Select(g => new { Hour = g.Key, Count = g.Count() })
+            .OrderBy(h => h.Hour)
+            .ToList();
+
+        // Priority distribution
+        var priorityStats = queueItems
+            .GroupBy(q => q.Priority)
+            .Select(g => new
+            {
+                Priority = g.Key.ToString(),
+                PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(g.Key),
+                Count = g.Count()
+            })
+            .OrderByDescending(p => p.Count)
+            .ToList();
+
+        return Ok(new
+        {
+            DateRange = new { From = from.ToString("yyyy-MM-dd"), To = to.ToString("yyyy-MM-dd") },
+            TotalItems = totalItems,
+            Completed = completedItems.Count,
+            NoShow = noShowItems.Count,
+            Cancelled = cancelledItems.Count,
+            CompletionRate = completionRate,
+            NoShowRate = noShowRate,
+            AvgServiceTimeMinutes = avgServiceTime,
+            AvgWaitTimeMinutes = avgWaitTime,
+            AvgCalledToInRoomMinutes = avgCalledToInRoom,
+            AvgInRoomToStartMinutes = avgInRoomToStart,
+            DoctorStats = doctorStats,
+            HourlyDistribution = hourlyDistribution,
+            PriorityDistribution = priorityStats
+        });
+    }
+
     // ─── PATCH /api/clinic-queue/{id}/room ───────────────────────────────────
     /// <summary>Changes the room assignment for a queue item.</summary>
     [HttpPatch("{id:guid}/room")]
@@ -596,8 +1048,26 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
                     || q.Status == ClinicQueueStatus.Called
                     || q.Status == ClinicQueueStatus.InRoom
                     || q.Status == ClinicQueueStatus.InProgress))
-            .OrderByDescending(q => q.CalledAt ?? q.CreatedAt)
+            .OrderByDescending(q => q.Priority)
+            .ThenBy(q => q.SortOrder)
+            .ThenBy(q => q.CreatedAt)
             .ToListAsync();
+
+        // Calculate avg service time for estimated wait
+        var completedToday = await db.ClinicQueueItems
+            .Where(q => q.QueueDate == today && q.Status == ClinicQueueStatus.Completed
+                     && q.StartedAt.HasValue && q.CompletedAt.HasValue && q.IsActive)
+            .Select(q => new { q.StartedAt, q.CompletedAt })
+            .ToListAsync();
+
+        double avgServiceTime = 15;
+        if (completedToday.Count > 0)
+        {
+            avgServiceTime = Math.Max(1, completedToday
+                .Where(q => q.CompletedAt!.Value > q.StartedAt!.Value)
+                .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
+                .DefaultIfEmpty(15).Average());
+        }
 
         // Latest called patient (only Called status — for voice announcement trigger)
         var latestCalled = items
@@ -610,23 +1080,33 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
                 PatientName = BuildPatientDisplayName(q.Patient),
                 DoctorName = q.Doctor != null ? q.Doctor.Name : "",
                 q.RoomName,
-                q.CalledAt
+                q.CalledAt,
+                q.RecallCount,
+                Priority = q.Priority.ToString(),
+                PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority)
             })
             .FirstOrDefault();
 
-        // Waiting list
-        var waitingList = items
+        // Waiting list with priority + position + estimated wait
+        var waitingItems = items
             .Where(q => q.Status == ClinicQueueStatus.Waiting)
-            .OrderBy(q => q.CreatedAt)
-            .Select(q => new
-            {
-                QueueItemId = q.Id,
-                PatientNumber = q.Patient?.PatientNumber ?? "",
-                PatientName = BuildPatientDisplayName(q.Patient),
-                DoctorName = q.Doctor != null ? q.Doctor.Name : "",
-                Status = "في الانتظار"
-            })
+            .OrderByDescending(q => q.Priority)
+            .ThenBy(q => q.SortOrder)
+            .ThenBy(q => q.CreatedAt)
             .ToList();
+
+        var waitingList = waitingItems.Select((q, idx) => new
+        {
+            QueueItemId = q.Id,
+            PatientNumber = q.Patient?.PatientNumber ?? "",
+            PatientName = BuildPatientDisplayName(q.Patient),
+            DoctorName = q.Doctor != null ? q.Doctor.Name : "",
+            Status = "في الانتظار",
+            Position = idx + 1,
+            EstimatedWaitMinutes = (int)Math.Ceiling((idx + 1) * avgServiceTime),
+            Priority = q.Priority.ToString(),
+            PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority)
+        }).ToList();
 
         // Recently called (Called + InRoom, most recent first)
         var recentlyCalled = items
@@ -642,8 +1122,24 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
                 q.RoomName,
                 StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
                 Status = q.Status.ToString(),
-                q.CalledAt
+                q.CalledAt,
+                q.RecallCount
             })
+            .ToList();
+
+        // Now Serving — room-by-room view: which doctor is in which room with which patient
+        var nowServing = items
+            .Where(q => q.Status == ClinicQueueStatus.InProgress && !string.IsNullOrWhiteSpace(q.RoomName))
+            .GroupBy(q => q.RoomName!)
+            .Select(g => new
+            {
+                RoomName = g.Key,
+                DoctorName = g.First().Doctor != null ? g.First().Doctor!.Name : "",
+                PatientName = BuildPatientDisplayName(g.First().Patient),
+                PatientNumber = g.First().Patient?.PatientNumber ?? "",
+                StartedAt = g.First().StartedAt
+            })
+            .OrderBy(r => r.RoomName)
             .ToList();
 
         return Ok(new
@@ -651,7 +1147,9 @@ public class ClinicQueueController(AppDbContext db, IRealTimePushService pushSer
             LatestCalled = latestCalled,
             WaitingCount = waitingList.Count,
             WaitingList = waitingList,
-            RecentlyCalled = recentlyCalled
+            RecentlyCalled = recentlyCalled,
+            NowServing = nowServing,
+            AverageServiceTimeMinutes = Math.Round(avgServiceTime, 1)
         });
     }
 
@@ -971,4 +1469,21 @@ public class CallQueuePatientRequest
 public class ChangeRoomRequest
 {
     public string RoomName { get; set; } = string.Empty;
+}
+
+public class ChangePriorityRequest
+{
+    public ClinicQueuePriority Priority { get; set; } = ClinicQueuePriority.Normal;
+}
+
+public class ReorderItemRequest
+{
+    public Guid Id { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public class NotifyPatientRequest
+{
+    /// <summary>Notification channel: "sms", "whatsapp", or "both"</summary>
+    public string Channel { get; set; } = "sms";
 }

@@ -3,22 +3,21 @@ using AqlanDentalPro.Domain.Enums;
 namespace AqlanDentalPro.Application.Services;
 
 /// <summary>
-/// CON-01 FIX: Defines valid status transitions for clinic queue items.
+/// Defines valid status transitions for clinic queue items.
 /// Centralizes the transition rules that were previously scattered in the controller.
 /// Prevents invalid state changes (e.g., jumping from Waiting directly to InProgress).
 ///
 /// Transition map:
-///   Waiting  → Called, InRoom, Cancelled
-///   Called   → InRoom, Waiting, Cancelled
-///   InRoom   → InProgress, Called, Cancelled
+///   Waiting    → Called, InRoom, Cancelled, NoShow
+///   Called     → InRoom, Waiting, Cancelled, NoShow
+///   InRoom     → InProgress, Called, Cancelled
 ///   InProgress → Completed, Cancelled
 ///   Completed  → (terminal)
 ///   Cancelled  → (terminal)
+///   NoShow     → (terminal)
 ///
-/// NOTE: Called → InProgress was removed because it creates an asymmetry with
-/// AppointmentStatusTransitions (which does not allow Called → InProgress).
-/// This caused SyncAppointmentStatus to silently fail, leaving the appointment
-/// status inconsistent with the queue status.
+/// NoShow: Added for patients who were called but did not arrive.
+/// This distinguishes "patient didn't show" from "clinic cancelled the appointment".
 /// </summary>
 public static class ClinicQueueStatusTransitions
 {
@@ -30,7 +29,17 @@ public static class ClinicQueueStatusTransitions
         [ClinicQueueStatus.InRoom] = "داخل الغرفة",
         [ClinicQueueStatus.InProgress] = "قيد المعالجة",
         [ClinicQueueStatus.Completed] = "مكتمل",
-        [ClinicQueueStatus.Cancelled] = "ملغي"
+        [ClinicQueueStatus.Cancelled] = "ملغي",
+        [ClinicQueueStatus.NoShow] = "لم يحضر"
+    };
+
+    // Arabic labels for priority levels
+    private static readonly Dictionary<ClinicQueuePriority, string> PriorityArabicLabels = new()
+    {
+        [ClinicQueuePriority.Normal] = "عادي",
+        [ClinicQueuePriority.Urgent] = "عاجل",
+        [ClinicQueuePriority.VIP] = "مميز",
+        [ClinicQueuePriority.Emergency] = "طوارئ"
     };
 
     // Each status maps to the set of statuses it can transition TO.
@@ -40,13 +49,15 @@ public static class ClinicQueueStatusTransitions
         {
             ClinicQueueStatus.Called,
             ClinicQueueStatus.InRoom,    // Direct entry if business allows
-            ClinicQueueStatus.Cancelled
+            ClinicQueueStatus.Cancelled,
+            ClinicQueueStatus.NoShow     // Patient didn't show up for scheduled slot
         },
         [ClinicQueueStatus.Called] = new()
         {
             ClinicQueueStatus.InRoom,
             ClinicQueueStatus.Waiting,   // Return to waiting
-            ClinicQueueStatus.Cancelled
+            ClinicQueueStatus.Cancelled,
+            ClinicQueueStatus.NoShow     // Called but didn't respond
         },
         [ClinicQueueStatus.InRoom] = new()
         {
@@ -61,7 +72,8 @@ public static class ClinicQueueStatusTransitions
         },
         // Terminal states — no transitions out
         [ClinicQueueStatus.Completed] = new(),
-        [ClinicQueueStatus.Cancelled] = new()
+        [ClinicQueueStatus.Cancelled] = new(),
+        [ClinicQueueStatus.NoShow] = new()
     };
 
     /// <summary>
@@ -93,8 +105,6 @@ public static class ClinicQueueStatusTransitions
     /// <summary>
     /// Returns an Arabic error message for an invalid transition.
     /// Returns null if the transition is valid.
-    /// CON-01 FIX: Centralized error message generation — controllers no longer need
-    /// to construct their own Arabic messages for transition validation failures.
     /// </summary>
     public static string? GetValidationError(ClinicQueueStatus currentStatus, ClinicQueueStatus newStatus)
     {
@@ -114,5 +124,13 @@ public static class ClinicQueueStatusTransitions
     public static string GetArabicLabel(ClinicQueueStatus status)
     {
         return StatusArabicLabels.GetValueOrDefault(status, status.ToString());
+    }
+
+    /// <summary>
+    /// Returns the Arabic label for a given priority level.
+    /// </summary>
+    public static string GetPriorityArabicLabel(ClinicQueuePriority priority)
+    {
+        return PriorityArabicLabels.GetValueOrDefault(priority, priority.ToString());
     }
 }

@@ -2,126 +2,132 @@
    Finance V3 — Type Definitions
    ═══════════════════════════════════════════════════════════════════════════════
 
-   IMPORTANT: All property names use camelCase to match the JSON output from
-   ASP.NET Core (which uses JsonNamingPolicy.CamelCase by default).
-   The rest of the frontend codebase (patient.ts, etc.) follows the same convention.
+   IMPORTANT: Property names use PascalCase to match the JSON output from
+   ASP.NET Core controller anonymous objects. While ASP.NET Core's default
+   JsonSerializerDefaults.Web uses camelCase, the FinanceV3Controller returns
+   anonymous objects where property names are defined in PascalCase (e.g.,
+   `new { TodayInflow, TotalOutstanding }`). System.Text.Json preserves
+   the exact casing of anonymous object property names regardless of naming policy.
+   
+   All component code accesses these properties with PascalCase (e.g., `r.TotalAmount`),
+   so the types must match.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Dashboard Overview ─────────────────────────────────────────────────────────── */
 export interface DashboardData {
-  todayInflow: number;
-  todayOutflow: number;
-  todayNet: number;
-  monthInflow: number;
-  monthOutflow: number;
-  monthNet: number;
-  totalOutstanding: number;
-  contractOutstanding: number;
-  invoiceOutstanding: number;
-  totalTreasuryBalance: number;
-  todayAccruedRevenue: number;
-  monthAccruedRevenue: number;
-  journalEntryCount: number;
-  postedEntryCount: number;
-  reversalEntryCount: number;
-  dualWriteCoverage: string;
-  pendingExpenses: number;
-  pendingTransfers: number;
-  date: string;
+  TodayInflow: number;
+  TodayOutflow: number;
+  TodayNet: number;
+  MonthInflow: number;
+  MonthOutflow: number;
+  MonthNet: number;
+  TotalOutstanding: number;
+  ContractOutstanding: number;
+  InvoiceOutstanding: number;
+  TotalTreasuryBalance: number;
+  TodayAccruedRevenue: number;
+  MonthAccruedRevenue: number;
+  JournalEntryCount: number;
+  PostedEntryCount: number;
+  ReversalEntryCount: number;
+  DualWriteCoverage: string;
+  PendingExpenses: number;
+  PendingTransfers: number;
+  Date: string;
 }
 
 /* ── Patient Accounts ───────────────────────────────────────────────────────────── */
 export interface PatientBalance {
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  totalInvoiced: number;
-  totalPaid: number;
-  totalRefunds: number;
-  balance: number;
-  outstandingInvoices: number;
-  activeContracts: number;
-  hasOutstanding: boolean;
+  PatientId: string;
+  PatientName: string;
+  PatientNumber: string;
+  TotalInvoiced: number;
+  TotalPaid: number;
+  TotalRefunds: number;
+  Balance: number;
+  OutstandingInvoices: number;
+  ActiveContracts: number;
+  HasOutstanding: boolean;
 }
 
 export interface PatientBalanceDetail {
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  totalInvoiced: number;
-  totalPaid: number;
-  totalRefunds: number;
-  netPaid: number;
-  totalDiscounts: number;
-  balance: number;
-  entityBalance?: number;
-  contractOutstanding: number;
-  hasOutstanding: boolean;
-  journalReceivable?: number;
-  journalAdvance?: number;
+  PatientId: string;
+  PatientName: string;
+  PatientNumber: string;
+  TotalInvoiced: number;
+  TotalPaid: number;
+  TotalRefunds: number;
+  NetPaid: number;
+  TotalDiscounts: number;
+  Balance: number;
+  EntityBalance?: number;
+  ContractOutstanding: number;
+  HasOutstanding: boolean;
+  JournalReceivable?: number;
+  JournalAdvance?: number;
 }
 
 /* ── Invoices ───────────────────────────────────────────────────────────────────── */
 export interface InvoiceListItem {
-  id: string;
-  invoiceNumber: string;
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  totalAmount: number;
-  paidAmount: number;
-  balance: number;
-  status: string;
-  issueDate: string;
-  createdAt: string;
+  Id: string;
+  InvoiceNumber: string;
+  PatientId: string;
+  PatientName: string;
+  PatientNumber: string;
+  TotalAmount: number;
+  PaidAmount: number;
+  Balance: number;
+  Status: string;
+  IssueDate: string;
+  CreatedAt: string;
 }
 
 export interface InvoiceLineItem {
-  id: string;
-  treatmentId: string | null;
-  treatmentName: string;
-  toothNumber: string | null;
-  quantity: number;
-  unitPrice: number;
-  discountAmount: number;
-  totalPrice: number;
+  Id: string;
+  TreatmentId: string | null;
+  TreatmentName: string;
+  ToothNumber: string | null;
+  Quantity: number;
+  UnitPrice: number;
+  DiscountAmount: number;
+  TotalPrice: number;
 }
 
 export interface InvoiceDetail {
-  id: string;
-  invoiceNumber: string;
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  lineItems: InvoiceLineItem[];
-  subtotal: number;
-  totalDiscount: number;
-  totalAmount: number;
-  paidAmount: number;
-  balance: number;
-  status: string;
-  issueDate: string;
-  dueDate: string | null;
-  contractId: string | null;
-  notes: string | null;
+  Id: string;
+  InvoiceNumber: string;
+  PatientId: string;
+  PatientName: string;
+  PatientNumber: string;
+  LineItems: InvoiceLineItem[];
+  Subtotal: number;
+  TotalDiscount: number;
+  TotalAmount: number;
+  PaidAmount: number;
+  Balance: number;
+  Status: string;
+  IssueDate: string;
+  DueDate: string | null;
+  ContractId: string | null;
+  Notes: string | null;
 }
 
 /* ── Collections / Payments ─────────────────────────────────────────────────────── */
 export interface PaymentListItem {
-  id: string;
-  paymentNumber: string;
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  amount: number;
-  paymentMethod: string;
-  paymentDate: string;
-  invoiceId: string | null;
-  contractId: string | null;
-  cashierSessionId: string | null;
-  isReversal: boolean;
-  reversedById: string | null;
-  status: string;
+  Id: string;
+  PaymentNumber: string;
+  PatientId: string;
+  PatientName: string;
+  PatientNumber: string;
+  Amount: number;
+  PaymentMethod: string;
+  PaymentDate: string;
+  InvoiceId: string | null;
+  ContractId: string | null;
+  CashierSessionId: string | null;
+  IsReversal: boolean;
+  ReversedById: string | null;
+  Status: string;
 }
 
 export interface RegisterPaymentRequest {
@@ -135,40 +141,40 @@ export interface RegisterPaymentRequest {
 
 /* ── Contracts ──────────────────────────────────────────────────────────────────── */
 export interface ContractListItem {
-  id: string;
-  contractNumber: string;
-  patientId: string;
-  patientName: string;
-  patientNumber: string;
-  totalAmount: number;
-  paidAmount: number;
-  outstandingAmount: number;
-  status: string;
-  startDate: string;
-  endDate: string | null;
-  isOverdue: boolean;
+  Id: string;
+  ContractNumber: string;
+  PatientId: string;
+  PatientName: string;
+  PatientNumber: string;
+  TotalAmount: number;
+  PaidAmount: number;
+  OutstandingAmount: number;
+  Status: string;
+  StartDate: string;
+  EndDate: string | null;
+  IsOverdue: boolean;
 }
 
 /* ── Cashier Sessions ───────────────────────────────────────────────────────────── */
 export interface CashierSession {
-  id: string;
-  cashierUserId?: string;
-  cashierId?: string;
-  cashierName: string;
-  branchId: string;
-  openedAt: string;
-  closingTime: string | null;
-  openingBalance: number;
-  expectedClosingCash: number;   // Migration C: calculated from JournalLine (Treasury Vault)
-  expectedClosingCard: number;   // Migration C: merged with bank; TODO: TreasuryType.Card
-  expectedClosingBank: number;   // Migration C: calculated from JournalLine (Treasury Bank)
-  actualClosingCash: number | null;
-  actualClosingCard: number | null;
-  actualClosingBank: number | null;
-  shortageOrSurplus: number | null;
-  status: string;
-  notes: string | null;
-  treasuryId: string | null;
+  Id: string;
+  CashierUserId?: string;
+  CashierId?: string;
+  CashierName: string;
+  BranchId: string;
+  OpenedAt: string;
+  ClosingTime: string | null;
+  OpeningBalance: number;
+  ExpectedClosingCash: number;
+  ExpectedClosingCard: number;
+  ExpectedClosingBank: number;
+  ActualClosingCash: number | null;
+  ActualClosingCard: number | null;
+  ActualClosingBank: number | null;
+  ShortageOrSurplus: number | null;
+  Status: string;
+  Notes: string | null;
+  TreasuryId: string | null;
 }
 
 export interface CloseSessionRequest {
@@ -179,12 +185,12 @@ export interface CloseSessionRequest {
 
 /* ── Treasuries ─────────────────────────────────────────────────────────────────── */
 export interface Treasury {
-  id: string;
-  name: string;
-  type: string;
-  typeArabic?: string;
-  balance: number;
-  branchId: string;
+  Id: string;
+  Name: string;
+  Type: string;
+  TypeArabic?: string;
+  Balance: number;
+  BranchId: string;
 }
 
 export interface CreateTreasuryRequest {
@@ -195,21 +201,21 @@ export interface CreateTreasuryRequest {
 }
 
 export interface VaultTransfer {
-  id: string;
-  sourceTreasuryId: string;
-  sourceTreasuryName: string;
-  destinationTreasuryId: string;
-  destinationTreasuryName: string;
-  amount: number;
-  depositSource: string | null;
-  status: string;
-  requestedBy: string;
-  requestedAt: string;
-  approvedBy: string | null;
-  approvedAt: string | null;
-  rejectedBy: string | null;
-  rejectedAt: string | null;
-  rejectionReason: string | null;
+  Id: string;
+  SourceTreasuryId: string;
+  SourceTreasuryName: string;
+  DestinationTreasuryId: string;
+  DestinationTreasuryName: string;
+  Amount: number;
+  DepositSource: string | null;
+  Status: string;
+  RequestedBy: string;
+  RequestedAt: string;
+  ApprovedBy: string | null;
+  ApprovedAt: string | null;
+  RejectedBy: string | null;
+  RejectedAt: string | null;
+  RejectionReason: string | null;
 }
 
 export interface CreateTransferRequest {
@@ -222,22 +228,22 @@ export interface CreateTransferRequest {
 
 /* ── Expenses ───────────────────────────────────────────────────────────────────── */
 export interface ExpenseListItem {
-  id: string;
-  title: string;
-  category: string;
-  amount: number;
-  paymentMethod: string;
-  expenseDate: string;
-  status: string;
-  requestedBy: string;
-  approvedBy: string | null;
-  approvedAt: string | null;
-  rejectedBy: string | null;
-  rejectedAt: string | null;
-  rejectionReason: string | null;
-  isReversal: boolean;
-  treasuryId: string | null;     // Migration C: now sourced from JournalLine (Treasury account)
-  treasuryName: string | null;   // Migration C: now sourced from JournalLine (Treasury account)
+  Id: string;
+  Title: string;
+  Category: string;
+  Amount: number;
+  PaymentMethod: string;
+  ExpenseDate: string;
+  Status: string;
+  RequestedBy: string;
+  ApprovedBy: string | null;
+  ApprovedAt: string | null;
+  RejectedBy: string | null;
+  RejectedAt: string | null;
+  RejectionReason: string | null;
+  IsReversal: boolean;
+  TreasuryId: string | null;
+  TreasuryName: string | null;
 }
 
 export interface CreateExpenseRequest {
@@ -252,26 +258,26 @@ export interface CreateExpenseRequest {
 
 /* ── Suppliers ──────────────────────────────────────────────────────────────────── */
 export interface SupplierListItem {
-  id: string;
-  name: string;
-  contactPerson: string | null;
-  phone: string | null;
-  totalBilled: number;
-  totalPaid: number;
-  balance: number;
+  Id: string;
+  Name: string;
+  ContactPerson: string | null;
+  Phone: string | null;
+  TotalBilled: number;
+  TotalPaid: number;
+  Balance: number;
 }
 
 export interface SupplierBill {
-  id: string;
-  supplierId: string;
-  supplierName: string;
-  description: string;
-  totalAmount: number;
-  paidAmount: number;
-  balance: number;
-  dueDate: string;
-  status: string;
-  createdAt: string;
+  Id: string;
+  SupplierId: string;
+  SupplierName: string;
+  Description: string;
+  TotalAmount: number;
+  PaidAmount: number;
+  Balance: number;
+  DueDate: string;
+  Status: string;
+  CreatedAt: string;
 }
 
 export interface CreateSupplierBillRequest {
@@ -291,67 +297,64 @@ export interface PaySupplierBillRequest {
 
 /* ── Profit & Loss ──────────────────────────────────────────────────────────────── */
 export interface ProfitLossData {
-  period: { from: string; to: string };
-  accruedRevenue: number;
-  accruedExpenses: number;
-  accruedNetProfit: number;
-  cashCollections: number;
-  cashRefunds: number;
-  patientPaymentReversals?: number;
-  netCashCollections: number;
-  operatingExpenses: number;
-  salaryPayments: number;
-  doctorCommissions: number;
-  supplierPayments: number;
-  totalCosts: number;
-  cashNetProfit: number;
-  profitMargin: number;
-  reversalCoverage: Record<string, string>;
-  revenueTransactionCount?: number;
-  expenseTransactionCount?: number;
+  Period: { From: string; To: string };
+  AccruedRevenue: number;
+  AccruedExpenses: number;
+  AccruedNetProfit: number;
+  CashCollections: number;
+  CashRefunds: number;
+  PatientPaymentReversals?: number;
+  NetCashCollections: number;
+  OperatingExpenses: number;
+  SalaryPayments: number;
+  DoctorCommissions: number;
+  SupplierPayments: number;
+  TotalCosts: number;
+  CashNetProfit: number;
+  ProfitMargin: number;
+  ReversalCoverage: Record<string, string>;
+  RevenueTransactionCount?: number;
+  ExpenseTransactionCount?: number;
 }
 
 /* ── Daily Cash Summary ─────────────────────────────────────────────────────────── */
-// Migration B: All fields now derived from JournalEntry/JournalLine (canonical source)
-// instead of CashFlowTransaction.
 export interface DailyCashCategory {
-  type: string;           // "Inflow" or "Outflow" — Migration B: from JournalLine Debit/Credit
-  category: string;       // Migration B: mapped from JournalEntry.FinancialDocumentType via MapDocumentTypeToCategory
-  isReversal: boolean;    // Migration B: from JournalEntry.IsReversal
-  count: number;
-  total: number;
+  Type: string;
+  Category: string;
+  IsReversal: boolean;
+  Count: number;
+  Total: number;
 }
 
 export interface DailyCashSummary {
-  date: string;
-  totalInflow: number;
-  totalOutflow: number;
-  netCash: number;
-  byCategory: DailyCashCategory[];
-  byPaymentMethod: { paymentMethod: string; count: number; total: number }[];
-  transactionCount: number;
-  reversalCount: number;
-  journalEntryCount: number;
+  Date: string;
+  TotalInflow: number;
+  TotalOutflow: number;
+  NetCash: number;
+  ByCategory: DailyCashCategory[];
+  ByPaymentMethod: { PaymentMethod: string; Count: number; Total: number }[];
+  TransactionCount: number;
+  ReversalCount: number;
+  JournalEntryCount: number;
 }
 
 /* ── Account Balances ───────────────────────────────────────────────────────────── */
-// Migration A: All balance calculations now derived from JournalLine (canonical source).
 export interface AccountBalance {
-  accountType: string;
-  totalDebit: number;
-  totalCredit: number;
-  netBalance: number;
-  entryCount: number;
+  AccountType: string;
+  TotalDebit: number;
+  TotalCredit: number;
+  NetBalance: number;
+  EntryCount: number;
 }
 
 export interface AccountBalancesData {
-  accountBalances: AccountBalance[];
-  treasuries: { id: string; name: string; type: string; balance: number; branchId: string }[];
-  totalAssets: number;
-  totalRevenue: number;
-  totalExpenses: number;
-  totalReceivables: number;
-  totalPayables: number;
+  AccountBalances: AccountBalance[];
+  Treasuries: { Id: string; Name: string; Type: string; Balance: number; BranchId: string }[];
+  TotalAssets: number;
+  TotalRevenue: number;
+  TotalExpenses: number;
+  TotalReceivables: number;
+  TotalPayables: number;
 }
 
 /* ── Expense categories ─────────────────────────────────────────────────────────── */

@@ -398,7 +398,6 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<ShiftEnforcerFilter>();
 builder.Services.AddScoped<PatientService>();
 builder.Services.AddScoped<AppointmentService>();
 builder.Services.AddScoped<DashboardService>();
@@ -439,6 +438,8 @@ builder.Services.AddHttpClient("Sms", client =>
 builder.Services.AddHttpContextAccessor();
 
 // ── Action Filters ────────────────────────────────────────────────────────────
+// ShiftEnforcerFilter registered as scoped service for [ServiceFilter] usage
+// on FinanceV3Controller.CreatePayment endpoint.
 builder.Services.AddScoped<ShiftEnforcerFilter>();
 
 // ── FluentValidation ──────────────────────────────────────────────────────────
@@ -464,13 +465,7 @@ builder.Services.AddSignalR(options =>
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
     options.MaximumReceiveMessageSize = 10 * 1024; // 10 KB
 });
-builder.Services.AddControllers(options =>
-    {
-        // Sprint 2: ShiftEnforcerFilter — automatic shift validation before payment operations.
-        // Checks that the cashier has an open, active shift before allowing POST to /api/finance-v3/payments.
-        // Admin bypasses this check for emergency situations.
-        options.Filters.AddService<ShiftEnforcerFilter>();
-    })
+builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         // FIX: Allow enum values as strings in JSON (e.g., "Consultation" instead of 0)

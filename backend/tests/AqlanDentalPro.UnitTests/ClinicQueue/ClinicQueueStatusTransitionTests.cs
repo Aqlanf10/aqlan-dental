@@ -21,6 +21,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InProgress)]
     [InlineData(ClinicQueueStatus.Completed)]
     [InlineData(ClinicQueueStatus.Cancelled)]
+    [InlineData(ClinicQueueStatus.NoShow)]
     public void SameStatus_Transition_IsAlwaysValid(ClinicQueueStatus status)
     {
         ClinicQueueStatusTransitions.IsValidTransition(status, status)
@@ -178,6 +179,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InRoom)]
     [InlineData(ClinicQueueStatus.InProgress)]
     [InlineData(ClinicQueueStatus.Cancelled)]
+    [InlineData(ClinicQueueStatus.NoShow)]
     public void Completed_OnlyAllowsIdempotent(ClinicQueueStatus target)
     {
         if (target == ClinicQueueStatus.Completed)
@@ -198,6 +200,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InRoom)]
     [InlineData(ClinicQueueStatus.InProgress)]
     [InlineData(ClinicQueueStatus.Completed)]
+    [InlineData(ClinicQueueStatus.NoShow)]
     public void Cancelled_OnlyAllowsIdempotent(ClinicQueueStatus target)
     {
         if (target == ClinicQueueStatus.Cancelled)
@@ -418,6 +421,7 @@ public class ClinicQueueStatusTransitionTests
     [InlineData(ClinicQueueStatus.InProgress, "قيد المعالجة")]
     [InlineData(ClinicQueueStatus.Completed, "مكتمل")]
     [InlineData(ClinicQueueStatus.Cancelled, "ملغي")]
+    [InlineData(ClinicQueueStatus.NoShow, "لم يحضر")]
     public void GetArabicLabel_ReturnsCorrectLabel(ClinicQueueStatus status, string expectedLabel)
     {
         ClinicQueueStatusTransitions.GetArabicLabel(status).Should().Be(expectedLabel);

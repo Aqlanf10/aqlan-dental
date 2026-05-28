@@ -131,12 +131,12 @@ export interface PaymentListItem {
 }
 
 export interface RegisterPaymentRequest {
-  patientId: string;
-  invoiceId?: string;
-  contractId?: string;
-  amount: number;
-  paymentMethod: string;
-  notes?: string;
+  PatientId: string;
+  InvoiceId?: string;
+  ContractId?: string;
+  Amount: number;
+  PaymentMethod: string;
+  Notes?: string;
 }
 
 /* ── Contracts ──────────────────────────────────────────────────────────────────── */
@@ -178,9 +178,9 @@ export interface CashierSession {
 }
 
 export interface CloseSessionRequest {
-  actualClosingCash: number;
-  actualClosingCard: number;
-  actualClosingBank: number;
+  ActualClosingCash: number;
+  ActualClosingCard: number;
+  ActualClosingBank: number;
 }
 
 /* ── Treasuries ─────────────────────────────────────────────────────────────────── */
@@ -194,10 +194,10 @@ export interface Treasury {
 }
 
 export interface CreateTreasuryRequest {
-  name: string;
-  type: string;
-  openingBalance: number;
-  branchId?: string;
+  Name: string;
+  Type: string;
+  OpeningBalance: number;
+  BranchId?: string;
 }
 
 export interface VaultTransfer {
@@ -219,11 +219,11 @@ export interface VaultTransfer {
 }
 
 export interface CreateTransferRequest {
-  sourceTreasuryId: string;
-  destinationTreasuryId: string;
-  amount: number;
-  depositSource?: string;
-  notes?: string;
+  SourceTreasuryId: string;
+  DestinationTreasuryId: string;
+  Amount: number;
+  DepositSource?: string;
+  Notes?: string;
 }
 
 /* ── Expenses ───────────────────────────────────────────────────────────────────── */
@@ -247,13 +247,13 @@ export interface ExpenseListItem {
 }
 
 export interface CreateExpenseRequest {
-  title: string;
-  category: string;
-  amount: number;
-  paymentMethod: string;
-  expenseDate: string;
-  treasuryId?: string;
-  notes?: string;
+  Title: string;
+  Category: string;
+  Amount: number;
+  PaymentMethod: string;
+  ExpenseDate: string;
+  TreasuryId?: string;
+  Notes?: string;
 }
 
 /* ── Suppliers ──────────────────────────────────────────────────────────────────── */
@@ -281,18 +281,18 @@ export interface SupplierBill {
 }
 
 export interface CreateSupplierBillRequest {
-  supplierId: string;
-  description: string;
-  totalAmount: number;
-  dueDate: string;
-  notes?: string;
+  SupplierId: string;
+  Description: string;
+  TotalAmount: number;
+  DueDate: string;
+  Notes?: string;
 }
 
 export interface PaySupplierBillRequest {
-  amount: number;
-  paymentMethod: string;
-  treasuryId?: string;
-  notes?: string;
+  Amount: number;
+  PaymentMethod: string;
+  TreasuryId?: string;
+  Notes?: string;
 }
 
 /* ── Profit & Loss ──────────────────────────────────────────────────────────────── */

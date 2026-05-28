@@ -711,36 +711,88 @@ public class FinanceV3AccountingSafetyTests
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task FinanceService_CreatePaymentAsync_EmptyBranchId_ThrowsArgumentException()
+    public async Task FinanceService_CreatePaymentAsync_EmptyBranchId_SucceedsWhenSessionHasBranch()
     {
+        // Hotfix: Payment now resolves branch from active cashier session.
+        // Admin with empty BranchId claim can create payment when session has valid BranchId.
         await using var db = CreateContext();
         var (branchId, cashierId) = SeedBranchAndUser(db);
         CreateOpenSession(db, cashierId, branchId);
 
-        // Create ICurrentUserService with empty BranchId
+        // Create ICurrentUserService with empty BranchId (Admin without branch claim)
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(cashierId);
         currentUser.SetupGet(c => c.BranchId).Returns(Guid.Empty);
         currentUser.SetupGet(c => c.IsAdmin).Returns(true);
+
+        var jeMock = new Mock<IJournalEntryService>();
+        jeMock.Setup(s => s.CreateEntryAsync(
+            It.IsAny<FinancialDocumentType>(),
+            It.IsAny<Guid>(),
+            It.IsAny<string>(),
+            It.IsAny<DateOnly>(),
+            It.IsAny<Guid>(),
+            It.IsAny<Guid>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<Guid?>(),
+            It.IsAny<IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)>>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FinancialDocumentType docType, Guid docId, string desc, DateOnly date, Guid branch, Guid performedBy, Guid? sessionId, Guid? treasuryId, IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)> lines, CancellationToken ct) =>
+            {
+                var entry = new JournalEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EntryNumber = "JE-HOTFIX-001",
+                    FinancialDocumentId = docId,
+                    FinancialDocumentType = docType,
+                    Description = desc,
+                    EntryDate = date,
+                    BranchId = branch,
+                    PerformedBy = performedBy,
+                    CashierSessionId = sessionId,
+                    TreasuryId = treasuryId,
+                    IsPosted = false,
+                    IsReversal = false,
+                };
+                foreach (var (accountType, accountId, debit, credit, lineDesc) in lines)
+                {
+                    entry.Lines.Add(new JournalLine
+                    {
+                        Id = Guid.NewGuid(),
+                        AccountType = accountType,
+                        AccountId = accountId,
+                        Debit = debit,
+                        Credit = credit,
+                        Description = lineDesc,
+                        BranchId = branch,
+                    });
+                }
+                return entry;
+            });
 
         var service = new FinanceService(
             db, currentUser.Object,
             new Mock<INotificationService>().Object,
             new Mock<ILogger<FinanceService>>().Object,
             new Mock<ICommissionService>().Object,
-            new Mock<IJournalEntryService>().Object);
+            jeMock.Object);
 
         var patient = SeedPatient(db, branchId);
 
-        var act = () => service.CreatePaymentAsync(new CreatePaymentRequest
+        var result = await service.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patient.Id,
             Amount = 10_000m,
             PaymentMethod = "cash"
         });
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*الفرع*");
+        // Payment should succeed — branch resolved from active session
+        result.Should().NotBeNull();
+        result.Amount.Should().Be(10_000m);
+
+        // Payment.BranchId should be the session's branch, not Guid.Empty
+        var payment = await db.Payments.FirstAsync(p => p.Id == result.Id);
+        payment.BranchId.Should().Be(branchId);
     }
 
     [Fact]

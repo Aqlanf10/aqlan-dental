@@ -590,13 +590,16 @@ public class CashDrawerReconciliationTests
     }
 
     [Fact]
-    public async Task FinanceService_CreatePayment_WithNullBranchId_Throws()
+    public async Task FinanceService_CreatePayment_WithNullBranchId_SucceedsWhenSessionHasBranch()
     {
+        // Hotfix: Payment now resolves branch from active cashier session,
+        // not from currentUser.BranchId. Admin without branch claim can create
+        // payment if their cashier session has a valid BranchId.
         await using var db = CreateContext();
         var (branchId, cashierId) = SeedBranchAndUser(db);
         CreateOpenSession(db, cashierId, branchId);
 
-        // Create a mock ICurrentUserService with NO branch
+        // Create a mock ICurrentUserService with NO branch (Admin user)
         var currentUserNoBranch = new Mock<ICurrentUserService>();
         currentUserNoBranch.SetupGet(c => c.UserId).Returns(cashierId);
         currentUserNoBranch.SetupGet(c => c.BranchId).Returns((Guid?)null);
@@ -683,24 +686,32 @@ public class CashDrawerReconciliationTests
             Id = patientId,
             FirstName = "مريض",
             LastName = "تجريبي",
-            PatientNumber = "P-BRANCH-TEST"
+            PatientNumber = "P-BRANCH-TEST",
+            BranchId = branchId
         });
         await db.SaveChangesAsync();
 
-        var act = () => service.CreatePaymentAsync(new CreatePaymentRequest
+        var result = await service.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patientId,
             Amount = 10_000m,
             PaymentMethod = "cash"
         });
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*الفرع*");
+        // Payment should succeed — branch resolved from active session
+        result.Should().NotBeNull();
+        result.Amount.Should().Be(10_000m);
+
+        // Payment.BranchId should be the session's branch, not Guid.Empty
+        var payment = await db.Payments.FirstAsync(p => p.Id == result.Id);
+        payment.BranchId.Should().Be(branchId);
     }
 
     [Fact]
-    public async Task FinanceService_RefundPayment_WithEmptyBranchId_Throws()
+    public async Task FinanceService_RefundPayment_WithEmptyBranchId_SucceedsWhenSessionHasBranch()
     {
+        // Hotfix: Refund now resolves branch from active cashier session,
+        // not from currentUser.BranchId. Same logic as CreatePayment.
         await using var db = CreateContext();
         var (branchId, cashierId) = SeedBranchAndUser(db);
         var session = CreateOpenSession(db, cashierId, branchId);
@@ -713,7 +724,8 @@ public class CashDrawerReconciliationTests
             Id = patientId,
             FirstName = "مريض",
             LastName = "تجريبي",
-            PatientNumber = "P-REF-BRANCH"
+            PatientNumber = "P-REF-BRANCH",
+            BranchId = branchId
         });
 
         db.Payments.Add(new Payment
@@ -808,10 +820,18 @@ public class CashDrawerReconciliationTests
 
         var service = new FinanceService(db, currentUserEmptyBranch.Object, notifications.Object, logger.Object, commissionService.Object, journalEntryService.Object);
 
-        var act = () => service.RefundPaymentAsync(paymentId, "test refund");
+        // Refund should succeed — branch resolved from active session
+        var result = await service.RefundPaymentAsync(paymentId, "test refund");
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*الفرع*");
+        // Refund should not return null
+        result.Should().NotBeNull();
+
+        // Refund payment's CashFlow BranchId should be the session's branch
+        var refundPayment = await db.Payments.FirstOrDefaultAsync(p => p.Amount < 0 && p.PatientId == patientId);
+        refundPayment.Should().NotBeNull();
+        var refundCashflow = await db.CashFlowTransactions.FirstOrDefaultAsync(c => c.ReferenceId == refundPayment!.Id);
+        refundCashflow.Should().NotBeNull();
+        refundCashflow!.BranchId.Should().Be(branchId);
     }
 
     // ─── Test 13: Profit/loss current calculations do not double-count flows ──

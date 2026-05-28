@@ -103,8 +103,14 @@ export function CollectionsTab() {
         paymentMethod: payMethod,
         notes: payNotes || undefined,
       };
+      // Only include invoiceId/contractId when actually selected (not empty string)
       if (selectedInvoice) payload.invoiceId = selectedInvoice;
       if (selectedContract) payload.contractId = selectedContract;
+      // Debug-safe console log in development only
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.debug("[CollectionsTab] payment payload:", { ...payload, amount: payload.amount });
+      }
       await api.post("/api/finance-v3/payments", payload);
       toast.success("تم تسجيل الدفعة بنجاح");
       resetForm();

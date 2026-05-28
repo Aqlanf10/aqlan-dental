@@ -188,9 +188,18 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (activeSession == null)
             throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات.");
 
-        // BranchId guard: must have a valid branch assignment before creating a payment
-        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
-            throw new ArgumentException("عذراً، يجب تحديد الفرع قبل تسجيل أي مدفوعات.");
+        // Hotfix: Resolve branch from active cashier session instead of currentUser.BranchId.
+        // Admin users may not have a BranchId claim but they open cashier sessions with a selected branch.
+        // The cashier session's BranchId is the authoritative source for payment operations.
+        var paymentBranchId = activeSession.BranchId;
+
+        // If active session somehow has no branch, try currentUser.BranchId as fallback
+        if (paymentBranchId == Guid.Empty && currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+            paymentBranchId = currentUser.BranchId.Value;
+
+        // If still no branch, reject with clear Arabic message
+        if (paymentBranchId == Guid.Empty)
+            throw new ArgumentException("لم يتم تحديد فرع الوردية. يرجى إغلاق الوردية وفتح وردية جديدة بفرع صحيح.");
 
         // Phase 0B: Validate payment amount is positive
         if (req.Amount <= 0)
@@ -235,7 +244,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ServiceDescription = req.ServiceDescription,
             Specialty = req.Specialty,
             DoctorId = req.DoctorId,
-            BranchId = currentUser.BranchId,
+            BranchId = paymentBranchId,
             ReceivedBy = currentUser.UserId,
             ReceiptNumber = receiptNumber,
             Notes = req.Notes
@@ -265,7 +274,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ReferenceNumber = payment.ReceiptNumber,
             Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
             PerformedBy = userId,
-            BranchId = currentUser.BranchId.Value,
+            BranchId = paymentBranchId,
             CashierSessionId = activeSession.Id
         };
         db.CashFlowTransactions.Add(cashflow);
@@ -780,9 +789,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (activeSession == null)
             throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل إجراء أي عمليات استرداد للدفعة.");
 
-        // BranchId guard: must have a valid branch assignment before processing a refund
-        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
-            throw new ArgumentException("عذراً، يجب تحديد الفرع قبل إجراء أي عمليات استرداد للدفعة.");
+        // Hotfix: Resolve branch from active cashier session (same logic as CreatePaymentAsync).
+        var refundBranchId = activeSession.BranchId;
+        if (refundBranchId == Guid.Empty && currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+            refundBranchId = currentUser.BranchId.Value;
+        if (refundBranchId == Guid.Empty)
+            throw new ArgumentException("لم يتم تحديد فرع الوردية. يرجى إغلاق الوردية وفتح وردية جديدة بفرع صحيح.");
 
         var refund = new Payment
         {
@@ -821,7 +833,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 ? $"استرداد جزئي ({refundAmount:N0}) دفعة مريض - سند قبض {refund.ReceiptNumber}"
                 : $"استرداد دفعة مريض - سند قبض {refund.ReceiptNumber}",
             PerformedBy = userId,
-            BranchId = currentUser.BranchId.Value,
+            BranchId = refundBranchId,
             CashierSessionId = activeSession.Id
         };
         db.CashFlowTransactions.Add(refundCashflow);

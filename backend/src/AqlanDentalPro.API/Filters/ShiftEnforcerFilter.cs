@@ -40,7 +40,7 @@ public class ShiftEnforcerFilter : IAsyncActionFilter
                     context.Result = new BadRequestObjectResult(new
                     {
                         ErrorCode = "NO_ACTIVE_SHIFT",
-                        Message = "خطأ حرج: لم يتم التعرف على هوية المستخدم. يرجى إعادة تسجيل الدخول."
+                        Message = "لم يتم التعرف على هوية المستخدم. يرجى إعادة تسجيل الدخول."
                     });
                     return;
                 }
@@ -54,7 +54,7 @@ public class ShiftEnforcerFilter : IAsyncActionFilter
                     context.Result = new BadRequestObjectResult(new
                     {
                         ErrorCode = "NO_ACTIVE_SHIFT",
-                        Message = "خطأ حرج: لا توجد وردية مفتوحة حالياً. يجب فتح وردية كاشير قبل تسجيل أي مدفوعات."
+                        Message = "لا توجد وردية صندوق مفتوحة. يجب فتح وردية كاشير قبل تسجيل أي مدفوعات نقدية."
                     });
                     return;
                 }

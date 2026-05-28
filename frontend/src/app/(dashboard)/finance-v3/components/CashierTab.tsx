@@ -22,7 +22,7 @@ import { formatYER, extractErrorMessage, safeFormatDateTime, safeArray } from ".
    Tab 6: Cashier
    Zero-State Resiliency: Safe array extraction, null-safe rendering
    ═══════════════════════════════════════════════════════════════════════════════ */
-export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
+export function CashierTab({ isAdmin, onSessionChange }: { isAdmin: boolean; onSessionChange?: () => void }) {
   const { user } = useAuthStore();
   const { data: branches } = useBranches("active");
   const [sessions, setSessions] = useState<CashierSession[]>([]);
@@ -92,6 +92,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       toast.success("تم إقفال الوردية بنجاح");
       setCloseSession(null);
       fetchSessions();
+      onSessionChange?.();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إقفال الوردية")); } finally { setSubmitting(false); }
   };
 
@@ -125,6 +126,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       if (openNotes.trim()) payload.notes = openNotes.trim();
       await api.post("/api/cashier-sessions/open", payload);
       toast.success("تم فتح الوردية بنجاح");
+      onSessionChange?.();
       setShowOpenSession(false);
       setOpenBalance("0");
       setOpenBranchId("");
@@ -135,7 +137,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     } finally {
       setOpenSubmitting(false);
     }
-  }, [needsBranchSelection, openBranchId, openBalance, openNotes, fetchSessions]);
+  }, [needsBranchSelection, openBranchId, openBalance, openNotes, fetchSessions, onSessionChange]);
 
   return (
     <div className="p-6 space-y-4">
@@ -143,7 +145,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         <div className="flex items-center gap-2">
           {!openSession && (
             <button onClick={() => setShowOpenSession(true)} style={btnPrimary}>
-              <Unlock className="w-4 h-4" /> فتح وردية
+              <Unlock className="w-4 h-4" /> فتح وردية صندوق
             </button>
           )}
           {openSession && (
@@ -160,10 +162,10 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.warningBg, borderColor: tokens.warningBorder }}>
           <div className="flex items-center gap-2 mb-2">
             <CircleDot className="w-4 h-4" style={{ color: tokens.warningBorder }} />
-            <h4 className="text-sm font-bold" style={{ color: tokens.warningBorder }}>لا توجد وردية مفتوحة</h4>
+            <h4 className="text-sm font-bold" style={{ color: tokens.warningBorder }}>لا توجد وردية صندوق مفتوحة</h4>
           </div>
           <p className="text-xs" style={{ color: tokens.warningText }}>
-            يجب فتح وردية كاشير قبل تسجيل أي مدفوعات. اضغط على &ldquo;فتح وردية&rdquo; أعلاه لبدء الدورة النقدية.
+            افتح وردية جديدة قبل تسجيل التحصيلات النقدية
           </p>
         </div>
       )}
@@ -175,10 +177,15 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             <CircleDot className="w-4 h-4" style={{ color: tokens.successBorder }} />
             <h4 className="text-sm font-bold" style={{ color: tokens.successBorder }}>وردية مفتوحة</h4>
           </div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div><span style={{ color: tokens.textTertiary }}>الكاشر:</span> <span className="font-bold">{openSession.cashierName ?? "—"}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>الافتتاح:</span> <span className="font-bold">{safeFormatDateTime(openSession.openedAt)}</span></div>
-            <div><span style={{ color: tokens.textTertiary }}>رصيد الافتتاح:</span> <span className="font-bold">{formatYER(openSession.openingBalance ?? 0)}</span></div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div><span style={{ color: tokens.textTertiary }}>أمين الصندوق:</span> <span className="font-bold">{openSession.cashierName ?? "—"}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>رقم الوردية:</span> <span className="font-bold">{openSession.sessionNumber ?? "—"}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>الرصيد الافتتاحي:</span> <span className="font-bold">{formatYER(openSession.openingBalance ?? 0)}</span></div>
+            <div><span style={{ color: tokens.textTertiary }}>إجمالي التحصيلات:</span> <span className="font-bold" style={{ color: tokens.successBorder }}>{formatYER(
+              Math.max(0, (openSession.expectedClosingCash ?? 0) - (openSession.openingBalance ?? 0))
+              + (openSession.expectedClosingCard ?? 0)
+              + (openSession.expectedClosingBank ?? 0)
+            )}</span></div>
           </div>
         </div>
       )}

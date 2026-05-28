@@ -143,7 +143,12 @@ export function TreasuriesTab() {
           </div>
         } />
 
-        {loading ? <LoadingSkeleton /> : treasuries.length === 0 ? <EmptyState icon={Landmark} message="لا توجد خزائن" /> : (
+        {loading ? <LoadingSkeleton /> : error ? (
+          <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.dangerBg, borderColor: tokens.dangerBorder }}>
+            <p className="text-sm" style={{ color: tokens.dangerText }}>{error}</p>
+            <button onClick={fetchData} className="text-xs font-medium mt-2 underline" style={{ color: tokens.brand }}>إعادة المحاولة</button>
+          </div>
+        ) : treasuries.length === 0 ? <EmptyState icon={Landmark} message="لا توجد خزائن" /> : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {treasuries.map((t) => (
               <div key={t.id} className="rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>

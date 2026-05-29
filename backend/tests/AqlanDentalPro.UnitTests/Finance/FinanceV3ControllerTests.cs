@@ -22,7 +22,7 @@ namespace AqlanDentalPro.UnitTests.Finance;
 ///
 /// Endpoints tested:
 ///   - FinanceV3Controller: invoices, patient-accounts, treasuries, dashboard, patient-balance
-///   - InvoicesController: /api/patients/{id}/invoices (must return Balance)
+///   - FinanceV3Controller: /api/finance-v3/patients/{id}/invoices (must return Balance)
 ///   - TreasuriesController: GetAll (must return { data } wrapper)
 ///   - CashierSessionsController: GetAll, GetSessionDetail
 ///   - AdvancePaymentController: rejection path, create, delete, GetAll
@@ -83,7 +83,8 @@ public class FinanceV3ControllerTests
         var audit = new Mock<IAuditService>().Object;
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<FinanceV3Controller>>().Object;
-        var controller = new FinanceV3Controller(db, currentUser, financeService, audit, journalEntryService, treasuryResolution, logger);
+        var pdfService = new Mock<IPdfService>().Object;
+        var controller = new FinanceV3Controller(db, currentUser, financeService, audit, journalEntryService, treasuryResolution, pdfService, commissionService, logger);
 
         // Set up HttpContext with ClaimsPrincipal so ResolveBranchIdAsync(Guid?) can read claims
         var claims = new List<Claim>
@@ -118,16 +119,6 @@ public class FinanceV3ControllerTests
         treasuryResolution ??= new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var logger = new Mock<ILogger<CashierSessionsController>>().Object;
         return new CashierSessionsController(db, currentUser, audit, treasuryResolution, logger);
-    }
-
-    private static InvoicesController BuildInvoicesController(AppDbContext db, ICurrentUserService? currentUser = null)
-    {
-        currentUser ??= CreateAdminUser();
-        var pdfService = new Mock<IPdfService>().Object;
-        var audit = new Mock<IAuditService>().Object;
-        var logger = new Mock<ILogger<InvoicesController>>().Object;
-        var commission = new Mock<ICommissionService>().Object;
-        return new InvoicesController(db, pdfService, audit, logger, commission, currentUser);
     }
 
     private static AdvancePaymentController BuildAdvancePaymentController(
@@ -317,7 +308,7 @@ public class FinanceV3ControllerTests
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // InvoicesController — /api/patients/{id}/invoices returns Balance
+    // FinanceV3Controller — /api/finance-v3/patients/{id}/invoices returns Balance
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
@@ -351,9 +342,9 @@ public class FinanceV3ControllerTests
         db.Payments.Add(payment);
         await db.SaveChangesAsync();
 
-        var controller = BuildInvoicesController(db, CreateAdminUser(branchId));
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
 
-        var result = await controller.GetByPatient(patient.Id);
+        var result = await controller.GetPatientInvoices(patient.Id);
 
         result.Should().BeOfType<OkObjectResult>();
         var ok = (OkObjectResult)result;
@@ -426,8 +417,8 @@ public class FinanceV3ControllerTests
 
         await db.SaveChangesAsync();
 
-        var controller = BuildInvoicesController(db, CreateAdminUser(branchId));
-        var result = await controller.GetByPatient(patient.Id);
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.GetPatientInvoices(patient.Id);
 
         var ok = (OkObjectResult)result;
         var invoices = (System.Collections.IEnumerable)ok.Value!;

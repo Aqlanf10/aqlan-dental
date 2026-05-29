@@ -1076,7 +1076,7 @@ public class PatientJourneyController(
     /// Uses Visit.AmountDueReference and linked ServiceId for line item pricing.
     /// Does NOT create a Payment. Does NOT alter Contract or Patient balance.
     /// If a Draft invoice already exists for this Visit, returns the existing one.
-    /// Uses transaction + advisory lock + InvoicesController.GenerateInvoiceNumberAsync
+    /// Uses transaction + advisory lock + FinanceV3Controller.GenerateInvoiceNumberAsync
     /// + commissionService.AutoFillFromServiceAsync to match main branch safe behavior.
     /// Re-checks for duplicate draft inside the transaction to prevent race conditions.</summary>
     [HttpPost("{visitId:guid}/create-draft-invoice")]
@@ -1132,7 +1132,7 @@ public class PatientJourneyController(
                 lineDescription = svc.ArabicName ?? svc.Code ?? lineDescription;
         }
 
-        // Use transaction + advisory lock (matching main branch InvoicesController.Create)
+        // Use transaction + advisory lock (matching FinanceV3Controller.CreateInvoice)
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
@@ -1162,8 +1162,8 @@ public class PatientJourneyController(
                 });
             }
 
-            // Use InvoicesController.GenerateInvoiceNumberAsync (same as main branch)
-            var invoiceNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
+            // Use FinanceV3Controller.GenerateInvoiceNumberAsync (same as main branch)
+            var invoiceNumber = await FinanceV3Controller.GenerateInvoiceNumberAsync(db);
             var userId = GetCurrentUserId();
 
             var invoice = new Invoice

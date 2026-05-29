@@ -23,7 +23,7 @@ import { formatYER, extractErrorMessage } from "./FinanceHelpers";
    - حساب الضريبة كنسبة مئوية
    - اختيار شركة التأمين مع تعديل نسبة التغطية
    - معاينة مالية لحظية (subTotal / tax / grossTotal / covered / co-pay)
-   - إرسال البيانات إلى POST /api/invoices
+   - إرسال البيانات إلى POST /api/finance-v3/invoices
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 interface LineItem {
@@ -185,7 +185,7 @@ export default function CreateInvoiceModal({
         notes: notes || undefined,
       };
 
-      await api.post("/api/invoices", payload);
+      await api.post("/api/finance-v3/invoices", payload);
       toast.success("تم إصدار الفاتورة بنجاح");
       onCreated?.();
       onClose();

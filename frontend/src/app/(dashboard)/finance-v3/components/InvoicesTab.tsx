@@ -83,7 +83,7 @@ export function InvoicesTab() {
   const openDetail = async (inv: InvoiceListItem) => {
     try {
       setDetailLoading(true);
-      const { data } = await api.get<InvoiceDetail>(`/api/invoices/${inv.id}`);
+      const { data } = await api.get<InvoiceDetail>(`/api/finance-v3/invoices/${inv.id}`);
       setDetail(data);
     } catch { toast.error("فشل في تحميل تفاصيل الفاتورة"); } finally { setDetailLoading(false); }
   };

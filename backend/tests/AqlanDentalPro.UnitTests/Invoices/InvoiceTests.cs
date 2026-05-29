@@ -519,7 +519,7 @@ public class InvoiceTests
         db.Invoices.Add(invoice1);
         await db.SaveChangesAsync();
 
-        var nextNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
+        var nextNumber = await FinanceV3Controller.GenerateInvoiceNumberAsync(db);
         nextNumber.Should().Be($"{todayPrefix}002");
     }
 
@@ -528,7 +528,7 @@ public class InvoiceTests
     {
         await using var db = CreateContext();
 
-        var nextNumber = await InvoicesController.GenerateInvoiceNumberAsync(db);
+        var nextNumber = await FinanceV3Controller.GenerateInvoiceNumberAsync(db);
         nextNumber.Should().Be($"INV-{DateTime.UtcNow:yyyyMMdd}-001");
     }
 }

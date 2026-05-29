@@ -44,7 +44,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
   const fetchContracts = useCallback(() => {
     setLoading(true);
     setError("");
-    api.get<Contract[]>(`/api/contracts?patientId=${patientId}`)
+    api.get<Contract[]>(`/api/finance-v3/contracts?patientId=${patientId}`)
       .then((r) => setContracts(r.data))
       .catch(() => setError("فشل تحميل العقود"))
       .finally(() => setLoading(false));

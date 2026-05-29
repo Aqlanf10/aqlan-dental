@@ -516,7 +516,7 @@ export default function DailyOperationsPage() {
 
       if (result?.id) {
         try {
-          const { data } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, {
+          const { data } = await import("@/lib/api").then(m => m.default.get(`/api/finance-v3/payments/${result.id}/pdf`, {
             responseType: "blob",
           }));
           const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
@@ -670,7 +670,7 @@ export default function DailyOperationsPage() {
       // Download PDF receipt if available
       if (result?.id) {
         try {
-          const { data: pdfData } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, { responseType: "blob" }));
+          const { data: pdfData } = await import("@/lib/api").then(m => m.default.get(`/api/finance-v3/payments/${result.id}/pdf`, { responseType: "blob" }));
           const url = window.URL.createObjectURL(new Blob([pdfData], { type: "application/pdf" }));
           const link = document.createElement("a");
           link.href = url;

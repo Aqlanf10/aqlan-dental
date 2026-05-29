@@ -1216,7 +1216,7 @@ export default function PatientJourneyPage() {
                 {/* Phase 2c: Download Payment Receipt PDF */}
                 {summary.financeSummary?.latestPayment && canViewFinance && (
                   <button
-                    onClick={() => handleDownloadPdf(`/api/payments/${summary.financeSummary!.latestPayment!.id}/pdf`, `receipt-${summary.financeSummary!.latestPayment!.receiptNumber ?? summary.financeSummary!.latestPayment!.id}.pdf`)}
+                    onClick={() => handleDownloadPdf(`/api/finance-v3/payments/${summary.financeSummary!.latestPayment!.id}/pdf`, `receipt-${summary.financeSummary!.latestPayment!.receiptNumber ?? summary.financeSummary!.latestPayment!.id}.pdf`)}
                     disabled={pdfDownloading}
                     className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition mt-1 mr-2 disabled:opacity-50"
                   >

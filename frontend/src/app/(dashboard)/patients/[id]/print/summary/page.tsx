@@ -71,7 +71,7 @@ export default function PatientSummaryPrintPage() {
     Promise.all([
       api.get<PatientProfile>(`/api/patients/${id}`).then((r) => r.data).catch(() => null),
       api.get<PatientSummary>(`/api/patients/${id}/summary`).then((r) => r.data).catch(() => null),
-      api.get<PatientFinanceSummary>(`/api/patients/${id}/finance-summary`).then((r) => r.data).catch(() => null),
+      api.get<PatientFinanceSummary>(`/api/finance-v3/patients/${id}/finance-summary`).then((r) => r.data).catch(() => null),
       api.get<TimelineEvent[]>(`/api/patients/${id}/timeline`).then((r) => r.data).catch(() => []),
     ]).then(([p, s, f, t]) => {
       setPatient(p);

@@ -538,7 +538,7 @@ export function JourneyActionsPanel({
                     </button>
                     {/* Phase 2c: Download Invoice PDF */}
                     <button
-                      onClick={() => onDownloadPdf(`/api/invoices/${draftInvoiceResult.invoiceId}/pdf`, `invoice-${draftInvoiceResult.invoiceNumber}.pdf`)}
+                      onClick={() => onDownloadPdf(`/api/finance-v3/invoices/${draftInvoiceResult.invoiceId}/pdf`, `invoice-${draftInvoiceResult.invoiceNumber}.pdf`)}
                       className="flex items-center gap-1 px-2 py-1 text-[10px] rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
                     >
                       <Filter className="w-3 h-3" />

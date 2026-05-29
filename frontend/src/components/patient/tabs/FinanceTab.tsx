@@ -32,7 +32,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
       });
 
     api
-      .get<Invoice[]>(`/api/patients/${patientId}/invoices`)
+      .get<Invoice[]>(`/api/finance-v3/patients/${patientId}/invoices`)
       .then((r) => setInvoices(r.data))
       .catch(() => {});
   }, [patientId]);

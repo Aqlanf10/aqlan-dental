@@ -1247,7 +1247,7 @@ export default function PatientDailyJourneyHub() {
                         onClick={async () => {
                           if (paymentAmount <= 0) { toast.error("أدخل مبلغاً صحيحاً"); return; }
                           try {
-                            await api.post("/api/payments", {
+                            await api.post("/api/finance-v3/payments", {
                               patientId,
                               amount: paymentAmount,
                               paymentMethod,

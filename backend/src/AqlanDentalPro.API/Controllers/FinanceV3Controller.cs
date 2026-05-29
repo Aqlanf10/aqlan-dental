@@ -116,6 +116,8 @@ public class FinanceV3Controller(
     IAuditService audit,
     IJournalEntryService journalEntryService,
     ITreasuryResolutionService treasuryResolution,
+    IPdfService pdfService,
+    ICommissionService commissionService,
     ILogger<FinanceV3Controller> logger) : ControllerBase
 {
     // ─── Dashboard KPIs ─────────────────────────────────────────────────────
@@ -3645,7 +3647,788 @@ public class FinanceV3Controller(
     }
 
 
+    // ─── Invoice CRUD ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// POST /api/finance-v3/invoices — Create a standalone draft invoice.
+    /// Migrated from InvoicesController.Create. Uses FinanceAccess policy.
+    /// </summary>
+    [HttpPost("invoices")]
+    [Authorize(Policy = "FinanceAccess")]
+    public async Task<IActionResult> CreateInvoice([FromBody] CreateInvoiceRequest req)
+    {
+        // Validate patient exists
+        var patient = await db.Patients.FindAsync(req.PatientId);
+        if (patient == null || !patient.IsActive)
+            return BadRequest(new { message = "المريض غير موجود أو محذوف" });
+
+        // Validate appointment if provided
+        if (req.AppointmentId.HasValue)
+        {
+            var appointment = await db.Appointments.FindAsync(req.AppointmentId.Value);
+            if (appointment == null)
+                return BadRequest(new { message = "الموعد غير موجود" });
+            if (appointment.PatientId != req.PatientId)
+                return BadRequest(new { message = "الموعد لا ينتمي لهذا المريض" });
+        }
+
+        // Validate visit if provided
+        if (req.VisitId.HasValue)
+        {
+            var visit = await db.Visits.FindAsync(req.VisitId.Value);
+            if (visit == null)
+                return BadRequest(new { message = "الزيارة غير موجودة" });
+            if (visit.PatientId != req.PatientId)
+                return BadRequest(new { message = "الزيارة لا تنتمي لهذا المريض" });
+        }
+
+        // Use advisory lock for invoice number generation to prevent duplicates
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var lockKey = StableLockKeyHelper.InvoiceNumber;
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            var invoiceNumber = await GenerateInvoiceNumberAsync(db);
+            var userId = currentUser.UserId ?? Guid.Empty;
+
+            var invoice = new Invoice
+            {
+                InvoiceNumber = invoiceNumber,
+                PatientId = req.PatientId,
+                VisitId = req.VisitId,
+                AppointmentId = req.AppointmentId,
+                Status = InvoiceStatus.Draft,
+                Notes = req.Notes,
+                CreatedBy = userId,
+                UpdatedBy = userId
+            };
+
+            db.Invoices.Add(invoice);
+
+            // Add line items if provided
+            if (req.LineItems != null && req.LineItems.Count > 0)
+            {
+                // Validate all DoctorIds upfront before any DB writes
+                var doctorIds = req.LineItems.Where(li => li.DoctorId.HasValue).Select(li => li.DoctorId!.Value).Distinct().ToList();
+                var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
+                var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
+                if (invalidDoctorId != default)
+                    return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
+
+                var sortOrder = 0;
+                foreach (var itemReq in req.LineItems)
+                {
+                    string serviceNameSnapshot = itemReq.ServiceNameSnapshot ?? "خدمة علاجية";
+                    string description = itemReq.Description ?? serviceNameSnapshot;
+
+                    // If service is provided, look up price and name
+                    if (itemReq.ServiceId.HasValue)
+                    {
+                        var service = await db.ClinicServices.FindAsync(itemReq.ServiceId.Value);
+                        if (service != null)
+                        {
+                            if (string.IsNullOrWhiteSpace(itemReq.ServiceNameSnapshot))
+                                serviceNameSnapshot = service.ArabicName;
+                        }
+                    }
+
+                    var quantity = itemReq.Quantity > 0 ? itemReq.Quantity : 1;
+                    var unitPrice = itemReq.UnitPrice;
+                    var totalPrice = quantity * unitPrice;
+
+                    var lineItem = new InvoiceLineItem
+                    {
+                        InvoiceId = invoice.Id,
+                        ServiceId = itemReq.ServiceId,
+                        ServiceNameSnapshot = serviceNameSnapshot,
+                        Description = description,
+                        Quantity = quantity,
+                        UnitPrice = unitPrice,
+                        TotalPrice = totalPrice,
+                        DoctorId = itemReq.DoctorId,
+                        RelatedTreatmentPlanStepId = itemReq.RelatedTreatmentPlanStepId,
+                        RelatedVisitId = itemReq.RelatedVisitId,
+                        SortOrder = sortOrder++
+                    };
+
+                    db.InvoiceLineItems.Add(lineItem);
+                }
+            }
+
+            await db.SaveChangesAsync();
+
+            // Auto-fill commission defaults from each line item's service catalog entry
+            var newLineItems = await db.InvoiceLineItems
+                .Where(l => l.InvoiceId == invoice.Id && l.IsActive && l.ServiceId != null)
+                .Select(l => l.Id)
+                .ToListAsync();
+            foreach (var lineItemId in newLineItems)
+            {
+                try { await commissionService.AutoFillFromServiceAsync(lineItemId); }
+                catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", lineItemId); }
+            }
+
+            // Recalculate totals from line items
+            var allLineItems = await db.InvoiceLineItems
+                .Where(l => l.InvoiceId == invoice.Id && l.IsActive)
+                .ToListAsync();
+            invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
+            var discount = req.DiscountAmount ?? 0;
+
+            // V4: حساب الضريبة — إذا وُجدت نسبة ضريبية، نحسب المبلغ منها؛ وإلا نستخدم المبلغ الثابت
+            decimal tax;
+            if (req.TaxPercentage > 0)
+            {
+                tax = Math.Round(invoice.Subtotal * (req.TaxPercentage / 100m), 2);
+                invoice.TaxPercentage = req.TaxPercentage;
+            }
+            else
+            {
+                tax = req.TaxAmount ?? 0;
+                invoice.TaxPercentage = 0;
+            }
+
+            invoice.DiscountAmount = discount;
+            invoice.TaxAmount = tax;
+            invoice.TotalAmount = invoice.Subtotal - discount + tax;
+
+            // V4: معالجة التأمين — إن وُجدت شركة تأمين، ننشئ مطالبة تأمينية
+            InsuranceClaim? claim = null;
+            if (req.InsuranceCompanyId.HasValue)
+            {
+                var insuranceCo = await db.Set<InsuranceCompany>()
+                    .FirstOrDefaultAsync(ic => ic.Id == req.InsuranceCompanyId.Value && ic.IsActive);
+
+                if (insuranceCo == null)
+                    return BadRequest(new { message = "شركة التأمين غير صالحة أو غير نشطة." });
+
+                // حساب نسبة التغطية (المخصصة أو الافتراضية للشركة)
+                decimal coveragePercent = req.CustomCoveragePercentage ?? insuranceCo.DefaultCoveragePercentage;
+                decimal coveredAmount = Math.Round(invoice.TotalAmount * (coveragePercent / 100m), 2);
+                decimal patientCoPay = invoice.TotalAmount - coveredAmount;
+
+                claim = new InsuranceClaim
+                {
+                    InvoiceId = invoice.Id,
+                    InsuranceCompanyId = insuranceCo.Id,
+                    PatientId = req.PatientId,
+                    TotalAmount = invoice.TotalAmount,
+                    CoveredAmount = coveredAmount,
+                    PatientCoPay = patientCoPay,
+                    Status = ClaimStatus.Pending
+                };
+                db.Set<InsuranceClaim>().Add(claim);
+
+                // ربط المطالبة بالفاتورة
+                invoice.InsuranceClaim = claim;
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            // H3: Audit logging for invoice creation
+            await audit.LogAsync(AuditAction.Create, "Invoice", invoice.Id);
+
+            return Created($"/api/finance-v3/invoices/{invoice.Id}", new
+            {
+                invoice.Id,
+                invoice.InvoiceNumber,
+                invoice.PatientId,
+                invoice.VisitId,
+                invoice.AppointmentId,
+                Status = invoice.Status.ToString(),
+                StatusArabic = GetStatusArabic(invoice.Status),
+                invoice.Subtotal,
+                invoice.DiscountAmount,
+                invoice.TaxAmount,
+                invoice.TaxPercentage,
+                invoice.TotalAmount,
+                invoice.Notes,
+                InsuranceClaimId = claim?.Id,
+                CoveredAmount = claim?.CoveredAmount,
+                PatientCoPay = claim?.PatientCoPay,
+                message = claim != null ? "تم إنشاء الفاتورة التأمينية بنجاح" : "تم إنشاء الفاتورة بنجاح"
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/invoices/{id} — Invoice detail with line items, payments, and insurance.
+    /// Migrated from InvoicesController.GetById.
+    /// </summary>
+    [HttpGet("invoices/{id:guid}")]
+    public async Task<IActionResult> GetInvoiceById(Guid id)
+    {
+        Invoice? invoice;
+        try
+        {
+            // V4 FIX: تحميل بيانات التأمين بشكل آمن — ThenInclude على navigation اختياري
+            invoice = await db.Invoices
+                .Include(i => i.Patient)
+                .Include(i => i.Visit)
+                .Include(i => i.Appointment)
+                .Include(i => i.InsuranceClaim!)
+                    .ThenInclude(ic => ic.InsuranceCompany)
+                .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
+                    .ThenInclude(l => l.Service)
+                .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
+                    .ThenInclude(l => l.Doctor)
+                .Include(i => i.Payments.Where(p => p.IsActive))
+                .FirstOrDefaultAsync(i => i.Id == id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load invoice {InvoiceId} with full includes. Inner: {InnerMessage}", id, ex.InnerException?.Message ?? ex.Message);
+
+            // Fallback 1: try without ThenInclude(Doctor)
+            try
+            {
+                invoice = await db.Invoices
+                    .Include(i => i.Patient)
+                    .Include(i => i.Visit)
+                    .Include(i => i.Appointment)
+                    .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
+                        .ThenInclude(l => l.Service)
+                    .Include(i => i.Payments.Where(p => p.IsActive))
+                    .FirstOrDefaultAsync(i => i.Id == id);
+
+                if (invoice != null)
+                {
+                    foreach (var li in invoice.LineItems.Where(l => l.DoctorId.HasValue))
+                        await db.Entry(li).Reference(l => l.Doctor).LoadAsync();
+                }
+            }
+            catch (Exception ex2)
+            {
+                logger.LogError(ex2, "Fallback1 failed for invoice {InvoiceId}. Inner: {InnerMessage}", id, ex2.InnerException?.Message ?? ex2.Message);
+
+                // Fallback 2: minimal query — no Includes, load navigation manually
+                try
+                {
+                    invoice = await db.Invoices
+                        .Include(i => i.Patient)
+                        .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
+                        .Include(i => i.Payments.Where(p => p.IsActive))
+                        .FirstOrDefaultAsync(i => i.Id == id);
+
+                    if (invoice != null)
+                    {
+                        foreach (var li in invoice.LineItems.Where(l => l.DoctorId.HasValue))
+                            await db.Entry(li).Reference(l => l.Doctor).LoadAsync();
+                        foreach (var li in invoice.LineItems.Where(l => l.ServiceId.HasValue))
+                            await db.Entry(li).Reference(l => l.Service).LoadAsync();
+                    }
+                }
+                catch (Exception ex3)
+                {
+                    logger.LogError(ex3, "All fallbacks failed for invoice {InvoiceId}. Inner: {InnerMessage}", id, ex3.InnerException?.Message ?? ex3.Message);
+                    return StatusCode(500, new { message = "فشل تحميل الفاتورة — يرجى المحاولة مرة أخرى" });
+                }
+            }
+        }
+
+        if (invoice == null)
+            return NotFound(new { message = "الفاتورة غير موجودة" });
+
+        var paidAmount = invoice.Payments.Sum(p => p.Amount);
+        var remainingAmount = Math.Max(0, invoice.TotalAmount - paidAmount);
+
+        return Ok(new
+        {
+            invoice.Id,
+            invoice.InvoiceNumber,
+            invoice.PatientId,
+            PatientName = invoice.Patient != null ? BuildPatientDisplayName(invoice.Patient) : "",
+            invoice.VisitId,
+            invoice.AppointmentId,
+            Status = invoice.Status.ToString(),
+            StatusArabic = GetStatusArabic(invoice.Status),
+            invoice.Subtotal,
+            invoice.DiscountAmount,
+            invoice.TaxAmount,
+            invoice.TaxPercentage,
+            invoice.TotalAmount,
+            invoice.Currency,
+            PaidAmount = paidAmount,
+            RemainingAmount = remainingAmount,
+            InsuranceClaimId = invoice.InsuranceClaimId,
+            HasInsurance = invoice.InsuranceClaimId.HasValue,
+            CoveredAmount = invoice.InsuranceClaim?.CoveredAmount ?? 0,
+            PatientCoPay = invoice.InsuranceClaim?.PatientCoPay ?? 0,
+            InsuranceCompanyName = invoice.InsuranceClaim?.InsuranceCompany?.Name,
+            InsuranceClaimStatus = invoice.InsuranceClaim?.Status.ToString(),
+            invoice.Notes,
+            invoice.CreatedAt,
+            invoice.UpdatedAt,
+            invoice.CreatedBy,
+            invoice.UpdatedBy,
+            LineItems = invoice.LineItems.Select(l => new
+            {
+                l.Id,
+                l.InvoiceId,
+                l.ServiceId,
+                ServiceName = l.Service != null ? l.Service.ArabicName : l.ServiceNameSnapshot,
+                l.ServiceNameSnapshot,
+                l.Description,
+                l.Quantity,
+                l.UnitPrice,
+                l.TotalPrice,
+                l.DoctorId,
+                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
+                l.LineDiscountAmount,
+                l.MaterialCost,
+                l.LabCost,
+                l.OtherDirectCost,
+                CommissionStatus = l.CommissionStatus.ToString(),
+                l.DoctorCommissionPercentage,
+                l.NetCommissionableAmount,
+                l.DoctorCommissionAmount,
+                l.CenterShareAmount,
+                l.RelatedTreatmentPlanStepId,
+                l.RelatedVisitId,
+                l.SortOrder
+            }),
+            Payments = invoice.Payments
+                .OrderByDescending(p => p.PaymentDate)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Amount,
+                    p.PaymentDate,
+                    p.PaymentMethod,
+                    p.ReceiptNumber,
+                    p.Notes
+                })
+        });
+    }
+
+    /// <summary>
+    /// PUT /api/finance-v3/invoices/{id} — Update a draft invoice.
+    /// Migrated from InvoicesController.Update. Uses FinanceWrite policy.
+    /// </summary>
+    [HttpPut("invoices/{id:guid}")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> UpdateInvoice(Guid id, [FromBody] UpdateInvoiceRequest req)
+    {
+        var invoice = await db.Invoices
+            .Include(i => i.LineItems)
+            .FirstOrDefaultAsync(i => i.Id == id);
+
+        if (invoice == null)
+            return NotFound(new { message = "الفاتورة غير موجودة" });
+        if (!invoice.IsActive)
+            return BadRequest(new { message = "الفاتورة محذوفة" });
+        if (invoice.Status != InvoiceStatus.Draft)
+            return BadRequest(new { message = "يمكن تعديل الفواتير المسودة فقط" });
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        invoice.UpdatedBy = userId;
+
+        // Update notes if provided
+        if (req.Notes != null)
+            invoice.Notes = req.Notes;
+
+        // Update discount if provided
+        if (req.DiscountAmount.HasValue)
+            invoice.DiscountAmount = req.DiscountAmount.Value;
+
+        // Update tax if provided
+        if (req.TaxAmount.HasValue)
+            invoice.TaxAmount = req.TaxAmount.Value;
+
+        // Replace line items if provided
+        if (req.LineItems != null && req.LineItems.Count > 0)
+        {
+            // Validate all DoctorIds upfront before any DB writes
+            var doctorIds = req.LineItems.Where(li => li.DoctorId.HasValue).Select(li => li.DoctorId!.Value).Distinct().ToList();
+            if (doctorIds.Count > 0)
+            {
+                var validDoctorIds = (await db.Doctors.Where(d => doctorIds.Contains(d.Id)).Select(d => d.Id).ToListAsync()).ToHashSet();
+                var invalidDoctorId = doctorIds.FirstOrDefault(id => !validDoctorIds.Contains(id));
+                if (invalidDoctorId != default)
+                    return BadRequest(new { message = $"الطبيب المحدد غير موجود (معرّف: {invalidDoctorId})" });
+            }
+
+            // Soft-delete existing line items (preserve audit trail and commission links)
+            foreach (var existingItem in invoice.LineItems.Where(l => l.IsActive))
+            {
+                existingItem.IsActive = false;
+                existingItem.DeletedAt = DateTime.UtcNow;
+                existingItem.DeletedBy = userId;
+            }
+
+            // Add new line items
+            var sortOrder = 0;
+            foreach (var itemReq in req.LineItems)
+            {
+                string serviceNameSnapshot = itemReq.ServiceNameSnapshot ?? "خدمة علاجية";
+                string description = itemReq.Description ?? serviceNameSnapshot;
+
+                // If service is provided, look up price and name
+                if (itemReq.ServiceId.HasValue)
+                {
+                    var service = await db.ClinicServices.FindAsync(itemReq.ServiceId.Value);
+                    if (service != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(itemReq.ServiceNameSnapshot))
+                            serviceNameSnapshot = service.ArabicName;
+                    }
+                }
+
+                var quantity = itemReq.Quantity > 0 ? itemReq.Quantity : 1;
+                var unitPrice = itemReq.UnitPrice;
+                var totalPrice = quantity * unitPrice;
+
+                var lineItem = new InvoiceLineItem
+                {
+                    InvoiceId = invoice.Id,
+                    ServiceId = itemReq.ServiceId,
+                    ServiceNameSnapshot = serviceNameSnapshot,
+                    Description = description,
+                    Quantity = quantity,
+                    UnitPrice = unitPrice,
+                    TotalPrice = totalPrice,
+                    DoctorId = itemReq.DoctorId,
+                    RelatedTreatmentPlanStepId = itemReq.RelatedTreatmentPlanStepId,
+                    RelatedVisitId = itemReq.RelatedVisitId,
+                    SortOrder = sortOrder++
+                };
+
+                db.InvoiceLineItems.Add(lineItem);
+            }
+        }
+
+        // Persist soft-deleted items and new items before recalculating totals
+        await db.SaveChangesAsync();
+
+        // Recalculate totals from the now-consistent database state
+        var allLineItems = await db.InvoiceLineItems
+            .Where(l => l.InvoiceId == invoice.Id && l.IsActive)
+            .ToListAsync();
+        invoice.Subtotal = allLineItems.Sum(l => l.TotalPrice);
+        var discount = invoice.DiscountAmount ?? 0;
+        invoice.TotalAmount = invoice.Subtotal - discount + invoice.TaxAmount;
+
+        await db.SaveChangesAsync();
+
+        // Auto-fill commission defaults for newly added line items linked to a service
+        foreach (var liId in allLineItems.Where(l => l.ServiceId != null && l.CommissionStatus == CommissionStatus.Pending).Select(l => l.Id))
+        {
+            try { await commissionService.AutoFillFromServiceAsync(liId); }
+            catch (Exception ex) { logger.LogWarning(ex, "Commission auto-fill failed for line item {LineItemId}", liId); }
+        }
+
+        return Ok(new
+        {
+            invoice.Id,
+            invoice.InvoiceNumber,
+            Status = invoice.Status.ToString(),
+            invoice.Subtotal,
+            invoice.DiscountAmount,
+            invoice.TaxAmount,
+            invoice.TotalAmount,
+            message = "تم تحديث الفاتورة بنجاح"
+        });
+    }
+
+    /// <summary>
+    /// PATCH /api/finance-v3/invoices/{id}/issue — Issue a draft invoice.
+    /// Migrated from InvoicesController.Issue. Uses FinanceWrite policy.
+    /// Wraps status change + accrual journal creation in a transaction.
+    /// </summary>
+    [HttpPatch("invoices/{id:guid}/issue")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> IssueInvoice(Guid id)
+    {
+        var invoice = await db.Invoices.FindAsync(id);
+        if (invoice == null)
+            return NotFound(new { message = "الفاتورة غير موجودة" });
+        if (!invoice.IsActive)
+            return BadRequest(new { message = "الفاتورة محذوفة" });
+        if (invoice.Status != InvoiceStatus.Draft)
+            return BadRequest(new { message = "يمكن إصدار الفواتير المسودة فقط" });
+
+        var userId = currentUser.UserId ?? Guid.Empty;
+        invoice.Status = InvoiceStatus.Issued;
+        invoice.UpdatedBy = userId;
+
+        // Finance V3: Post accrual journal entry for invoice issuance
+        // Wrap status change + accrual journal creation + journal posting in one
+        // explicit transaction so any failure rolls everything back and the invoice
+        // remains Draft (atomic operation).
+        var useTx = db.Database.IsRelational();
+        var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        try
+        {
+            await financeService.PostInvoiceIssuedEntryAsync(invoice.Id);
+            await db.SaveChangesAsync();
+            if (useTx) await tx!.CommitAsync();
+        }
+        catch
+        {
+            if (useTx) await tx!.RollbackAsync();
+            // Reload invoice from DB to discard the in-memory status change
+            await db.Entry(invoice).ReloadAsync();
+            throw;
+        }
+
+        // H3: Audit logging for invoice issue
+        await audit.LogAsync(AuditAction.Update, "Invoice", id, details: "Invoice issued via Finance V3");
+
+        return Ok(new
+        {
+            invoice.Id,
+            invoice.InvoiceNumber,
+            Status = invoice.Status.ToString(),
+            StatusArabic = GetStatusArabic(invoice.Status),
+            message = "تم إصدار الفاتورة بنجاح"
+        });
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/invoices/{id}/pdf — Generate invoice PDF.
+    /// </summary>
+    [HttpGet("invoices/{id:guid}/pdf")]
+    public async Task<IActionResult> GetInvoicePdf(Guid id)
+    {
+        try
+        {
+            var pdfBytes = await pdfService.GenerateInvoicePdfAsync(id);
+            return File(pdfBytes, "application/pdf", $"invoice-{id}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Invoice PDF generation failed for invoice {InvoiceId}", id);
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/patients/{patientId}/invoices — Patient invoices.
+    /// Migrated from InvoicesController.GetByPatient.
+    /// </summary>
+    [HttpGet("patients/{patientId:guid}/invoices")]
+    public async Task<IActionResult> GetPatientInvoices(Guid patientId)
+    {
+        var patientExists = await db.Patients.AnyAsync(p => p.Id == patientId && p.IsActive);
+        if (!patientExists)
+            return NotFound(new { message = "المريض غير موجود" });
+
+        var invoices = await db.Invoices
+            .Include(i => i.LineItems)
+            .Include(i => i.Payments)
+            .Where(i => i.PatientId == patientId)
+            .OrderByDescending(i => i.CreatedAt)
+            .Select(i => new
+            {
+                i.Id,
+                i.InvoiceNumber,
+                Status = i.Status.ToString(),
+                StatusArabic = GetStatusArabic(i.Status),
+                i.TotalAmount,
+                PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
+                Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
+                LineItemCount = i.LineItems.Count,
+                i.CreatedAt,
+                i.UpdatedAt
+            })
+            .ToListAsync();
+
+        return Ok(invoices);
+    }
+
+    // ─── Payment Detail / Update / Refund / PDF ────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/payments/{id} — Payment detail.
+    /// Migrated from PaymentsController.GetPaymentById.
+    /// </summary>
+    [HttpGet("payments/{id:guid}")]
+    public async Task<IActionResult> GetPaymentById(Guid id)
+    {
+        var result = await financeService.GetPaymentByIdAsync(id);
+        return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+    }
+
+    /// <summary>
+    /// PUT /api/finance-v3/payments/{id} — Update a payment.
+    /// Migrated from PaymentsController.UpdatePayment. Uses FinanceWrite policy.
+    /// </summary>
+    [HttpPut("payments/{id:guid}")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> UpdatePayment(Guid id, [FromBody] UpdatePaymentRequest req)
+    {
+        try
+        {
+            var result = await financeService.UpdatePaymentAsync(id, req);
+            return result == null ? NotFound(new { message = "الدفعة غير موجودة" }) : Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Payment update validation failed for payment {PaymentId}", id);
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/payments/{id}/refund — Refund a payment.
+    /// Migrated from PaymentsController.RefundPayment. Uses AdminOnly policy.
+    /// </summary>
+    [HttpPost("payments/{id:guid}/refund")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> RefundPayment(Guid id, [FromBody] RefundPaymentRequest? req)
+    {
+        var result = await financeService.RefundPaymentAsync(id, req?.Reason, req?.PartialAmount);
+
+        if (result != null)
+        {
+            await audit.LogAsync(AuditAction.Refund, "PaymentRefund", result.Id,
+                details: $"Refund of payment {id}");
+        }
+
+        return result == null ? NotFound(new { message = "الدفعة غير موجودة أو ملغاة" }) : Ok(result);
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/payments/{id}/pdf — Payment receipt PDF.
+    /// </summary>
+    [HttpGet("payments/{id:guid}/pdf")]
+    public async Task<IActionResult> GetPaymentPdf(Guid id)
+    {
+        try
+        {
+            var pdfBytes = await pdfService.GeneratePaymentReceiptAsync(id);
+            return File(pdfBytes, "application/pdf", $"receipt-{id}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Payment receipt PDF generation failed for payment {PaymentId}", id);
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/patients/{patientId}/finance-summary — Patient finance summary.
+    /// Migrated from PaymentsController.GetPatientFinanceSummary.
+    /// </summary>
+    [HttpGet("patients/{patientId:guid}/finance-summary")]
+    public async Task<IActionResult> GetPatientFinanceSummary(Guid patientId)
+    {
+        var result = await financeService.GetPatientFinanceSummaryAsync(patientId);
+        return Ok(result);
+    }
+
+    // ─── Contract CRUD ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/contracts/{id} — Contract detail.
+    /// Migrated from ContractsController.GetById.
+    /// </summary>
+    [HttpGet("contracts/{id:guid}")]
+    public async Task<IActionResult> GetContractById(Guid id)
+    {
+        var result = await financeService.GetContractByIdAsync(id);
+        return result == null ? NotFound(new { message = "العقد غير موجود" }) : Ok(result);
+    }
+
+    /// <summary>
+    /// POST /api/finance-v3/contracts — Create contract.
+    /// Migrated from ContractsController.Create. Uses FinanceWrite policy.
+    /// </summary>
+    [HttpPost("contracts")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> CreateContract([FromBody] CreateContractRequest req)
+    {
+        var result = await financeService.CreateContractAsync(req);
+        return Created($"/api/finance-v3/contracts/{result.Id}", result);
+    }
+
+    /// <summary>
+    /// PUT /api/finance-v3/contracts/{id} — Update contract.
+    /// Migrated from ContractsController.Update. Uses FinanceWrite policy.
+    /// </summary>
+    [HttpPut("contracts/{id:guid}")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> UpdateContract(Guid id, [FromBody] UpdateContractRequest req)
+    {
+        if (req.DiscountAmount > req.TotalAmount)
+            return BadRequest(new { message = "قيمة الخصم لا يمكن أن تتجاوز إجمالي العقد" });
+
+        if (!string.IsNullOrWhiteSpace(req.StartDate) && !DateOnly.TryParse(req.StartDate, out _))
+            return BadRequest(new { message = "تاريخ البدء غير صالح" });
+
+        var result = await financeService.UpdateContractAsync(id, req);
+        return result == null ? NotFound(new { message = "العقد غير موجود" }) : Ok(result);
+    }
+
+    /// <summary>
+    /// PATCH /api/finance-v3/contracts/{id}/status — Update contract status.
+    /// Migrated from ContractsController.UpdateStatus. Uses FinanceWrite policy.
+    /// </summary>
+    [HttpPatch("contracts/{id:guid}/status")]
+    [Authorize(Policy = "FinanceWrite")]
+    public async Task<IActionResult> UpdateContractStatus(Guid id, [FromBody] UpdateContractStatusBody body)
+    {
+        var allowed = new[] { "active", "completed", "cancelled" };
+        if (!allowed.Contains(body.Status))
+            return BadRequest(new { message = "الحالة غير صالحة — القيم المسموحة: active، completed، cancelled" });
+
+        var result = await financeService.UpdateContractStatusAsync(id, body.Status);
+        if (result == null) return NotFound(new { message = "العقد غير موجود" });
+        return Ok(result);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    private static string GetStatusArabic(InvoiceStatus status) => status switch
+    {
+        InvoiceStatus.Draft => "مسودة",
+        InvoiceStatus.Issued => "مصدرة",
+        InvoiceStatus.Cancelled => "ملغاة",
+        InvoiceStatus.Paid => "مدفوعة",
+        _ => status.ToString()
+    };
+
+    private static string BuildPatientDisplayName(Patient? patient)
+    {
+        if (patient == null) return "";
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(patient.FirstName)) parts.Add(patient.FirstName.Trim());
+        if (!string.IsNullOrWhiteSpace(patient.MiddleName)) parts.Add(patient.MiddleName.Trim());
+        if (!string.IsNullOrWhiteSpace(patient.LastName)) parts.Add(patient.LastName.Trim());
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>Generates a unique invoice number: INV-yyyyMMdd-NNN.</summary>
+    public static async Task<string> GenerateInvoiceNumberAsync(AppDbContext db)
+    {
+        var today = DateTime.UtcNow;
+        var datePart = today.ToString("yyyyMMdd");
+        var prefix = $"INV-{datePart}-";
+
+        var lastNumber = await db.Invoices
+            .IgnoreQueryFilters()
+            .Where(i => i.InvoiceNumber.StartsWith(prefix))
+            .OrderByDescending(i => i.InvoiceNumber)
+            .Select(i => i.InvoiceNumber)
+            .FirstOrDefaultAsync();
+
+        var nextSeq = 1;
+        if (!string.IsNullOrEmpty(lastNumber) && lastNumber.Length > prefix.Length)
+        {
+            var seqPart = lastNumber[prefix.Length..];
+            if (int.TryParse(seqPart, out var lastSeq))
+                nextSeq = lastSeq + 1;
+        }
+
+        return $"{prefix}{nextSeq:D3}";
+    }
 
     /// <summary>
     /// Sprint 1: Resolves the effective branch ID for GET (read) endpoints.

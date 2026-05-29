@@ -69,7 +69,7 @@ export function CollectionsTab() {
     setSelectedContract("");
     try {
       const [invRes, conRes] = await Promise.all([
-        api.get<{ data: InvoiceListItem[] }>(`/api/patients/${patientId}/invoices`),
+        api.get<{ data: InvoiceListItem[] }>(`/api/finance-v3/patients/${patientId}/invoices`),
         api.get<ContractListItem[]>(`/api/patients/${patientId}/contracts`),
       ]);
       const invData = invRes.data?.data ?? invRes.data as unknown as InvoiceListItem[];

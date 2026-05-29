@@ -64,8 +64,8 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
     setLoading(true);
     setError("");
     Promise.all([
-      api.get<Payment[]>(`/api/payments?patientId=${patientId}`).then((r) => r.data).catch(() => []),
-      api.get<Contract[]>(`/api/contracts?patientId=${patientId}&status=active`).then((r) => r.data).catch(() => []),
+      api.get<Payment[]>(`/api/finance-v3/payments?patientId=${patientId}`).then((r) => r.data).catch(() => []),
+      api.get<Contract[]>(`/api/finance-v3/contracts?patientId=${patientId}&status=active`).then((r) => r.data).catch(() => []),
     ]).then(([p, c]) => {
       setPayments(p);
       setContracts(c);
@@ -131,7 +131,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
           doctorId: form.doctorId || undefined,
           notes: form.notes || undefined,
         };
-        await api.put(`/api/payments/${editingPayment.id}`, payload);
+        await api.put(`/api/finance-v3/payments/${editingPayment.id}`, payload);
         toast.success("تم تحديث الدفعة بنجاح");
       } else {
         const payload: CreatePaymentRequest = {
@@ -144,7 +144,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
           doctorId: form.doctorId || undefined,
           notes: form.notes || undefined,
         };
-        await api.post("/api/payments", payload);
+        await api.post("/api/finance-v3/payments", payload);
         toast.success("تم إضافة الدفعة بنجاح");
       }
       setShowModal(false);
@@ -160,7 +160,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
 
   const handleDelete = async (id: string) => {
     try {
-      await api.delete(`/api/payments/${id}`);
+      await api.delete(`/api/finance-v3/payments/${id}`);
       toast.success("تم حذف الدفعة بنجاح");
       setDeleteConfirm(null);
       fetchPayments();

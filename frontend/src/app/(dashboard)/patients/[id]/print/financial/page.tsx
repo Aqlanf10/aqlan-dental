@@ -45,9 +45,9 @@ export default function FinancialStatementPrintPage() {
   useEffect(() => {
     Promise.all([
       api.get<PatientProfile>(`/api/patients/${id}`).then((r) => r.data).catch(() => null),
-      api.get<PatientFinanceSummary>(`/api/patients/${id}/finance-summary`).then((r) => r.data).catch(() => null),
-      api.get<Contract[]>(`/api/contracts?patientId=${id}`).then((r) => r.data).catch(() => []),
-      api.get<Payment[]>(`/api/payments?patientId=${id}`).then((r) => r.data).catch(() => []),
+      api.get<PatientFinanceSummary>(`/api/finance-v3/patients/${id}/finance-summary`).then((r) => r.data).catch(() => null),
+      api.get<Contract[]>(`/api/finance-v3/contracts?patientId=${id}`).then((r) => r.data).catch(() => []),
+      api.get<Payment[]>(`/api/finance-v3/payments?patientId=${id}`).then((r) => r.data).catch(() => []),
     ]).then(([p, f, c, pm]) => {
       setPatient(p);
       setFinance(f);

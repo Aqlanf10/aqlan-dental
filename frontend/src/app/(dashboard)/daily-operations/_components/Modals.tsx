@@ -94,7 +94,7 @@ export function QuickPaymentModal({
     if (!latestPayment?.id) return;
     setDownloadingPdf(true);
     try {
-      const { data } = await api.get(`/api/payments/${latestPayment.id}/pdf`, {
+      const { data } = await api.get(`/api/finance-v3/payments/${latestPayment.id}/pdf`, {
         responseType: "blob",
       });
       const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));

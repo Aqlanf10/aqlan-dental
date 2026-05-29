@@ -254,7 +254,7 @@ export function useJourneyCreatePayment() {
       doctorId?: string;
       notes?: string;
     }) => {
-      const { data } = await api.post("/api/payments", body);
+      const { data } = await api.post("/api/finance-v3/payments", body);
       return data;
     },
     onSuccess: () => {
@@ -272,7 +272,7 @@ export function useJourneyIssueInvoice() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (invoiceId: string) => {
-      const { data } = await api.patch(`/api/invoices/${invoiceId}/issue`);
+      const { data } = await api.patch(`/api/finance-v3/invoices/${invoiceId}/issue`);
       return data;
     },
     onSuccess: () => {

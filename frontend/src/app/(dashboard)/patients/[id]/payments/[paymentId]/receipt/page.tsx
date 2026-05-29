@@ -28,8 +28,8 @@ export default function PaymentReceiptPrintPage() {
   useEffect(() => {
     Promise.all([
       api.get<PatientProfile>(`/api/patients/${id}`).then((r) => r.data).catch(() => null),
-      api.get<Payment>(`/api/payments/${paymentId}`).then((r) => r.data).catch(() => null),
-      api.get<PatientFinanceSummary>(`/api/patients/${id}/finance-summary`).then((r) => r.data).catch(() => null),
+      api.get<Payment>(`/api/finance-v3/payments/${paymentId}`).then((r) => r.data).catch(() => null),
+      api.get<PatientFinanceSummary>(`/api/finance-v3/patients/${id}/finance-summary`).then((r) => r.data).catch(() => null),
     ]).then(([p, pm, f]) => {
       setPatient(p);
       setPayment(pm);

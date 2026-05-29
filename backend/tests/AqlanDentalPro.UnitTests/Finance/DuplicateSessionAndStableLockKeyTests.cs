@@ -278,7 +278,7 @@ public class DuplicateSessionAndStableLockKeyTests
             "backend/src/AqlanDentalPro.Infrastructure/Services/JournalEntryService.cs",
             "backend/src/AqlanDentalPro.Infrastructure/Services/FinanceService.cs",
             "backend/src/AqlanDentalPro.Infrastructure/Services/CommissionService.cs",
-            "backend/src/AqlanDentalPro.API/Controllers/InvoicesController.cs",
+            "backend/src/AqlanDentalPro.API/Controllers/FinanceV3Controller.cs",
             "backend/src/AqlanDentalPro.API/Controllers/OperationalExpensesController.cs",
             "backend/src/AqlanDentalPro.API/Controllers/SupplierBillsController.cs",
             "backend/src/AqlanDentalPro.API/Controllers/VaultTransfersController.cs",

@@ -1632,11 +1632,16 @@ public class FinanceV3Controller(
                 Status = i.Status.ToString(),
                 i.Subtotal,
                 i.DiscountAmount,
+                i.TaxPercentage, // V4: نسبة الضريبة
+                i.TaxAmount, // V4: مبلغ الضريبة
                 i.TotalAmount,
                 PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
                 Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 PatientName = (i.Patient.FirstName + " " + i.Patient.LastName).Trim(),
                 PatientNumber = i.Patient.PatientNumber,
+                // V4: مؤشر التأمين — آمن من الـ Null للفواتير القديمة
+                InsuranceClaimId = (Guid?)i.InsuranceClaimId,
+                HasInsurance = i.InsuranceClaimId != null,
                 IssueDate = i.CreatedAt,
                 i.CreatedAt
             })
@@ -3502,6 +3507,143 @@ public class FinanceV3Controller(
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    // ─── V4: Insurance Companies & Claims Queries ────────────────────────────
+
+    /// <summary>
+    /// GET /api/finance-v3/insurance-companies
+    /// يسترجع قائمة شركات التأمين النشطة — يُستخدم في واجهة إصدار الفاتورة
+    /// لاختيار شركة التأمين ونسبة التغطية الافتراضية.
+    /// </summary>
+    [HttpGet("insurance-companies")]
+    public async Task<IActionResult> GetInsuranceCompanies()
+    {
+        try
+        {
+            var companies = await db.InsuranceCompanies
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.Name)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Name,
+                    c.ContactEmail,
+                    c.Phone,
+                    c.DefaultCoveragePercentage,
+                    c.IsActive
+                })
+                .ToListAsync();
+
+            return Ok(new { data = companies });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetInsuranceCompanies error: {Message}", ex.Message);
+            return Ok(new { data = new object[0] });
+        }
+    }
+
+    /// <summary>
+    /// GET /api/finance-v3/insurance-claims
+    /// يسترجع قائمة المطالبات التأمينية مع إمكانية التصفية حسب الحالة.
+    /// يدعم الفلترة حسب الفرع للمستخدمين غير المديرين.
+    /// </summary>
+    [HttpGet("insurance-claims")]
+    public async Task<IActionResult> GetInsuranceClaims(
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? branchId = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        try
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 20;
+
+            var resolvedBranchId = await ResolveBranchIdAsync(branchId);
+
+            var query = db.InsuranceClaims
+                .Include(c => c.InsuranceCompany)
+                .Include(c => c.Invoice)
+                    .ThenInclude(i => i.Patient)
+                .Where(c => c.IsActive);
+
+            // Branch filter — via Patient → Branch
+            if (resolvedBranchId.HasValue)
+                query = query.Where(c => c.Invoice.Patient.BranchId == resolvedBranchId.Value);
+
+            // Status filter
+            if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ClaimStatus>(status, true, out var claimStatus))
+                query = query.Where(c => c.Status == claimStatus);
+
+            var total = await query.CountAsync();
+
+            var claims = await query
+                .OrderByDescending(c => c.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.InvoiceId,
+                    InvoiceNumber = c.Invoice != null ? c.Invoice.InvoiceNumber : "",
+                    c.InsuranceCompanyId,
+                    InsuranceCompanyName = c.InsuranceCompany != null ? c.InsuranceCompany.Name : "",
+                    c.PatientId,
+                    PatientName = c.Invoice != null && c.Invoice.Patient != null
+                        ? (c.Invoice.Patient.FirstName + " " + c.Invoice.Patient.LastName).Trim()
+                        : "",
+                    c.TotalAmount,
+                    c.CoveredAmount,
+                    c.PatientCoPay,
+                    Status = c.Status.ToString(),
+                    c.RejectionReason,
+                    CreatedAt = c.CreatedAt.ToString("yyyy-MM-dd")
+                })
+                .ToListAsync();
+
+            // KPI summary — separate query (main query already paginated)
+            var kpiQuery = db.InsuranceClaims
+                .Include(c => c.Invoice)
+                    .ThenInclude(i => i.Patient)
+                .Where(c => c.IsActive);
+            if (resolvedBranchId.HasValue)
+                kpiQuery = kpiQuery.Where(c => c.Invoice.Patient.BranchId == resolvedBranchId.Value);
+
+            var totalClaims = await kpiQuery.CountAsync();
+            var pendingClaims = await kpiQuery.CountAsync(c => c.Status == ClaimStatus.Pending);
+            var totalCoveredAmount = await kpiQuery
+                .Where(c => c.Status == ClaimStatus.Pending || c.Status == ClaimStatus.Approved)
+                .SumAsync(c => (decimal?)c.CoveredAmount) ?? 0;
+
+            return Ok(new
+            {
+                data = claims,
+                total,
+                page,
+                pageSize,
+                kpi = new
+                {
+                    TotalClaims = totalClaims,
+                    PendingClaims = pendingClaims,
+                    TotalCoveredAmount = totalCoveredAmount
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FinanceV3 GetInsuranceClaims error: {Message}", ex.Message);
+            return Ok(new
+            {
+                data = new object[0],
+                total = 0,
+                page = 1,
+                pageSize = 20,
+                kpi = new { TotalClaims = 0, PendingClaims = 0, TotalCoveredAmount = 0m }
+            });
+        }
+    }
+
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 

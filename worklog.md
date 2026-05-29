@@ -193,3 +193,56 @@ Stage Summary:
 - All 3 obsolete endpoints deleted (finance/summary, finance/overdue, cashier-sessions/active)
 - Frontend fully migrated to V3 endpoints
 - PR #251 updated: https://github.com/Aqlanf10/aqlan-dental/pull/251
+
+---
+Task ID: frontend-phase3-4
+Agent: Main Agent
+Task: Build Frontend UI for Installments (Phase 3) and Insurance Claims (Phase 4) in Finance V3 Center
+
+Work Log:
+- Explored project structure: verified backend Phase 3 & 4 fully implemented, frontend types/components missing
+- Added TypeScript types to finance-v3/components/types.ts: InstallmentPlanDto, InstallmentDto, InsuranceClaimDto, InsuranceCompanyDto, PayInstallmentRequest, SettleInsuranceClaimRequest, CLAIM_STATUS_MAP, INSTALLMENT_STATUS_MAP
+- Added TypeScript types to shared finance.ts: matching types + CLAIM_STATUS, INSTALLMENT_STATUS constants for patient module
+- Created CreateInstallmentModal.tsx: real-time monthly preview, down payment/numberOfMonths/startDate inputs, validation, API call to POST /contracts/{id}/installments
+- Created InstallmentCard.tsx: installment status display (Pending/Paid/Overdue), pay button, PayInstallment modal with payment method & notes
+- Created InstallmentsTab.tsx: expandable contract list, fetches installment plan per contract, displays plan summary (total/downPayment/monthlyAmount) and installment cards
+- Created InsuranceTab.tsx: claims table with status badges, settle modal, KPI summary (total claims, pending, total covered amount)
+- Updated ContractsTab.tsx: added installment schedule button for active contracts, integrated CreateInstallmentModal
+- Updated page.tsx: added CalendarClock + ShieldCheck icons, installments + insurance tabs, ErrorBoundary wrappers
+- TypeScript compilation (tsc --noEmit) passed with zero errors
+- Committed and pushed to feat/insurance-installment-entities branch on GitHub
+
+Stage Summary:
+- 8 files changed, 1309 insertions(+), 2 deletions(-)
+- 4 new components: CreateInstallmentModal, InstallmentCard, InstallmentsTab, InsuranceTab
+- 4 modified files: ContractsTab, types.ts, page.tsx, finance.ts
+- All UI follows existing Fluent 2 design tokens (inline styles + FinanceSharedUI)
+- Commit: b42f65f pushed to origin/feat/insurance-installment-entities
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Apply 4 Critical Production Stability Fixes for Insurance & Installments V4
+
+Work Log:
+- Read all backend files: JournalAccountType.cs, FinanceValidators.cs, InvoiceDtos.cs, RecentInvoiceDto.cs, Invoice.cs, FinanceService.cs, InvoicesController.cs, FinanceV3Controller.cs, Migration file
+- Verified all 4 fixes already implemented in code from previous session
+- Applied cosmetic fix: reordered JournalAccountType enum — moved InsuranceReceivable = 90 to end after ContraRevenue/ContraExpense
+- Built backend with dotnet: 0 errors, 44 warnings (pre-existing)
+- Built frontend with tsc --noEmit: 0 errors
+- Verified CreateInvoiceModal.tsx has full insurance integration (company dropdown, custom coverage, real-time co-pay preview)
+- Verified PatientJourneyController.cs explicitly sends TaxPercentage = 0 for checkout flow
+- Committed all changes as cf45d4e with detailed message
+- Pushed to origin/feat/insurance-installment-entities
+
+Stage Summary:
+- All 4 critical production fixes confirmed implemented:
+  1. ✅ DB Schema Migration (IF NOT EXISTS safety, 4 new tables, 5 new columns on Invoices)
+  2. ✅ Null Reference Protection (?. and ?? 0 on all InsuranceClaim accesses)
+  3. ✅ Payload Mismatch (TaxPercentage=0 default, InsuranceCompanyId optional, .When() guards in validators)
+  4. ✅ Enum Shift Protection (InsuranceReceivable = 90, stored as string via HasConversion<string>())
+- Cosmetic: enum reordered for readability
+- Invoice UI: already fully integrated with insurance (CreateInvoiceModal.tsx)
+- Backend build: clean (0 errors)
+- Frontend build: clean (0 errors)
+- Commit: cf45d4e pushed to origin

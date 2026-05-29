@@ -1900,6 +1900,210 @@ catch (Exception ex)
     smsSettingsLogger2.LogError(ex, "Failed to seed SMS Gateway settings");
 }
 
+// ── CRITICAL: Ensure Insurance & Installments tables/columns exist (V4) ──────
+// HOTFIX: PR #258 added Insurance, Installments, and tax support to Invoices.
+// If ENABLE_STARTUP_DB_MAINTENANCE=false, MigrateAsync() is skipped and
+// these tables/columns will be missing. Without them:
+// - GET /api/invoices returns 500 (TaxPercentage column missing)
+// - GET /api/finance-v3/invoices returns 500 (TaxPercentage column missing)
+// - POST /api/invoices with insurance returns 500 (InsuranceClaims table missing)
+// - Installment endpoints return 500 (InstallmentPlans/Installments tables missing)
+// This block runs UNCONDITIONALLY and is fully idempotent.
+try
+{
+    using var v4Scope = app.Services.CreateScope();
+    var v4Db     = v4Scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var v4Logger = v4Scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    await v4Db.Database.ExecuteSqlRawAsync("""
+        DO $$ BEGIN
+            -- ── 1. Create InsuranceCompanies table if not exists ──────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'InsuranceCompanies') THEN
+                CREATE TABLE "InsuranceCompanies" (
+                    "Id"                        uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "Name"                      character varying(200)   NOT NULL,
+                    "ContactEmail"              character varying(200)   NOT NULL DEFAULT '',
+                    "Phone"                     character varying(30)    NOT NULL DEFAULT '',
+                    "DefaultCoveragePercentage" numeric(5,4)             NOT NULL DEFAULT 0,
+                    "CreatedAt"                 timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"                 timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"                  boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"                 timestamp with time zone  NULL,
+                    "DeletedBy"                 uuid                     NULL,
+                    CONSTRAINT "PK_InsuranceCompanies" PRIMARY KEY ("Id")
+                );
+                CREATE INDEX "IX_InsuranceCompanies_Name" ON "InsuranceCompanies" ("Name");
+                CREATE INDEX "IX_InsuranceCompanies_IsActive" ON "InsuranceCompanies" ("IsActive");
+            END IF;
+
+            -- ── 2. Create InsuranceClaims table if not exists ─────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'InsuranceClaims') THEN
+                CREATE TABLE "InsuranceClaims" (
+                    "Id"                  uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "InvoiceId"           uuid                     NOT NULL,
+                    "InsuranceCompanyId"  uuid                     NOT NULL,
+                    "PatientId"           uuid                     NOT NULL,
+                    "TotalAmount"         numeric(12,2)            NOT NULL DEFAULT 0,
+                    "CoveredAmount"       numeric(12,2)            NOT NULL DEFAULT 0,
+                    "PatientCoPay"        numeric(12,2)            NOT NULL DEFAULT 0,
+                    "Status"              character varying(20)    NOT NULL DEFAULT 'Pending',
+                    "RejectionReason"     character varying(500)   NULL,
+                    "CreatedAt"           timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"           timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"            boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"           timestamp with time zone  NULL,
+                    "DeletedBy"           uuid                     NULL,
+                    CONSTRAINT "PK_InsuranceClaims" PRIMARY KEY ("Id"),
+                    CONSTRAINT "FK_InsuranceClaims_InsuranceCompanies_InsuranceCompanyId"
+                        FOREIGN KEY ("InsuranceCompanyId") REFERENCES "InsuranceCompanies"("Id") ON DELETE RESTRICT,
+                    CONSTRAINT "FK_InsuranceClaims_Invoices_InvoiceId"
+                        FOREIGN KEY ("InvoiceId") REFERENCES "Invoices"("Id") ON DELETE RESTRICT,
+                    CONSTRAINT "FK_InsuranceClaims_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT
+                );
+                CREATE INDEX "IX_InsuranceClaims_InvoiceId" ON "InsuranceClaims" ("InvoiceId");
+                CREATE INDEX "IX_InsuranceClaims_InsuranceCompanyId" ON "InsuranceClaims" ("InsuranceCompanyId");
+                CREATE INDEX "IX_InsuranceClaims_PatientId" ON "InsuranceClaims" ("PatientId");
+                CREATE INDEX "IX_InsuranceClaims_Status" ON "InsuranceClaims" ("Status");
+            END IF;
+
+            -- ── 3. Create InstallmentPlans table if not exists ────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'InstallmentPlans') THEN
+                CREATE TABLE "InstallmentPlans" (
+                    "Id"             uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "ContractId"     uuid                     NOT NULL,
+                    "PatientId"      uuid                     NOT NULL,
+                    "TotalAmount"    numeric(12,2)            NOT NULL DEFAULT 0,
+                    "DownPayment"    numeric(12,2)            NOT NULL DEFAULT 0,
+                    "NumberOfMonths" integer                  NOT NULL DEFAULT 1,
+                    "MonthlyAmount"  numeric(12,2)            NOT NULL DEFAULT 0,
+                    "StartDate"      timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsCompleted"    boolean                  NOT NULL DEFAULT false,
+                    "CreatedAt"      timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"      timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"       boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"      timestamp with time zone  NULL,
+                    "DeletedBy"      uuid                     NULL,
+                    CONSTRAINT "PK_InstallmentPlans" PRIMARY KEY ("Id"),
+                    CONSTRAINT "FK_InstallmentPlans_Contracts_ContractId"
+                        FOREIGN KEY ("ContractId") REFERENCES "Contracts"("Id") ON DELETE RESTRICT,
+                    CONSTRAINT "FK_InstallmentPlans_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE RESTRICT
+                );
+                CREATE INDEX "IX_InstallmentPlans_ContractId" ON "InstallmentPlans" ("ContractId");
+                CREATE INDEX "IX_InstallmentPlans_PatientId" ON "InstallmentPlans" ("PatientId");
+                CREATE INDEX "IX_InstallmentPlans_IsCompleted" ON "InstallmentPlans" ("IsCompleted");
+            END IF;
+
+            -- ── 4. Create Installments table if not exists ────────────────
+            IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Installments') THEN
+                CREATE TABLE "Installments" (
+                    "Id"                 uuid                     NOT NULL DEFAULT gen_random_uuid(),
+                    "InstallmentPlanId"  uuid                     NOT NULL,
+                    "Amount"             numeric(12,2)            NOT NULL DEFAULT 0,
+                    "DueDate"            timestamp with time zone  NOT NULL,
+                    "PaidDate"           timestamp with time zone  NULL,
+                    "Status"             character varying(20)    NOT NULL DEFAULT 'Pending',
+                    "PaymentId"          uuid                     NULL,
+                    "CreatedAt"          timestamp with time zone  NOT NULL DEFAULT now(),
+                    "UpdatedAt"          timestamp with time zone  NOT NULL DEFAULT now(),
+                    "IsActive"           boolean                  NOT NULL DEFAULT true,
+                    "DeletedAt"          timestamp with time zone  NULL,
+                    "DeletedBy"          uuid                     NULL,
+                    CONSTRAINT "PK_Installments" PRIMARY KEY ("Id"),
+                    CONSTRAINT "FK_Installments_InstallmentPlans_InstallmentPlanId"
+                        FOREIGN KEY ("InstallmentPlanId") REFERENCES "InstallmentPlans"("Id") ON DELETE CASCADE,
+                    CONSTRAINT "FK_Installments_Payments_PaymentId"
+                        FOREIGN KEY ("PaymentId") REFERENCES "Payments"("Id") ON DELETE SET NULL
+                );
+                CREATE INDEX "IX_Installments_InstallmentPlanId" ON "Installments" ("InstallmentPlanId");
+                CREATE INDEX "IX_Installments_DueDate" ON "Installments" ("DueDate");
+                CREATE INDEX "IX_Installments_Status" ON "Installments" ("Status");
+            END IF;
+
+            -- ── 5. Add new columns to Invoices table ──────────────────────
+            -- TaxPercentage — نسبة الضريبة
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Invoices' AND column_name = 'TaxPercentage') THEN
+                ALTER TABLE "Invoices" ADD COLUMN "TaxPercentage" numeric(5,2) NOT NULL DEFAULT 0;
+            END IF;
+
+            -- TaxAmount — set NOT NULL if currently nullable (old invoices had NULL)
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Invoices' AND column_name = 'TaxAmount' AND is_nullable = 'YES') THEN
+                UPDATE "Invoices" SET "TaxAmount" = 0 WHERE "TaxAmount" IS NULL;
+                ALTER TABLE "Invoices" ALTER COLUMN "TaxAmount" SET NOT NULL;
+                ALTER TABLE "Invoices" ALTER COLUMN "TaxAmount" SET DEFAULT 0;
+            END IF;
+
+            -- Currency — العملة
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Invoices' AND column_name = 'Currency') THEN
+                ALTER TABLE "Invoices" ADD COLUMN "Currency" character varying(10) NOT NULL DEFAULT 'YER';
+            END IF;
+
+            -- ExchangeRate — سعر الصرف
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Invoices' AND column_name = 'ExchangeRate') THEN
+                ALTER TABLE "Invoices" ADD COLUMN "ExchangeRate" numeric(12,6) NOT NULL DEFAULT 1.0;
+            END IF;
+
+            -- TotalCostOfGoodsSold — تكلفة البضاعة المباعة
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Invoices' AND column_name = 'TotalCostOfGoodsSold') THEN
+                ALTER TABLE "Invoices" ADD COLUMN "TotalCostOfGoodsSold" numeric(12,2) NOT NULL DEFAULT 0;
+            END IF;
+
+            -- InsuranceClaimId — ربط المطالبة التأمينية
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Invoices' AND column_name = 'InsuranceClaimId') THEN
+                ALTER TABLE "Invoices" ADD COLUMN "InsuranceClaimId" uuid NULL;
+            END IF;
+
+            -- ── 6. Add InsuranceClaimId index and FK on Invoices ──────────
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Invoices_InsuranceClaimId') THEN
+                CREATE INDEX "IX_Invoices_InsuranceClaimId" ON "Invoices" ("InsuranceClaimId");
+            END IF;
+
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Invoices_InsuranceClaims_InsuranceClaimId') THEN
+                ALTER TABLE "Invoices"
+                    ADD CONSTRAINT "FK_Invoices_InsuranceClaims_InsuranceClaimId"
+                    FOREIGN KEY ("InsuranceClaimId") REFERENCES "InsuranceClaims"("Id")
+                    ON DELETE SET NULL;
+            END IF;
+
+        END $$;
+    """);
+
+    // ── 7. Seed default insurance companies (idempotent) ──────────────
+    var existingCompanies = await v4Db.Set<AqlanDentalPro.Domain.Entities.InsuranceCompany>()
+        .Where(c => c.IsActive)
+        .AnyAsync();
+
+    if (!existingCompanies)
+    {
+        v4Db.Set<AqlanDentalPro.Domain.Entities.InsuranceCompany>().AddRange(
+            new AqlanDentalPro.Domain.Entities.InsuranceCompany
+            {
+                Name = "التأمين الاجتماعي",
+                ContactEmail = "claims@social-insurance.ye",
+                Phone = "+9671234567",
+                DefaultCoveragePercentage = 0.80m
+            },
+            new AqlanDentalPro.Domain.Entities.InsuranceCompany
+            {
+                Name = "بوبا العربية",
+                ContactEmail = "claims@bupa-arabia.com",
+                Phone = "+96612345678",
+                DefaultCoveragePercentage = 0.75m
+            }
+        );
+        await v4Db.SaveChangesAsync();
+        v4Logger.LogInformation("HOTFIX: Seeded default insurance companies");
+    }
+
+    v4Logger.LogInformation("HOTFIX: Insurance & Installments tables/columns ensured (idempotent)");
+}
+catch (Exception ex)
+{
+    var v4Logger2 = app.Services.GetRequiredService<ILogger<Program>>();
+    v4Logger2.LogError(ex, "HOTFIX: Failed to ensure Insurance & Installments tables/columns. Invoice/finance endpoints may return 500!");
+}
+
 // ── DB Maintenance (gated by ENABLE_STARTUP_DB_MAINTENANCE + advisory lock) ────
 // TD-020: remaining raw SQL blocks — see docs/technical-debt/TD-020-raw-sql-inventory.md
 var enableStartupDbMaintenance =

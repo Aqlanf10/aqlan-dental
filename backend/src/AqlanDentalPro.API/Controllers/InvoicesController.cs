@@ -279,7 +279,11 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 i.Subtotal,
                 i.DiscountAmount,
                 i.TaxAmount,
+                i.TaxPercentage, // V4: نسبة الضريبة
                 i.TotalAmount,
+                // V4: مؤشر التأمين — null-safe للفواتير القديمة
+                InsuranceClaimId = (Guid?)i.InsuranceClaimId,
+                HasInsurance = i.InsuranceClaimId != null,
                 LineItemCount = i.LineItems.Count,
                 i.Notes,
                 i.CreatedAt,
@@ -298,10 +302,15 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         Invoice? invoice;
         try
         {
+            // V4 FIX: تحميل بيانات التأمين بشكل آمن — ThenInclude على navigation اختياري
+            // قد يفشل Include/ThenInclude على InsuranceClaim إذا كانت جداول التأمين غير موجودة
+            // بعد تطبيق الـ Migration. نستخدم try/catch مع fallback.
             invoice = await db.Invoices
                 .Include(i => i.Patient)
                 .Include(i => i.Visit)
                 .Include(i => i.Appointment)
+                .Include(i => i.InsuranceClaim!) // V4: تحميل المطالبة التأمينية (اختيارية)
+                    .ThenInclude(ic => ic.InsuranceCompany) // V4: تحميل بيانات شركة التأمين
                 .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
                     .ThenInclude(l => l.Service)
                 .Include(i => i.LineItems.OrderBy(l => l.SortOrder))
@@ -379,9 +388,18 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             invoice.Subtotal,
             invoice.DiscountAmount,
             invoice.TaxAmount,
+            invoice.TaxPercentage, // V4: نسبة الضريبة
             invoice.TotalAmount,
+            invoice.Currency, // V4: العملة
             PaidAmount = paidAmount,
             RemainingAmount = remainingAmount,
+            // V4: بيانات التأمين — آمنة من الـ Null للفواتير القديمة (بدون تأمين)
+            InsuranceClaimId = invoice.InsuranceClaimId,
+            HasInsurance = invoice.InsuranceClaimId.HasValue,
+            CoveredAmount = invoice.InsuranceClaim?.CoveredAmount ?? 0,
+            PatientCoPay = invoice.InsuranceClaim?.PatientCoPay ?? 0,
+            InsuranceCompanyName = invoice.InsuranceClaim?.InsuranceCompany?.Name,
+            InsuranceClaimStatus = invoice.InsuranceClaim?.Status.ToString(),
             invoice.Notes,
             invoice.CreatedAt,
             invoice.UpdatedAt,

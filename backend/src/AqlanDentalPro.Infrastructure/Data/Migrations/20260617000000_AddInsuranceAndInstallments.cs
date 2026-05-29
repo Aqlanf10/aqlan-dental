@@ -222,18 +222,34 @@ public partial class AddInsuranceAndInstallments : Migration
             column: "Status");
 
         // ─── 5. Add new columns to Invoices table ────────────────────────────
-        // Idempotent: ADD COLUMN IF NOT EXISTS for safety on re-runs
+        // SAFETY: TaxAmount column already exists (from AddInvoicesAndInvoiceLineItems migration)
+        // as nullable. We must ALTER it to NOT NULL instead of ADD.
+        // Other columns are truly new and can use ADD COLUMN IF NOT EXISTS.
 
+        // TaxPercentage — truly new column
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" ADD COLUMN IF NOT EXISTS ""TaxPercentage"" numeric(5,2) NOT NULL DEFAULT 0");
+
+        // TaxAmount — ALREADY EXISTS as nullable from original migration.
+        // Step 1: Update any existing NULL values to 0 (old invoices had no tax)
         migrationBuilder.Sql(
-            @"ALTER TABLE ""Invoices"" ADD COLUMN IF NOT EXISTS ""TaxAmount"" numeric(12,2) NOT NULL DEFAULT 0");
+            @"UPDATE ""Invoices"" SET ""TaxAmount"" = 0 WHERE ""TaxAmount"" IS NULL");
+        // Step 2: Alter column to NOT NULL DEFAULT 0
+        migrationBuilder.Sql(
+            @"ALTER TABLE ""Invoices"" ALTER COLUMN ""TaxAmount"" SET NOT NULL");
+        migrationBuilder.Sql(
+            @"ALTER TABLE ""Invoices"" ALTER COLUMN ""TaxAmount"" SET DEFAULT 0");
+
+        // Currency — truly new column
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" ADD COLUMN IF NOT EXISTS ""Currency"" character varying(10) NOT NULL DEFAULT 'YER'");
+        // ExchangeRate — truly new column
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" ADD COLUMN IF NOT EXISTS ""ExchangeRate"" numeric(12,6) NOT NULL DEFAULT 1.0");
+        // TotalCostOfGoodsSold — truly new column
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" ADD COLUMN IF NOT EXISTS ""TotalCostOfGoodsSold"" numeric(12,2) NOT NULL DEFAULT 0");
+        // InsuranceClaimId — truly new column (nullable by design)
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" ADD COLUMN IF NOT EXISTS ""InsuranceClaimId"" uuid NULL");
 
@@ -284,17 +300,25 @@ public partial class AddInsuranceAndInstallments : Migration
         migrationBuilder.Sql(
             @"DROP INDEX IF EXISTS ""IX_Invoices_InsuranceClaimId""");
 
-        // ─── Drop new columns from Invoices ───────────────────────────────────
+        // ─── Revert Invoices column changes ───────────────────────────────────
+        // TaxPercentage — truly new, can be dropped
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" DROP COLUMN IF EXISTS ""TaxPercentage""");
+        // TaxAmount — existed before, revert to nullable (drop NOT NULL, drop default)
         migrationBuilder.Sql(
-            @"ALTER TABLE ""Invoices"" DROP COLUMN IF EXISTS ""TaxAmount""");
+            @"ALTER TABLE ""Invoices"" ALTER COLUMN ""TaxAmount"" DROP NOT NULL");
+        migrationBuilder.Sql(
+            @"ALTER TABLE ""Invoices"" ALTER COLUMN ""TaxAmount"" DROP DEFAULT");
+        // Currency — truly new, can be dropped
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" DROP COLUMN IF EXISTS ""Currency""");
+        // ExchangeRate — truly new, can be dropped
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" DROP COLUMN IF EXISTS ""ExchangeRate""");
+        // TotalCostOfGoodsSold — truly new, can be dropped
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" DROP COLUMN IF EXISTS ""TotalCostOfGoodsSold""");
+        // InsuranceClaimId — truly new, can be dropped
         migrationBuilder.Sql(
             @"ALTER TABLE ""Invoices"" DROP COLUMN IF EXISTS ""InsuranceClaimId""");
 

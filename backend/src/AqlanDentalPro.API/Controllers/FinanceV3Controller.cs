@@ -1632,11 +1632,16 @@ public class FinanceV3Controller(
                 Status = i.Status.ToString(),
                 i.Subtotal,
                 i.DiscountAmount,
+                i.TaxPercentage, // V4: نسبة الضريبة
+                i.TaxAmount, // V4: مبلغ الضريبة
                 i.TotalAmount,
                 PaidAmount = i.Payments.Where(p => p.IsActive && p.Amount > 0).Sum(p => p.Amount),
                 Balance = i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 PatientName = (i.Patient.FirstName + " " + i.Patient.LastName).Trim(),
                 PatientNumber = i.Patient.PatientNumber,
+                // V4: مؤشر التأمين — آمن من الـ Null للفواتير القديمة
+                InsuranceClaimId = (Guid?)i.InsuranceClaimId,
+                HasInsurance = i.InsuranceClaimId != null,
                 IssueDate = i.CreatedAt,
                 i.CreatedAt
             })

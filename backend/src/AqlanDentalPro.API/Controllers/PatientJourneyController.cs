@@ -1173,6 +1173,9 @@ public class PatientJourneyController(
                 VisitId = visitId,
                 AppointmentId = visit.AppointmentId,
                 Status = InvoiceStatus.Draft,
+                TaxPercentage = 0, // V4: صريح للوضوح — الفواتير من الزيارات نقدية بدون ضريبة
+                Currency = "YER",
+                ExchangeRate = 1.0m,
                 Notes = $"فاتورة مسودة من زيارة يوم {visit.VisitDate:yyyy-MM-dd}",
                 CreatedBy = userId,
                 UpdatedBy = userId

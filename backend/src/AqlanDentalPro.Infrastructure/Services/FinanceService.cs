@@ -1928,8 +1928,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         {
             var claim = await db.Set<InsuranceClaim>()
                 .Include(c => c.InsuranceCompany)
-                .Include(c => c.Invoice)
-                    .ThenInclude(i => i!.Patient)
+                .Include(c => c.Invoice!)
+                    .ThenInclude(i => i.Patient)
                 .FirstOrDefaultAsync(c => c.Id == claimId && c.IsActive);
 
             if (claim == null)

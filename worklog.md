@@ -193,3 +193,28 @@ Stage Summary:
 - All 3 obsolete endpoints deleted (finance/summary, finance/overdue, cashier-sessions/active)
 - Frontend fully migrated to V3 endpoints
 - PR #251 updated: https://github.com/Aqlanf10/aqlan-dental/pull/251
+
+---
+Task ID: frontend-phase3-4
+Agent: Main Agent
+Task: Build Frontend UI for Installments (Phase 3) and Insurance Claims (Phase 4) in Finance V3 Center
+
+Work Log:
+- Explored project structure: verified backend Phase 3 & 4 fully implemented, frontend types/components missing
+- Added TypeScript types to finance-v3/components/types.ts: InstallmentPlanDto, InstallmentDto, InsuranceClaimDto, InsuranceCompanyDto, PayInstallmentRequest, SettleInsuranceClaimRequest, CLAIM_STATUS_MAP, INSTALLMENT_STATUS_MAP
+- Added TypeScript types to shared finance.ts: matching types + CLAIM_STATUS, INSTALLMENT_STATUS constants for patient module
+- Created CreateInstallmentModal.tsx: real-time monthly preview, down payment/numberOfMonths/startDate inputs, validation, API call to POST /contracts/{id}/installments
+- Created InstallmentCard.tsx: installment status display (Pending/Paid/Overdue), pay button, PayInstallment modal with payment method & notes
+- Created InstallmentsTab.tsx: expandable contract list, fetches installment plan per contract, displays plan summary (total/downPayment/monthlyAmount) and installment cards
+- Created InsuranceTab.tsx: claims table with status badges, settle modal, KPI summary (total claims, pending, total covered amount)
+- Updated ContractsTab.tsx: added installment schedule button for active contracts, integrated CreateInstallmentModal
+- Updated page.tsx: added CalendarClock + ShieldCheck icons, installments + insurance tabs, ErrorBoundary wrappers
+- TypeScript compilation (tsc --noEmit) passed with zero errors
+- Committed and pushed to feat/insurance-installment-entities branch on GitHub
+
+Stage Summary:
+- 8 files changed, 1309 insertions(+), 2 deletions(-)
+- 4 new components: CreateInstallmentModal, InstallmentCard, InstallmentsTab, InsuranceTab
+- 4 modified files: ContractsTab, types.ts, page.tsx, finance.ts
+- All UI follows existing Fluent 2 design tokens (inline styles + FinanceSharedUI)
+- Commit: b42f65f pushed to origin/feat/insurance-installment-entities

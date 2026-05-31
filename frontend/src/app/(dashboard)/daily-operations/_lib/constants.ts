@@ -173,10 +173,11 @@ export const STATUS_COLORS: Record<string, { bg: string; text: string; border: s
 
 // ─── Payment methods ─────────────────────────────────────────────────────────
 export const PAYMENT_METHODS = [
-  { value: "Cash",          label: "نقدي" },
-  { value: "Card",          label: "بطاقة" },
-  { value: "BankTransfer",  label: "تحويل بنكي" },
-  { value: "MobileWallet",  label: "محفظة إلكترونية" },
+  { value: "cash",          label: "نقدي" },
+  { value: "card",          label: "بطاقة" },
+  { value: "bank_transfer", label: "تحويل بنكي" },
+  { value: "check",         label: "شيك" },
+  { value: "other",         label: "أخرى" },
 ];
 
 // ─── Appointment types ───────────────────────────────────────────────────────

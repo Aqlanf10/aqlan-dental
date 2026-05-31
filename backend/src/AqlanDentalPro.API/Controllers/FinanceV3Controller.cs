@@ -1420,13 +1420,17 @@ public class FinanceV3Controller(
 
         var total = await query.CountAsync();
 
-        var payments = await query
+        var paymentsRaw = await query
             .OrderByDescending(p => p.PaymentDate)
+            .ThenByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(p => new
             {
                 p.Id,
+                p.PatientId,
+                p.ContractId,
+                p.InvoiceId,
                 p.Amount,
                 PaymentDate = p.PaymentDate.ToString("yyyy-MM-dd"),
                 p.PaymentMethod,
@@ -1437,9 +1441,68 @@ public class FinanceV3Controller(
                 PatientNumber = p.Patient.PatientNumber,
                 DoctorName = p.Doctor != null ? p.Doctor.Name : null,
                 p.Notes,
+                p.BranchId,
                 p.CreatedAt
             })
             .ToListAsync();
+
+        // Enrich with reversal status from JournalEntry
+        var paymentIds = paymentsRaw.Select(p => p.Id).ToList();
+        var reversalEntries = await db.JournalEntries
+            .Where(e => e.FinancialDocumentType == FinancialDocumentType.PaymentDeletion
+                && e.IsReversal
+                && paymentIds.Contains(e.ReversalOfEntryId ?? Guid.Empty))
+            .Select(e => new { e.ReversalOfEntryId, ReversedById = e.Id })
+            .ToListAsync();
+
+        // Also find which payments have JournalEntries (for reconciliation indicator)
+        var paymentJournalEntries = await db.JournalEntries
+            .Where(e => e.FinancialDocumentType == FinancialDocumentType.Payment
+                && !e.IsReversal
+                && paymentIds.Contains(e.FinancialDocumentId))
+            .Select(e => new { e.FinancialDocumentId, e.Id })
+            .ToListAsync();
+
+        var payments = paymentsRaw.Select(p =>
+        {
+            // Find the original JE for this payment to determine reversal status
+            var originalJe = paymentJournalEntries.FirstOrDefault(je => je.FinancialDocumentId == p.Id);
+            var isReversal = false;
+            var reversedById = (Guid?)null;
+            if (originalJe != null)
+            {
+                var revEntry = reversalEntries.FirstOrDefault(r => r.ReversalOfEntryId == originalJe.Id);
+                if (revEntry != null)
+                {
+                    reversedById = revEntry.ReversedById;
+                    isReversal = true;
+                }
+            }
+            return new
+            {
+                p.Id,
+                p.PatientId,
+                p.ContractId,
+                p.InvoiceId,
+                p.Amount,
+                p.PaymentDate,
+                p.PaymentMethod,
+                p.Specialty,
+                p.ServiceDescription,
+                p.ReceiptNumber,
+                PaymentNumber = p.ReceiptNumber, // Alias: receiptNumber exposed as paymentNumber for frontend compat
+                p.PatientName,
+                p.PatientNumber,
+                p.DoctorName,
+                p.Notes,
+                p.BranchId,
+                p.CreatedAt,
+                IsReversal = isReversal,
+                ReversedById = reversedById,
+                Status = isReversal ? "Reversed" : "Active",
+                HasJournalEntry = originalJe != null
+            };
+        }).ToList();
 
         return Ok(new { data = payments, total, page, pageSize });
     }
@@ -1562,6 +1625,8 @@ public class FinanceV3Controller(
                 c.PatientId,
                 PatientName = (c.Patient.FirstName + " " + c.Patient.LastName).Trim(),
                 PatientNumber = c.Patient.PatientNumber,
+                ContractNumber = "CTR-" + c.Id.ToString().Substring(0, 8).ToUpper(),
+                c.Specialty,
                 c.TotalAmount,
                 c.DiscountAmount,
                 PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
@@ -1939,6 +2004,11 @@ public class FinanceV3Controller(
         var branchId = await ResolveBranchIdAsync();
         if (branchId == Guid.Empty)
             return BadRequest(new { message = "لم يتم تحديد فرع للمستخدم. يرجى تسجيل الدخول بفرع صالح." });
+
+        // Pass the resolved branch to the service so it uses the same validated branch
+        // instead of independently resolving (which could differ for Admin users).
+        // This prevents Guid.Empty from being written to financial records.
+        req.ResolvedBranchId = branchId;
 
         // Amount validation: reject zero or negative amounts
         if (req.Amount <= 0)

@@ -188,9 +188,15 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (activeSession == null)
             throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات.");
 
-        // BranchId resolution: use current user's branch, or fallback to first active branch for Admin
+        // BranchId resolution: prefer controller-resolved branch (prevents Guid.Empty for Admin),
+        // then fall back to current user's branch, then first active branch for Admin
         Guid branchId;
-        if (currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+        if (req.ResolvedBranchId.HasValue && req.ResolvedBranchId.Value != Guid.Empty)
+        {
+            // Use the branch resolved and validated by the controller (Fix 4)
+            branchId = req.ResolvedBranchId.Value;
+        }
+        else if (currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
         {
             branchId = currentUser.BranchId.Value;
         }
@@ -205,6 +211,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 throw new ArgumentException("عذراً، يجب تحديد الفرع قبل تسجيل أي مدفوعات. لا توجد فروع نشطة في النظام.");
             branchId = firstBranch.Id;
         }
+
+        // Safety guard: never write Guid.Empty as BranchId in financial records (Fix 4)
+        if (branchId == Guid.Empty)
+            throw new ArgumentException("لم يتم تحديد فرع صالح. لا يمكن تسجيل الدفعة بدون فرع.");
 
         // Phase 0B: Validate payment amount is positive
         if (req.Amount <= 0)

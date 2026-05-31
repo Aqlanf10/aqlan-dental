@@ -120,6 +120,8 @@ export interface InvoiceDetail {
 export interface PaymentListItem {
   id: string;
   paymentNumber: string;
+  /** receiptNumber from backend — same value as paymentNumber (alias). Prefer this for display. */
+  receiptNumber?: string;
   patientId: string;
   patientName: string;
   patientNumber: string;
@@ -128,10 +130,11 @@ export interface PaymentListItem {
   paymentDate: string;
   invoiceId: string | null;
   contractId: string | null;
-  cashierSessionId: string | null;
   isReversal: boolean;
   reversedById: string | null;
   status: string;
+  /** Whether this payment has a corresponding JournalEntry (reconciliation indicator) */
+  hasJournalEntry?: boolean;
 }
 
 export interface RegisterPaymentRequest {
@@ -150,6 +153,8 @@ export interface ContractListItem {
   patientId: string;
   patientName: string;
   patientNumber: string;
+  /** Specialty field from Contract entity (used as display label when contractNumber is generated) */
+  specialty?: string;
   totalAmount: number;
   paidAmount: number;
   outstandingAmount: number;

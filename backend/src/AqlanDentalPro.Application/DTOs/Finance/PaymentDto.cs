@@ -33,6 +33,13 @@ public class CreatePaymentRequest
     public string? Specialty { get; set; }
     public Guid? DoctorId { get; set; }
     public string? Notes { get; set; }
+    /// <summary>
+    /// Resolved branch ID from controller. When provided and valid (non-empty),
+    /// FinanceService uses this instead of independently resolving from currentUser.
+    /// This ensures the branch validated by the controller is the one written to
+    /// financial records — prevents Guid.Empty for Admin users without an assigned branch.
+    /// </summary>
+    public Guid? ResolvedBranchId { get; set; }
 }
 
 public class UpdatePaymentRequest

@@ -18,6 +18,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [invoicesError, setInvoicesError] = useState(false);
 
   useEffect(() => {
     api
@@ -31,10 +32,11 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
         setLoading(false);
       });
 
+    setInvoicesError(false);
     api
       .get<Invoice[]>(`/api/patients/${patientId}/invoices`)
       .then((r) => setInvoices(r.data))
-      .catch(() => {});
+      .catch(() => { setInvoicesError(true); });
   }, [patientId]);
 
   if (loading) {
@@ -178,7 +180,11 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
           <FileText className="w-4 h-4 text-[#3d7ab5]" />
           الفواتير
         </h3>
-        {invoices.length === 0 ? (
+        {invoicesError ? (
+          <div className="p-3 text-center">
+            <p className="text-sm text-red-600 mb-2">فشل في تحميل الفواتير</p>
+          </div>
+        ) : invoices.length === 0 ? (
           <p className="text-sm text-[#94a3b8]">لا توجد فواتير مسجّلة</p>
         ) : (
           <div className="space-y-2">

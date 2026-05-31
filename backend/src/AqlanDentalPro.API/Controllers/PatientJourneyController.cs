@@ -6,6 +6,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -1246,9 +1247,13 @@ public class PatientJourneyController(
     private static bool IsUniqueViolation(DbUpdateException ex)
     {
         var inner = ex.InnerException;
-        if (inner == null) return false;
-        var msg = inner.Message.ToLowerInvariant();
-        return msg.Contains("unique") || msg.Contains("duplicate") || msg.Contains("23505");
+        while (inner != null)
+        {
+            if (inner is PostgresException pgEx && pgEx.SqlState == "23505")
+                return true;
+            inner = inner.InnerException;
+        }
+        return false;
     }
 
     private static string DetermineNextAction(AppointmentStatus apptStatus, ClinicQueueStatus? queueStatus, string? checkoutStatus)

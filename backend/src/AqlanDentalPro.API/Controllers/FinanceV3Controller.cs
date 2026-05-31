@@ -3266,15 +3266,19 @@ public class FinanceV3Controller(
     /// </summary>
     private async Task<Guid> ResolveBranchIdAsync()
     {
-        // Non-admin: always use their assigned branch (no fallback)
+        // Non-admin: must have a valid branch assignment
         if (!currentUser.IsAdmin)
-            return currentUser.BranchId ?? Guid.Empty;
+        {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                throw new InvalidOperationException("المستخدم ليس لديه فرع معين. تواصل مع الإدارة.");
+            return currentUser.BranchId.Value;
+        }
 
         // Admin with valid branch: use their assigned branch
         if (currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
             return currentUser.BranchId.Value;
 
-        // Admin without branch: fallback to first active branch in the system
+        // Admin without branch: fallback to first active branch
         var firstBranchId = await db.Branches
             .Where(b => b.IsActive)
             .OrderBy(b => b.Name)

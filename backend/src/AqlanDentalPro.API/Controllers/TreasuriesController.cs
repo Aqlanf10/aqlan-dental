@@ -23,7 +23,9 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
         var isAdmin = currentUser.IsAdmin;
 
         var query = db.Treasuries
@@ -31,7 +33,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
 
         if (!isAdmin)
         {
-            query = query.Where(t => t.BranchId == branchId);
+            query = query.Where(t => t.BranchId == currentUser.BranchId!.Value);
         }
 
         var list = await query
@@ -64,14 +66,16 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "رصيد البداية لا يمكن أن يكون سالباً" });
 
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+        var branchId = currentUser.BranchId;
+        if (branchId == null || branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل إنشاء خزنة/حساب مالي." });
 
         var treasury = new Treasury
         {
             Name = req.Name.Trim(),
             Type = type,
             Balance = req.OpeningBalance,
-            BranchId = branchId,
+            BranchId = branchId.Value,
             IsActive = true
         };
 
@@ -93,7 +97,7 @@ public class TreasuriesController(AppDbContext db, ICurrentUserService currentUs
                 ReferenceNumber = "OP-BAL",
                 Description = $"رصيد افتتاحي لبداية تشغيل {treasury.Name}",
                 PerformedBy = currentUser.UserId ?? Guid.Empty,
-                BranchId = branchId
+                BranchId = branchId.Value
             };
             db.CashFlowTransactions.Add(cashflow);
         }

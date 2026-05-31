@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -648,8 +649,7 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
         var inner = ex.InnerException;
         while (inner != null)
         {
-            if (inner.Message.Contains("23505") || inner.Message.Contains("duplicate key") ||
-                inner.Message.Contains("unique constraint") || inner.Message.Contains("OrderNumber"))
+            if (inner is PostgresException pgEx && pgEx.SqlState == "23505")
                 return true;
             inner = inner.InnerException;
         }

@@ -42,7 +42,7 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             ServiceException => ex.Message, // Business-rule messages are safe to expose
             UnauthorizedAccessException => ex.Message, // Safe to expose auth errors
             KeyNotFoundException => ex.Message,         // Safe to expose not-found errors
-            ArgumentException => ex.Message,            // Validation messages are safe to expose
+            ArgumentException => SanitizeArgumentMessage(ex.Message),            // Validation messages are safe to expose (sanitized)
             DbUpdateConcurrencyException => "تم تعديل البيانات بواسطة مستخدم آخر. يرجى تحديث الصفحة والمحاولة مرة أخرى.",
             _ => context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true
                 ? "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً."
@@ -57,9 +57,9 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
             Instance = context.Request.Path
         };
 
-        // Diagnostic: Include exception type in non-production environments only
-        var isProduction = context.RequestServices?.GetService<IWebHostEnvironment>()?.IsProduction() == true;
-        if (!isProduction)
+        // Diagnostic: Include exception type in Development environment only
+        var isDevelopment = context.RequestServices?.GetService<IWebHostEnvironment>()?.IsDevelopment() == true;
+        if (isDevelopment)
         {
             problem.Extensions["errorType"] = ex.GetType().Name;
             problem.Extensions["errorSource"] = ex.TargetSite?.DeclaringType?.Name ?? "unknown";
@@ -68,5 +68,12 @@ public class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandling
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/problem+json";
         await context.Response.WriteAsync(JsonSerializer.Serialize(problem));
+    }
+
+    private static string SanitizeArgumentMessage(string message)
+    {
+        // Remove .NET parameter hints like "(Parameter 'source')" from ArgumentException messages
+        var parenIdx = message.IndexOf(" (Parameter ");
+        return parenIdx > 0 ? message[..parenIdx] : message;
     }
 }

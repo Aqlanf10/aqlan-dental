@@ -15,13 +15,16 @@ interface SurgeryTabProps {
 export function SurgeryTab({ patientId }: SurgeryTabProps) {
   const [cases, setCases] = useState<SurgeryCase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    setFetchError(false);
     api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${patientId}`)
       .then((r) => setCases(r.data.data ?? []))
-      .catch(() => {})
+      .catch(() => { setFetchError(true); })
       .finally(() => setLoading(false));
-  }, [patientId]);
+  }, [patientId, retryKey]);
 
   /* ── Loading skeleton ──────────────────────────────────────────────────── */
   if (loading) {
@@ -39,6 +42,16 @@ export function SurgeryTab({ patientId }: SurgeryTabProps) {
             className="h-[88px] bg-[#f1f5f9] rounded-xl animate-pulse"
           />
         ))}
+      </div>
+    );
+  }
+
+  /* ── Error state ────────────────────────────────────────────────────────── */
+  if (fetchError) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+        <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );
   }

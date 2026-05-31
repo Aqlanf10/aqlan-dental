@@ -333,8 +333,8 @@ export function useCancelQueue() {
 export function useChangeRoom() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { queueItemId: string; roomId: string }) => {
-      const { data } = await api.patch(`/api/clinic-queue/${params.queueItemId}/room`, { roomId: params.roomId });
+    mutationFn: async (params: { queueItemId: string; roomName: string }) => {
+      const { data } = await api.patch(`/api/clinic-queue/${params.queueItemId}/room`, { roomName: params.roomName });
       return data;
     },
     onSuccess: () => {
@@ -357,7 +357,22 @@ export function useCreateAppointment() {
       appointmentType?: string;
       notes?: string;
     }) => {
-      const { data } = await api.post("/api/appointments", body);
+      // Compute durationMinutes from startTime and endTime
+      let durationMinutes: number | undefined;
+      if (body.endTime && body.startTime) {
+        const [sh, sm] = body.startTime.split(":").map(Number);
+        const [eh, em] = body.endTime.split(":").map(Number);
+        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+          durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
+          if (durationMinutes <= 0) durationMinutes = undefined;
+        }
+      }
+      const { endTime, ...rest } = body;
+      const { data } = await api.post("/api/appointments", {
+        ...rest,
+        durationMinutes: durationMinutes ?? 30,
+        appointmentType: body.appointmentType || "Consultation",
+      });
       return data;
     },
     onSuccess: () => {
@@ -550,7 +565,7 @@ export function useActiveCashierSession() {
     queryKey: ["daily-ops", "active-cashier-session"],
     queryFn: async () => {
       try {
-        const { data } = await api.get("/api/finance-v3/active-cashier-session");
+        const { data } = await api.get("/api/finance-v3/cashier-sessions/active");
         return data;
       } catch {
         return null;

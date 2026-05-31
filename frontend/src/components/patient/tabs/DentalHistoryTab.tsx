@@ -14,6 +14,8 @@ interface DentalHistoryTabProps {
 export function DentalHistoryTab({ patientId, initialData }: DentalHistoryTabProps) {
   const [data, setData] = useState<DentalHistory | null>(initialData ?? null);
   const [loading, setLoading] = useState(!initialData);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -21,12 +23,13 @@ export function DentalHistoryTab({ patientId, initialData }: DentalHistoryTabPro
 
   useEffect(() => {
     if (!initialData) {
+      setFetchError(false);
       api.get<DentalHistory>(`/api/patients/${patientId}/dental-history`)
         .then((r) => setData(r.data))
-        .catch(() => {})
+        .catch(() => { setFetchError(true); })
         .finally(() => setLoading(false));
     }
-  }, [patientId, initialData]);
+  }, [patientId, initialData, retryKey]);
 
   const startEdit = () => {
     if (data) {
@@ -124,6 +127,15 @@ export function DentalHistoryTab({ patientId, initialData }: DentalHistoryTabPro
             <textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full text-sm border border-[#e8f0f9] rounded-lg px-3 py-2 focus:outline-none focus:border-clinic-blue" rows={2} />
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="p-4 text-center" dir="rtl">
+        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+        <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );
   }

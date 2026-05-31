@@ -37,6 +37,8 @@ interface AppointmentsTabProps {
 export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps) {
   const [appointments, setAppointments] = useState<AppointmentDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   // Date range filter
   const today = new Date();
@@ -50,11 +52,12 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
 
   useEffect(() => {
     setLoading(true);
+    setFetchError(false);
     api.get<AppointmentDto[]>(`/api/appointments/patient/${patientId}`)
       .then((r) => setAppointments(r.data))
-      .catch(() => {})
+      .catch(() => { setFetchError(true); })
       .finally(() => setLoading(false));
-  }, [patientId]);
+  }, [patientId, retryKey]);
 
   const filtered = appointments.filter((a) => {
     if (fromDate && a.date < fromDate) return false;
@@ -99,6 +102,11 @@ export function AppointmentsTab({ patientId, patientName }: AppointmentsTabProps
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-14 bg-[#f1f5f9] rounded-lg" />
           ))}
+        </div>
+      ) : fetchError ? (
+        <div className="p-4 text-center">
+          <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+          <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
         </div>
       ) : filtered.length === 0 ? (
         <EmptyState

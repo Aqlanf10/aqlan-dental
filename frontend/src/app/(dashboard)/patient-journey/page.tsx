@@ -142,7 +142,6 @@ export default function PatientJourneyPage() {
   // ─── Cancel Appointment/NoShow Dialog ──────────────────────────────────────
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelDialogType, setCancelDialogType] = useState<"Cancelled" | "NoShow" | "CancelQueue" | "ChangeRoom">("Cancelled");
-  const [pendingChangeRoomId, setPendingChangeRoomId] = useState("");
   const [pendingChangeRoomName, setPendingChangeRoomName] = useState("");
 
   // ─── Record Payment Modal ──────────────────────────────────────────────────
@@ -162,8 +161,8 @@ export default function PatientJourneyPage() {
   const [prescDiagnosis, setPrescDiagnosis] = useState("");
   const [prescNotes, setPrescNotes] = useState("");
   const [prescItems, setPrescItems] = useState<Array<{
-    medicationName: string; dosage: string; frequency: string; duration: string; notes: string;
-  }>>([{ medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+    name: string; dose: string; frequency: string; duration: string; notes: string;
+  }>>([{ name: "", dose: "", frequency: "", duration: "", notes: "" }]);
 
   // ─── Edit Visit Modal ──────────────────────────────────────────────────────
   const [editVisitModalOpen, setEditVisitModalOpen] = useState(false);
@@ -266,7 +265,6 @@ export default function PatientJourneyPage() {
     setCheckoutNotes("");
     // Reset new modal states
     setCancelDialogOpen(false);
-    setPendingChangeRoomId("");
     setPendingChangeRoomName("");
     setPdfDownloading(false);
     setRecordPaymentOpen(false);
@@ -280,7 +278,7 @@ export default function PatientJourneyPage() {
     setPrescriptionModalOpen(false);
     setPrescDiagnosis("");
     setPrescNotes("");
-    setPrescItems([{ medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+    setPrescItems([{ name: "", dose: "", frequency: "", duration: "", notes: "" }]);
     setEditVisitModalOpen(false);
     setEditVisitForm({ chiefComplaint: "", clinicalNotes: "", treatmentDone: "", diagnosis: "", instructions: "", nextVisitPlan: "", cost: 0 });
     setBookAppointmentModalOpen(false);
@@ -482,20 +480,19 @@ export default function PatientJourneyPage() {
         if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
         undoTimerRef.current = setTimeout(() => setUndoInfo(null), 5000);
       } else if (cancelDialogType === "ChangeRoom") {
-        if (!queueItemId || !pendingChangeRoomId) return;
-        await changeRoomMutation.mutateAsync({ queueItemId, roomId: pendingChangeRoomId });
+        if (!queueItemId || !pendingChangeRoomName) return;
+        await changeRoomMutation.mutateAsync({ queueItemId, roomName: pendingChangeRoomName });
         toast.success("تم تغيير الغرفة");
         setChangeRoomSelectedRoom("");
       }
       setCancelDialogOpen(false);
-      setPendingChangeRoomId("");
       loadJourney();
       refetchSummary();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       toast.error(msg);
     }
-  }, [cancelDialogType, summary?.todayAppointment?.id, summary?.todayAppointment?.status, queueItemId, pendingChangeRoomId, updateAptStatusMutation, cancelQueueMutation, changeRoomMutation, loadJourney, refetchSummary]);
+  }, [cancelDialogType, summary?.todayAppointment?.id, summary?.todayAppointment?.status, queueItemId, pendingChangeRoomName, updateAptStatusMutation, cancelQueueMutation, changeRoomMutation, loadJourney, refetchSummary]);
 
   // ─── Undo Action ──────────────────────────────────────────────────────────
   const handleUndo = useCallback(async () => {
@@ -534,7 +531,6 @@ export default function PatientJourneyPage() {
   // ─── Request Change Room (shows confirmation) ───────────────────────────────
   const handleRequestChangeRoom = useCallback((roomId: string) => {
     const targetRoom = rooms.find((r) => r.id === roomId);
-    setPendingChangeRoomId(roomId);
     setChangeRoomSelectedRoom(roomId);
     setCancelDialogType("ChangeRoom");
     setCancelDialogOpen(true);
@@ -609,15 +605,18 @@ export default function PatientJourneyPage() {
   // ─── Send SMS ──────────────────────────────────────────────────────────────
   const handleSendSms = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!smsTo || !smsMessage) {
-      toast.error("يرجى إدخال رقم الهاتف والرسالة");
+    if (!smsMessage) {
+      toast.error("يرجى إدخال الرسالة");
       return;
     }
     try {
+      if (!selectedPatientId) {
+        toast.error("يرجى اختيار مريض أولاً");
+        return;
+      }
       await sendSmsMutation.mutateAsync({
-        to: smsTo,
+        patientId: selectedPatientId,
         message: smsMessage,
-        patientId: selectedPatientId || undefined,
       });
       toast.success("تم إرسال الرسالة");
       setSmsModalOpen(false);
@@ -626,7 +625,7 @@ export default function PatientJourneyPage() {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       toast.error(msg);
     }
-  }, [smsTo, smsMessage, selectedPatientId, sendSmsMutation]);
+  }, [smsMessage, selectedPatientId, sendSmsMutation]);
 
   // ─── Send Appointment Reminder ─────────────────────────────────────────────
   const handleSendReminder = useCallback(async () => {
@@ -670,7 +669,7 @@ export default function PatientJourneyPage() {
   const handleCreatePrescription = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPatientId) return;
-    const validItems = prescItems.filter((item) => item.medicationName.trim());
+    const validItems = prescItems.filter((item) => item.name.trim());
     if (validItems.length === 0) {
       toast.error("يرجى إضافة دواء واحد على الأقل");
       return;
@@ -681,9 +680,9 @@ export default function PatientJourneyPage() {
         doctorId: selectedItem?.doctorId || undefined,
         diagnosis: prescDiagnosis || undefined,
         notes: prescNotes || undefined,
-        items: validItems.map((item) => ({
-          medicationName: item.medicationName,
-          dosage: item.dosage || undefined,
+        drugs: validItems.map((item) => ({
+          name: item.name,
+          dose: item.dose || undefined,
           frequency: item.frequency || undefined,
           duration: item.duration || undefined,
           notes: item.notes || undefined,
@@ -693,7 +692,7 @@ export default function PatientJourneyPage() {
       setPrescriptionModalOpen(false);
       setPrescDiagnosis("");
       setPrescNotes("");
-      setPrescItems([{ medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }]);
+      setPrescItems([{ name: "", dose: "", frequency: "", duration: "", notes: "" }]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? "حدث خطأ";
       toast.error(msg);

@@ -161,6 +161,7 @@ public class FinanceV3SuppliersController(
     // ─── 4. POST /api/finance-v3/suppliers/{id}/bills — تسجيل فاتورة مطالبة ──
     /// <summary>Registers a new supplier bill (increases what the clinic owes).</summary>
     [HttpPost("{supplierId:guid}/bills")]
+    [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreateSupplierBill(Guid supplierId, [FromBody] CreateSupplierBillRequestDto req)
     {
         var supplier = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId && s.IsActive);
@@ -256,6 +257,7 @@ public class FinanceV3SuppliersController(
     /// journal (Debit AccountsPayable / Credit Treasury). Commits atomically.
     /// </summary>
     [HttpPost("bills/{billId:guid}/pay")]
+    [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> PayBill(Guid billId, [FromBody] PaySupplierBillRequest request)
     {
         var userId = currentUser.UserId ?? Guid.Empty;
@@ -310,6 +312,7 @@ public class FinanceV3SuppliersController(
     /// The credit note starts in Draft status and can be approved by an accountant.
     /// </summary>
     [HttpPost("/api/finance-v3/credit-notes")]
+    [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> CreateCreditNote([FromBody] CreateCreditNoteRequest request)
     {
         if (request.Amount <= 0)
@@ -320,7 +323,9 @@ public class FinanceV3SuppliersController(
             return NotFound(new { message = "الفاتورة غير موجودة" });
 
         var userId = currentUser.UserId ?? Guid.Empty;
-        var branchId = currentUser.BranchId ?? Guid.Empty;
+        var branchId = currentUser.BranchId;
+        if (branchId == null || branchId == Guid.Empty)
+            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل إنشاء إشعار دائن." });
 
         var creditNote = new CreditNote
         {
@@ -329,7 +334,7 @@ public class FinanceV3SuppliersController(
             Amount = request.Amount,
             Reason = request.Reason,
             Status = CreditNoteStatus.Approved, // Auto-approve — user already has FinanceAccess
-            BranchId = branchId,
+            BranchId = branchId.Value,
             CreatedBy = userId,
             Notes = request.Notes
         };
@@ -360,6 +365,7 @@ public class FinanceV3SuppliersController(
     /// (Debit SalesReturns / Credit Treasury). Commits atomically.
     /// </summary>
     [HttpPost("/api/finance-v3/credit-notes/{creditNoteId:guid}/refund")]
+    [Authorize(Policy = "FinanceWrite")]
     public async Task<IActionResult> ProcessRefund(Guid creditNoteId, [FromBody] ProcessRefundRequest request)
     {
         var userId = currentUser.UserId ?? Guid.Empty;

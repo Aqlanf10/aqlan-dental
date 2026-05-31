@@ -54,7 +54,7 @@ export function OverviewTab() {
       const now = new Date();
       const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
       const to = now.toISOString().slice(0, 10);
-      const { data } = await api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: { from, to } });
+      const { data } = await api.get<ProfitLossData>("/api/finance-v3/profit-loss", { params: { fromDate: from, toDate: to } });
       setPlData(data);
     } catch {
       // P&L is supplementary — don't block the page

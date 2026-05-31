@@ -160,14 +160,12 @@ export interface ContractListItem {
   outstandingAmount: number;
   status: string;
   startDate: string;
-  endDate: string | null;
   isOverdue: boolean;
 }
 
 /* ── Cashier Sessions ───────────────────────────────────────────────────────────── */
 export interface CashierSession {
   id: string;
-  cashierUserId?: string;
   cashierId?: string;
   cashierName: string;
   branchId: string;
@@ -190,6 +188,7 @@ export interface CloseSessionRequest {
   actualClosingCash: number;
   actualClosingCard: number;
   actualClosingBank: number;
+  notes?: string;
 }
 
 /* ── Treasuries ─────────────────────────────────────────────────────────────────── */
@@ -197,7 +196,6 @@ export interface Treasury {
   id: string;
   name: string;
   type: string;
-  typeArabic?: string;
   balance: number;
   branchId: string;
 }
@@ -218,10 +216,10 @@ export interface VaultTransfer {
   amount: number;
   depositSource: string | null;
   status: string;
-  requestedBy: string;
-  requestedAt: string;
+  performedBy: string;
+  transferDate: string;
   approvedBy: string | null;
-  approvedAt: string | null;
+  approvalDate: string | null;
   rejectedBy: string | null;
   rejectedAt: string | null;
   rejectionReason: string | null;
@@ -283,7 +281,8 @@ export interface SupplierListItem {
 export interface SupplierDto {
   id: string;
   name: string;
-  type: SupplierType;
+  type: number;  // Backend serializes SupplierType enum as integer (0=DentalLab, 1=MedicalVendor, 2=GeneralService)
+  typeLabel?: string;  // Arabic label if provided
   contactPerson: string | null;
   phone: string | null;
   totalBilled: number;
@@ -363,6 +362,17 @@ export const SUPPLIER_TYPE_OPTIONS = [
   { value: 'GeneralService', label: 'خدمات عامة' },
 ] as const;
 
+export const SUPPLIER_TYPE_MAP: Record<number, SupplierType> = {
+  0: 'DentalLab',
+  1: 'MedicalVendor',
+  2: 'GeneralService',
+};
+
+export function getSupplierTypeLabel(typeNum: number): string {
+  const key = SUPPLIER_TYPE_MAP[typeNum] ?? 'MedicalVendor';
+  return SUPPLIER_TYPE_LABELS[key];
+}
+
 /* ── Profit & Loss ──────────────────────────────────────────────────────────────── */
 export interface ProfitLossData {
   period: { from: string; to: string };
@@ -383,6 +393,8 @@ export interface ProfitLossData {
   reversalCoverage: Record<string, string>;
   revenueTransactionCount?: number;
   expenseTransactionCount?: number;
+  isConsolidated?: boolean;
+  netCashCollectionsFormula?: string;
 }
 
 /* ── Daily Cash Summary ─────────────────────────────────────────────────────────── */
@@ -404,6 +416,7 @@ export interface DailyCashSummary {
   transactionCount: number;
   reversalCount: number;
   journalEntryCount: number;
+  isConsolidated?: boolean;
 }
 
 /* ── Account Balances ───────────────────────────────────────────────────────────── */
@@ -423,20 +436,21 @@ export interface AccountBalancesData {
   totalExpenses: number;
   totalReceivables: number;
   totalPayables: number;
+  isConsolidated?: boolean;
 }
 
 /* ── Expense categories ─────────────────────────────────────────────────────────── */
 export const EXPENSE_CATEGORIES = [
   { value: "Rent", label: "إيجار" },
   { value: "Utilities", label: "مرافق" },
-  { value: "Supplies", label: "مستلزمات" },
-  { value: "Maintenance", label: "صيانة" },
+  { value: "LabFees", label: "رسوم مختبر" },
   { value: "Marketing", label: "تسويق" },
-  { value: "Transportation", label: "نقل" },
-  { value: "Insurance", label: "تأمين" },
-  { value: "Food", label: "ضيافة" },
-  { value: "ProfessionalServices", label: "خدمات مهنية" },
-  { value: "Other", label: "أخرى" },
+  { value: "ClinicSupplies", label: "مستلزمات العيادة" },
+  { value: "Maintenance", label: "صيانة" },
+  { value: "Salaries", label: "رواتب" },
+  { value: "Commissions", label: "عمولات" },
+  { value: "Taxes", label: "ضرائب" },
+  { value: "Miscellaneous", label: "أخرى" },
 ] as const;
 
 /* ── Credit Notes & Refunds ─────────────────────────────────────────────────────── */
@@ -462,6 +476,7 @@ export interface CreateCreditNoteRequest {
 export interface ProcessRefundRequest {
   treasuryId: string;
   notes: string;
+  paymentMethod?: string;  // defaults to "cash" on backend
 }
 
 /* ── Deposit sources for external transfers ─────────────────────────────────────── */

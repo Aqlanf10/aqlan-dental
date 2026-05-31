@@ -260,8 +260,8 @@ export function SendSmsModal({
 // ─── Quick Prescription Modal ───────────────────────────────────────────────
 
 interface PrescriptionItem {
-  medicationName: string;
-  dosage: string;
+  name: string;
+  dose: string;
   frequency: string;
   duration: string;
   notes: string;
@@ -323,7 +323,7 @@ export function PrescriptionModal({
               <span className="text-xs font-bold text-[#1a3a5c]">الأدوية</span>
               <button
                 type="button"
-                onClick={() => setPrescItems([...prescItems, { medicationName: "", dosage: "", frequency: "", duration: "", notes: "" }])}
+                onClick={() => setPrescItems([...prescItems, { name: "", dose: "", frequency: "", duration: "", notes: "" }])}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] rounded-lg bg-[#3d7ab5]/10 text-[#3d7ab5] hover:bg-[#3d7ab5]/20 transition"
               >
                 <Plus className="w-3 h-3" />
@@ -348,10 +348,10 @@ export function PrescriptionModal({
                   <div>
                     <label className="block text-[9px] font-medium text-gray-500">اسم الدواء *</label>
                     <input
-                      value={item.medicationName}
+                      value={item.name}
                       onChange={(e) => {
                         const updated = [...prescItems];
-                        updated[idx] = { ...updated[idx], medicationName: e.target.value };
+                        updated[idx] = { ...updated[idx], name: e.target.value };
                         setPrescItems(updated);
                       }}
                       className={inputCls}
@@ -361,10 +361,10 @@ export function PrescriptionModal({
                   <div>
                     <label className="block text-[9px] font-medium text-gray-500">الجرعة</label>
                     <input
-                      value={item.dosage}
+                      value={item.dose}
                       onChange={(e) => {
                         const updated = [...prescItems];
-                        updated[idx] = { ...updated[idx], dosage: e.target.value };
+                        updated[idx] = { ...updated[idx], dose: e.target.value };
                         setPrescItems(updated);
                       }}
                       className={inputCls}

@@ -28,13 +28,13 @@ export function ExpensesTab() {
 
   // Create form
   const [eTitle, setETitle] = useState("");
-  const [eCategory, setECategory] = useState("Other");
+  const [eCategory, setECategory] = useState("Miscellaneous");
   const [eAmount, setEAmount] = useState("");
   const [eMethod, setEMethod] = useState("cash");
   const [eDate, setEDate] = useState(new Date().toISOString().slice(0, 10));
 
   const fetchData = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/expenses"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
+    try { setLoading(true); const { data: responseData } = await api.get<{ data: ExpenseListItem[]; total: number }>("/api/finance-v3/expenses"); setData(responseData?.data ?? []); } catch { toast.error("فشل في تحميل المصروفات"); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -56,7 +56,7 @@ export function ExpensesTab() {
       await api.post("/api/finance-v3/expenses", payload);
       toast.success("تم إنشاء المصروف بنجاح");
       setShowCreate(false);
-      setETitle(""); setECategory("Other"); setEAmount(""); setEMethod("cash"); setEDate(new Date().toISOString().slice(0, 10));
+      setETitle(""); setECategory("Miscellaneous"); setEAmount(""); setEMethod("cash"); setEDate(new Date().toISOString().slice(0, 10));
       fetchData();
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في إنشاء المصروف")); } finally { setSubmitting(false); }
   };

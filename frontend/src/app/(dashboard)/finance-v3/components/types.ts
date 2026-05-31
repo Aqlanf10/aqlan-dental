@@ -375,6 +375,31 @@ export const EXPENSE_CATEGORIES = [
   { value: "Other", label: "أخرى" },
 ] as const;
 
+/* ── Credit Notes & Refunds ─────────────────────────────────────────────────────── */
+export type CreditNoteStatus = 'Draft' | 'Approved' | 'Refunded';
+
+export interface CreditNoteDto {
+  id: string;
+  invoiceId: string;
+  patientId: string;
+  amount: number;
+  reason: string;
+  status: CreditNoteStatus;
+  createdAt: string;
+  refundPaymentId?: string;
+}
+
+export interface CreateCreditNoteRequest {
+  invoiceId: string;
+  amount: number;
+  reason: string;
+}
+
+export interface ProcessRefundRequest {
+  treasuryId: string;
+  notes: string;
+}
+
 /* ── Deposit sources for external transfers ─────────────────────────────────────── */
 export const DEPOSIT_SOURCES = [
   { value: "OwnerCapital", label: "رأس مال المالك" },

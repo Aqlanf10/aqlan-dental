@@ -1575,54 +1575,8 @@ public class FinanceV3Controller(
         return Ok(new { data = contracts, total, page, pageSize });
     }
 
-    // ─── Suppliers List ─────────────────────────────────────────────────────
-
-    /// <summary>
-    /// GET /api/finance-v3/suppliers — List suppliers with balance info for Finance V3.
-    /// </summary>
-    [HttpGet("suppliers")]
-    public async Task<IActionResult> GetSuppliers(
-        [FromQuery] string? search = null,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 30)
-    {
-        // Branch isolation guard
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
-
-        if (page < 1) page = 1;
-        if (pageSize < 1 || pageSize > 100) pageSize = 30;
-
-        var query = db.Suppliers.Where(s => s.IsActive);
-
-        if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(s => s.Name.Contains(search) ||
-                                     (s.ContactPerson != null && s.ContactPerson.Contains(search)) ||
-                                     (s.Phone != null && s.Phone.Contains(search)));
-
-        var total = await query.CountAsync();
-
-        var suppliers = await query
-            .OrderBy(s => s.Name)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(s => new
-            {
-                s.Id,
-                s.Name,
-                s.ContactPerson,
-                s.Phone,
-                TotalBilled = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0,
-                TotalPaid = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.PaidAmount) ?? 0,
-                Balance = (db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0)
-                         - (db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.PaidAmount) ?? 0)
-            })
-            .ToListAsync();
-
-        return Ok(new { data = suppliers, total, page, pageSize });
-    }
-
     // ─── Supplier Bills List ────────────────────────────────────────────────
+    // NOTE: GET /api/finance-v3/suppliers has been moved to FinanceV3SuppliersController
 
     /// <summary>
     /// GET /api/finance-v3/supplier-bills — List supplier bills with branch isolation for Finance V3.

@@ -122,6 +122,8 @@ export function StatusBadge({ status }: { status: string }) {
     Open:            { bg: tokens.successBg,   text: tokens.successBorder, label: "مفتوحة" },
     Closed:          { bg: tokens.cardHover,   text: tokens.textTertiary, label: "مقفولة" },
     Overdue:         { bg: tokens.dangerBg,    text: tokens.dangerText, label: "متأخرة" },
+    Refunded:        { bg: tokens.warningBg,   text: tokens.warningText, label: "مُسترد" },
+    Unpaid:          { bg: tokens.dangerBg,    text: tokens.dangerText, label: "غير مدفوعة" },
   };
   const cfg = map[status] ?? { bg: tokens.cardHover, text: tokens.textSecondary, label: status };
   return (

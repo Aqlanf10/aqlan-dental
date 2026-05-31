@@ -21,6 +21,9 @@ public class ProcessRefundRequest
     /// <summary>Payment method for the refund: cash, card, bank_transfer.</summary>
     public string PaymentMethod { get; set; } = "cash";
 
+    /// <summary>Optional treasury ID to refund from. If null, auto-resolved by payment method.</summary>
+    public Guid? TreasuryId { get; set; }
+
     /// <summary>Optional notes for the refund transaction.</summary>
     public string? Notes { get; set; }
 }
@@ -42,4 +45,23 @@ public class PaySupplierBillRequest
 
     /// <summary>Optional notes.</summary>
     public string? Notes { get; set; }
+}
+
+/// <summary>
+/// Request to register a new supplier bill (accounts payable entry).
+/// Increases what the clinic owes the supplier by TotalAmount.
+/// </summary>
+public class SupplierBillCreateRequest
+{
+    /// <summary>Supplier bill reference number (e.g., "INV-2026-045").</summary>
+    public string BillNumber { get; set; } = string.Empty;
+
+    /// <summary>Total invoice amount in YER as stated by the supplier.</summary>
+    public decimal TotalAmount { get; set; }
+
+    /// <summary>Due date for full payment (for credit terms).</summary>
+    public DateTime DueDate { get; set; }
+
+    /// <summary>Optional link to an external lab order this bill pays for.</summary>
+    public Guid? LabOrderId { get; set; }
 }

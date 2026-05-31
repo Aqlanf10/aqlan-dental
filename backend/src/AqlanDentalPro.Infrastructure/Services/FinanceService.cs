@@ -1154,8 +1154,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             // Deduct from treasury (outflow for refund)
             await UpdateTreasuryBalanceNoSaveAsync(currentUser.BranchId.Value, -creditNote.Amount, request.PaymentMethod);
 
-            // Resolve treasury for journal entry
-            var treasury = await ResolveTreasuryNoSaveAsync(currentUser.BranchId.Value, request.PaymentMethod);
+            // Resolve treasury for journal entry — use explicit TreasuryId if provided, otherwise auto-resolve
+            Treasury treasury;
+            if (request.TreasuryId.HasValue && request.TreasuryId.Value != Guid.Empty)
+            {
+                treasury = await db.Treasuries.FirstOrDefaultAsync(t => t.Id == request.TreasuryId.Value && t.IsActive)
+                    ?? throw new ArgumentException("الخزينة المحددة غير موجودة.");
+            }
+            else
+            {
+                treasury = await ResolveTreasuryNoSaveAsync(currentUser.BranchId.Value, request.PaymentMethod);
+            }
             cashflow.TreasuryId = treasury.Id;
 
             // Double-entry journal: Debit SalesReturns / Credit Treasury

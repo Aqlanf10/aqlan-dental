@@ -129,15 +129,15 @@ public class PatientRepository(AppDbContext context)
         var yearPrefix = $"{prefix}-{year}-";
 
         // Use MAX of the numeric suffix so gaps (soft-deleted rows) don't cause reuse
-        var maxSuffix = await DbSet
+        var suffixes = await DbSet
             .IgnoreQueryFilters()
             .Where(p => p.PatientNumber.StartsWith(yearPrefix))
             .Select(p => p.PatientNumber.Substring(yearPrefix.Length))
-            .ToListAsync()
-            .ContinueWith(t => t.Result
-                .Select(s => int.TryParse(s, out var n) ? n : 0)
-                .DefaultIfEmpty(0)
-                .Max());
+            .ToListAsync();
+        var maxSuffix = suffixes
+            .Select(s => int.TryParse(s, out var n) ? n : 0)
+            .DefaultIfEmpty(0)
+            .Max();
 
         return $"{yearPrefix}{(maxSuffix + 1):D3}";
     }

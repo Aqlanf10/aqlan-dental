@@ -93,4 +93,5 @@ export interface ServiceCommissionDefaults {
   defaultLabCost: number;
   defaultDoctorCommissionPercentage: number | null;
   commissionBaseRule: CommissionBaseRule;
+  commissionRecognitionMode: "OnInvoiceApproval" | "OnPaymentCollection";
 }

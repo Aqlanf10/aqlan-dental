@@ -51,8 +51,9 @@ public static class DbSeeder
             if (!await context.Settings.AnyAsync())
                 await SeedSettingsAsync(context);
 
-            if (!await context.ClinicServices.AnyAsync())
-                await SeedClinicServicesAsync(context);
+            // Always run ClinicServices upsert — syncs commission defaults for existing records,
+            // inserts new services if table is empty. Safe to run every startup.
+            await SeedClinicServicesAsync(context);
 
             if (!await context.ClinicRooms.AnyAsync())
                 await SeedClinicRoomsAsync(context);
@@ -540,27 +541,87 @@ public static class DbSeeder
 
     private static async Task SeedClinicServicesAsync(AppDbContext context)
     {
-        var services = new[]
+        // Canonical service definitions — used for both insert (new DB) and upsert (existing DB).
+        // Commission fields are always synced; DefaultPrice is synced only for new records.
+        var canonical = new[]
         {
-            new ClinicService { ArabicName = "معاينة", EnglishName = "Consultation", Code = "CONS", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 5000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 1 },
-            new ClinicService { ArabicName = "متابعة", EnglishName = "Follow-up", Code = "FOLL", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 15, DefaultPrice = 3000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 50, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 2 },
-            new ClinicService { ArabicName = "طوارئ", EnglishName = "Emergency", Code = "EMER", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 7000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 3 },
-            new ClinicService { ArabicName = "حشوة", EnglishName = "Filling", Code = "FILL", Category = ServiceCategory.Restorative, DefaultDurationMinutes = 45, DefaultPrice = 15000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 40, SortOrder = 4 },
-            new ClinicService { ArabicName = "علاج عصب", EnglishName = "Root Canal", Code = "RC", Category = ServiceCategory.Endodontics, DefaultDurationMinutes = 60, DefaultPrice = 40000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 35, SortOrder = 5 },
-            new ClinicService { ArabicName = "تنظيف جير", EnglishName = "Scaling", Code = "SCAL", Category = ServiceCategory.Preventive, DefaultDurationMinutes = 30, DefaultPrice = 10000, RequiresDoctor = false, DefaultDoctorCommissionPercentage = 30, SortOrder = 6 },
-            new ClinicService { ArabicName = "خلع بسيط", EnglishName = "Simple Extraction", Code = "EXT-S", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 30, DefaultPrice = 10000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 40, SortOrder = 7 },
-            new ClinicService { ArabicName = "خلع جراحي", EnglishName = "Surgical Extraction", Code = "EXT-G", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 60, DefaultPrice = 30000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 35, SortOrder = 8 },
-            new ClinicService { ArabicName = "كشف تقويم", EnglishName = "Ortho Consultation", Code = "ORTH-C", Category = ServiceCategory.Orthodontics, DefaultDurationMinutes = 30, DefaultPrice = 5000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 9 },
-            new ClinicService { ArabicName = "شد تقويم", EnglishName = "Ortho Adjustment", Code = "ORTH-A", Category = ServiceCategory.Orthodontics, DefaultDurationMinutes = 20, DefaultPrice = 5000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 50, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 10 },
-            new ClinicService { ArabicName = "زراعة", EnglishName = "Implant", Code = "IMPL", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 90, DefaultPrice = 200000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 25, DefaultLabCost = 40000, SortOrder = 11 },
-            new ClinicService { ArabicName = "تركيبات زيركون", EnglishName = "Zirconia Crown", Code = "CROWN-Z", Category = ServiceCategory.Prosthodontics, DefaultDurationMinutes = 45, DefaultPrice = 60000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 30, DefaultLabCost = 15000, SortOrder = 12 },
-            new ClinicService { ArabicName = "تركيبات إيماكس", EnglishName = "E-Max Veneer/Crown", Code = "EMAX", Category = ServiceCategory.Prosthodontics, DefaultDurationMinutes = 45, DefaultPrice = 50000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 30, DefaultLabCost = 12000, SortOrder = 13 },
-            new ClinicService { ArabicName = "فينير", EnglishName = "Veneer", Code = "VENEER", Category = ServiceCategory.Cosmetic, DefaultDurationMinutes = 45, DefaultPrice = 50000, RequiresDoctor = true, ShowInBooking = false, DefaultDoctorCommissionPercentage = 30, DefaultLabCost = 12000, SortOrder = 14 },
-            new ClinicService { ArabicName = "تبييض", EnglishName = "Whitening", Code = "WHITE", Category = ServiceCategory.Cosmetic, DefaultDurationMinutes = 60, DefaultPrice = 30000, RequiresDoctor = false, DefaultDoctorCommissionPercentage = 25, DefaultMaterialCost = 5000, SortOrder = 15 },
-            new ClinicService { ArabicName = "أشعة", EnglishName = "X-Ray", Code = "XRAY", Category = ServiceCategory.Radiology, DefaultDurationMinutes = 15, DefaultPrice = 5000, RequiresDoctor = false, ShowInBooking = false, ShowInTreatmentPlan = false, DefaultDoctorCommissionPercentage = 0, SortOrder = 16 },
-            new ClinicService { ArabicName = "أخرى", EnglishName = "Other", Code = "OTHER", Category = ServiceCategory.Other, DefaultDurationMinutes = 30, DefaultPrice = 0, RequiresDoctor = true, ShowInBooking = false, DefaultDoctorCommissionPercentage = 40, SortOrder = 99 },
+            new ClinicService { ArabicName = "معاينة", EnglishName = "Consultation", Code = "CONS", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 5000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 1 },
+            new ClinicService { ArabicName = "متابعة", EnglishName = "Follow-up", Code = "FOLL", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 15, DefaultPrice = 3000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 2 },
+            new ClinicService { ArabicName = "طوارئ", EnglishName = "Emergency", Code = "EMER", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 7000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 3 },
+            new ClinicService { ArabicName = "حشوة", EnglishName = "Filling", Code = "FILL", Category = ServiceCategory.Restorative, DefaultDurationMinutes = 45, DefaultPrice = 15000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 40, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 4 },
+            new ClinicService { ArabicName = "علاج عصب", EnglishName = "Root Canal", Code = "RC", Category = ServiceCategory.Endodontics, DefaultDurationMinutes = 60, DefaultPrice = 40000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 35, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 5 },
+            new ClinicService { ArabicName = "تنظيف جير", EnglishName = "Scaling", Code = "SCAL", Category = ServiceCategory.Preventive, DefaultDurationMinutes = 30, DefaultPrice = 10000, RequiresDoctor = false, DefaultDoctorCommissionPercentage = 30, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 6 },
+            new ClinicService { ArabicName = "خلع بسيط", EnglishName = "Simple Extraction", Code = "EXT-S", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 30, DefaultPrice = 10000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 40, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 7 },
+            new ClinicService { ArabicName = "خلع جراحي", EnglishName = "Surgical Extraction", Code = "EXT-G", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 60, DefaultPrice = 30000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 35, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 8 },
+            new ClinicService { ArabicName = "كشف تقويم", EnglishName = "Ortho Consultation", Code = "ORTH-C", Category = ServiceCategory.Orthodontics, DefaultDurationMinutes = 30, DefaultPrice = 5000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 9 },
+            new ClinicService { ArabicName = "شد تقويم", EnglishName = "Ortho Adjustment", Code = "ORTH-A", Category = ServiceCategory.Orthodontics, DefaultDurationMinutes = 20, DefaultPrice = 5000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 10 },
+            new ClinicService { ArabicName = "زراعة", EnglishName = "Implant", Code = "IMPL", Category = ServiceCategory.Surgery, DefaultDurationMinutes = 90, DefaultPrice = 200000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 25, DefaultLabCost = 40000, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 11 },
+            new ClinicService { ArabicName = "تركيبات زيركون", EnglishName = "Zirconia Crown", Code = "CROWN-Z", Category = ServiceCategory.Prosthodontics, DefaultDurationMinutes = 45, DefaultPrice = 60000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 30, DefaultLabCost = 15000, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 12 },
+            new ClinicService { ArabicName = "تركيبات إيماكس", EnglishName = "E-Max Veneer/Crown", Code = "EMAX", Category = ServiceCategory.Prosthodontics, DefaultDurationMinutes = 45, DefaultPrice = 50000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 30, DefaultLabCost = 12000, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 13 },
+            new ClinicService { ArabicName = "فينير", EnglishName = "Veneer", Code = "VENEER", Category = ServiceCategory.Cosmetic, DefaultDurationMinutes = 45, DefaultPrice = 50000, RequiresDoctor = true, ShowInBooking = false, DefaultDoctorCommissionPercentage = 30, DefaultLabCost = 12000, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 14 },
+            new ClinicService { ArabicName = "تبييض", EnglishName = "Whitening", Code = "WHITE", Category = ServiceCategory.Cosmetic, DefaultDurationMinutes = 60, DefaultPrice = 30000, RequiresDoctor = false, DefaultDoctorCommissionPercentage = 25, DefaultMaterialCost = 5000, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 15 },
+            new ClinicService { ArabicName = "أشعة", EnglishName = "X-Ray", Code = "XRAY", Category = ServiceCategory.Radiology, DefaultDurationMinutes = 15, DefaultPrice = 5000, RequiresDoctor = false, ShowInBooking = false, ShowInTreatmentPlan = false, DefaultDoctorCommissionPercentage = 0, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 16 },
+            new ClinicService { ArabicName = "أخرى", EnglishName = "Other", Code = "OTHER", Category = ServiceCategory.Other, DefaultDurationMinutes = 30, DefaultPrice = 0, RequiresDoctor = true, ShowInBooking = false, DefaultDoctorCommissionPercentage = 40, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval, SortOrder = 99 },
         };
-        await context.ClinicServices.AddRangeAsync(services);
+
+        // Upsert-by-Code: update existing services with canonical commission values,
+        // insert new services if they don't exist yet.
+        var existingServices = await context.ClinicServices
+            .IgnoreQueryFilters()
+            .ToDictionaryAsync(s => s.Code);
+
+        foreach (var c in canonical)
+        {
+            if (existingServices.TryGetValue(c.Code, out var existing))
+            {
+                // Sync commission defaults — these are system-managed, not user-customized
+                existing.DefaultDoctorCommissionPercentage = c.DefaultDoctorCommissionPercentage;
+                existing.DefaultMaterialCost             = c.DefaultMaterialCost;
+                existing.DefaultMaterialCostType          = c.DefaultMaterialCostType;
+                existing.DefaultLabCost                   = c.DefaultLabCost;
+                existing.CommissionBaseRule               = c.CommissionBaseRule;
+                existing.CommissionRecognitionMode         = c.CommissionRecognitionMode;
+                // Sync descriptive fields
+                existing.ArabicName            = c.ArabicName;
+                existing.EnglishName           = c.EnglishName;
+                existing.Category              = c.Category;
+                existing.DefaultDurationMinutes = c.DefaultDurationMinutes;
+                existing.RequiresDoctor        = c.RequiresDoctor;
+                existing.RequiresConsultationFee = c.RequiresConsultationFee;
+                existing.ShowInBooking         = c.ShowInBooking;
+                existing.ShowInReception       = c.ShowInReception;
+                existing.ShowInTreatmentPlan   = c.ShowInTreatmentPlan;
+                existing.SortOrder             = c.SortOrder;
+                // Note: DefaultPrice is NOT overwritten for existing services
+                // — admin may have customized pricing through the UI.
+            }
+            else
+            {
+                // New service — insert with full data including price
+                var newService = new ClinicService
+                {
+                    ArabicName                    = c.ArabicName,
+                    EnglishName                   = c.EnglishName,
+                    Code                          = c.Code,
+                    Category                      = c.Category,
+                    DefaultDurationMinutes        = c.DefaultDurationMinutes,
+                    DefaultPrice                  = c.DefaultPrice,
+                    RequiresDoctor                = c.RequiresDoctor,
+                    RequiresConsultationFee       = c.RequiresConsultationFee,
+                    ShowInBooking                 = c.ShowInBooking,
+                    ShowInReception               = c.ShowInReception,
+                    ShowInTreatmentPlan           = c.ShowInTreatmentPlan,
+                    SortOrder                     = c.SortOrder,
+                    DefaultMaterialCost           = c.DefaultMaterialCost,
+                    DefaultMaterialCostType       = c.DefaultMaterialCostType,
+                    DefaultLabCost                = c.DefaultLabCost,
+                    DefaultDoctorCommissionPercentage = c.DefaultDoctorCommissionPercentage,
+                    CommissionBaseRule            = c.CommissionBaseRule,
+                    CommissionRecognitionMode     = c.CommissionRecognitionMode,
+                };
+                await context.ClinicServices.AddAsync(newService);
+            }
+        }
     }
 
     private static async Task SeedClinicRoomsAsync(AppDbContext context)

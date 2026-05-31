@@ -146,7 +146,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
           doctorId: form.doctorId || undefined,
           notes: form.notes || undefined,
         };
-        await api.post("/api/finance-v3/payments", payload);
+        await api.post("/api/payments", payload);
         toast.success("تم إضافة الدفعة بنجاح");
       }
       setShowModal(false);

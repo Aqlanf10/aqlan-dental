@@ -69,6 +69,7 @@ import {
   UndoToast,
   KeyboardShortcutsHelp,
   BulkSmsModal,
+  DirectPaymentModal,
 } from "./_components/Modals";
 
 // ── Embedded module views ──
@@ -213,6 +214,9 @@ export default function DailyOperationsPage() {
 
   // ── Bulk SMS modal ──
   const [bulkSmsModalOpen, setBulkSmsModalOpen] = useState(false);
+
+  // ── Direct payment modal (for unbooked patients) ──
+  const [directPaymentModalOpen, setDirectPaymentModalOpen] = useState(false);
 
   // ── Sound toggle ──
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -646,6 +650,44 @@ export default function DailyOperationsPage() {
     }
   }, [bulkSmsMutation, tomorrowItems]);
 
+  // ── Direct payment for unbooked patient ──
+  const handleDirectPaymentConfirm = useCallback(async (data: {
+    patientId: string; patientName: string;
+    amount: number; paymentMethod: string;
+    serviceDescription: string; notes: string;
+  }) => {
+    try {
+      const result = await createPaymentMutation.mutateAsync({
+        patientId: data.patientId,
+        amount: data.amount,
+        paymentMethod: data.paymentMethod,
+        serviceDescription: data.serviceDescription || undefined,
+        notes: data.notes || undefined,
+      });
+      toast.success(`تم تسجيل دفعة ${fmtRial(data.amount)} للمريض ${data.patientName} بنجاح`);
+      setDirectPaymentModalOpen(false);
+
+      // Try to download PDF receipt
+      if (result?.id) {
+        try {
+          const { data: pdfData } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, {
+            responseType: "blob",
+          }));
+          const url = window.URL.createObjectURL(new Blob([pdfData], { type: "application/pdf" }));
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `receipt-${result.receiptNumber || result.id}.pdf`;
+          link.click();
+          window.URL.revokeObjectURL(url);
+        } catch {
+          // PDF download failed, user can still download manually
+        }
+      }
+    } catch {
+      toast.error("فشل تسجيل الدفعة");
+    }
+  }, [createPaymentMutation]);
+
   // ── Available status filters ──
   const statusFilters = [
     { value: "", label: "الكل" },
@@ -749,6 +791,17 @@ export default function DailyOperationsPage() {
             <UserPlus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">مريض مشي</span>
           </button>
+
+          {/* Direct Payment for unbooked patient (Green with text) */}
+          {!isDoctor && (
+            <button onClick={() => setDirectPaymentModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90"
+              style={{ background: "#22c55e" }}
+              title="دفع لمريض بدون موعد">
+              <CreditCard className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">دفع لمريض</span>
+            </button>
+          )}
 
           {/* SMS Reminders (blue outline) */}
           {!isDoctor && (
@@ -1200,6 +1253,14 @@ export default function DailyOperationsPage() {
         tomorrowItems={tomorrowItems}
         isPending={bulkSmsMutation.isPending}
         onConfirm={handleBulkSms}
+      />
+
+      {/* Direct Payment Modal (for unbooked patients) */}
+      <DirectPaymentModal
+        open={directPaymentModalOpen}
+        onClose={() => setDirectPaymentModalOpen(false)}
+        isPending={createPaymentMutation.isPending}
+        onConfirm={handleDirectPaymentConfirm}
       />
 
       {/* ── Right-click Context Menu for Journey Items ── */}

@@ -12,6 +12,7 @@ import {
   MessageCircle, Loader2, Send, Printer, Building2,
   UserPlus, Undo2, Keyboard, Clock, ChevronLeft,
   AlertCircle, Wallet, FileText, Stethoscope,
+  Search, User,
 } from "lucide-react";
 import {
   PAYMENT_METHODS, APPOINTMENT_TYPES, inputCls, fmtRial,
@@ -1181,6 +1182,261 @@ export function BulkSmsModal({
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           إرسال {selectedIds.size} تذكير
         </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Direct Payment Modal — Pay for any patient (even without appointment)
+   Allows searching for a patient by name/phone and making a direct payment.
+   ═══════════════════════════════════════════════════════════════════════════ */
+interface SearchedPatient {
+  id: string;
+  name: string;
+  phone?: string;
+  patientNumber?: string;
+}
+
+export function DirectPaymentModal({
+  open, onClose, isPending, onConfirm,
+}: {
+  open: boolean; onClose: () => void;
+  isPending: boolean;
+  onConfirm: (data: {
+    patientId: string; patientName: string;
+    amount: number; paymentMethod: string;
+    serviceDescription: string; notes: string;
+  }) => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchedPatient[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<SearchedPatient | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Payment form state
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("Cash");
+  const [desc, setDesc] = useState("");
+  const [notes, setNotes] = useState("");
+  const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");
+
+  // Search patients with debounce
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const { data } = await api.get(`/api/patients?search=${encodeURIComponent(searchQuery.trim())}&pageSize=10`);
+        const patients = Array.isArray(data) ? data : (data as { items?: SearchedPatient[] }).items ?? [];
+        setSearchResults(patients.map((p: SearchedPatient & { fullName?: string; arabicName?: string }) => ({
+          id: p.id,
+          name: p.name || p.fullName || p.arabicName || "—",
+          phone: p.phone,
+          patientNumber: p.patientNumber,
+        })));
+      } catch {
+        setSearchResults([]);
+      }
+      setIsSearching(false);
+    }, 350);
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
+  }, [searchQuery]);
+
+  // Reset on close
+  useEffect(() => {
+    if (!open) {
+      setSearchQuery(""); setSearchResults([]); setSelectedPatient(null);
+      setAmount(""); setMethod("Cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
+    }
+  }, [open]);
+
+  const handleSubmit = () => {
+    if (!selectedPatient) return;
+    const num = parseFloat(amount);
+    if (!num || num <= 0) return;
+    const voucherPrefix = voucherType === "consultation" ? "[سند معاينة] " : "[إجراءات شغل/خدمة مقدمة] ";
+    onConfirm({
+      patientId: selectedPatient.id,
+      patientName: selectedPatient.name,
+      amount: num,
+      paymentMethod: method,
+      serviceDescription: desc ? voucherPrefix + desc : voucherPrefix.trim(),
+      notes: notes,
+    });
+  };
+
+  return (
+    <ModalShell open={open} onClose={onClose} title="دفع لمريض (بدون موعد)" icon={CreditCard} iconColor="#22c55e" wide>
+      {/* Step 1: Search Patient */}
+      {!selectedPatient && (
+        <div className="space-y-3">
+          <div className="p-2.5 rounded-xl flex items-center gap-2" style={{ background: "#f0f5fb", border: "1px solid #3d7ab520" }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: BLUE }} />
+            <span className="text-[11px] font-medium" style={{ color: NAVY }}>
+              ابحث عن مريض لتسجيل دفعة مباشرة بدون الحاجة لموعد محجوز
+            </span>
+          </div>
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>بحث عن مريض *</label>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute top-1/2 right-3 -translate-y-1/2" style={{ color: "#94a3b8" }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="اسم المريض أو رقم الهاتف..."
+                className={inputCls() + " pr-9"}
+                autoFocus
+              />
+              {isSearching && (
+                <Loader2 className="w-4 h-4 absolute top-1/2 left-3 -translate-y-1/2 animate-spin" style={{ color: BLUE }} />
+              )}
+            </div>
+          </div>
+
+          {/* Search Results */}
+          {searchResults.length > 0 && (
+            <div className="border rounded-xl overflow-hidden" style={{ borderColor: "#e5e7eb" }}>
+              <div className="max-h-[200px] overflow-y-auto">
+                {searchResults.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedPatient(p)}
+                    className="w-full text-right px-4 py-3 flex items-center gap-3 transition hover:bg-[#f0f5fb] border-b last:border-0"
+                    style={{ borderColor: "#f1f5f9" }}
+                  >
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ background: NAVY + "12" }}>
+                      <User className="w-4 h-4" style={{ color: NAVY }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate" style={{ color: NAVY }}>{p.name}</div>
+                      <div className="text-[10px]" style={{ color: "#94a3b8" }}>
+                        {p.phone && <span>{p.phone}</span>}
+                        {p.patientNumber && <span className="mr-2">#{p.patientNumber}</span>}
+                      </div>
+                    </div>
+                    <CreditCard className="w-4 h-4 flex-shrink-0" style={{ color: "#22c55e" }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No results */}
+          {searchQuery.trim().length >= 2 && !isSearching && searchResults.length === 0 && (
+            <div className="text-center py-6">
+              <User className="w-8 h-8 mx-auto mb-2 opacity-20" style={{ color: "#94a3b8" }} />
+              <p className="text-xs font-bold" style={{ color: "#94a3b8" }}>لم يتم العثور على مريض</p>
+              <p className="text-[10px] mt-1" style={{ color: "#94a3b8" }}>جرّب بحثاً مختلفاً أو سجّل مريض مشي جديد</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 2: Payment Form */}
+      {selectedPatient && (
+        <div className="space-y-3">
+          {/* Selected patient chip */}
+          <div className="p-3 rounded-xl flex items-center gap-3" style={{ background: "#f0f5fb" }}>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: "#22c55e15" }}>
+              <User className="w-4 h-4" style={{ color: "#22c55e" }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold truncate" style={{ color: NAVY }}>{selectedPatient.name}</div>
+              <div className="text-[10px]" style={{ color: "#94a3b8" }}>
+                {selectedPatient.phone && <span>{selectedPatient.phone}</span>}
+                {selectedPatient.patientNumber && <span className="mr-2">#{selectedPatient.patientNumber}</span>}
+              </div>
+            </div>
+            <button onClick={() => setSelectedPatient(null)}
+              className="px-2 py-1 rounded-lg text-[10px] font-bold"
+              style={{ background: "#ef444415", color: "#ef4444", border: "1px solid #ef444430" }}>
+              تغيير
+            </button>
+          </div>
+
+          {/* Voucher Type Selector */}
+          <div>
+            <label className="text-xs font-semibold block mb-2" style={{ color: NAVY }}>نوع السند *</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setVoucherType("consultation")}
+                className="flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center"
+                style={{
+                  background: voucherType === "consultation" ? "#f0f5fb" : "#fff",
+                  borderColor: voucherType === "consultation" ? "#3d7ab5" : "#e5e7eb",
+                  boxShadow: voucherType === "consultation" ? "0 2px 8px rgba(61,122,181,0.15)" : "none",
+                }}>
+                <Stethoscope className="w-5 h-5" style={{ color: voucherType === "consultation" ? "#3d7ab5" : "#94a3b8" }} />
+                <span className="text-xs font-bold" style={{ color: voucherType === "consultation" ? NAVY : "#94a3b8" }}>سند معاينة</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setVoucherType("procedure")}
+                className="flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center"
+                style={{
+                  background: voucherType === "procedure" ? "#faf5ff" : "#fff",
+                  borderColor: voucherType === "procedure" ? "#9333ea" : "#e5e7eb",
+                  boxShadow: voucherType === "procedure" ? "0 2px 8px rgba(147,51,234,0.15)" : "none",
+                }}>
+                <FileText className="w-5 h-5" style={{ color: voucherType === "procedure" ? "#9333ea" : "#94a3b8" }} />
+                <span className="text-xs font-bold" style={{ color: voucherType === "procedure" ? NAVY : "#94a3b8" }}>إجراءات شغل</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Amount */}
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المبلغ *</label>
+            <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
+              placeholder="0" className={inputCls()} min={0} step={0.01} dir="ltr" />
+          </div>
+
+          {/* Payment Method */}
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>طريقة الدفع</label>
+            <select value={method} onChange={e => setMethod(e.target.value)} className={inputCls()}>
+              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+
+          {/* Service Description */}
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>وصف الخدمة</label>
+            <input value={desc} onChange={e => setDesc(e.target.value)}
+              placeholder={voucherType === "consultation" ? "مثال: كشف + فحص أشعة" : "مثال: حشوة تجميلية + تنظيف"}
+              className={inputCls()} />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>ملاحظات</label>
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="اختياري" className={inputCls()} />
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2 mt-5">
+        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+          style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
+        {selectedPatient && (
+          <button onClick={handleSubmit} disabled={!amount || isPending}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+            style={{ background: "#22c55a", opacity: !amount || isPending ? 0.5 : 1 }}>
+            {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+            تسجيل الدفع
+          </button>
+        )}
       </div>
     </ModalShell>
   );

@@ -9,7 +9,7 @@ import {
   LayoutDashboard, User, FileText, Stethoscope, Calendar, ClipboardList, 
   Activity, Grid3x3, Scissors, Image, ScanLine, Pill, ArrowRightLeft, 
   FlaskConical, FolderOpen, Wallet, FileSignature, CreditCard, MessageCircle, 
-  Clock, KeyRound, Settings, Sparkles, ArrowRight
+  Clock, KeyRound, Sparkles, ArrowRight
 } from 'lucide-react';
 
 const mockPatient = {

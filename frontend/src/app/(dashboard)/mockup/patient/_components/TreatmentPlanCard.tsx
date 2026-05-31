@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { CheckCircle2, Circle, ChevronLeft, Clock, MoreHorizontal, Plus, Target, TrendingUp } from 'lucide-react';
+import { CheckCircle2, Circle, Clock, Target, TrendingUp } from 'lucide-react';
 
 interface TreatmentStep {
   id: number;

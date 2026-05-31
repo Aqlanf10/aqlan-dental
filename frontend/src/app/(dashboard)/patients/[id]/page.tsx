@@ -8,7 +8,7 @@ import {
   Calendar, Activity, Wallet, Pill, Plus, Scissors, Image as ImageIcon,
   MessageCircle, Archive, RotateCcw, ClipboardList, CreditCard,
   FileSignature, ScanLine, ArrowRightLeft, FolderOpen, FlaskConical,
-  LayoutDashboard, KeyRound, Copy, Check, ChevronDown, Mail,
+  LayoutDashboard, KeyRound, Copy, Check, Mail,
   AlertTriangle, Shield, Receipt, Zap, ChevronRight,
   TrendingUp, Star, MoreHorizontal, Bell,
 } from "lucide-react";
@@ -218,28 +218,28 @@ export default function PatientProfilePage() {
     if (!patient) return null;
     const pn = `${patient.firstName} ${patient.lastName}`;
     switch (activeTab) {
-      case "overview":       return <OverviewTab patientId={id} onTabSwitch={switchTab} />;
-      case "info":           return <BasicInfoTab patient={patient} onPatientUpdated={setPatient} />;
+      case "overview":       return <OverviewTab patientId={id} summary={summary} patient={patient} onAddVisit={() => { switchTab("visits"); setOpenAddVisitModal(true); }} />;
+      case "info":           return <BasicInfoTab patient={patient} orthoCases={orthoCases} surgeryCases={surgeryCases} />;
       case "medical":        return <MedicalHistoryTab patientId={id} />;
       case "dental":         return <DentalHistoryTab patientId={id} />;
       case "appointments":   return <AppointmentsTab patientId={id} patientName={pn} />;
-      case "visits":         return <VisitsTab patientId={id} patientName={pn} openAddModalOnMount={openAddVisitModal} onModalClosed={() => setOpenAddVisitModal(false)} />;
+      case "visits":         return <VisitsTab patientId={id} openAddModal={openAddVisitModal} onModalOpened={() => setOpenAddVisitModal(false)} />;
       case "treatment-plan": return <TreatmentPlanTab patientId={id} />;
-      case "orthodontics":   return <OrthodonticsTab patientId={id} orthoCases={orthoCases} />;
+      case "orthodontics":   return <OrthodonticsTab patientId={id} />;
       case "general":        return <GeneralDentistryTab patientId={id} />;
-      case "surgery":        return <SurgeryTab patientId={id} surgeryCases={surgeryCases} />;
+      case "surgery":        return <SurgeryTab patientId={id} />;
       case "photos":         return <PhotosTab patientId={id} />;
       case "radiographs":    return <RadiographsTab patientId={id} />;
-      case "prescriptions":  return <PrescriptionsTab patientId={id} patientName={pn} />;
+      case "prescriptions":  return <PrescriptionsTab patientId={id} />;
       case "referrals":      return <ReferralsTab patientId={id} />;
       case "lab-orders":     return <LabOrdersTab patientId={id} />;
       case "documents":      return <DocumentsTab patientId={id} />;
       case "finance":        return <FinanceTab patientId={id} />;
       case "contracts":      return <ContractsTab patientId={id} />;
       case "payments":       return <PaymentsTab patientId={id} />;
-      case "messages":       return <MessagesTab patientId={id} patientName={pn} />;
+      case "messages":       return <MessagesTab patientId={id} />;
       case "timeline":       return <TimelineTab patientId={id} />;
-      case "portal-access":  return <PortalAccessTab patientId={id} patientName={pn} />;
+      case "portal-access":  return <PortalAccessTab patientId={id} patientNumber={patient.patientNumber ?? ''} />;
       default:               return null;
     }
   };

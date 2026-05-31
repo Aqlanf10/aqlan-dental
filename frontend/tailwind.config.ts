@@ -90,6 +90,15 @@ const config: Config = {
         "card-hover": "0 6px 24px rgba(26,58,92,0.1)",
         dropdown: "0 8px 30px rgba(0,0,0,0.12)",
       },
+      animation: {
+        fadeIn: "fadeIn 0.3s ease",
+      },
+      keyframes: {
+        fadeIn: {
+          from: { opacity: "0", transform: "translateY(6px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+      },
     },
   },
   plugins: [],

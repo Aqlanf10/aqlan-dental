@@ -46,7 +46,7 @@ namespace AqlanDentalPro.API.Controllers;
 ///   ✅ Code cleanup — removed obsolete helpers and comment blocks
 ///
 /// Hotfixes (same PR):
-///   ✅ ExpectedClosingCard = 0 fix — merged card with bank (TODO: TreasuryType.Card)
+///   ✅ ExpectedClosingCard = 0 fix — card currently shares the bank treasury bucket
 ///   ✅ Treasury opening balance — creates JournalEntry on treasury creation
 ///   ✅ Treasury recalculate fallback — includes CashFlow OP-BAL for legacy treasuries
 ///   ✅ DELETE /expenses reads — migrated from CashFlowTransaction to JournalEntry

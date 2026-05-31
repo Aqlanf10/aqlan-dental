@@ -80,6 +80,15 @@ export function PatientAccountsTab() {
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الخصومات</p><p className="text-sm font-bold" style={{ color: tokens.brand }}>{formatYER(selected.totalDiscounts)}</p></div>
               <div><p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد</p><p className="text-sm font-bold" style={{ color: selected.balance > 0 ? tokens.dangerBorder : tokens.successBorder }}>{formatYER(selected.balance)}</p></div>
               {selected.contractOutstanding > 0 && <div className="col-span-2"><p className="text-[11px]" style={{ color: tokens.textTertiary }}>مستحقات العقود</p><p className="text-sm font-bold" style={{ color: tokens.warningText }}>{formatYER(selected.contractOutstanding)}</p></div>}
+              {/* Fix 5: Reconciliation indicator — warn if JournalLine balance differs from entity balance */}
+              {selected.journalReceivable != null && selected.entityBalance != null && Math.abs(selected.journalReceivable - selected.entityBalance) > 0.01 && (
+                <div className="col-span-2 p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#fef3c740", border: `1px solid ${tokens.warningBorder}` }}>
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: tokens.warningBorder }} />
+                  <span className="text-[11px] font-medium" style={{ color: tokens.warningText }}>
+                    تباين بين رصيد القيود ({formatYER(selected.journalReceivable)}) والرصيد المسجل ({formatYER(selected.entityBalance)}). قد تكون هناك سجلات قديمة بدون قيود محاسبية.
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: tokens.border }}>
               <button onClick={() => setShowPayment(true)} style={btnPrimary}>

@@ -8,16 +8,48 @@ import {
   Trash2,
   Printer,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
-import type { PaymentListItem, RegisterPaymentRequest, InvoiceListItem, ContractListItem } from "./types";
+import { useAuthStore } from "@/stores/authStore";
+import type { PaymentListItem, RegisterPaymentRequest, ContractListItem } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
+/* ── Inline types for API responses ──────────────────────────────────────────── */
+interface PatientInvoice {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  totalAmount: number;
+  paidAmount: number;
+  balance: number;
+}
+
+interface FinanceV3Contract {
+  id: string;
+  contractNumber: string;
+  specialty?: string;
+  outstandingAmount: number;
+  totalAmount: number;
+  status: string;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 4: Collections
+
+   Fix 1: Contract linking now uses GET /api/finance-v3/contracts?patientId=
+          instead of the non-existent GET /api/patients/{id}/contracts.
+          The FinanceV3 endpoint wraps in { data, total, page, pageSize } and
+          returns contractNumber + outstandingAmount.
+
+   Fix 2: Receipt number column now reads receiptNumber from backend response.
+          The backend also aliases ReceiptNumber as PaymentNumber for compat.
+
+   Fix 3: Delete/reverse button is hidden for non-Admin users since the
+          DELETE endpoint requires AdminOnly policy.
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function CollectionsTab() {
   const [payments, setPayments] = useState<PaymentListItem[]>([]);
@@ -25,6 +57,10 @@ export function CollectionsTab() {
   const [showRegister, setShowRegister] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fix 3: Get current user role for permission checks
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === "Admin";
 
   // Register payment form state
   const [patientSearch, setPatientSearch] = useState("");
@@ -58,14 +94,36 @@ export function CollectionsTab() {
     setSelectedInvoice("");
     setSelectedContract("");
     try {
+      // Fix 1: Use real backend routes
+      // Invoices: GET /api/patients/{patientId}/invoices (exists in InvoicesController)
+      // Contracts: GET /api/finance-v3/contracts?patientId= (FinanceV3Controller, returns { data, total, page, pageSize })
       const [invRes, conRes] = await Promise.all([
-        api.get<{ data: InvoiceListItem[] }>(`/api/patients/${patientId}/invoices`),
-        api.get<ContractListItem[]>(`/api/patients/${patientId}/contracts`),
+        api.get<PatientInvoice[] | { data: PatientInvoice[] }>(`/api/patients/${patientId}/invoices`),
+        api.get<{ data: FinanceV3Contract[]; total: number }>(`/api/finance-v3/contracts`, { params: { patientId, status: "active", pageSize: 100 } }),
       ]);
-      const invData = invRes.data?.data ?? invRes.data as unknown as InvoiceListItem[];
-      setInvoiceOptions((Array.isArray(invData) ? invData : []).filter((i) => i.balance > 0).map((i) => ({ id: i.id, invoiceNumber: i.invoiceNumber, balance: i.balance })));
-      const conData = Array.isArray(conRes.data) ? conRes.data : (conRes.data as { data?: ContractListItem[] }).data ?? [];
-      setContractOptions(conData.filter((c) => c.outstandingAmount > 0).map((c) => ({ id: c.id, contractNumber: c.contractNumber, outstandingAmount: c.outstandingAmount })));
+
+      // Parse invoices — endpoint returns flat array
+      const invRaw = invRes.data;
+      const invData: PatientInvoice[] = Array.isArray(invRaw)
+        ? invRaw
+        : (invRaw as { data?: PatientInvoice[] })?.data ?? [];
+      setInvoiceOptions(
+        invData
+          .filter((i) => i.balance > 0)
+          .map((i) => ({ id: i.id, invoiceNumber: i.invoiceNumber, balance: i.balance }))
+      );
+
+      // Parse contracts — FinanceV3 wraps in { data: [...] }
+      const conData: FinanceV3Contract[] = conRes.data?.data ?? [];
+      setContractOptions(
+        conData
+          .filter((c) => c.outstandingAmount > 0)
+          .map((c) => ({
+            id: c.id,
+            contractNumber: c.contractNumber ?? c.specialty ?? `عقد ${c.id.substring(0, 8)}`,
+            outstandingAmount: c.outstandingAmount,
+          }))
+      );
     } catch { /* ignore */ }
   };
 
@@ -121,6 +179,10 @@ export function CollectionsTab() {
     setPayAmount(""); setPayMethod("cash"); setPayNotes("");
   };
 
+  // Fix 2: Prefer receiptNumber from backend; paymentNumber is an alias for the same value
+  const getReceiptNumber = (r: PaymentListItem) =>
+    r.receiptNumber ?? r.paymentNumber ?? "—";
+
   return (
     <div className="p-6 space-y-4">
       <SectionHeader title="التحصيل" action={
@@ -135,15 +197,19 @@ export function CollectionsTab() {
           keyField="id"
           data={payments}
           columns={[
-            { key: "paymentNumber", label: "رقم الإيصال" },
+            { key: "paymentNumber", label: "رقم الإيصال", render: (r) => getReceiptNumber(r) },
             { key: "patientName", label: "المريض" },
             { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
             { key: "paymentMethod", label: "طريقة الدفع", render: (r) => PAYMENT_METHODS.find((m) => m.value === r.paymentMethod)?.label ?? r.paymentMethod },
             { key: "paymentDate", label: "التاريخ", render: (r) => safeFormatDate(r.paymentDate) },
             { key: "isReversal", label: "عكسي", render: (r) => r.isReversal ? <span style={{ color: tokens.dangerBorder, fontWeight: 700 }}>نعم</span> : "—" },
+            { key: "hasJournalEntry", label: "قيود", render: (r) => r.hasJournalEntry === false ? <span title="لا يوجد قيد محاسبي"><AlertTriangle className="w-4 h-4" style={{ color: tokens.warningBorder }} /></span> : <span style={{ color: tokens.successBorder }}>✓</span> },
             { key: "actions", label: "إجراءات", render: (r) => !r.isReversal && !r.reversedById ? (
               <div className="flex items-center gap-1">
-                <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(r.id); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="عكس الدفعة"><Trash2 className="w-3.5 h-3.5" /></button>
+                {/* Fix 3: Only show reverse/delete to Admin (DELETE /payments/{id} is AdminOnly) */}
+                {isAdmin && (
+                  <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(r.id); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="عكس الدفعة"><Trash2 className="w-3.5 h-3.5" /></button>
+                )}
                 <button onClick={(e) => { e.stopPropagation(); window.print(); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="طباعة إيصال"><Printer className="w-3.5 h-3.5" /></button>
               </div>
             ) : null },
@@ -225,6 +291,7 @@ export function CollectionsTab() {
         </div>
       </Modal>
 
+      {/* Fix 3: Confirm dialog for delete — only reachable by Admin */}
       <ConfirmDialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} onConfirm={handleDelete} title="عكس الدفعة" message="هل أنت متأكد من عكس هذه الدفعة؟ سيتم إنشاء قيد عكسي." confirmLabel="عكس الدفعة" danger />
     </div>
   );

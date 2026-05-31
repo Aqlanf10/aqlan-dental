@@ -124,6 +124,7 @@ export function StatusBadge({ status }: { status: string }) {
     Overdue:         { bg: tokens.dangerBg,    text: tokens.dangerText, label: "متأخرة" },
     Refunded:        { bg: tokens.warningBg,   text: tokens.warningText, label: "مُسترد" },
     Unpaid:          { bg: tokens.dangerBg,    text: tokens.dangerText, label: "غير مدفوعة" },
+    FullyPaid:       { bg: tokens.successBg,   text: tokens.successBorder, label: "مدفوعة بالكامل" },
   };
   const cfg = map[status] ?? { bg: tokens.cardHover, text: tokens.textSecondary, label: status };
   return (

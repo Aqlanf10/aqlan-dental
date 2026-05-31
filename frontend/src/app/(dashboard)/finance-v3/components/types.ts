@@ -262,7 +262,7 @@ export interface CreateExpenseRequest {
 
 /* ── Suppliers ──────────────────────────────────────────────────────────────────── */
 export type SupplierType = 'DentalLab' | 'MedicalVendor' | 'GeneralService';
-export type BillStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid';
+export type BillStatus = 'Unpaid' | 'PartiallyPaid' | 'FullyPaid' | 'Cancelled';
 
 export interface SupplierListItem {
   id: string;

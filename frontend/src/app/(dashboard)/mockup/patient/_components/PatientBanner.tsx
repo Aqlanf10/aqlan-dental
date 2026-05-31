@@ -1,8 +1,20 @@
 'use client';
 import React, { useState } from 'react';
-import { Phone, Droplet, AlertTriangle, Coins, Edit3, Archive, MessageCircle, Copy, Check, ExternalLink } from 'lucide-react';
+import { Droplet, AlertTriangle, Coins, Copy, Check } from 'lucide-react';
 
-export default function PatientBanner({ patient }: any) {
+interface PatientBannerProps {
+  patient: {
+    name: string;
+    id: string;
+    age: number;
+    phone: string;
+    bloodType: string;
+    alerts: string[];
+    balance: number;
+  };
+}
+
+export default function PatientBanner({ patient }: PatientBannerProps) {
   const [phoneCopied, setPhoneCopied] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -98,15 +110,15 @@ export default function PatientBanner({ patient }: any) {
       <div className={`overflow-hidden transition-all duration-500 ${isHovered ? 'max-h-16 opacity-100' : 'max-h-0 opacity-0'}`}>
         <div className="px-6 pb-3 grid grid-cols-6 gap-2">
           {[
-            { label: 'المواعيد', value: '3', color: 'sky' },
-            { label: 'المكتملة', value: '12', color: 'emerald' },
-            { label: 'التقويم النشط', value: '1', color: 'violet' },
-            { label: 'المدفوع', value: '45,000', color: 'green' },
-            { label: 'المستحق', value: '25,000', color: 'orange' },
-            { label: 'الوصفات', value: '5', color: 'blue' },
+            { label: 'المواعيد', value: '3', bgClass: 'bg-sky-50 border-sky-100', textClass: 'text-sky-700' },
+            { label: 'المكتملة', value: '12', bgClass: 'bg-emerald-50 border-emerald-100', textClass: 'text-emerald-700' },
+            { label: 'التقويم النشط', value: '1', bgClass: 'bg-violet-50 border-violet-100', textClass: 'text-violet-700' },
+            { label: 'المدفوع', value: '45,000', bgClass: 'bg-green-50 border-green-100', textClass: 'text-green-700' },
+            { label: 'المستحق', value: '25,000', bgClass: 'bg-orange-50 border-orange-100', textClass: 'text-orange-700' },
+            { label: 'الوصفات', value: '5', bgClass: 'bg-blue-50 border-blue-100', textClass: 'text-blue-700' },
           ].map((stat, i) => (
-            <div key={i} className={`bg-${stat.color}-50 rounded-lg px-3 py-1.5 text-center border border-${stat.color}-100`}>
-              <div className={`text-${stat.color}-700 text-sm font-black`}>{stat.value}</div>
+            <div key={i} className={`${stat.bgClass} rounded-lg px-3 py-1.5 text-center border ${stat.bgClass.split(' ')[1]}`}>
+              <div className={`${stat.textClass} text-sm font-black`}>{stat.value}</div>
               <div className="text-[9px] text-slate-500 font-bold">{stat.label}</div>
             </div>
           ))}

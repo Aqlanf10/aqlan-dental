@@ -1,16 +1,25 @@
 'use client';
 import React, { useState } from 'react';
 import { 
-  Stethoscope, ClipboardList, FileText, PackagePlus, Receipt, 
+  Stethoscope, ClipboardList, Receipt, 
   ArrowLeftRight, Printer, CalendarPlus, Pill, FileSignature,
   Activity, Scissors, MessageCircle, Image, ScanLine, Wallet,
-  CreditCard, ArrowRightLeft, FlaskConical, FolderOpen, KeyRound,
-  Clock, ChevronDown, ChevronUp, MoreHorizontal, Plus, Eye
+  FlaskConical, FolderOpen, KeyRound,
+  ChevronDown, ChevronUp, Eye
 } from 'lucide-react';
+
+import type { LucideIcon } from 'lucide-react';
+
+interface RibbonItem {
+  icon: LucideIcon;
+  label: string;
+  color: string;
+  bgColor: string;
+}
 
 interface RibbonGroup {
   label: string;
-  items: { icon: any; label: string; color: string; bgColor: string }[];
+  items: RibbonItem[];
 }
 
 const ribbonGroups: RibbonGroup[] = [

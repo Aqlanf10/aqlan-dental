@@ -4,13 +4,10 @@ import { Clock, MapPin, Bell, CheckCircle2, Phone, Navigation } from 'lucide-rea
 
 export default function NextAppointmentCard() {
   const [isReminded, setIsReminded] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <div 
       className="min-w-[280px] max-w-[320px] rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-500"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Main Card */}
       <div className="bg-gradient-to-b from-sky-400 via-sky-500 to-blue-600 text-white p-5 relative overflow-hidden">

@@ -70,8 +70,10 @@ public class FinanceV3SuppliersController(
             {
                 s.Id,
                 s.Name,
+                s.Type,
                 s.ContactPerson,
                 s.Phone,
+                s.IsActive,
                 TotalBilled = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0,
                 TotalPaid = db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.PaidAmount) ?? 0,
                 Balance = (db.SupplierBills.Where(b => b.SupplierId == s.Id && b.IsActive).Sum(b => (decimal?)b.TotalAmount) ?? 0)
@@ -116,7 +118,8 @@ public class FinanceV3SuppliersController(
         if (supplier == null)
             return NotFound(new { message = "المورد غير موجود" });
 
-        var bills = await db.SupplierBills
+        // Load bills in-memory first, then project — avoids EF Core translation issues with DateOnly.ToString
+        var rawBills = await db.SupplierBills
             .AsNoTracking()
             .Where(b => b.SupplierId == supplierId && b.IsActive)
             .OrderByDescending(b => b.BillDate)
@@ -127,12 +130,24 @@ public class FinanceV3SuppliersController(
                 b.Description,
                 b.TotalAmount,
                 b.PaidAmount,
-                RemainingAmount = b.TotalAmount - b.PaidAmount,
-                Status = b.Status.ToString(),
-                BillDate = b.BillDate.ToString("yyyy-MM-dd"),
-                DueDate = b.DueDate.HasValue ? b.DueDate.Value.ToString("yyyy-MM-dd") : null
+                b.Status,
+                b.BillDate,
+                b.DueDate
             })
             .ToListAsync();
+
+        var bills = rawBills.Select(b => new
+        {
+            b.Id,
+            b.BillNumber,
+            b.Description,
+            b.TotalAmount,
+            b.PaidAmount,
+            RemainingAmount = b.TotalAmount - b.PaidAmount,
+            Status = b.Status.ToString(),
+            BillDate = b.BillDate.ToString("yyyy-MM-dd"),
+            DueDate = b.DueDate.HasValue ? b.DueDate.Value.ToString("yyyy-MM-dd") : null
+        }).ToList();
 
         return Ok(new
         {
@@ -194,7 +209,7 @@ public class FinanceV3SuppliersController(
             PaidAmount = 0,
             Status = BillStatus.Unpaid,
             BillDate = DateOnly.FromDateTime(DateTime.Today),
-            DueDate = req.DueDate,
+            DueDate = !string.IsNullOrWhiteSpace(req.DueDate) && DateOnly.TryParse(req.DueDate, out var dd) ? dd : (DateOnly?)null,
             LabOrderId = req.LabOrderId,
             BranchId = branchId,
             CreatedBy = userId
@@ -363,6 +378,9 @@ public sealed class CreateSupplierBillRequestDto
 {
     public string? Description { get; init; }
     public decimal TotalAmount { get; init; }
-    public DateOnly? DueDate { get; init; }
+
+    /// <summary>Due date as ISO string (e.g., "2026-06-15"). Parsed to DateOnly server-side.</summary>
+    public string? DueDate { get; init; }
+
     public Guid? LabOrderId { get; init; }
 }

@@ -590,7 +590,7 @@ public class CashDrawerReconciliationTests
     }
 
     [Fact]
-    public async Task FinanceService_CreatePayment_WithNullBranchId_Throws()
+    public async Task FinanceService_CreatePayment_WithNullBranchId_ResolvesFallbackBranch()
     {
         await using var db = CreateContext();
         var (branchId, cashierId) = SeedBranchAndUser(db);
@@ -694,8 +694,7 @@ public class CashDrawerReconciliationTests
             PaymentMethod = "cash"
         });
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*الفرع*");
+        await act.Should().NotThrowAsync<ArgumentException>("Sprint 1: Admin with null BranchId now resolves fallback branch instead of throwing");
     }
 
     [Fact]

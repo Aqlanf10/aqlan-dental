@@ -30,10 +30,10 @@ public class FinanceV3IntegrationFixTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static ICurrentUserService CreateAdminUser(Guid? branchId = null)
+    private static ICurrentUserService CreateAdminUser(Guid? branchId = null, Guid? userId = null)
     {
         var mock = new Mock<ICurrentUserService>();
-        mock.Setup(u => u.UserId).Returns(Guid.NewGuid());
+        mock.Setup(u => u.UserId).Returns(userId ?? Guid.NewGuid());
         mock.Setup(u => u.Role).Returns(UserRole.Admin);
         mock.Setup(u => u.IsAdmin).Returns(true);
         mock.Setup(u => u.IsAuthenticated).Returns(true);
@@ -277,8 +277,8 @@ public class FinanceV3IntegrationFixTests
 
         await db.SaveChangesAsync();
 
-        // Admin user with NO branch (Guid.Empty)
-        var adminNoBranch = CreateAdminUser(Guid.Empty);
+        // Admin user with NO branch (Guid.Empty) — pass userId so cashier session matches
+        var adminNoBranch = CreateAdminUser(Guid.Empty, userId);
         var controller = BuildFinanceV3Controller(db, adminNoBranch);
 
         var request = new CreatePaymentRequest
@@ -373,8 +373,8 @@ public class FinanceV3IntegrationFixTests
 
         await db.SaveChangesAsync();
 
-        // Admin with Guid.Empty branch and no ResolvedBranchId
-        var adminEmptyBranch = CreateAdminUser(Guid.Empty);
+        // Admin with Guid.Empty branch and no ResolvedBranchId — pass userId so cashier session matches
+        var adminEmptyBranch = CreateAdminUser(Guid.Empty, userId);
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
@@ -627,8 +627,8 @@ public class FinanceV3IntegrationFixTests
 
         await db.SaveChangesAsync();
 
-        // Create payment via FinanceService (same as PaymentsController)
-        var adminUser = CreateAdminUser(branchId);
+        // Create payment via FinanceService (same as PaymentsController) — pass userId so cashier session matches
+        var adminUser = CreateAdminUser(branchId, userId);
         var notifications = new Mock<INotificationService>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);

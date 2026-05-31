@@ -24,6 +24,13 @@ interface ServiceRow {
   showInTreatmentPlan: boolean;
   isActive: boolean;
   sortOrder: number;
+  // Commission defaults (returned from API)
+  defaultMaterialCost: number;
+  defaultMaterialCostType: string;
+  defaultLabCost: number;
+  defaultDoctorCommissionPercentage: number | null;
+  commissionBaseRule: string;
+  commissionRecognitionMode: string;
 }
 
 interface ServiceForm {
@@ -41,25 +48,14 @@ interface ServiceForm {
   showInReception: boolean;
   showInTreatmentPlan: boolean;
   sortOrder: number;
-}
-
-interface CommissionDefaults {
+  // Commission defaults
   defaultMaterialCost: number;
-  defaultMaterialCostType: "FixedAmount" | "PercentageOfServicePrice";
+  defaultMaterialCostType: string;
   defaultLabCost: number;
   defaultDoctorCommissionPercentage: number | null;
-  commissionBaseRule: "GrossAmount" | "AfterDiscount" | "AfterDiscountAndCosts";
-  commissionRecognitionMode: "OnInvoiceApproval" | "OnPaymentCollection";
+  commissionBaseRule: string;
+  commissionRecognitionMode: string;
 }
-
-const EMPTY_COMMISSION: CommissionDefaults = {
-  defaultMaterialCost: 0,
-  defaultMaterialCostType: "FixedAmount",
-  defaultLabCost: 0,
-  defaultDoctorCommissionPercentage: null,
-  commissionBaseRule: "AfterDiscountAndCosts",
-  commissionRecognitionMode: "OnInvoiceApproval",
-};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -76,6 +72,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   Other: "أخرى",
 };
 
+const CATEGORIES = Object.keys(CATEGORY_LABELS);
+
 const CATEGORY_COLORS: Record<string, string> = {
   Consultation: "bg-blue-50 text-blue-700",
   Preventive: "bg-green-50 text-green-700",
@@ -88,8 +86,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   Radiology: "bg-cyan-50 text-cyan-700",
   Other: "bg-gray-50 text-gray-700",
 };
-
-const CATEGORIES = Object.keys(CATEGORY_LABELS);
 
 const EMPTY_FORM: ServiceForm = {
   arabicName: "",
@@ -106,6 +102,12 @@ const EMPTY_FORM: ServiceForm = {
   showInReception: true,
   showInTreatmentPlan: true,
   sortOrder: 0,
+  defaultMaterialCost: 0,
+  defaultMaterialCostType: "FixedAmount",
+  defaultLabCost: 0,
+  defaultDoctorCommissionPercentage: null,
+  commissionBaseRule: "AfterDiscountAndCosts",
+  commissionRecognitionMode: "OnInvoiceApproval",
 };
 
 const inputCls =
@@ -135,7 +137,6 @@ export default function ServicesSettingsPage() {
   const [formError, setFormError] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showCommission, setShowCommission] = useState(false);
-  const [commission, setCommission] = useState<CommissionDefaults>(EMPTY_COMMISSION);
 
   const load = () => {
     setLoading(true);
@@ -152,7 +153,6 @@ export default function ServicesSettingsPage() {
 
   const handleOpenAdd = () => {
     setForm(EMPTY_FORM);
-    setCommission(EMPTY_COMMISSION);
     setEditingId(null);
     setFormError("");
     setShowCommission(false);
@@ -175,33 +175,23 @@ export default function ServicesSettingsPage() {
       showInReception: s.showInReception,
       showInTreatmentPlan: s.showInTreatmentPlan,
       sortOrder: s.sortOrder,
+      // Commission defaults — now returned directly from the services API
+      defaultMaterialCost: s.defaultMaterialCost ?? 0,
+      defaultMaterialCostType: s.defaultMaterialCostType ?? "FixedAmount",
+      defaultLabCost: s.defaultLabCost ?? 0,
+      defaultDoctorCommissionPercentage: s.defaultDoctorCommissionPercentage ?? null,
+      commissionBaseRule: s.commissionBaseRule ?? "AfterDiscountAndCosts",
+      commissionRecognitionMode: s.commissionRecognitionMode ?? "OnInvoiceApproval",
     });
     setEditingId(s.id);
     setFormError("");
-    setShowCommission(false);
-    setCommission(EMPTY_COMMISSION);
     setShowForm(true);
-    // Load existing commission defaults
-    try {
-      const { data } = await api.get<CommissionDefaults>(`/api/commissions/services/${s.id}/defaults`);
-      setCommission({
-        defaultMaterialCost: data.defaultMaterialCost ?? 0,
-        defaultMaterialCostType: (data.defaultMaterialCostType as CommissionDefaults["defaultMaterialCostType"]) ?? "FixedAmount",
-        defaultLabCost: data.defaultLabCost ?? 0,
-        defaultDoctorCommissionPercentage: data.defaultDoctorCommissionPercentage ?? null,
-        commissionBaseRule: (data.commissionBaseRule as CommissionDefaults["commissionBaseRule"]) ?? "AfterDiscountAndCosts",
-        commissionRecognitionMode: (data.commissionRecognitionMode as CommissionDefaults["commissionRecognitionMode"]) ?? "OnInvoiceApproval",
-      });
-    } catch {
-      // Defaults not yet configured — keep EMPTY_COMMISSION
-    }
   };
 
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingId(null);
     setForm(EMPTY_FORM);
-    setCommission(EMPTY_COMMISSION);
     setShowCommission(false);
     setFormError("");
   };
@@ -236,20 +226,17 @@ export default function ServicesSettingsPage() {
         showInReception: form.showInReception,
         showInTreatmentPlan: form.showInTreatmentPlan,
         sortOrder: form.sortOrder,
+        // Commission defaults — now sent directly with the service payload
+        defaultMaterialCost: form.defaultMaterialCost,
+        defaultMaterialCostType: form.defaultMaterialCostType,
+        defaultLabCost: form.defaultLabCost,
+        defaultDoctorCommissionPercentage: form.defaultDoctorCommissionPercentage,
+        commissionBaseRule: form.commissionBaseRule,
+        commissionRecognitionMode: form.commissionRecognitionMode,
       };
 
       if (editingId) {
         await api.put(`/api/settings/services/${editingId}`, payload);
-        if (showCommission) {
-          await api.put(`/api/commissions/services/${editingId}/defaults`, {
-            defaultMaterialCost: commission.defaultMaterialCost,
-            defaultMaterialCostType: commission.defaultMaterialCostType,
-            defaultLabCost: commission.defaultLabCost,
-            defaultDoctorCommissionPercentage: commission.defaultDoctorCommissionPercentage,
-            commissionBaseRule: commission.commissionBaseRule,
-            commissionRecognitionMode: commission.commissionRecognitionMode,
-          });
-        }
       } else {
         await api.post("/api/settings/services", payload);
       }
@@ -499,95 +486,93 @@ export default function ServicesSettingsPage() {
             ))}
           </div>
 
-          {/* Commission Defaults — collapsible, edit only */}
-          {editingId && (
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setShowCommission((v) => !v)}
-                className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition text-sm"
-              >
-                <span className="font-medium text-gray-700">إعدادات العمولة الافتراضية</span>
-                {showCommission ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-              </button>
-              {showCommission && (
-                <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">تكلفة المواد الافتراضية</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={commission.defaultMaterialCost}
-                      onChange={(e) => setCommission((c) => ({ ...c, defaultMaterialCost: parseFloat(e.target.value) || 0 }))}
-                      className={inputCls}
-                      dir="ltr"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">نوع تكلفة المواد</label>
-                    <select
-                      value={commission.defaultMaterialCostType}
-                      onChange={(e) => setCommission((c) => ({ ...c, defaultMaterialCostType: e.target.value as CommissionDefaults["defaultMaterialCostType"] }))}
-                      className={inputCls}
-                    >
-                      <option value="FixedAmount">مبلغ ثابت</option>
-                      <option value="PercentageOfServicePrice">نسبة من سعر الخدمة</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">تكلفة المعمل الافتراضية</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={commission.defaultLabCost}
-                      onChange={(e) => setCommission((c) => ({ ...c, defaultLabCost: parseFloat(e.target.value) || 0 }))}
-                      className={inputCls}
-                      dir="ltr"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">نسبة عمولة الطبيب الافتراضية (%)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step="0.5"
-                      value={commission.defaultDoctorCommissionPercentage ?? ""}
-                      placeholder="غير محدد"
-                      onChange={(e) => setCommission((c) => ({ ...c, defaultDoctorCommissionPercentage: e.target.value === "" ? null : parseFloat(e.target.value) }))}
-                      className={inputCls}
-                      dir="ltr"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">أساس احتساب العمولة</label>
-                    <select
-                      value={commission.commissionBaseRule}
-                      onChange={(e) => setCommission((c) => ({ ...c, commissionBaseRule: e.target.value as CommissionDefaults["commissionBaseRule"] }))}
-                      className={inputCls}
-                    >
-                      <option value="GrossAmount">الإجمالي الكلي</option>
-                      <option value="AfterDiscount">بعد الخصم</option>
-                      <option value="AfterDiscountAndCosts">بعد الخصم والتكاليف</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">وقت احتساب العمولة</label>
-                    <select
-                      value={commission.commissionRecognitionMode}
-                      onChange={(e) => setCommission((c) => ({ ...c, commissionRecognitionMode: e.target.value as CommissionDefaults["commissionRecognitionMode"] }))}
-                      className={inputCls}
-                    >
-                      <option value="OnInvoiceApproval">عند إصدار الفاتورة</option>
-                      <option value="OnPaymentCollection">عند تحصيل الدفعة</option>
-                    </select>
-                  </div>
+          {/* Commission Defaults — collapsible, available for both create and edit */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowCommission((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition text-sm"
+            >
+              <span className="font-medium text-gray-700">إعدادات العمولة الافتراضية</span>
+              {showCommission ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </button>
+            {showCommission && (
+              <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">تكلفة المواد الافتراضية</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={form.defaultMaterialCost}
+                    onChange={(e) => setForm({ ...form, defaultMaterialCost: parseFloat(e.target.value) || 0 })}
+                    className={inputCls}
+                    dir="ltr"
+                  />
                 </div>
-              )}
-            </div>
-          )}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">نوع تكلفة المواد</label>
+                  <select
+                    value={form.defaultMaterialCostType}
+                    onChange={(e) => setForm({ ...form, defaultMaterialCostType: e.target.value })}
+                    className={inputCls}
+                  >
+                    <option value="FixedAmount">مبلغ ثابت</option>
+                    <option value="PercentageOfServicePrice">نسبة من سعر الخدمة</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">تكلفة المعمل الافتراضية</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={form.defaultLabCost}
+                    onChange={(e) => setForm({ ...form, defaultLabCost: parseFloat(e.target.value) || 0 })}
+                    className={inputCls}
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">نسبة عمولة الطبيب الافتراضية (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.5"
+                    value={form.defaultDoctorCommissionPercentage ?? ""}
+                    placeholder="غير محدد"
+                    onChange={(e) => setForm({ ...form, defaultDoctorCommissionPercentage: e.target.value === "" ? null : parseFloat(e.target.value) })}
+                    className={inputCls}
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">أساس احتساب العمولة</label>
+                  <select
+                    value={form.commissionBaseRule}
+                    onChange={(e) => setForm({ ...form, commissionBaseRule: e.target.value })}
+                    className={inputCls}
+                  >
+                    <option value="GrossAmount">الإجمالي الكلي</option>
+                    <option value="AfterDiscount">بعد الخصم</option>
+                    <option value="AfterDiscountAndCosts">بعد الخصم والتكاليف</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">وقت احتساب العمولة</label>
+                  <select
+                    value={form.commissionRecognitionMode}
+                    onChange={(e) => setForm({ ...form, commissionRecognitionMode: e.target.value })}
+                    className={inputCls}
+                  >
+                    <option value="OnInvoiceApproval">عند إصدار الفاتورة</option>
+                    <option value="OnPaymentCollection">عند تحصيل الدفعة</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Submit */}
           <div className="flex justify-end gap-2 pt-1">
@@ -642,6 +627,7 @@ export default function ServicesSettingsPage() {
                   "التصنيف",
                   "المدة",
                   "السعر الافتراضي",
+                  "العمولة",
                   "الحالة",
                   "إجراءات",
                 ].map((h) => (
@@ -701,6 +687,21 @@ export default function ServicesSettingsPage() {
                   </td>
                   <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                     {Number(s.defaultPrice).toLocaleString("ar-YE")} ر.ي
+                  </td>
+                  <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                    {s.defaultDoctorCommissionPercentage != null ? (
+                      <div className="text-xs">
+                        <span className="font-medium">{s.defaultDoctorCommissionPercentage}%</span>
+                        {s.defaultLabCost > 0 && (
+                          <span className="text-gray-400 mr-1">· معمل {Number(s.defaultLabCost).toLocaleString("ar-YE")}</span>
+                        )}
+                        {s.defaultMaterialCost > 0 && (
+                          <span className="text-gray-400 mr-1">· مواد {Number(s.defaultMaterialCost).toLocaleString("ar-YE")}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span

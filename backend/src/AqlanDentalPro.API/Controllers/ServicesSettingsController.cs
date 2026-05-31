@@ -101,6 +101,12 @@ public class ServicesSettingsController(AppDbContext db) : ControllerBase
             ShowInReception = req.ShowInReception ?? true,
             ShowInTreatmentPlan = req.ShowInTreatmentPlan ?? true,
             SortOrder = req.SortOrder ?? 0,
+            DefaultMaterialCost = req.DefaultMaterialCost ?? 0,
+            DefaultMaterialCostType = req.DefaultMaterialCostType ?? MaterialCostType.FixedAmount,
+            DefaultLabCost = req.DefaultLabCost ?? 0,
+            DefaultDoctorCommissionPercentage = req.DefaultDoctorCommissionPercentage,
+            CommissionBaseRule = req.CommissionBaseRule ?? CommissionBaseRule.AfterDiscountAndCosts,
+            CommissionRecognitionMode = req.CommissionRecognitionMode ?? CommissionRecognitionMode.OnInvoiceApproval,
             IsActive = true
         };
 
@@ -141,6 +147,14 @@ public class ServicesSettingsController(AppDbContext db) : ControllerBase
         if (req.ShowInReception != null) service.ShowInReception = req.ShowInReception.Value;
         if (req.ShowInTreatmentPlan != null) service.ShowInTreatmentPlan = req.ShowInTreatmentPlan.Value;
         if (req.SortOrder != null) service.SortOrder = req.SortOrder.Value;
+
+        // Commission defaults — always update if provided
+        if (req.DefaultMaterialCost != null) service.DefaultMaterialCost = req.DefaultMaterialCost.Value;
+        if (req.DefaultMaterialCostType != null) service.DefaultMaterialCostType = req.DefaultMaterialCostType.Value;
+        if (req.DefaultLabCost != null) service.DefaultLabCost = req.DefaultLabCost.Value;
+        if (req.DefaultDoctorCommissionPercentage != null) service.DefaultDoctorCommissionPercentage = req.DefaultDoctorCommissionPercentage.Value;
+        if (req.CommissionBaseRule != null) service.CommissionBaseRule = req.CommissionBaseRule.Value;
+        if (req.CommissionRecognitionMode != null) service.CommissionRecognitionMode = req.CommissionRecognitionMode.Value;
 
         await db.SaveChangesAsync();
         return Ok(MapToDto(service));
@@ -205,6 +219,12 @@ public class ServicesSettingsController(AppDbContext db) : ControllerBase
         s.ShowInTreatmentPlan,
         s.IsActive,
         s.SortOrder,
+        s.DefaultMaterialCost,
+        DefaultMaterialCostType = s.DefaultMaterialCostType.ToString(),
+        s.DefaultLabCost,
+        s.DefaultDoctorCommissionPercentage,
+        CommissionBaseRule = s.CommissionBaseRule.ToString(),
+        CommissionRecognitionMode = s.CommissionRecognitionMode.ToString(),
         s.CreatedAt,
         s.UpdatedAt
     };
@@ -228,6 +248,13 @@ public class CreateClinicServiceRequest
     public bool? ShowInReception { get; set; }
     public bool? ShowInTreatmentPlan { get; set; }
     public int? SortOrder { get; set; }
+    // Commission defaults
+    public decimal? DefaultMaterialCost { get; set; }
+    public MaterialCostType? DefaultMaterialCostType { get; set; }
+    public decimal? DefaultLabCost { get; set; }
+    public decimal? DefaultDoctorCommissionPercentage { get; set; }
+    public CommissionBaseRule? CommissionBaseRule { get; set; }
+    public CommissionRecognitionMode? CommissionRecognitionMode { get; set; }
 }
 
 public class UpdateClinicServiceRequest
@@ -246,4 +273,11 @@ public class UpdateClinicServiceRequest
     public bool? ShowInReception { get; set; }
     public bool? ShowInTreatmentPlan { get; set; }
     public int? SortOrder { get; set; }
+    // Commission defaults
+    public decimal? DefaultMaterialCost { get; set; }
+    public MaterialCostType? DefaultMaterialCostType { get; set; }
+    public decimal? DefaultLabCost { get; set; }
+    public decimal? DefaultDoctorCommissionPercentage { get; set; }
+    public CommissionBaseRule? CommissionBaseRule { get; set; }
+    public CommissionRecognitionMode? CommissionRecognitionMode { get; set; }
 }

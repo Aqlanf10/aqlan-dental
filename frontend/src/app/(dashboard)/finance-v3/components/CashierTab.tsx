@@ -8,15 +8,16 @@ import {
   Vault,
   Loader2,
   Calculator,
+  Unlock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { CashierSession, CloseSessionRequest } from "./types";
-import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnDanger, btnGhost } from "./FinanceSharedUI";
+import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnDanger, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   Tab 6: Cashier
+   Tab 6: Cashier — الورديات اليومية (التشغيل اليومي)
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [sessions, setSessions] = useState<CashierSession[]>([]);
@@ -28,16 +29,51 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
   const [submitting, setSubmitting] = useState(false);
   const [confirmReconcile, setConfirmReconcile] = useState<string | null>(null);
 
+  // Open session modal state
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [openingBalance, setOpeningBalance] = useState("");
+  const [openNotes, setOpenNotes] = useState("");
+
   const fetchSessions = useCallback(async () => {
-    try { setLoading(true); const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions"); setSessions(responseData?.data ?? []); } catch { toast.error("فشل في تحميل ورديات الصندوق"); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const { data: responseData } = await api.get<{ data: CashierSession[]; total: number }>("/api/cashier-sessions");
+      setSessions(responseData?.data ?? []);
+    } catch {
+      toast.error("فشل في تحميل ورديات الصندوق");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
 
-  const openCloseSession = async (s: CashierSession) => {
+  const openSession = sessions.find((s) => s.status === "Open");
+
+  // ── Open new session ──
+  const handleOpenSession = async () => {
+    try {
+      setSubmitting(true);
+      await api.post("/api/cashier-sessions/open", {
+        openingBalance: Number(openingBalance) || 0,
+        notes: openNotes?.trim() || null,
+      });
+      toast.success("تم فتح صندوق الكاشير والوردية اليومية بنجاح");
+      setShowOpenModal(false);
+      setOpeningBalance("");
+      setOpenNotes("");
+      fetchSessions();
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل في فتح الوردية"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Close session ──
+  const openCloseSessionModal = async (s: CashierSession) => {
     setCloseSession(s);
     // Fetch session detail to get accurate per-bucket expected values
-    // Never initialize actual amounts from undefined — fetch first
     try {
       const { data: detail } = await api.get<{
         expectedClosingCash: number;
@@ -68,9 +104,14 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       toast.success("تم إقفال الوردية بنجاح");
       setCloseSession(null);
       fetchSessions();
-    } catch (err) { toast.error(extractErrorMessage(err, "فشل في إقفال الوردية")); } finally { setSubmitting(false); }
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل في إقفال الوردية"));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  // ── Reconcile session ──
   const handleReconcile = async () => {
     if (!confirmReconcile) return;
     try {
@@ -79,17 +120,24 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
       toast.success("تم تسوية الوردية بنجاح");
       setConfirmReconcile(null);
       fetchSessions();
-    } catch (err) { toast.error(extractErrorMessage(err, "فشل في التسوية")); } finally { setSubmitting(false); }
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل في التسوية"));
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-  const openSession = sessions.find((s) => s.status === "Open");
 
   return (
     <div className="p-6 space-y-4">
       <SectionHeader title="الصندوق" action={
         <div className="flex items-center gap-2">
+          {!openSession && (
+            <button onClick={() => setShowOpenModal(true)} style={btnPrimary}>
+              <Unlock className="w-4 h-4" /> فتح وردية
+            </button>
+          )}
           {openSession && (
-            <button onClick={() => openCloseSession(openSession)} style={btnDanger}>
+            <button onClick={() => openCloseSessionModal(openSession)} style={btnDanger}>
               <Lock className="w-4 h-4" /> إقفال الوردية
             </button>
           )}
@@ -112,6 +160,19 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         </div>
       )}
 
+      {/* No open session warning */}
+      {!openSession && !loading && (
+        <div className="rounded-lg border p-4" style={{ backgroundColor: tokens.warningBg, borderColor: tokens.warningBorder }}>
+          <div className="flex items-center gap-2">
+            <Vault className="w-4 h-4" style={{ color: tokens.warningText }} />
+            <h4 className="text-sm font-bold" style={{ color: tokens.warningText }}>لا توجد وردية مفتوحة</h4>
+          </div>
+          <p className="text-xs mt-1" style={{ color: tokens.warningText }}>
+            يجب فتح وردية (صندوق الكاشير) أولاً قبل تسجيل أي مدفوعات أو عمليات مالية. اضغط &quot;فتح وردية&quot; أعلاه.
+          </p>
+        </div>
+      )}
+
       {loading ? <LoadingSkeleton /> : sessions.length === 0 ? <EmptyState icon={Vault} message="لا توجد ورديات صندوق" /> : (
         <DataTable<CashierSession>
           keyField="id"
@@ -130,7 +191,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "actions", label: "إجراءات", render: (r) => (
               <div className="flex items-center gap-1">
-                {r.status === "Open" && <button onClick={(e) => { e.stopPropagation(); openCloseSession(r); }} style={{ color: tokens.dangerBorder }} className="w-7 h-7 rounded-md flex items-center justify-center" title="إقفال"><Lock className="w-3.5 h-3.5" /></button>}
+                {r.status === "Open" && <button onClick={(e) => { e.stopPropagation(); openCloseSessionModal(r); }} style={{ color: tokens.dangerBorder }} className="w-7 h-7 rounded-md flex items-center justify-center" title="إقفال"><Lock className="w-3.5 h-3.5" /></button>}
                 {r.status === "Closed" && isAdmin && <button onClick={(e) => { e.stopPropagation(); setConfirmReconcile(r.id); }} style={{ color: tokens.brand }} className="w-7 h-7 rounded-md flex items-center justify-center" title="تسوية"><Calculator className="w-3.5 h-3.5" /></button>}
               </div>
             )},
@@ -138,7 +199,54 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         />
       )}
 
-      {/* Close session modal with actual counts */}
+      {/* ═══ Open Session Modal ═══ */}
+      <Modal open={showOpenModal} onClose={() => setShowOpenModal(false)} title="فتح وردية جديدة">
+        <div className="space-y-4">
+          <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
+            <p className="text-xs" style={{ color: tokens.infoText }}>
+              فتح وردية الكاشير ضروري قبل تسجيل أي مدفوعات. سيتم ربط جميع المعاملات المالية بهذه الوردية تلقائياً.
+            </p>
+          </div>
+
+          <div>
+            <label style={labelStyle}>مبلغ العهدة الافتتاحية</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={openingBalance}
+              onChange={(e) => setOpeningBalance(e.target.value)}
+              dir="ltr"
+              placeholder="0"
+              style={inputStyle}
+            />
+            <p className="text-[11px] mt-1" style={{ color: tokens.textTertiary }}>
+              المبلغ النقدي الموجود في الدرج عند بدء الوردية (اختياري، يمكن تركه 0)
+            </p>
+          </div>
+
+          <div>
+            <label style={labelStyle}>ملاحظات (اختياري)</label>
+            <input
+              type="text"
+              value={openNotes}
+              onChange={(e) => setOpenNotes(e.target.value)}
+              placeholder="ملاحظات إضافية..."
+              style={inputStyle}
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
+            <button onClick={() => setShowOpenModal(false)} style={btnGhost}>إلغاء</button>
+            <button onClick={handleOpenSession} disabled={submitting} style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}>
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {submitting ? "جارٍ الفتح..." : "فتح الوردية"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ═══ Close Session Modal ═══ */}
       <Modal open={!!closeSession} onClose={() => setCloseSession(null)} title="إقفال الوردية">
         {closeSession && (
           <div className="space-y-4">

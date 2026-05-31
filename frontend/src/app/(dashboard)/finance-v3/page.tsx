@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Wallet,
   FileText,
@@ -14,8 +14,10 @@ import {
   ClipboardCheck,
   Bell,
   CircleDot,
+  BookOpen,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import { api } from "@/lib/api";
 import { AccessDenied, tokens } from "./components/FinanceSharedUI";
 import { todayArabic } from "./components/FinanceHelpers";
 import { OverviewTab } from "./components/OverviewTab";
@@ -28,6 +30,7 @@ import { TreasuriesTab } from "./components/TreasuriesTab";
 import { ExpensesTab } from "./components/ExpensesTab";
 import { SuppliersTab } from "./components/SuppliersTab";
 import { AuditTab } from "./components/AuditTab";
+import { JournalTab } from "./components/JournalTab";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab definition
@@ -48,6 +51,7 @@ const TABS: TabDef[] = [
   { key: "treasuries",     label: "الخزائن",           icon: Landmark },
   { key: "expenses",       label: "المصروفات",         icon: TrendingDown },
   { key: "suppliers",      label: "الموردون",          icon: Truck },
+  { key: "journal",        label: "قيود اليومية",      icon: BookOpen },
   { key: "audit",          label: "سجل المراجعة",      icon: ClipboardCheck },
 ];
 
@@ -57,10 +61,30 @@ const TABS: TabDef[] = [
 export default function FinanceV3Page() {
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState("overview");
+  const [hasActiveSession, setHasActiveSession] = useState(false);
+  const [activeSessionInfo, setActiveSessionInfo] = useState<{ cashierName: string; openedAt: string } | null>(null);
 
   /* ── Access gate: Admin / Accountant only ── */
   const isAuthorized = user?.role === "Admin" || user?.role === "Accountant";
   const isAdmin = user?.role === "Admin";
+
+  /* ── Fetch active cashier session status ── */
+  const fetchActiveSession = useCallback(async () => {
+    try {
+      const { data } = await api.get<{ hasActiveSession: boolean; cashierName?: string; openedAt?: string }>("/api/finance-v3/cashier-sessions/active");
+      setHasActiveSession(data?.hasActiveSession ?? false);
+      if (data?.hasActiveSession) {
+        setActiveSessionInfo({ cashierName: data.cashierName ?? "", openedAt: data.openedAt ?? "" });
+      } else {
+        setActiveSessionInfo(null);
+      }
+    } catch {
+      setHasActiveSession(false);
+      setActiveSessionInfo(null);
+    }
+  }, []);
+
+  useEffect(() => { fetchActiveSession(); }, [fetchActiveSession]);
 
   if (!isAuthorized) {
     return <AccessDenied />;
@@ -85,8 +109,20 @@ export default function FinanceV3Page() {
         <span className="text-xs font-medium" style={{ color: tokens.textSecondary }}>الفرع الرئيسي</span>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
         <div className="flex items-center gap-1.5">
-          <CircleDot className="w-3 h-3" style={{ color: tokens.textTertiary }} />
-          <span className="text-xs" style={{ color: tokens.textTertiary }}>لا وردية مفتوحة</span>
+          {hasActiveSession ? (
+            <>
+              <CircleDot className="w-3 h-3" style={{ color: tokens.successBorder }} />
+              <span className="text-xs font-medium" style={{ color: tokens.successBorder }}>وردية مفتوحة</span>
+              {activeSessionInfo?.cashierName && (
+                <span className="text-xs" style={{ color: tokens.textTertiary }}>({activeSessionInfo.cashierName})</span>
+              )}
+            </>
+          ) : (
+            <>
+              <CircleDot className="w-3 h-3" style={{ color: tokens.textTertiary }} />
+              <span className="text-xs" style={{ color: tokens.textTertiary }}>لا وردية مفتوحة</span>
+            </>
+          )}
         </div>
         <div className="w-px h-5" style={{ backgroundColor: tokens.border }} />
         <button className="w-7 h-7 rounded-md flex items-center justify-center transition-colors" style={{ color: tokens.textSecondary }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = tokens.cardHover; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }} title="الإشعارات"><Bell className="w-4 h-4" /></button>
@@ -116,6 +152,7 @@ export default function FinanceV3Page() {
         {activeTab === "treasuries" && <TreasuriesTab />}
         {activeTab === "expenses" && <ExpensesTab />}
         {activeTab === "suppliers" && <SuppliersTab />}
+        {activeTab === "journal" && <JournalTab />}
         {activeTab === "audit" && <AuditTab />}
       </div>
     </div>

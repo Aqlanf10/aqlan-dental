@@ -666,6 +666,7 @@ public class FinanceV3Controller(
         FinancialDocumentType.VaultTransfer => "InternalTransfer",
         FinancialDocumentType.ContractCancellation => "Reversal",
         FinancialDocumentType.PaymentDeletion => "Reversal",
+        FinancialDocumentType.CreditNoteRefund => "Refund",
         FinancialDocumentType.Invoice => "Revenue",
         FinancialDocumentType.AdvancePayment => "AdvancePayment",
         _ => "Other"

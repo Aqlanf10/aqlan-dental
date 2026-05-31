@@ -35,4 +35,20 @@ public interface IFinanceService
     /// Auto-posts the reversal. Used when cancelling an Issued invoice.
     /// </summary>
     Task ReverseInvoiceIssuedEntryAsync(Guid invoiceId);
+
+    /// <summary>
+    /// Finance Phase 1: Pays a supplier bill (partially or fully).
+    /// Validates open cashier session, loads bill + supplier, updates PaidAmount/Status/Balance,
+    /// creates SupplierBillPayment, CashFlowTransaction (Outflow), and double-entry journal
+    /// (Debit AccountsPayable / Credit Treasury). Commits atomically.
+    /// </summary>
+    Task PaySupplierBillAsync(Guid billId, PaySupplierBillRequest request, Guid currentUserId);
+
+    /// <summary>
+    /// Finance Phase 1: Processes a refund for an approved Credit Note.
+    /// Validates open cashier session, loads creditNote + invoice, creates refund Payment (Expense type),
+    /// updates creditNote status to Refunded, creates CashFlowTransaction (Outflow), and double-entry
+    /// journal (Debit SalesReturns / Credit Treasury). Commits atomically.
+    /// </summary>
+    Task ProcessRefundAsync(Guid creditNoteId, ProcessRefundRequest request, Guid currentUserId);
 }

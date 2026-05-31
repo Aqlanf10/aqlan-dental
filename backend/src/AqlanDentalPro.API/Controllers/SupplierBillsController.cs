@@ -112,6 +112,10 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
             };
 
             db.SupplierBills.Add(bill);
+
+            // Finance Phase 1: Update supplier balance (increase what we owe)
+            supplier.Balance += req.TotalAmount;
+
             await db.SaveChangesAsync();
             await tx.CommitAsync();
 
@@ -457,6 +461,12 @@ public class SupplierBillsController(AppDbContext db, ICurrentUserService curren
             // Update bill paid amount and status
             bill.PaidAmount += req.Amount;
             bill.Status = bill.PaidAmount >= bill.TotalAmount ? BillStatus.FullyPaid : BillStatus.PartiallyPaid;
+
+            // Finance Phase 1: Update supplier balance (reduce what we owe)
+            if (bill.Supplier != null)
+            {
+                bill.Supplier.Balance -= req.Amount;
+            }
 
             await db.SaveChangesAsync();
             await tx.CommitAsync();

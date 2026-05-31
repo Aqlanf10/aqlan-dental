@@ -22,5 +22,7 @@ public enum JournalAccountType
     OwnerEquity,       // حقوق الملكية — Owner's equity (capital deposits, opening balances)
     OtherReceivable,   // ذمم مدينة أخرى — Classified external deposits awaiting allocation
     ContraRevenue,     // إيرادات مقابلة — Deductions from revenue (discounts, allowances)
-    ContraExpense      // مصروفات مقابلة — Reductions to expenses
+    ContraExpense,     // مصروفات مقابلة — Reductions to expenses
+    AccountsPayable = 20, // ذمم دائنة — Amounts the clinic owes suppliers (supplier bills)
+    SalesReturns = 30     // مرتجعات مبيعات — Revenue reductions from credit notes/returns
 }

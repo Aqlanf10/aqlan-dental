@@ -2304,6 +2304,98 @@ if (enableStartupDbMaintenance)
         logger.LogError(ex, "Failed to ensure SupplierBillPayments table");
     }
 
+    // ── Finance Phase 1: CreditNotes + Supplier.Type/Balance ─────────────
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "CreditNotes" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "InvoiceId" uuid NOT NULL,
+                "PatientId" uuid NOT NULL,
+                "Amount" numeric(12,2) NOT NULL,
+                "Reason" character varying(500) NOT NULL DEFAULT '',
+                "Status" integer NOT NULL DEFAULT 0,
+                "RefundPaymentId" uuid NULL,
+                "BranchId" uuid NOT NULL,
+                "CreatedBy" uuid NOT NULL,
+                "Notes" text NULL,
+                "CreatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "UpdatedAt" timestamp with time zone NOT NULL DEFAULT NOW(),
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "DeletedAt" timestamp with time zone NULL,
+                "DeletedBy" uuid NULL
+            );
+        """);
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CreditNotes_InvoiceId" ON "CreditNotes" ("InvoiceId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CreditNotes_PatientId" ON "CreditNotes" ("PatientId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CreditNotes_BranchId" ON "CreditNotes" ("BranchId")""");
+        await db.Database.ExecuteSqlRawAsync("""CREATE INDEX IF NOT EXISTS "IX_CreditNotes_Status" ON "CreditNotes" ("Status")""");
+
+        // Supplier.Type column (integer enum: 0=DentalLab, 1=MedicalVendor, 2=GeneralService)
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Suppliers' AND column_name = 'Type') THEN
+                    ALTER TABLE "Suppliers" ADD COLUMN "Type" integer NOT NULL DEFAULT 1;
+                END IF;
+            END $$;
+        """);
+
+        // Supplier.Balance column (default 0)
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Suppliers' AND column_name = 'Balance') THEN
+                    ALTER TABLE "Suppliers" ADD COLUMN "Balance" numeric(12,2) NOT NULL DEFAULT 0;
+                END IF;
+            END $$;
+        """);
+
+        // FK: CreditNotes -> Invoices (Restrict)
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_CreditNotes_Invoices_InvoiceId') THEN
+                    ALTER TABLE "CreditNotes" ADD CONSTRAINT "FK_CreditNotes_Invoices_InvoiceId"
+                        FOREIGN KEY ("InvoiceId") REFERENCES "Invoices"("Id") ON DELETE RESTRICT;
+                END IF;
+            END $$;
+        """);
+
+        // FK: CreditNotes -> Patients
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_CreditNotes_Patients_PatientId') THEN
+                    ALTER TABLE "CreditNotes" ADD CONSTRAINT "FK_CreditNotes_Patients_PatientId"
+                        FOREIGN KEY ("PatientId") REFERENCES "Patients"("Id") ON DELETE CASCADE;
+                END IF;
+            END $$;
+        """);
+
+        // FK: CreditNotes -> Payments (RefundPaymentId)
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_CreditNotes_Payments_RefundPaymentId') THEN
+                    ALTER TABLE "CreditNotes" ADD CONSTRAINT "FK_CreditNotes_Payments_RefundPaymentId"
+                        FOREIGN KEY ("RefundPaymentId") REFERENCES "Payments"("Id") ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """);
+
+        // FK: CreditNotes -> Branches
+        await db.Database.ExecuteSqlRawAsync("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_CreditNotes_Branches_BranchId') THEN
+                    ALTER TABLE "CreditNotes" ADD CONSTRAINT "FK_CreditNotes_Branches_BranchId"
+                        FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE CASCADE;
+                END IF;
+            END $$;
+        """);
+
+        logger.LogInformation("Finance Phase 1: CreditNotes table + Supplier.Type/Balance columns ensured (idempotent)");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to ensure Finance Phase 1 CreditNotes/Supplier schema. Credit note and refund endpoints may return 500!");
+    }
+
     // ── VaultTransfers ─────────────────────────────────────────────────────
     try
     {

@@ -112,6 +112,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SupplierBill> SupplierBills => Set<SupplierBill>();
     public DbSet<SupplierBillPayment> SupplierBillPayments => Set<SupplierBillPayment>();
 
+    // Finance Phase 1 — Credit Notes & Returns
+    public DbSet<CreditNote> CreditNotes => Set<CreditNote>();
+
     // Finance V3 — Double-Entry Bookkeeping (JournalEntry + JournalLine)
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalLine> JournalLines => Set<JournalLine>();
@@ -147,6 +150,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 property.SetValueConverter(jsonConverter);
             }
         }
+
+        // Finance Phase 1: CreditNote → Invoice (Restrict delete to preserve invoice integrity)
+        modelBuilder.Entity<CreditNote>()
+            .HasOne(c => c.Invoice).WithMany()
+            .HasForeignKey(c => c.InvoiceId).OnDelete(DeleteBehavior.Restrict);
+
+        // Finance Phase 1: SupplierBill → Supplier (Cascade delete bills when supplier is deleted)
+        modelBuilder.Entity<SupplierBill>()
+            .HasOne(sb => sb.Supplier).WithMany(s => s.Bills)
+            .HasForeignKey(sb => sb.SupplierId).OnDelete(DeleteBehavior.Cascade);
+
+        // Finance Phase 1: Supplier.Balance default value
+        modelBuilder.Entity<Supplier>().Property(s => s.Balance).HasDefaultValue(0m);
 
         // Global soft-delete query filter for all ISoftDeletable entities
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())

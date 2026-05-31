@@ -14,6 +14,7 @@ public enum FinancialDocumentType
     AdvancePayment,    // سلفة موظف — Employee advance payment
     CommissionPayment, // صرف عمولة — Doctor commission payment
     SupplierPayment,   // دفع مورد — Supplier bill payment
+    CreditNoteRefund,  // استرداد إشعار دائن — Credit note refund
     VaultTransfer,     // ترحيل سيولة — Vault transfer / external deposit
     ContractCancellation, // إلغاء عقد — Contract cancellation reversal
     PaymentDeletion,   // حذف دفعة — Payment deletion reversal

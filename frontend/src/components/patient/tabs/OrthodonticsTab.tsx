@@ -64,8 +64,11 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
   const [cases, setCases] = useState<OrthoCaseDto[]>([]);
   const [overviews, setOverviews] = useState<Record<string, OrthoOverviewDto>>({});
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    setFetchError(false);
     api
       .get<OrthoCaseDto[]>(`/api/ortho-cases?patientId=${patientId}`)
       .then((r) => {
@@ -78,9 +81,9 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
             .catch(() => {});
         });
       })
-      .catch(() => {})
+      .catch(() => { setFetchError(true); })
       .finally(() => setLoading(false));
-  }, [patientId]);
+  }, [patientId, retryKey]);
 
   if (loading) {
     return (
@@ -88,6 +91,15 @@ export function OrthodonticsTab({ patientId }: OrthodonticsTabProps) {
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="h-40 bg-[#f1f5f9] rounded-xl" />
         ))}
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+        <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );
   }

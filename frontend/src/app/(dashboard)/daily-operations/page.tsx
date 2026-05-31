@@ -1238,10 +1238,10 @@ export default function DailyOperationsPage() {
         onClose={() => setChangeRoomModalOpen(false)}
         rooms={rooms}
         isPending={changeRoomMutation.isPending}
-        onConfirm={async (roomId: string) => {
+        onConfirm={async (roomName: string) => {
           if (!selectedItem?.queueItemId) return;
           try {
-            await changeRoomMutation.mutateAsync({ queueItemId: selectedItem.queueItemId, roomId });
+            await changeRoomMutation.mutateAsync({ queueItemId: selectedItem.queueItemId, roomName });
             toast.success("تم تغيير الغرفة");
             setChangeRoomModalOpen(false);
           } catch {

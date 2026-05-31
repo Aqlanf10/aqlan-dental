@@ -204,10 +204,10 @@ export function useJourneyCancelQueue() {
 export function useJourneyChangeRoom() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (params: { queueItemId: string; roomId: string }) => {
+    mutationFn: async (params: { queueItemId: string; roomName: string }) => {
       const { data } = await api.patch(
         `/api/clinic-queue/${params.queueItemId}/room`,
-        { roomId: params.roomId }
+        { roomName: params.roomName }
       );
       return data;
     },
@@ -318,11 +318,14 @@ export function useJourneyUpdateVisit() {
 export function useJourneySendSms() {
   return useMutation({
     mutationFn: async (body: {
-      to: string;
+      patientId: string;
       message: string;
-      patientId?: string;
     }) => {
-      const { data } = await api.post("/api/sms/send", body);
+      const { data } = await api.post("/api/sms/send", {
+        patientId: body.patientId,
+        templateType: "custom",
+        customMessage: body.message,
+      });
       return data;
     },
   });
@@ -349,9 +352,9 @@ export function useJourneyCreatePrescription() {
       doctorId?: string;
       diagnosis?: string;
       notes?: string;
-      items: Array<{
-        medicationName: string;
-        dosage?: string;
+      drugs: Array<{
+        name: string;
+        dose?: string;
         frequency?: string;
         duration?: string;
         notes?: string;
@@ -382,7 +385,23 @@ export function useJourneyCreateAppointment() {
       appointmentType?: string;
       notes?: string;
     }) => {
-      const { data } = await api.post("/api/appointments", body);
+      // Compute durationMinutes from startTime and endTime
+      let durationMinutes: number | undefined;
+      if (body.endTime && body.startTime) {
+        const [sh, sm] = body.startTime.split(":").map(Number);
+        const [eh, em] = body.endTime.split(":").map(Number);
+        if (!isNaN(sh) && !isNaN(sm) && !isNaN(eh) && !isNaN(em)) {
+          durationMinutes = (eh * 60 + em) - (sh * 60 + sm);
+          if (durationMinutes <= 0) durationMinutes = undefined;
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { endTime, ...rest } = body;
+      const { data } = await api.post("/api/appointments", {
+        ...rest,
+        durationMinutes: durationMinutes ?? 30,
+        appointmentType: body.appointmentType || "Consultation",
+      });
       return data;
     },
     onSuccess: () => {
@@ -399,10 +418,15 @@ export function useQueueEstimatedWait(queueItemId: string | null | undefined) {
     queryKey: ["clinic-queue", "estimated-wait", queueItemId],
     queryFn: async () => {
       if (!queueItemId) return null;
-      const { data } = await api.get(
-        `/api/clinic-queue/estimated-wait?queueItemId=${queueItemId}`
-      );
-      return data as { estimatedMinutes: number; position: number };
+      const { data } = await api.get<{
+        averageServiceTimeMinutes: number;
+        currentWaitMinutes: number;
+        waitingCount: number;
+      }>(`/api/clinic-queue/estimated-wait?queueItemId=${queueItemId}`);
+      return {
+        estimatedMinutes: data.currentWaitMinutes,
+        position: data.waitingCount,
+      };
     },
     enabled: !!queueItemId,
     staleTime: 15_000,

@@ -32,13 +32,16 @@ interface LabOrdersTabProps {
 export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
   const [orders, setOrders] = useState<LabOrderDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    setFetchError(false);
     api.get<LabOrderDto[]>(`/api/lab-orders?patientId=${patientId}`)
       .then((r) => setOrders(r.data))
-      .catch(() => {})
+      .catch(() => { setFetchError(true); })
       .finally(() => setLoading(false));
-  }, [patientId]);
+  }, [patientId, retryKey]);
 
   if (loading) {
     return (
@@ -46,6 +49,15 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
         ))}
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+        <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );
   }

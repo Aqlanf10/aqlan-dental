@@ -692,13 +692,14 @@ export function ChangeRoomModal({
   open: boolean; onClose: () => void;
   rooms: RoomOption[];
   isPending: boolean;
-  onConfirm: (roomId: string) => void;
+  onConfirm: (roomName: string) => void;
 }) {
   const [roomId, setRoomId] = useState("");
 
   const handleSubmit = () => {
     if (!roomId) return;
-    onConfirm(roomId);
+    const selectedRoom = rooms.find(r => r.id === roomId);
+    onConfirm(selectedRoom?.arabicName ?? roomId);
     setRoomId("");
   };
 

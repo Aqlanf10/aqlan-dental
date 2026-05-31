@@ -263,7 +263,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to load invoice {InvoiceId} with full includes. Inner: {InnerMessage}", id, ex.InnerException?.Message ?? ex.Message);
+            logger.LogError(ex, "Failed to load invoice {InvoiceId} with full includes", id);
 
             // Fallback 1: try without ThenInclude(Doctor)
             try
@@ -285,7 +285,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
             }
             catch (Exception ex2)
             {
-                logger.LogError(ex2, "Fallback1 failed for invoice {InvoiceId}. Inner: {InnerMessage}", id, ex2.InnerException?.Message ?? ex2.Message);
+                logger.LogError(ex2, "Fallback1 failed for invoice {InvoiceId}", id);
 
                 // Fallback 2: minimal query — no Includes, load navigation manually
                 try
@@ -306,7 +306,7 @@ public class InvoicesController(AppDbContext db, IPdfService pdfService, IAuditS
                 }
                 catch (Exception ex3)
                 {
-                    logger.LogError(ex3, "All fallbacks failed for invoice {InvoiceId}. Inner: {InnerMessage}", id, ex3.InnerException?.Message ?? ex3.Message);
+                    logger.LogError(ex3, "All fallbacks failed for invoice {InvoiceId}", id);
                     return StatusCode(500, new { message = "فشل تحميل الفاتورة — يرجى المحاولة مرة أخرى" });
                 }
             }

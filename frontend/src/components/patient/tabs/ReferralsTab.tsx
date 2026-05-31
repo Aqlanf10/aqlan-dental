@@ -40,17 +40,20 @@ interface ReferralsTabProps {
 export function ReferralsTab({ patientId }: ReferralsTabProps) {
   const [referrals, setReferrals] = useState<ReferralDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    setFetchError(false);
     api.get<{ data: ReferralDto[] } | ReferralDto[]>(`/api/referrals?patientId=${patientId}`)
       .then((r) => {
         // API returns { data: [...], total, page, pageSize } — extract the array
         const arr = Array.isArray(r.data) ? r.data : (r.data as { data: ReferralDto[] }).data ?? [];
         setReferrals(arr);
       })
-      .catch(() => {})
+      .catch(() => { setFetchError(true); })
       .finally(() => setLoading(false));
-  }, [patientId]);
+  }, [patientId, retryKey]);
 
   if (loading) {
     return (
@@ -58,6 +61,15 @@ export function ReferralsTab({ patientId }: ReferralsTabProps) {
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="h-16 bg-[#f1f5f9] rounded-lg" />
         ))}
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-sm text-red-600 mb-2">فشل في تحميل البيانات</p>
+        <button onClick={() => setRetryKey((k) => k + 1)} className="text-xs text-blue-600 underline">إعادة المحاولة</button>
       </div>
     );
   }

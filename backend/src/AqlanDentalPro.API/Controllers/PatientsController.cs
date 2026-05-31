@@ -7,6 +7,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -160,11 +161,7 @@ public class PatientsController(
             logger.LogWarning(ex, "Patient creation conflict");
             return Conflict(new { message = ex.Message });
         }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_NormalizedPhone") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_NormalizedWhatsApp") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_Phone") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             logger.LogWarning(ex, "Duplicate patient data on create");
             return Conflict(new { message = "البيانات مكررة — رقم الهاتف أو الواتساب أو رقم الملف موجود مسبقاً" });
@@ -258,11 +255,7 @@ public class PatientsController(
             logger.LogWarning(ex, "Patient update conflict");
             return Conflict(new { message = ex.Message });
         }
-        catch (DbUpdateException ex) when (ex.InnerException?.Message?.Contains("IX_Patients_NormalizedPhone") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_NormalizedWhatsApp") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_Phone") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_WhatsApp") == true
-                                         || ex.InnerException?.Message?.Contains("IX_Patients_PatientNumber") == true)
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
             logger.LogWarning(ex, "Duplicate patient data on update");
             return Conflict(new { message = "رقم الهاتف أو الواتساب مستخدم مسبقاً لمريض آخر." });
@@ -530,6 +523,18 @@ public class PatientsController(
     }
 
     // ── Mapping helpers ───────────────────────────────────────────────────────
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        var inner = ex.InnerException;
+        while (inner != null)
+        {
+            if (inner is PostgresException pgEx && pgEx.SqlState == "23505")
+                return true;
+            inner = inner.InnerException;
+        }
+        return false;
+    }
 
     private static PatientClinicalDto ToClinicalDto(PatientProfileDto p) => new()
     {

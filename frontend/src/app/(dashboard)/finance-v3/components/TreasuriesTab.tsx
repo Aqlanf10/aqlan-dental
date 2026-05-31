@@ -157,8 +157,8 @@ export function TreasuriesTab() {
               { key: "destinationTreasuryName", label: "إلى" },
               { key: "amount", label: "المبلغ", render: (r) => formatYER(r.amount) },
               { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
-              { key: "requestedBy", label: "بواسطة" },
-              { key: "requestedAt", label: "التاريخ", render: (r) => safeFormatDateTime(r.requestedAt) },
+              { key: "performedBy", label: "بواسطة" },
+              { key: "transferDate", label: "التاريخ", render: (r) => safeFormatDateTime(r.transferDate) },
               { key: "actions", label: "إجراءات", render: (r) => r.status === "Pending" ? (
                 <div className="flex items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); setConfirmApprove({ id: r.id, action: "approve" }); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.successBorder }} title="اعتماد"><ThumbsUp className="w-3.5 h-3.5" /></button>

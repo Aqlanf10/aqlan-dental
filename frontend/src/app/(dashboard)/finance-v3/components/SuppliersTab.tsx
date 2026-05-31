@@ -25,7 +25,7 @@ import type {
   SupplierType,
   Treasury,
 } from "./types";
-import { SUPPLIER_TYPE_LABELS, SUPPLIER_TYPE_OPTIONS, PAYMENT_METHODS } from "./types";
+import { SUPPLIER_TYPE_MAP, SUPPLIER_TYPE_OPTIONS, PAYMENT_METHODS, getSupplierTypeLabel } from "./types";
 import {
   LoadingSkeleton,
   EmptyState,
@@ -272,15 +272,16 @@ export function SuppliersTab() {
     fetchTreasuries();
   }, [fetchTreasuries]);
 
-  /* ── Supplier type badge renderer ── */
-  const renderTypeBadge = (type: SupplierType) => {
-    const label = SUPPLIER_TYPE_LABELS[type] ?? type;
-    const colorMap: Record<SupplierType, { bg: string; text: string }> = {
+  /* ── Supplier type badge renderer (numeric type from backend) ── */
+  const renderTypeBadge = (typeNum: number) => {
+    const label = getSupplierTypeLabel(typeNum);
+    const key = SUPPLIER_TYPE_MAP[typeNum] ?? "MedicalVendor";
+    const colorMap: Record<string, { bg: string; text: string }> = {
       DentalLab: { bg: "#deecf9", text: "#0078d4" },
       MedicalVendor: { bg: "#dff6dd", text: "#107c10" },
       GeneralService: { bg: "#fff4ce", text: "#8a6914" },
     };
-    const c = colorMap[type] ?? { bg: tokens.cardHover, text: tokens.textSecondary };
+    const c = colorMap[key] ?? { bg: tokens.cardHover, text: tokens.textSecondary };
     return (
       <span
         className="inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full"
@@ -373,7 +374,7 @@ export function SuppliersTab() {
             {
               key: "type",
               label: "النوع",
-              render: (r) => renderTypeBadge(r.type ?? "MedicalVendor"),
+              render: (r) => renderTypeBadge(r.type),
             },
             {
               key: "phone",

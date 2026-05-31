@@ -428,7 +428,7 @@ public class ClinicQueueController(
                 }
                 catch (DbUpdateException ex)
                 {
-                    logger.LogError(ex, "Failed to create visit for queue item {QueueItemId}. Inner: {InnerMessage}", id, ex.InnerException?.Message);
+                    logger.LogError(ex, "Failed to create visit for queue item {QueueItemId}", id);
                     throw;
                 }
                 item.VisitId = visit.Id;

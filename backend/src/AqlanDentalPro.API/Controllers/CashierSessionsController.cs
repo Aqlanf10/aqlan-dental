@@ -275,9 +275,11 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             .Where(s => s.IsActive)
             .AsQueryable();
 
-        // Non-admin can only see their own branch sessions
-        if (currentUser.BranchId.HasValue && !currentUser.IsAdmin)
+        // Non-admin must have a valid branch assignment and can only see their own branch sessions
+        if (!currentUser.IsAdmin)
         {
+            if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
+                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
             query = query.Where(s => s.BranchId == currentUser.BranchId.Value);
         }
 

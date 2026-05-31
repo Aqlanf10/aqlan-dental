@@ -1233,7 +1233,7 @@ export function DirectPaymentModal({
       setIsSearching(true);
       try {
         const { data } = await api.get(`/api/patients?search=${encodeURIComponent(searchQuery.trim())}&pageSize=10`);
-        const patients = Array.isArray(data) ? data : (data as { items?: SearchedPatient[] }).items ?? [];
+        const patients = Array.isArray(data) ? data : (data as { data?: SearchedPatient[]; items?: SearchedPatient[] }).data ?? (data as { items?: SearchedPatient[] }).items ?? [];
         setSearchResults(patients.map((p: SearchedPatient & { fullName?: string; arabicName?: string }) => ({
           id: p.id,
           name: p.name || p.fullName || p.arabicName || "—",

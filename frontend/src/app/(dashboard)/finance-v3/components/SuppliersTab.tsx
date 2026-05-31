@@ -7,77 +7,171 @@ import {
   Plus,
   FileText,
   DollarSign,
+  Users,
+  CircleDollarSign,
+  Search,
+  Eye,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
-import type { SupplierListItem, SupplierBill, CreateSupplierBillRequest, PaySupplierBillRequest } from "./types";
-import { PAYMENT_METHODS } from "./types";
-import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
+import type {
+  SupplierDto,
+  SupplierStatement,
+  SupplierBillDto,
+  CreateSupplierRequest,
+  PaySupplierBillRequest,
+  SupplierType,
+} from "./types";
+import { SUPPLIER_TYPE_LABELS, SUPPLIER_TYPE_OPTIONS, PAYMENT_METHODS } from "./types";
+import {
+  LoadingSkeleton,
+  EmptyState,
+  DataTable,
+  Modal,
+  StatusBadge,
+  KpiCard,
+  tokens,
+  inputStyle,
+  labelStyle,
+  btnPrimary,
+  btnGhost,
+} from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   Tab 9: Suppliers
+   Tab 9: Suppliers — الموردون والمعامل
+   ═══════════════════════════════════════════════════════════════════════════════
+   شاشة شاملة تعرض:
+   - بطاقات ملخص مالي (عدد الموردين، إجمالي الديون)
+   - جدول الموردين مع أزرار كشف الحساب وسداد دفعة
+   - نوافذ منبثقة: إضافة مورد، كشف حساب، سداد قسط، فاتورة جديدة
    ═══════════════════════════════════════════════════════════════════════════════ */
+
 export function SuppliersTab() {
-  const [suppliers, setSuppliers] = useState<SupplierListItem[]>([]);
-  const [bills, setBills] = useState<SupplierBill[]>([]);
+  /* ── State ── */
+  const [suppliers, setSuppliers] = useState<SupplierDto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateBill, setShowCreateBill] = useState(false);
-  const [showPayBill, setShowPayBill] = useState<SupplierBill | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Create bill form
-  const [bSupplier, setBSupplier] = useState("");
-  const [bDesc, setBDesc] = useState("");
-  const [bAmount, setBAmount] = useState("");
-  const [bDueDate, setBDueDate] = useState("");
+  // Modal states
+  const [showCreateSupplier, setShowCreateSupplier] = useState(false);
+  const [showStatement, setShowStatement] = useState<SupplierDto | null>(null);
+  const [showCreateBill, setShowCreateBill] = useState<SupplierDto | null>(null);
+  const [showPayBill, setShowPayBill] = useState<SupplierBillDto | null>(null);
 
-  // Pay installment form
+  // Form: Create Supplier
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newContact, setNewContact] = useState("");
+  const [newType, setNewType] = useState<SupplierType>("DentalLab");
+
+  // Form: Create Bill
+  const [billDesc, setBillDesc] = useState("");
+  const [billAmount, setBillAmount] = useState("");
+  const [billDueDate, setBillDueDate] = useState("");
+
+  // Form: Pay Bill
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
 
-  const fetchData = useCallback(async () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  /* ── Fetch suppliers from Finance V3 API ── */
+  const fetchSuppliers = useCallback(async () => {
     try {
       setLoading(true);
-      const [sRes, bRes] = await Promise.all([
-        api.get<{ data: SupplierListItem[]; total: number }>("/api/suppliers"),
-        api.get<{ data: SupplierBill[]; total: number }>("/api/supplier-bills"),
-      ]);
-      setSuppliers(sRes.data.data ?? (Array.isArray(sRes.data) ? sRes.data as unknown as SupplierListItem[] : []));
-      setBills(bRes.data.data ?? (Array.isArray(bRes.data) ? bRes.data as unknown as SupplierBill[] : []));
-    } catch { toast.error("فشل في تحميل بيانات الموردين"); } finally { setLoading(false); }
+      const res = await api.get<{ data: SupplierDto[]; total: number }>(
+        "/api/finance-v3/suppliers"
+      );
+      const list = res.data.data ?? (Array.isArray(res.data) ? (res.data as unknown as SupplierDto[]) : []);
+      setSuppliers(list);
+    } catch {
+      toast.error("فشل في تحميل بيانات الموردين");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchSuppliers();
+  }, [fetchSuppliers]);
 
+  /* ── Computed values ── */
+  const filteredSuppliers = suppliers.filter((s) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.trim().toLowerCase();
+    return (
+      s.name.toLowerCase().includes(q) ||
+      (s.contactPerson && s.contactPerson.toLowerCase().includes(q)) ||
+      (s.phone && s.phone.includes(q))
+    );
+  });
+
+  const totalDebt = suppliers.reduce((sum, s) => sum + (s.balance ?? 0), 0);
+  const suppliersWithDebt = suppliers.filter((s) => (s.balance ?? 0) > 0).length;
+
+  /* ── Handlers ── */
+
+  // Create Supplier
+  const handleCreateSupplier = async () => {
+    if (!newName.trim()) {
+      toast.error("اسم المورد مطلوب");
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const payload: CreateSupplierRequest = {
+        name: newName.trim(),
+        contactPerson: newContact.trim() || undefined,
+        phone: newPhone.trim() || undefined,
+        type: newType,
+      };
+      await api.post("/api/finance-v3/suppliers", payload);
+      toast.success("تم إنشاء المورد/المعمل بنجاح");
+      setShowCreateSupplier(false);
+      resetCreateSupplierForm();
+      fetchSuppliers();
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل في إنشاء المورد"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Create Supplier Bill
   const handleCreateBill = async () => {
-    if (!bSupplier || !bDesc.trim() || !bAmount || Number(bAmount) <= 0 || !bDueDate) {
+    if (!showCreateBill) return;
+    if (!billDesc.trim() || !billAmount || Number(billAmount) <= 0 || !billDueDate) {
       toast.error("يرجى ملء جميع الحقول المطلوبة");
       return;
     }
     try {
       setSubmitting(true);
-      const payload: CreateSupplierBillRequest = {
-        supplierId: bSupplier,
-        description: bDesc,
-        totalAmount: Number(bAmount),
-        dueDate: bDueDate,
-      };
-      await api.post("/api/finance-v3/supplier-bills", payload);
-      toast.success("تم إنشاء فاتورة المورد بنجاح");
-      setShowCreateBill(false);
-      setBSupplier(""); setBDesc(""); setBAmount(""); setBDueDate("");
-      fetchData();
-    } catch (err) { toast.error(extractErrorMessage(err, "فشل في إنشاء الفاتورة")); } finally { setSubmitting(false); }
+      await api.post(`/api/finance-v3/suppliers/${showCreateBill.id}/bills`, {
+        description: billDesc.trim(),
+        totalAmount: Number(billAmount),
+        dueDate: billDueDate,
+      });
+      toast.success("تم تسجيل فاتورة المورد بنجاح");
+      setShowCreateBill(null);
+      resetBillForm();
+      fetchSuppliers();
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل في تسجيل الفاتورة"));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  // Pay Bill Installment
   const handlePayBill = async () => {
-    if (!showPayBill || !payAmount || Number(payAmount) <= 0) {
-      toast.error("يرجى إدخال المبلغ");
+    if (!showPayBill) return;
+    if (!payAmount || Number(payAmount) <= 0) {
+      toast.error("يرجى إدخال مبلغ صحيح");
       return;
     }
-    if (Number(payAmount) > showPayBill.balance) {
-      toast.error(`المبلغ يتجاوز المستحق (${formatYER(showPayBill.balance)})`);
+    if (Number(payAmount) > showPayBill.remainingAmount) {
+      toast.error(`المبلغ يتجاوز المستحق (${formatYER(showPayBill.remainingAmount)})`);
       return;
     }
     try {
@@ -86,88 +180,470 @@ export function SuppliersTab() {
         amount: Number(payAmount),
         paymentMethod: payMethod,
       };
-      await api.post(`/api/finance-v3/supplier-bills/${showPayBill.id}/pay`, payload);
-      toast.success("تم سداد القسط بنجاح");
+      await api.post(`/api/finance-v3/suppliers/bills/${showPayBill.id}/pay`, payload);
+      toast.success("تم سداد القسط بنجاح وترحيل القيد المحاسبي");
       setShowPayBill(null);
-      setPayAmount(""); setPayMethod("cash");
-      fetchData();
-    } catch (err) { toast.error(extractErrorMessage(err, "فشل في سداد القسط")); } finally { setSubmitting(false); }
+      resetPayForm();
+      fetchSuppliers();
+      // Refresh statement if open
+      if (showStatement) {
+        loadStatement(showStatement.id);
+      }
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "فشل في سداد القسط"));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  // Load supplier account statement
+  const [statementData, setStatementData] = useState<SupplierStatement | null>(null);
+  const [statementLoading, setStatementLoading] = useState(false);
+
+  const loadStatement = async (supplierId: string) => {
+    try {
+      setStatementLoading(true);
+      const res = await api.get<SupplierStatement>(
+        `/api/finance-v3/suppliers/${supplierId}/bills`
+      );
+      setStatementData(res.data);
+    } catch {
+      toast.error("فشل في تحميل كشف الحساب");
+    } finally {
+      setStatementLoading(false);
+    }
+  };
+
+  const openStatement = (supplier: SupplierDto) => {
+    setShowStatement(supplier);
+    loadStatement(supplier.id);
+  };
+
+  /* ── Form reset helpers ── */
+  const resetCreateSupplierForm = () => {
+    setNewName("");
+    setNewPhone("");
+    setNewContact("");
+    setNewType("DentalLab");
+  };
+
+  const resetBillForm = () => {
+    setBillDesc("");
+    setBillAmount("");
+    setBillDueDate("");
+  };
+
+  const resetPayForm = () => {
+    setPayAmount("");
+    setPayMethod("cash");
+  };
+
+  /* ── Supplier type badge renderer ── */
+  const renderTypeBadge = (type: SupplierType) => {
+    const label = SUPPLIER_TYPE_LABELS[type] ?? type;
+    const colorMap: Record<SupplierType, { bg: string; text: string }> = {
+      DentalLab: { bg: "#deecf9", text: "#0078d4" },
+      MedicalVendor: { bg: "#dff6dd", text: "#107c10" },
+      GeneralService: { bg: "#fff4ce", text: "#8a6914" },
+    };
+    const c = colorMap[type] ?? { bg: tokens.cardHover, text: tokens.textSecondary };
+    return (
+      <span
+        className="inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full"
+        style={{ backgroundColor: c.bg, color: c.text }}
+      >
+        {label}
+      </span>
+    );
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     Render
+     ═══════════════════════════════════════════════════════════════════════════ */
   return (
     <div className="p-6 space-y-6">
-      {/* Suppliers */}
-      <div>
-        <SectionHeader title="الموردون" action={
-          <button onClick={fetchData} className="w-8 h-8 rounded-md flex items-center justify-center" style={{ color: tokens.brand, border: `1px solid ${tokens.border}` }} title="تحديث"><RefreshCw className="w-4 h-4" /></button>
-        } />
-        {loading ? <LoadingSkeleton /> : suppliers.length === 0 ? <EmptyState icon={Truck} message="لا يوجد موردون" /> : (
-          <DataTable<SupplierListItem>
-            keyField="id"
-            data={suppliers}
-            columns={[
-              { key: "name", label: "الاسم" },
-              { key: "contactPerson", label: "جهة الاتصال", render: (r) => r.contactPerson ?? "—" },
-              { key: "phone", label: "الهاتف", render: (r) => r.phone ?? "—" },
-              { key: "totalBilled", label: "إجمالي الفواتير", render: (r) => formatYER(r.totalBilled) },
-              { key: "totalPaid", label: "المدفوع", render: (r) => formatYER(r.totalPaid) },
-              { key: "balance", label: "الرصيد", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
-            ]}
-          />
-        )}
+      {/* ── KPI Summary Cards ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <KpiCard
+          label="إجمالي الموردين والمعامل"
+          value={String(suppliers.length)}
+          sublabel={suppliersWithDebt > 0 ? `${suppliersWithDebt} لديهم ديون مستحقة` : "لا توجد ديون"}
+          color={tokens.brand}
+          icon={<Users className="w-4 h-4" style={{ color: tokens.brand }} />}
+        />
+        <KpiCard
+          label="إجمالي الديون المستحقة"
+          value={formatYER(totalDebt)}
+          sublabel="لنا ديون على الموردين"
+          color={totalDebt > 0 ? "#d13438" : "#107c10"}
+          icon={<CircleDollarSign className="w-4 h-4" style={{ color: totalDebt > 0 ? "#d13438" : "#107c10" }} />}
+        />
+        <KpiCard
+          label="إجمالي المبالغ المدفوعة"
+          value={formatYER(suppliers.reduce((s, x) => s + (x.totalPaid ?? 0), 0))}
+          sublabel="للموردين والمعامل"
+          color="#107c10"
+          icon={<DollarSign className="w-4 h-4" style={{ color: "#107c10" }} />}
+        />
       </div>
 
-      {/* Supplier Bills */}
-      <div>
-        <SectionHeader title="فواتير الموردين" action={
-          <button onClick={() => setShowCreateBill(true)} style={btnPrimary}><Plus className="w-4 h-4" /> فاتورة جديدة</button>
-        } />
-        {loading ? <LoadingSkeleton /> : bills.length === 0 ? <EmptyState icon={FileText} message="لا توجد فواتير موردين" /> : (
-          <DataTable<SupplierBill>
-            keyField="id"
-            data={bills}
-            columns={[
-              { key: "supplierName", label: "المورد" },
-              { key: "description", label: "الوصف" },
-              { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
-              { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
-              { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
-              { key: "dueDate", label: "تاريخ الاستحقاق", render: (r) => safeFormatDate(r.dueDate) },
-              { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
-              { key: "actions", label: "إجراءات", render: (r) => r.balance > 0 ? (
-                <button onClick={(e) => { e.stopPropagation(); setShowPayBill(r); setPayAmount(""); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="سداد قسط"><DollarSign className="w-3.5 h-3.5" /></button>
-              ) : null },
-            ]}
-          />
-        )}
+      {/* ── Search & Action Bar ── */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 rounded-lg border p-4" style={{ backgroundColor: tokens.card, borderColor: tokens.border }}>
+        <div className="flex items-center gap-3 flex-1 w-full sm:w-auto">
+          <h2 className="text-sm font-bold whitespace-nowrap" style={{ color: tokens.textPrimary }}>
+            سجل المعامل والموردين
+          </h2>
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: tokens.textTertiary }} />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="بحث بالاسم أو الهاتف..."
+              className="w-full pr-9 pl-3 py-2 rounded-md text-xs"
+              style={{ ...inputStyle, fontSize: 12 }}
+            />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={fetchSuppliers} className="w-8 h-8 rounded-md flex items-center justify-center transition-colors" style={{ color: tokens.textSecondary, border: `1px solid ${tokens.border}` }} title="تحديث">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={() => setShowCreateSupplier(true)} style={btnPrimary}>
+            <Plus className="w-4 h-4" /> إضافة مورد جديد
+          </button>
+        </div>
       </div>
 
-      {/* Create Supplier Bill Modal */}
-      <Modal open={showCreateBill} onClose={() => setShowCreateBill(false)} title="فاتورة مورد جديدة">
+      {/* ── Suppliers Data Table ── */}
+      {loading ? (
+        <LoadingSkeleton rows={5} />
+      ) : filteredSuppliers.length === 0 ? (
+        <EmptyState icon={Truck} message={searchQuery ? "لا توجد نتائج مطابقة" : "لا يوجد موردون مسجلين"} />
+      ) : (
+        <DataTable<SupplierDto>
+          keyField="id"
+          data={filteredSuppliers}
+          columns={[
+            {
+              key: "name",
+              label: "اسم الجهة",
+              render: (r) => (
+                <div>
+                  <span className="font-semibold" style={{ color: tokens.textPrimary }}>{r.name}</span>
+                  {r.contactPerson && (
+                    <p className="text-[11px]" style={{ color: tokens.textTertiary }}>{r.contactPerson}</p>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "type",
+              label: "النوع",
+              render: (r) => renderTypeBadge(r.type ?? "MedicalVendor"),
+            },
+            {
+              key: "phone",
+              label: "الهاتف",
+              render: (r) => r.phone ?? "—",
+            },
+            {
+              key: "totalBilled",
+              label: "إجمالي الفواتير",
+              render: (r) => formatYER(r.totalBilled ?? 0),
+            },
+            {
+              key: "totalPaid",
+              label: "المدفوع",
+              render: (r) => formatYER(r.totalPaid ?? 0),
+            },
+            {
+              key: "balance",
+              label: "الرصيد المستحق",
+              render: (r) => (
+                <span style={{ color: (r.balance ?? 0) > 0 ? "#d13438" : "#107c10", fontWeight: 700 }}>
+                  {formatYER(r.balance ?? 0)}
+                </span>
+              ),
+            },
+            {
+              key: "actions",
+              label: "الإجراءات",
+              render: (r) => (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openStatement(r); }}
+                    className="text-[11px] font-medium px-2.5 py-1 rounded-md transition-colors"
+                    style={{ color: tokens.brand, backgroundColor: `${tokens.brand}10` }}
+                    title="كشف الحساب"
+                  >
+                    <Eye className="w-3 h-3 inline ml-1" />
+                    كشف الحساب
+                  </button>
+                  {(r.balance ?? 0) > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowCreateBill(r); resetBillForm(); }}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-md transition-colors"
+                      style={{ color: "#8a6914", backgroundColor: "#fff4ce" }}
+                      title="فاتورة جديدة"
+                    >
+                      <FileText className="w-3 h-3 inline ml-1" />
+                      فاتورة
+                    </button>
+                  )}
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════════
+          MODALS
+          ═══════════════════════════════════════════════════════════════════════════ */}
+
+      {/* ── Modal: Create Supplier ── */}
+      <Modal open={showCreateSupplier} onClose={() => setShowCreateSupplier(false)} title="إضافة مورد/معمل جديد">
         <div className="space-y-4">
-          <div><label style={labelStyle}>المورد <span style={{ color: tokens.dangerBorder }}>*</span></label><select value={bSupplier} onChange={(e) => setBSupplier(e.target.value)} style={inputStyle}><option value="">— اختر —</option>{suppliers.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}</select></div>
-          <div><label style={labelStyle}>الوصف <span style={{ color: tokens.dangerBorder }}>*</span></label><input value={bDesc} onChange={(e) => setBDesc(e.target.value)} placeholder="وصف الفاتورة" style={inputStyle} /></div>
-          <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0.01" step="0.01" value={bAmount} onChange={(e) => setBAmount(e.target.value)} dir="ltr" style={inputStyle} /></div>
-          <div><label style={labelStyle}>تاريخ الاستحقاق <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="date" value={bDueDate} onChange={(e) => setBDueDate(e.target.value)} style={inputStyle} /></div>
-          <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
-            <button onClick={() => setShowCreateBill(false)} style={btnGhost}>إلغاء</button>
-            <button onClick={handleCreateBill} disabled={submitting} style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}>{submitting ? "جارٍ الحفظ..." : "إنشاء"}</button>
+          <div>
+            <label style={labelStyle}>الاسم <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="مثال: معمل الابتسامة الرقمية"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>النوع</label>
+            <select
+              value={newType}
+              onChange={(e) => setNewType(e.target.value as SupplierType)}
+              style={inputStyle}
+            >
+              {SUPPLIER_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>رقم الهاتف</label>
+            <input
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              placeholder="777123456"
+              dir="ltr"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>جهة الاتصال</label>
+            <input
+              value={newContact}
+              onChange={(e) => setNewContact(e.target.value)}
+              placeholder="اسم الشخص المسؤول"
+              style={inputStyle}
+            />
+          </div>
+          <div className="flex gap-3 pt-3 border-t" style={{ borderColor: tokens.border }}>
+            <button onClick={() => setShowCreateSupplier(false)} style={btnGhost}>إلغاء</button>
+            <button
+              onClick={handleCreateSupplier}
+              disabled={submitting || !newName.trim()}
+              style={{ ...btnPrimary, opacity: submitting || !newName.trim() ? 0.6 : 1 }}
+            >
+              {submitting ? "جارٍ الحفظ..." : "إنشاء المورد"}
+            </button>
           </div>
         </div>
       </Modal>
 
-      {/* Pay Installment Modal */}
-      <Modal open={!!showPayBill} onClose={() => setShowPayBill(null)} title={`سداد قسط — ${showPayBill?.description ?? ""}`}>
+      {/* ── Modal: Supplier Account Statement (كشف الحساب) ── */}
+      <Modal open={!!showStatement} onClose={() => { setShowStatement(null); setStatementData(null); }} title={`كشف حساب — ${showStatement?.name ?? ""}`} wide>
+        {statementLoading ? (
+          <LoadingSkeleton rows={4} />
+        ) : statementData ? (
+          <div className="space-y-4">
+            {/* Statement summary */}
+            <div className="rounded-md p-4 grid grid-cols-2 sm:grid-cols-3 gap-4" style={{ backgroundColor: tokens.cardHover, border: `1px solid ${tokens.border}` }}>
+              <div>
+                <p className="text-[11px]" style={{ color: tokens.textTertiary }}>اسم الجهة</p>
+                <p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{statementData.supplierName}</p>
+              </div>
+              <div>
+                <p className="text-[11px]" style={{ color: tokens.textTertiary }}>الرصيد الحالي</p>
+                <p className="text-sm font-bold" style={{ color: statementData.balance > 0 ? "#d13438" : "#107c10" }}>
+                  {formatYER(statementData.balance)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px]" style={{ color: tokens.textTertiary }}>عدد الفواتير</p>
+                <p className="text-sm font-bold" style={{ color: tokens.textPrimary }}>{statementData.bills?.length ?? 0}</p>
+              </div>
+            </div>
+
+            {/* Bills table */}
+            {!statementData.bills || statementData.bills.length === 0 ? (
+              <EmptyState icon={FileText} message="لا توجد فواتير مسجلة" />
+            ) : (
+              <DataTable<SupplierBillDto>
+                keyField="id"
+                data={statementData.bills}
+                columns={[
+                  { key: "billNumber", label: "رقم الفاتورة" },
+                  { key: "description", label: "الوصف", render: (r) => r.description || "—" },
+                  { key: "totalAmount", label: "الإجمالي", render: (r) => formatYER(r.totalAmount) },
+                  { key: "paidAmount", label: "المدفوع", render: (r) => formatYER(r.paidAmount) },
+                  {
+                    key: "remainingAmount",
+                    label: "المتبقي",
+                    render: (r) => (
+                      <span style={{ color: r.remainingAmount > 0 ? "#d13438" : "#107c10", fontWeight: 700 }}>
+                        {formatYER(r.remainingAmount)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "dueDate",
+                    label: "تاريخ الاستحقاق",
+                    render: (r) => safeFormatDate(r.dueDate),
+                  },
+                  {
+                    key: "status",
+                    label: "الحالة",
+                    render: (r) => <StatusBadge status={r.status} />,
+                  },
+                  {
+                    key: "actions",
+                    label: "إجراء",
+                    render: (r) =>
+                      r.remainingAmount > 0 ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowPayBill(r);
+                            setPayAmount("");
+                            setPayMethod("cash");
+                          }}
+                          className="text-[11px] font-medium px-3 py-1 rounded-md transition-colors"
+                          style={{ color: "#d13438", backgroundColor: "#fde7e9" }}
+                        >
+                          <DollarSign className="w-3 h-3 inline ml-1" />
+                          سداد دفعة
+                        </button>
+                      ) : null,
+                  },
+                ]}
+              />
+            )}
+
+            <div className="flex justify-start pt-2">
+              <button onClick={() => { setShowStatement(null); setStatementData(null); }} style={btnGhost}>
+                إغلاق
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* ── Modal: Create Supplier Bill ── */}
+      <Modal open={!!showCreateBill} onClose={() => setShowCreateBill(null)} title={`فاتورة جديدة — ${showCreateBill?.name ?? ""}`}>
+        <div className="space-y-4">
+          <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
+            <p className="text-xs" style={{ color: tokens.infoText }}>
+              المورد: <strong>{showCreateBill?.name}</strong> — الرصيد الحالي: <strong>{formatYER(showCreateBill?.balance ?? 0)}</strong>
+            </p>
+          </div>
+          <div>
+            <label style={labelStyle}>وصف الفاتورة <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <input
+              value={billDesc}
+              onChange={(e) => setBillDesc(e.target.value)}
+              placeholder="مثال: تركة زركونيا - 12 وحدة"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>المبلغ الإجمالي <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={billAmount}
+              onChange={(e) => setBillAmount(e.target.value)}
+              dir="ltr"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>تاريخ الاستحقاق <span style={{ color: tokens.dangerBorder }}>*</span></label>
+            <input
+              type="date"
+              value={billDueDate}
+              onChange={(e) => setBillDueDate(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          <div className="flex gap-3 pt-3 border-t" style={{ borderColor: tokens.border }}>
+            <button onClick={() => setShowCreateBill(null)} style={btnGhost}>إلغاء</button>
+            <button
+              onClick={handleCreateBill}
+              disabled={submitting || !billDesc.trim() || !billAmount || !billDueDate}
+              style={{ ...btnPrimary, opacity: submitting ? 0.6 : 1 }}
+            >
+              {submitting ? "جارٍ التسجيل..." : "تسجيل الفاتورة"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Modal: Pay Bill Installment ── */}
+      <Modal open={!!showPayBill} onClose={() => setShowPayBill(null)} title={`سداد قسط — ${showPayBill?.billNumber ?? ""}`}>
         {showPayBill && (
           <div className="space-y-4">
-            <div className="rounded-md p-3" style={{ backgroundColor: tokens.infoBg, border: `1px solid ${tokens.infoBorder}` }}>
-              <p className="text-xs" style={{ color: tokens.infoText }}>المتبقي: <strong>{formatYER(showPayBill.balance)}</strong></p>
+            <div className="rounded-md p-3" style={{ backgroundColor: tokens.warningBg, border: `1px solid ${tokens.warningBorder}` }}>
+              <p className="text-xs" style={{ color: tokens.warningText }}>
+                الفاتورة: <strong>{showPayBill.billNumber}</strong> — المتبقي: <strong>{formatYER(showPayBill.remainingAmount)}</strong>
+              </p>
             </div>
-            <div><label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label><input type="number" min="0" max={showPayBill.balance} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} dir="ltr" style={inputStyle} />{Number(payAmount) > showPayBill.balance && (<p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>⚠ المبلغ يتجاوز المبلغ المتبقي ({formatYER(showPayBill.balance)})</p>)}</div>
-            <div><label style={labelStyle}>طريقة الدفع</label><select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} style={inputStyle}>{PAYMENT_METHODS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}</select></div>
-            <div className="flex gap-3 pt-2 border-t" style={{ borderColor: tokens.border }}>
+            <div>
+              <label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label>
+              <input
+                type="number"
+                min="0"
+                max={showPayBill.remainingAmount}
+                step="0.01"
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                dir="ltr"
+                style={inputStyle}
+              />
+              {Number(payAmount) > showPayBill.remainingAmount && (
+                <p className="text-xs mt-1" style={{ color: tokens.dangerBorder }}>
+                  المبلغ يتجاوز المتبقي ({formatYER(showPayBill.remainingAmount)})
+                </p>
+              )}
+            </div>
+            <div>
+              <label style={labelStyle}>طريقة الدفع</label>
+              <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} style={inputStyle}>
+                {PAYMENT_METHODS.map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-3 pt-3 border-t" style={{ borderColor: tokens.border }}>
               <button onClick={() => setShowPayBill(null)} style={btnGhost}>إلغاء</button>
-              <button onClick={handlePayBill} disabled={submitting || Number(payAmount) > showPayBill.balance} style={{ ...btnPrimary, opacity: submitting || Number(payAmount) > showPayBill.balance ? 0.6 : 1 }}>{submitting ? "جارٍ السداد..." : "سداد"}</button>
+              <button
+                onClick={handlePayBill}
+                disabled={submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount}
+                style={{
+                  ...btnPrimary,
+                  backgroundColor: "#d13438",
+                  opacity: submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount ? 0.6 : 1,
+                }}
+              >
+                {submitting ? "جارٍ السداد..." : "سداد القسط"}
+              </button>
             </div>
           </div>
         )}

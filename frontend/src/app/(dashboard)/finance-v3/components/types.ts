@@ -261,6 +261,9 @@ export interface CreateExpenseRequest {
 }
 
 /* ── Suppliers ──────────────────────────────────────────────────────────────────── */
+export type SupplierType = 'DentalLab' | 'MedicalVendor' | 'GeneralService';
+export type BillStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid';
+
 export interface SupplierListItem {
   id: string;
   name: string;
@@ -269,6 +272,40 @@ export interface SupplierListItem {
   totalBilled: number;
   totalPaid: number;
   balance: number;
+}
+
+/** Matches FinanceV3SuppliersController GET /api/finance-v3/suppliers response */
+export interface SupplierDto {
+  id: string;
+  name: string;
+  type: SupplierType;
+  contactPerson: string | null;
+  phone: string | null;
+  totalBilled: number;
+  totalPaid: number;
+  balance: number;
+  isActive: boolean;
+}
+
+/** Matches FinanceV3SuppliersController GET /{id}/bills response items */
+export interface SupplierBillDto {
+  id: string;
+  billNumber: string;
+  description: string;
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  status: BillStatus;
+  billDate: string;
+  dueDate: string | null;
+}
+
+/** Supplier account statement from GET /{id}/bills */
+export interface SupplierStatement {
+  supplierId: string;
+  supplierName: string;
+  balance: number;
+  bills: SupplierBillDto[];
 }
 
 export interface SupplierBill {
@@ -292,12 +329,33 @@ export interface CreateSupplierBillRequest {
   notes?: string;
 }
 
+/** Matches CreateFinanceV3SupplierRequest DTO */
+export interface CreateSupplierRequest {
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  type?: SupplierType;
+}
+
 export interface PaySupplierBillRequest {
   amount: number;
   paymentMethod: string;
   treasuryId?: string;
   notes?: string;
 }
+
+/** Supplier type labels for Arabic UI */
+export const SUPPLIER_TYPE_LABELS: Record<SupplierType, string> = {
+  DentalLab: 'معمل تركيبات',
+  MedicalVendor: 'مورد طبي',
+  GeneralService: 'خدمات عامة',
+} as const;
+
+export const SUPPLIER_TYPE_OPTIONS = [
+  { value: 'DentalLab', label: 'معمل تركيبات' },
+  { value: 'MedicalVendor', label: 'مورد طبي' },
+  { value: 'GeneralService', label: 'خدمات عامة' },
+] as const;
 
 /* ── Profit & Loss ──────────────────────────────────────────────────────────────── */
 export interface ProfitLossData {

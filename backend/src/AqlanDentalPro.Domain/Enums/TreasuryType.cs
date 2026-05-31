@@ -6,5 +6,6 @@ namespace AqlanDentalPro.Domain.Enums;
 public enum TreasuryType
 {
     Vault,     // خزنة مادية (مثال: الخزنة الحديدية للمركز، درج الكاشير)
-    Bank       // حساب بنكي (مثال: حساب بنك التضامن)
+    Bank,      // حساب بنكي (مثال: حساب بنك التضامن)
+    Card       // نقطة بيع / POS (مثال: جهاز شبكة في الاستقبال)
 }

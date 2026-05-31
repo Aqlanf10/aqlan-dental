@@ -73,11 +73,8 @@ export async function confirmBookingAndCreateAppointment(
   // Build the payload — only include patientId if we have a real one.
   // The backend ConvertToAppointmentAsync handles patient lookup/creation by phone,
   // so omitting patientId is safe and preferred over sending a placeholder.
-  // TODO: After calling this, invalidate:
-  //   - queryClient.invalidateQueries({ queryKey: ["daily-ops"] })
-  //   - queryClient.invalidateQueries({ queryKey: ["patient-journey"] })
-  //   - queryClient.invalidateQueries({ queryKey: ["appointments"] })
-  //   - queryClient.invalidateQueries({ queryKey: ["booking-requests"] })
+  // Callers are responsible for refreshing stale queries after this resolves
+  // (e.g. fetchItems() in BookingRequestsView, or queryClient.invalidateQueries).
   const payload: Record<string, unknown> = {
     doctorId: item.doctorId,
     appointmentDate,
@@ -101,11 +98,9 @@ export async function confirmBookingAndCreateAppointment(
  *  2. POST /api/booking-requests/{id}/confirm-and-create-appointment
  *  3. If 404 → POST /api/booking-requests/{id}/convert-to-appointment (legacy)
  *
- * TODO: After calling this, invalidate:
- *   - queryClient.invalidateQueries({ queryKey: ["daily-ops"] })
- *   - queryClient.invalidateQueries({ queryKey: ["patient-journey"] })
- *   - queryClient.invalidateQueries({ queryKey: ["appointments"] })
- *   - queryClient.invalidateQueries({ queryKey: ["booking-requests"] })
+ * After this resolves, callers must refresh stale data:
+ * - In React Query: invalidate "daily-ops", "appointments", "booking-requests", "patient-journey"
+ * - In local state: call fetchItems() or equivalent refresh function
  */
 export async function confirmBookingAndCreateAppointmentV2(
   item: DailyOpsBookingConversionInput,

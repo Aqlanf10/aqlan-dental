@@ -61,30 +61,29 @@ public partial class FinanceV3Controller
         // Classify each line by payment method (Treasury.Type) and direction (Debit/Credit)
         // Vault-type treasury → cash, Bank-type treasury → bank/card
         decimal cashInflows = 0, cashOutflows = 0;
+        decimal cardInflows = 0, cardOutflows = 0;
         decimal bankInflows = 0, bankOutflows = 0;
 
         foreach (var line in sessionJournalLines)
         {
             var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
-            var isCash = tType != TreasuryType.Bank; // Vault or unknown → cash
-            var isBank = tType == TreasuryType.Bank;
+            var isCash = tType == TreasuryType.Vault || tType == null; // Vault or unknown → cash
+            var isCard = tType == TreasuryType.Card;                       // POS/card terminal
+            var isBank = tType == TreasuryType.Bank;                       // bank account
 
             if (line.Debit > 0) // Inflow (money received into treasury)
             {
                 if (isCash) cashInflows += line.Debit;
+                else if (isCard) cardInflows += line.Debit;
                 else if (isBank) bankInflows += line.Debit;
             }
             else if (line.Credit > 0) // Outflow (money paid from treasury)
             {
                 if (isCash) cashOutflows += line.Credit;
+                else if (isCard) cardOutflows += line.Credit;
                 else if (isBank) bankOutflows += line.Credit;
             }
         }
-
-        // TODO: Separate card from bank when TreasuryType.Card is introduced
-        // Currently card and bank are merged since both go through Bank-type treasuries
-        var cardInflows = bankInflows;
-        var cardOutflows = bankOutflows;
 
         var totalCollections = sessionJournalLines.Where(l => l.Debit > 0).Sum(l => l.Debit);
 
@@ -166,30 +165,29 @@ public partial class FinanceV3Controller
 
         // Classify each line by payment method (Treasury.Type) and direction (Debit/Credit)
         decimal cashInflows = 0, cashOutflows = 0;
+        decimal cardInflows = 0, cardOutflows = 0;
         decimal bankInflows = 0, bankOutflows = 0;
 
         foreach (var line in sessionJournalLines)
         {
             var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
-            var isCash = tType != TreasuryType.Bank;
+            var isCash = tType == TreasuryType.Vault || tType == null;
+            var isCard = tType == TreasuryType.Card;
             var isBank = tType == TreasuryType.Bank;
 
             if (line.Debit > 0) // Inflow
             {
                 if (isCash) cashInflows += line.Debit;
+                else if (isCard) cardInflows += line.Debit;
                 else if (isBank) bankInflows += line.Debit;
             }
             else if (line.Credit > 0) // Outflow
             {
                 if (isCash) cashOutflows += line.Credit;
+                else if (isCard) cardOutflows += line.Credit;
                 else if (isBank) bankOutflows += line.Credit;
             }
         }
-
-        // TODO: Separate card from bank when TreasuryType.Card is introduced
-        // Currently card and bank are merged since both go through Bank-type treasuries
-        var cardInflows = bankInflows;
-        var cardOutflows = bankOutflows;
 
         session.ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows;
         session.ExpectedClosingCard = cardInflows - cardOutflows;

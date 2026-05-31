@@ -711,13 +711,14 @@ public class FinanceV3AccountingSafetyTests
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task FinanceService_CreatePaymentAsync_EmptyBranchId_ThrowsArgumentException()
+    public async Task FinanceService_CreatePaymentAsync_EmptyBranchId_ResolvesFallbackBranch()
     {
         await using var db = CreateContext();
         var (branchId, cashierId) = SeedBranchAndUser(db);
         CreateOpenSession(db, cashierId, branchId);
 
-        // Create ICurrentUserService with empty BranchId
+        // Create ICurrentUserService with empty BranchId (Admin)
+        // Sprint 1: Admin with Guid.Empty BranchId now resolves fallback branch instead of throwing
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(c => c.UserId).Returns(cashierId);
         currentUser.SetupGet(c => c.BranchId).Returns(Guid.Empty);
@@ -739,8 +740,9 @@ public class FinanceV3AccountingSafetyTests
             PaymentMethod = "cash"
         });
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*الفرع*");
+        // Sprint 1: FinanceService now resolves fallback branch for Admin with empty BranchId
+        // The payment should be created successfully with the seeded fallback branch
+        await act.Should().NotThrowAsync<ArgumentException>("Sprint 1: Admin with empty BranchId resolves fallback branch instead of throwing");
     }
 
     [Fact]

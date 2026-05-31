@@ -188,9 +188,23 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (activeSession == null)
             throw new ArgumentException("عذراً، يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات.");
 
-        // BranchId guard: must have a valid branch assignment before creating a payment
-        if (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty)
-            throw new ArgumentException("عذراً، يجب تحديد الفرع قبل تسجيل أي مدفوعات.");
+        // BranchId resolution: use current user's branch, or fallback to first active branch for Admin
+        Guid branchId;
+        if (currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+        {
+            branchId = currentUser.BranchId.Value;
+        }
+        else
+        {
+            // Admin fallback: resolve to the first active branch in the system
+            var firstBranch = await db.Branches
+                .Where(b => b.IsActive)
+                .OrderBy(b => b.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (firstBranch == null)
+                throw new ArgumentException("عذراً، يجب تحديد الفرع قبل تسجيل أي مدفوعات. لا توجد فروع نشطة في النظام.");
+            branchId = firstBranch.Id;
+        }
 
         // Phase 0B: Validate payment amount is positive
         if (req.Amount <= 0)
@@ -235,7 +249,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ServiceDescription = req.ServiceDescription,
             Specialty = req.Specialty,
             DoctorId = req.DoctorId,
-            BranchId = currentUser.BranchId,
+            BranchId = branchId,
             ReceivedBy = currentUser.UserId,
             ReceiptNumber = receiptNumber,
             Notes = req.Notes
@@ -265,7 +279,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             ReferenceNumber = payment.ReceiptNumber,
             Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
             PerformedBy = userId,
-            BranchId = currentUser.BranchId.Value,
+            BranchId = branchId,
             CashierSessionId = activeSession.Id
         };
         db.CashFlowTransactions.Add(cashflow);

@@ -543,3 +543,20 @@ export function useCreateDraftInvoice() {
     },
   });
 }
+
+// ─── Active Cashier Session Check ──────────────────────────────────────────
+export function useActiveCashierSession() {
+  return useQuery<{ id: string; sessionNumber: string; status: string } | null>({
+    queryKey: ["daily-ops", "active-cashier-session"],
+    queryFn: async () => {
+      try {
+        const { data } = await api.get("/api/finance-v3/active-cashier-session");
+        return data;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}

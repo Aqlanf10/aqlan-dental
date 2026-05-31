@@ -46,7 +46,7 @@ public class FinanceV3SuppliersController(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
-        // Branch isolation guard
+        // Branch isolation guard - Admin can see all branches
         if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
             return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
@@ -173,7 +173,16 @@ public class FinanceV3SuppliersController(
         var userId = currentUser.UserId ?? Guid.Empty;
         var branchId = currentUser.BranchId ?? Guid.Empty;
         if (branchId == Guid.Empty)
-            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل فاتورة المورد." });
+        {
+            // Admin fallback: resolve to the first active branch
+            var firstBranch = await db.Branches
+                .Where(b => b.IsActive)
+                .OrderBy(b => b.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (firstBranch == null)
+                return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل تسجيل فاتورة المورد. لا توجد فروع نشطة في النظام." });
+            branchId = firstBranch.Id;
+        }
 
         // Generate BILL number
         var datePart = DateTime.UtcNow.ToString("yyyyMMdd");

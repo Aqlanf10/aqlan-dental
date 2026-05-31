@@ -53,6 +53,7 @@ import {
   useQueueWaitTime,
   useTomorrowAppointments,
   useSendBulkSmsReminders,
+  useActiveCashierSession,
 } from "./_lib/hooks";
 
 import AppointmentsTable from "./_components/AppointmentsTable";
@@ -218,6 +219,9 @@ export default function DailyOperationsPage() {
   // ── Direct payment modal (for unbooked patients) ──
   const [directPaymentModalOpen, setDirectPaymentModalOpen] = useState(false);
 
+  // ── Active cashier session check ──
+  const { data: activeCashierSession } = useActiveCashierSession();
+
   // ── Sound toggle ──
   const [soundEnabled, setSoundEnabled] = useState(true);
 
@@ -359,9 +363,13 @@ export default function DailyOperationsPage() {
   }, [enterRoomMutation]);
 
   const handleQuickPayment = useCallback((item: TodayJourneyItem) => {
+    if (!activeCashierSession) {
+      toast.error("يجب فتح وردية (صندوق الكاشير) أولاً قبل تسجيل أي مدفوعات. اذهب إلى المالية > الصندوق لفتح وردية.");
+      return;
+    }
     setSelectedItem(item);
     setPaymentModalOpen(true);
-  }, []);
+  }, [activeCashierSession]);
 
   const handleCompleteVisit = useCallback((item: TodayJourneyItem) => {
     setSelectedItem(item);
@@ -524,8 +532,14 @@ export default function DailyOperationsPage() {
           // PDF download failed, user can still download manually
         }
       }
-    } catch {
-      toast.error("فشل تسجيل الدفعة");
+    } catch (err: unknown) {
+      // Extract the actual error message from backend response
+      let errorMsg = "فشل تسجيل الدفعة";
+      if (err && typeof err === "object" && "response" in err) {
+        const resp = (err as { response?: { data?: { message?: string } } }).response;
+        if (resp?.data?.message) errorMsg = resp.data.message;
+      }
+      toast.error(errorMsg);
     }
   }, [selectedItem, createPaymentMutation]);
 
@@ -683,8 +697,14 @@ export default function DailyOperationsPage() {
           // PDF download failed, user can still download manually
         }
       }
-    } catch {
-      toast.error("فشل تسجيل الدفعة");
+    } catch (err: unknown) {
+      // Extract the actual error message from backend response
+      let errorMsg = "فشل تسجيل الدفعة";
+      if (err && typeof err === "object" && "response" in err) {
+        const resp = (err as { response?: { data?: { message?: string } } }).response;
+        if (resp?.data?.message) errorMsg = resp.data.message;
+      }
+      toast.error(errorMsg);
     }
   }, [createPaymentMutation]);
 
@@ -794,10 +814,16 @@ export default function DailyOperationsPage() {
 
           {/* Direct Payment for unbooked patient (Green with text) */}
           {!isDoctor && (
-            <button onClick={() => setDirectPaymentModalOpen(true)}
+            <button onClick={() => {
+              if (!activeCashierSession) {
+                toast.error("يجب فتح وردية (صندوق الكاشير) أولاً قبل تسجيل أي مدفوعات. اذهب إلى المالية > الصندوق لفتح وردية.");
+                return;
+              }
+              setDirectPaymentModalOpen(true);
+            }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90"
-              style={{ background: "#22c55e" }}
-              title="دفع لمريض بدون موعد">
+              style={{ background: activeCashierSession ? "#22c55e" : "#94a3b8" }}
+              title={activeCashierSession ? "دفع لمريض بدون موعد" : "يجب فتح وردية أولاً"}>
               <CreditCard className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">دفع لمريض</span>
             </button>

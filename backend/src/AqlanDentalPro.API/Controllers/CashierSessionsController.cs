@@ -33,10 +33,18 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     {
         var userId = currentUser.UserId ?? Guid.Empty;
 
-        // BranchId guard: must have a valid branch assignment before opening a cashier session
+        // BranchId resolution: use current user's branch, or fallback to first active branch for Admin
         var branchId = currentUser.BranchId;
         if (branchId == null || branchId == Guid.Empty)
-            return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل فتح صندوق الكاشير." });
+        {
+            var firstBranch = await db.Branches
+                .Where(b => b.IsActive)
+                .OrderBy(b => b.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (firstBranch == null)
+                return BadRequest(new { message = "عذراً، يجب تحديد الفرع قبل فتح صندوق الكاشير. لا توجد فروع نشطة في النظام." });
+            branchId = firstBranch.Id;
+        }
 
         if (req.OpeningBalance < 0)
             return BadRequest(new { message = "لا يمكن أن يكون رصيد العهدة الافتتاحية سالباً" });

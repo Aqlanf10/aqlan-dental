@@ -100,7 +100,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
         actualClosingCard: Number(actualCard) || 0,
         actualClosingBank: Number(actualBank) || 0,
       };
-      await api.post(`/api/finance-v3/cashier-sessions/close`, payload);
+      await api.post(`/api/cashier-sessions/close`, payload);
       toast.success("تم إقفال الوردية بنجاح");
       setCloseSession(null);
       fetchSessions();
@@ -116,7 +116,7 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
     if (!confirmReconcile) return;
     try {
       setSubmitting(true);
-      await api.patch(`/api/finance-v3/cashier-sessions/${confirmReconcile}/reconcile`);
+      await api.patch(`/api/cashier-sessions/${confirmReconcile}/reconcile`);
       toast.success("تم تسوية الوردية بنجاح");
       setConfirmReconcile(null);
       fetchSessions();

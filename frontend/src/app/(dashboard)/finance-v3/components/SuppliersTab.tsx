@@ -11,6 +11,8 @@ import {
   CircleDollarSign,
   Search,
   Eye,
+  Loader2,
+  Wallet,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
@@ -21,6 +23,7 @@ import type {
   CreateSupplierRequest,
   PaySupplierBillRequest,
   SupplierType,
+  Treasury,
 } from "./types";
 import { SUPPLIER_TYPE_LABELS, SUPPLIER_TYPE_OPTIONS, PAYMENT_METHODS } from "./types";
 import {
@@ -73,6 +76,11 @@ export function SuppliersTab() {
   // Form: Pay Bill
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("cash");
+  const [payTreasuryId, setPayTreasuryId] = useState<string>("");
+  const [payNotes, setPayNotes] = useState("");
+  const [payRefNumber, setPayRefNumber] = useState("");
+  const [treasuries, setTreasuries] = useState<Treasury[]>([]);
+  const [treasuriesLoading, setTreasuriesLoading] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -179,6 +187,9 @@ export function SuppliersTab() {
       const payload: PaySupplierBillRequest = {
         amount: Number(payAmount),
         paymentMethod: payMethod,
+        treasuryId: payTreasuryId || undefined,
+        notes: payNotes.trim() || undefined,
+        referenceNumber: payRefNumber.trim() || undefined,
       };
       await api.post(`/api/finance-v3/suppliers/bills/${showPayBill.id}/pay`, payload);
       toast.success("تم سداد القسط بنجاح وترحيل القيد المحاسبي");
@@ -189,6 +200,8 @@ export function SuppliersTab() {
       if (showStatement) {
         loadStatement(showStatement.id);
       }
+      // Refresh treasuries in case balance changed
+      fetchTreasuries();
     } catch (err) {
       toast.error(extractErrorMessage(err, "فشل في سداد القسط"));
     } finally {
@@ -236,7 +249,28 @@ export function SuppliersTab() {
   const resetPayForm = () => {
     setPayAmount("");
     setPayMethod("cash");
+    setPayTreasuryId("");
+    setPayNotes("");
+    setPayRefNumber("");
   };
+
+  /* ── Fetch treasuries for payment modal ── */
+  const fetchTreasuries = useCallback(async () => {
+    try {
+      setTreasuriesLoading(true);
+      const res = await api.get<{ data: Treasury[]; total: number }>("/api/finance-v3/treasuries");
+      const list = res.data?.data ?? (Array.isArray(res.data) ? (res.data as unknown as Treasury[]) : []);
+      setTreasuries(list);
+    } catch {
+      setTreasuries([]);
+    } finally {
+      setTreasuriesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTreasuries();
+  }, [fetchTreasuries]);
 
   /* ── Supplier type badge renderer ── */
   const renderTypeBadge = (type: SupplierType) => {
@@ -596,15 +630,18 @@ export function SuppliersTab() {
         </div>
       </Modal>
 
-      {/* ── Modal: Pay Bill Installment ── */}
+      {/* ── Modal: Pay Bill Installment (Advanced — with Treasury selection) ── */}
       <Modal open={!!showPayBill} onClose={() => setShowPayBill(null)} title={`سداد قسط — ${showPayBill?.billNumber ?? ""}`}>
         {showPayBill && (
           <div className="space-y-4">
+            {/* Bill info banner */}
             <div className="rounded-md p-3" style={{ backgroundColor: tokens.warningBg, border: `1px solid ${tokens.warningBorder}` }}>
               <p className="text-xs" style={{ color: tokens.warningText }}>
                 الفاتورة: <strong>{showPayBill.billNumber}</strong> — المتبقي: <strong>{formatYER(showPayBill.remainingAmount)}</strong>
               </p>
             </div>
+
+            {/* Amount */}
             <div>
               <label style={labelStyle}>المبلغ <span style={{ color: tokens.dangerBorder }}>*</span></label>
               <input
@@ -623,6 +660,8 @@ export function SuppliersTab() {
                 </p>
               )}
             </div>
+
+            {/* Payment method */}
             <div>
               <label style={labelStyle}>طريقة الدفع</label>
               <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} style={inputStyle}>
@@ -631,18 +670,98 @@ export function SuppliersTab() {
                 ))}
               </select>
             </div>
+
+            {/* Treasury selector */}
+            <div>
+              <label style={labelStyle}>السحب من الخزينة <span style={{ color: tokens.dangerBorder }}>*</span></label>
+              {treasuriesLoading ? (
+                <div className="flex items-center gap-2 text-xs" style={{ color: tokens.textTertiary }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> جاري تحميل الخزائن...
+                </div>
+              ) : treasuries.length === 0 ? (
+                <div
+                  className="rounded-md p-3 text-xs"
+                  style={{ backgroundColor: tokens.dangerBg, color: tokens.dangerText, border: `1px solid ${tokens.dangerBorder}` }}
+                >
+                  لا توجد خزائن نشطة. يرجى إنشاء خزينة أولاً.
+                </div>
+              ) : (
+                <select
+                  value={payTreasuryId}
+                  onChange={(e) => setPayTreasuryId(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">— اختر الخزينة —</option>
+                  {treasuries.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({formatYER(t.balance)})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Selected treasury balance hint */}
+            {payTreasuryId && (() => {
+              const selected = treasuries.find((t) => t.id === payTreasuryId);
+              if (!selected) return null;
+              const payNum = Number(payAmount) || 0;
+              return (
+                <div
+                  className="rounded-md p-2 flex items-center gap-2"
+                  style={{ backgroundColor: tokens.brandLight, border: `1px solid ${tokens.infoBorder}` }}
+                >
+                  <Wallet className="w-3.5 h-3.5 flex-shrink-0" style={{ color: tokens.brand }} />
+                  <span className="text-xs" style={{ color: tokens.infoText }}>
+                    رصيد {selected.name}: <strong>{formatYER(selected.balance)}</strong>
+                    {payNum > 0 && selected.balance < payNum && (
+                      <span style={{ color: tokens.dangerText, marginRight: 8 }}>
+                        ⚠ الرصيد غير كافٍ
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* Reference number */}
+            <div>
+              <label style={labelStyle}>رقم الإشعار / المرجع (اختياري)</label>
+              <input
+                type="text"
+                value={payRefNumber}
+                onChange={(e) => setPayRefNumber(e.target.value)}
+                placeholder="مثال: CHK-00123"
+                dir="ltr"
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label style={labelStyle}>ملاحظات (اختياري)</label>
+              <input
+                type="text"
+                value={payNotes}
+                onChange={(e) => setPayNotes(e.target.value)}
+                placeholder="مثال: دفعة جزئية من إجمالي الفاتورة..."
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Actions */}
             <div className="flex gap-3 pt-3 border-t" style={{ borderColor: tokens.border }}>
               <button onClick={() => setShowPayBill(null)} style={btnGhost}>إلغاء</button>
               <button
                 onClick={handlePayBill}
-                disabled={submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount}
+                disabled={submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount || (!payTreasuryId && treasuries.length > 0)}
                 style={{
                   ...btnPrimary,
                   backgroundColor: "#d13438",
-                  opacity: submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount ? 0.6 : 1,
+                  opacity: submitting || !payAmount || Number(payAmount) <= 0 || Number(payAmount) > showPayBill.remainingAmount || (!payTreasuryId && treasuries.length > 0) ? 0.6 : 1,
                 }}
               >
-                {submitting ? "جارٍ السداد..." : "سداد القسط"}
+                {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> جارٍ السداد...</> : "سداد القسط"}
               </button>
             </div>
           </div>

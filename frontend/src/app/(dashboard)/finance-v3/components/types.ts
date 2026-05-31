@@ -341,6 +341,7 @@ export interface PaySupplierBillRequest {
   amount: number;
   paymentMethod: string;
   treasuryId?: string;
+  referenceNumber?: string;
   notes?: string;
 }
 

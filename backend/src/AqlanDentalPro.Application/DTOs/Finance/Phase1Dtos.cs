@@ -40,6 +40,9 @@ public class PaySupplierBillRequest
     /// <summary>Payment method: cash, card, bank_transfer.</summary>
     public string PaymentMethod { get; set; } = "cash";
 
+    /// <summary>Optional treasury ID to pay from. If null, auto-resolved by payment method and branch.</summary>
+    public Guid? TreasuryId { get; set; }
+
     /// <summary>Optional bank reference / receipt number.</summary>
     public string? ReferenceNumber { get; set; }
 

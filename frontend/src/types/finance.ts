@@ -81,16 +81,18 @@ export interface UpdatePaymentRequest {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  patientId: string;
+  patientId?: string;
   patientName?: string;
   visitId?: string;
   appointmentId?: string;
-  status: "Draft" | "Issued" | "Cancelled" | "Paid";
+  status: string;
   statusArabic?: string;
-  subtotal: number;
+  subtotal?: number;
   discountAmount?: number;
   taxAmount?: number;
   totalAmount: number;
+  paidAmount?: number;
+  balance?: number;
   lineItemCount?: number;
   notes?: string;
   createdAt: string;

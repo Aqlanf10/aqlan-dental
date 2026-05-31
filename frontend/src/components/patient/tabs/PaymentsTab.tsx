@@ -89,7 +89,9 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
       })
     : payments;
 
-  const totalPaid = payments.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+  const totalPaid = payments
+    .filter((p) => p.isActive !== false)
+    .reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
@@ -144,7 +146,7 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
           doctorId: form.doctorId || undefined,
           notes: form.notes || undefined,
         };
-        await api.post("/api/payments", payload);
+        await api.post("/api/finance-v3/payments", payload);
         toast.success("تم إضافة الدفعة بنجاح");
       }
       setShowModal(false);

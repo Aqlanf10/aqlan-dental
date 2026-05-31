@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -159,6 +159,12 @@ export default function PatientProfilePage() {
 
   // ─── Data Fetching ──────────────────────────────────────────────────────────
 
+  const loadSummary = useCallback(() => {
+    api.get<PatientSummary>(`/api/patients/${id}/summary`)
+      .then((r) => setSummary(r.data))
+      .catch(() => {});
+  }, [id]);
+
   useEffect(() => {
     setError(null);
     api.get<PatientProfile>(`/api/patients/${id}`)
@@ -168,9 +174,7 @@ export default function PatientProfilePage() {
         setError(msg ?? "فشل تحميل بيانات المريض");
       })
       .finally(() => setLoading(false));
-    api.get<PatientSummary>(`/api/patients/${id}/summary`)
-      .then((r) => setSummary(r.data))
-      .catch(() => {});
+    loadSummary();
     api.get<OrthoCase[]>(`/api/ortho-cases?patientId=${id}&pageSize=10`)
       .then((r) => setOrthoCases(r.data))
       .catch(() => {});
@@ -178,7 +182,7 @@ export default function PatientProfilePage() {
       .then((r) => setSurgeryCases(r.data.data ?? []))
       .catch(() => {});
     // Portal credentials now fetched by PortalAccessTab
-  }, [id]);
+  }, [id, loadSummary]);
 
   // Close more-actions dropdown on click outside
   useEffect(() => {
@@ -239,13 +243,13 @@ export default function PatientProfilePage() {
       case "appointments":
         return <AppointmentsTab patientId={id} patientName={patientName} />;
       case "visits":
-        return <VisitsTab patientId={id} openAddModal={openAddVisitModal} onModalOpened={() => setOpenAddVisitModal(false)} onVisitChanged={() => { /* could refresh summary here */ }} />;
+        return <VisitsTab patientId={id} openAddModal={openAddVisitModal} onModalOpened={() => setOpenAddVisitModal(false)} onVisitChanged={loadSummary} />;
       case "finance":
         return <FinanceTab patientId={id} />;
       case "contracts":
         return <ContractsTab patientId={id} />;
       case "payments":
-        return <PaymentsTab patientId={id} onPaymentChanged={() => { /* could refresh summary here */ }} />;
+        return <PaymentsTab patientId={id} onPaymentChanged={loadSummary} />;
       case "messages":
         return <MessagesTab patientId={id} />;
       case "orthodontics":

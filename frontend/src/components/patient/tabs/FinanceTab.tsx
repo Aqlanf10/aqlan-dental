@@ -210,11 +210,18 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
                         invStatus?.color ?? "bg-gray-100 text-gray-600"
                       )}
                     >
-                      {invStatus?.label ?? inv.status}
+                      {invStatus?.label ?? inv.statusArabic ?? inv.status}
                     </span>
-                    <p className="text-sm font-semibold text-[#3d7ab5]">
-                      {inv.totalAmount.toLocaleString()}
-                    </p>
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-[#3d7ab5]">
+                        {inv.totalAmount.toLocaleString()} ر.ي
+                      </p>
+                      {inv.paidAmount != null && inv.balance != null && (
+                        <p className="text-[10px] text-[#94a3b8]">
+                          مدفوع {inv.paidAmount.toLocaleString()} · متبقي {inv.balance.toLocaleString()}
+                        </p>
+                      )}
+                    </div>
                     <ArrowLeft className="w-3.5 h-3.5 text-[#94a3b8]" />
                   </div>
                 </Link>

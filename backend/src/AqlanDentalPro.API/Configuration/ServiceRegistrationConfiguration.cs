@@ -2,6 +2,7 @@ using AqlanDentalPro.Application.Interfaces.Repositories;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Application.Services;
 using AqlanDentalPro.Application.Validators;
+using AqlanDentalPro.API.Hubs;
 using AqlanDentalPro.Infrastructure.Repositories;
 using AqlanDentalPro.Infrastructure.Services;
 using MessagingService = AqlanDentalPro.Infrastructure.Services.MessagingService;

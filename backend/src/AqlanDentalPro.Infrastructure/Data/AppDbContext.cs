@@ -151,18 +151,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             }
         }
 
-        // Finance Phase 1: CreditNote → Invoice (Restrict delete to preserve invoice integrity)
-        modelBuilder.Entity<CreditNote>()
-            .HasOne(c => c.Invoice).WithMany()
-            .HasForeignKey(c => c.InvoiceId).OnDelete(DeleteBehavior.Restrict);
-
-        // Finance Phase 1: SupplierBill → Supplier (Cascade delete bills when supplier is deleted)
-        modelBuilder.Entity<SupplierBill>()
-            .HasOne(sb => sb.Supplier).WithMany(s => s.Bills)
-            .HasForeignKey(sb => sb.SupplierId).OnDelete(DeleteBehavior.Cascade);
-
-        // Finance Phase 1: Supplier.Balance default value
-        modelBuilder.Entity<Supplier>().Property(s => s.Balance).HasDefaultValue(0m);
+        // Finance Phase 1: CreditNote, SupplierBill, Supplier configurations
+        // are now in dedicated IEntityTypeConfiguration classes:
+        // - CreditNoteConfiguration.cs
+        // - SupplierBillConfiguration.cs
+        // - SupplierConfiguration.cs
+        // (Applied automatically via ApplyConfigurationsFromAssembly above)
 
         // Global soft-delete query filter for all ISoftDeletable entities
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())

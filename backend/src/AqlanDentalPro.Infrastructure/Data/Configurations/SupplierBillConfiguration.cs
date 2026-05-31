@@ -23,5 +23,11 @@ public class SupplierBillConfiguration : IEntityTypeConfiguration<SupplierBill>
         builder.HasIndex(b => b.BranchId);
         builder.HasIndex(b => b.SupplierId);
         builder.HasIndex(b => b.Status);
+
+        // Relationships
+        builder.HasOne(b => b.Supplier)
+            .WithMany(s => s.Bills)
+            .HasForeignKey(b => b.SupplierId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

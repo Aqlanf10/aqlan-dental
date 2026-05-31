@@ -13,7 +13,7 @@ import {
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
-import type { PaymentListItem, RegisterPaymentRequest, ContractListItem } from "./types";
+import type { PaymentListItem, RegisterPaymentRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDate } from "./FinanceHelpers";

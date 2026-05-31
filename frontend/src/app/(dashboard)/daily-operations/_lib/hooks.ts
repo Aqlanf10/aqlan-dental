@@ -367,6 +367,7 @@ export function useCreateAppointment() {
           if (durationMinutes <= 0) durationMinutes = undefined;
         }
       }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { endTime, ...rest } = body;
       const { data } = await api.post("/api/appointments", {
         ...rest,

@@ -53,7 +53,7 @@ export default function ProcessRefundModal({
         })
         .finally(() => setTreasuriesLoading(false));
     }
-  }, [isOpen]);
+  }, [isOpen, treasuryId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

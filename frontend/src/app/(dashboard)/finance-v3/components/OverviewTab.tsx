@@ -14,7 +14,7 @@ import {
 import { api } from "@/lib/api";
 import type { DashboardData, ProfitLossData } from "./types";
 import { KpiCard, tokens } from "./FinanceSharedUI";
-import { formatYER, safeFormatDate } from "./FinanceHelpers";
+import { formatYER } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab 1: Overview

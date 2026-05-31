@@ -12,8 +12,6 @@ import {
   Clock,
   Settings,
   RefreshCw,
-  Wifi,
-  WifiOff,
   AlertTriangle,
   UserCheck,
 } from "lucide-react";

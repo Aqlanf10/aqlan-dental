@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Loader2, AlertTriangle } from "lucide-react";
 import type { CreateCreditNoteRequest } from "./types";
-import { Modal, tokens, inputStyle, labelStyle, btnPrimary, btnGhost, btnDanger } from "./FinanceSharedUI";
+import { Modal, tokens, inputStyle, labelStyle, btnGhost, btnDanger } from "./FinanceSharedUI";
 import { formatYER } from "./FinanceHelpers";
 
 /* ═══════════════════════════════════════════════════════════════════════════════

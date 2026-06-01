@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useAuthStore } from "@/stores/authStore";
 import { hasPermission } from "@/hooks/usePermissions";
+import { financeV3CollectionsUrl, financeV3InvoicesUrl } from "@/lib/financeRoutes";
 import type { UserDto } from "@/types/auth";
 import {
   ArrowRight,
@@ -117,7 +118,7 @@ export const WORKFLOW_LINKS = {
   /** المدفوعات / جاهز للدفع */
   payments: (permission = "finance.view"): WorkflowLink => ({
     label: "المدفوعات",
-    href: "/finance/payments",
+    href: financeV3CollectionsUrl(),
     icon: CreditCard,
     permission,
     variant: "default",
@@ -126,7 +127,7 @@ export const WORKFLOW_LINKS = {
   /** الفواتير */
   invoices: (permission = "invoices.view"): WorkflowLink => ({
     label: "الفواتير",
-    href: "/finance/invoices",
+    href: financeV3InvoicesUrl(),
     icon: FileText,
     permission,
     variant: "default",

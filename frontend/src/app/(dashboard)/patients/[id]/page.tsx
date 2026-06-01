@@ -19,6 +19,7 @@ import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
 import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
+import { financeV3ContractsUrl } from "@/lib/financeRoutes";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -770,7 +771,7 @@ export default function PatientProfilePage() {
                         return (
                           <Link
                             key={ii}
-                            href={`/finance/contracts/new?patientId=${id}&patientName=${encodeURIComponent(patientName)}`}
+                            href={financeV3ContractsUrl(id, { patientName })}
                             onClick={() => setRibbonActiveAction(item.label)}
                             className={`
                               flex flex-col items-center w-[68px] p-1.5 rounded-lg transition-all duration-200

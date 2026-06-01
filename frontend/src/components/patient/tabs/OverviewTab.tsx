@@ -13,6 +13,7 @@ import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate, APPOINTMENT_STATUS_LABELS } from "@/lib/utils";
 import type { PatientProfile } from "@/types/patient";
+import { financeV3CollectionsUrl } from "@/lib/financeRoutes";
 import { SURGERY_STATUS_LABELS } from "@/types/surgery";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ export function OverviewTab({ patientId, summary, patient, canViewFinance = fals
         </Link>
         {canViewFinance && (
           <Link
-            href={`/finance/payments?patientId=${patientId}`}
+            href={financeV3CollectionsUrl(patientId)}
             className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
             style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}

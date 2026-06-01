@@ -147,7 +147,7 @@ export default function DashboardPage() {
                 { label: "مريض جديد", icon: Plus, color: "#3d7ab5", href: "/patients/new" },
                 { label: "موعد جديد", icon: Calendar, color: "#f5922e", href: "/appointments/new" },
                 { label: "حالة تقويم", icon: Activity, color: "#a855f7", href: "/ortho/new" },
-                { label: "تسجيل دفعة", icon: Wallet, color: "#22c55e", href: "/finance/payments" },
+                { label: "تسجيل دفعة", icon: Wallet, color: "#22c55e", href: "/daily-operations" },
               ].map((a) => (
                 <Link
                   key={a.label}

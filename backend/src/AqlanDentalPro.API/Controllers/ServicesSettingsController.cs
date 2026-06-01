@@ -106,7 +106,7 @@ public class ServicesSettingsController(AppDbContext db) : ControllerBase
             DefaultLabCost = req.DefaultLabCost ?? 0,
             DefaultDoctorCommissionPercentage = req.DefaultDoctorCommissionPercentage,
             CommissionBaseRule = req.CommissionBaseRule ?? CommissionBaseRule.AfterDiscountAndCosts,
-            CommissionRecognitionMode = req.CommissionRecognitionMode ?? CommissionRecognitionMode.OnInvoiceApproval,
+            CommissionRecognitionMode = req.CommissionRecognitionMode ?? CommissionRecognitionMode.OnPaymentCollection,
             IsActive = true
         };
 

@@ -1293,7 +1293,7 @@ export default function PatientDailyJourneyHub() {
                         )}
                         {canViewInvoices && (
                           <Link
-                            href={`/finance/invoices?patientId=${patientId}`}
+                            href={`/finance-v3?tab=invoices&patientId=${patientId}`}
                             className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-[#d3d1c7] bg-white text-[#1a3a5c] hover:bg-[#f8f9fa] transition"
                           >
                             <Receipt className="w-3.5 h-3.5" />

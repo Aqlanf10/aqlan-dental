@@ -780,7 +780,7 @@ public partial class FinanceV3Controller
             .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
 
         var netPaid = totalPaid + totalRefunds; // refunds are negative
-        var entityBalance = totalInvoiced - netPaid - totalDiscounts;
+        var entityBalance = totalInvoiced - netPaid;
 
         // Contract outstanding
         var contractOutstanding = await db.Contracts

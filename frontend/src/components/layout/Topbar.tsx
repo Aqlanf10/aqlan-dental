@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUnreadCount } from "@/hooks/useMessaging";
+import { financeV3CollectionsUrl, financeV3ContractsUrl } from "@/lib/financeRoutes";
 
 /* ─── Live Clock — matches ZIP ─────────────────────────────────────────────── */
 function LiveClock() {
@@ -58,8 +59,8 @@ interface NotificationItem {
 const ENTITY_URL: Record<string, (id: string) => string> = {
   Appointment: () => "/appointments",
   Patient:     (id) => `/patients/${id}`,
-  Payment:     (id) => `/finance/payments/${id}`,
-  Contract:    (id) => `/finance/contracts/${id}`,
+  Payment:     () => financeV3CollectionsUrl(),
+  Contract:    () => financeV3ContractsUrl(),
   LabOrder:    () => "/lab",
   OrthoCase:   (id) => `/ortho/${id}`,
 };

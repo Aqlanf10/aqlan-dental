@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Wallet,
   FileText,
@@ -58,9 +59,15 @@ const TABS: TabDef[] = [
 /* ═══════════════════════════════════════════════════════════════════════════════
    Finance V3 Financial Center — Main Page
    ═══════════════════════════════════════════════════════════════════════════════ */
-export default function FinanceV3Page() {
+const VALID_TABS = new Set(TABS.map((t) => t.key));
+
+function FinanceV3PageInner() {
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const initialTab = tabFromUrl && VALID_TABS.has(tabFromUrl) ? tabFromUrl : "overview";
+
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [activeSessionInfo, setActiveSessionInfo] = useState<{ cashierName: string; openedAt: string } | null>(null);
 
@@ -85,6 +92,10 @@ export default function FinanceV3Page() {
   }, []);
 
   useEffect(() => { fetchActiveSession(); }, [fetchActiveSession]);
+
+  useEffect(() => {
+    if (tabFromUrl && VALID_TABS.has(tabFromUrl)) setActiveTab(tabFromUrl);
+  }, [tabFromUrl]);
 
   if (!isAuthorized) {
     return <AccessDenied />;
@@ -156,5 +167,13 @@ export default function FinanceV3Page() {
         {activeTab === "audit" && <AuditTab />}
       </div>
     </div>
+  );
+}
+
+export default function FinanceV3Page() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">جاري التحميل...</div>}>
+      <FinanceV3PageInner />
+    </Suspense>
   );
 }

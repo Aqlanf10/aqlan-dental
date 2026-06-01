@@ -22,6 +22,7 @@ import {
   inputCls, fmtRial, fmtDate, fmtTime, getInitials, getStepIndex, getStepStatus,
 } from "../_lib/constants";
 import type { JourneyItem, ServiceOption, RoomOption } from "../_lib/constants";
+import { financeV3InvoicesUrl } from "@/lib/financeRoutes";
 
 // ─── 1. Patient Header Card ──────────────────────────────────────────────────
 
@@ -521,7 +522,7 @@ export function JourneyActionsPanel({
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Link
-                      href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                      href={financeV3InvoicesUrl(selectedItem.patientId)}
                       className="text-xs text-[#3d7ab5] hover:underline flex items-center gap-1"
                     >
                       <FileText className="w-3 h-3" />
@@ -579,7 +580,7 @@ export function JourneyActionsPanel({
                     تم إنشاء الفاتورة: <span className="font-mono">{draftInvoiceResult.invoiceNumber}</span>
                   </p>
                   <Link
-                    href={`/finance/invoices/${draftInvoiceResult.invoiceId}`}
+                    href={financeV3InvoicesUrl(selectedItem.patientId)}
                     className="text-[10px] text-[#3d7ab5] hover:underline flex items-center gap-1"
                   >
                     <FileText className="w-3 h-3" />

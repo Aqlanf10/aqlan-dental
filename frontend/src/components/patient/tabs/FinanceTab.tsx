@@ -8,6 +8,7 @@ import { EmptyState } from "./EmptyState";
 import { cn } from "@/lib/utils";
 import type { Invoice, AccountStatement } from "@/types/finance";
 import { PAYMENT_METHODS as paymentMethodLabels, CONTRACT_STATUS as contractStatusConfig, INVOICE_STATUS as invoiceStatusConfig } from "@/types/finance";
+import { financeV3ContractsUrl, financeV3InvoicesUrl } from "@/lib/financeRoutes";
 
 interface FinanceTabProps {
   patientId: string;
@@ -110,7 +111,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
               return (
                 <Link
                   key={c.id}
-                  href={`/finance/contracts/${c.id}`}
+                  href={financeV3ContractsUrl(patientId)}
                   className="flex flex-col gap-2 p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9] hover:border-[#3d7ab5]/30 transition-colors"
                 >
                   <div className="flex items-center justify-between">
@@ -193,7 +194,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
               return (
                 <Link
                   key={inv.id}
-                  href={`/finance/invoices/${inv.id}`}
+                  href={financeV3InvoicesUrl(patientId)}
                   className="flex items-center justify-between p-3 bg-[#f7fafd] rounded-xl border border-[#e8f0f9] hover:border-[#3d7ab5]/30 transition-colors"
                 >
                   <div className="flex items-center gap-2">

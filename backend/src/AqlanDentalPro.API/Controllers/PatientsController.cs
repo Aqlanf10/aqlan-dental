@@ -377,8 +377,13 @@ public class PatientsController(
         var activeOrthoCases = await db.OrthoCases.CountAsync(o => o.PatientId == id && o.Status == OrthoCaseStatus.Active);
         var prescriptionsCount = await db.Prescriptions.CountAsync(p => p.PatientId == id);
 
-        // Financial totals are restricted to non-doctor roles.
-        if (patientAccess.IsDoctor)
+        // Financial totals: Admin, Accountant, and Reception (matches patient file UI).
+        var role = currentUser.Role?.ToString() ?? "";
+        var canViewFinanceTotals = role.Equals(nameof(UserRole.Admin), StringComparison.OrdinalIgnoreCase)
+            || role.Equals(nameof(UserRole.Accountant), StringComparison.OrdinalIgnoreCase)
+            || role.Equals(nameof(UserRole.Reception), StringComparison.OrdinalIgnoreCase);
+
+        if (patientAccess.IsDoctor || !canViewFinanceTotals)
         {
             return Ok(new
             {
@@ -391,22 +396,10 @@ public class PatientsController(
             });
         }
 
-        // FIX: Only count active payments (exclude soft-deleted/refunded).
-        // This aligns the summary cards with the Finance tab calculation.
-        var totalPaid = await db.Payments
-            .Where(p => p.PatientId == id && p.IsActive)
-            .SumAsync(p => (decimal?)p.Amount) ?? 0;
-
-        // FIX: totalOutstanding = totalContracted - totalDiscounts - totalPaid.
-        // Previously this only summed active contracts' remaining and missed discounts
-        // and unlinked payments. Now it matches the account-statement formula.
-        var totalContracted = await db.Contracts
-            .Where(c => c.PatientId == id && c.Status == ContractStatus.Active)
-            .SumAsync(c => (decimal?)c.TotalAmount) ?? 0;
-        var totalDiscounts = await db.Contracts
-            .Where(c => c.PatientId == id && c.Status == ContractStatus.Active)
-            .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
-        var totalOutstanding = totalContracted - totalDiscounts - totalPaid;
+        // Align with canonical finance-summary (contracts + invoices + orphan payments).
+        var financeSummary = await financeService.GetPatientFinanceSummaryAsync(id);
+        var totalPaid = financeSummary.TotalPaid;
+        var totalOutstanding = financeSummary.OutstandingBalance;
 
         // Audit: non-doctor viewed financial summary.
         await audit.LogAsync(AuditAction.View, "PatientFinanceSummary", id,

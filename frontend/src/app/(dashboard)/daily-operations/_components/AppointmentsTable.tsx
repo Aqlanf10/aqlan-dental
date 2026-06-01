@@ -9,9 +9,9 @@
 import { useState } from "react";
 import {
   Calendar, UserCheck, ClipboardList, DoorOpen, CheckCircle,
-  CreditCard, FileText, CalendarPlus, MessageCircle, XCircle,
-  UserX, MoreHorizontal, Eye, Phone, Clock,
+  MoreHorizontal, Eye, Phone, Clock,
   Building2, PanelRight, Timer, AlertCircle, Heart,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
 import {
   APPT_STATUS_LABELS, STATUS_COLORS, ACTION_LABELS,
@@ -19,26 +19,6 @@ import {
   isAppointmentOverdue, fmtOverdueMinutes, fmtSessionDuration,
   type TodayJourneyItem,
 } from "../_lib/constants";
-
-/* ─── Row action button (Fluent style) ────────────────────────────────────── */
-function ActionBtn({
-  icon: Icon, label, color, onClick, disabled,
-}: {
-  icon: React.ElementType; label: string; color: string;
-  onClick: () => void; disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-105 disabled:opacity-30 disabled:hover:scale-100"
-      style={{ background: color + "12", color }}
-    >
-      <Icon className="w-3.5 h-3.5" />
-    </button>
-  );
-}
 
 /* ─── Status badge ────────────────────────────────────────────────────────── */
 function StatusBadge({ status }: { status: string }) {
@@ -299,8 +279,7 @@ export default function AppointmentsTable({
 function AppointmentRow({
   item, isDoctor, canProcessCheckout, isSelected, isEven, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
-  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
+  onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
 }: {
   item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; isSelected: boolean; isEven: boolean; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
@@ -310,6 +289,83 @@ function AppointmentRow({
   // Determine next patient highlight
   const isNextPatient = item.nextAction === "CallPatient" || item.nextAction === "EnterRoom" || 
     (item.nextAction === "Intake" && (item.appointmentStatus === "Scheduled" || item.appointmentStatus === "Confirmed"));
+
+  // Render the primary labeled action button based on the nextAction status
+  let primaryBtn = null;
+  if (canAct && !isDoctor) {
+    if (item.nextAction === "Intake") {
+      primaryBtn = (
+        <button
+          onClick={() => onIntake(item)}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#16a34a" }}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>تسجيل وصول</span>
+        </button>
+      );
+    } else if (item.nextAction === "SendToQueue") {
+      primaryBtn = (
+        <button
+          onClick={() => onSendToQueue(item)}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#f5922e" }}
+        >
+          <ClipboardList className="w-3.5 h-3.5" />
+          <span>إدخال الطابور</span>
+        </button>
+      );
+    } else if (item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient")) {
+      primaryBtn = (
+        <button
+          onClick={() => onCallPatient(item)}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#d97706" }}
+        >
+          <Phone className="w-3.5 h-3.5" />
+          <span>نداء المريض</span>
+        </button>
+      );
+    } else if (item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom")) {
+      primaryBtn = (
+        <button
+          onClick={() => onEnterRoom(item)}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#9333ea" }}
+        >
+          <DoorOpen className="w-3.5 h-3.5" />
+          <span>دخول العيادة</span>
+        </button>
+      );
+    }
+  }
+
+  // Checkout primary button
+  if (canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout")) {
+    primaryBtn = (
+      <button
+        onClick={() => onCompleteVisit(item)}
+        className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+        style={{ background: "#10b981" }} // Emerald/Green for checkout
+      >
+        <CheckCircle className="w-3.5 h-3.5" />
+        <span>التحصيل والخروج</span>
+      </button>
+    );
+  }
+
+  if (!primaryBtn) {
+    primaryBtn = (
+      <button
+        onClick={() => onViewPatient(item)}
+        className="px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-100 flex items-center justify-center gap-1.5"
+        style={{ color: "#3d7ab5", border: "1px solid #3d7ab530" }}
+      >
+        <Eye className="w-3.5 h-3.5" />
+        <span>عرض الملف</span>
+      </button>
+    );
+  }
 
   return (
     <tr
@@ -393,39 +449,21 @@ function AppointmentRow({
       </td>
       <td className="py-2 px-3"><NextActionBadge action={item.nextAction} /></td>
       <td className="py-2 px-3">
-        <div className="flex items-center gap-0.5 flex-wrap">
-          <ActionBtn icon={Eye} label="فتح الملف" color="#3d7ab5" onClick={() => onViewPatient(item)} />
-          {canAct && item.nextAction === "Intake" && (
-            <ActionBtn icon={UserCheck} label="تسجيل حضور" color="#16a34a" onClick={() => onIntake(item)} />
-          )}
-          {canAct && item.nextAction === "SendToQueue" && (
-            <ActionBtn icon={ClipboardList} label="إضافة للطابور" color="#f5922e" onClick={() => onSendToQueue(item)} />
-          )}
-          {canAct && item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient") && (
-            <ActionBtn icon={Phone} label="نداء المريض" color="#d97706" onClick={() => onCallPatient(item)} />
-          )}
-          {canAct && item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom") && (
-            <ActionBtn icon={DoorOpen} label="دخول الغرفة" color="#9333ea" onClick={() => onEnterRoom(item)} />
-          )}
-          {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
-            <ActionBtn icon={CheckCircle} label="التحصيل والخروج" color="#16a34a" onClick={() => onCompleteVisit(item)} />
-          )}
-          {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
-            <ActionBtn icon={FileText} label="إنشاء فاتورة مسودة" color="#3d7ab5" disabled={createDraftInvoicePending} onClick={() => onCreateDraftInvoice(item)} />
-          )}
-          {!isDoctor && (
-            <ActionBtn icon={CreditCard} label="دفعة سريعة" color="#22c55e" onClick={() => onQuickPayment(item)} />
-          )}
-          <ActionBtn icon={CalendarPlus} label="حجز متابعة" color="#3d7ab5" onClick={() => onBookAppointment(item)} />
-          {!isDoctor && item.patientPhone && (
-            <ActionBtn icon={MessageCircle} label="واتساب" color="#25D366" onClick={() => onWhatsApp(item)} />
-          )}
-          {canAct && (item.appointmentStatus === "Scheduled" || item.appointmentStatus === "Confirmed") && (
-            <ActionBtn icon={UserX} label="لم يحضر" color="#ef4444" onClick={() => onNoShow(item)} />
-          )}
-          {canAct && item.appointmentStatus !== "NoShow" && (
-            <ActionBtn icon={XCircle} label="إلغاء" color="#6b7280" onClick={() => onCancel(item)} />
-          )}
+        <div className="flex items-center gap-2">
+          {/* Labeled Dynamic Primary Action */}
+          {primaryBtn}
+
+          {/* Inline Context Trigger */}
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              onContextMenu?.(e, item);
+            }}
+            title="خيارات إضافية"
+            className="w-8 h-8 rounded-lg flex items-center justify-center border hover:bg-gray-50 transition-all text-[#64748b] border-[#e2e8f0]"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
         </div>
       </td>
     </tr>
@@ -436,13 +474,89 @@ function AppointmentRow({
 function MobileCard({
   item, isDoctor, canProcessCheckout, expanded, onToggle, queueWaitMinutes,
   onIntake, onSendToQueue, onCallPatient, onEnterRoom,
-  onQuickPayment, onCreateDraftInvoice, createDraftInvoicePending, onBookAppointment, onWhatsApp,
-  onNoShow, onCancel, onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
+  onViewPatient, onCompleteVisit, onOpenSidePanel, onContextMenu,
 }: {
   item: TodayJourneyItem; isDoctor: boolean; canProcessCheckout: boolean; expanded: boolean; onToggle: () => void; queueWaitMinutes?: number;
 } & Omit<AppointmentsTableProps, "items" | "loading" | "isAccountant" | "isReception" | "queueWaitTime" | "selectedPatientId">) {
   const canAct = item.appointmentStatus !== "Cancelled" && item.appointmentStatus !== "Completed" && item.appointmentStatus !== "NoShow";
   const overdueText = isAppointmentOverdue(item) ? fmtOverdueMinutes(item) : "";
+
+  // Render the primary labeled action button based on the nextAction status
+  let primaryBtn = null;
+  if (canAct && !isDoctor) {
+    if (item.nextAction === "Intake") {
+      primaryBtn = (
+        <button
+          onClick={() => onIntake(item)}
+          className="w-full px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#16a34a" }}
+        >
+          <UserCheck className="w-3.5 h-3.5" />
+          <span>تسجيل وصول</span>
+        </button>
+      );
+    } else if (item.nextAction === "SendToQueue") {
+      primaryBtn = (
+        <button
+          onClick={() => onSendToQueue(item)}
+          className="w-full px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#f5922e" }}
+        >
+          <ClipboardList className="w-3.5 h-3.5" />
+          <span>إدخال الطابور</span>
+        </button>
+      );
+    } else if (item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient")) {
+      primaryBtn = (
+        <button
+          onClick={() => onCallPatient(item)}
+          className="w-full px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#d97706" }}
+        >
+          <Phone className="w-3.5 h-3.5" />
+          <span>نداء المريض</span>
+        </button>
+      );
+    } else if (item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom")) {
+      primaryBtn = (
+        <button
+          onClick={() => onEnterRoom(item)}
+          className="w-full px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+          style={{ background: "#9333ea" }}
+        >
+          <DoorOpen className="w-3.5 h-3.5" />
+          <span>دخول العيادة</span>
+        </button>
+      );
+    }
+  }
+
+  // Checkout primary button
+  if (canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout")) {
+    primaryBtn = (
+      <button
+        onClick={() => onCompleteVisit(item)}
+        className="w-full px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center justify-center gap-1.5 shadow-sm"
+        style={{ background: "#10b981" }} // Emerald/Green for checkout
+      >
+        <CheckCircle className="w-3.5 h-3.5" />
+        <span>التحصيل والخروج</span>
+      </button>
+    );
+  }
+
+  if (!primaryBtn) {
+    primaryBtn = (
+      <button
+        onClick={() => onViewPatient(item)}
+        className="w-full px-3 py-1.5 rounded-lg text-xs font-bold transition hover:bg-gray-100 flex items-center justify-center gap-1.5"
+        style={{ color: "#3d7ab5", border: "1px solid #3d7ab530" }}
+      >
+        <Eye className="w-3.5 h-3.5" />
+        <span>عرض الملف</span>
+      </button>
+    );
+  }
 
   return (
     <div
@@ -462,8 +576,8 @@ function MobileCard({
         {queueWaitMinutes && <WaitTimeChip minutes={queueWaitMinutes} />}
         {overdueText && <OverdueBadge text={overdueText} />}
         <div className="flex-1" />
-        <button onClick={onToggle} className="p-1 rounded-lg hover:bg-gray-50">
-          <MoreHorizontal className="w-4 h-4 text-gray-400" />
+        <button onClick={onToggle} className="p-1 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-1" title="تفاصيل إضافية">
+          {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
       </div>
       <div className="mt-1.5 flex items-center gap-2">
@@ -481,46 +595,39 @@ function MobileCard({
 
       {expanded && (
         <div className="mt-3 pt-3 border-t space-y-2" style={{ borderColor: "#f1f5f9" }}>
-          <div className="flex flex-wrap gap-1.5 text-xs" style={{ color: "#64748b" }}>
-            {item.serviceName && <span>الخدمة: {item.serviceName}</span>}
-            {item.roomName && <span>الغرفة: {item.roomName}</span>}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            <ActionBtn icon={Eye} label="فتح الملف" color="#3d7ab5" onClick={() => onViewPatient(item)} />
-            {canAct && item.nextAction === "Intake" && (
-              <ActionBtn icon={UserCheck} label="تسجيل حضور" color="#16a34a" onClick={() => onIntake(item)} />
+          <div className="flex flex-wrap gap-3 text-xs" style={{ color: "#64748b" }}>
+            {item.serviceName && (
+              <span className="flex items-center gap-1">
+                <strong>الخدمة:</strong> {item.serviceName}
+              </span>
             )}
-            {canAct && item.nextAction === "SendToQueue" && (
-              <ActionBtn icon={ClipboardList} label="إضافة للطابور" color="#f5922e" onClick={() => onSendToQueue(item)} />
-            )}
-            {canAct && item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient") && (
-              <ActionBtn icon={Phone} label="نداء" color="#d97706" onClick={() => onCallPatient(item)} />
-            )}
-            {canAct && item.queueItemId && (item.queueStatus === "Called" || item.nextAction === "EnterRoom") && (
-              <ActionBtn icon={DoorOpen} label="دخول" color="#9333ea" onClick={() => onEnterRoom(item)} />
-            )}
-            {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
-              <ActionBtn icon={CheckCircle} label="تحصيل وخروج" color="#16a34a" onClick={() => onCompleteVisit(item)} />
-            )}
-            {canProcessCheckout && (item.nextAction === "Checkout" || item.checkoutStatus === "ReadyForCheckout") && (
-              <ActionBtn icon={FileText} label="فاتورة مسودة" color="#3d7ab5" disabled={createDraftInvoicePending} onClick={() => onCreateDraftInvoice(item)} />
-            )}
-            {!isDoctor && (
-              <ActionBtn icon={CreditCard} label="دفعة" color="#22c55e" onClick={() => onQuickPayment(item)} />
-            )}
-            <ActionBtn icon={CalendarPlus} label="متابعة" color="#3d7ab5" onClick={() => onBookAppointment(item)} />
-            {!isDoctor && item.patientPhone && (
-              <ActionBtn icon={MessageCircle} label="واتساب" color="#25D366" onClick={() => onWhatsApp(item)} />
-            )}
-            {canAct && (item.appointmentStatus === "Scheduled" || item.appointmentStatus === "Confirmed") && (
-              <ActionBtn icon={UserX} label="لم يحضر" color="#ef4444" onClick={() => onNoShow(item)} />
-            )}
-            {canAct && (
-              <ActionBtn icon={XCircle} label="إلغاء" color="#6b7280" onClick={() => onCancel(item)} />
+            {item.roomName && (
+              <span className="flex items-center gap-1">
+                <strong>الغرفة:</strong> {item.roomName}
+              </span>
             )}
           </div>
         </div>
       )}
+
+      {/* Unified Action Footer */}
+      <div className="mt-3 pt-2.5 border-t flex items-center gap-2" style={{ borderColor: "#f1f5f9" }}>
+        <div className="flex-1">
+          {primaryBtn}
+        </div>
+
+        {/* Options Button to Trigger Context Menu */}
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            onContextMenu?.(e, item);
+          }}
+          title="خيارات إضافية"
+          className="w-8 h-8 rounded-lg flex items-center justify-center border hover:bg-gray-50 transition-all text-[#64748b] border-[#e2e8f0]"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
-import { isClinicalRole, isAccountantRole } from "@/lib/roles";
+import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -105,8 +105,9 @@ export default function PatientProfilePage() {
   const router   = useRouter();
   const { user } = useAuthStore();
   // isClinicalRole covers: Doctor, Orthodontist, GeneralDentist, OralSurgeon
-  const isDoctor    = isClinicalRole(user?.role);
-  const isAccountant = isAccountantRole(user?.role);
+  const isDoctor       = isClinicalRole(user?.role);
+  const isAccountant   = isAccountantRole(user?.role);
+  const canViewFinance = canViewPatientFinance(user?.role);
 
   const [patient,      setPatient]      = useState<PatientProfile | null>(null);
   const [summary,      setSummary]      = useState<PatientSummary | null>(null);
@@ -212,8 +213,7 @@ export default function PatientProfilePage() {
 
   // Filter ribbon groups for limited view and Doctor / Accountant roles
   const visibleRibbonGroups = ribbonGroups.filter(g => {
-    if (limited && g.label === "المالية V3") return false;
-    if (isDoctor && g.label === "المالية V3") return false;
+    if ((limited || !canViewFinance) && g.label === "المالية V3") return false;
     if (isAccountant && ["إجراءات العيادة", "الحالات السريرية", "المرفقات والسجلات"].includes(g.label)) return false;
     return true;
   });
@@ -317,6 +317,7 @@ export default function PatientProfilePage() {
             patientId={id}
             summary={summary}
             patient={patient}
+            canViewFinance={canViewFinance}
             onAddVisit={() => { switchTab("visits"); setOpenAddVisitModal(true); }}
           />
         );
@@ -398,7 +399,7 @@ export default function PatientProfilePage() {
         );
 
       case "finance":
-        if (isDoctor) return null;
+        if (!canViewFinance) return null;
         return (
           <div className="space-y-4">
             {renderSubTabs(
@@ -461,8 +462,9 @@ export default function PatientProfilePage() {
 
   // Enforce Dynamic Role visibility on tabs
   const visibleTabs = ALL_PIVOT_TABS.filter((tab) => {
-    // Clinical roles: no finance tab, no activity-log (portal/messages are admin/reception workflows)
-    if (isDoctor && tab.key === "finance")       return false;
+    // Finance tab: Admin and Accountant only
+    if (!canViewFinance && tab.key === "finance") return false;
+    // Clinical roles: no activity-log (portal/messages are admin/reception workflows)
     if (isDoctor && tab.key === "activity-log")  return false;
     // Accountant: no clinical tabs
     if (isAccountant && ["medical-history", "clinical-notes", "treatments"].includes(tab.key)) return false;
@@ -526,7 +528,7 @@ export default function PatientProfilePage() {
           {/* Right side - Alerts & Balance */}
           <div className="flex items-center gap-3 order-2 md:order-1">
             {/* Financial Balance Card (Doctors cannot see) */}
-            {!isDoctor && !limited && (
+            {canViewFinance && !limited && (
               <div
                 className="group relative bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-3 text-center min-w-[140px] shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer hover:scale-[1.02]"
                 onClick={() => switchTab("finance")}
@@ -581,7 +583,7 @@ export default function PatientProfilePage() {
                     مؤرشف
                   </span>
                 )}
-                {hasDebt && !isDoctor && !limited && (
+                {hasDebt && canViewFinance && !limited && (
                   <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
                     <Receipt className="w-2.5 h-2.5" />{outstanding.toLocaleString()} ر.ي متبقي
                   </span>
@@ -701,7 +703,7 @@ export default function PatientProfilePage() {
               { label: 'المستحق', value: summary?.totalOutstanding != null ? summary.totalOutstanding.toLocaleString() : '—', bgClass: 'bg-orange-50 border-orange-100', textClass: 'text-orange-700' },
               { label: 'الوصفات', value: summary?.prescriptionsCount ?? '—', bgClass: 'bg-blue-50 border-blue-100', textClass: 'text-blue-700' },
             ].map((stat, i) => {
-              if (isDoctor && (stat.label === 'المدفوع' || stat.label === 'المستحق')) return null;
+              if (!canViewFinance && (stat.label === 'المدفوع' || stat.label === 'المستحق')) return null;
               return (
                 <div key={i} className={`${stat.bgClass} rounded-lg px-3 py-1.5 text-center border`}>
                   <div className={`${stat.textClass} text-sm font-black`}>{stat.value}</div>

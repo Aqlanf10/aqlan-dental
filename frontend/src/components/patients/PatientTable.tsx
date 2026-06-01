@@ -12,7 +12,7 @@ import type { PatientListItem, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
 import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
-import { isAccountantRole, isAdminRole } from "@/lib/roles";
+import { canViewPatientFinance, isAccountantRole, isAdminRole } from "@/lib/roles";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -51,8 +51,7 @@ export function PatientTable() {
   const { user } = useAuthStore();
   const isAdmin      = isAdminRole(user?.role);
   const isAccountant = isAccountantRole(user?.role);
-  // Finance data (balance/outstanding) shown only to Admin and Accountant
-  const canViewFinance = isAdmin || isAccountant;
+  const canViewFinance = canViewPatientFinance(user?.role);
 
   const [data, setData] = useState<PaginatedResponse<PatientListItem> | null>(null);
   const [search, setSearch] = useState("");
@@ -822,6 +821,7 @@ export function PatientTable() {
         patient={ctxMenu?.patient ?? null}
         position={ctxMenu?.position ?? null}
         isAdmin={isAdmin}
+        canViewFinance={canViewFinance}
         onClose={() => setCtxMenu(null)}
         onOpen={(id) => router.push(`/patients/${id}`)}
         onEdit={(id) => router.push(`/patients/${id}/edit`)}

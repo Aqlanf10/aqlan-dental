@@ -43,3 +43,8 @@ export function isAdminRole(role: string | null | undefined): boolean {
 export function isReceptionRole(role: string | null | undefined): boolean {
   return role?.toLowerCase() === "reception";
 }
+
+/** Patient balance / outstanding — Admin and Accountant only. */
+export function canViewPatientFinance(role: string | null | undefined): boolean {
+  return isAdminRole(role) || isAccountantRole(role);
+}

@@ -261,6 +261,13 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         return treasury.Id;
     }
 
+    [HttpGet("active")]
+    [Obsolete("Use GET /api/finance-v3/cashier-sessions/active instead. This endpoint redirects to the canonical Finance V3 session endpoint.")]
+    public IActionResult GetActiveSession()
+    {
+        return Redirect("/api/finance-v3/cashier-sessions/active");
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,

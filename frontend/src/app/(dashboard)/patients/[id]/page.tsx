@@ -12,13 +12,13 @@ import {
   AlertTriangle, Shield, Receipt, ChevronRight,
   MoreHorizontal, Bell,
   ChevronDown, ChevronUp, Eye, Coins,
-  Stethoscope as TreatmentIcon, ArrowLeftRight, Printer, CalendarPlus,
-  AlertCircle
+  Stethoscope as TreatmentIcon, ArrowLeftRight, Printer, CalendarPlus
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { PatientProfile } from "@/types/patient";
 import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
+import { isClinicalRole, isAccountantRole } from "@/lib/roles";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -44,6 +44,7 @@ import { LabOrdersTab }        from "@/components/patient/tabs/LabOrdersTab";
 import { TimelineTab }         from "@/components/patient/tabs/TimelineTab";
 import { PortalAccessTab }     from "@/components/patient/tabs/PortalAccessTab";
 import { TreatmentPlanTab }    from "@/components/patient/tabs/TreatmentPlanTab";
+import { ReferralsTab }        from "@/components/patient/tabs/ReferralsTab";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -102,8 +103,9 @@ interface RibbonGroup {
 export default function PatientProfilePage() {
   const { id }  = useParams<{ id: string }>();
   const { user } = useAuthStore();
-  const isDoctor = user?.role?.toLowerCase() === "doctor";
-  const isAccountant = user?.role?.toLowerCase() === "accountant";
+  // isClinicalRole covers: Doctor, Orthodontist, GeneralDentist, OralSurgeon
+  const isDoctor    = isClinicalRole(user?.role);
+  const isAccountant = isAccountantRole(user?.role);
 
   const [patient,      setPatient]      = useState<PatientProfile | null>(null);
   const [summary,      setSummary]      = useState<PatientSummary | null>(null);
@@ -360,13 +362,7 @@ export default function PatientProfilePage() {
             )}
             {clinicalSubTab === "treatment-plan" && <TreatmentPlanTab patientId={id} />}
             {clinicalSubTab === "prescriptions" && <PrescriptionsTab patientId={id} />}
-            {clinicalSubTab === "referrals" && (
-              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <AlertCircle className="w-10 h-10 text-slate-400 mx-auto animate-bounce" />
-                <h4 className="font-bold text-slate-700 text-sm">إحالات المرضى</h4>
-                <p className="text-xs text-slate-400">هذه الميزة تحتاج ربطاً لاحقاً</p>
-              </div>
-            )}
+            {clinicalSubTab === "referrals" && <ReferralsTab patientId={id} />}
           </div>
         );
 
@@ -464,7 +460,10 @@ export default function PatientProfilePage() {
 
   // Enforce Dynamic Role visibility on tabs
   const visibleTabs = ALL_PIVOT_TABS.filter((tab) => {
-    if (isDoctor && tab.key === "finance") return false;
+    // Clinical roles: no finance tab, no activity-log (portal/messages are admin/reception workflows)
+    if (isDoctor && tab.key === "finance")       return false;
+    if (isDoctor && tab.key === "activity-log")  return false;
+    // Accountant: no clinical tabs
     if (isAccountant && ["medical-history", "clinical-notes", "treatments"].includes(tab.key)) return false;
     return true;
   });

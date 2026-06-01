@@ -12,6 +12,7 @@ import type { PatientListItem, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
 import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
+import { isClinicalRole, isAccountantRole } from "@/lib/roles";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -48,9 +49,10 @@ function exportCsv(patients: PatientListItem[]) {
 export function PatientTable() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const isAdmin = user?.role?.toLowerCase() === "admin";
-  const isDoctor = user?.role?.toLowerCase() === "doctor";
-  const isAccountant = user?.role?.toLowerCase() === "accountant";
+  const isAdmin     = user?.role?.toLowerCase() === "admin";
+  // isClinicalRole covers: Doctor, Orthodontist, GeneralDentist, OralSurgeon
+  const isDoctor    = isClinicalRole(user?.role);
+  const isAccountant = isAccountantRole(user?.role);
 
   const [data, setData] = useState<PaginatedResponse<PatientListItem> | null>(null);
   const [search, setSearch] = useState("");

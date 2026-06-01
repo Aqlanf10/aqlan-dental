@@ -14,6 +14,7 @@ public partial class FinanceV3Controller
 
     /// <summary>
     /// GET /api/finance-v3/dashboard — Returns KPI data for the Finance V3 dashboard header band.
+    /// Supersedes the obsolete and removed GET /api/finance/summary endpoint from PaymentsController.
     /// Migration A: Now reads from JournalEntry/JournalLine (canonical source of truth)
     /// instead of CashFlowTransaction (transitional).
     /// Sprint 1: Admin users with Guid.Empty branchId bypass branch filter → consolidated data.
@@ -1413,6 +1414,7 @@ public partial class FinanceV3Controller
 
     /// <summary>
     /// GET /api/finance-v3/contracts — List contracts with branch isolation for Finance V3.
+    /// Supersedes the obsolete and removed GET /api/finance/overdue endpoint from PaymentsController.
     /// </summary>
     [HttpGet("contracts")]
     public async Task<IActionResult> GetContracts(

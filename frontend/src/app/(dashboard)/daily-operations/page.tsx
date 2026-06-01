@@ -1204,6 +1204,9 @@ export default function DailyOperationsPage() {
         isPending={checkoutMutation.isPending || handoffMutation.isPending}
         onConfirm={handleCompleteVisitConfirm}
         onCheckout={handleCheckoutConfirm}
+        onQuickPayment={handleQuickPayment}
+        onCreateDraftInvoice={handleCreateDraftInvoice}
+        createDraftInvoicePending={createDraftInvoiceMutation.isPending}
       />
 
       <BookAppointmentModal

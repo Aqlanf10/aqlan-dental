@@ -50,12 +50,12 @@ type NavEntry = (NavItem & { kind?: "leaf" }) | (NavGroup & { section?: string }
 /* ─── Navigation definition ─────────────────────────────────────────────────── */
 const NAV: NavEntry[] = [
   // ── رئيسي ────────────────────────────────────────────────────────────────
-  { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: [],                                                             section: "رئيسي" },
-  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: [], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
-  { href: "/patients",       label: "المرضى",           icon: Users,           roles: [], permission: PERMISSION_KEYS.PATIENTS_VIEW },
+  { href: "/",               label: "لوحة التحكم",     icon: LayoutDashboard, roles: ["Admin"],                                                             section: "رئيسي" },
+  { href: "/daily-operations", label: "التشغيل اليومي", icon: ClipboardList, roles: ["Admin", "Reception"], permission: PERMISSION_KEYS.DAILY_OPERATIONS_VIEW, badge: "⭐" },
+  { href: "/patients",       label: "المرضى",           icon: Users,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENTS_VIEW },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
-  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin","Reception"],                                         section: "العيادة" },
+  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], section: "العيادة" },
   { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────
@@ -65,13 +65,14 @@ const NAV: NavEntry[] = [
   { href: "/surgery",        label: "الجراحة",          icon: Scissors,        roles: ["Admin","OralSurgeon"] },
 
   // ── التواصل ───────────────────────────────────────────────────────────────
-  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: [],                                                             section: "التواصل" },
-  { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: [] },
-  { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: [] },
-  { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: [] },
+  { href: "/referrals",      label: "الإحالات",         icon: ArrowLeftRight,  roles: ["Admin", "Reception"],                                         section: "التواصل" },
+  { href: "/messages",       label: "الرسائل",          icon: MessageCircle,   roles: ["Admin", "Reception"] },
+  { href: "/whatsapp",       label: "واتساب",           icon: MessageSquare,   roles: ["Admin", "Reception"] },
+  { href: "/sms",            label: "رسائل SMS",        icon: Smartphone,      roles: ["Admin", "Reception"] },
 
   // ── المالية ───────────────────────────────────────────────────────────────
   { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant"],  section: "المالية" },
+  { href: "/commissions", label: "عمولات الأطباء", icon: Banknote, roles: ["Admin","Accountant"] },
   {
     kind: "group",
     label: "المخزون", icon: Package,
@@ -106,6 +107,7 @@ const NAV: NavEntry[] = [
 
   // ── النظام ───────────────────────────────────────────────────────────────
   { href: "/settings",       label: "الإعدادات",        icon: Settings,        roles: ["Admin"],                                                      section: "النظام" },
+  { href: "/settings/services", label: "الخدمات والتسعير", icon: ClipboardList, roles: ["Admin"] },
   { href: "/settings/backup", label: "النسخ الاحتياطي", icon: Shield,          roles: ["Admin"] },
 ];
 
@@ -184,12 +186,17 @@ function NavLink({
 
 /* ─── Visibility check ─────────────────────────────────────────────────────── */
 function isVisible(entry: { roles: string[]; permission?: string }, userRole: string, user: UserDto | null): boolean {
-  // If permission key is defined, use it
+  // 1. If the entry lists specific roles, the user's active role must be included
+  if (entry.roles && entry.roles.length > 0 && !entry.roles.includes(userRole)) {
+    return false;
+  }
+  
+  // 2. If the entry requires a permission, verify that the user has it
   if (entry.permission) {
     return hasPermission(user, entry.permission);
   }
-  // Fallback to role-based check
-  return entry.roles.length === 0 || entry.roles.includes(userRole);
+  
+  return true;
 }
 
 /* ─── Collapsible group ─────────────────────────────────────────────────────── */
@@ -350,12 +357,20 @@ export function Sidebar() {
             const isCurrent = leaf.href === "/" ? pathname === "/" : pathname.startsWith(leaf.href);
             const unreadCount = leaf.href === "/messages" ? unreadData?.totalUnread : undefined;
 
+            // Dynamically customize labels for Doctor roles
+            let label = leaf.label;
+            if (leaf.href === "/schedule" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
+              label = "مواعيدي";
+            } else if (leaf.href === "/patients" && ["GeneralDentist", "OralSurgeon", "Orthodontist"].includes(userRole)) {
+              label = "مرضاي";
+            }
+
             return (
               <div key={leaf.href}>
                 {leaf.section && <SectionLabel label={leaf.section} />}
                 <NavLink
                   href={leaf.href}
-                  label={leaf.label}
+                  label={label}
                   icon={leaf.icon}
                   isCurrent={isCurrent}
                   unreadCount={unreadCount}

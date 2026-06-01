@@ -276,11 +276,11 @@ export default function PatientProfilePage() {
   }, []);
 
   // Helper render wrapper for sub-tabs to provide beautiful Fluent styling
-  const renderSubTabs = (
-    tabs: { key: string; label: string }[],
-    current: string,
-    setTab: (k: string) => void
-  ) => {
+  function renderSubTabs<T extends string>(
+    tabs: { key: T; label: string }[],
+    current: T,
+    setTab: (k: T) => void
+  ) {
     return (
       <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg w-fit mb-4">
         {tabs.map((t) => (
@@ -299,7 +299,7 @@ export default function PatientProfilePage() {
         ))}
       </div>
     );
-  };
+  }
 
   // ─── Consolidated Tab Content Renderer ───────────────────────────────────
 
@@ -594,7 +594,7 @@ export default function PatientProfilePage() {
                 {patient.gender && (
                   <span className="flex items-center gap-1">
                     <User className="w-3 h-3" />
-                    {GENDER_LABELS[patient.gender]}{patient.age ? ` · ${patient.age} سنة` : ""}
+                    {GENDER_LABELS[patient.gender as keyof typeof GENDER_LABELS]}{patient.age ? ` · ${patient.age} سنة` : ""}
                   </span>
                 )}
                 {patient.phone && (

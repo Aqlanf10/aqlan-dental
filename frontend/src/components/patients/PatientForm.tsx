@@ -16,7 +16,6 @@ const schema = z.object({
   lastName:    z.string().min(1, "الاسم الأخير مطلوب"),
   dateOfBirth: z.string().optional(),
   gender:      z.enum(["Male", "Female"]).optional(),
-  // F4 FIX: Added phone/WhatsApp format validation with regex
   phone:       z.string()
     .optional()
     .refine((val) => !val || /^[0-9+\-\s]{7,15}$/.test(val), {
@@ -69,19 +68,22 @@ interface Props {
   patientId?: string;
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function FormPanel({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="bg-white rounded-xl border border-[#e8f0f9]  overflow-hidden">
+    <div className="bg-white rounded-xl border border-[#e8f0f9] overflow-hidden shadow-sm transition-all duration-300">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-4 text-start hover:bg-gray-50 transition"
+        className="w-full flex items-center justify-between px-5 py-4 text-start hover:bg-slate-50/50 transition border-b border-slate-100"
       >
-        <h3 className="font-bold text-[#0d2137]">{title}</h3>
-        <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", open && "rotate-180")} />
+        <div>
+          <h3 className="font-extrabold text-sm text-[#0d2137]">{title}</h3>
+          {description && <p className="text-[11px] text-slate-400 font-medium mt-0.5">{description}</p>}
+        </div>
+        <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform duration-200", open && "rotate-180")} />
       </button>
-      {open && <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>}
+      {open && <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4 bg-white">{children}</div>}
     </div>
   );
 }
@@ -89,19 +91,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, error, required, children }: { label: string; error?: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+        {label} {required && <span className="text-red-500 font-extrabold">*</span>}
       </label>
       {children}
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-red-500 font-semibold">{error}</p>}
     </div>
   );
 }
 
 const inputCls = (err?: string) =>
-  cn("w-full px-3 py-2 text-sm rounded-lg border bg-white focus:outline-none focus:ring-2 focus:ring-clinic-blue", err ? "border-red-400" : "border-gray-300");
+  cn("w-full h-10 px-3 py-2 text-sm rounded-lg border bg-[#f8fafc] text-[#0d2137] outline-none transition-all duration-200 focus:bg-white focus:ring-2 focus:ring-[#3d7ab5]/20 focus:border-[#3d7ab5]", err ? "border-red-400 bg-red-50/30" : "border-slate-200");
 
-const checkboxCls = "w-4 h-4 accent-clinic-blue rounded";
+const checkboxCls = "w-4 h-4 text-[#3d7ab5] border-slate-300 rounded focus:ring-[#3d7ab5]";
 
 export function PatientForm({ defaultValues, patientId }: Props) {
   const router = useRouter();
@@ -127,7 +129,7 @@ export function PatientForm({ defaultValues, patientId }: Props) {
     },
   });
 
-  // Watch phone/whatsApp/name fields for real-time duplicate check
+  // Watch fields for duplicate detection
   const phone = watch("phone");
   const whatsApp = watch("whatsApp");
   const firstName = watch("firstName");
@@ -155,14 +157,12 @@ export function PatientForm({ defaultValues, patientId }: Props) {
     } catch { /* silent */ }
   }, [phone, whatsApp, firstName, lastName, dateOfBirth, patientId]);
 
-  // Debounced duplicate check on field change
   const handleFieldChange = () => {
     if (checkTimer.current) clearTimeout(checkTimer.current);
     checkTimer.current = setTimeout(checkDuplicates, 500);
   };
 
   const onSubmit = async (data: FormData) => {
-    // If duplicates found by phone/whatsapp/patientNumber — prevent save entirely
     if (duplicateWarning && duplicateWarning.length > 0) {
       const hasPhoneOrNumberMatch = duplicateWarning.some(
         (m) => m.matchType === "phone" || m.matchType === "whatsapp" || m.matchType === "patientNumber"
@@ -171,7 +171,6 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         setServerError("لا يمكن حفظ المريض — رقم الهاتف أو الواتساب أو رقم الملف مكرر. راجع الملف الموجود.");
         return;
       }
-      // Name-only match: allow force save
       if (!forceSave) {
         setServerError("يوجد مريض مشابه بالاسم — راجع التحذير أعلاه أو اضغط 'حفظ على أي حال'");
         return;
@@ -211,30 +210,28 @@ export function PatientForm({ defaultValues, patientId }: Props) {
       } else {
         const { data: created } = await api.post<{ id: string; patientNumber?: string }>("/api/patients", payload);
 
-        // Try to create portal account automatically (Admin/Reception only)
         const userRole = useAuthStore.getState().user?.role;
         if (userRole === "Admin" || userRole === "Reception") {
           try {
-          const { data: portalData } = await api.post<{
-            username: string;
-            temporaryPassword?: string;
-            message: string;
-            alreadyExists: boolean;
-          }>(`/api/portal/credentials/${created.id}/create`);
+            const { data: portalData } = await api.post<{
+              username: string;
+              temporaryPassword?: string;
+              message: string;
+              alreadyExists: boolean;
+            }>(`/api/portal/credentials/${created.id}/create`);
 
-          if (!portalData.alreadyExists && portalData.temporaryPassword) {
-            // Show portal credentials dialog
-            setPortalDialog({
-              username: portalData.username,
-              temporaryPassword: portalData.temporaryPassword,
-              patientId: created.id,
-            });
-            return; // Don't navigate yet — let user see the dialog
+            if (!portalData.alreadyExists && portalData.temporaryPassword) {
+              setPortalDialog({
+                username: portalData.username,
+                temporaryPassword: portalData.temporaryPassword,
+                patientId: created.id,
+              });
+              return;
+            }
+          } catch {
+            // non-blocking portal error
           }
-        } catch {
-          // Portal creation failed — not critical, just navigate
         }
-        } // end Admin/Reception check
 
         router.push(`/patients/${created.id}`);
       }
@@ -255,77 +252,73 @@ export function PatientForm({ defaultValues, patientId }: Props) {
       await navigator.clipboard.writeText(text);
       setCopiedField(field);
       setTimeout(() => setCopiedField(null), 2000);
-    } catch {
-      /* silent */
-    }
+    } catch {}
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" dir="rtl">
       {serverError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3.5 text-sm font-semibold animate-pulse">
           {serverError}
         </div>
       )}
 
-      {/* Duplicate Warning */}
+      {/* Duplicate Warning Panel */}
       {duplicateWarning && duplicateWarning.length > 0 && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-amber-800 font-bold">
-              <AlertTriangle className="w-5 h-5" />
-              تحذير: يوجد مريض مشابه!
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-800 font-bold text-sm">
+              <AlertTriangle className="w-5 h-5 text-amber-600 animate-bounce" />
+              تنبيه هام: تم العثور على سجلات مطابقة في النظام!
             </div>
             <button type="button" onClick={() => setDuplicateWarning(null)} className="text-amber-600 hover:text-amber-800">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-sm text-amber-700 mb-3">
-            هذا الرقم أو الاسم مضاف مسبقاً لمريض آخر. يرجى مراجعة ملف المريض الموجود بدلاً من إنشاء ملف جديد.
+          <p className="text-xs text-amber-700">
+            رقم الهاتف أو الاسم المدخل مستخدم بالفعل لملف مريض آخر. يرجى مراجعة القائمة لتفادي تكرار الملفات.
           </p>
           <div className="space-y-2">
             {duplicateWarning.map((m, i) => (
-              <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 p-3">
+              <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 p-3 shadow-sm">
                 <div>
-                  <p className="font-semibold text-[#0d2137]">{m.fullName}</p>
-                  <p className="text-xs text-gray-500">
-                    ملف رقم: {m.patientNumber} {m.phone && `· هاتف: ${m.phone}`} · تطابق: {MATCH_LABELS[m.matchType] ?? m.matchType}
+                  <p className="font-extrabold text-xs text-[#0d2137]">{m.fullName}</p>
+                  <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                    ملف رقم: {m.patientNumber} {m.phone && `· هاتف: ${m.phone}`} · نوع التطابق: {MATCH_LABELS[m.matchType] ?? m.matchType}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => router.push(`/patients/${m.id}`)}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 transition"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#3d7ab5] text-white hover:opacity-90 transition duration-200"
                 >
-                  <ExternalLink className="w-3 h-3" />
-                  فتح الملف
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  فتح الملف الحالي
                 </button>
               </div>
             ))}
           </div>
-          <div className="mt-3 flex items-center gap-2">
-            {duplicateWarning.every((m) => m.matchType === "name") && (
-              <button
-                type="button"
-                onClick={() => { setForceSave(true); setServerError(""); }}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-100 transition"
-              >
-                حفظ على أي حال (مريض مختلف)
-              </button>
-            )}
-          </div>
+          {duplicateWarning.every((m) => m.matchType === "name") && (
+            <button
+              type="button"
+              onClick={() => { setForceSave(true); setServerError(""); }}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg border border-amber-400 text-amber-800 hover:bg-amber-100/50 transition"
+            >
+              حفظ الملف على أي حال (حالة تشابه أسماء فقط)
+            </button>
+          )}
         </div>
       )}
 
-      {/* Basic Info */}
-      <Section title="البيانات الأساسية">
+      {/* 1. Basic Information Panel */}
+      <FormPanel title="البيانات الأساسية" description="أدخل الاسم الشخصي للمريض وتاريخ الميلاد والبيانات الجندرية">
         <Field label="الاسم الأول" required error={errors.firstName?.message}>
           <input {...register("firstName")} className={inputCls(errors.firstName?.message)} placeholder="الاسم الأول" onChange={(e) => { register("firstName").onChange(e); handleFieldChange(); }} />
         </Field>
-        <Field label="اسم الأب" error={errors.middleName?.message}>
+        <Field label="اسم الأب والعائلة الوسطى" error={errors.middleName?.message}>
           <input {...register("middleName")} className={inputCls()} placeholder="اسم الأب (اختياري)" />
         </Field>
-        <Field label="الاسم الأخير" required error={errors.lastName?.message}>
+        <Field label="اللقب / الاسم الأخير" required error={errors.lastName?.message}>
           <input {...register("lastName")} className={inputCls(errors.lastName?.message)} placeholder="اسم العائلة" onChange={(e) => { register("lastName").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="تاريخ الميلاد">
@@ -333,192 +326,185 @@ export function PatientForm({ defaultValues, patientId }: Props) {
         </Field>
         <Field label="الجنس">
           <select {...register("gender")} className={inputCls()}>
-            <option value="">اختر...</option>
+            <option value="">اختر الجنس...</option>
             <option value="Male">ذكر</option>
             <option value="Female">أنثى</option>
           </select>
         </Field>
-        <Field label="رقم الهاتف">
-          <input {...register("phone")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" onChange={(e) => { register("phone").onChange(e); handleFieldChange(); }} />
+      </FormPanel>
+
+      {/* 2. Contact Information Panel */}
+      <FormPanel title="بيانات الاتصال" description="وسائل التواصل الهاتفي والإلكتروني لتنسيق المواعيد والتنبيهات">
+        <Field label="رقم الهاتف الأساسي" error={errors.phone?.message}>
+          <input {...register("phone")} className={inputCls(errors.phone?.message)} placeholder="7XXXXXXXX" dir="ltr" onChange={(e) => { register("phone").onChange(e); handleFieldChange(); }} />
         </Field>
-        <Field label="واتساب">
-          <input {...register("whatsApp")} className={inputCls()} placeholder="07XXXXXXXX" dir="ltr" onChange={(e) => { register("whatsApp").onChange(e); handleFieldChange(); }} />
+        <Field label="رقم الواتساب" error={errors.whatsApp?.message}>
+          <input {...register("whatsApp")} className={inputCls(errors.whatsApp?.message)} placeholder="7XXXXXXXX" dir="ltr" onChange={(e) => { register("whatsApp").onChange(e); handleFieldChange(); }} />
         </Field>
         <Field label="البريد الإلكتروني" error={errors.email?.message}>
           <input {...register("email")} type="email" className={inputCls(errors.email?.message)} placeholder="example@email.com" dir="ltr" />
         </Field>
-        <Field label="العنوان">
-          <input {...register("address")} className={inputCls()} placeholder="المدينة، الحي..." />
+      </FormPanel>
+
+      {/* 3. Address Panel */}
+      <FormPanel title="العنوان والوظيفة" description="البيانات الجغرافية والمهنية للمريض">
+        <Field label="العنوان السكني">
+          <input {...register("address")} className={inputCls()} placeholder="المحافظة، المدينة، الحي، الشارع..." />
         </Field>
-        <Field label="المهنة">
-          <input {...register("occupation")} className={inputCls()} placeholder="المهنة" />
+        <Field label="المهنة الحالية">
+          <input {...register("occupation")} className={inputCls()} placeholder="طبيعة العمل أو الوظيفة" />
         </Field>
-        <Field label="مصدر الإحالة">
-          <input {...register("referralSource")} className={inputCls()} placeholder="كيف سمع عن المركز؟" />
+      </FormPanel>
+
+      {/* 4. Medical Notes Panel */}
+      <FormPanel title="التاريخ الطبي والصحي" description="سجل الحالات والتحذيرات الطبية لحماية سلامة المريض أثناء العلاج">
+        <div className="md:col-span-2">
+          <Field label="الأمراض المزمنة">
+            <textarea {...register("chronicDiseases")} rows={2} className="w-full p-3 text-sm rounded-lg border border-slate-200 bg-[#f8fafc] text-[#0d2137] focus:bg-white focus:ring-2 focus:ring-[#3d7ab5]/20 focus:border-[#3d7ab5] focus:outline-none" placeholder="الضغط، السكري، أمراض القلب والكلى، الصرع..." />
+          </Field>
+        </div>
+        <Field label="الأدوية المستعملة حالياً">
+          <input {...register("currentMedications")} className={inputCls()} placeholder="المسكنات، مميعات الدم، إلخ..." />
         </Field>
+        <Field label="حساسية الأدوية والمواد">
+          <input {...register("drugAllergies")} className={inputCls()} placeholder="البنسلين، التخدير، اللاتكس..." />
+        </Field>
+        <Field label="العمليات الجراحية السابقة">
+          <input {...register("previousSurgeries")} className={inputCls()} placeholder="العمليات السابقة وتواريخها..." />
+        </Field>
+        <Field label="حالة الحمل (للإناث)">
+          <select {...register("isPregnant")} className={inputCls()}>
+            <option value="na">لا ينطبق</option>
+            <option value="no">لا يوجد حمل</option>
+            <option value="yes">يوجد حمل</option>
+          </select>
+        </Field>
+        <div className="flex flex-col gap-3 md:col-span-2 pt-2">
+          <label className="flex items-center gap-2.5 text-xs font-bold text-slate-700 cursor-pointer">
+            <input type="checkbox" {...register("bleedingDisorders")} className={checkboxCls} />
+            اضطرابات نزيف الدم أو استخدام مميعات
+          </label>
+          <label className="flex items-center gap-2.5 text-xs font-bold text-slate-700 cursor-pointer">
+            <input type="checkbox" {...register("tmjProblems")} className={checkboxCls} />
+            مشاكل أو آلام في المفصل الفكي الصدغي (TMJ)
+          </label>
+        </div>
+        <div className="md:col-span-2">
+          <Field label="ملاحظات وتوصيات طبية إضافية">
+            <textarea {...register("medNotes")} rows={2} className="w-full p-3 text-sm rounded-lg border border-slate-200 bg-[#f8fafc] text-[#0d2137] focus:bg-white focus:ring-2 focus:ring-[#3d7ab5]/20 focus:border-[#3d7ab5] focus:outline-none" placeholder="أي تفاصيل صحية أخرى يجب مراعاتها..." />
+          </Field>
+        </div>
+      </FormPanel>
+
+      {/* 5. Administrative & Dental Panel */}
+      <FormPanel title="المعلومات الإدارية وتاريخ الأسنان" description="الطبيب المتابع، مصدر التعرف على المركز، والتفاصيل العلاجية السنية">
         {doctors.length > 0 && (
-          <Field label="الطبيب المسؤول">
+          <Field label="الطبيب المسؤول عن الملف">
             <select {...register("primaryDoctorId")} className={inputCls()}>
-              <option value="">اختر الطبيب...</option>
+              <option value="">اختر الطبيب المسؤول...</option>
               {doctors.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </Field>
         )}
-      </Section>
-
-      {/* Medical History */}
-      <Section title="التاريخ الطبي">
+        <Field label="مصدر الإحالة / التعرف على المركز">
+          <input {...register("referralSource")} className={inputCls()} placeholder="صديق، شبكات التواصل، لافتة، إلخ..." />
+        </Field>
         <div className="md:col-span-2">
-          <Field label="الأمراض المزمنة">
-            <textarea {...register("chronicDiseases")} rows={2} className={inputCls()} placeholder="ضغط، سكر، قلب..." />
-          </Field>
-        </div>
-        <Field label="الأدوية الحالية">
-          <input {...register("currentMedications")} className={inputCls()} placeholder="أسماء الأدوية" />
-        </Field>
-        <Field label="حساسية الأدوية">
-          <input {...register("drugAllergies")} className={inputCls()} placeholder="نوع الحساسية" />
-        </Field>
-        <Field label="العمليات السابقة">
-          <input {...register("previousSurgeries")} className={inputCls()} placeholder="نوع العملية والتاريخ" />
-        </Field>
-        <Field label="الحمل">
-          <select {...register("isPregnant")} className={inputCls()}>
-            <option value="na">لا ينطبق</option>
-            <option value="no">لا</option>
-            <option value="yes">نعم</option>
-          </select>
-        </Field>
-        <div className="flex flex-col gap-2 md:col-span-2">
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-            <input type="checkbox" {...register("bleedingDisorders")} className={checkboxCls} />
-            اضطرابات النزيف
-          </label>
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-            <input type="checkbox" {...register("tmjProblems")} className={checkboxCls} />
-            مشاكل المفصل الفكي (TMJ)
-          </label>
-        </div>
-        <div className="md:col-span-2">
-          <Field label="ملاحظات طبية">
-            <textarea {...register("medNotes")} rows={2} className={inputCls()} />
-          </Field>
-        </div>
-      </Section>
-
-      {/* Dental History */}
-      <Section title="التاريخ السني">
-        <div className="md:col-span-2">
-          <Field label="الشكوى الرئيسية">
-            <textarea {...register("chiefComplaint")} rows={2} className={inputCls()} placeholder="وصف الشكوى الرئيسية..." />
+          <Field label="الشكوى الرئيسية السنية">
+            <textarea {...register("chiefComplaint")} rows={2} className="w-full p-3 text-sm rounded-lg border border-slate-200 bg-[#f8fafc] text-[#0d2137] focus:bg-white focus:ring-2 focus:ring-[#3d7ab5]/20 focus:border-[#3d7ab5] focus:outline-none" placeholder="آلام الأسنان، تجميل، تقويم، زراعة..." />
           </Field>
         </div>
         <div className="md:col-span-2">
-          <Field label="العلاجات السابقة">
-            <textarea {...register("previousTreatments")} rows={2} className={inputCls()} />
+          <Field label="العلاجات السنية السابقة">
+            <textarea {...register("previousTreatments")} rows={2} className="w-full p-3 text-sm rounded-lg border border-slate-200 bg-[#f8fafc] text-[#0d2137] focus:bg-white focus:ring-2 focus:ring-[#3d7ab5]/20 focus:border-[#3d7ab5] focus:outline-none" placeholder="حشوات، سحب عصب، خلع، تقويم سابق..." />
           </Field>
         </div>
-        <div className="flex flex-col gap-2 md:col-span-2">
-          <p className="text-sm font-medium text-gray-700">العادات الضارة</p>
+        <div className="flex flex-col gap-3 md:col-span-2 pt-2 border-t border-slate-100">
+          <p className="text-xs font-bold text-slate-700">العادات الفموية الضارة:</p>
           {[
-            { name: "mouthBreathing" as const, label: "التنفس الفموي" },
-            { name: "bruxism" as const,        label: "صرير الأسنان (Bruxism)" },
-            { name: "thumbSucking" as const,   label: "مص الإبهام" },
-            { name: "tongueThrusing" as const, label: "وضع اللسان الخاطئ (Tongue Thrusting)" },
+            { name: "mouthBreathing" as const, label: "التنفس من الفم" },
+            { name: "bruxism" as const,        label: "صرير أو كز الأسنان ليلاً (Bruxism)" },
+            { name: "thumbSucking" as const,   label: "مص الأصابع والإبهام" },
+            { name: "tongueThrusing" as const, label: "دفع اللسان للأمام أثناء البلع (Tongue Thrusting)" },
           ].map(({ name, label }) => (
-            <label key={name} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <label key={name} className="flex items-center gap-2.5 text-xs font-semibold text-slate-600 cursor-pointer">
               <input type="checkbox" {...register(name)} className={checkboxCls} />
               {label}
             </label>
           ))}
         </div>
         <div className="md:col-span-2">
-          <Field label="ملاحظات سنية">
-            <textarea {...register("dentalNotes")} rows={2} className={inputCls()} />
+          <Field label="ملاحظات وتفاصيل الفحص السني">
+            <textarea {...register("dentalNotes")} rows={2} className="w-full p-3 text-sm rounded-lg border border-slate-200 bg-[#f8fafc] text-[#0d2137] focus:bg-white focus:ring-2 focus:ring-[#3d7ab5]/20 focus:border-[#3d7ab5] focus:outline-none" placeholder="تفاصيل الفحص السريري للأسنان واللثة..." />
           </Field>
         </div>
-      </Section>
+      </FormPanel>
 
-      {/* Portal Credentials Dialog — shown once after patient creation */}
+      {/* Portal Account Credentials Popup - single rendering on creation */}
       {portalDialog && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div
-            className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
-            dir="rtl"
-          >
-            {/* Header */}
-            <div className="px-6 py-4" style={{ background: "#0d2137" }}>
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-5 h-5" style={{ color: "#f5922e" }} />
-                <h3 className="text-white font-bold">تم إنشاء حساب بوابة المريض</h3>
-              </div>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" dir="rtl">
+            <div className="px-6 py-4 bg-[#0d2137] flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-[#f5922e] animate-bounce" />
+              <h3 className="text-white font-bold text-sm">تم إنشاء حساب بوابة المريض تلقائياً</h3>
             </div>
-
             <div className="p-6 space-y-4">
-              {/* Warning */}
-              <div
-                className="flex items-start gap-2 p-3 rounded-lg"
-                style={{ background: "#ef444410", border: "1px solid #ef444430" }}
-              >
-                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: "#ef4444" }} />
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-bold" style={{ color: "#ef4444" }}>تحذير مهم</p>
-                  <p className="text-xs mt-0.5" style={{ color: "#dc2626" }}>
-                    كلمة المرور المؤقتة ستظهر مرة واحدة فقط! احفظها الآن قبل الإغلاق.
+                  <p className="text-xs font-bold text-red-500">تنبيه أمان هام</p>
+                  <p className="text-[11px] text-red-600 mt-0.5">
+                    تظهر كلمة المرور المؤقتة لمرة واحدة فقط! يرجى نسخها وتزويد المريض بها قبل إغلاق هذه النافذة.
                   </p>
                 </div>
               </div>
 
-              {/* Username */}
-              <div className="p-3 rounded-lg" style={{ background: "#f8fafc" }}>
-                <p className="text-xs mb-1" style={{ color: "#64748b" }}>اسم المستخدم</p>
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <p className="text-[10px] text-slate-400 font-bold mb-1">اسم المستخدم للمريض</p>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-base font-bold" style={{ color: "#0d2137" }}>
-                    {portalDialog.username}
-                  </span>
+                  <span className="font-mono text-base font-extrabold text-[#0d2137]">{portalDialog.username}</span>
                   <button
+                    type="button"
                     onClick={() => copyField(portalDialog.username, "dlg-username")}
-                    className="p-1.5 rounded hover:bg-gray-200 transition"
+                    className="p-1.5 rounded hover:bg-slate-200/55 transition"
                   >
-                    {copiedField === "dlg-username" ? <Check className="w-4 h-4" style={{ color: "#22c55e" }} /> : <Copy className="w-4 h-4" style={{ color: "#3d7ab5" }} />}
+                    {copiedField === "dlg-username" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-[#3d7ab5]" />}
                   </button>
                 </div>
               </div>
 
-              {/* Temporary Password */}
-              <div className="p-3 rounded-lg" style={{ background: "#f5922e08", border: "1px solid #f5922e20" }}>
-                <p className="text-xs mb-1" style={{ color: "#f5922e" }}>كلمة المرور المؤقتة</p>
+              <div className="p-3 rounded-lg bg-orange-500/5 border border-orange-500/10">
+                <p className="text-[10px] text-[#f5922e] font-bold mb-1">كلمة المرور المؤقتة</p>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-base font-bold" style={{ color: "#0d2137" }} dir="ltr">
-                    {portalDialog.temporaryPassword}
-                  </span>
+                  <span className="font-mono text-base font-extrabold text-[#0d2137]" dir="ltr">{portalDialog.temporaryPassword}</span>
                   <button
+                    type="button"
                     onClick={() => copyField(portalDialog.temporaryPassword, "dlg-password")}
-                    className="p-1.5 rounded hover:bg-gray-200 transition"
+                    className="p-1.5 rounded hover:bg-slate-200/55 transition"
                   >
-                    {copiedField === "dlg-password" ? <Check className="w-4 h-4" style={{ color: "#22c55e" }} /> : <Copy className="w-4 h-4" style={{ color: "#f5922e" }} />}
+                    {copiedField === "dlg-password" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-[#f5922e]" />}
                   </button>
                 </div>
               </div>
 
-              {/* Portal URL */}
-              <div className="p-3 rounded-lg" style={{ background: "#f8fafc" }}>
-                <p className="text-xs mb-1" style={{ color: "#64748b" }}>رابط بوابة المريض</p>
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <p className="text-[10px] text-slate-400 font-bold mb-1">رابط تسجيل الدخول للبوابة</p>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono break-all" style={{ color: "#3d7ab5" }} dir="ltr">
+                  <span className="text-[11px] font-mono text-[#3d7ab5] break-all" dir="ltr">
                     {typeof window !== "undefined" ? `${window.location.origin}/portal/login` : "/portal/login"}
                   </span>
                   <button
+                    type="button"
                     onClick={() => copyField(`${typeof window !== "undefined" ? window.location.origin : ""}/portal/login`, "dlg-url")}
-                    className="p-1.5 rounded hover:bg-gray-200 transition flex-shrink-0 ms-2"
+                    className="p-1.5 rounded hover:bg-slate-200/55 transition flex-shrink-0 ms-2"
                   >
-                    {copiedField === "dlg-url" ? <Check className="w-4 h-4" style={{ color: "#22c55e" }} /> : <Copy className="w-4 h-4" style={{ color: "#94a3b8" }} />}
+                    {copiedField === "dlg-url" ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-slate-400" />}
                   </button>
                 </div>
               </div>
 
-              {/* Copy all */}
               <button
+                type="button"
                 onClick={() => {
                   const info = `بيانات دخول بوابة المريض\nاسم المستخدم: ${portalDialog.username}\nكلمة المرور المؤقتة: ${portalDialog.temporaryPassword}\nرابط البوابة: ${typeof window !== "undefined" ? window.location.origin : ""}/portal/login`;
                   copyField(info, "dlg-all");
@@ -526,32 +512,40 @@ export function PatientForm({ defaultValues, patientId }: Props) {
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition"
                 style={{ background: copiedField === "dlg-all" ? "#22c55e" : "#3d7ab5", color: "#fff" }}
               >
-                {copiedField === "dlg-all" ? <><Check className="w-4 h-4" /> تم النسخ</> : <><Copy className="w-4 h-4" /> نسخ كل بيانات الدخول</>}
+                {copiedField === "dlg-all" ? <><Check className="w-4 h-4" /> تم نسخ كافة المعلومات</> : <><Copy className="w-4 h-4" /> نسخ بيانات الدخول بالكامل</>}
               </button>
 
-              {/* Close & Navigate */}
               <button
+                type="button"
                 onClick={() => {
                   setPortalDialog(null);
                   router.push(`/patients/${portalDialog.patientId}`);
                 }}
-                className="w-full py-2.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+                className="w-full py-2.5 text-sm font-bold rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition"
               >
-                إغلاق والانتقال لملف المريض
+                إغلاق والذهاب لملف المريض المكتمل
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Submit */}
-      <div className="flex justify-end gap-3 pb-4">
-        <button type="button" onClick={() => router.back()} className="px-5 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition">
-          إلغاء
+      {/* Form Action Buttons */}
+      <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="px-5 h-10 text-xs font-bold rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition duration-200"
+        >
+          إلغاء العملية
         </button>
-        <button type="submit" disabled={saving} className="flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-lg bg-clinic-blue text-white hover:opacity-90 disabled:opacity-60 transition">
-          <Save className="w-4 h-4" />
-          {saving ? "جارٍ الحفظ..." : "حفظ المريض"}
+        <button
+          type="submit"
+          disabled={saving}
+          className="flex items-center gap-2 px-6 h-10 text-xs font-bold rounded-lg bg-[#3d7ab5] text-white hover:opacity-90 disabled:opacity-60 transition duration-200"
+        >
+          <Save className="w-4.5 h-4.5" />
+          {saving ? "جارٍ حفظ البيانات..." : "حفظ ملف المريض"}
         </button>
       </div>
     </form>

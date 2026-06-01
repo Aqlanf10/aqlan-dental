@@ -6,6 +6,7 @@ import { FileSignature, AlertCircle, Plus, ChevronLeft } from "lucide-react";
 import api from "@/lib/api";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { EmptyState } from "./EmptyState";
+import { financeV3ContractsUrl } from "@/lib/financeRoutes";
 import type { Contract } from "@/types/finance";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
         title="لا توجد عقود مسجّلة"
         description="لم يتم تسجيل أي عقود لهذا المريض"
         actionLabel="إنشاء عقد"
-        actionHref={`/finance/contracts/new?patientId=${patientId}`}
+        actionHref={financeV3ContractsUrl(patientId)}
       />
     );
   }
@@ -96,7 +97,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold text-[#0d2137]">العقود</h3>
         <Link
-          href={`/finance/contracts/new?patientId=${patientId}`}
+          href={financeV3ContractsUrl(patientId)}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-[#3d7ab5] text-white hover:opacity-90 transition"
         >
           <Plus className="w-3.5 h-3.5" />
@@ -132,7 +133,7 @@ export function ContractsTab({ patientId }: ContractsTabProps) {
           const statusDef = CONTRACT_STATUS[c.status] ?? CONTRACT_STATUS.active;
           const paidPercent = c.totalAmount > 0 ? Math.min(100, Math.round((c.paidAmount / c.totalAmount) * 100)) : 0;
           return (
-            <Link key={c.id} href={`/finance/contracts/${c.id}`}
+            <Link key={c.id} href={financeV3ContractsUrl(patientId)}
               className="block p-3.5 bg-white border border-[#e8f0f9] rounded-xl hover:border-[#d6e8fa] transition"
             >
               <div className="flex items-center justify-between mb-2">

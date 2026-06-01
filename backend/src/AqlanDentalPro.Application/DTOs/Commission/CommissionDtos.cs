@@ -120,4 +120,4 @@ public record UpdateServiceCommissionDefaultsRequest(
     decimal DefaultLabCost,
     decimal? DefaultDoctorCommissionPercentage,
     CommissionBaseRule CommissionBaseRule,
-    CommissionRecognitionMode CommissionRecognitionMode = CommissionRecognitionMode.OnInvoiceApproval);
+    CommissionRecognitionMode CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection);

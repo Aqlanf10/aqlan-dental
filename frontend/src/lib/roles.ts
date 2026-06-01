@@ -46,5 +46,17 @@ export function isReceptionRole(role: string | null | undefined): boolean {
 
 /** Patient balance / outstanding — Admin and Accountant only. */
 export function canViewPatientFinance(role: string | null | undefined): boolean {
+  return isAdminRole(role) || isAccountantRole(role) || isReceptionRole(role);
+}
+
+/** Finance V3 reports / deep KPIs — Admin and Accountant only. */
+export function canViewFinanceReports(role: string | null | undefined): boolean {
   return isAdminRole(role) || isAccountantRole(role);
+}
+
+/** Daily checkout / cashier — Admin, Reception, Accountant. */
+export function canAccessCashier(role: string | null | undefined): boolean {
+  if (!role) return false;
+  const r = role.toLowerCase();
+  return r === "admin" || r === "reception" || r === "accountant";
 }

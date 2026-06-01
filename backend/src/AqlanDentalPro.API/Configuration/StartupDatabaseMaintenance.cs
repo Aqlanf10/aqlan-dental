@@ -412,7 +412,7 @@ public static class StartupDatabaseMaintenance
                     -- ClinicServices: CommissionRecognitionMode column (migration 20260607000000)
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicServices') THEN
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode') THEN
-                            ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 0;
+                            ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 1;
                         END IF;
                     END IF;
 
@@ -502,7 +502,7 @@ public static class StartupDatabaseMaintenance
                             "DefaultLabCost"                  numeric                  NOT NULL DEFAULT 0,
                             "DefaultDoctorCommissionPercentage" numeric                NULL,
                             "CommissionBaseRule"              integer                  NOT NULL DEFAULT 2,
-                            "CommissionRecognitionMode"       integer                  NOT NULL DEFAULT 0,
+                            "CommissionRecognitionMode"       integer                  NOT NULL DEFAULT 1,
                             "IsActive"                        boolean                  NOT NULL DEFAULT true,
                             "CreatedAt"                       timestamp with time zone  NOT NULL DEFAULT now(),
                             "UpdatedAt"                       timestamp with time zone  NOT NULL DEFAULT now(),
@@ -531,7 +531,7 @@ public static class StartupDatabaseMaintenance
                             ALTER TABLE "ClinicServices" ADD COLUMN "CommissionBaseRule" integer NOT NULL DEFAULT 2;
                         END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicServices' AND column_name = 'CommissionRecognitionMode') THEN
-                            ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 0;
+                            ALTER TABLE "ClinicServices" ADD COLUMN "CommissionRecognitionMode" integer NOT NULL DEFAULT 1;
                         END IF;
                     END IF;
 

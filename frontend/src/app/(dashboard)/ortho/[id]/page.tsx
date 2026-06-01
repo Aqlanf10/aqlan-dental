@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { cn, formatArabicDate, formatYemeniRiyal } from "@/lib/utils";
+import { financeV3ContractsUrl } from "@/lib/financeRoutes";
 import {
   useAddProblem,
   useAddRetentionVisit,
@@ -176,9 +177,11 @@ function SaveButton({
 
 function OverviewPanel({
   caseId,
+  patientId,
   setActiveTab,
 }: {
   caseId: string;
+  patientId: string;
   setActiveTab: (tab: Tab) => void;
 }) {
   const { data: overview } = useOrthoOverview(caseId);
@@ -332,7 +335,7 @@ function OverviewPanel({
                 </span>
               </div>
               <Link
-                href={`/finance/contracts/${overview.contractId}`}
+                href={financeV3ContractsUrl(patientId)}
                 className="mt-3 inline-flex text-sm font-medium text-clinic-blue hover:underline"
               >
                 فتح العقد المالي
@@ -2153,20 +2156,20 @@ function FinancePanel({
         <div className="flex flex-wrap gap-3">
           {overview?.contractId && (
             <Link
-              href={`/finance/contracts/${overview.contractId}`}
+              href={financeV3ContractsUrl(patientId)}
               className="rounded-lg bg-clinic-blue px-4 py-2 text-sm font-medium text-white"
             >
               فتح العقد
             </Link>
           )}
           <Link
-            href={`/finance/contracts/new?patientId=${patientId}&relatedCaseId=${caseId}`}
+            href={financeV3ContractsUrl(patientId, { relatedCaseId: caseId })}
             className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             إنشاء عقد تقويم
           </Link>
           <Link
-            href={`/patients/${patientId}?tab=finance`}
+            href={financeV3ContractsUrl(patientId)}
             className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             مالية المريض
@@ -2308,7 +2311,7 @@ export default function OrthoCaseDetailPage() {
         </div>
         <div className="p-5">
           {activeTab === "overview" && (
-            <OverviewPanel caseId={id} setActiveTab={setActiveTab} />
+            <OverviewPanel caseId={id} patientId={orthoCase.patientId} setActiveTab={setActiveTab} />
           )}
           {activeTab === "records" && <RecordsPanel caseId={id} />}
           {activeTab === "exam" && <ClinicalExamPanel caseId={id} />}

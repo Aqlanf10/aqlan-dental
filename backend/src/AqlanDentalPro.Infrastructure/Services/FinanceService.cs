@@ -497,8 +497,16 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Where(p => p.PatientId == patientId && p.IsActive)
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
 
-        var totalContracted = contracts.Sum(c => c.TotalAmount);
-        var totalDiscounts  = contracts.Sum(c => c.DiscountAmount);
+        var invoices = await db.Invoices
+            .Where(i => i.PatientId == patientId
+                     && i.Status != InvoiceStatus.Cancelled
+                     && i.IsActive)
+            .ToListAsync();
+
+        var totalContracted = contracts.Sum(c => c.TotalAmount)
+                            + invoices.Sum(i => i.Subtotal + (i.TaxAmount ?? 0m));
+        var totalDiscounts  = contracts.Sum(c => c.DiscountAmount)
+                            + invoices.Sum(i => i.DiscountAmount ?? 0m);
         var totalRemaining  = totalContracted - totalDiscounts - totalPaid;
 
         // FIX: Filter recentPayments to active only — inactive/refunded/cancelled
@@ -925,7 +933,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         // ── Combined totals ─────────────────────────────────────────────────
         var totalCost      = contractCost + invoiceCost;
-        var totalPaid      = contractPaid + invoicePaid + orphanPaid;
+        var totalPaid      = await db.Payments
+            .Where(p => p.PatientId == patientId && p.IsActive)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
         var outstanding    = totalCost - totalPaid;
 
         var today          = DateOnly.FromDateTime(DateTime.Today);
@@ -945,11 +955,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
 
-        var totalPaymentsCount = contracts.Sum(c => c.Payments.Count(p => p.IsActive))
-                               + invoices.Sum(i => i.Payments.Count(p => p.IsActive))
-                               + (orphanPaid > 0 ? await db.Payments.CountAsync(p => p.PatientId == patientId && p.IsActive
-                                   && (p.InvoiceId == null || !invoiceIds.Contains(p.InvoiceId.Value))
-                                   && (p.ContractId == null || !contractIds.Contains(p.ContractId.Value))) : 0);
+        var totalPaymentsCount = await db.Payments
+            .CountAsync(p => p.PatientId == patientId && p.IsActive);
 
         var status = totalCost == 0 ? "no_plan"
             : outstanding <= 0 ? "paid"

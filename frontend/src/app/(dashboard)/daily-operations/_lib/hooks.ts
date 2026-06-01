@@ -7,6 +7,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
+import { useAuthStore } from "@/stores/authStore";
+import { canViewFinanceReports } from "@/lib/roles";
 import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceOption, FinanceSummaryData } from "./constants";
 import type { DailyJourneySummary } from "@/types/journey";
 import type { DashboardStats } from "@/types/dashboard";
@@ -477,25 +479,34 @@ export function useWalkInPatient() {
   });
 }
 
-// ─── Finance Summary (migrated to FinanceV3 dashboard endpoint) ────────────
+function mapFinanceSummaryPayload(data: Record<string, unknown>): FinanceSummaryData {
+  return {
+    todayCollected: (data.todayInflow as number) ?? 0,
+    monthCollected: (data.monthInflow as number) ?? 0,
+    totalOutstanding: (data.totalOutstanding as number) ?? 0,
+    activeContracts: (data.activeContracts as number) ?? 0,
+    unpaidInvoicesCount: (data.unpaidInvoicesCount as number) ?? 0,
+    draftInvoicesCount: (data.draftInvoicesCount as number) ?? 0,
+    overdueAmount: (data.overdueAmount as number) ?? 0,
+    pendingCommissionsAmount: (data.pendingCommissionsAmount as number) ?? 0,
+    recentPayments: (data.recentPayments as FinanceSummaryData["recentPayments"]) ?? [],
+    recentInvoices: (data.recentInvoices as FinanceSummaryData["recentInvoices"]) ?? [],
+  };
+}
+
+// ─── Finance Summary — V3 dashboard (Admin/Accountant) or cashier daily-summary (Reception) ─
 export function useFinanceSummary() {
+  const { user } = useAuthStore();
+  const useFullDashboard = canViewFinanceReports(user?.role);
+
   return useQuery<FinanceSummaryData>({
-    queryKey: ["daily-ops", "finance-summary"],
+    queryKey: ["daily-ops", "finance-summary", useFullDashboard],
     queryFn: async () => {
-      const { data } = await api.get("/api/finance-v3/dashboard");
-      // Map V3 dashboard response to FinanceSummaryData shape
-      return {
-        todayCollected: data.todayInflow ?? 0,
-        monthCollected: data.monthInflow ?? 0,
-        totalOutstanding: data.totalOutstanding ?? 0,
-        activeContracts: data.activeContracts ?? 0,
-        unpaidInvoicesCount: data.unpaidInvoicesCount ?? 0,
-        draftInvoicesCount: data.draftInvoicesCount ?? 0,
-        overdueAmount: data.overdueAmount ?? 0,
-        pendingCommissionsAmount: data.pendingCommissionsAmount ?? 0,
-        recentPayments: data.recentPayments ?? [],
-        recentInvoices: data.recentInvoices ?? [],
-      } as FinanceSummaryData;
+      const url = useFullDashboard
+        ? "/api/finance-v3/dashboard"
+        : "/api/cashier-sessions/daily-summary";
+      const { data } = await api.get(url);
+      return mapFinanceSummaryPayload(data as Record<string, unknown>);
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -566,8 +577,18 @@ export function useActiveCashierSession() {
     queryKey: ["daily-ops", "active-cashier-session"],
     queryFn: async () => {
       try {
-        const { data } = await api.get("/api/finance-v3/cashier-sessions/active");
-        return data;
+        const { data } = await api.get<{
+          hasActiveSession?: boolean;
+          id?: string;
+          sessionNumber?: string;
+          status?: string;
+        }>("/api/cashier-sessions/active");
+        if (!data?.hasActiveSession || !data.id) return null;
+        return {
+          id: data.id,
+          sessionNumber: data.sessionNumber ?? "",
+          status: data.status ?? "Open",
+        };
       } catch {
         return null;
       }

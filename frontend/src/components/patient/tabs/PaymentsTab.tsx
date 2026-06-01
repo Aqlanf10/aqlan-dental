@@ -11,6 +11,8 @@ import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
+import { useAuthStore } from "@/stores/authStore";
+import { isAdminRole, isAccountantRole } from "@/lib/roles";
 import type { Payment, Contract, CreatePaymentRequest, UpdatePaymentRequest } from "@/types/finance";
 import { PAYMENT_METHODS, PAYMENT_METHOD_OPTIONS, SPECIALTY_OPTIONS } from "@/types/finance";
 
@@ -35,7 +37,7 @@ interface PaymentForm {
 const EMPTY_FORM: PaymentForm = {
   amount: "",
   paymentDate: new Date().toISOString().split("T")[0],
-  paymentMethod: "cash",
+  paymentMethod: "Cash",
   serviceDescription: "",
   specialty: "",
   doctorId: "",
@@ -44,6 +46,9 @@ const EMPTY_FORM: PaymentForm = {
 };
 
 export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
+  const { user } = useAuthStore();
+  const canModifyPayment = isAdminRole(user?.role) || isAccountantRole(user?.role);
+
   const [payments, setPayments] = useState<Payment[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
@@ -267,26 +272,30 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
                   <Printer className="w-3 h-3" />
                   سند قبض
                 </Link>
-                <button
-                  onClick={() => openEditModal(p)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
-                >
-                  <Pencil className="w-3 h-3" />
-                  تعديل
-                </button>
-                {deleteConfirm === p.id ? (
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => handleDelete(p.id)} className="px-2 py-1 text-xs font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition">تأكيد</button>
-                    <button onClick={() => setDeleteConfirm(null)} className="px-2 py-1 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">إلغاء</button>
-                  </div>
-                ) : (
+                {canModifyPayment && (
                   <button
-                    onClick={() => setDeleteConfirm(p.id)}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-red-500 hover:bg-red-50 transition"
+                    onClick={() => openEditModal(p)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-[#3d7ab5] text-[#3d7ab5] hover:bg-[#eef3f9] transition"
                   >
-                    <Trash2 className="w-3 h-3" />
-                    حذف
+                    <Pencil className="w-3 h-3" />
+                    تعديل
                   </button>
+                )}
+                {canModifyPayment && (
+                  deleteConfirm === p.id ? (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => handleDelete(p.id)} className="px-2 py-1 text-xs font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition">تأكيد</button>
+                      <button onClick={() => setDeleteConfirm(null)} className="px-2 py-1 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">إلغاء</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteConfirm(p.id)}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-red-500 hover:bg-red-50 transition"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      حذف
+                    </button>
+                  )
                 )}
               </div>
             </div>

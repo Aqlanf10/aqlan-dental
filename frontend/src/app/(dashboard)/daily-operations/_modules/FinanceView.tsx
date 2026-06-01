@@ -11,6 +11,8 @@ import { NAVY, BLUE, ORANGE, fmtRial, PAYMENT_METHODS } from "../_lib/constants"
 import type { FinanceSummaryData } from "../_lib/constants";
 import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout, useCreateDraftInvoice } from "../_lib/hooks";
 import { toast } from "@/stores/toastStore";
+import { useAuthStore } from "@/stores/authStore";
+import { canViewFinanceReports } from "@/lib/roles";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ReadyForCheckoutPatient {
@@ -67,6 +69,9 @@ interface FinanceViewProps {
 }
 
 export default function FinanceView({ onContextMenu }: FinanceViewProps) {
+  const { user } = useAuthStore();
+  const showDeepFinanceKpis = canViewFinanceReports(user?.role);
+
   // ── Data hooks ──
   const { data: summaryRaw, isLoading: summaryLoading, refetch: refetchSummary } = useFinanceSummary();
   const { data: journeyItems, isLoading: journeyLoading, refetch: refetchJourney } = useTodayJourneyItems({});
@@ -201,7 +206,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   return (
     <div className="flex flex-col h-full overflow-auto p-4 gap-4" style={{ background: "#f8fafc" }}>
       {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className={`grid grid-cols-2 gap-3 ${showDeepFinanceKpis ? "lg:grid-cols-4" : "lg:grid-cols-2"}`}>
         <SummaryCard
           icon={DollarSign}
           label="تحصيل اليوم"
@@ -210,22 +215,26 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
           bg="#f0fdf4"
           trend="up"
         />
-        <SummaryCard
-          icon={TrendingUp}
-          label="تحصيل الشهر"
-          value={fmtRial(summary?.monthCollected)}
-          color="#2563eb"
-          bg="#eff6ff"
-          trend="up"
-        />
-        <SummaryCard
-          icon={AlertTriangle}
-          label="مبالغ متأخرة"
-          value={fmtRial(summary?.overdueAmount)}
-          color="#dc2626"
-          bg="#fef2f2"
-          trend="down"
-        />
+        {showDeepFinanceKpis && (
+          <SummaryCard
+            icon={TrendingUp}
+            label="تحصيل الشهر"
+            value={fmtRial(summary?.monthCollected)}
+            color="#2563eb"
+            bg="#eff6ff"
+            trend="up"
+          />
+        )}
+        {showDeepFinanceKpis && (
+          <SummaryCard
+            icon={AlertTriangle}
+            label="مبالغ متأخرة"
+            value={fmtRial(summary?.overdueAmount)}
+            color="#dc2626"
+            bg="#fef2f2"
+            trend="down"
+          />
+        )}
         <SummaryCard
           icon={Users}
           label="عقود نشطة"

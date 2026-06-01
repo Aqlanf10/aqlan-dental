@@ -83,12 +83,10 @@ public static class AuthorizationPolicyConfiguration
 
             // ── Doctor Commission policies ───────────────────────────────────────────
             opts.AddPolicy("CommissionView", policy =>
-                policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant),
-                    nameof(UserRole.Reception),
-                    nameof(UserRole.Orthodontist), nameof(UserRole.GeneralDentist), nameof(UserRole.OralSurgeon)));
+                policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
 
             opts.AddPolicy("CommissionEdit", policy =>
-                policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant), nameof(UserRole.Reception)));
+                policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));
 
             opts.AddPolicy("CommissionApprove", policy =>
                 policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Accountant)));

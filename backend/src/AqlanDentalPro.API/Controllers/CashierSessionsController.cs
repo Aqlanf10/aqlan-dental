@@ -261,6 +261,82 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         return treasury.Id;
     }
 
+    /// <summary>
+    /// GET /api/cashier-sessions/daily-summary — Operational KPIs for Reception daily checkout.
+    /// FinanceAccess (Admin, Reception, Accountant). Excludes deep report fields (commissions, journal health).
+    /// </summary>
+    [HttpGet("daily-summary")]
+    public async Task<IActionResult> GetDailySummary()
+    {
+        var branchId = currentUser.BranchId;
+        if (!currentUser.IsAdmin && (!branchId.HasValue || branchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        var scopedBranch = currentUser.IsAdmin ? (Guid?)null : branchId;
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+
+        var paymentsQuery = db.Payments.Where(p => p.IsActive);
+        if (scopedBranch.HasValue)
+            paymentsQuery = paymentsQuery.Where(p => p.BranchId == scopedBranch.Value);
+
+        var todayInflow = await paymentsQuery
+            .Where(p => p.PaymentDate == today)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var monthInflow = await paymentsQuery
+            .Where(p => p.PaymentDate >= monthStart)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+        var activeContractsQuery = db.Contracts.Where(c => c.Status == ContractStatus.Active);
+        if (scopedBranch.HasValue)
+            activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == scopedBranch.Value);
+        var activeContracts = await activeContractsQuery.CountAsync();
+
+        var unpaidInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Issued && i.IsActive);
+        if (scopedBranch.HasValue)
+            unpaidInvoicesQuery = unpaidInvoicesQuery.Where(i => i.Patient.BranchId == scopedBranch.Value);
+        var unpaidInvoicesCount = await unpaidInvoicesQuery.CountAsync();
+
+        var draftInvoicesQuery = db.Invoices.Where(i => i.Status == InvoiceStatus.Draft && i.IsActive);
+        if (scopedBranch.HasValue)
+            draftInvoicesQuery = draftInvoicesQuery.Where(i => i.Patient.BranchId == scopedBranch.Value);
+        var draftInvoicesCount = await draftInvoicesQuery.CountAsync();
+
+        var recentPaymentsRaw = await paymentsQuery
+            .Include(p => p.Patient)
+            .OrderByDescending(p => p.PaymentDate).ThenByDescending(p => p.CreatedAt)
+            .Take(10)
+            .ToListAsync();
+        var recentPayments = recentPaymentsRaw.Select(p => new
+        {
+            p.Id,
+            p.Amount,
+            PaymentDate = p.PaymentDate.ToString(),
+            PatientName = p.Patient != null ? (p.Patient.FirstName + " " + p.Patient.LastName).Trim() : "",
+            p.PaymentMethod,
+        }).ToList();
+
+        var recentInvoicesQuery = db.Invoices.Include(i => i.Patient).Where(i => i.IsActive);
+        if (scopedBranch.HasValue)
+            recentInvoicesQuery = recentInvoicesQuery.Where(i => i.Patient.BranchId == scopedBranch.Value);
+        var recentInvoices = await recentInvoicesQuery
+            .OrderByDescending(i => i.CreatedAt)
+            .Take(10)
+            .Select(i => new { i.Id, i.InvoiceNumber, TotalAmount = i.TotalAmount, Status = i.Status.ToString() })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            TodayInflow = todayInflow,
+            MonthInflow = monthInflow,
+            ActiveContracts = activeContracts,
+            UnpaidInvoicesCount = unpaidInvoicesCount,
+            DraftInvoicesCount = draftInvoicesCount,
+            RecentPayments = recentPayments,
+            RecentInvoices = recentInvoices,
+        });
+    }
+
     [HttpGet("active")]
     [Obsolete("Use GET /api/finance-v3/cashier-sessions/active instead where ReportsAccess is allowed. This legacy endpoint remains fully active and returns canonical session data to preserve Reception access under FinanceAccess policy.")]
     public async Task<IActionResult> GetActiveSession()

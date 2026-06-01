@@ -262,10 +262,90 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
     }
 
     [HttpGet("active")]
-    [Obsolete("Use GET /api/finance-v3/cashier-sessions/active instead. This endpoint redirects to the canonical Finance V3 session endpoint.")]
-    public IActionResult GetActiveSession()
+    [Obsolete("Use GET /api/finance-v3/cashier-sessions/active instead where ReportsAccess is allowed. This legacy endpoint remains fully active and returns canonical session data to preserve Reception access under FinanceAccess policy.")]
+    public async Task<IActionResult> GetActiveSession()
     {
-        return Redirect("/api/finance-v3/cashier-sessions/active");
+        var cashierId = currentUser.UserId ?? Guid.Empty;
+
+        var session = await db.CashierSessions
+            .Include(s => s.Cashier)
+            .Include(s => s.Treasury)
+            .FirstOrDefaultAsync(s => s.CashierId == cashierId && s.Status == SessionStatus.Open && s.IsActive);
+
+        if (session == null)
+            return Ok(new { hasActiveSession = false });
+
+        // Calculate expected values from JournalLine instead of CashFlowTransaction
+        var sessionJournalLines = await db.JournalLines
+            .Where(l => l.AccountType == JournalAccountType.Treasury
+                && l.JournalEntry.IsPosted
+                && l.JournalEntry.PerformedBy == cashierId
+                && l.JournalEntry.CreatedAt >= session.OpeningTime
+                && l.JournalEntry.CreatedAt <= DateTime.UtcNow)
+            .Select(l => new
+            {
+                l.JournalEntryId,
+                l.Debit,
+                l.Credit,
+                l.AccountId // TreasuryId
+            })
+            .ToListAsync();
+
+        // Load treasury types for payment method mapping
+        var treasuryIds = sessionJournalLines.Select(l => l.AccountId).Distinct().ToList();
+        var treasuryTypes = await db.Treasuries
+            .Where(t => treasuryIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+
+        // Classify each line by payment method (Treasury.Type) and direction (Debit/Credit)
+        decimal cashInflows = 0, cashOutflows = 0;
+        decimal bankInflows = 0, bankOutflows = 0;
+
+        foreach (var line in sessionJournalLines)
+        {
+            var tType = treasuryTypes.GetValueOrDefault(line.AccountId);
+            var isCash = tType == TreasuryType.Vault || tType == null; // Vault or unknown → cash
+            var isBank = tType == TreasuryType.Bank;                       // bank account
+
+            if (line.Debit > 0) // Inflow
+            {
+                if (isCash) cashInflows += line.Debit;
+                else if (isBank) bankInflows += line.Debit;
+            }
+            else if (line.Credit > 0) // Outflow
+            {
+                if (isCash) cashOutflows += line.Credit;
+                else if (isBank) bankOutflows += line.Credit;
+            }
+        }
+
+        var cardInflows = bankInflows;
+        var cardOutflows = bankOutflows;
+        var totalCollections = sessionJournalLines.Where(l => l.Debit > 0).Sum(l => l.Debit);
+
+        return Ok(new
+        {
+            hasActiveSession = true,
+            session.Id,
+            session.SessionNumber,
+            CashierId = session.CashierId,
+            CashierName = session.Cashier?.Username ?? "",
+            session.BranchId,
+            OpenedAt = session.OpeningTime,
+            session.ClosingTime,
+            session.OpeningBalance,
+            ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows,
+            ExpectedClosingCard = cardInflows - cardOutflows,
+            ExpectedClosingBank = bankInflows - bankOutflows,
+            ActualClosingCash = (decimal?)session.ActualClosingCash,
+            ActualClosingCard = (decimal?)session.ActualClosingCard,
+            ActualClosingBank = (decimal?)session.ActualClosingBank,
+            ShortageOrSurplus = (decimal?)session.ShortageOrSurplus,
+            Status = session.Status.ToString(),
+            session.Notes,
+            session.TreasuryId,
+            TotalCollections = totalCollections
+        });
     }
 
     [HttpGet]

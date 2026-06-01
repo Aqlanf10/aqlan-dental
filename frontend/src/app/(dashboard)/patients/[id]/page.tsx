@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   User, Stethoscope, Phone, MapPin, Pencil,
@@ -102,6 +102,7 @@ interface RibbonGroup {
 
 export default function PatientProfilePage() {
   const { id }  = useParams<{ id: string }>();
+  const router   = useRouter();
   const { user } = useAuthStore();
   // isClinicalRole covers: Doctor, Orthodontist, GeneralDentist, OralSurgeon
   const isDoctor    = isClinicalRole(user?.role);
@@ -156,7 +157,7 @@ export default function PatientProfilePage() {
         { icon: CalendarPlus, label: "موعد جديد", color: "text-violet-600", bgColor: "hover:bg-violet-50",
           action: () => { /* handled via Link */ } },
         { icon: Pill, label: "وصفة طبية", color: "text-pink-600", bgColor: "hover:bg-pink-50",
-          action: () => { switchTab("clinical-notes"); setClinicalSubTab("prescriptions"); } },
+          action: () => router.push(`/prescriptions/new?patientId=${id}`) },
       ],
     },
     {
@@ -176,7 +177,7 @@ export default function PatientProfilePage() {
       label: "الحالات السريرية",
       items: [
         { icon: Activity, label: "حالة تقويم", color: "text-violet-600", bgColor: "hover:bg-violet-50",
-          action: () => { switchTab("treatments"); setTreatmentSubTab("orthodontics"); } },
+          action: () => router.push(`/ortho/new?patientId=${id}`) },
         { icon: Scissors, label: "حالة جراحة", color: "text-rose-600", bgColor: "hover:bg-rose-50",
           action: () => { switchTab("treatments"); setTreatmentSubTab("surgery"); } },
         { icon: Eye, label: "طب أسنان عام", color: "text-sky-600", bgColor: "hover:bg-sky-50",

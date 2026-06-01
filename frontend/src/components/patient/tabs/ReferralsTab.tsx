@@ -20,6 +20,18 @@ interface ReferralDto {
   priority?: string;
 }
 
+interface ReferralsPagedResponse {
+  data: ReferralDto[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+}
+
+function parseReferralsResponse(body: ReferralsPagedResponse | ReferralDto[]): ReferralDto[] {
+  if (Array.isArray(body)) return body;
+  return body.data ?? [];
+}
+
 const REFERRAL_STATUS_LABELS: Record<string, string> = {
   pending: "معلّقة",
   accepted: "مقبولة",
@@ -44,15 +56,24 @@ export function ReferralsTab({ patientId }: ReferralsTabProps) {
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
     setFetchError(false);
-    api.get<{ data: ReferralDto[] } | ReferralDto[]>(`/api/referrals?patientId=${patientId}`)
+    api
+      .get<ReferralsPagedResponse | ReferralDto[]>(`/api/referrals?patientId=${patientId}&pageSize=50`)
       .then((r) => {
-        // API returns { data: [...], total, page, pageSize } — extract the array
-        const arr = Array.isArray(r.data) ? r.data : (r.data as { data: ReferralDto[] }).data ?? [];
-        setReferrals(arr);
+        if (cancelled) return;
+        setReferrals(parseReferralsResponse(r.data));
       })
-      .catch(() => { setFetchError(true); })
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) setFetchError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [patientId, retryKey]);
 
   if (loading) {

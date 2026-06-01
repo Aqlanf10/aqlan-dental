@@ -30,6 +30,7 @@ interface Props {
   patient: PatientListItem | null;
   position: ContextMenuPosition | null;
   isAdmin?: boolean;
+  canViewFinance?: boolean;
   onClose: () => void;
   onOpen: (id: string) => void;
   onEdit: (id: string) => void;
@@ -53,6 +54,7 @@ export function PatientContextMenu({
   patient,
   position,
   isAdmin,
+  canViewFinance = false,
   onClose,
   onOpen,
   onEdit,
@@ -221,13 +223,15 @@ export function PatientContextMenu({
                   <FileText className="w-4 h-4 text-gray-400" />
                   طباعة ملف المريض
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/financial`); onClose(); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
-                >
-                  <Wallet className="w-4 h-4 text-gray-400" />
-                  طباعة التقرير المالي
-                </button>
+                {canViewFinance && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/financial`); onClose(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
+                  >
+                    <Wallet className="w-4 h-4 text-gray-400" />
+                    طباعة التقرير المالي
+                  </button>
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/media`); onClose(); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"

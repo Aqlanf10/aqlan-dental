@@ -12,6 +12,7 @@ import type { PatientListItem, PatientProfile } from "@/types/patient";
 import type { PaginatedResponse } from "@/types/api";
 import api from "@/lib/api";
 import { GENDER_LABELS, formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
+import { canViewPatientFinance, isAccountantRole, isAdminRole } from "@/lib/roles";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -48,9 +49,9 @@ function exportCsv(patients: PatientListItem[]) {
 export function PatientTable() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const isAdmin = user?.role?.toLowerCase() === "admin";
-  const isDoctor = user?.role?.toLowerCase() === "doctor";
-  const isAccountant = user?.role?.toLowerCase() === "accountant";
+  const isAdmin      = isAdminRole(user?.role);
+  const isAccountant = isAccountantRole(user?.role);
+  const canViewFinance = canViewPatientFinance(user?.role);
 
   const [data, setData] = useState<PaginatedResponse<PatientListItem> | null>(null);
   const [search, setSearch] = useState("");
@@ -680,8 +681,8 @@ export function PatientTable() {
                   </div>
                 </div>
 
-                {/* Outstanding Balance (Finance authorized roles only) */}
-                {!isDoctor && selectedSummary && (
+                {/* Outstanding Balance — Finance roles only: Admin, Accountant */}
+                {canViewFinance && selectedSummary && (
                   <div
                     className="group relative bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-3 text-center shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer"
                     onClick={() => router.push(`/patients/${selectedProfile.id}?tab=finance`)}
@@ -820,6 +821,7 @@ export function PatientTable() {
         patient={ctxMenu?.patient ?? null}
         position={ctxMenu?.position ?? null}
         isAdmin={isAdmin}
+        canViewFinance={canViewFinance}
         onClose={() => setCtxMenu(null)}
         onOpen={(id) => router.push(`/patients/${id}`)}
         onEdit={(id) => router.push(`/patients/${id}/edit`)}

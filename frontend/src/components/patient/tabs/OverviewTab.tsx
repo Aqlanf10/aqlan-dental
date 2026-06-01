@@ -103,12 +103,13 @@ interface OverviewTabProps {
   patientId: string;
   summary: PatientSummary | null;
   patient: PatientProfile;
+  canViewFinance?: boolean;
   onAddVisit?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function OverviewTab({ patientId, summary, patient, onAddVisit }: OverviewTabProps) {
+export function OverviewTab({ patientId, summary, patient, canViewFinance = false, onAddVisit }: OverviewTabProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [orthoCases, setOrthoCases] = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
@@ -190,16 +191,18 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
           <Calendar className="w-3.5 h-3.5" />
           حجز موعد
         </Link>
-        <Link
-          href={`/finance/payments?patientId=${patientId}`}
-          className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
-          style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
-        >
-          <Wallet className="w-3.5 h-3.5" />
-          إضافة دفعة
-        </Link>
+        {canViewFinance && (
+          <Link
+            href={`/finance/payments?patientId=${patientId}`}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
+            style={{ border: "1.5px solid #3d7ab5", color: "#3d7ab5", background: "#fff" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#eef3f9")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            إضافة دفعة
+          </Link>
+        )}
         <Link
           href={`/patients/${patientId}?tab=documents`}
           className="flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl transition shadow-sm"
@@ -308,21 +311,23 @@ export function OverviewTab({ patientId, summary, patient, onAddVisit }: Overvie
           )}
         </div>
 
-        {/* Outstanding Balance */}
-        <div className="rounded-xl p-3.5 border border-[#e8f0f9] bg-white">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-orange-50">
-              <Wallet className="w-3.5 h-3.5 text-orange-600" />
+        {/* Outstanding Balance — Admin / Accountant only */}
+        {canViewFinance ? (
+          <div className="rounded-xl p-3.5 border border-[#e8f0f9] bg-white">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-orange-50">
+                <Wallet className="w-3.5 h-3.5 text-orange-600" />
+              </div>
+              <span className="text-xs font-semibold text-[#94a3b8]">الرصيد المتبقي</span>
             </div>
-            <span className="text-xs font-semibold text-[#94a3b8]">الرصيد المتبقي</span>
+            <p className="text-sm font-bold text-orange-600">
+              {summary?.totalOutstanding != null ? `${summary.totalOutstanding.toLocaleString()} ر.ي` : "—"}
+            </p>
+            <p className="text-xs text-[#94a3b8] mt-0.5">
+              مدفوع: {summary?.totalPaid != null ? `${summary.totalPaid.toLocaleString()} ر.ي` : "—"}
+            </p>
           </div>
-          <p className="text-sm font-bold text-orange-600">
-            {summary?.totalOutstanding != null ? `${summary.totalOutstanding.toLocaleString()} ر.ي` : "—"}
-          </p>
-          <p className="text-xs text-[#94a3b8] mt-0.5">
-            مدفوع: {summary?.totalPaid != null ? `${summary.totalPaid.toLocaleString()} ر.ي` : "—"}
-          </p>
-        </div>
+        ) : null}
 
         {/* Primary Doctor / Branch */}
         <div className="rounded-xl p-3.5 border border-[#e8f0f9] bg-white">

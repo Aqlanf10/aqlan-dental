@@ -24,7 +24,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
             // so that EF Core sees no model diff from this migration.
             var buildMethod = typeof(AppDbContextModelSnapshot)
                 .GetMethod(
-                    nameof(AppDbContextModelSnapshot.BuildModel),
+                    "BuildModel",
                     BindingFlags.Instance | BindingFlags.NonPublic);
             buildMethod!.Invoke(
                 Activator.CreateInstance<AppDbContextModelSnapshot>(),

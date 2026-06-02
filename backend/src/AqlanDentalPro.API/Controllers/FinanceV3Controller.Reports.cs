@@ -1588,11 +1588,11 @@ public partial class FinanceV3Controller
                 SourceTreasuryId = t.SourceTreasuryId,
                 SourceTreasuryName = t.SourceTreasury != null ? t.SourceTreasury.Name : "إيداع خارجي",
                 DestinationTreasuryId = t.DestinationTreasuryId,
-                DestinationTreasuryName = t.DestinationTreasury.Name,
+                DestinationTreasuryName = t.DestinationTreasury != null ? t.DestinationTreasury.Name : "",
                 t.Amount,
                 DepositSource = t.DepositSource,
                 Status = t.Status.ToString(),
-                RequestedBy = t.PerformedByUser.Username,
+                RequestedBy = t.PerformedByUser != null ? t.PerformedByUser.Username : "",
                 RequestedAt = t.TransferDate,
                 ApprovedBy = t.ApprovedByUser != null ? t.ApprovedByUser.Username : null,
                 ApprovedAt = t.ApprovalDate,
@@ -1668,11 +1668,11 @@ public partial class FinanceV3Controller
                 IsReversal = db.JournalEntries.Any(je => je.FinancialDocumentId == e.Id
                     && je.FinancialDocumentType == FinancialDocumentType.Expense
                     && je.IsReversal && je.IsPosted),
-                JournalEntryId = (Guid?)db.JournalEntries
+                JournalEntryId = db.JournalEntries
                     .Where(je => je.FinancialDocumentId == e.Id
                         && je.FinancialDocumentType == FinancialDocumentType.Expense
                         && !je.IsReversal && je.IsPosted)
-                    .Select(je => je.Id)
+                    .Select(je => (Guid?)je.Id)
                     .FirstOrDefault()
             })
             .ToListAsync();

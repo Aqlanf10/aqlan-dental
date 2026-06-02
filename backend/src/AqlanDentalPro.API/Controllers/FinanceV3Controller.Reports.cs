@@ -22,13 +22,15 @@ public partial class FinanceV3Controller
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboard([FromQuery] string? period = "today")
     {
-        // Blocker 6: Branch isolation guard for non-admin users
-        // Admin users with no branch (Guid.Empty) bypass the branch filter to view
-        // consolidated statistics across all branches (Sprint 1 admin fallback).
-        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
-            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+        try
+        {
+            // Blocker 6: Branch isolation guard for non-admin users
+            // Admin users with no branch (Guid.Empty) bypass the branch filter to view
+            // consolidated statistics across all branches (Sprint 1 admin fallback).
+            if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+                return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
 
-        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+            var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
         var today = DateOnly.FromDateTime(DateTime.Today);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
 
@@ -135,7 +137,7 @@ public partial class FinanceV3Controller
             var monthsElapsed = ((today.Year - startDate.Year) * 12) + (today.Month - startDate.Month);
             if (monthsElapsed <= 0) continue;
             var expectedPaid = c.DownPayment + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
+            var actualPaid = c.Payments?.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m;
             var overAmt = expectedPaid - actualPaid;
             if (overAmt > 0) overdueAmount += overAmt;
         }
@@ -223,6 +225,12 @@ public partial class FinanceV3Controller
             // Consolidation flag
             IsConsolidated = !branchId.HasValue // true when admin views all branches
         });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetDashboard failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     // ─── Journal Entries ─────────────────────────────────────────────────────

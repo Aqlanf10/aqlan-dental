@@ -45,8 +45,8 @@ export function TreasuriesTab() {
     try {
       setLoading(true);
       const [tRes, trRes] = await Promise.all([
-        api.get<{ data: Treasury[] }>("/api/treasuries"),
-        api.get<{ data: VaultTransfer[] }>("/api/vault-transfers"),
+        api.get<{ data: Treasury[] }>("/api/finance-v3/treasuries"),
+        api.get<{ data: VaultTransfer[] }>("/api/finance-v3/vault-transfers"),
       ]);
       setTreasuries(tRes.data.data ?? []);
       setTransfers(trRes.data.data ?? (Array.isArray(trRes.data) ? trRes.data as unknown as VaultTransfer[] : []));

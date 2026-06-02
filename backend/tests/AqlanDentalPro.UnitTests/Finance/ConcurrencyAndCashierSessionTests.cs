@@ -294,7 +294,8 @@ public class ConcurrencyAndCashierSessionTests
         var journalEntryService = new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         var treasuryResolution = new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         var audit = new Mock<IAuditService>().Object;
-        var controller = new SalaryController(db, journalEntryService, treasuryResolution, audit);
+        var logger = new Mock<ILogger<SalaryController>>().Object;
+        var controller = new SalaryController(db, journalEntryService, treasuryResolution, audit, logger);
 
         controller.ControllerContext = new ControllerContext
         {

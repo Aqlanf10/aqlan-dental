@@ -5,6 +5,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 
 namespace AqlanDentalPro.API.Controllers;
@@ -43,7 +44,7 @@ public sealed class UpdateEmployeeRequest
 [ApiController]
 [Route("api/employees")]
 [Authorize(Policy = "AdminOnly")]
-public class EmployeesController(AppDbContext db) : ControllerBase
+public class EmployeesController(AppDbContext db, ILogger<EmployeesController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -53,6 +54,8 @@ public class EmployeesController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        try
+        {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -67,7 +70,7 @@ public class EmployeesController(AppDbContext db) : ControllerBase
             var s = search.Trim().ToLower();
             query = query.Where(e =>
                 e.FullName.ToLower().Contains(s) ||
-                e.User.Username.ToLower().Contains(s));
+                (e.User != null && e.User.Username != null && e.User.Username.ToLower().Contains(s)));
         }
 
         // Filter by role
@@ -119,6 +122,12 @@ public class EmployeesController(AppDbContext db) : ControllerBase
             pageSize,
             totalPages = (int)Math.Ceiling(total / (double)pageSize),
         });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll employees failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     [HttpGet("{id:guid}")]

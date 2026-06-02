@@ -47,6 +47,8 @@ public class ClinicQueueController(
     [HttpGet("today")]
     public async Task<IActionResult> GetTodayQueue([FromQuery] Guid? doctorId)
     {
+        try
+        {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         var query = db.ClinicQueueItems
@@ -135,6 +137,12 @@ public class ClinicQueueController(
         });
 
         return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetTodayQueue failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     // ─── POST /api/clinic-queue ──────────────────────────────────────────────

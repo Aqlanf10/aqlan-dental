@@ -111,7 +111,7 @@ public partial class FinanceV3Controller
         var contracts = await query.ToListAsync();
         // Sprint 1: Nullable-safe aggregation — use decimal? sum with ?? 0m fallback
         // to prevent overflow or null issues on empty payment collections
-        return contracts.Sum(c => c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount ?? 0m));
+        return contracts.Sum(c => c.TotalAmount - c.DiscountAmount - (c.Payments?.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m));
     }
 
     private async Task<decimal> CalculateInvoiceOutstandingAsync(Guid? branchId)
@@ -125,6 +125,6 @@ public partial class FinanceV3Controller
 
         var invoices = await query.ToListAsync();
         // Sprint 1: Nullable-safe aggregation
-        return invoices.Sum(i => i.TotalAmount - i.Payments.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount ?? 0m));
+        return invoices.Sum(i => i.TotalAmount - (i.Payments?.Where(p => p.IsActive).Sum(p => (decimal?)p.Amount) ?? 0m));
     }
 }

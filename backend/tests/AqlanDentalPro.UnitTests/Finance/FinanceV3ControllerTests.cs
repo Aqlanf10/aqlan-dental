@@ -122,7 +122,8 @@ public class FinanceV3ControllerTests
         audit ??= new Mock<IAuditService>().Object;
         jeService ??= new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         treasuryResolution ??= new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
-        return new AdvancePaymentController(db, audit, jeService, treasuryResolution);
+        var logger = new Mock<ILogger<AdvancePaymentController>>().Object;
+        return new AdvancePaymentController(db, audit, jeService, treasuryResolution, logger);
     }
 
     private static SalaryController BuildSalaryController(
@@ -132,7 +133,8 @@ public class FinanceV3ControllerTests
         jeService ??= new JournalEntryService(db, new Mock<ILogger<JournalEntryService>>().Object);
         treasuryResolution ??= new TreasuryResolutionService(db, new Mock<ILogger<TreasuryResolutionService>>().Object);
         audit ??= new Mock<IAuditService>().Object;
-        return new SalaryController(db, jeService, treasuryResolution, audit);
+        var logger = new Mock<ILogger<SalaryController>>().Object;
+        return new SalaryController(db, jeService, treasuryResolution, audit, logger);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

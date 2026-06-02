@@ -4,6 +4,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -66,7 +67,7 @@ public sealed class AdjustQuantityRequestValidator : AbstractValidator<AdjustQua
 [ApiController]
 [Route("api/inventory")]
 [Authorize(Policy = "AdminOnly")]
-public class InventoryController(AppDbContext db) : ControllerBase
+public class InventoryController(AppDbContext db, ILogger<InventoryController> logger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(
@@ -75,6 +76,8 @@ public class InventoryController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
+        try
+        {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Inventory.AsQueryable();
 
@@ -104,6 +107,12 @@ public class InventoryController(AppDbContext db) : ControllerBase
             .ToListAsync();
 
         return Ok(new { data = items, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll inventory failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     [HttpGet("categories")]

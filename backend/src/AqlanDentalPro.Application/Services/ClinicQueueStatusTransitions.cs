@@ -39,7 +39,7 @@ public static class ClinicQueueStatusTransitions
         [ClinicQueuePriority.Normal] = "عادي",
         [ClinicQueuePriority.Urgent] = "عاجل",
         [ClinicQueuePriority.VIP] = "مميز",
-        [ClinicQueuePriority.Emergency] = "طوارئ"
+        [ClinicQueuePriority.Emergency] = "حالة إسعافية"
     };
 
     // Each status maps to the set of statuses it can transition TO.
@@ -114,7 +114,7 @@ public static class ClinicQueueStatusTransitions
         var currentLabel = StatusArabicLabels.GetValueOrDefault(currentStatus, currentStatus.ToString());
         var newLabel = StatusArabicLabels.GetValueOrDefault(newStatus, newStatus.ToString());
 
-        return $"لا يمكن تغيير حالة الطابور من {currentLabel} إلى {newLabel}";
+        return $"لا يمكن تغيير حالة الانتظار من {currentLabel} إلى {newLabel}";
     }
 
     /// <summary>

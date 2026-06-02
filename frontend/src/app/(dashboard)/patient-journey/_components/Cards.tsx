@@ -182,7 +182,7 @@ export function QueueStatusCard({ summary }: { summary: DailyJourneySummary }) {
     <div className="bg-blue-50 rounded-xl border border-blue-200 p-3">
       <div className="flex items-center gap-2 mb-2">
         <Clock className="w-4 h-4 text-[#3d7ab5]" />
-        <span className="text-sm font-bold text-[#1a3a5c]">حالة الطابور</span>
+        <span className="text-sm font-bold text-[#1a3a5c]">حالة الانتظار</span>
         <span className={cn(
           "text-[10px] px-2 py-0.5 rounded-full font-medium mr-auto",
           q.status === "Waiting" ? "bg-orange-100 text-orange-700" :
@@ -336,7 +336,7 @@ export function JourneyActionsPanel({
         <form onSubmit={onIntakeSubmit} className="space-y-3 bg-white rounded-xl border border-[#9fe1cb] p-3">
           <span className="text-xs font-bold text-[#2d5e8e] flex items-center gap-1.5">
             <UserCheck className="w-4 h-4" />
-            تسجيل الوصول وإدخال الطابور
+            تسجيل الوصول وإدخال الانتظار
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
@@ -419,7 +419,7 @@ export function JourneyActionsPanel({
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
-              {(intakeMutation.isPending || sendToQueueMutation.isPending) ? "جارٍ الحفظ..." : "تسجيل الوصول وإدخال الطابور"}
+              {(intakeMutation.isPending || sendToQueueMutation.isPending) ? "جارٍ الحفظ..." : "تسجيل الوصول وإدخال الانتظار"}
             </button>
           </div>
         </form>

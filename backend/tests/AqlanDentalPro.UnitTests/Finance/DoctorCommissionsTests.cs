@@ -148,4 +148,106 @@ public class DoctorCommissionsTests
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
     }
+
+    private static ICurrentUserService CreateAccountantUser(Guid? branchId = null)
+    {
+        var mock = new Mock<ICurrentUserService>();
+        mock.Setup(u => u.UserId).Returns(Guid.NewGuid());
+        mock.Setup(u => u.Role).Returns(UserRole.Accountant);
+        mock.Setup(u => u.IsAdmin).Returns(false);
+        mock.Setup(u => u.IsAuthenticated).Returns(true);
+        mock.Setup(u => u.BranchId).Returns(branchId);
+        return mock.Object;
+    }
+
+    [Fact]
+    public async Task GetDoctorCommissions_NonAdmin_FiltersByBranch()
+    {
+        // Arrange
+        await using var db = CreateDb();
+        var branchAId = Guid.NewGuid();
+        var branchBId = Guid.NewGuid();
+
+        var doctorA = new Doctor { Id = Guid.NewGuid(), Name = "Doctor A", BranchId = branchAId, UserId = Guid.NewGuid() };
+        var doctorB = new Doctor { Id = Guid.NewGuid(), Name = "Doctor B", BranchId = branchBId, UserId = Guid.NewGuid() };
+        db.Doctors.AddRange(doctorA, doctorB);
+
+        var patientA = new Patient { Id = Guid.NewGuid(), FirstName = "Patient", LastName = "A", BranchId = branchAId };
+        var patientB = new Patient { Id = Guid.NewGuid(), FirstName = "Patient", LastName = "B", BranchId = branchBId };
+        db.Patients.AddRange(patientA, patientB);
+
+        var invoiceA = new Invoice { Id = Guid.NewGuid(), PatientId = patientA.Id, Status = InvoiceStatus.Issued, CreatedAt = DateTime.UtcNow };
+        var invoiceB = new Invoice { Id = Guid.NewGuid(), PatientId = patientB.Id, Status = InvoiceStatus.Issued, CreatedAt = DateTime.UtcNow };
+        db.Invoices.AddRange(invoiceA, invoiceB);
+
+        db.InvoiceLineItems.Add(new InvoiceLineItem { Id = Guid.NewGuid(), InvoiceId = invoiceA.Id, DoctorId = doctorA.Id, TotalPrice = 1000m, DoctorCommissionAmount = 400m, IsActive = true });
+        db.InvoiceLineItems.Add(new InvoiceLineItem { Id = Guid.NewGuid(), InvoiceId = invoiceB.Id, DoctorId = doctorB.Id, TotalPrice = 2000m, DoctorCommissionAmount = 800m, IsActive = true });
+
+        await db.SaveChangesAsync();
+
+        var accountantUser = CreateAccountantUser(branchAId);
+        var controller = BuildFinanceV3Controller(db, accountantUser);
+
+        // Act
+        var result = await controller.GetDoctorCommissions(
+            doctorId: null,
+            from: DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd"),
+            to: DateTime.UtcNow.AddDays(1).ToString("yyyy-MM-dd")
+        );
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var okResult = (OkObjectResult)result;
+        var list = (List<DoctorCommissionSummaryDto>)okResult.Value!;
+
+        list.Should().ContainSingle();
+        list[0].DoctorId.Should().Be(doctorA.Id);
+        list[0].DoctorName.Should().Be("Doctor A");
+        list[0].TotalServiceValue.Should().Be(1000m);
+    }
+
+    [Fact]
+    public async Task GetDoctorCommissions_NonAdminNoBranch_ReturnsForbid()
+    {
+        // Arrange
+        await using var db = CreateDb();
+        var accountantUser = CreateAccountantUser(branchId: null);
+        var controller = BuildFinanceV3Controller(db, accountantUser);
+
+        // Act
+        var result = await controller.GetDoctorCommissions(
+            doctorId: null,
+            from: "2026-06-01",
+            to: "2026-06-30"
+        );
+
+        // Assert
+        result.Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task GetDoctorCommissions_RequestOtherBranchDoctor_ReturnsForbid()
+    {
+        // Arrange
+        await using var db = CreateDb();
+        var branchAId = Guid.NewGuid();
+        var branchBId = Guid.NewGuid();
+
+        var doctorB = new Doctor { Id = Guid.NewGuid(), Name = "Doctor B", BranchId = branchBId, UserId = Guid.NewGuid() };
+        db.Doctors.Add(doctorB);
+        await db.SaveChangesAsync();
+
+        var accountantUser = CreateAccountantUser(branchAId);
+        var controller = BuildFinanceV3Controller(db, accountantUser);
+
+        // Act
+        var result = await controller.GetDoctorCommissions(
+            doctorId: doctorB.Id,
+            from: "2026-06-01",
+            to: "2026-06-30"
+        );
+
+        // Assert
+        result.Should().BeOfType<ForbidResult>();
+    }
 }

@@ -161,7 +161,12 @@ function FinanceV3PageInner() {
         {activeTab === "patient-acct" && <PatientAccountsTab />}
         {activeTab === "invoices" && <InvoicesTab />}
         {activeTab === "collections" && <CollectionsTab />}
-        {activeTab === "contracts" && <ContractsTab />}
+        {activeTab === "contracts" && (
+          <ContractsTab
+            patientId={searchParams.get("patientId") ?? undefined}
+            patientName={searchParams.get("patientName") ?? undefined}
+          />
+        )}
         {activeTab === "cashier" && <CashierTab isAdmin={isAdmin} />}
         {activeTab === "treasuries" && <TreasuriesTab />}
         {activeTab === "expenses" && <ExpensesTab />}

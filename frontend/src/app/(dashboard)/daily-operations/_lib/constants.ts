@@ -27,6 +27,7 @@ export interface TodayJourneyItem {
   queueStatus?: string;
   visitId?: string;
   visitStatus?: string;
+  proposedProcedure?: string;
   consultationFeeRequired?: boolean;
   consultationFeePaid?: boolean;
   checkoutStatus?: string;
@@ -147,7 +148,7 @@ export const QUEUE_STATUS_LABELS: Record<string, string> = {
 
 export const ACTION_LABELS: Record<string, string> = {
   Intake: "تسجيل الوصول",
-  SendToQueue: "إضافة للطابور",
+  SendToQueue: "إضافة للانتظار",
   CallPatient: "نداء المريض",
   EnterRoom: "دخول الغرفة",
   StartVisit: "بدء الزيارة",
@@ -174,8 +175,11 @@ export const STATUS_COLORS: Record<string, { bg: string; text: string; border: s
 // ─── Payment methods ─────────────────────────────────────────────────────────
 export const PAYMENT_METHODS = [
   { value: "cash",          label: "نقدي" },
-  { value: "card",          label: "بطاقة" },
   { value: "bank_transfer", label: "تحويل بنكي" },
+  { value: "karimey",       label: "حاسب الكريمي" },
+  { value: "jawaly",        label: "ام فلوس / جوالي" },
+  { value: "transfer",      label: "حوالة" },
+  { value: "card",          label: "بطاقة" },
   { value: "check",         label: "شيك" },
   { value: "other",         label: "أخرى" },
 ];
@@ -185,7 +189,7 @@ export const APPOINTMENT_TYPES = [
   { value: "Consultation",    label: "استشارة" },
   { value: "FollowUp",        label: "متابعة" },
   { value: "Treatment",       label: "علاج" },
-  { value: "Emergency",       label: "طوارئ" },
+  { value: "Emergency",       label: "حالة إسعافية" },
   { value: "OrthoAdjustment", label: "تعديل تقويم" },
   { value: "Surgery",         label: "جراحة" },
 ];

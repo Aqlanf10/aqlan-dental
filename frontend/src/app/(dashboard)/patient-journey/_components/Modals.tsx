@@ -34,7 +34,7 @@ export function ConfirmDialog({
           <h3 className="text-sm font-bold text-[#1a3a5c]">
             {type === "Cancelled" ? "تأكيد إلغاء الموعد"
               : type === "NoShow" ? "تأكيد تسجيل عدم الحضور"
-              : type === "CancelQueue" ? "تأكيد الإلغاء من الطابور"
+              : type === "CancelQueue" ? "تأكيد الإلغاء من الانتظار"
               : "تأكيد تغيير الغرفة"}
           </h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 transition">
@@ -53,7 +53,7 @@ export function ConfirmDialog({
               : type === "NoShow"
               ? "هل أنت متأكد من تسجيل عدم الحضور؟ سيتم تغيير حالة الموعد."
               : type === "CancelQueue"
-              ? "هل أنت متأكد من إلغاء المريض من الطابور؟ سيتم إخراجه من قائمة الانتظار."
+              ? "هل أنت متأكد من إلغاء المريض من الانتظار؟ سيتم إخراجه من قائمة الانتظار."
               : `هل أنت متأكد من نقل المريض إلى غرفة "${pendingChangeRoomName}"؟`}
           </p>
         </div>
@@ -671,7 +671,7 @@ export function BookAppointmentModal({
                 <option value="FollowUp">متابعة</option>
                 <option value="Consultation">معاينة</option>
                 <option value="Procedure">إجراء</option>
-                <option value="Emergency">طوارئ</option>
+                <option value="Emergency">حالة إسعافية</option>
               </select>
             </div>
           </div>

@@ -158,7 +158,7 @@ export default function JourneyContextMenu({
     },
     {
       icon: <ClipboardList className="w-4 h-4" />,
-      label: "إضافة للطابور",
+      label: "إضافة للانتظار",
       action: () => { onSendToQueue(item); close(); },
       color: "#f5922e",
       show: canAct && item.nextAction === "SendToQueue",
@@ -275,7 +275,7 @@ export default function JourneyContextMenu({
 
   const actionLabel: Record<string, string> = {
     Intake: "تسجيل وصول",
-    SendToQueue: "إضافة للطابور",
+    SendToQueue: "إضافة للانتظار",
     CallPatient: "نداء المريض",
     EnterRoom: "دخول الغرفة",
     StartVisit: "بدء الزيارة",

@@ -1255,6 +1255,11 @@ public static class StartupDatabaseMaintenance
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'AmountDueReference') THEN
                         ALTER TABLE "Visits" ADD COLUMN "AmountDueReference" numeric(12,2) NULL;
                     END IF;
+
+                    -- ── Visits: add ProposedProcedure if missing ──────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'ProposedProcedure') THEN
+                        ALTER TABLE "Visits" ADD COLUMN "ProposedProcedure" character varying(500) NULL;
+                    END IF;
                 END $$;
             """);
 

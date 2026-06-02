@@ -88,9 +88,9 @@ export const WORKFLOW_LINKS = {
     variant: "primary",
   }),
 
-  /** طابور العيادة */
+  /** قائمة الانتظار */
   clinicQueue: (permission = "clinic_queue.view"): WorkflowLink => ({
-    label: "الطابور",
+    label: "الانتظار",
     href: "/clinic-queue",
     icon: ClipboardList,
     permission,

@@ -213,9 +213,9 @@ export default function PatientDailyJourneyHub() {
       await sendToQueueMutation.mutateAsync({
         appointmentId: data.todayAppointment.id,
       });
-      toast.success("تم إضافة المريض للطابور");
+      toast.success("تم إضافة المريض للانتظار");
     } catch {
-      toast.error("فشل إضافة المريض للطابور");
+      toast.error("فشل إضافة المريض للانتظار");
     }
   }, [data?.todayAppointment?.id, sendToQueueMutation]);
 
@@ -682,7 +682,7 @@ export default function PatientDailyJourneyHub() {
                           {nextAction === "SendToQueue" && (
                             <button onClick={handleSendToQueue} disabled={sendToQueueMutation.isPending} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50">
                               <ArrowUpRight className="w-3.5 h-3.5" />
-                              {sendToQueueMutation.isPending ? "جارٍ..." : "إضافة للطابور"}
+                              {sendToQueueMutation.isPending ? "جارٍ..." : "إضافة للانتظار"}
                             </button>
                           )}
                           {nextAction === "CallPatient" && (
@@ -817,7 +817,7 @@ export default function PatientDailyJourneyHub() {
                       className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-[#3d7ab5] text-white hover:bg-[#2d5e8e] transition disabled:opacity-50"
                     >
                       <Save className="w-3.5 h-3.5" />
-                      {intakeMutation.isPending ? "جارٍ الحفظ..." : "تسجيل الوصول وإدخال الطابور"}
+                      {intakeMutation.isPending ? "جارٍ الحفظ..." : "تسجيل الوصول وإدخال الانتظار"}
                     </button>
                     <button onClick={() => setShowIntakeForm(false)} className="px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-[#d3d1c7] bg-white text-[#1a3a5c] hover:bg-[#f8f9fa] transition">
                       إلغاء

@@ -5,8 +5,11 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
 /// <summary>
-/// Sprint 1 — Fix enum column types Phase 2: Convert ALL remaining enum columns
-/// from integer to varchar so that HasConversion&lt;string&gt;() configurations work.
+/// Sprint 1 — Fix enum column types Phase 2: Convert enum columns from integer to
+/// varchar so that HasConversion&lt;string&gt;() configurations work.
+/// Only includes columns where HasConversion&lt;string&gt;() is configured in entity configs.
+/// Excluded: Treasuries.Type, VaultTransfers.Status/Type, OperationalExpenses.ApprovalStatus,
+/// CashierSessions.Status (these use integer storage without HasConversion).
 /// Idempotent — uses IF conditions to avoid errors on re-run.
 /// </summary>
 public partial class Sprint1_FixEnumColumnTypesPhase2 : Migration
@@ -14,7 +17,8 @@ public partial class Sprint1_FixEnumColumnTypesPhase2 : Migration
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         // ════════════════════════════════════════════════════════════════════
-        // Phase 2 — Convert ALL remaining enum columns from integer → varchar
+        // Phase 2 — Convert enum columns from integer → varchar
+        // Only columns with HasConversion<string>() in entity configurations.
         // Each block is idempotent: skips if column is already varchar.
         // ════════════════════════════════════════════════════════════════════
 
@@ -339,109 +343,7 @@ public partial class Sprint1_FixEnumColumnTypesPhase2 : Migration
             END$$;
         ");
 
-        // ── 15. Treasuries.Type: integer → varchar(30) ──
-        migrationBuilder.Sql(@"
-            DO $$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'Treasuries' 
-                      AND column_name = 'Type' 
-                      AND data_type = 'integer'
-                ) THEN
-                    ALTER TABLE ""Treasuries"" ALTER COLUMN ""Type"" TYPE varchar(30) USING CASE
-                        WHEN ""Type"" = 0 THEN 'Vault'
-                        WHEN ""Type"" = 1 THEN 'Bank'
-                        WHEN ""Type"" = 2 THEN 'Safe'
-                        ELSE 'Vault'
-                    END;
-                END IF;
-            END$$;
-        ");
-
-        // ── 16. VaultTransfers.Status: integer → varchar(20) ──
-        migrationBuilder.Sql(@"
-            DO $$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'VaultTransfers' 
-                      AND column_name = 'Status' 
-                      AND data_type = 'integer'
-                ) THEN
-                    ALTER TABLE ""VaultTransfers"" ALTER COLUMN ""Status"" TYPE varchar(20) USING CASE
-                        WHEN ""Status"" = 0 THEN 'Pending'
-                        WHEN ""Status"" = 1 THEN 'Approved'
-                        WHEN ""Status"" = 2 THEN 'Completed'
-                        WHEN ""Status"" = 3 THEN 'Rejected'
-                        WHEN ""Status"" = 4 THEN 'Cancelled'
-                        ELSE 'Pending'
-                    END;
-                END IF;
-            END$$;
-        ");
-
-        // ── 17. VaultTransfers.Type (DepositSource): integer → varchar(30) ──
-        migrationBuilder.Sql(@"
-            DO $$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'VaultTransfers' 
-                      AND column_name = 'Type' 
-                      AND data_type = 'integer'
-                ) THEN
-                    ALTER TABLE ""VaultTransfers"" ALTER COLUMN ""Type"" TYPE varchar(30) USING CASE
-                        WHEN ""Type"" = 0 THEN 'CashDeposit'
-                        WHEN ""Type"" = 1 THEN 'BankTransfer'
-                        WHEN ""Type"" = 2 THEN 'VaultTransfer'
-                        WHEN ""Type"" = 3 THEN 'Other'
-                        ELSE 'Other'
-                    END;
-                END IF;
-            END$$;
-        ");
-
-        // ── 18. OperationalExpenses.ApprovalStatus: integer → varchar(20) ──
-        migrationBuilder.Sql(@"
-            DO $$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'OperationalExpenses' 
-                      AND column_name = 'ApprovalStatus' 
-                      AND data_type = 'integer'
-                ) THEN
-                    ALTER TABLE ""OperationalExpenses"" ALTER COLUMN ""ApprovalStatus"" TYPE varchar(20) USING CASE
-                        WHEN ""ApprovalStatus"" = 0 THEN 'Pending'
-                        WHEN ""ApprovalStatus"" = 1 THEN 'Approved'
-                        WHEN ""ApprovalStatus"" = 2 THEN 'Rejected'
-                        ELSE 'Pending'
-                    END;
-                END IF;
-            END$$;
-        ");
-
-        // ── 19. CashierSessions.Status: integer → varchar(20) ──
-        migrationBuilder.Sql(@"
-            DO $$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'CashierSessions' 
-                      AND column_name = 'Status' 
-                      AND data_type = 'integer'
-                ) THEN
-                    ALTER TABLE ""CashierSessions"" ALTER COLUMN ""Status"" TYPE varchar(20) USING CASE
-                        WHEN ""Status"" = 0 THEN 'Open'
-                        WHEN ""Status"" = 1 THEN 'Closed'
-                        ELSE 'Open'
-                    END;
-                END IF;
-            END$$;
-        ");
-
-        // ── 20. Conversations.ConversationType: integer → varchar(20) ──
+        // ── 15. Conversations.ConversationType: integer → varchar(20) ──
         migrationBuilder.Sql(@"
             DO $$
             BEGIN
@@ -465,7 +367,8 @@ public partial class Sprint1_FixEnumColumnTypesPhase2 : Migration
     protected override void Down(MigrationBuilder migrationBuilder)
     {
         // ════════════════════════════════════════════════════════════════════
-        // Revert ALL enum columns back from varchar → integer
+        // Revert enum columns back from varchar → integer
+        // Only columns converted in Up().
         // ════════════════════════════════════════════════════════════════════
 
         // ── 1. Users.Role: varchar(50) → integer ──
@@ -649,59 +552,7 @@ public partial class Sprint1_FixEnumColumnTypesPhase2 : Migration
             END;
         ");
 
-        // ── 15. Treasuries.Type: varchar(30) → integer ──
-        migrationBuilder.Sql(@"
-            ALTER TABLE ""Treasuries"" ALTER COLUMN ""Type"" TYPE integer USING CASE
-                WHEN ""Type"" = 'Vault' THEN 0
-                WHEN ""Type"" = 'Bank' THEN 1
-                WHEN ""Type"" = 'Safe' THEN 2
-                ELSE 0
-            END;
-        ");
-
-        // ── 16. VaultTransfers.Status: varchar(20) → integer ──
-        migrationBuilder.Sql(@"
-            ALTER TABLE ""VaultTransfers"" ALTER COLUMN ""Status"" TYPE integer USING CASE
-                WHEN ""Status"" = 'Pending' THEN 0
-                WHEN ""Status"" = 'Approved' THEN 1
-                WHEN ""Status"" = 'Completed' THEN 2
-                WHEN ""Status"" = 'Rejected' THEN 3
-                WHEN ""Status"" = 'Cancelled' THEN 4
-                ELSE 0
-            END;
-        ");
-
-        // ── 17. VaultTransfers.Type: varchar(30) → integer ──
-        migrationBuilder.Sql(@"
-            ALTER TABLE ""VaultTransfers"" ALTER COLUMN ""Type"" TYPE integer USING CASE
-                WHEN ""Type"" = 'CashDeposit' THEN 0
-                WHEN ""Type"" = 'BankTransfer' THEN 1
-                WHEN ""Type"" = 'VaultTransfer' THEN 2
-                WHEN ""Type"" = 'Other' THEN 3
-                ELSE 3
-            END;
-        ");
-
-        // ── 18. OperationalExpenses.ApprovalStatus: varchar(20) → integer ──
-        migrationBuilder.Sql(@"
-            ALTER TABLE ""OperationalExpenses"" ALTER COLUMN ""ApprovalStatus"" TYPE integer USING CASE
-                WHEN ""ApprovalStatus"" = 'Pending' THEN 0
-                WHEN ""ApprovalStatus"" = 'Approved' THEN 1
-                WHEN ""ApprovalStatus"" = 'Rejected' THEN 2
-                ELSE 0
-            END;
-        ");
-
-        // ── 19. CashierSessions.Status: varchar(20) → integer ──
-        migrationBuilder.Sql(@"
-            ALTER TABLE ""CashierSessions"" ALTER COLUMN ""Status"" TYPE integer USING CASE
-                WHEN ""Status"" = 'Open' THEN 0
-                WHEN ""Status"" = 'Closed' THEN 1
-                ELSE 0
-            END;
-        ");
-
-        // ── 20. Conversations.ConversationType: varchar(20) → integer ──
+        // ── 15. Conversations.ConversationType: varchar(20) → integer ──
         migrationBuilder.Sql(@"
             ALTER TABLE ""Conversations"" ALTER COLUMN ""ConversationType"" TYPE integer USING CASE
                 WHEN ""ConversationType"" = 'StaffToStaff' THEN 0

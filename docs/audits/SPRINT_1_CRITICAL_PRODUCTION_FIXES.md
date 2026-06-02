@@ -41,7 +41,7 @@ This was a systemic issue affecting **24 enum properties across 19 entity config
 | New frontend files | 2 (routePermissions, patientRouting) |
 | Total lines changed | ~1,200+ |
 | Endpoints fixed | 15 |
-| Enum columns converted | 20 |
+| Enum columns converted | 15 (HasConversion only) |
 
 ---
 
@@ -58,30 +58,35 @@ Npgsql.PostgresException: 22P02: Invalid input syntax for type varchar: "0"
    at Microsoft.EntityFrameworkCore.Query.Internal...
 ```
 
-**Tables Affected (20 columns):**
+**Tables Affected — Migration Phase 2 (15 columns with HasConversion<string>):**
 
-| Table | Column | Old Type | New Type | Migration Reference |
-|-------|--------|----------|----------|---------------------|
-| Users | Role | integer | varchar(50) | Phase 1 Fix |
-| Patients | Gender | integer | varchar(10) | Phase 1 Fix |
-| Appointments | Status | integer | varchar(50) | Phase 1 Fix |
-| Appointments | Specialty | integer | varchar(50) | Phase 1 Fix |
-| Contracts | Status | integer | varchar(20) | Phase 1 Fix |
-| Invoices | Status | integer | varchar(20) | Phase 1 Fix |
-| PurchaseOrders | Status | integer | varchar(30) | Phase 1 Fix |
-| OrthoCases | Status | integer | varchar(20) | Phase 1 Fix |
-| SurgeryCases | Status | integer | varchar(20) | Phase 1 Fix |
-| Doctors | CompensationType | integer | varchar(20) | Phase 1 Fix |
-| ClinicQueueItems | Status | integer | varchar(30) | Phase 1 Fix |
-| ClinicQueueItems | Priority | integer | varchar(20) | Phase 1 Fix |
-| ClinicServices | Category | integer | varchar(30) | Phase 1 Fix |
-| AuditLogs | Action | integer | varchar(50) | Phase 1 Fix |
-| Treasuries | Type | integer | varchar(30) | Phase 1 Fix |
-| VaultTransfers | Status | integer | varchar(20) | Phase 1 Fix |
-| VaultTransfers | Type | integer | varchar(30) | Phase 1 Fix |
-| OperationalExpenses | ApprovalStatus | integer | varchar(20) | Phase 1 Fix |
-| CashierSessions | Status | integer | varchar(20) | Phase 1 Fix |
-| Conversations | ConversationType | integer | varchar(20) | Phase 1 Fix |
+| Table | Column | Old Type | New Type | HasConversion? |
+|-------|--------|----------|----------|----------------|
+| Users | Role | integer | varchar(50) | Yes |
+| Patients | Gender | integer | varchar(10) | Yes |
+| Appointments | Status | integer | varchar(50) | Yes |
+| Appointments | Specialty | integer | varchar(50) | Yes |
+| Contracts | Status | integer | varchar(20) | Yes |
+| Invoices | Status | integer | varchar(20) | Yes |
+| PurchaseOrders | Status | integer | varchar(30) | Yes |
+| OrthoCases | Status | integer | varchar(20) | Yes |
+| SurgeryCases | Status | integer | varchar(20) | Yes |
+| Doctors | CompensationType | integer | varchar(20) | Yes |
+| ClinicQueueItems | Status | integer | varchar(30) | Yes |
+| ClinicQueueItems | Priority | integer | varchar(20) | Yes |
+| ClinicServices | Category | integer | varchar(30) | Yes |
+| AuditLogs | Action | integer | varchar(50) | Yes |
+| Conversations | ConversationType | integer | varchar(20) | Yes |
+
+**Excluded from migration (no HasConversion<string>() — EF Core expects integer):**
+
+| Table | Column | Reason |
+|-------|--------|--------|
+| Treasuries | Type | No HasConversion — EF Core model expects integer |
+| VaultTransfers | Status | No HasConversion — EF Core model expects integer |
+| VaultTransfers | Type | Column does not exist in entity |
+| OperationalExpenses | ApprovalStatus | No HasConversion — EF Core model expects integer |
+| CashierSessions | Status | No HasConversion — EF Core model expects integer |
 
 ### 2.2 Missing Defensive Error Handling
 
@@ -183,7 +188,7 @@ The refresh-token endpoint had no error handling. If Redis was temporarily unrea
 
 | File | Description |
 |------|-------------|
-| `20260620000000_Sprint1_FixEnumColumnTypesPhase2.cs` | Converts 20 enum columns from integer to varchar. 714 lines. Idempotent. |
+| `20260620000000_Sprint1_FixEnumColumnTypesPhase2.cs` | Converts 15 enum columns from integer to varchar (HasConversion only). 565 lines. Idempotent. |
 
 ### 5.3 Error Handling Pattern
 

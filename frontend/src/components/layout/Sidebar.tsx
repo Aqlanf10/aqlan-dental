@@ -72,7 +72,7 @@ const NAV: NavEntry[] = [
 
   // ── المالية ───────────────────────────────────────────────────────────────
   { href: "/finance-v3",  label: "المالية",  icon: Wallet,  roles: ["Admin","Accountant"],  section: "المالية" },
-  { href: "/commissions", label: "عمولات الأطباء", icon: Banknote, roles: ["Admin","Accountant"] },
+  { href: "/finance-v3?tab=commissions", label: "عمولات الأطباء", icon: Banknote, roles: ["Admin","Accountant"] },
   {
     kind: "group",
     label: "المخزون", icon: Package,

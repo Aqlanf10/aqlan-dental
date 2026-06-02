@@ -185,7 +185,7 @@ export default function DashboardPage() {
 
           {/* Queue Status Widget */}
           <div style={cardStyle}>
-            <h3 className="font-extrabold text-sm mb-3.5" style={{ color: "#0d2137" }}>حالة الطابور</h3>
+            <h3 className="font-extrabold text-sm mb-3.5" style={{ color: "#0d2137" }}>حالة الانتظار</h3>
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg p-3 text-center" style={{ background: "#f5922e10", border: "1.5px solid #f5922e25" }}>
                 <div className="text-xl font-extrabold" style={{ color: "#f5922e" }}>{stats?.queueWaitingCount ?? 0}</div>
@@ -206,7 +206,7 @@ export default function DashboardPage() {
               style={{ background: "#3d7ab5" }}
             >
               <ListOrdered className="w-4 h-4" />
-              فتح الطابور
+              فتح الانتظار
             </Link>
           </div>
         </div>

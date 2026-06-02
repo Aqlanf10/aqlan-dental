@@ -147,7 +147,7 @@ export const QUEUE_STATUS_LABELS: Record<string, string> = {
 
 export const ACTION_LABELS: Record<string, string> = {
   Intake: "تسجيل الوصول",
-  SendToQueue: "إضافة للطابور",
+  SendToQueue: "إضافة للانتظار",
   CallPatient: "نداء المريض",
   EnterRoom: "دخول الغرفة",
   StartVisit: "بدء الزيارة",
@@ -185,7 +185,7 @@ export const APPOINTMENT_TYPES = [
   { value: "Consultation",    label: "استشارة" },
   { value: "FollowUp",        label: "متابعة" },
   { value: "Treatment",       label: "علاج" },
-  { value: "Emergency",       label: "طوارئ" },
+  { value: "Emergency",       label: "حالة إسعافية" },
   { value: "OrthoAdjustment", label: "تعديل تقويم" },
   { value: "Surgery",         label: "جراحة" },
 ];

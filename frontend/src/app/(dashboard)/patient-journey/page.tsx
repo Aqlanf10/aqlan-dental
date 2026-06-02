@@ -345,7 +345,7 @@ export default function PatientJourneyPage() {
     try {
       if (item.nextAction === "SendToQueue") {
         await sendToQueueMutation.mutateAsync({ appointmentId: item.appointmentId });
-        toast.success("تم إضافة المريض للطابور");
+        toast.success("تم إضافة المريض للانتظار");
       } else if (item.nextAction === "CallPatient") {
         await api.post(`/api/clinic-queue/${item.queueItemId}/call`, {});
         toast.success("تم نداء المريض");
@@ -384,7 +384,7 @@ export default function PatientJourneyPage() {
         appointmentId: selectedItem.appointmentId,
         body: { roomId: intakeRoom || undefined },
       });
-      toast.success("تم تسجيل الوصول وإدخال الطابور");
+      toast.success("تم تسجيل الوصول وإدخال الانتظار");
       loadJourney();
       refetchSummary();
     } catch (err: unknown) {
@@ -474,7 +474,7 @@ export default function PatientJourneyPage() {
       } else if (cancelDialogType === "CancelQueue") {
         if (!queueItemId) return;
         await cancelQueueMutation.mutateAsync(queueItemId);
-        toast.success("تم إلغاء المريض من الطابور");
+        toast.success("تم إلغاء المريض من الانتظار");
         // Enable undo for 5 seconds
         setUndoInfo({ type: "CancelQueue", previousStatus: "Waiting", queueItemId: queueItemId ?? undefined });
         if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
@@ -509,7 +509,7 @@ export default function PatientJourneyPage() {
         // Re-add to queue via send-to-queue
         if (selectedItem?.appointmentId) {
           await sendToQueueMutation.mutateAsync({ appointmentId: selectedItem.appointmentId });
-          toast.success("تم إعادة المريض للطابور");
+          toast.success("تم إعادة المريض للانتظار");
         }
       }
       setUndoInfo(null);
@@ -1078,7 +1078,7 @@ export default function PatientJourneyPage() {
                       className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition"
                     >
                       <Ban className="w-3 h-3" />
-                      إلغاء من الطابور
+                      إلغاء من الانتظار
                     </button>
                     {/* Phase 1c: Change Room */}
                     <div className="flex items-center gap-1.5">
@@ -1347,7 +1347,7 @@ export default function PatientJourneyPage() {
                     <span className="text-[11px] text-amber-800 font-medium">
                       {undoInfo.type === "Cancelled" ? "تم إلغاء الموعد" :
                        undoInfo.type === "NoShow" ? "تم تسجيل عدم الحضور" :
-                       "تم الإلغاء من الطابور"}
+                       "تم الإلغاء من الانتظار"}
                     </span>
                     <button
                       onClick={handleUndo}

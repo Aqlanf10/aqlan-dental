@@ -70,7 +70,7 @@ export const STATUS_COLORS: Record<string, string> = {
 
 export const ACTION_LABELS: Record<string, string> = {
   Intake: "تسجيل الوصول",
-  SendToQueue: "إدخال للطابور",
+  SendToQueue: "إدخال للانتظار",
   CallPatient: "نداء المريض",
   EnterRoom: "إدخال الغرفة",
   StartVisit: "بدء الزيارة",

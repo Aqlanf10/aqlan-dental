@@ -145,7 +145,7 @@ export default function ClinicQueuePage() {
       if (!loading) {
         if (err && typeof err === "object" && "response" in err) {
           const axiosErr = err as { response?: { data?: { message?: string } } };
-          setError(axiosErr.response?.data?.message || "خطأ في تحميل الطابور");
+          setError(axiosErr.response?.data?.message || "خطأ في تحميل الانتظار");
         } else {
           setError("فشل الاتصال بالخادم");
         }
@@ -299,7 +299,7 @@ export default function ClinicQueuePage() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-extrabold" style={{ color: "#0d2137" }}>
-            طابور العيادة
+            الانتظار
           </h1>
           <p className="text-sm mt-1" style={{ color: "#64748b" }}>
             {todayDateStr} — تحديث تلقائي كل ١٥ ثانية
@@ -315,7 +315,7 @@ export default function ClinicQueuePage() {
             style={{ background: "#3d7ab5" }}
           >
             <UserPlus className="w-4 h-4" />
-            إضافة للطابور
+            إضافة للانتظار
           </button>
           <button
             onClick={fetchQueue}
@@ -455,8 +455,8 @@ export default function ClinicQueuePage() {
       ) : filteredActive.length === 0 && filteredCompleted.length === 0 ? (
         <div className="text-center py-20" style={{ color: "#94a3b8" }}>
           <UserPlus className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">لا توجد مرضى في الطابور</p>
-          <p className="text-sm mt-1">اضغط &quot;إضافة للطابور&quot; لإضافة مريض جديد</p>
+          <p className="font-medium">لا توجد مرضى في الانتظار</p>
+          <p className="text-sm mt-1">اضغط &quot;إضافة للانتظار&quot; لإضافة مريض جديد</p>
         </div>
       ) : (
         <>
@@ -464,7 +464,7 @@ export default function ClinicQueuePage() {
           {filteredActive.length > 0 && (
             <div className="space-y-3">
               <h2 className="text-sm font-bold" style={{ color: "#64748b" }}>
-                الطابور النشط ({filteredActive.length})
+                الانتظار النشط ({filteredActive.length})
               </h2>
               <div className="grid gap-3">
                 {filteredActive.map((item) => (
@@ -552,8 +552,8 @@ export default function ClinicQueuePage() {
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-gray-900">إلغاء الطابور</h3>
-                <p className="text-sm text-gray-600 mt-1">هل أنت متأكد من إلغاء هذا المريض من الطابور؟</p>
+                <h3 className="text-base font-bold text-gray-900">إلغاء من الانتظار</h3>
+                <p className="text-sm text-gray-600 mt-1">هل أنت متأكد من إلغاء هذا المريض من الانتظار؟</p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 pt-2">
@@ -571,7 +571,7 @@ export default function ClinicQueuePage() {
                 disabled={actionLoading !== null}
                 className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 transition disabled:opacity-50"
               >
-                إلغاء الطابور
+                إلغاء من الانتظار
               </button>
             </div>
           </div>
@@ -940,7 +940,7 @@ function AddToQueuePanel({
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold" style={{ color: "#0d2137" }}>إضافة مريض للطابور</h2>
+        <h2 className="text-base font-bold" style={{ color: "#0d2137" }}>إضافة مريض للانتظار</h2>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
       </div>
 
@@ -1057,7 +1057,7 @@ function AddToQueuePanel({
           style={{ background: "#3d7ab5" }}
         >
           {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-          إضافة للطابور
+          إضافة للانتظار
         </button>
         <button
           onClick={onClose}

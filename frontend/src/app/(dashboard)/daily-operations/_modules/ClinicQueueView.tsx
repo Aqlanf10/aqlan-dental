@@ -70,7 +70,7 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string; bg: string
   Normal:    { label: "عادي",   color: "#6b7280", bg: "#f3f4f6" },
   Urgent:    { label: "عاجل",   color: "#d97706", bg: "#fffbeb" },
   VIP:       { label: "مميز",   color: "#7c3aed", bg: "#f5f3ff" },
-  Emergency: { label: "طوارئ", color: "#dc2626", bg: "#fef2f2" },
+  Emergency: { label: "حالة إسعافية", color: "#dc2626", bg: "#fef2f2" },
 };
 
 /** Map ClinicQueueItem → TodayJourneyItem for context menu compatibility */
@@ -419,7 +419,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         {/* Analytics toggle */}
         <button onClick={() => { setShowAnalytics(!showAnalytics); if (!showAnalytics && !analytics) fetchAnalytics(); }}
           className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition"
-          title="إحصائيات الطابور">
+          title="إحصائيات الانتظار">
           <BarChart3 className="w-4 h-4" style={{ color: showAnalytics ? BLUE : "#94a3b8" }} />
         </button>
 
@@ -459,7 +459,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         <div className="flex-shrink-0 px-3 py-2 border-b" style={{ borderColor: "#f1f5f9", background: "#f8fafc" }}>
           <div className="flex items-center gap-2 mb-1">
             <BarChart3 className="w-3.5 h-3.5" style={{ color: BLUE }} />
-            <span className="text-[11px] font-bold" style={{ color: NAVY }}>إحصائيات الطابور</span>
+            <span className="text-[11px] font-bold" style={{ color: NAVY }}>إحصائيات الانتظار</span>
             <button onClick={() => setShowAnalytics(false)} className="mr-auto">
               <ChevronUp className="w-3.5 h-3.5" style={{ color: "#94a3b8" }} />
             </button>
@@ -502,7 +502,7 @@ export default function ClinicQueueView({ searchQuery, onContextMenu }: ClinicQu
         ) : filtered(activeItems).length === 0 && filtered(completedItems).length === 0 && filtered(noShowItems).length === 0 ? (
           <div className="text-center py-20" style={{ color: "#94a3b8" }}>
             <UserPlus className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">لا توجد مرضى في الطابور</p>
+            <p className="font-medium">لا توجد مرضى في الانتظار</p>
           </div>
         ) : (
           <>

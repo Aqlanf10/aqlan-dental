@@ -178,7 +178,7 @@ export default function AppointmentsTable({
           style={{ background: "#fff7ed", border: "1px solid #fde8d0" }}>
           <Clock className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
           <span className="text-xs font-bold" style={{ color: NAVY }}>
-            وقت الانتظار المتوقع في الطابور: ~{queueWaitTime.estimatedMinutes < 60
+            وقت الانتظار المتوقع: ~{queueWaitTime.estimatedMinutes < 60
               ? `${queueWaitTime.estimatedMinutes} دقيقة`
               : `${Math.floor(queueWaitTime.estimatedMinutes / 60)} ساعة ${queueWaitTime.estimatedMinutes % 60} دقيقة`}
           </span>
@@ -312,7 +312,7 @@ function AppointmentRow({
           style={{ background: "#f5922e" }}
         >
           <ClipboardList className="w-3.5 h-3.5" />
-          <span>إدخال الطابور</span>
+          <span>إدخال الانتظار</span>
         </button>
       );
     } else if (item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient")) {
@@ -503,7 +503,7 @@ function MobileCard({
           style={{ background: "#f5922e" }}
         >
           <ClipboardList className="w-3.5 h-3.5" />
-          <span>إدخال الطابور</span>
+          <span>إدخال الانتظار</span>
         </button>
       );
     } else if (item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient")) {

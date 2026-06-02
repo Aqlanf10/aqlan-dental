@@ -1200,7 +1200,7 @@ function RolesTab() {
     impersonation: "الانتحال",
     daily_operations: "التشغيل اليومي",
     booking_requests: "طلبات الحجز",
-    clinic_queue: "الطابور",
+    clinic_queue: "الانتظار",
     clinic_display: "شاشة النداء",
     patient_journey: "رحلة المرضى",
     visits: "الزيارات",

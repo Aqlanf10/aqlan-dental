@@ -710,7 +710,7 @@ export function WalkInModal({
       <div className="mb-3 p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#fff7ed" }}>
         <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
         <span className="text-xs font-medium" style={{ color: "#92400e" }}>
-          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة للطابور تلقائياً
+          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة للانتظار تلقائياً
         </span>
       </div>
 
@@ -766,7 +766,7 @@ export function WalkInModal({
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
           style={{ background: ORANGE, opacity: !patientName.trim() || !doctorId || isPending ? 0.5 : 1 }}>
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-          تسجيل وإضافة للطابور
+          تسجيل وإضافة للانتظار
         </button>
       </div>
     </ModalShell>
@@ -788,7 +788,7 @@ export function ConfirmDialog({
   const configs: Record<string, { title: string; body: string; btnColor: string }> = {
     Cancel:      { title: "إلغاء الموعد",     body: `هل أنت متأكد من إلغاء موعد المريض ${patientName}؟`, btnColor: "#ef4444" },
     NoShow:      { title: "لم يحضر",          body: `هل تريد تسجيل المريض ${patientName} كـ "لم يحضر"؟`, btnColor: "#f5922e" },
-    CancelQueue: { title: "إلغاء من الطابور", body: `هل أنت متأكد من إلغاء المريض ${patientName} من الطابور؟`, btnColor: "#ef4444" },
+    CancelQueue: { title: "إلغاء من الانتظار", body: `هل أنت متأكد من إلغاء المريض ${patientName} من الانتظار؟`, btnColor: "#ef4444" },
     ChangeRoom:  { title: "تغيير الغرفة",     body: `هل تريد تغيير غرفة المريض ${patientName}؟`, btnColor: "#3d7ab5" },
     Complete:    { title: "إنهاء الزيارة",     body: `هل تريد إنهاء زيارة المريض ${patientName}؟`, btnColor: "#16a34a" },
   };
@@ -955,7 +955,7 @@ export function UndoToast({
   const actionLabels: Record<string, string> = {
     Cancel: "إلغاء الموعد",
     NoShow: "لم يحضر",
-    CancelQueue: "إلغاء من الطابور",
+    CancelQueue: "إلغاء من الانتظار",
   };
 
   return (

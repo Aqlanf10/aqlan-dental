@@ -271,11 +271,11 @@ function AppointmentCard({
     setQueueLoading(true);
     try {
       await api.post(`/api/patient-journey/${a.id}/send-to-queue`, {});
-      toast.success("تم إرسال المريض إلى الطابور");
+      toast.success("تم إرسال المريض إلى الانتظار");
       onStatusChange(a.id, "Waiting");
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error(msg ?? "فشل إرسال المريض للطابور");
+      toast.error(msg ?? "فشل إرسال المريض للانتظار");
     } finally {
       setQueueLoading(false);
     }
@@ -383,7 +383,7 @@ function AppointmentCard({
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600 transition disabled:opacity-60"
           >
             {queueLoading ? <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : null}
-            إرسال إلى الطابور
+            إرسال إلى الانتظار
           </button>
         )}
       </div>

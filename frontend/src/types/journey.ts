@@ -204,7 +204,7 @@ export const QUEUE_STATUS_ARABIC: Record<string, string> = {
 
 export const NEXT_ACTION_ARABIC: Record<string, string> = {
   Intake: "تسجيل الوصول",
-  SendToQueue: "إضافة للطابور",
+  SendToQueue: "إضافة للانتظار",
   CallPatient: "نداء المريض",
   EnterRoom: "دخول الغرفة",
   StartVisit: "بدء الزيارة",

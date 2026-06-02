@@ -80,7 +80,7 @@ const EMPTY_FORM: VisitForm = {
 const VISIT_TYPES: Record<string, string> = {
   Consultation: "استشارة",
   FollowUp: "متابعة",
-  Emergency: "طوارئ",
+  Emergency: "حالة إسعافية",
   Treatment: "علاج",
   Review: "مراجعة",
 };

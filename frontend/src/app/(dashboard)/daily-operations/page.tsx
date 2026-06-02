@@ -6,9 +6,10 @@ import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw,
   Globe,
-  Wallet, UserPlus, Keyboard, Bell, BellOff,
+  UserPlus, Keyboard, Bell, BellOff,
   Printer, Activity, Megaphone, Building2,
-  X, Phone, MessageCircle, Monitor,
+  X, Phone, MessageCircle, UserCheck,
+  BarChart3, PhoneCall, CalendarPlus,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -106,17 +107,42 @@ const animationStyles = `
 /* ═══════════════════════════════════════════════════════════════════════════
    Module tabs (top level navigation within daily operations)
    ═══════════════════════════════════════════════════════════════════════════ */
-type ModuleTab = "journey" | "booking" | "appointments" | "queue" | "calling" | "rooms" | "finance";
+type ModuleTab = "arrivals" | "queue" | "rooms" | "checkout" | "bookings" | "lab" | "report" | "appointments" | "journey" | "booking" | "calling" | "finance";
 
 const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [
-  { key: "journey",     label: "رحلة المريض",      icon: Activity,      color: ORANGE },
-  { key: "booking",     label: "طلبات الحجز",      icon: Globe,         color: BLUE },
-  { key: "appointments", label: "المواعيد",         icon: Calendar,      color: BLUE },
-  { key: "queue",       label: "الطابور",          icon: ClipboardList, color: ORANGE },
-  { key: "calling",     label: "النداء",           icon: Monitor,       color: "#8b5cf6" },
-  { key: "rooms",       label: "الغرف",           icon: Building2,     color: NAVY },
-  { key: "finance",     label: "المالية/الدفع",     icon: Wallet,        color: "#16a34a" },
+  { key: "arrivals",    label: "وصول اليوم",     icon: Calendar,      color: BLUE },
+  { key: "queue",      label: "الانتظار",       icon: ClipboardList, color: ORANGE },
+  { key: "rooms",      label: "الغرف",         icon: Building2,     color: NAVY },
+  { key: "checkout",   label: "جاهز للمحاسبة",  icon: CreditCard,   color: "#16a34a" },
+  { key: "bookings",   label: "الحجوزات",       icon: Globe,         color: BLUE },
+  { key: "lab",        label: "المعمل",        icon: Activity,      color: "#8b5cf6" },
+  { key: "report",     label: "تقرير اليوم",   icon: BarChart3,    color: ORANGE },
 ];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Quick Action Buttons Configuration
+   ═══════════════════════════════════════════════════════════════════════════ */
+interface QuickAction {
+  key: string;
+  label: string;
+  icon: React.ElementType;
+  color: string;
+  onClick: () => void;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _useQuickActions(_handlers: Record<string, () => void>): QuickAction[] {
+  return [
+    { key: "checkin",       label: "تسجيل وصول",  icon: UserCheck,     color: "#16a34a", onClick: () => {} },
+    { key: "newPatient",   label: "مريض جديد",   icon: UserPlus,     color: BLUE,    onClick: () => {} },
+    { key: "walkin",       label: "دخول مباشر",  icon: UserPlus,     color: ORANGE,   onClick: () => {} },
+    { key: "payment",     label: "تحصيل",       icon: CreditCard,   color: "#22c55e", onClick: () => {} },
+    { key: "call",         label: "نداء",        icon: Phone,        color: "#d97706", onClick: () => {} },
+    { key: "recall",       label: "إعادة النداء", icon: PhoneCall,    color: "#059669", onClick: () => {} },
+    { key: "nextApt",      label: "موعد قادم",   icon: CalendarPlus, color: NAVY,     onClick: () => {} },
+    { key: "print",        label: "طباعة سند",   icon: Printer,      color: "#64748b", onClick: () => window.print() },
+  ];
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Sub-tab icon mapping (for رحلة المريض view)
@@ -149,7 +175,7 @@ export default function DailyOperationsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
-  const [activeModule, setActiveModule] = useState<ModuleTab>("journey");
+  const [activeModule, setActiveModule] = useState<ModuleTab>("arrivals");
 
   // ── Data ──
   const { data: items = [], isLoading: itemsLoading, refetch: refetchItems } = useTodayJourneyItems({
@@ -310,10 +336,10 @@ export default function DailyOperationsPage() {
       }
 
       if (!isInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        const tabKeys: TabKey[] = ["appointments", "queue", "inClinic", "completed", "payments", "overdue"];
+        const tabKeys: ModuleTab[] = ["arrivals", "queue", "rooms", "checkout", "bookings", "lab", "report"];
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 6) {
-          setActiveTab(tabKeys[num - 1]);
+        if (num >= 1 && num <= 7) {
+          setActiveTab(tabKeys[num - 1] as TabKey ?? "appointments");
           return;
         }
         if (e.key === "?") {
@@ -342,7 +368,7 @@ export default function DailyOperationsPage() {
   const handleSendToQueue = useCallback((item: TodayJourneyItem) => {
     sendToQueueMutation.mutate(
       { appointmentId: item.appointmentId },
-      { onSuccess: () => toast.success("تمت إضافة المريض للطابور"), onError: () => toast.error("فشل الإضافة للطابور") },
+      { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: () => toast.error("فشل الإضافة للانتظار") },
     );
   }, [sendToQueueMutation]);
 
@@ -444,7 +470,7 @@ export default function DailyOperationsPage() {
         toast.success("تم التراجع عن الإجراء");
       } else if (undoAction.type === "CancelQueue" && undoAction.queueItemId) {
         await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
-        toast.success("تم التراجع — أعيد المريض للطابور");
+        toast.success("تم التراجع — أعيد المريض للانتظار");
       }
     } catch {
       toast.error("فشل التراجع");
@@ -482,7 +508,7 @@ export default function DailyOperationsPage() {
       } else if (confirmDialogType === "CancelQueue") {
         if (!selectedItem.queueItemId) return;
         await cancelQueueMutation.mutateAsync(selectedItem.queueItemId);
-        toast.success("تم إلغاء المريض من الطابور");
+        toast.success("تم إلغاء المريض من الانتظار");
         pushUndoAction({
           id: crypto.randomUUID(),
           type: "CancelQueue",
@@ -645,7 +671,7 @@ export default function DailyOperationsPage() {
   }) => {
     try {
       await walkInMutation.mutateAsync(data);
-      toast.success("تم تسجيل المريض المشي وإضافته للطابور");
+      toast.success("تم تسجيل المريض المشي وإضافته للانتظار");
       setWalkInModalOpen(false);
     } catch {
       toast.error("فشل تسجيل المريض المشي");
@@ -882,9 +908,11 @@ export default function DailyOperationsPage() {
             return (
               <button key={tab.key}
                 onClick={() => {
-                  if (tab.key === "calling") {
-                    window.open("/clinic-display", "_blank");
-                    return;
+                  if (tab.key === "report") {
+                    // Report tab could open a summary view
+                  }
+                  if (tab.key === "lab") {
+                    // Lab tab - placeholder, could navigate
                   }
                   setActiveModule(tab.key);
                 }}
@@ -895,13 +923,13 @@ export default function DailyOperationsPage() {
                 }}>
                 <TabIcon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
-                {tab.key === "journey" && items.length > 0 && (
+                {tab.key === "arrivals" && items.length > 0 && (
                   <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
                     style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
                     {items.length}
                   </span>
                 )}
-                {tab.key === "finance" && tabCounts.payments > 0 && (
+                {tab.key === "checkout" && tabCounts.payments > 0 && (
                   <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
                     style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
                     {tabCounts.payments}
@@ -921,8 +949,8 @@ export default function DailyOperationsPage() {
             ═══════════════════════════════════════════════════════════════════ */}
         <div className="flex-1 flex overflow-hidden">
 
-          {/* ═══ Module: رحلة المريض (default) ═══ */}
-          {activeModule === "journey" && (
+          {/* ═══ Module: وصول اليوم (default) ═══ */}
+          {activeModule === "arrivals" && (
             <>
               {/* ── Left: Tab Pills + Data Grid ── */}
               <div className="flex-1 flex flex-col min-w-0">
@@ -1095,21 +1123,21 @@ export default function DailyOperationsPage() {
             </>
           )}
 
-          {/* ═══ Module: طلبات الحجز ═══ */}
-          {activeModule === "booking" && (
+          {/* ═══ Module: طلبات الحجز / الحجوزات ═══ */}
+          {activeModule === "bookings" && (
             <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
               <BookingRequestsView searchQuery={searchQuery} />
             </div>
           )}
 
-          {/* ═══ Module: المواعيد ═══ */}
+          {/* ═══ Module: المواعيد (legacy - not in new tabs but kept for backwards compat) ═══ */}
           {activeModule === "appointments" && (
             <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
               <AppointmentsView />
             </div>
           )}
 
-          {/* ═══ Module: الطابور ═══ */}
+          {/* ═══ Module: الانتظار ═══ */}
           {activeModule === "queue" && (
             <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
               <ClinicQueueView searchQuery={searchQuery} onContextMenu={handleItemContextMenu} />
@@ -1123,10 +1151,64 @@ export default function DailyOperationsPage() {
             </div>
           )}
 
-          {/* ═══ Module: المالية/الدفع ═══ */}
-          {activeModule === "finance" && (
+          {/* ═══ Module: جاهز للمحاسبة ═══ */}
+          {activeModule === "checkout" && (
             <div className="flex-1 flex flex-col min-w-0">
               <FinanceView onContextMenu={handleItemContextMenu} />
+            </div>
+          )}
+
+          {/* ═══ Module: المعمل (Lab placeholder) ═══ */}
+          {activeModule === "lab" && (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] items-center justify-center">
+              <div className="text-center" style={{ color: "#94a3b8" }}>
+                <Activity className="w-16 h-16 mx-auto mb-3 opacity-20" />
+                <p className="text-sm font-bold">قسم المعمل</p>
+                <p className="text-xs mt-1">إدارة أعمال المعمل المخبرطية و حالتها</p>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ Module: تقرير اليوم (Report) ═══ */}
+          {activeModule === "report" && (
+            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] p-6 overflow-auto">
+              <h2 className="text-lg font-extrabold mb-4" style={{ color: NAVY }}>تقرير التشغيل اليومي</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>إجمالي المواعيد</div>
+                  <div className="text-2xl font-extrabold mt-1" style={{ color: BLUE }}>{dayStats.totalAppointments}</div>
+                </div>
+                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>في الانتظار</div>
+                  <div className="text-2xl font-extrabold mt-1" style={{ color: ORANGE }}>{dayStats.waiting}</div>
+                </div>
+                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>بداخل الغرف</div>
+                  <div className="text-2xl font-extrabold mt-1" style={{ color: "#9333ea" }}>{dayStats.inClinic}</div>
+                </div>
+                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>مكتمل</div>
+                  <div className="text-2xl font-extrabold mt-1" style={{ color: "#16a34a" }}>{dayStats.completed}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-4 rounded-xl border" style={{ background: "#fff7ed", borderColor: "#fde8d0" }}>
+                  <div className="text-[11px] font-medium" style={{ color: ORANGE }}>تحصيل اليوم</div>
+                  <div className="text-xl font-extrabold mt-1" style={{ color: NAVY }}>{fmtRial(dayStats.todayPayments)}</div>
+                </div>
+                <div className="p-4 rounded-xl border" style={{ background: dayStats.noShow > 0 ? "#fef2f2" : "#fff", borderColor: dayStats.noShow > 0 ? "#fecaca" : "#e5e7eb" }}>
+                  <div className="text-[11px] font-medium" style={{ color: "#ef4444" }}>لم يحضر</div>
+                  <div className="text-xl font-extrabold mt-1" style={{ color: "#ef4444" }}>{dayStats.noShow}</div>
+                </div>
+                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
+                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>نسبة عدم الحضور</div>
+                  <div className="text-xl font-extrabold mt-1" style={{ color: NAVY }}>{dayStats.noShowRate}%</div>
+                </div>
+                <div className="p-4 rounded-xl border" style={{ background: dayStats.overdueAppointments > 0 ? "#fef2f2" : "#fff", borderColor: dayStats.overdueAppointments > 0 ? "#fecaca" : "#e5e7eb" }}>
+                  <div className="text-[11px] font-medium" style={{ color: "#ef4444" }}>متأخرات</div>
+                  <div className="text-xl font-extrabold mt-1" style={{ color: NAVY }}>{dayStats.overdueAppointments}</div>
+                </div>
+              </div>
             </div>
           )}
         </div>

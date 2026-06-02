@@ -126,7 +126,7 @@ The refresh-token endpoint had no error handling. If Redis was temporarily unrea
 
 **File:** `backend/src/AqlanDentalPro.Infrastructure/Data/Migrations/20260620000000_Sprint1_FixEnumColumnTypesPhase2.cs`
 
-**Purpose:** Convert ALL remaining enum columns from `integer` to `varchar` to match `HasConversion<string>()` entity configurations.
+**Purpose:** Convert enum columns from `integer` to `varchar` to match `HasConversion<string>()` entity configurations. Only includes 15 columns that have `HasConversion<string>()` configured. Five columns are intentionally excluded because they use integer storage without `HasConversion<string>()`.
 
 **Design Principles:**
 - **Idempotent:** Uses `DO $$ ... IF EXISTS (data_type = 'integer') ... END $$;` pattern — safe to re-run
@@ -160,6 +160,15 @@ The refresh-token endpoint had no error handling. If Redis was temporarily unrea
 | ConversationType | StaffToStaff=0, StaffToPatient=1, PatientToStaff=2 |
 
 **Safety:** The migration uses `CREATE TABLE IF NOT EXISTS` and `ALTER COLUMN ... IF EXISTS` patterns. It will NOT error if the column is already varchar (e.g., if Phase 1 already converted it).
+
+**Excluded Columns (no HasConversion<string>() — EF Core expects integer):**
+- `Treasuries.Type`
+- `VaultTransfers.Status`
+- `VaultTransfers.Type` (column does not exist in entity)
+- `OperationalExpenses.ApprovalStatus`
+- `CashierSessions.Status`
+
+**Discovery Fix:** A matching `.Designer.cs` file was added (hotfix PR) with the `[Migration]` attribute so that `dotnet ef migrations list` correctly discovers this migration.
 
 ---
 

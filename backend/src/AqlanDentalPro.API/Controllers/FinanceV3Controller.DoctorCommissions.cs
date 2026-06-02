@@ -224,8 +224,8 @@ public partial class FinanceV3Controller
         // 2. Get all invoices in date range with their payments and line items
         var invoicesQuery = db.Invoices
             .Include(i => i.Patient)
-            .Include(i => i.LineItems.Where(l => l.IsActive))
-            .Include(i => i.Payments.Where(p => p.IsActive))
+            .Include(i => i.LineItems)
+            .Include(i => i.Payments)
             .Where(i => i.IsActive && i.CreatedAt >= startDateTime && i.CreatedAt <= endDateTime);
 
         if (branchId.HasValue)
@@ -234,6 +234,14 @@ public partial class FinanceV3Controller
             invoicesQuery = invoicesQuery.Where(i => i.LineItems.Any(l => l.DoctorId == doctorId.Value));
 
         var invoices = await invoicesQuery.ToListAsync();
+
+        // Explicitly filter inactive line items and payments in-memory
+        // (ensures correct behavior across all database providers including InMemory)
+        foreach (var inv in invoices)
+        {
+            inv.LineItems = inv.LineItems.Where(l => l.IsActive).ToList();
+            inv.Payments = inv.Payments.Where(p => p.IsActive).ToList();
+        }
 
         // 3. Get doctor commission payments
         var commissionPaymentsQuery = db.DoctorCommissionPayments

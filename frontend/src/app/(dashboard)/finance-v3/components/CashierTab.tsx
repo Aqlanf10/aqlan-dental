@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
+import { useAuthStore } from "@/stores/authStore";
 import type { CashierSession, CloseSessionRequest } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, StatusBadge, tokens, inputStyle, labelStyle, btnPrimary, btnDanger, btnGhost } from "./FinanceSharedUI";
 import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHelpers";
@@ -20,6 +21,7 @@ import { formatYER, extractErrorMessage, safeFormatDateTime } from "./FinanceHel
    Tab 6: Cashier — الورديات اليومية (التشغيل اليومي)
    ═══════════════════════════════════════════════════════════════════════════════ */
 export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
+  const { user } = useAuthStore();
   const [sessions, setSessions] = useState<CashierSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [closeSession, setCloseSession] = useState<CashierSession | null>(null);
@@ -48,7 +50,12 @@ export function CashierTab({ isAdmin }: { isAdmin: boolean }) {
 
   useEffect(() => { fetchSessions(); }, [fetchSessions]);
 
-  const openSession = sessions.find((s) => s.status === "Open");
+  const openSession = sessions.find((s) => {
+    if (s.status !== "Open") return false;
+    if (s.cashierId && user?.id) return s.cashierId.toLowerCase() === user.id.toLowerCase();
+    if (s.cashierName && user?.username) return s.cashierName.toLowerCase() === user.username.toLowerCase();
+    return false;
+  });
 
   // ── Open new session ──
   const handleOpenSession = async () => {

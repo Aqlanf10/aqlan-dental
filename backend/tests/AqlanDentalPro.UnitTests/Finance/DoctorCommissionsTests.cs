@@ -318,11 +318,9 @@ public class DoctorCommissionsTests
 
         result.Should().BeOfType<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        dynamic list = okResult.Value!;
-        Assert.Single(list);
-        dynamic summary = list[0];
-        // Collected = 100,000 * 0.5 = 50,000; Commission = 50,000 * 50% = 25,000
-        Assert.Equal(25_000m, (decimal)summary.CommissionDue);
+        var list = (List<DoctorCommissionEarnedFromCollectionsDto>)okResult.Value!;
+        list.Should().ContainSingle();
+        list[0].CommissionDue.Should().Be(25_000m);
     }
 
     [Fact]
@@ -390,11 +388,9 @@ public class DoctorCommissionsTests
 
         result.Should().BeOfType<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        dynamic list = okResult.Value!;
-        Assert.Single(list);
-        dynamic summary = list[0];
-        // Full collection with lab cost: (100,000 - 20,000) * 50% = 40,000
-        Assert.Equal(40_000m, (decimal)summary.CommissionDue);
+        var list = (List<DoctorCommissionEarnedFromCollectionsDto>)okResult.Value!;
+        list.Should().ContainSingle();
+        list[0].CommissionDue.Should().Be(40_000m);
     }
 
     [Fact]
@@ -453,11 +449,9 @@ public class DoctorCommissionsTests
 
         result.Should().BeOfType<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        dynamic list = okResult.Value!;
-        Assert.Single(list);
-        dynamic summary = list[0];
-        // No payment collected → commission = 0
-        Assert.Equal(0m, (decimal)summary.CommissionDue);
+        var list = (List<DoctorCommissionEarnedFromCollectionsDto>)okResult.Value!;
+        list.Should().ContainSingle();
+        list[0].CommissionDue.Should().Be(0m);
     }
 
     [Fact]
@@ -524,11 +518,9 @@ public class DoctorCommissionsTests
 
         result.Should().BeOfType<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        dynamic list = okResult.Value!;
-        Assert.Single(list);
-        dynamic summary = list[0];
-        // Cancelled payment not counted → commission = 0
-        Assert.Equal(0m, (decimal)summary.CommissionDue);
+        var list = (List<DoctorCommissionEarnedFromCollectionsDto>)okResult.Value!;
+        list.Should().ContainSingle();
+        list[0].CommissionDue.Should().Be(0m);
     }
 
     [Fact]
@@ -586,11 +578,9 @@ public class DoctorCommissionsTests
 
         result.Should().BeOfType<OkObjectResult>();
         var okResult = (OkObjectResult)result;
-        dynamic list = okResult.Value!;
-        Assert.Single(list);
-        dynamic summary = list[0];
-        // Only branch A doctor should be returned
-        Assert.Equal(doctorA.Id, (Guid)summary.DoctorId);
-        Assert.Equal(50_000m, (decimal)summary.CommissionDue);
+        var list = (List<DoctorCommissionEarnedFromCollectionsDto>)okResult.Value!;
+        list.Should().ContainSingle();
+        list[0].DoctorId.Should().Be(doctorA.Id);
+        list[0].CommissionDue.Should().Be(50_000m);
     }
 }

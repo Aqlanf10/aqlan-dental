@@ -259,7 +259,7 @@ public partial class FinanceV3Controller
         var doctorsMap = await doctorsMapQuery.ToDictionaryAsync(d => d.Id, d => d);
 
         // 5. Build results per doctor
-        var result = new List<object>();
+        var result = new List<DoctorCommissionEarnedFromCollectionsDto>();
         foreach (var docId in doctorIds)
         {
             var doctor = doctorsMap.GetValueOrDefault(docId);
@@ -312,7 +312,7 @@ public partial class FinanceV3Controller
             var commissionRemaining = Math.Max(0, totalEarnedCommission - commissionPaid);
             var netCommissionableAmount = Math.Max(0, totalCollected - totalLabCost - totalMaterialCost - totalOtherDirectCosts);
 
-            result.Add(new
+            result.Add(new DoctorCommissionEarnedFromCollectionsDto
             {
                 DoctorId = docId,
                 DoctorName = doctor.Name,

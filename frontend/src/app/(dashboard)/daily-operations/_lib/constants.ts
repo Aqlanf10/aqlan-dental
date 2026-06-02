@@ -27,6 +27,7 @@ export interface TodayJourneyItem {
   queueStatus?: string;
   visitId?: string;
   visitStatus?: string;
+  proposedProcedure?: string;
   consultationFeeRequired?: boolean;
   consultationFeePaid?: boolean;
   checkoutStatus?: string;
@@ -174,8 +175,11 @@ export const STATUS_COLORS: Record<string, { bg: string; text: string; border: s
 // ─── Payment methods ─────────────────────────────────────────────────────────
 export const PAYMENT_METHODS = [
   { value: "cash",          label: "نقدي" },
-  { value: "card",          label: "بطاقة" },
   { value: "bank_transfer", label: "تحويل بنكي" },
+  { value: "karimey",       label: "حاسب الكريمي" },
+  { value: "jawaly",        label: "ام فلوس / جوالي" },
+  { value: "transfer",      label: "حوالة" },
+  { value: "card",          label: "بطاقة" },
   { value: "check",         label: "شيك" },
   { value: "other",         label: "أخرى" },
 ];

@@ -28,6 +28,7 @@ public class ClinicQueueController(
     IRealTimePushService pushService,
     ISmsService smsService,
     IWhatsAppService whatsAppService,
+    IAuditService audit,
     ILogger<ClinicQueueController> logger) : ControllerBase
 {
     private static readonly HashSet<ClinicQueueStatus> ActiveStatuses =
@@ -47,8 +48,6 @@ public class ClinicQueueController(
     [HttpGet("today")]
     public async Task<IActionResult> GetTodayQueue([FromQuery] Guid? doctorId)
     {
-        try
-        {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         var query = db.ClinicQueueItems
@@ -137,12 +136,6 @@ public class ClinicQueueController(
         });
 
         return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "GetTodayQueue failed");
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
-        }
     }
 
     // ─── POST /api/clinic-queue ──────────────────────────────────────────────
@@ -176,7 +169,7 @@ public class ClinicQueueController(
                             && q.IsActive);
 
             if (existingActive)
-                return Conflict(new { message = "يوجد عنصر نشط لهذا المريض في طابور اليوم بالفعل" });
+                return Conflict(new { message = "يوجد عنصر نشط لهذا المريض في قائمة الانتظار اليوم بالفعل" });
 
             // Validate appointment if provided
             if (req.AppointmentId.HasValue)
@@ -251,7 +244,7 @@ public class ClinicQueueController(
                 StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(item.Status),
                 item.QueueDate,
                 item.Notes,
-                message = "تمت إضافة المريض إلى الطابور بنجاح"
+                message = "تمت إضافة المريض إلى قائمة الانتظار بنجاح"
             });
         }
         catch
@@ -276,9 +269,9 @@ public class ClinicQueueController(
 
             var item = await db.ClinicQueueItems.FindAsync(id);
             if (item is null)
-                return NotFound(new { message = "عنصر الطابور غير موجود" });
+                return NotFound(new { message = "عنصر الانتظار غير موجود" });
             if (!item.IsActive)
-                return BadRequest(new { message = "عنصر الطابور محذوف" });
+                return BadRequest(new { message = "عنصر الانتظار محذوف" });
 
             // CON-01 FIX: Use centralized transition validation with Arabic error message
             var validationError = ClinicQueueStatusTransitions.GetValidationError(item.Status, ClinicQueueStatus.Called);
@@ -351,7 +344,7 @@ public class ClinicQueueController(
 
             var item = await db.ClinicQueueItems.FindAsync(id);
             if (item is null)
-                return NotFound(new { message = "عنصر الطابور غير موجود" });
+                return NotFound(new { message = "عنصر الانتظار غير موجود" });
 
             // CON-01 FIX: Use centralized transition validation with Arabic error message
             var validationError = ClinicQueueStatusTransitions.GetValidationError(item.Status, ClinicQueueStatus.InRoom);
@@ -409,7 +402,7 @@ public class ClinicQueueController(
                 .FirstOrDefaultAsync(q => q.Id == id);
 
             if (item is null)
-                return NotFound(new { message = "عنصر الطابور غير موجود" });
+                return NotFound(new { message = "عنصر الانتظار غير موجود" });
 
             // CON-01 FIX: Use centralized transition validation with Arabic error message
             var validationError = ClinicQueueStatusTransitions.GetValidationError(item.Status, ClinicQueueStatus.InProgress);
@@ -490,7 +483,7 @@ public class ClinicQueueController(
 
             var item = await db.ClinicQueueItems.FindAsync(id);
             if (item is null)
-                return NotFound(new { message = "عنصر الطابور غير موجود" });
+                return NotFound(new { message = "عنصر الانتظار غير موجود" });
 
             // CON-01 FIX: Use centralized transition validation with Arabic error message
             var validationError = ClinicQueueStatusTransitions.GetValidationError(item.Status, ClinicQueueStatus.Completed);
@@ -519,7 +512,7 @@ public class ClinicQueueController(
                 Status = item.Status.ToString(),
                 StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(item.Status),
                 item.CompletedAt,
-                message = "تم إكمال عنصر الطابور بنجاح"
+                message = "تم إكمال عنصر الانتظار بنجاح"
             });
         }
         catch
@@ -545,7 +538,7 @@ public class ClinicQueueController(
 
             var item = await db.ClinicQueueItems.FindAsync(id);
             if (item is null)
-                return NotFound(new { message = "عنصر الطابور غير موجود" });
+                return NotFound(new { message = "عنصر الانتظار غير موجود" });
 
             // CON-01 FIX: Use centralized transition validation with Arabic error message
             var validationError = ClinicQueueStatusTransitions.GetValidationError(item.Status, ClinicQueueStatus.Cancelled);
@@ -578,7 +571,7 @@ public class ClinicQueueController(
                 Status = item.Status.ToString(),
                 StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(item.Status),
                 item.CancelledAt,
-                message = "تم إلغاء عنصر الطابور بنجاح"
+                message = "تم إلغاء عنصر الانتظار بنجاح"
             });
         }
         catch
@@ -601,9 +594,9 @@ public class ClinicQueueController(
 
             var item = await db.ClinicQueueItems.FindAsync(id);
             if (item is null)
-                return NotFound(new { message = "عنصر الطابور غير موجود" });
+                return NotFound(new { message = "عنصر الانتظار غير موجود" });
             if (!item.IsActive)
-                return BadRequest(new { message = "عنصر الطابور محذوف" });
+                return BadRequest(new { message = "عنصر الانتظار محذوف" });
 
             var validationError = ClinicQueueStatusTransitions.GetValidationError(item.Status, ClinicQueueStatus.NoShow);
             if (validationError != null)
@@ -666,9 +659,9 @@ public class ClinicQueueController(
 
             var item = await db.ClinicQueueItems.FindAsync(id);
             if (item is null)
-                return NotFound(new { message = "عنصر الطابور غير موجود" });
+                return NotFound(new { message = "عنصر الانتظار غير موجود" });
             if (!item.IsActive)
-                return BadRequest(new { message = "عنصر الطابور محذوف" });
+                return BadRequest(new { message = "عنصر الانتظار محذوف" });
 
             // Can only recall patients in Called status (already called but not yet in room)
             if (item.Status != ClinicQueueStatus.Called && item.Status != ClinicQueueStatus.Waiting)
@@ -734,14 +727,39 @@ public class ClinicQueueController(
     {
         var item = await db.ClinicQueueItems.FindAsync(id);
         if (item is null)
-            return NotFound(new { message = "عنصر الطابور غير موجود" });
+            return NotFound(new { message = "عنصر الانتظار غير موجود" });
 
         // Can only change priority for active items
         if (!ActiveStatuses.Contains(item.Status))
             return BadRequest(new { message = "لا يمكن تغيير الأولوية لعنصر غير نشط" });
 
+        // If priority is set to Emergency (حالة إسعافية), audit reason is required
+        if (req.Priority == ClinicQueuePriority.Emergency)
+        {
+            if (string.IsNullOrWhiteSpace(req.Reason))
+            {
+                return BadRequest(new { message = "الرجاء إدخال سبب الحالة الإسعافية لتوثيق السجل" });
+            }
+
+            // Log formal audit record
+            await audit.LogAsync(
+                AuditAction.Update,
+                "ClinicQueueItem",
+                item.Id,
+                oldData: new { Priority = item.Priority.ToString() },
+                newData: new { Priority = req.Priority.ToString(), Reason = req.Reason },
+                details: $"تم تغيير أولوية المريض إلى حالة إسعافية. السبب: {req.Reason}"
+            );
+        }
+
         item.Priority = req.Priority;
         item.UpdatedAt = DateTime.UtcNow;
+        if (req.Priority == ClinicQueuePriority.Emergency && !string.IsNullOrWhiteSpace(req.Reason))
+        {
+            item.Notes = string.IsNullOrWhiteSpace(item.Notes) 
+                ? $"[حالة إسعافية: {req.Reason}]" 
+                : $"{item.Notes} | [حالة إسعافية: {req.Reason}]";
+        }
         await db.SaveChangesAsync();
 
         var branchId = GetCurrentBranchId();
@@ -791,7 +809,7 @@ public class ClinicQueueController(
             else
                 await pushService.PushToAllAsync(MessagingHubEvents.QueueUpdated, new { action = "reordered" });
 
-            return Ok(new { message = "تم إعادة ترتيب الطابور بنجاح" });
+            return Ok(new { message = "تم إعادة ترتيب قائمة الانتظار بنجاح" });
         }
         catch
         {
@@ -810,7 +828,7 @@ public class ClinicQueueController(
             .FirstOrDefaultAsync(q => q.Id == id);
 
         if (item is null)
-            return NotFound(new { message = "عنصر الطابور غير موجود" });
+            return NotFound(new { message = "عنصر الانتظار غير موجود" });
 
         if (item.Patient is null)
             return BadRequest(new { message = "لا توجد بيانات مريض مرتبطة" });
@@ -990,7 +1008,7 @@ public class ClinicQueueController(
     {
         var item = await db.ClinicQueueItems.FindAsync(id);
         if (item is null)
-            return NotFound(new { message = "عنصر الطابور غير موجود" });
+            return NotFound(new { message = "عنصر الانتظار غير موجود" });
 
         if (!await IsRoomValidAsync(req.RoomName))
             return BadRequest(new { message = "اسم الغرفة غير صالح" });
@@ -1482,6 +1500,7 @@ public class ChangeRoomRequest
 public class ChangePriorityRequest
 {
     public ClinicQueuePriority Priority { get; set; } = ClinicQueuePriority.Normal;
+    public string? Reason { get; set; }
 }
 
 public class ReorderItemRequest

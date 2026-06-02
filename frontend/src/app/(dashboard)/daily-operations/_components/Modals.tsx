@@ -23,6 +23,7 @@ import {
 import type { TodayJourneyItem, DoctorOption, ServiceOption, RoomOption, BranchOption } from "../_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
 import api from "@/lib/api";
+import axios from "axios";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Shared overlay wrapper
@@ -250,6 +251,7 @@ export function CompleteVisitModal({
     serviceDesc: string; amountDue: number; isPaid: boolean;
     needsFollowUp: boolean; nextDate: string; notes: string;
     diagnosis: string; instructions: string;
+    proposedProcedure?: string;
   }) => void;
   onCheckout: (data: { paymentAmount: number; paymentMethod: string; notes: string; nextDate?: string; nextServiceId?: string }) => void;
   onQuickPayment?: (item: TodayJourneyItem) => void;
@@ -265,6 +267,13 @@ export function CompleteVisitModal({
   const [needsFollowUp, setNeedsFollowUp] = useState(false);
   const [nextDate, setNextDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [proposedProcedure, setProposedProcedure] = useState("");
+
+  useEffect(() => {
+    if (item) {
+      setProposedProcedure(item.proposedProcedure ?? "");
+    }
+  }, [item]);
 
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const latestPayment = summary?.financeSummary?.latestPayment;
@@ -306,12 +315,12 @@ export function CompleteVisitModal({
       // Doctor mode: handoff with treatment details
       onConfirm({
         serviceDesc, amountDue: num, isPaid, needsFollowUp, nextDate, notes,
-        diagnosis, instructions,
+        diagnosis, instructions, proposedProcedure,
       });
     }
     setServiceDesc(""); setDiagnosis(""); setInstructions("");
     setAmountDue(""); setPaymentMethod("Cash"); setIsPaid(false);
-    setNeedsFollowUp(false); setNextDate(""); setNotes("");
+    setNeedsFollowUp(false); setNextDate(""); setNotes(""); setProposedProcedure("");
   };
 
   const outstanding = summary?.financeSummary?.outstandingBalance ?? 0;
@@ -391,12 +400,17 @@ export function CompleteVisitModal({
             </span>
           </div>
 
-          {/* Row 1: Service + Diagnosis */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Row 1: Service + ProposedProcedure + Diagnosis */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>ملخص الإجراء / الخدمة</label>
               <input value={serviceDesc} onChange={e => setServiceDesc(e.target.value)}
                 placeholder="مثال: حشو + تنظيف" className={inputCls()} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>الإجراء المقترح للمحاسبة *</label>
+              <input value={proposedProcedure} onChange={e => setProposedProcedure(e.target.value)}
+                placeholder="مثال: خلع ضرس عقل علوي أيسر" className={inputCls()} />
             </div>
             <div>
               <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>التشخيص</label>
@@ -710,7 +724,7 @@ export function WalkInModal({
       <div className="mb-3 p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#fff7ed" }}>
         <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
         <span className="text-xs font-medium" style={{ color: "#92400e" }}>
-          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة للانتظار تلقائياً
+          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة للطابور تلقائياً
         </span>
       </div>
 
@@ -766,7 +780,7 @@ export function WalkInModal({
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
           style={{ background: ORANGE, opacity: !patientName.trim() || !doctorId || isPending ? 0.5 : 1 }}>
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-          تسجيل وإضافة للانتظار
+          تسجيل وإضافة للطابور
         </button>
       </div>
     </ModalShell>
@@ -788,7 +802,7 @@ export function ConfirmDialog({
   const configs: Record<string, { title: string; body: string; btnColor: string }> = {
     Cancel:      { title: "إلغاء الموعد",     body: `هل أنت متأكد من إلغاء موعد المريض ${patientName}؟`, btnColor: "#ef4444" },
     NoShow:      { title: "لم يحضر",          body: `هل تريد تسجيل المريض ${patientName} كـ "لم يحضر"؟`, btnColor: "#f5922e" },
-    CancelQueue: { title: "إلغاء من الانتظار", body: `هل أنت متأكد من إلغاء المريض ${patientName} من الانتظار؟`, btnColor: "#ef4444" },
+    CancelQueue: { title: "إلغاء من الطابور", body: `هل أنت متأكد من إلغاء المريض ${patientName} من الطابور؟`, btnColor: "#ef4444" },
     ChangeRoom:  { title: "تغيير الغرفة",     body: `هل تريد تغيير غرفة المريض ${patientName}؟`, btnColor: "#3d7ab5" },
     Complete:    { title: "إنهاء الزيارة",     body: `هل تريد إنهاء زيارة المريض ${patientName}؟`, btnColor: "#16a34a" },
   };
@@ -955,7 +969,7 @@ export function UndoToast({
   const actionLabels: Record<string, string> = {
     Cancel: "إلغاء الموعد",
     NoShow: "لم يحضر",
-    CancelQueue: "إلغاء من الانتظار",
+    CancelQueue: "إلغاء من الطابور",
   };
 
   return (
@@ -1568,6 +1582,116 @@ export function DirectPaymentModal({
           </button>
         )}
       </div>
+    </ModalShell>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Manager Override Dialog — for patients with overdue balance
+   ═══════════════════════════════════════════════════════════════════════════ */
+export function OverrideDialog({
+  open,
+  onClose,
+  patientName,
+  overdueAmount,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  patientName: string;
+  overdueAmount: number;
+  onConfirm: (managerUsername: string) => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.trim() || !password) return;
+    setLoading(true);
+    setError("");
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+      const { data } = await axios.post(`${API_URL}/api/auth/login`, {
+        username: username.trim(),
+        password,
+      });
+
+      const userRole = data?.user?.role;
+      if (userRole === "Admin" || userRole === "BranchManager") {
+        onConfirm(username.trim());
+        setUsername("");
+        setPassword("");
+      } else {
+        setError("عذراً، هذا الحساب لا يملك صلاحية تجاوز (يجب أن يكون مدير فرع أو مسؤول)");
+      }
+    } catch (err: unknown) {
+      let errorMsg = "فشل التحقق من اسم المستخدم أو كلمة المرور";
+      if (err && typeof err === "object" && "response" in err) {
+        const resp = (err as { response?: { data?: { message?: string } } }).response;
+        if (resp?.data?.message) errorMsg = resp.data.message;
+      }
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ModalShell open={open} onClose={onClose} title="موافقة المدير المطلوبة (تجاوز متأخرات)" icon={AlertTriangle} iconColor="#ef4444">
+      <div className="mb-4 p-3.5 rounded-xl border border-red-100 bg-red-50 text-red-800 text-xs">
+        <div className="font-extrabold text-sm mb-1">تنبيه وجود متأخرات مالية!</div>
+        لا يمكن تسجيل وصول أو إدخال المريض <span className="font-extrabold">{patientName}</span> للانتظار نظراً لوجود أقساط متأخرة بقيمة <span className="font-extrabold">{fmtRial(overdueAmount)}</span>.
+        لتجاوز هذا المنع، يجب إدخال اسم مستخدم وكلمة مرور لمدير الفرع أو المسؤول.
+      </div>
+
+      <form onSubmit={handleVerify} className="space-y-3.5">
+        <div>
+          <label className="text-xs font-semibold block mb-1 text-gray-700">اسم مستخدم المدير</label>
+          <input
+            type="text"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            placeholder="Username"
+            className={inputCls()}
+            required
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold block mb-1 text-gray-700">كلمة المرور</label>
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="••••••••"
+            className={inputCls()}
+            required
+          />
+        </div>
+
+        {error && (
+          <div className="text-xs font-semibold text-red-600 bg-red-50 p-2 rounded-lg border border-red-200">
+            {error}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-gray-100 text-gray-600">
+            إلغاء
+          </button>
+          <button
+            type="submit"
+            disabled={loading || !username.trim() || !password}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            تأكيد التجاوز
+          </button>
+        </div>
+      </form>
     </ModalShell>
   );
 }

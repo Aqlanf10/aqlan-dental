@@ -6,14 +6,14 @@ import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw,
   Globe,
-  UserPlus, Keyboard, Bell, BellOff,
+  Wallet, UserPlus, Keyboard, Bell, BellOff,
   Printer, Activity, Megaphone, Building2,
-  X, Phone, MessageCircle, UserCheck,
-  BarChart3, PhoneCall, CalendarPlus,
+  X, Phone, MessageCircle, Monitor,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
+import api from "@/lib/api";
 
 import {
   NAVY, BLUE, ORANGE,
@@ -72,6 +72,7 @@ import {
   KeyboardShortcutsHelp,
   BulkSmsModal,
   DirectPaymentModal,
+  OverrideDialog,
 } from "./_components/Modals";
 
 // ── Embedded module views ──
@@ -80,6 +81,8 @@ import ClinicQueueView from "./_modules/ClinicQueueView";
 import AppointmentsView from "./_modules/AppointmentsView";
 import RoomsView from "./_modules/RoomsView";
 import FinanceView from "./_modules/FinanceView";
+import LabView from "./_modules/LabView";
+import ReportView from "./_modules/ReportView";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Inline styles for animations
@@ -107,42 +110,17 @@ const animationStyles = `
 /* ═══════════════════════════════════════════════════════════════════════════
    Module tabs (top level navigation within daily operations)
    ═══════════════════════════════════════════════════════════════════════════ */
-type ModuleTab = "arrivals" | "queue" | "rooms" | "checkout" | "bookings" | "lab" | "report" | "appointments" | "journey" | "booking" | "calling" | "finance";
+type ModuleTab = "appointments" | "queue" | "rooms" | "checkout" | "booking" | "lab" | "report";
 
 const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [
-  { key: "arrivals",    label: "وصول اليوم",     icon: Calendar,      color: BLUE },
-  { key: "queue",      label: "الانتظار",       icon: ClipboardList, color: ORANGE },
-  { key: "rooms",      label: "الغرف",         icon: Building2,     color: NAVY },
-  { key: "checkout",   label: "جاهز للمحاسبة",  icon: CreditCard,   color: "#16a34a" },
-  { key: "bookings",   label: "الحجوزات",       icon: Globe,         color: BLUE },
-  { key: "lab",        label: "المعمل",        icon: Activity,      color: "#8b5cf6" },
-  { key: "report",     label: "تقرير اليوم",   icon: BarChart3,    color: ORANGE },
+  { key: "appointments", label: "وصول اليوم",         icon: Calendar,      color: BLUE },
+  { key: "queue",        label: "قائمة الانتظار",      icon: ClipboardList, color: ORANGE },
+  { key: "rooms",        label: "الغرف والعيادات",      icon: Building2,     color: NAVY },
+  { key: "checkout",     label: "جاهز للمحاسبة",      icon: CreditCard,    color: "#22c55e" },
+  { key: "booking",      label: "طلبات الحجز",        icon: Globe,         color: BLUE },
+  { key: "lab",          label: "المعمل",            icon: Activity,      color: "#8b5cf6" },
+  { key: "report",       label: "تقرير اليوم والعمولات", icon: Wallet,        color: "#16a34a" },
 ];
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Quick Action Buttons Configuration
-   ═══════════════════════════════════════════════════════════════════════════ */
-interface QuickAction {
-  key: string;
-  label: string;
-  icon: React.ElementType;
-  color: string;
-  onClick: () => void;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _useQuickActions(_handlers: Record<string, () => void>): QuickAction[] {
-  return [
-    { key: "checkin",       label: "تسجيل وصول",  icon: UserCheck,     color: "#16a34a", onClick: () => {} },
-    { key: "newPatient",   label: "مريض جديد",   icon: UserPlus,     color: BLUE,    onClick: () => {} },
-    { key: "walkin",       label: "دخول مباشر",  icon: UserPlus,     color: ORANGE,   onClick: () => {} },
-    { key: "payment",     label: "تحصيل",       icon: CreditCard,   color: "#22c55e", onClick: () => {} },
-    { key: "call",         label: "نداء",        icon: Phone,        color: "#d97706", onClick: () => {} },
-    { key: "recall",       label: "إعادة النداء", icon: PhoneCall,    color: "#059669", onClick: () => {} },
-    { key: "nextApt",      label: "موعد قادم",   icon: CalendarPlus, color: NAVY,     onClick: () => {} },
-    { key: "print",        label: "طباعة سند",   icon: Printer,      color: "#64748b", onClick: () => window.print() },
-  ];
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Sub-tab icon mapping (for رحلة المريض view)
@@ -175,7 +153,7 @@ export default function DailyOperationsPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
-  const [activeModule, setActiveModule] = useState<ModuleTab>("arrivals");
+  const [activeModule, setActiveModule] = useState<ModuleTab>("appointments");
 
   // ── Data ──
   const { data: items = [], isLoading: itemsLoading, refetch: refetchItems } = useTodayJourneyItems({
@@ -221,6 +199,12 @@ export default function DailyOperationsPage() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [completeVisitModalOpen, setCompleteVisitModalOpen] = useState(false);
   const [bookAppointmentModalOpen, setBookAppointmentModalOpen] = useState(false);
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [pendingOverrideAction, setPendingOverrideAction] = useState<{
+    type: "Intake" | "SendToQueue";
+    item: TodayJourneyItem;
+    overdueAmount: number;
+  } | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmDialogType, setConfirmDialogType] = useState<"Cancel" | "NoShow" | "CancelQueue" | "ChangeRoom" | "Complete">("Cancel");
   const [whatsAppMenuOpen, setWhatsAppMenuOpen] = useState(false);
@@ -309,6 +293,7 @@ export default function DailyOperationsPage() {
         if (paymentModalOpen) { setPaymentModalOpen(false); return; }
         if (completeVisitModalOpen) { setCompleteVisitModalOpen(false); return; }
         if (bookAppointmentModalOpen) { setBookAppointmentModalOpen(false); return; }
+        if (overrideOpen) { setOverrideOpen(false); return; }
         if (confirmDialogOpen) { setConfirmDialogOpen(false); return; }
         if (whatsAppMenuOpen) { setWhatsAppMenuOpen(false); return; }
         if (changeRoomModalOpen) { setChangeRoomModalOpen(false); return; }
@@ -336,10 +321,10 @@ export default function DailyOperationsPage() {
       }
 
       if (!isInput && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        const tabKeys: ModuleTab[] = ["arrivals", "queue", "rooms", "checkout", "bookings", "lab", "report"];
+        const tabKeys: TabKey[] = ["appointments", "queue", "inClinic", "completed", "payments", "overdue"];
         const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= 7) {
-          setActiveTab(tabKeys[num - 1] as TabKey ?? "appointments");
+        if (num >= 1 && num <= 6) {
+          setActiveTab(tabKeys[num - 1]);
           return;
         }
         if (e.key === "?") {
@@ -352,25 +337,58 @@ export default function DailyOperationsPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    paymentModalOpen, completeVisitModalOpen, bookAppointmentModalOpen,
+    paymentModalOpen, completeVisitModalOpen, bookAppointmentModalOpen, overrideOpen,
     confirmDialogOpen, whatsAppMenuOpen, changeRoomModalOpen,
     walkInModalOpen, sidePanelOpen, shortcutsHelpOpen, ctxMenu, refetchItems,
   ]);
 
   // ── Action handlers ──
+  const triggerIntakeOrQueue = useCallback(async (item: TodayJourneyItem, actionType: "Intake" | "SendToQueue", overrideManager?: string) => {
+    try {
+      if (!overrideManager) {
+        // Fetch patient summary to check overdue amount
+        const { data: summaryData } = await api.get(`/api/patient-journey/${item.patientId}/daily-summary`);
+        const overdue = summaryData?.financeSummary?.overdueAmount ?? 0;
+        if (overdue > 0) {
+          setPendingOverrideAction({ type: actionType, item, overdueAmount: overdue });
+          setOverrideOpen(true);
+          return;
+        }
+      }
+
+      const notesSuffix = overrideManager ? `[تجاوز متأخرات: بواسطة المدير ${overrideManager}]` : "";
+
+      if (actionType === "Intake") {
+        intakeMutation.mutate(
+          { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
+          { onSuccess: () => toast.success("تم تسجيل وصول المريض"), onError: () => toast.error("فشل تسجيل الوصول") }
+        );
+      } else {
+        sendToQueueMutation.mutate(
+          { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
+          { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: () => toast.error("فشل إضافة المريض للانتظار") }
+        );
+      }
+    } catch (error) {
+      toast.error("فشل إتمام العملية");
+    }
+  }, [intakeMutation, sendToQueueMutation]);
+
+  const handleOverrideConfirm = useCallback((managerUsername: string) => {
+    if (!pendingOverrideAction) return;
+    const { item, type } = pendingOverrideAction;
+    setOverrideOpen(false);
+    setPendingOverrideAction(null);
+    triggerIntakeOrQueue(item, type, managerUsername);
+  }, [pendingOverrideAction, triggerIntakeOrQueue]);
+
   const handleIntake = useCallback((item: TodayJourneyItem) => {
-    intakeMutation.mutate(
-      { appointmentId: item.appointmentId, body: {} },
-      { onSuccess: () => toast.success("تم تسجيل وصول المريض"), onError: () => toast.error("فشل تسجيل الوصول") },
-    );
-  }, [intakeMutation]);
+    triggerIntakeOrQueue(item, "Intake");
+  }, [triggerIntakeOrQueue]);
 
   const handleSendToQueue = useCallback((item: TodayJourneyItem) => {
-    sendToQueueMutation.mutate(
-      { appointmentId: item.appointmentId },
-      { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: () => toast.error("فشل الإضافة للانتظار") },
-    );
-  }, [sendToQueueMutation]);
+    triggerIntakeOrQueue(item, "SendToQueue");
+  }, [triggerIntakeOrQueue]);
 
   const handleCallPatient = useCallback((item: TodayJourneyItem) => {
     if (!item.queueItemId) return;
@@ -470,7 +488,7 @@ export default function DailyOperationsPage() {
         toast.success("تم التراجع عن الإجراء");
       } else if (undoAction.type === "CancelQueue" && undoAction.queueItemId) {
         await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
-        toast.success("تم التراجع — أعيد المريض للانتظار");
+        toast.success("تم التراجع — أعيد المريض للطابور");
       }
     } catch {
       toast.error("فشل التراجع");
@@ -508,7 +526,7 @@ export default function DailyOperationsPage() {
       } else if (confirmDialogType === "CancelQueue") {
         if (!selectedItem.queueItemId) return;
         await cancelQueueMutation.mutateAsync(selectedItem.queueItemId);
-        toast.success("تم إلغاء المريض من الانتظار");
+        toast.success("تم إلغاء المريض من الطابور");
         pushUndoAction({
           id: crypto.randomUUID(),
           type: "CancelQueue",
@@ -573,6 +591,7 @@ export default function DailyOperationsPage() {
     serviceDesc: string; amountDue: number; isPaid: boolean;
     needsFollowUp: boolean; nextDate: string; notes: string;
     diagnosis: string; instructions: string;
+    proposedProcedure?: string;
   }) => {
     if (!selectedItem) return;
     try {
@@ -590,6 +609,7 @@ export default function DailyOperationsPage() {
             amountDue: data.amountDue || undefined,
             notes: data.notes || undefined,
             followUpDate: data.needsFollowUp ? data.nextDate : undefined,
+            proposedProcedure: data.proposedProcedure || undefined,
           },
         });
         toast.success("تم إرسال المريض للاستقبال للتحصيل والخروج");
@@ -671,7 +691,7 @@ export default function DailyOperationsPage() {
   }) => {
     try {
       await walkInMutation.mutateAsync(data);
-      toast.success("تم تسجيل المريض المشي وإضافته للانتظار");
+      toast.success("تم تسجيل المريض المشي وإضافته للطابور");
       setWalkInModalOpen(false);
     } catch {
       toast.error("فشل تسجيل المريض المشي");
@@ -908,12 +928,6 @@ export default function DailyOperationsPage() {
             return (
               <button key={tab.key}
                 onClick={() => {
-                  if (tab.key === "report") {
-                    // Report tab could open a summary view
-                  }
-                  if (tab.key === "lab") {
-                    // Lab tab - placeholder, could navigate
-                  }
                   setActiveModule(tab.key);
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-bold relative transition-all"
@@ -923,10 +937,16 @@ export default function DailyOperationsPage() {
                 }}>
                 <TabIcon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
-                {tab.key === "arrivals" && items.length > 0 && (
+                {tab.key === "appointments" && items.length > 0 && (
                   <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
                     style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
                     {items.length}
+                  </span>
+                )}
+                {tab.key === "queue" && tabCounts.queue > 0 && (
+                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                    style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
+                    {tabCounts.queue}
                   </span>
                 )}
                 {tab.key === "checkout" && tabCounts.payments > 0 && (
@@ -945,19 +965,20 @@ export default function DailyOperationsPage() {
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            MAIN CONTENT AREA (flex-1) — Switches by activeModule
+            MAIN CONTENT AREA (flex-1) — Unified Layout
             ═══════════════════════════════════════════════════════════════════ */}
         <div className="flex-1 flex overflow-hidden">
 
-          {/* ═══ Module: وصول اليوم (default) ═══ */}
-          {activeModule === "arrivals" && (
-            <>
-              {/* ── Left: Tab Pills + Data Grid ── */}
+          {/* ── Left Area: Active Tab View (75%) ── */}
+          <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+
+            {/* Tab: وصول اليوم (appointments) */}
+            {activeModule === "appointments" && (
               <div className="flex-1 flex flex-col min-w-0">
                 {/* Tab Pills */}
                 <div className="flex-shrink-0 bg-white px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
                   style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  {TABS.map(tab => {
+                  {TABS.filter(t => t.key !== "payments" && t.key !== "queue").map(tab => {
                     const count = tabCounts[tab.key];
                     const isActive = activeTab === tab.key;
                     const TabIcon = TAB_ICONS[tab.key];
@@ -978,12 +999,6 @@ export default function DailyOperationsPage() {
                               color: isActive ? "#fff" : tab.color,
                             }}>
                             {count}
-                          </span>
-                        )}
-                        {tab.key === "queue" && queueWaitTime && queueWaitTime.estimatedMinutes > 0 && (
-                          <span className="text-[9px] font-bold px-1 py-0.5 rounded"
-                            style={{ background: "rgba(255,255,255,0.2)", color: isActive ? "#fff" : ORANGE }}>
-                            ~{queueWaitTime.estimatedMinutes}د
                           </span>
                         )}
                       </button>
@@ -1018,34 +1033,6 @@ export default function DailyOperationsPage() {
                   )}
                 </div>
 
-                {/* ReadyForCheckout Banner — Prominent for Reception */}
-                {canProcessCheckout && tabCounts.payments > 0 && (
-                  <div className="flex-shrink-0 mx-3 mt-2 mb-1 p-2.5 rounded-xl flex items-center gap-3"
-                    style={{
-                      background: "linear-gradient(135deg, #fff7ed, #fef3c7)",
-                      border: "1.5px solid #f5922e40",
-                      boxShadow: "0 2px 8px rgba(245,146,46,0.1)",
-                    }}>
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: ORANGE + "20" }}>
-                      <CreditCard className="w-4 h-4" style={{ color: ORANGE }} />
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-xs font-extrabold" style={{ color: NAVY }}>
-                        جاهزون للدفع من الطبيب
-                      </div>
-                      <div className="text-[10px] font-medium" style={{ color: "#92400e" }}>
-                        {tabCounts.payments} مريض بحاجة لتحصيل وخروج
-                      </div>
-                    </div>
-                    <button onClick={() => setActiveTab("payments")}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex items-center gap-1.5"
-                      style={{ background: ORANGE }}>
-                      <CreditCard className="w-3.5 h-3.5" />
-                      عرض الكل
-                    </button>
-                  </div>
-                )}
-
                 {/* Data Grid Area */}
                 <div className="flex-1 overflow-auto bg-white">
                   <AppointmentsTable
@@ -1075,141 +1062,133 @@ export default function DailyOperationsPage() {
                   />
                 </div>
               </div>
+            )}
 
-              {/* ── Right: Patient Detail Panel (380px) ── */}
-              {sidePanelOpen && sidePanelItem && (
-                <>
-                  {/* Desktop: inline panel */}
-                  <div className="hidden lg:flex w-[380px] flex-shrink-0 flex-col bg-white animate-panel-slide overflow-hidden"
-                    style={{ borderRight: "1px solid #e5e7eb" }}>
-                    <PatientDetailPanel
-                      item={sidePanelItem}
-                      summary={selectedSummary ?? null}
-                      waitTime={queueWaitTime}
-                      onClose={() => setSidePanelOpen(false)}
-                      onQuickPayment={handleQuickPayment}
-                      onBookAppointment={handleBookAppointment}
-                      onWhatsApp={handleWhatsApp}
-                      onViewPatient={handleViewPatient}
-                      medicalAlerts={panelMedicalAlerts}
-                      finance={panelFinance}
-                      activeContract={panelActiveContract}
-                      activeOrtho={panelActiveOrtho}
-                    />
-                  </div>
+            {/* Tab: قائمة الانتظار (queue) */}
+            {activeModule === "queue" && (
+              <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+                <ClinicQueueView searchQuery={searchQuery} onContextMenu={handleItemContextMenu} onOpenSidePanel={handleOpenSidePanel} />
+              </div>
+            )}
 
-                  {/* Mobile: full-screen overlay */}
-                  <div className="lg:hidden fixed inset-0 z-50 flex">
-                    <div className="flex-1 bg-black/30" onClick={() => setSidePanelOpen(false)} />
-                    <div className="w-full max-w-md bg-white overflow-y-auto animate-slide-in-right">
-                      <PatientDetailPanel
-                        item={sidePanelItem}
-                        summary={selectedSummary ?? null}
-                        waitTime={queueWaitTime}
-                        onClose={() => setSidePanelOpen(false)}
-                        onQuickPayment={handleQuickPayment}
-                        onBookAppointment={handleBookAppointment}
-                        onWhatsApp={handleWhatsApp}
-                        onViewPatient={handleViewPatient}
-                        medicalAlerts={panelMedicalAlerts}
-                        finance={panelFinance}
-                        activeContract={panelActiveContract}
-                        activeOrtho={panelActiveOrtho}
-                      />
+            {/* Tab: الغرف والعيادات (rooms) */}
+            {activeModule === "rooms" && (
+              <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+                <RoomsView />
+              </div>
+            )}
+
+            {/* Tab: جاهز للمحاسبة (checkout) */}
+            {activeModule === "checkout" && (
+              <div className="flex-1 flex flex-col min-w-0">
+                {/* Heading banner for checkout list */}
+                <div className="bg-white p-3 border-b flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-emerald-500" />
+                    <div>
+                      <h3 className="text-xs font-bold" style={{ color: NAVY }}>المرضى الجاهزون للمحاسبة والتحصيل</h3>
+                      <p className="text-[10px] text-gray-400 font-medium">قائمة الحالات التي تم تسليمها من الأطباء بانتظار سداد الفاتورة والخروج</p>
                     </div>
                   </div>
-                </>
-              )}
+                  {tabCounts.payments > 0 && (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200">
+                      {tabCounts.payments} حالات معلقة
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-auto bg-white">
+                  <AppointmentsTable
+                    items={items.filter(i => i.checkoutStatus === "ReadyForCheckout" || i.nextAction === "Checkout" || i.appointmentStatus === "Completed")}
+                    loading={itemsLoading}
+                    isDoctor={isDoctor}
+                    canProcessCheckout={canProcessCheckout}
+                    isReception={userRole === "Reception"}
+                    isAccountant={userRole === "Accountant"}
+                    queueWaitTime={queueWaitTime}
+                    onIntake={handleIntake}
+                    onSendToQueue={handleSendToQueue}
+                    onCallPatient={handleCallPatient}
+                    onEnterRoom={handleEnterRoom}
+                    onQuickPayment={handleQuickPayment}
+                    onCreateDraftInvoice={handleCreateDraftInvoice}
+                    createDraftInvoicePending={createDraftInvoiceMutation.isPending}
+                    onBookAppointment={handleBookAppointment}
+                    onWhatsApp={handleWhatsApp}
+                    onNoShow={handleNoShow}
+                    onCancel={handleCancel}
+                    onViewPatient={handleViewPatient}
+                    onCompleteVisit={handleCompleteVisit}
+                    onOpenSidePanel={handleOpenSidePanel}
+                    selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
+                    onContextMenu={handleItemContextMenu}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Tab: طلبات الحجز (booking) */}
+            {activeModule === "booking" && (
+              <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
+                <BookingRequestsView searchQuery={searchQuery} />
+              </div>
+            )}
+
+            {/* Tab: المعمل (lab) */}
+            {activeModule === "lab" && (
+              <LabView />
+            )}
+
+            {/* Tab: تقرير اليوم (report) */}
+            {activeModule === "report" && (
+              <ReportView />
+            )}
+
+          </div>
+
+          {/* Sticky Right Patient Detail Panel (25%) */}
+          {sidePanelOpen && sidePanelItem && (
+            <>
+              {/* Desktop: inline panel */}
+              <div className="hidden lg:flex w-[380px] flex-shrink-0 flex-col bg-white animate-panel-slide overflow-hidden"
+                style={{ borderRight: "1px solid #e5e7eb" }}>
+                <PatientDetailPanel
+                  item={sidePanelItem}
+                  summary={selectedSummary ?? null}
+                  waitTime={queueWaitTime}
+                  onClose={() => setSidePanelOpen(false)}
+                  onQuickPayment={handleQuickPayment}
+                  onBookAppointment={handleBookAppointment}
+                  onWhatsApp={handleWhatsApp}
+                  onViewPatient={handleViewPatient}
+                  medicalAlerts={panelMedicalAlerts}
+                  finance={panelFinance}
+                  activeContract={panelActiveContract}
+                  activeOrtho={panelActiveOrtho}
+                />
+              </div>
+
+              {/* Mobile: full-screen overlay */}
+              <div className="lg:hidden fixed inset-0 z-50 flex">
+                <div className="flex-1 bg-black/30" onClick={() => setSidePanelOpen(false)} />
+                <div className="w-full max-w-md bg-white overflow-y-auto animate-slide-in-right">
+                  <PatientDetailPanel
+                    item={sidePanelItem}
+                    summary={selectedSummary ?? null}
+                    waitTime={queueWaitTime}
+                    onClose={() => setSidePanelOpen(false)}
+                    onQuickPayment={handleQuickPayment}
+                    onBookAppointment={handleBookAppointment}
+                    onWhatsApp={handleWhatsApp}
+                    onViewPatient={handleViewPatient}
+                    medicalAlerts={panelMedicalAlerts}
+                    finance={panelFinance}
+                    activeContract={panelActiveContract}
+                    activeOrtho={panelActiveOrtho}
+                  />
+                </div>
+              </div>
             </>
-          )}
-
-          {/* ═══ Module: طلبات الحجز / الحجوزات ═══ */}
-          {activeModule === "bookings" && (
-            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-              <BookingRequestsView searchQuery={searchQuery} />
-            </div>
-          )}
-
-          {/* ═══ Module: المواعيد (legacy - not in new tabs but kept for backwards compat) ═══ */}
-          {activeModule === "appointments" && (
-            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-              <AppointmentsView />
-            </div>
-          )}
-
-          {/* ═══ Module: الانتظار ═══ */}
-          {activeModule === "queue" && (
-            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-              <ClinicQueueView searchQuery={searchQuery} onContextMenu={handleItemContextMenu} />
-            </div>
-          )}
-
-          {/* ═══ Module: الغرف ═══ */}
-          {activeModule === "rooms" && (
-            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc]">
-              <RoomsView />
-            </div>
-          )}
-
-          {/* ═══ Module: جاهز للمحاسبة ═══ */}
-          {activeModule === "checkout" && (
-            <div className="flex-1 flex flex-col min-w-0">
-              <FinanceView onContextMenu={handleItemContextMenu} />
-            </div>
-          )}
-
-          {/* ═══ Module: المعمل (Lab placeholder) ═══ */}
-          {activeModule === "lab" && (
-            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] items-center justify-center">
-              <div className="text-center" style={{ color: "#94a3b8" }}>
-                <Activity className="w-16 h-16 mx-auto mb-3 opacity-20" />
-                <p className="text-sm font-bold">قسم المعمل</p>
-                <p className="text-xs mt-1">إدارة أعمال المعمل المخبرطية و حالتها</p>
-              </div>
-            </div>
-          )}
-
-          {/* ═══ Module: تقرير اليوم (Report) ═══ */}
-          {activeModule === "report" && (
-            <div className="flex-1 flex flex-col min-w-0 bg-[#f8fafc] p-6 overflow-auto">
-              <h2 className="text-lg font-extrabold mb-4" style={{ color: NAVY }}>تقرير التشغيل اليومي</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
-                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>إجمالي المواعيد</div>
-                  <div className="text-2xl font-extrabold mt-1" style={{ color: BLUE }}>{dayStats.totalAppointments}</div>
-                </div>
-                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
-                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>في الانتظار</div>
-                  <div className="text-2xl font-extrabold mt-1" style={{ color: ORANGE }}>{dayStats.waiting}</div>
-                </div>
-                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
-                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>بداخل الغرف</div>
-                  <div className="text-2xl font-extrabold mt-1" style={{ color: "#9333ea" }}>{dayStats.inClinic}</div>
-                </div>
-                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
-                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>مكتمل</div>
-                  <div className="text-2xl font-extrabold mt-1" style={{ color: "#16a34a" }}>{dayStats.completed}</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="p-4 rounded-xl border" style={{ background: "#fff7ed", borderColor: "#fde8d0" }}>
-                  <div className="text-[11px] font-medium" style={{ color: ORANGE }}>تحصيل اليوم</div>
-                  <div className="text-xl font-extrabold mt-1" style={{ color: NAVY }}>{fmtRial(dayStats.todayPayments)}</div>
-                </div>
-                <div className="p-4 rounded-xl border" style={{ background: dayStats.noShow > 0 ? "#fef2f2" : "#fff", borderColor: dayStats.noShow > 0 ? "#fecaca" : "#e5e7eb" }}>
-                  <div className="text-[11px] font-medium" style={{ color: "#ef4444" }}>لم يحضر</div>
-                  <div className="text-xl font-extrabold mt-1" style={{ color: "#ef4444" }}>{dayStats.noShow}</div>
-                </div>
-                <div className="p-4 rounded-xl border" style={{ background: "#fff", borderColor: "#e5e7eb" }}>
-                  <div className="text-[11px] font-medium" style={{ color: "#64748b" }}>نسبة عدم الحضور</div>
-                  <div className="text-xl font-extrabold mt-1" style={{ color: NAVY }}>{dayStats.noShowRate}%</div>
-                </div>
-                <div className="p-4 rounded-xl border" style={{ background: dayStats.overdueAppointments > 0 ? "#fef2f2" : "#fff", borderColor: dayStats.overdueAppointments > 0 ? "#fecaca" : "#e5e7eb" }}>
-                  <div className="text-[11px] font-medium" style={{ color: "#ef4444" }}>متأخرات</div>
-                  <div className="text-xl font-extrabold mt-1" style={{ color: NAVY }}>{dayStats.overdueAppointments}</div>
-                </div>
-              </div>
-            </div>
           )}
         </div>
 
@@ -1343,6 +1322,14 @@ export default function DailyOperationsPage() {
         branches={branches}
         isPending={walkInMutation.isPending}
         onConfirm={handleWalkInConfirm}
+      />
+
+      <OverrideDialog
+        open={overrideOpen}
+        onClose={() => setOverrideOpen(false)}
+        patientName={pendingOverrideAction?.item?.patientName ?? ""}
+        overdueAmount={pendingOverrideAction?.overdueAmount ?? 0}
+        onConfirm={handleOverrideConfirm}
       />
 
       {undoAction && (

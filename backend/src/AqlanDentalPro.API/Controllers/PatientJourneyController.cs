@@ -163,6 +163,7 @@ public class PatientJourneyController(
                 CheckoutStatus = checkoutStatus,
                 AmountDueReference = visit?.AmountDueReference,
                 TreatmentDone = visit?.TreatmentDone,
+                ProposedProcedure = visit?.ProposedProcedure,
                 ChiefComplaint = visit?.ChiefComplaint,
                 InRoomSince = inRoomSince,
                 NextAction = nextAction
@@ -781,7 +782,7 @@ public class PatientJourneyController(
 
         // Must be Arrived or Waiting status
         if (appointment.Status != AppointmentStatus.Arrived && appointment.Status != AppointmentStatus.Waiting)
-            return BadRequest(new { message = "يجب أن يكون المريض وصل أو في الانتظار قبل إضافته للطابور" });
+            return BadRequest(new { message = "يجب أن يكون المريض وصل أو في الانتظار قبل إضافته لقائمة الانتظار" });
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
@@ -793,7 +794,7 @@ public class PatientJourneyController(
                 && q.IsActive);
 
         if (existingQueueItem)
-            return Conflict(new { message = "المريض موجود بالفعل في الطابور" });
+            return Conflict(new { message = "المريض موجود بالفعل في قائمة الانتظار" });
 
         // Determine room name
         string? roomName = appointment.RoomName;
@@ -837,7 +838,7 @@ public class PatientJourneyController(
             queueItem.Id,
             QueueStatus = queueItem.Status.ToString(),
             StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(queueItem.Status),
-            message = "تمت إضافة المريض إلى الطابور بنجاح"
+            message = "تمت إضافة المريض إلى قائمة الانتظار بنجاح"
         });
     }
 
@@ -866,7 +867,7 @@ public class PatientJourneyController(
                 && q.Status != ClinicQueueStatus.Cancelled);
 
         if (queueItem == null)
-            return BadRequest(new { message = "لا يوجد عنصر طابور نشط لهذا الموعد" });
+            return BadRequest(new { message = "لا يوجد عنصر انتظار نشط لهذا الموعد" });
 
         // Validate queue transition to InProgress
         var validationError = ClinicQueueStatusTransitions.GetValidationError(queueItem.Status, ClinicQueueStatus.InProgress);
@@ -978,6 +979,8 @@ public class PatientJourneyController(
             visit.NextVisitDate = req.FollowUpDate;
         if (req.AmountDue.HasValue)
             visit.AmountDueReference = req.AmountDue;
+        if (!string.IsNullOrWhiteSpace(req.ProposedProcedure))
+            visit.ProposedProcedure = req.ProposedProcedure;
 
         // Mark as ready for checkout
         visit.CheckoutStatus = "ReadyForCheckout";
@@ -1007,6 +1010,7 @@ public class PatientJourneyController(
             CheckoutStatus = visit.CheckoutStatus,
             ReadyForCheckoutAt = visit.ReadyForCheckoutAt,
             AmountDueReference = visit.AmountDueReference,
+            ProposedProcedure = visit.ProposedProcedure,
             message = "تم تسليم المريض للاستقبال بنجاح"
         });
     }
@@ -1329,6 +1333,7 @@ public class HandoffRequest
     public DateOnly? FollowUpDate { get; set; }
     public decimal? AmountDue { get; set; }
     public string? Notes { get; set; }
+    public string? ProposedProcedure { get; set; }
 }
 
 public class CheckoutRequest

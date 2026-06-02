@@ -397,7 +397,7 @@ public class ClinicQueueStatusTransitionTests
     {
         var error = ClinicQueueStatusTransitions.GetValidationError(ClinicQueueStatus.Waiting, ClinicQueueStatus.InProgress);
         error.Should().NotBeNull();
-        error.Should().Contain("لا يمكن تغيير حالة الطابور");
+        error.Should().Contain("لا يمكن تغيير حالة الانتظار");
         error.Should().Contain("في الانتظار");
         error.Should().Contain("قيد المعالجة");
     }
@@ -407,7 +407,7 @@ public class ClinicQueueStatusTransitionTests
     {
         var error = ClinicQueueStatusTransitions.GetValidationError(ClinicQueueStatus.Completed, ClinicQueueStatus.Cancelled);
         error.Should().NotBeNull();
-        error.Should().Contain("لا يمكن تغيير حالة الطابور");
+        error.Should().Contain("لا يمكن تغيير حالة الانتظار");
         error.Should().Contain("مكتمل");
         error.Should().Contain("ملغي");
     }

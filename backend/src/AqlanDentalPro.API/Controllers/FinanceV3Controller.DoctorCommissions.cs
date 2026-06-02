@@ -20,6 +20,22 @@ public partial class FinanceV3Controller
         [FromQuery] string? from,
         [FromQuery] string? to)
     {
+        // Blocker: Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        // Verify requested doctor belongs to the branch for non-admins
+        if (doctorId.HasValue && branchId.HasValue)
+        {
+            var doctorExistsInBranch = await db.Doctors.AnyAsync(d => d.Id == doctorId.Value && d.BranchId == branchId.Value);
+            if (!doctorExistsInBranch)
+            {
+                return Forbid("ليس لديك صلاحية الوصول إلى بيانات طبيب من فرع آخر");
+            }
+        }
+
         // 1. Safe parsing of the date range
         DateOnly fromDate;
         DateOnly toDate;
@@ -55,6 +71,11 @@ public partial class FinanceV3Controller
                      && i.Invoice.CreatedAt >= startDateTime 
                      && i.Invoice.CreatedAt <= endDateTime);
 
+        if (branchId.HasValue)
+        {
+            itemsQuery = itemsQuery.Where(i => i.Invoice.Patient.BranchId == branchId.Value);
+        }
+
         if (doctorId.HasValue)
         {
             itemsQuery = itemsQuery.Where(i => i.DoctorId == doctorId.Value);
@@ -74,6 +95,11 @@ public partial class FinanceV3Controller
             .Where(p => p.IsActive 
                      && p.PaymentDate >= fromDate 
                      && p.PaymentDate <= toDate);
+
+        if (branchId.HasValue)
+        {
+            paymentsQuery = paymentsQuery.Where(p => p.Doctor.BranchId == branchId.Value);
+        }
 
         if (doctorId.HasValue)
         {
@@ -101,16 +127,19 @@ public partial class FinanceV3Controller
             doctorIds.Add(doctorId.Value);
         }
 
-        var doctorsMap = await db.Doctors
-            .Where(d => doctorIds.Contains(d.Id))
-            .ToDictionaryAsync(d => d.Id, d => d);
+        var doctorsMapQuery = db.Doctors.Where(d => doctorIds.Contains(d.Id));
+        if (branchId.HasValue)
+        {
+            doctorsMapQuery = doctorsMapQuery.Where(d => d.BranchId == branchId.Value);
+        }
+        var doctorsMap = await doctorsMapQuery.ToDictionaryAsync(d => d.Id, d => d);
 
         // 5. Build DTOs
         var resultList = new List<DoctorCommissionSummaryDto>();
         foreach (var docId in doctorIds)
         {
             var doctor = doctorsMap.GetValueOrDefault(docId);
-            if (doctor == null) continue; // Skip if doctor doesn't exist in DB
+            if (doctor == null) continue; // Skip if doctor doesn't exist in DB or branch
 
             var docItems = items.Where(i => i.DoctorId == docId).ToList();
             var docPayments = payments.Where(p => p.DoctorId == docId).ToList();

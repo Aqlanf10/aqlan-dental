@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Activity, CheckCircle2, Clock, Calendar, Check, Send, AlertTriangle, FileSpreadsheet } from "lucide-react";
-import { NAVY, BLUE, ORANGE, fmtRial, fmtDate } from "../_lib/constants";
+import { Search, Activity, CheckCircle2, Clock, Check, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { NAVY, fmtRial, fmtDate } from "../_lib/constants";
 import { toast } from "@/stores/toastStore";
 
 interface LabCase {

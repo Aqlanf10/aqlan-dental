@@ -116,8 +116,12 @@ export function CreateContractModal({
       toast.success("تم إنشاء العقد بنجاح");
       onSuccess();
       onClose();
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || "حدث خطأ أثناء حفظ العقد";
+    } catch (err: unknown) {
+      let msg = "حدث خطأ أثناء حفظ العقد";
+      if (err && typeof err === "object" && "response" in err) {
+        const resp = (err as { response?: { data?: { message?: string } } }).response;
+        if (resp?.data?.message) msg = resp.data.message;
+      }
       setError(msg);
     } finally {
       setSaving(false);
@@ -320,8 +324,8 @@ export function ContractsTab({ patientId, patientName }: ContractsTabProps) {
       } else {
         // Fetch patient fallback to display name correctly
         api.get(`/api/patients/${patientId}`)
-          .then((res: any) => {
-            const p = res.data;
+          .then((res) => {
+            const p = res.data as { firstName: string; lastName: string; patientNumber: string };
             setInitialPatientName(`${p.firstName} ${p.lastName} (${p.patientNumber})`);
           })
           .catch(() => {

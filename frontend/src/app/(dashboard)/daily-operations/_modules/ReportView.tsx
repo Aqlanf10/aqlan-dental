@@ -5,10 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import {
-  Wallet, CreditCard, Landmark, Calculator, AlertTriangle, CheckCircle,
-  Loader2, RefreshCw, Sparkles, TrendingUp, DollarSign
+  Wallet, CreditCard, Landmark, AlertTriangle, CheckCircle,
+  Loader2, RefreshCw, Sparkles, TrendingUp
 } from "lucide-react";
-import { NAVY, BLUE, ORANGE, fmtRial, fmtDate } from "../_lib/constants";
+import { NAVY, BLUE, fmtRial } from "../_lib/constants";
 import { CashierSession } from "../_lib/hooks";
 
 interface DoctorCommissionStats {
@@ -26,7 +26,7 @@ export default function ReportView() {
   const queryClient = useQueryClient();
 
   // 1. Fetch Active Cashier Session Details
-  const { data: session, isLoading: sessionLoading, refetch: refetchSession } = useQuery<CashierSession | null>({
+  const { data: session, refetch: refetchSession } = useQuery<CashierSession | null>({
     queryKey: ["daily-ops", "active-cashier-session-reconcile"],
     queryFn: async () => {
       try {

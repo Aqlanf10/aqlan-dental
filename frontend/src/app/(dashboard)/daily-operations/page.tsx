@@ -8,7 +8,7 @@ import {
   Globe,
   Wallet, UserPlus, Keyboard, Bell, BellOff,
   Printer, Activity, Megaphone, Building2,
-  X, Phone, MessageCircle, Monitor,
+  X, Phone, MessageCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
@@ -78,9 +78,7 @@ import {
 // ── Embedded module views ──
 import BookingRequestsView from "./_modules/BookingRequestsView";
 import ClinicQueueView from "./_modules/ClinicQueueView";
-import AppointmentsView from "./_modules/AppointmentsView";
 import RoomsView from "./_modules/RoomsView";
-import FinanceView from "./_modules/FinanceView";
 import LabView from "./_modules/LabView";
 import ReportView from "./_modules/ReportView";
 
@@ -369,7 +367,7 @@ export default function DailyOperationsPage() {
           { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: () => toast.error("فشل إضافة المريض للانتظار") }
         );
       }
-    } catch (error) {
+    } catch {
       toast.error("فشل إتمام العملية");
     }
   }, [intakeMutation, sendToQueueMutation]);

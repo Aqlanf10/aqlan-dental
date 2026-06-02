@@ -161,6 +161,8 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        try
+        {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -198,6 +200,12 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
             .ToListAsync();
 
         return Ok(new { data = orders, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll purchase orders failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     // ─── 2. GET /api/purchase-orders/{id} — Get PO with line items ──────

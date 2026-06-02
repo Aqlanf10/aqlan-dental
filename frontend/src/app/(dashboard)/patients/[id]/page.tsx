@@ -20,6 +20,7 @@ import api from "@/lib/api";
 import { cn, GENDER_LABELS, formatArabicDate, formatPhoneForWhatsApp } from "@/lib/utils";
 import { isClinicalRole, isAccountantRole, canViewPatientFinance } from "@/lib/roles";
 import { financeV3ContractsUrl } from "@/lib/financeRoutes";
+import { isGuid } from "@/lib/patientRouting";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -249,6 +250,28 @@ export default function PatientProfilePage() {
     action();
     setTimeout(() => setRibbonActiveAction(null), 600);
   };
+
+  // ─── Patient Number Resolution ────────────────────────────────────────
+  // If the URL param is a patient number (e.g., GM-2026-025) instead of a GUID,
+  // resolve it to the patient's GUID and redirect.
+  useEffect(() => {
+    const patientId = id as string;
+    if (patientId && !isGuid(patientId)) {
+      api.get(`/api/patients/by-number/${encodeURIComponent(patientId)}`)
+        .then(({ data }) => {
+          if (data?.id) {
+            router.replace(`/patients/${data.id}`);
+          } else {
+            setError(`لا يوجد مريض برقم الملف ${patientId}`);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          setError(`لا يوجد مريض برقم الملف ${patientId}`);
+          setLoading(false);
+        });
+    }
+  }, [id, router]);
 
   // ─── Data Fetching ──────────────────────────────────────────────────────
 

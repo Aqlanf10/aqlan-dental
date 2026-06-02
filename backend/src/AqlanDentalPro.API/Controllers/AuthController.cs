@@ -102,23 +102,44 @@ public class AuthController(
         if (string.IsNullOrEmpty(refreshToken))
             return Unauthorized(new { message = "لا يوجد refresh token" });
 
-        // The access token may be expired here, so we cannot rely on JWT claims.
-        // Look up the owner directly from the refresh token stored in Redis.
-        var userId = currentUser.UserId
-            ?? await tokenService.GetOwnerOfRefreshTokenAsync(refreshToken);
-
-        if (userId is null)
-            return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
-
-        var result = await authService.RefreshAsync(userId.Value, refreshToken);
-        if (result == null)
+        try
         {
+            // The access token may be expired here, so we cannot rely on JWT claims.
+            // Look up the owner directly from the refresh token stored in Redis.
+            var userId = currentUser.UserId
+                ?? await tokenService.GetOwnerOfRefreshTokenAsync(refreshToken);
+
+            if (userId is null)
+                return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
+
+            var result = await authService.RefreshAsync(userId.Value, refreshToken);
+            if (result == null)
+            {
+                Response.Cookies.Delete(RefreshTokenCookie);
+                return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
+            }
+
+            SetRefreshTokenCookie(result.Value.refreshToken);
+            return Ok(new { accessToken = result.Value.accessToken });
+        }
+        catch (Exception ex)
+        {
+            // Sprint 1 Fix: Log refresh failure safely WITHOUT printing tokens
+            // The user is logged out only if refresh genuinely fails (expired/invalid token),
+            // not due to transient server errors (Redis timeout, etc.)
+            Console.WriteLine($"[Auth] RefreshToken failed: {ex.GetType().Name}");
+            
+            // For transient errors (Redis timeout, network issues), return 500 instead of 401
+            // so the frontend can retry instead of force-logging-out the user
+            if (ex is InvalidOperationException or TimeoutException or System.Net.Sockets.SocketException)
+            {
+                return StatusCode(500, new { message = "حدث خطأ مؤقت أثناء تجديد الجلسة، يرجى المحاولة مرة أخرى" });
+            }
+            
+            // For auth errors (invalid/expired token), clear cookie and return 401
             Response.Cookies.Delete(RefreshTokenCookie);
             return Unauthorized(new { message = "انتهت صلاحية الجلسة، يرجى تسجيل الدخول مجدداً" });
         }
-
-        SetRefreshTokenCookie(result.Value.refreshToken);
-        return Ok(new { accessToken = result.Value.accessToken });
     }
 
     [HttpGet("me")]

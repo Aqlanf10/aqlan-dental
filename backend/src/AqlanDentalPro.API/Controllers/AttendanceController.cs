@@ -4,6 +4,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -30,7 +31,7 @@ public sealed class CheckOutRequest
 [ApiController]
 [Route("api/attendance")]
 [Authorize]
-public class AttendanceController(AppDbContext db) : ControllerBase
+public class AttendanceController(AppDbContext db, ILogger<AttendanceController> logger) : ControllerBase
 {
     /// <summary>
     /// Get attendance records with filters
@@ -46,6 +47,8 @@ public class AttendanceController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 31)
     {
+        try
+        {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 31;
 
@@ -93,6 +96,12 @@ public class AttendanceController(AppDbContext db) : ControllerBase
             .ToListAsync();
 
         return Ok(new { data = records, total, page, pageSize, totalPages = (int)Math.Ceiling(total / (double)pageSize) });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll attendance failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     /// <summary>

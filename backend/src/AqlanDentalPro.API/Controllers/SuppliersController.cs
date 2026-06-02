@@ -89,7 +89,7 @@ public sealed class UpdateSupplierRequestValidator : AbstractValidator<UpdateSup
 [ApiController]
 [Route("api/suppliers")]
 [Authorize(Policy = "AdminOnly")]
-public class SuppliersController(AppDbContext db) : ControllerBase
+public class SuppliersController(AppDbContext db, ILogger<SuppliersController> logger) : ControllerBase
 {
     // ─── 1. GET /api/suppliers — List all suppliers ──────────────────────
     /// <summary>Returns paginated list of suppliers with optional search.</summary>
@@ -99,6 +99,8 @@ public class SuppliersController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 30)
     {
+        try
+        {
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Suppliers.AsQueryable();
 
@@ -127,6 +129,12 @@ public class SuppliersController(AppDbContext db) : ControllerBase
             .ToListAsync();
 
         return Ok(new { data = suppliers, total, page, pageSize });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll suppliers failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     // ─── 2. GET /api/suppliers/{id} — Get supplier by ID ────────────────

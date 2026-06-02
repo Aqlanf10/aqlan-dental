@@ -145,6 +145,47 @@ public class PatientsController(
         }
     }
 
+    // ── Resolve patient by number ──────────────────────────────────────────────
+    /// <summary>
+    /// Sprint 1 Fix: Resolve a patient GUID from their patient number (e.g. GM-2026-025).
+    /// Returns { id, patientNumber, fullName } so the frontend can navigate to the GUID route.
+    /// Returns 404 with Arabic message if the number doesn't exist.
+    /// </summary>
+    [HttpGet("by-number/{patientNumber}")]
+    public async Task<IActionResult> GetByPatientNumber(string patientNumber)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(patientNumber))
+                return BadRequest(new { message = "رقم الملف مطلوب" });
+
+            var patient = await db.Patients
+                .IgnoreQueryFilters()
+                .Where(p => p.PatientNumber == patientNumber && p.IsActive)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.PatientNumber,
+                    FullName = (p.FirstName + " " + (string.IsNullOrWhiteSpace(p.MiddleName) ? "" : p.MiddleName + " ") + p.LastName).Trim()
+                })
+                .FirstOrDefaultAsync();
+
+            if (patient == null)
+                return NotFound(new { message = $"لا يوجد مريض برقم الملف {patientNumber}" });
+
+            // Doctors must not access patients they aren't linked to
+            var denied = await DenyIfDoctorCannotAccess(patient.Id);
+            if (denied != null) return denied;
+
+            return Ok(patient);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "PatientsController.GetByPatientNumber failed for {PatientNumber}", patientNumber);
+            return StatusCode(500, new { message = "تعذر البحث عن المريض حالياً" });
+        }
+    }
+
     // ── Create ────────────────────────────────────────────────────────────────
 
     [HttpPost]

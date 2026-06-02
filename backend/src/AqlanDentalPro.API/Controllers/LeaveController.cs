@@ -4,6 +4,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -25,7 +26,7 @@ public sealed class ApproveLeaveRequest
 [ApiController]
 [Route("api/leaves")]
 [Authorize]
-public class LeaveController(AppDbContext db) : ControllerBase
+public class LeaveController(AppDbContext db, ILogger<LeaveController> logger) : ControllerBase
 {
     /// <summary>
     /// Get leave requests with filters
@@ -39,6 +40,8 @@ public class LeaveController(AppDbContext db) : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        try
+        {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -82,6 +85,12 @@ public class LeaveController(AppDbContext db) : ControllerBase
             .ToListAsync();
 
         return Ok(new { data = records, total, page, pageSize, totalPages = (int)Math.Ceiling(total / (double)pageSize) });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll leaves failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     /// <summary>

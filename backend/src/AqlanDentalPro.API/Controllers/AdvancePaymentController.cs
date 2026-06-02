@@ -5,6 +5,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -26,7 +27,7 @@ public sealed class ApproveAdvanceRequest
 [ApiController]
 [Route("api/advances")]
 [Authorize(Policy = "ReportsAccess")]
-public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution) : ControllerBase
+public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, ILogger<AdvancePaymentController> logger) : ControllerBase
 {
     /// <summary>
     /// Get advance payment records with filters
@@ -39,6 +40,8 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        try
+        {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -80,6 +83,12 @@ public class AdvancePaymentController(AppDbContext db, IAuditService audit, IJou
             .ToListAsync();
 
         return Ok(new { data = records, total, page, pageSize, totalPages = (int)Math.Ceiling(total / (double)pageSize) });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll advances failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     /// <summary>

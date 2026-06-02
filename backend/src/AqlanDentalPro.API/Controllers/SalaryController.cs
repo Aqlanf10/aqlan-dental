@@ -5,6 +5,7 @@ using AqlanDentalPro.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -29,7 +30,7 @@ public sealed class PaySalaryRequest
 [ApiController]
 [Route("api/salaries")]
 [Authorize(Policy = "ReportsAccess")]
-public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, IAuditService audit) : ControllerBase
+public class SalaryController(AppDbContext db, IJournalEntryService journalEntryService, ITreasuryResolutionService treasuryResolution, IAuditService audit, ILogger<SalaryController> logger) : ControllerBase
 {
     /// <summary>
     /// Get salary records with filters
@@ -44,6 +45,8 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        try
+        {
         if (page < 1) page = 1;
         if (pageSize < 1 || pageSize > 100) pageSize = 20;
 
@@ -94,6 +97,12 @@ public class SalaryController(AppDbContext db, IJournalEntryService journalEntry
             .ToListAsync();
 
         return Ok(new { data = records, total, page, pageSize, totalPages = (int)Math.Ceiling(total / (double)pageSize) });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetAll salaries failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     /// <summary>

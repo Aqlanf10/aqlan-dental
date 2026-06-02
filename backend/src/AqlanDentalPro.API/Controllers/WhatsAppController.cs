@@ -14,8 +14,16 @@ public class WhatsAppController(IWhatsAppService whatsappService, ILogger<WhatsA
     [Authorize(Policy = "AdminOnly")]
     public async Task<IActionResult> GetDashboard()
     {
-        var dashboard = await whatsappService.GetDashboardAsync();
-        return Ok(dashboard);
+        try
+        {
+            var dashboard = await whatsappService.GetDashboardAsync();
+            return Ok(dashboard);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetDashboard failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+        }
     }
 
     [HttpPost("send")]

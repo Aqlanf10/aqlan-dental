@@ -16,6 +16,7 @@ import {
   Bell,
   CircleDot,
   BookOpen,
+  Banknote,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { api } from "@/lib/api";
@@ -32,6 +33,7 @@ import { ExpensesTab } from "./components/ExpensesTab";
 import { SuppliersTab } from "./components/SuppliersTab";
 import { AuditTab } from "./components/AuditTab";
 import { JournalTab } from "./components/JournalTab";
+import { CommissionsTab } from "./components/CommissionsTab";
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    Tab definition
@@ -53,6 +55,7 @@ const TABS: TabDef[] = [
   { key: "expenses",       label: "المصروفات",         icon: TrendingDown },
   { key: "suppliers",      label: "الموردون",          icon: Truck },
   { key: "journal",        label: "قيود اليومية",      icon: BookOpen },
+  { key: "commissions",    label: "عمولات الأطباء",     icon: Banknote },
   { key: "audit",          label: "سجل المراجعة",      icon: ClipboardCheck },
 ];
 
@@ -164,6 +167,7 @@ function FinanceV3PageInner() {
         {activeTab === "expenses" && <ExpensesTab />}
         {activeTab === "suppliers" && <SuppliersTab />}
         {activeTab === "journal" && <JournalTab />}
+        {activeTab === "commissions" && <CommissionsTab />}
         {activeTab === "audit" && <AuditTab />}
       </div>
     </div>

@@ -5,6 +5,8 @@ import { useAuthStore } from "@/stores/authStore";
 export const PERMISSION_KEYS = {
   // Daily Operations group
   DAILY_OPERATIONS_VIEW: "daily_operations.view",
+  DAILY_OPERATIONS_CREATE: "daily_operations.create", // check-in
+  DAILY_OPERATIONS_EDIT: "daily_operations.edit", // walk-in
 
   // Booking Requests
   BOOKING_REQUESTS_VIEW: "booking_requests.view",
@@ -19,9 +21,9 @@ export const PERMISSION_KEYS = {
 
   // Clinic Queue
   CLINIC_QUEUE_VIEW: "clinic_queue.view",
-  CLINIC_QUEUE_CREATE: "clinic_queue.create",
-  CLINIC_QUEUE_EDIT: "clinic_queue.edit",
-  CLINIC_QUEUE_APPROVE: "clinic_queue.approve",
+  CLINIC_QUEUE_CREATE: "clinic_queue.create", // call
+  CLINIC_QUEUE_EDIT: "clinic_queue.edit", // recall
+  CLINIC_QUEUE_APPROVE: "clinic_queue.approve", // priority change / emergency
 
   // Clinic Display
   CLINIC_DISPLAY_VIEW: "clinic_display.view",
@@ -32,26 +34,40 @@ export const PERMISSION_KEYS = {
 
   // Visits
   VISITS_VIEW: "visits.view",
-  VISITS_EDIT: "visits.edit",
+  VISITS_EDIT: "visits.edit", // close visit
 
   // Checkout
   CHECKOUT_VIEW: "checkout.view",
 
-  // Payments (reuse existing finance resource)
+  // Finance / Payments
   PAYMENTS_VIEW: "finance.view",
-  PAYMENTS_CREATE: "finance.create",
+  PAYMENTS_CREATE: "finance.create", // payment
+  PAYMENTS_EDIT: "finance.edit", // discount within limits
+  PAYMENTS_APPROVE: "finance.approve", // approve discount above limits
+  PAYMENTS_DELETE: "finance.delete", // write-off debt
+  PAYMENTS_EXPORT: "finance.export", // installments list export
 
   // Invoices
   INVOICES_VIEW: "invoices.view",
-  INVOICES_CREATE: "invoices.create",
+  INVOICES_CREATE: "invoices.create", // draft invoice
 
   // Rooms
   ROOMS_VIEW: "rooms.view",
-  ROOMS_EDIT: "rooms.edit",
+  ROOMS_CREATE: "rooms.create", // enter room
+  ROOMS_EDIT: "rooms.edit", // change room
 
   // Patients
   PATIENTS_VIEW: "patients.view",
   PATIENTS_CREATE: "patients.create",
+
+  // Settings
+  SETTINGS_VIEW: "settings.view",
+  SETTINGS_EDIT: "settings.edit", // permissions UI
+  SETTINGS_APPROVE: "settings.approve", // manager override
+
+  // Reports / Commissions
+  REPORTS_VIEW: "reports.view", // daily reports
+  REPORTS_CREATE: "reports.create", // commissions
 } as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[keyof typeof PERMISSION_KEYS];

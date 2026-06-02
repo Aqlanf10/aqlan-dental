@@ -37,7 +37,7 @@ public sealed class CreateContractRequestValidator : AbstractValidator<CreateCon
 public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaymentRequest>
 {
     private static readonly HashSet<string> ValidMethods =
-        ["cash", "bank_transfer", "card", "check", "other"];
+        ["cash", "bank_transfer", "card", "check", "other", "karimey", "jawaly", "transfer"];
 
     public CreatePaymentRequestValidator()
     {
@@ -60,7 +60,7 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
 public sealed class UpdatePaymentRequestValidator : AbstractValidator<UpdatePaymentRequest>
 {
     private static readonly HashSet<string> ValidMethods =
-        ["cash", "bank_transfer", "card", "check", "other"];
+        ["cash", "bank_transfer", "card", "check", "other", "karimey", "jawaly", "transfer"];
 
     public UpdatePaymentRequestValidator()
     {

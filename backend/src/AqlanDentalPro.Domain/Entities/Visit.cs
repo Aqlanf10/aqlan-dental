@@ -28,6 +28,8 @@ public class Visit : BaseEntity
     public DateTime? ReadyForCheckoutAt { get; set; }
     /// <summary>Reference amount due at checkout (not a finance calculation).</summary>
     public decimal? AmountDueReference { get; set; }
+    /// <summary>Suggested billing procedure from clinical diagnosis (without price).</summary>
+    public string? ProposedProcedure { get; set; }
 
     public Patient Patient { get; set; } = null!;
     public Appointment? Appointment { get; set; }

@@ -303,6 +303,7 @@ export function useHandoff() {
         followUpDate?: string;
         amountDue?: number;
         notes?: string;
+        proposedProcedure?: string;
       };
     }) => {
       const { data } = await api.post(`/api/patient-journey/${params.visitId}/handoff-to-reception`, params.body);
@@ -571,24 +572,26 @@ export function useCreateDraftInvoice() {
   });
 }
 
+export interface CashierSession {
+  id: string;
+  sessionNumber: string;
+  openedAt: string;
+  cashierName: string;
+  expectedClosingCash: number;
+  expectedClosingCard: number;
+  expectedClosingBank: number;
+  hasActiveSession?: boolean;
+}
+
 // ─── Active Cashier Session Check ──────────────────────────────────────────
 export function useActiveCashierSession() {
-  return useQuery<{ id: string; sessionNumber: string; status: string } | null>({
+  return useQuery<CashierSession | null>({
     queryKey: ["daily-ops", "active-cashier-session"],
     queryFn: async () => {
       try {
-        const { data } = await api.get<{
-          hasActiveSession?: boolean;
-          id?: string;
-          sessionNumber?: string;
-          status?: string;
-        }>("/api/cashier-sessions/active");
+        const { data } = await api.get<{ hasActiveSession: boolean; id?: string } & CashierSession>("/api/cashier-sessions/active");
         if (!data?.hasActiveSession || !data.id) return null;
-        return {
-          id: data.id,
-          sessionNumber: data.sessionNumber ?? "",
-          status: data.status ?? "Open",
-        };
+        return data;
       } catch {
         return null;
       }

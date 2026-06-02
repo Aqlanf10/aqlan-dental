@@ -365,7 +365,7 @@ public static class DbSeeder
             },
             ["finance"] = new()
             {
-                ["Admin"]     = (true, true, true, true, true, false),
+                ["Admin"]     = (true, true, true, true, true, true),
                 ["Reception"] = (true, true, false, false, false, false),
                 ["Accountant"]= (true, true, true, false, true,  false),
             },
@@ -380,7 +380,8 @@ public static class DbSeeder
             },
             ["settings"] = new()
             {
-                ["Admin"] = (true, false, true, false, false, false),
+                ["Admin"]         = (true, true, true, true, true, true),
+                ["BranchManager"] = (true, false, false, false, false, true),
             },
             ["ai"] = new()
             {
@@ -403,20 +404,19 @@ public static class DbSeeder
             },
             ["daily_operations"] = new()
             {
-                ["Admin"]          = (true, false, false, false, false, false),
-                ["Reception"]      = (true, false, false, false, false, false),
+                ["Admin"]          = (true, true, true, true, true, true),
+                ["Reception"]      = (true, true, true, false, false, false),
                 ["Orthodontist"]   = (true, false, false, false, false, false),
                 ["GeneralDentist"] = (true, false, false, false, false, false),
                 ["OralSurgeon"]    = (true, false, false, false, false, false),
                 ["Accountant"]     = (true, false, false, false, false, false),
                 ["Assistant"]      = (true, false, false, false, false, false),
-                ["BranchManager"]  = (true, false, false, false, false, false),
+                ["BranchManager"]  = (true, false, false, false, false, true),
             },
             ["booking_requests"] = new()
             {
                 ["Admin"]     = (true, true, true, false, false, false),
                 ["Reception"] = (true, true, true, false, false, false),
-                // Accountant: NO access — intentionally omitted
             },
             ["clinic_queue"] = new()
             {
@@ -466,27 +466,33 @@ public static class DbSeeder
             },
             ["rooms"] = new()
             {
-                ["Admin"] = (true, true, true, false, false, false),
+                ["Admin"]          = (true, true, true, false, false, false),
+                ["Reception"]      = (true, true, true, false, false, false),
+                ["Orthodontist"]   = (true, true, true, false, false, false),
+                ["GeneralDentist"] = (true, true, true, false, false, false),
+                ["OralSurgeon"]    = (true, true, true, false, false, false),
             },
         };
 
-        // Additive seeding: only insert (Role, Resource) combinations that don't already exist.
-        var existing = await context.RolePermissions
-            .Select(rp => new { rp.Role, rp.Resource })
-            .ToListAsync();
-
-        var existingSet = new HashSet<(string Role, string Resource)>(
-            existing.Select(e => (e.Role, e.Resource)));
-
-        var toAdd = new List<RolePermission>();
+        var existingPermissions = await context.RolePermissions
+            .ToDictionaryAsync(rp => (rp.Role, rp.Resource));
 
         foreach (var (resource, roles) in matrix)
         {
             foreach (var (role, (view, create, edit, delete, export, approve)) in roles)
             {
-                if (!existingSet.Contains((role, resource)))
+                if (existingPermissions.TryGetValue((role, resource), out var existing))
                 {
-                    toAdd.Add(new RolePermission
+                    existing.CanView = view;
+                    existing.CanCreate = create;
+                    existing.CanEdit = edit;
+                    existing.CanDelete = delete;
+                    existing.CanExport = export;
+                    existing.CanApprove = approve;
+                }
+                else
+                {
+                    context.RolePermissions.Add(new RolePermission
                     {
                         Role = role,
                         Resource = resource,
@@ -499,11 +505,6 @@ public static class DbSeeder
                     });
                 }
             }
-        }
-
-        if (toAdd.Count > 0)
-        {
-            await context.RolePermissions.AddRangeAsync(toAdd);
         }
     }
 
@@ -547,7 +548,7 @@ public static class DbSeeder
         {
             new ClinicService { ArabicName = "معاينة", EnglishName = "Consultation", Code = "CONS", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 5000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 1 },
             new ClinicService { ArabicName = "متابعة", EnglishName = "Follow-up", Code = "FOLL", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 15, DefaultPrice = 3000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 2 },
-            new ClinicService { ArabicName = "طوارئ", EnglishName = "Emergency", Code = "EMER", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 7000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 3 },
+            new ClinicService { ArabicName = "حالة إسعافية", EnglishName = "Emergency", Code = "EMER", Category = ServiceCategory.Consultation, DefaultDurationMinutes = 30, DefaultPrice = 7000, RequiresDoctor = true, RequiresConsultationFee = true, DefaultDoctorCommissionPercentage = 50, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 3 },
             new ClinicService { ArabicName = "حشوة", EnglishName = "Filling", Code = "FILL", Category = ServiceCategory.Restorative, DefaultDurationMinutes = 45, DefaultPrice = 15000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 40, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 4 },
             new ClinicService { ArabicName = "علاج عصب", EnglishName = "Root Canal", Code = "RC", Category = ServiceCategory.Endodontics, DefaultDurationMinutes = 60, DefaultPrice = 40000, RequiresDoctor = true, DefaultDoctorCommissionPercentage = 35, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 5 },
             new ClinicService { ArabicName = "تنظيف جير", EnglishName = "Scaling", Code = "SCAL", Category = ServiceCategory.Preventive, DefaultDurationMinutes = 30, DefaultPrice = 10000, RequiresDoctor = false, DefaultDoctorCommissionPercentage = 30, CommissionBaseRule = CommissionBaseRule.AfterDiscountAndCosts, CommissionRecognitionMode = CommissionRecognitionMode.OnPaymentCollection, SortOrder = 6 },

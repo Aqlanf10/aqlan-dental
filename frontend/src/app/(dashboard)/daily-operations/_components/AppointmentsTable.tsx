@@ -178,7 +178,7 @@ export default function AppointmentsTable({
           style={{ background: "#fff7ed", border: "1px solid #fde8d0" }}>
           <Clock className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
           <span className="text-xs font-bold" style={{ color: NAVY }}>
-            وقت الانتظار المتوقع في الطابور: ~{queueWaitTime.estimatedMinutes < 60
+            وقت الانتظار المتوقع في الانتظار: ~{queueWaitTime.estimatedMinutes < 60
               ? `${queueWaitTime.estimatedMinutes} دقيقة`
               : `${Math.floor(queueWaitTime.estimatedMinutes / 60)} ساعة ${queueWaitTime.estimatedMinutes % 60} دقيقة`}
           </span>
@@ -312,7 +312,7 @@ function AppointmentRow({
           style={{ background: "#f5922e" }}
         >
           <ClipboardList className="w-3.5 h-3.5" />
-          <span>إدخال الطابور</span>
+          <span>إضافة للانتظار</span>
         </button>
       );
     } else if (item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient")) {
@@ -429,7 +429,14 @@ function AppointmentRow({
         </td>
       )}
       <td className="py-2 px-3 text-xs font-medium" style={{ color: "#475569" }}>{item.doctorName}</td>
-      <td className="py-2 px-3 text-xs font-medium" style={{ color: "#475569" }}>{item.serviceName ?? "—"}</td>
+      <td className="py-2 px-3 text-xs font-medium" style={{ color: "#475569" }}>
+        <div>{item.serviceName ?? "—"}</div>
+        {item.proposedProcedure && (
+          <div className="text-[10px] text-purple-600 font-bold mt-0.5 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 inline-block">
+            📌 المقترح: {item.proposedProcedure}
+          </div>
+        )}
+      </td>
       <td className="py-2 px-3 text-xs font-medium" style={{ color: "#475569" }}>
         {item.roomName ? (
           <span className="inline-flex items-center gap-1">
@@ -503,7 +510,7 @@ function MobileCard({
           style={{ background: "#f5922e" }}
         >
           <ClipboardList className="w-3.5 h-3.5" />
-          <span>إدخال الطابور</span>
+          <span>إضافة للانتظار</span>
         </button>
       );
     } else if (item.queueItemId && (item.queueStatus === "Waiting" || item.nextAction === "CallPatient")) {
@@ -600,6 +607,11 @@ function MobileCard({
               <span className="flex items-center gap-1">
                 <strong>الخدمة:</strong> {item.serviceName}
               </span>
+            )}
+            {item.proposedProcedure && (
+              <div className="text-[10px] text-purple-600 font-bold mt-1 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 block w-full">
+                📌 الإجراء المقترح للمحاسبة: {item.proposedProcedure}
+              </div>
             )}
             {item.roomName && (
               <span className="flex items-center gap-1">

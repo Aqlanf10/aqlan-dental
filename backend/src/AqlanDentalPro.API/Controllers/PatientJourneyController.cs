@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.Text.Json;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -1237,6 +1238,101 @@ public class PatientJourneyController(
         }
     }
 
+    // ─── 8. POST /api/patient-journey/{patientId}/validate-financial-closure ─
+    /// <summary>
+    /// Validates whether a visit can be financially closed.
+    /// Checks outstanding balance and treatment plan status.
+    /// </summary>
+    [HttpPost("{patientId:guid}/validate-financial-closure")]
+    public async Task<IActionResult> ValidateFinancialClosure(
+        Guid patientId,
+        [FromBody] ValidateFinancialClosureRequest req)
+    {
+        var patient = await db.Patients.FindAsync(patientId);
+        if (patient == null) return NotFound(new { message = "المريض غير موجود" });
+
+        // Get the latest active visit
+        var visit = await db.Visits
+            .Include(v => v.Appointment)
+            .FirstOrDefaultAsync(v => v.PatientId == patientId && v.IsActive && v.CheckoutStatus != "CheckedOut");
+
+        if (visit == null) return Ok(new { canClose = true, reason = "" });
+
+        // Get outstanding balance for this patient
+        var invoices = await db.Invoices
+            .Include(i => i.Payments.Where(p => p.IsActive))
+            .Include(i => i.LineItems.Where(l => l.IsActive))
+            .Where(i => i.PatientId == patientId && i.IsActive && i.Status != InvoiceStatus.Cancelled)
+            .ToListAsync();
+
+        var totalInvoiced = invoices.Sum(i => i.TotalAmount);
+        var totalPaid = invoices.Sum(i => i.Payments.Sum(p => p.Amount));
+        var outstanding = totalInvoiced - totalPaid;
+
+        if (outstanding <= 0)
+        {
+            return Ok(new { canClose = true, reason = "الرصيد متساوي", outstandingAmount = 0 });
+        }
+
+        // Check if there's a multi-session treatment plan (active ortho case or in-progress general treatment items)
+        var hasActiveOrthoCase = await db.OrthoCases
+            .AnyAsync(o => o.PatientId == patientId && o.IsActive && o.Status == OrthoCaseStatus.Active);
+
+        var hasActiveGeneralPlan = await db.GeneralTreatmentPlanItems
+            .AnyAsync(g => g.PatientId == patientId && g.IsActive && g.Status == "in_progress");
+
+        if (hasActiveOrthoCase || hasActiveGeneralPlan)
+        {
+            return Ok(new
+            {
+                canClose = true,
+                reason = "خطة علاج متعددة الجلسات",
+                reasonCode = "MULTI_SESSION_PLAN",
+                outstandingAmount = outstanding,
+                requiresAuditLog = true
+            });
+        }
+
+        // If completed visit with outstanding and no plan
+        if (req.ManagerOverride)
+        {
+            // Log audit for manager override
+            var userId = GetCurrentUserId();
+            db.AuditLogs.Add(new AuditLog
+            {
+                Resource = "Visit.FinancialClosure",
+                ResourceId = visit.Id,
+                Action = AuditAction.Approve,
+                UserId = userId,
+                NewData = JsonSerializer.SerializeToDocument(new
+                {
+                    action = "ManagerOverrideFinancialClosure",
+                    outstandingAmount = outstanding,
+                    reason = req.ClosureReason ?? "موافقة مدير على الدين"
+                })
+            });
+            await db.SaveChangesAsync();
+
+            return Ok(new
+            {
+                canClose = true,
+                reason = "موافقة مدير على الدين",
+                reasonCode = "MANAGER_OVERRIDE",
+                outstandingAmount = outstanding,
+                requiresAuditLog = true
+            });
+        }
+
+        // Cannot close without manager approval
+        return Ok(new
+        {
+            canClose = false,
+            reason = "يوجد مبلغ متبقي. يلزم دفع كامل أو موافقة مدير أو تحويل لخطة أقساط.",
+            reasonCode = "OUTSTANDING_BALANCE",
+            outstandingAmount = outstanding
+        });
+    }
+
     private static string GetInvoiceStatusArabic(InvoiceStatus status) => status switch
     {
         InvoiceStatus.Draft => "مسودة",
@@ -1349,4 +1445,19 @@ public class CheckoutRequest
     public string? Notes { get; set; }
     public DateOnly? NextAppointmentDate { get; set; }
     public Guid? NextServiceId { get; set; }
+}
+
+/// <summary>
+/// Request DTO for financial closure validation.
+/// </summary>
+public sealed class ValidateFinancialClosureRequest
+{
+    /// <summary>If true, a manager is overriding the outstanding balance check.</summary>
+    public bool ManagerOverride { get; init; }
+
+    /// <summary>Reason for closure override (e.g. manager approval reason).</summary>
+    public string? ClosureReason { get; init; }
+
+    /// <summary>Specific visit to validate (optional — defaults to latest active visit).</summary>
+    public Guid? VisitId { get; init; }
 }

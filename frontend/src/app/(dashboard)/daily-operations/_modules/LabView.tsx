@@ -1,137 +1,140 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Activity, CheckCircle2, Clock, Check, AlertTriangle, FileSpreadsheet } from "lucide-react";
-import { NAVY, fmtRial, fmtDate } from "../_lib/constants";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useLabOrders,
+  useMarkLabReceived,
+  useMarkLabDelivered,
+  useCancelLabOrder,
+  useCreateLabOrder,
+  type LabOrderRow,
+} from "../_lib/hooks";
 import { toast } from "@/stores/toastStore";
+import {
+  Search, Activity, CheckCircle2, Clock, Check, AlertTriangle,
+  Plus, Loader2, XCircle, Package
+} from "lucide-react";
+import { NAVY, BLUE, fmtRial, fmtDate } from "../_lib/constants";
 
-interface LabCase {
-  id: string;
-  patientName: string;
-  patientNumber: string;
-  doctorName: string;
-  labName: string;
-  restorationType: string;
-  shade: string;
-  status: "Sent" | "Received" | "Delivered";
-  sentDate: string;
-  expectedDate: string;
-  cost: number;
-  notes?: string;
+// Status labels and colors
+const LAB_STATUS_MAP: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: React.ElementType }> = {
+  sent: { label: "تم الإرسال", color: "#d97706", bgColor: "#fff7ed", borderColor: "#fde68a", icon: Clock },
+  manufacturing: { label: "قيد العمل", color: "#7c3aed", bgColor: "#faf5ff", borderColor: "#e9d5ff", icon: Activity },
+  ready: { label: "جاهز للتسليم", color: "#2563eb", bgColor: "#eff6ff", borderColor: "#bfdbfe", icon: Package },
+  received: { label: "جاهز بالعيادة", color: "#0891b2", bgColor: "#ecfeff", borderColor: "#a5f3fc", icon: CheckCircle2 },
+  delivered: { label: "تم التسليم", color: "#16a34a", bgColor: "#f0fdf4", borderColor: "#bbf7d0", icon: Check },
+  cancelled: { label: "ملغي", color: "#6b7280", bgColor: "#f9fafb", borderColor: "#e5e7eb", icon: XCircle },
+};
+
+// Ready lab orders alert query
+function useReadyLabOrders() {
+  return useQueryClient().getQueryData<LabOrderRow[]>(["daily-ops", "lab-orders-ready"]) ?? [];
 }
 
-const MOCK_LAB_CASES: LabCase[] = [
-  {
-    id: "1",
-    patientName: "أحمد محمد العولقي",
-    patientNumber: "P-10023",
-    doctorName: "د. عقلان الكاملي",
-    labName: "مختبر النخبة لتركيبات الأسنان",
-    restorationType: "تاج زركونيا (Zirconia Crown)",
-    shade: "A2",
-    status: "Sent",
-    sentDate: "2026-06-01",
-    expectedDate: "2026-06-05",
-    cost: 45000,
-    notes: "يرجى التركيز على حواف التاج ونقاط التلامس"
-  },
-  {
-    id: "2",
-    patientName: "سارة عبد الله الحبيشي",
-    patientNumber: "P-10094",
-    doctorName: "د. إيمان الخليدي",
-    labName: "مختبر الجزيرة الحديث",
-    restorationType: "فينير إيماكس (E-Max Veneers x6)",
-    shade: "BL4",
-    status: "Received",
-    sentDate: "2026-05-25",
-    expectedDate: "2026-06-02",
-    cost: 180000,
-    notes: "تبييض هوليوود سمايل طبيعي"
-  },
-  {
-    id: "3",
-    patientName: "صالح علي الصبري",
-    patientNumber: "P-10112",
-    doctorName: "د. عقلان الكاملي",
-    labName: "مختبر النخبة لتركيبات الأسنان",
-    restorationType: "جسر زركونيا 3 وحدات (3-Unit Bridge)",
-    shade: "A3",
-    status: "Delivered",
-    sentDate: "2026-05-20",
-    expectedDate: "2026-05-26",
-    cost: 120000,
-    notes: "تم القياس والتسليم بنجاح للمريض"
-  },
-  {
-    id: "4",
-    patientName: "نادية عبد الكريم الريمي",
-    patientNumber: "P-10255",
-    doctorName: "د. طارق الحيمي",
-    labName: "مختبر المستقبل الرقمي",
-    restorationType: "طقم أسنان أكريليكي جزئي (Partial Acrylic Denture)",
-    shade: "A3.5",
-    status: "Sent",
-    sentDate: "2026-05-30",
-    expectedDate: "2026-06-04",
-    cost: 60000,
-    notes: "مريض لديه حساسية لبعض المواد"
-  }
-];
-
 export default function LabView() {
-  const [cases, setCases] = useState<LabCase[]>(MOCK_LAB_CASES);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [page, setPage] = useState(1);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [newOrderModalOpen, setNewOrderModalOpen] = useState(false);
+  // New lab order form state
+  const [newPatientId, setNewPatientId] = useState("");
+  const [newApplianceType, setNewApplianceType] = useState("");
+  const [newLabName, setNewLabName] = useState("");
+  const [newCost, setNewCost] = useState("");
 
-  const handleUpdateStatus = (id: string, newStatus: "Sent" | "Received" | "Delivered") => {
-    setCases(prev => prev.map(c => {
-      if (c.id === id) {
-        toast.success(`تم تحديث حالة المعمل بنجاح`);
-        return { ...c, status: newStatus };
-      }
-      return c;
-    }));
-  };
-
-  const filteredCases = cases.filter(c => {
-    const matchesSearch = c.patientName.includes(search) || c.doctorName.includes(search) || c.restorationType.includes(search);
-    const matchesStatus = statusFilter === "All" || c.status === statusFilter;
-    return matchesSearch && matchesStatus;
+  // Fetch lab orders
+  const { data, isLoading, isError } = useLabOrders({
+    status: statusFilter !== "All" ? statusFilter : undefined,
+    page,
   });
 
-  const getStatusBadge = (status: "Sent" | "Received" | "Delivered") => {
-    switch (status) {
-      case "Sent":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-            <Clock className="w-3 h-3" /> تم الإرسال للمعمل
-          </span>
-        );
-      case "Received":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-            <CheckCircle2 className="w-3 h-3" /> جاهز للتسليم بالعيادة
-          </span>
-        );
-      case "Delivered":
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Check className="w-3 h-3" /> تم التسليم للمريض
-          </span>
-        );
+  const orders = data?.data ?? [];
+
+  // Filter by search on frontend (API doesn't support text search)
+  const filteredOrders = orders.filter(o => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return o.patientName.toLowerCase().includes(q) ||
+      o.patientNumber?.toLowerCase().includes(q) ||
+      o.doctorName?.toLowerCase().includes(q) ||
+      o.applianceType?.toLowerCase().includes(q);
+  });
+
+  // Check for ready lab orders (alert badge)
+  const readyOrders = useReadyLabOrders();
+
+  // Mark received mutation
+  const markReceivedMutation = useMarkLabReceived();
+
+  // Mark delivered mutation
+  const markDeliveredMutation = useMarkLabDelivered();
+
+  // Cancel mutation
+  const cancelMutation = useCancelLabOrder();
+
+  // Create lab order mutation
+  const createMutation = useCreateLabOrder();
+
+  const getStatusBadge = (status: string) => {
+    const info = LAB_STATUS_MAP[status] || LAB_STATUS_MAP.sent;
+    const Icon = info.icon;
+    return (
+      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border`}
+        style={{ background: info.bgColor, color: info.color, borderColor: info.borderColor }}>
+        <Icon className="w-3 h-3" /> {info.label}
+      </span>
+    );
+  };
+
+  const handleCreateOrder = () => {
+    if (!newPatientId.trim() || !newApplianceType.trim()) {
+      toast.error("المريض ونوع التركيبة مطلوبان");
+      return;
     }
+    createMutation.mutate(
+      {
+        patientId: newPatientId.trim(),
+        applianceType: newApplianceType.trim(),
+        labName: newLabName.trim() || undefined,
+        cost: newCost ? parseFloat(newCost) : undefined,
+        sentDate: new Date().toISOString().split("T")[0],
+      },
+      {
+        onSuccess: () => {
+          setNewOrderModalOpen(false);
+          setNewPatientId("");
+          setNewApplianceType("");
+          setNewLabName("");
+          setNewCost("");
+        },
+      }
+    );
   };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+      {/* Ready Lab Orders Alert */}
+      {readyOrders.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border bg-blue-50 border-blue-200">
+          <Package className="w-4 h-4 text-blue-600 flex-shrink-0" />
+          <span className="text-xs font-bold text-blue-800">
+            {readyOrders.length} طلب معمل جاهز بالعيادة بانتظار التسليم للمريض
+          </span>
+        </div>
+      )}
+
       {/* Top Filter Bar */}
       <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-gray-100 shadow-sm flex-wrap">
         <div className="flex items-center gap-2 flex-1 max-w-md relative">
           <Search className="w-4 h-4 absolute top-1/2 right-3 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="البحث باسم المريض، الطبيب، أو نوع التركيبة..."
+            placeholder="البحث باسم المريض، رقم الملف، الطبيب، أو نوع التركيبة..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full text-xs rounded-xl border border-gray-200 pl-10 pr-9 py-2 outline-none focus:ring-2 focus:ring-[#3d7ab5]/20"
@@ -141,37 +144,60 @@ export default function LabView() {
         <div className="flex items-center gap-2">
           <select
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
+            onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
             className="text-xs font-semibold rounded-xl px-3 py-2 border border-gray-200 outline-none"
             style={{ color: NAVY }}
           >
-            <option value="All">📊 كل حالات المعمل</option>
-            <option value="Sent">⌛ المرسلة للمعمل</option>
-            <option value="Received">📦 الجاهزة للتسليم</option>
-            <option value="Delivered">✅ المسلمة للمرضى</option>
+            <option value="All">كل حالات المعمل</option>
+            <option value="sent">المرسلة</option>
+            <option value="manufacturing">قيد العمل</option>
+            <option value="ready">جاهز للتسليم</option>
+            <option value="received">جاهز بالعيادة</option>
+            <option value="delivered">تم التسليم</option>
+            <option value="cancelled">ملغي</option>
           </select>
 
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-gray-50 border border-gray-200 hover:bg-gray-100 text-gray-700">
-            <FileSpreadsheet className="w-3.5 h-3.5" /> تصدير
+          <button
+            onClick={() => setNewOrderModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition hover:opacity-90"
+            style={{ background: BLUE }}
+          >
+            <Plus className="w-3.5 h-3.5" /> طلب جديد
           </button>
         </div>
       </div>
 
-      {/* Grid List */}
-      <div className="flex-1 overflow-auto bg-white rounded-2xl border border-gray-100 shadow-sm">
-        {filteredCases.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-            <Activity className="w-12 h-12 mb-3 opacity-20" />
-            <p className="text-sm font-bold">لا توجد حالات معمل مطابقة</p>
-          </div>
-        ) : (
+      {/* Loading / Error / Empty states */}
+      {isLoading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin" style={{ color: BLUE }} />
+        </div>
+      ) : isError ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-red-400 py-20">
+          <AlertTriangle className="w-12 h-12 mb-3 opacity-40" />
+          <p className="text-sm font-bold">فشل تحميل بيانات المعمل</p>
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["daily-ops", "lab-orders"] })}
+            className="mt-2 text-xs text-blue-500 hover:underline"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      ) : filteredOrders.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-20">
+          <Activity className="w-12 h-12 mb-3 opacity-20" />
+          <p className="text-sm font-bold">لا توجد حالات معمل مطابقة</p>
+        </div>
+      ) : (
+        /* Table */
+        <div className="flex-1 overflow-auto bg-white rounded-2xl border border-gray-100 shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-right" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
               <thead>
                 <tr className="text-[11px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50/50">
                   <th className="py-3 px-4 border-b">المريض</th>
-                  <th className="py-3 px-4 border-b">التركيبة والظل</th>
-                  <th className="py-3 px-4 border-b">الطبيب والمعمل</th>
+                  <th className="py-3 px-4 border-b">نوع التركيبة</th>
+                  <th className="py-3 px-4 border-b">الطبيب / المعمل</th>
                   <th className="py-3 px-4 border-b">التواريخ</th>
                   <th className="py-3 px-4 border-b">التكلفة</th>
                   <th className="py-3 px-4 border-b">الحالة</th>
@@ -179,53 +205,51 @@ export default function LabView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredCases.map(c => (
+                {filteredOrders.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50/30 text-xs">
                     <td className="py-3.5 px-4 font-bold" style={{ color: NAVY }}>
                       <div>{c.patientName}</div>
                       <div className="text-[10px] text-gray-400 font-medium font-sans mt-0.5">{c.patientNumber}</div>
                     </td>
                     <td className="py-3.5 px-4 font-semibold text-gray-700">
-                      <div>{c.restorationType}</div>
-                      <div className="text-[10px] text-purple-600 font-bold bg-purple-50 px-1 py-0.5 rounded border border-purple-100 inline-block mt-1">
-                        الظل / Shade: {c.shade}
-                      </div>
+                      <div>{c.applianceType}</div>
                     </td>
                     <td className="py-3.5 px-4 text-gray-600">
-                      <div className="font-semibold">{c.doctorName}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">{c.labName}</div>
+                      <div className="font-semibold">{c.doctorName || "—"}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">{c.labName || "—"}</div>
                     </td>
                     <td className="py-3.5 px-4 text-gray-500 font-medium">
-                      <div>ارسل: {fmtDate(c.sentDate)}</div>
-                      <div className="text-[10px] text-orange-600 font-bold mt-0.5">متوقع: {fmtDate(c.expectedDate)}</div>
+                      <div>أُرسل: {c.sentDate ? fmtDate(c.sentDate) : "—"}</div>
+                      <div className="text-[10px] text-orange-600 font-bold mt-0.5">متوقع: {c.expectedDate ? fmtDate(c.expectedDate) : "—"}</div>
                     </td>
-                    <td className="py-3.5 px-4 font-bold text-gray-900 font-sans">{fmtRial(c.cost)}</td>
+                    <td className="py-3.5 px-4 font-bold text-gray-900 font-sans">{c.cost ? fmtRial(c.cost) : "—"}</td>
                     <td className="py-3.5 px-4">{getStatusBadge(c.status)}</td>
                     <td className="py-3.5 px-4 text-left">
                       <div className="flex items-center justify-end gap-1.5">
-                        {c.status === "Sent" && (
+                        {(c.status === "sent" || c.status === "manufacturing") && (
                           <button
-                            onClick={() => handleUpdateStatus(c.id, "Received")}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition"
+                            onClick={() => markReceivedMutation.mutate(c.id)}
+                            disabled={markReceivedMutation.isPending}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-50"
                           >
                             تأكيد الوصول
                           </button>
                         )}
-                        {c.status === "Received" && (
+                        {(c.status === "ready" || c.status === "received") && (
                           <button
-                            onClick={() => handleUpdateStatus(c.id, "Delivered")}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition"
+                            onClick={() => markDeliveredMutation.mutate(c.id)}
+                            disabled={markDeliveredMutation.isPending}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition disabled:opacity-50"
                           >
                             تسليم للمريض
                           </button>
                         )}
-                        {c.notes && (
+                        {c.status !== "delivered" && c.status !== "cancelled" && (
                           <button
-                            onClick={() => alert(`ملاحظة المعمل: ${c.notes}`)}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center border hover:bg-gray-100 text-gray-400"
-                            title="عرض الملاحظات"
+                            onClick={() => { setCancelOrderId(c.id); setCancelModalOpen(true); }}
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-red-600 border border-red-200 hover:bg-red-50 transition"
                           >
-                            <AlertTriangle className="w-3.5 h-3.5" />
+                            إلغاء
                           </button>
                         )}
                       </div>
@@ -235,8 +259,154 @@ export default function LabView() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+
+          {/* Pagination */}
+          {data && data.total > 50 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+              <span className="text-[10px] text-gray-400">
+                عرض {((page - 1) * 50) + 1} - {Math.min(page * 50, data.total)} من {data.total}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  السابق
+                </button>
+                <span className="text-xs font-bold" style={{ color: NAVY }}>{page}</span>
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page * 50 >= data.total}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  التالي
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cancel Reason Modal */}
+      {cancelModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setCancelModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-extrabold text-[15px] mb-3" style={{ color: NAVY }}>إلغاء طلب المعمل</h3>
+            <p className="text-xs text-gray-500 mb-3">يرجى إدخال سبب الإلغاء</p>
+            <textarea
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              placeholder="سبب الإلغاء..."
+              rows={3}
+              className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-red-400"
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => { setCancelModalOpen(false); setCancelOrderId(null); setCancelReason(""); }}
+                className="flex-1 py-2 rounded-xl text-sm font-bold bg-gray-100 text-gray-500 hover:bg-gray-200 transition"
+              >
+                تراجع
+              </button>
+              <button
+                onClick={() => {
+                  if (cancelOrderId) {
+                    cancelMutation.mutate(
+                      { id: cancelOrderId, reason: cancelReason.trim() || "بدون سبب" },
+                      {
+                        onSuccess: () => {
+                          setCancelModalOpen(false);
+                          setCancelOrderId(null);
+                          setCancelReason("");
+                        },
+                      }
+                    );
+                  }
+                }}
+                disabled={!cancelReason.trim() || cancelMutation.isPending}
+                className="flex-1 py-2 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition"
+              >
+                {cancelMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "تأكيد الإلغاء"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Lab Order Modal */}
+      {newOrderModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setNewOrderModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-extrabold text-[15px] mb-1" style={{ color: NAVY }}>طلب معمل جديد</h3>
+            <p className="text-xs text-gray-400 mb-4">سيتم إنشاء طلب معمل جديد وإضافته للتتبع</p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>معرف المريض (GUID) *</label>
+                <input
+                  value={newPatientId}
+                  onChange={e => setNewPatientId(e.target.value)}
+                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="أدخل معرف المريض أو ابحث"
+                  dir="ltr"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>نوع التركيبة *</label>
+                <input
+                  value={newApplianceType}
+                  onChange={e => setNewApplianceType(e.target.value)}
+                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="مثال: تاج زركونيا"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>اسم المعمل</label>
+                <input
+                  value={newLabName}
+                  onChange={e => setNewLabName(e.target.value)}
+                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="اسم المختبر"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>التكلفة</label>
+                <input
+                  type="number"
+                  value={newCost}
+                  onChange={e => setNewCost(e.target.value)}
+                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
+                  placeholder="0"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => {
+                  setNewOrderModalOpen(false);
+                  setNewPatientId("");
+                  setNewApplianceType("");
+                  setNewLabName("");
+                  setNewCost("");
+                }}
+                className="flex-1 py-2 rounded-xl text-sm font-bold bg-gray-100 text-gray-500 hover:bg-gray-200 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleCreateOrder}
+                disabled={createMutation.isPending}
+                className="flex-1 py-2 rounded-xl text-sm font-bold text-white hover:opacity-90 transition disabled:opacity-50"
+                style={{ background: BLUE }}
+              >
+                {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "إنشاء الطلب"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

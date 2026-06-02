@@ -327,4 +327,31 @@ public class CommissionCalculatorTests
     {
         CommissionCalculator.ProportionalCommission(40_000m, -0.25m).Should().Be(0m);
     }
+
+    // ── Proportional commission: earned-from-collections scenarios ──────────
+
+    [Fact]
+    public void ProportionalCommission_50PercentCollection_Returns50PercentOfFullCommission()
+    {
+        // fullCommission = 50000, paidRatio = 0.5
+        // expected = 25000
+        var result = CommissionCalculator.ProportionalCommission(50000m, 0.5m);
+        Assert.Equal(25000m, result);
+    }
+
+    [Fact]
+    public void ProportionalCommission_ZeroCollection_ReturnsZero()
+    {
+        // No payment collected → commission = 0
+        var result = CommissionCalculator.ProportionalCommission(50000m, 0m);
+        Assert.Equal(0m, result);
+    }
+
+    [Fact]
+    public void ProportionalCommission_FullCollection_ReturnsFullAmount()
+    {
+        // Full payment collected → full commission
+        var result = CommissionCalculator.ProportionalCommission(50000m, 1m);
+        Assert.Equal(50000m, result);
+    }
 }

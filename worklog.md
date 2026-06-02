@@ -1,195 +1,341 @@
-# Worklog
+# Sprint 2 — Daily Operations Production Completion: Backend Changes
+
+**Task ID:** 1  
+**Branch:** sprint/2-daily-operations-production-completion  
+**Date:** 2026-06-02
+
+## Summary
+
+Implemented all 10 backend changes for Sprint 2. Build succeeds with 0 errors. EF Core migration created successfully.
+
+## Changes Made
+
+### 1. LabOrder Entity — Extended Fields
+**File:** `backend/src/AqlanDentalPro.Domain/Entities/LabOrder.cs`
+
+Added 6 new fields:
+- `Shade` (string?) — dental shade/color code
+- `RestorationType` (string?) — type of restoration (e.g., Zirconia Crown)
+- `VisitId` (Guid?) — nullable link to Visit
+- `DeliveredDate` (DateOnly?) — when delivered to patient
+- `CancellationReason` (string?) — reason if cancelled
+- `BranchId` (Guid?) — for multi-branch support
+
+Added 1 navigation property:
+- `Visit? Visit` — link to Visit entity
+
+### 2. LabOrderConfiguration — New Indexes & FK
+**File:** `backend/src/AqlanDentalPro.Infrastructure/Data/Configurations/LabOrderConfiguration.cs`
+
+Added:
+- Index on `BranchId` for multi-branch queries
+- Index on `VisitId` for visit linkage
+- FK relationship: `LabOrder.Visit → Visit` with `SetNull` on delete
+
+### 3. PaymentMethodSetting Entity — NEW
+**File:** `backend/src/AqlanDentalPro.Domain/Entities/PaymentMethodSetting.cs`
+
+Created entity with fields: Name, Code, RequiresReferenceNumber, AccountName, AccountNumber, Notes, SortOrder, BranchId. Inherits IsActive from BaseEntity.
+
+### 4. PaymentMethodSettingConfiguration — NEW
+**File:** `backend/src/AqlanDentalPro.Infrastructure/Data/Configurations/PaymentMethodSettingConfiguration.cs`
+
+Created configuration with:
+- Unique index on `Code`
+- Index on `BranchId`
+- `HasQueryFilter(p => p.IsActive)` for global soft-delete
+- Property constraints (MaxLength for Name, Code, AccountName, AccountNumber, Notes)
+
+### 5. LabOrdersController — New Endpoints
+**File:** `backend/src/AqlanDentalPro.API/Controllers/LabOrdersController.cs`
+
+Added 5 new endpoints:
+- `GET /api/lab-orders/today` — returns today's lab orders (SentDate, ExpectedDate, ReceivedDate, or DeliveredDate matches today)
+- `GET /api/lab-orders/ready` — returns lab orders with status "ready" or "received"
+- `POST /api/lab-orders/{id}/mark-received` — marks as received with notification
+- `POST /api/lab-orders/{id}/mark-delivered` — marks as delivered to patient
+- `POST /api/lab-orders/{id}/cancel` — cancels with reason
+
+Updated existing endpoints:
+- `CreateLabOrderRequest` — added Shade, RestorationType, VisitId
+- `Create` method — populates new fields (Shade, RestorationType, VisitId)
+- `GetAll` response — includes Shade, RestorationType, VisitId, DeliveredDate, CancellationReason
+- `GetById` response — includes Shade, RestorationType, VisitId, DeliveredDate, CancellationReason
+
+Added DTOs:
+- `MarkReceivedRequest` — optional ReceivedDate
+- `CancelLabOrderRequest` — required Reason
+
+### 6. SettingsController — Payment Method Settings API
+**File:** `backend/src/AqlanDentalPro.API/Controllers/SettingsController.cs`
+
+Added 4 endpoints:
+- `GET /api/settings/payment-methods` — list active payment methods (StaffOnly)
+- `POST /api/settings/payment-methods` — create payment method (AdminOnly)
+- `PUT /api/settings/payment-methods/{id}` — update payment method (AdminOnly)
+- `POST /api/settings/payment-methods/{id}/toggle` — toggle active/inactive (AdminOnly)
+
+Added DTOs:
+- `CreatePaymentMethodRequest`
+- `UpdatePaymentMethodRequest`
+
+Updated controller constructor to inject `ICurrentUserService` for admin checks.
+
+### 7. Receipt PDF Endpoint — Already Existed
+**File:** `backend/src/AqlanDentalPro.API/Controllers/PaymentsController.cs`
+
+The `GET /api/payments/{id}/pdf` endpoint already existed with the exact implementation requested. No changes needed.
+
+### 8. DbContext — PaymentMethodSettings DbSet
+**File:** `backend/src/AqlanDentalPro.Infrastructure/Data/AppDbContext.cs`
+
+Added: `public DbSet<PaymentMethodSetting> PaymentMethodSettings => Set<PaymentMethodSetting>();`
+
+### 9. DbSeeder — Default Payment Methods
+**File:** `backend/src/AqlanDentalPro.Infrastructure/Data/Seed/DbSeeder.cs`
+
+Added `SeedPaymentMethodSettingsAsync` method with upsert-by-Code logic for 7 default payment methods:
+| Name | Code | RequiresReferenceNumber |
+|---|---|---|
+| نقداً | cash | false |
+| بطاقة/شبكة | card | true |
+| تحويل بنكي | bank_transfer | true |
+| كريمي | karimey | true |
+| جوالي | jawaly | true |
+| حوالة | transfer | false |
+| أخرى | other | false |
+
+### 10. Daily Operations Report Endpoint — NEW Controller
+**File:** `backend/src/AqlanDentalPro.API/Controllers/DailyOperationsController.cs`
+
+Created new controller with:
+- `GET /api/daily-operations/report?date=YYYY-MM-DD` — returns aggregated daily report
+  - PatientCounts: Total, Waiting, InRoom, ReadyForCheckout, Completed, NoShow, LeftWithoutCompletion, Emergency
+  - Financial: TotalCollected, ByPaymentMethod, NewDebts, PartialPayments, DraftInvoices, Discounts
+  - LabOrders: Sent, Received, Delivered
+  - ManagerOverrides count
+  - TomorrowAppointments count
+
+### 11. Migration
+**File:** `backend/src/AqlanDentalPro.Infrastructure/Data/Migrations/20260602230911_Sprint2_LabOrderAndPaymentMethodSettings.cs`
+
+EF Core migration created successfully, adding:
+- 6 new columns to `LabOrders` table (Shade, RestorationType, VisitId, DeliveredDate, CancellationReason, BranchId)
+- `PaymentMethodSettings` table with indexes
+- `FK_LabOrders_Visits_VisitId` foreign key
+- `IX_LabOrders_BranchId` and `IX_LabOrders_VisitId` indexes
+
+## Build Result
+- **Build succeeded** with 0 errors
+- 58 pre-existing warnings (none from Sprint 2 changes)
+- Fixed CS0108 warning by removing duplicate `IsActive` property from `PaymentMethodSetting` (inherited from `BaseEntity`)
 
 ---
-Task ID: 1
-Agent: Main Agent
-Task: Enable patient-facing portal messaging between clinic staff and patients
 
-Work Log:
-- Explored existing messaging system (Conversation, Message, ConversationParticipant, MessageRead models)
-- Explored PatientPortalService, MessagingService, MessagesController
-- Explored frontend messaging page, portal layout, types, hooks
-- Added ConversationType enum (InternalPatientDiscussion=0, PatientFacing=1, StaffGeneral=2)
-- Added ConversationType and PatientId fields to Conversation model
-- Created EF Core migration 20260502000000_AddConversationTypeAndPatientFacing
-- Added ConversationConfiguration updates for new fields and indexes
-- Added portal messaging DTOs (PortalConversationDto, PortalMessageDto, PortalConversationDetailDto, PortalSendMessageRequest, PortalUnreadCountDto)
-- Updated ConversationListDto and ConversationDetailDto with ConversationType, PatientId, PatientName, PatientNumber
-- Added IsFromPatient to MessageDto
-- Updated CreateConversationRequest with ConversationType and PatientId
-- Added messaging methods to IPatientPortalService interface
-- Implemented messaging methods in PatientPortalService with INotificationService injection
-- Added portal messaging endpoints in PatientPortalController (6 endpoints)
-- Updated MessagingService with type filter, patient info, and IsFromPatient flag
-- Updated MessagesController with type filter query parameter
-- Added ConversationType enum to frontend messaging types
-- Added portal messaging types to patientPortal.ts
-- Created usePortalMessaging.ts hooks (5 hooks)
-- Created /portal/messages page with conversation list, chat view, new message form
-- Updated portal layout to add التواصل nav item
-- Updated staff /messages page with type badges, patient info, filter tabs, patient file link
-- Fixed build errors (unused isPatientFacing prop, unused profile import)
-- Frontend build passes successfully
-- Force pushed to main branch on GitHub
+**Task ID:** 3  
+**Branch:** sprint/2-daily-operations-production-completion  
+**Date:** 2026-06-03
 
-Stage Summary:
-- Backend: 6 new portal messaging endpoints + updated staff endpoints
-- Frontend: New /portal/messages page + updated staff messages page
-- Database: New ConversationType and PatientId columns
-- Security: Patient can only access own PatientFacing conversations
-- Deployed to main branch (Railway auto-deploy)
+## Summary
 
----
-Task ID: 2
-Agent: Main Agent
-Task: Merge and Deploy PR #32 (Patient Portal messaging recipient selection)
+Implemented Commission Audit + Financial Closure Logic. Added collection-based commission endpoint, financial closure validation endpoint, and comprehensive test coverage for commission calculations, financial closure, and lab order lifecycle. Build succeeds with 0 errors.
 
-Work Log:
-- Verified PR #32 was open and mergeable on GitHub (state: open, mergeable: true, merge_state: clean)
-- Merged PR #32 via GitHub API (squash merge, SHA: ef9940f)
-- Pulled latest main branch locally
-- Pushed empty commit to trigger Vercel redeployment
-- Verified Vercel frontend build ID changed from 44OmjMC-ahcppsmWcRu9U to FHC4z2tjob9rZe3oDSLC1
-- Discovered backend 500 error: "column c.RecipientType does not exist" — migration not applied on Railway
-- Root cause: ENABLE_STARTUP_DB_MAINTENANCE is disabled on Railway, so MigrateAsync() never runs
-- Added pre-migration SQL block inside the gated section (first attempt — didn't help because gate is disabled)
-- Added UNCONDITIONAL hotfix for RecipientType/RecipientUserId columns (same pattern as PatientAccounts hotfix)
-- Pushed hotfix to main (commit 11fc232)
-- Waited for Railway deployment and verified:
-  - Backend health: ✅ healthy
-  - Conversations API: ✅ returns 200 (was 500 before)
-  - Recipients endpoint: ✅ exists (returns 401 for unauthenticated)
-  - Frontend code: ✅ includes /api/portal/messages/recipients reference
-  - Build ID updated: ✅ b-ciKjblbmLDVcN374D-1
+## Changes Made
 
-Stage Summary:
-- PR #32 merged and deployed successfully
-- Database migration applied via unconditional hotfix
-- Backend: fully functional with RecipientType/RecipientUserId columns
-- Frontend: deployed with recipient selection feature code
-- Patient login issue: test account GM-2026-010 password may have been changed (unrelated to this PR)
+### 1. Collection-Based Commission Endpoint
+**File:** `backend/src/AqlanDentalPro.API/Controllers/FinanceV3Controller.DoctorCommissions.cs`
 
----
-Task ID: 3
-Agent: Main Agent
-Task: Final Stabilization Check for PR #32 Database Hotfix
+Added new endpoint `GET /api/finance-v3/doctor-commissions/earned-from-collections` that calculates commission based on ACTUAL payment collections (not just invoice amounts).
 
-Work Log:
-- Verified Program.cs hotfix is fully idempotent (all IF NOT EXISTS, no destructive SQL)
-- Verified production DB schema: RecipientType, RecipientUserId columns exist, indexes exist
-- Verified __EFMigrationsHistory: migration 20260503000000_AddConversationRecipientType registered by hotfix
-- Found triple redundancy: unconditional + gated + fallback blocks — all idempotent, no conflicts
-- Noted: hotfix creates IX_Conversations_RecipientUserId index that EF migration doesn't have (safe extra index)
-- Ran 11 live production tests:
-  1. ✅ Patient login (correct field: "username" not "patientNumber")
-  2. ✅ GET /api/portal/messages/recipients returns 3 recipient types
-  3. ✅ Patient starts Reception conversation (recipientType=Reception)
-  4. ✅ Reception sees the conversation
-  5. ✅ Patient starts Admin conversation (migrated legacy conv to recipientType=Admin)
-  6. ✅ Admin-directed conversation visible in staff API
-  7. ⚠️ TreatingDoctor conversation created even without primary doctor (no doctor participant added — needs frontend guard)
-  8. ✅ Doctor sees conversation when assigned as primary doctor
-  9. ✅ Legacy PatientFacing conversation still opens (17 messages)
-  10. ✅ StaffToPatient internal conversations hidden from patient
-  11. ✅ Cross-patient isolation works (denied access, minor: returns 400 instead of 403)
-- Test accounts cleaned up: passwords reset to random, MustChangePassword=true, primary doctor removed
-- Known bugs found:
-  1. TreatingDoctor conversation allowed without primary doctor (should be blocked by frontend isAvailable=false)
-  2. Forbid() returns 400 instead of 403 for cross-patient access (ASP.NET auth scheme issue)
+Formula: `Commission = (Collected Amount - Lab Cost - Material Cost - Other Direct Costs) * Doctor Percentage`
 
-Stage Summary:
-- Hotfix SQL: ✅ Fully idempotent, no destructive operations
-- DB schema: ✅ Columns and indexes exist in production
-- Migration history: ✅ Registered, no future conflicts expected
-- Live tests: 9/11 pass cleanly, 2 minor issues documented
-- Test accounts: ✅ Secured (random password + must change)
-- Risks: Triple redundancy in Program.cs (safe but should be cleaned up), TreatingDoctor edge case
+Key features:
+- Only payments that have been actually collected are counted
+- Collection ratio is calculated per invoice: `collectionRatio = invoicePaid / invoiceTotal`
+- Proportional costs are deducted based on collection ratio
+- Supports branch isolation for non-admin users
+- Supports date range filtering
+- Returns: DoctorId, DoctorName, CasesCount, TotalServiceValue, TotalCollected, TotalLabCost, TotalMaterialCost, TotalOtherDirectCosts, NetCommissionableAmount, DoctorPercentage, CommissionDue, CommissionPaid, CommissionRemaining
+
+### 2. Financial Closure Validation Endpoint
+**File:** `backend/src/AqlanDentalPro.API/Controllers/PatientJourneyController.cs`
+
+Added new endpoint `POST /api/patient-journey/{patientId}/validate-financial-closure` that validates whether a visit can be financially closed.
+
+Business rules:
+- No outstanding balance → `canClose: true`
+- Outstanding balance with active ortho case or general treatment plan → `canClose: true, reasonCode: "MULTI_SESSION_PLAN"`
+- Outstanding balance with manager override → `canClose: true, reasonCode: "MANAGER_OVERRIDE"`, audit log created
+- Outstanding balance without plan or override → `canClose: false, reasonCode: "OUTSTANDING_BALANCE"`
+
+Added `using System.Text.Json;` for `JsonSerializer.SerializeToDocument`.
+
+Added DTO:
+- `ValidateFinancialClosureRequest` with `ManagerOverride`, `ClosureReason`, `VisitId` properties
+
+### 3. Commission Tests
+**File:** `backend/tests/AqlanDentalPro.UnitTests/Services/CommissionCalculatorTests.cs`
+
+Added 3 proportional commission tests for earned-from-collections scenarios:
+- `ProportionalCommission_50PercentCollection_Returns50PercentOfFullCommission` — 50% paid → 50% commission
+- `ProportionalCommission_ZeroCollection_ReturnsZero` — no payment → 0 commission
+- `ProportionalCommission_FullCollection_ReturnsFullAmount` — full payment → full commission
+
+**File:** `backend/tests/AqlanDentalPro.UnitTests/Finance/DoctorCommissionsTests.cs`
+
+Added 5 earned-from-collections integration tests:
+- `EarnedFromCollections_PartialPayment_ReturnsProportionalCommission` — Invoice 100k, paid 50k, 50% doctor → commission 25k
+- `EarnedFromCollections_FullPayment_WithLabCost_ReturnsCorrectCommission` — Invoice 100k, paid 100k, lab 20k, 50% doctor → commission 40k
+- `EarnedFromCollections_UnpaidInvoice_ReturnsZeroCommission` — Invoice 100k, paid 0 → commission 0
+- `EarnedFromCollections_CancelledPayment_NotCounted` — Invoice with inactive payment → commission 0
+- `EarnedFromCollections_BranchIsolation_ReturnsOnlyBranchData` — Non-admin user sees only their branch
+
+### 4. Financial Closure Tests
+**File:** `backend/tests/AqlanDentalPro.UnitTests/Journey/PatientJourneyTests.cs`
+
+Added 4 financial closure validation tests:
+- `ValidateFinancialClosure_NoOutstanding_ReturnsCanClose` — fully paid invoice → outstanding = 0
+- `ValidateFinancialClosure_WithOutstanding_NoPlan_RequiresManagerOverride` — outstanding balance, no plan → cannot close
+- `ValidateFinancialClosure_WithOutstanding_ActivePlan_AllowsClosure` — outstanding balance with active ortho case → allows closure
+- `ValidateFinancialClosure_ManagerOverride_RecordsAuditLog` — manager override creates AuditLog entry with proper fields
+
+Added `using System.Text.Json;` for `JsonSerializer.SerializeToDocument`.
+
+### 5. Lab Order Tests
+**File:** `backend/tests/AqlanDentalPro.UnitTests/LabOrders/LabOrderNumberGenerationTests.cs`
+
+Added 5 lab order lifecycle tests using InMemory database:
+- `MarkReceived_SetsStatusAndDate` — "sent" → "received" with ReceivedDate
+- `MarkDelivered_RequiresReadyStatus` — cannot deliver from "sent", can deliver from "ready"
+- `Cancel_WithReason_SetsCancellationReason` — cancel with reason, verify status and reason
+- `Today_ReturnsOnlyTodayOrders` — filter by today's date (SentDate, ExpectedDate, ReceivedDate, DeliveredDate)
+- `Ready_ReturnsOnlyReadyAndReceived` — filter by status "ready" or "received"
+
+Added imports: `AqlanDentalPro.Domain.Entities`, `AqlanDentalPro.Infrastructure.Data`, `Microsoft.EntityFrameworkCore`
+
+## Build Result
+- **Build succeeded** with 0 errors
+- 58 pre-existing warnings (none from new changes)
 
 ---
-Task ID: 4
-Agent: Main Agent
-Task: Fix clinic display Arabic voice announcement — stabilize digit-by-digit speech
 
-Work Log:
-- Cloned repo and created branch fix/clinic-display-voice-announcement-root
-- Read all relevant files: page.tsx, clinic-display-announcement.js, patch script, test script, ClinicQueueController.cs
-- Identified 3 root causes for voice saying only "Two":
-  1. page.tsx had inline buildAnnouncementText() sending raw "2020-622" to SpeechSynthesis
-  2. speakArabic() silently fell back to English/default voice
-  3. Backend PatientName missing MiddleName
-- Created new TypeScript helper: frontend/src/lib/clinic-display-announcement.ts
-  - formatFileNumberForSpeech(): digit-by-digit conversion with Arabic word names
-  - English letter conversion (G→جي, M→إم, etc.)
-  - Arabic-Indic digit support (٠→صفر, ٢→اثنين)
-  - Separator skipping (-, _, /, space, .)
-  - buildAnnouncementText(): uses "المراجع" not "المريض"
-- Updated page.tsx: removed inline duplicates, imports from .ts module
-- Fixed speakArabic(): REQUIRES Arabic voice, shows Arabic warning if unavailable
-- Fixed backend ClinicQueueController.cs: added BuildPatientDisplayName() with MiddleName
-- Deleted old .js helper and fragile patch-clinic-display-announcement.mjs
-- Updated test file to TypeScript with 18 test cases
-- TypeScript check: passed with zero errors
-- Next.js build: succeeded
-- Committed as d6461a5ffc69da3decc5cb2ab55ef527d222a6e9
-- Push failed: no GitHub auth credentials available in environment
+# Sprint 2 — Daily Operations Production Completion: Frontend Changes
 
-Stage Summary:
-- 8 files changed, 497 insertions, 395 deletions
-- Root cause fully addressed: raw numbers no longer sent to SpeechSynthesis
-- Arabic voice is now required (no silent English fallback)
-- "المراجع" used consistently (not "المريض")
-- Backend includes MiddleName in patient display name
-- No DB/schema/migration/auth changes
-- Build verified: TypeScript + Next.js build pass
-- Branch ready to push: fix/clinic-display-voice-announcement-root
----
-Task ID: daily-operations-unified
-Agent: main
-Task: Build unified Daily Operations reception screen
+**Task ID:** 2  
+**Branch:** sprint/2-daily-operations-production-completion  
+**Date:** 2026-03-05
 
-Work Log:
-- Explored full codebase: 46 backend controllers, 80+ frontend pages, all APIs and types
-- Analyzed existing patient-journey page structure and hooks
-- Created _lib/constants.ts with types, status labels, WhatsApp templates, helpers
-- Created _lib/hooks.ts with 15+ React Query hooks for all operations
-- Created _components/Modals.tsx with 5 modal components (QuickPayment, CompleteVisit, BookAppointment, ConfirmDialog, WhatsAppMenu)
-- Created _components/AppointmentsTable.tsx with desktop table + mobile cards + 10+ quick actions per row
-- Rewrote page.tsx as full operations screen with: top bar, 7 summary cards, 6 tabs, all modals
-- Fixed ESLint errors (any types, unused hook)
-- Fixed toast import (useToastStore → toast direct import)
-- TypeScript check: ✅ clean
-- Build: ✅ Compiled successfully
-- Pushed to feature/daily-operations-unified
-- Created PR #218
+## Summary
 
-Stage Summary:
-- New route: /daily-operations (complete rewrite from launcher to full ops screen)
-- 5 new files, 1 modified file, ~2000 lines of new code
-- No backend changes, no DB changes, no auth changes
-- All existing units remain untouched
-- PR: https://github.com/Aqlanf10/aqlan-dental/pull/218
-- Commit: 615cec0
+Implemented all 7 frontend features for Sprint 2. TypeScript compiles with 0 errors (only pre-existing globals.css warning).
 
----
-Task ID: 6
-Agent: main
-Task: Phase 6 Final Cleanup — Migrate frontend to V3 endpoints, delete obsolete endpoints
+## Changes Made
 
-Work Log:
-- Explored codebase to find all references to /api/finance/summary, /api/finance/overdue, /api/cashier-sessions/active
-- Compared old endpoint response shapes with V3 dashboard response
-- Added 7 missing fields to GET /api/finance-v3/dashboard (ActiveContracts, UnpaidInvoicesCount, DraftInvoicesCount, OverdueAmount, PendingCommissionsAmount, RecentPayments, RecentInvoices)
-- Migrated useFinanceSummary hook from /api/finance/summary to /api/finance-v3/dashboard with field mapping
-- Updated /finance/overdue navigation link in page.tsx to /finance-v3?tab=contracts
-- Deleted GET /api/finance/summary from PaymentsController
-- Deleted GET /api/finance/overdue from PaymentsController
-- Deleted GET /api/cashier-sessions/active from CashierSessionsController
-- Verified zero remaining references to old endpoints in both frontend and backend
-- Updated FinanceV3Controller migration header with Phase 6 status
-- Committed as 7c4009a and pushed to origin
-- Updated PR #251 title and description
+### 1. Top Operation Buttons in Daily Operations Header
+**File:** `frontend/src/app/(dashboard)/daily-operations/page.tsx`
 
-Stage Summary:
-- All 3 obsolete endpoints deleted (finance/summary, finance/overdue, cashier-sessions/active)
-- Frontend fully migrated to V3 endpoints
-- PR #251 updated: https://github.com/Aqlanf10/aqlan-dental/pull/251
+Added 8 compact operation buttons in the command bar between the date filters and the walk-in button area:
+
+1. **تسجيل وصول** (CheckIn) — ClipboardCheck icon, green — calls `handleIntake(selectedItem)`
+2. **مريض جديد** (New Patient) — UserPlus icon, navy — navigates to `/patients/new`
+3. **دخول مباشر** (Walk-In) — LogIn icon, orange — opens walkInModal
+4. **تحصيل** (Collect Payment) — CreditCard icon, emerald — opens QuickPaymentModal
+5. **نداء** (Call Patient) — Bell icon, amber — calls `handleCallPatient(selectedItem)`
+6. **إعادة النداء** (Recall) — BellRing icon, yellow — re-calls already called patients
+7. **موعد قادم** (Next Appointment) — CalendarPlus icon, blue — opens bookAppointmentModal
+8. **طباعة سند** (Print Receipt) — Printer icon, purple — downloads PDF receipt for latest payment
+
+Each button that requires a patient selection checks `getActiveItem()` (returns `sidePanelItem ?? selectedItem ?? null`) and shows a toast if none selected. Buttons are gated by permission hooks.
+
+Added imports: `ClipboardCheck, LogIn, BellRing, CalendarPlus` from lucide-react, and `useHasPermission, PERMISSION_KEYS` from hooks.
+
+### 2. Payment Methods Settings Page
+**File:** `frontend/src/app/(dashboard)/settings/payment-methods/page.tsx` (NEW)
+
+Created a complete settings page following the rooms settings page pattern:
+- Fetches from `GET /api/settings/payment-methods`
+- Displays each method in a table row with: Name, Code, Active toggle, RequiresReferenceNumber badge, AccountName, AccountNumber
+- Allows toggling active/inactive via `POST /api/settings/payment-methods/{id}/toggle`
+- Allows editing via inline form with `PUT /api/settings/payment-methods/{id}`
+- Allows creating new methods via `POST /api/settings/payment-methods`
+- Shows "الرقم المرجعي إلزامي" badge if RequiresReferenceNumber is true
+- Only accessible by Admin role (checked via `useHasPermission` with `SETTINGS_PAYMENT_METHODS_MANAGE`)
+
+### 3. Updated usePermissions Hook
+**File:** `frontend/src/hooks/usePermissions.ts`
+
+Added 17 new permission keys to `PERMISSION_KEYS`:
+- `DAILY_OPS_VIEW`, `DAILY_OPS_CHECK_IN`, `DAILY_OPS_CREATE_WALK_IN`, `DAILY_OPS_CALL_PATIENT`, `DAILY_OPS_RECALL_PATIENT`, `DAILY_OPS_ENTER_ROOM`, `DAILY_OPS_CHANGE_ROOM`, `DAILY_OPS_COLLECT_PAYMENT`, `DAILY_OPS_CREATE_DRAFT_INVOICE`, `DAILY_OPS_CLOSE_VISIT`, `DAILY_OPS_MANAGER_OVERRIDE`, `DAILY_OPS_LAB_VIEW`, `DAILY_OPS_LAB_MANAGE`, `REPORTS_DAILY_VIEW`, `COMMISSIONS_VIEW`, `SETTINGS_PAYMENT_METHODS_MANAGE`
+
+Added `ROLE_FALLBACK` map with role-based permission inference for:
+- Reception: full daily ops access (checkIn, walkIn, callPatient, recall, enterRoom, changeRoom, collectPayment, draftInvoice, closeVisit, labView)
+- Accountant: dailyOps view, collectPayment, finance, reports, commissions
+- Assistant: callPatient, recall, enterRoom, changeRoom, labView
+- Doctor roles: dailyOps view, lab view
+- BranchManager: full daily ops + manager override + lab manage + reports + commissions + payment methods
+
+Updated `useHasPermission` hook to fall back to role-based permissions when no explicit permissions are loaded.
+
+### 4. Permission-Based Button Visibility
+**File:** `frontend/src/app/(dashboard)/daily-operations/page.tsx`
+
+Added permission checks using `useHasPermission`:
+- `canCheckIn` — gates CheckIn button
+- `canCreateWalkIn` — gates Walk-In button
+- `canCallPatient` — gates Call Patient button
+- `canRecallPatient` — gates Recall button
+- `canCollectPayment` — gates Collect Payment button AND Direct Payment button (replaced `!isDoctor` check)
+- `canCreateDraftInvoice` — available for future use
+- `canCloseVisit` — available for future use
+
+### 5. Dynamic Payment Methods in Modals
+**Files:** 
+- `frontend/src/app/(dashboard)/daily-operations/_components/Modals.tsx`
+- `frontend/src/app/(dashboard)/daily-operations/_lib/hooks.ts`
+
+**QuickPaymentModal changes:**
+- Added `usePaymentMethodSettings` hook to fetch dynamic payment methods from API
+- Replaced hardcoded `PAYMENT_METHODS` dropdown with dynamic methods from `activePaymentMethods`
+- Falls back to `PAYMENT_METHODS` constant if API returns empty
+- Added `referenceNumber` state and `referenceError` state
+- When selected method has `requiresReferenceNumber: true`, shows a required reference number input field
+- Validates reference number on submit: shows error "الرقم المرجعي مطلوب لطريقة الدفع هذه" if missing
+- Updated `onConfirm` signature to accept `referenceNumber?: string`
+
+**DirectPaymentModal changes:**
+- Same changes as QuickPaymentModal
+- Updated `onConfirm` data type to include `referenceNumber?: string`
+
+**useCreatePayment hook:**
+- Added `referenceNumber?: string` to the mutation body type
+
+**page.tsx handlers:**
+- Updated `handlePaymentConfirm` to accept and pass `referenceNumber`
+- Updated `handleDirectPaymentConfirm` to accept and pass `referenceNumber`
+
+### 6. Enhanced Receipt Download
+**File:** `frontend/src/app/(dashboard)/daily-operations/page.tsx`
+
+Added `handlePrintReceipt` callback that:
+- Gets the active item via `getActiveItem()`
+- Shows toast "يرجى اختيار مريض أولاً" if no patient selected
+- Checks for `latestPayment?.id` in selectedSummary
+- Shows toast "لا توجد دفعة حديثة لطباعة سند" if no payment found
+- Downloads PDF receipt from `/api/payments/{paymentId}/pdf`
+
+Added "طباعة سند" button in the side panel's Financial Summary section:
+- Shows only when `finance.latestPayment?.id` exists
+- Downloads PDF receipt directly with proper filename
+
+### 7. Payment Methods Link in Settings Page
+**File:** `frontend/src/app/(dashboard)/settings/page.tsx`
+
+Added `CreditCard` icon import and a new Link card for payment methods:
+- Links to `/settings/payment-methods`
+- Purple theme with CreditCard icon
+- Label: "طرق الدفع"
+- Description: "إدارة طرق الدفع المتاحة والرقم المرجعي"
+
+## Build Result
+- **TypeScript check passed** with 0 relevant errors
+- Only pre-existing `globals.css` module declaration warning

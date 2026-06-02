@@ -1,3 +1,5 @@
+using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -5,10 +7,35 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.API.Controllers;
 
+/// <summary>Sprint 2 — DTO for creating a payment method.</summary>
+public sealed class CreatePaymentMethodRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public string Code { get; init; } = string.Empty;
+    public bool RequiresReferenceNumber { get; init; }
+    public string? AccountName { get; init; }
+    public string? AccountNumber { get; init; }
+    public string? Notes { get; init; }
+    public int SortOrder { get; init; }
+    public Guid? BranchId { get; init; }
+}
+
+/// <summary>Sprint 2 — DTO for updating a payment method.</summary>
+public sealed class UpdatePaymentMethodRequest
+{
+    public string? Name { get; init; }
+    public string? Code { get; init; }
+    public bool? RequiresReferenceNumber { get; init; }
+    public string? AccountName { get; init; }
+    public string? AccountNumber { get; init; }
+    public string? Notes { get; init; }
+    public int? SortOrder { get; init; }
+}
+
 [ApiController]
 [Route("api/settings")]
 [Authorize(Policy = "AdminOnly")]
-public class SettingsController(AppDbContext db) : ControllerBase
+public class SettingsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -116,6 +143,82 @@ public class SettingsController(AppDbContext db) : ControllerBase
         }
 
         return Ok(result);
+    }
+
+    // ─── Sprint 2 — Payment Method Settings ─────────────────────────────────
+
+    /// <summary>جلب طرق الدفع النشطة (متاح لجميع الموظفين)</summary>
+    [HttpGet("payment-methods")]
+    [Authorize(Policy = "StaffOnly")]
+    public async Task<IActionResult> GetPaymentMethods()
+    {
+        var methods = await db.PaymentMethodSettings
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.SortOrder)
+            .Select(p => new {
+                p.Id, p.Name, p.Code, p.IsActive,
+                p.RequiresReferenceNumber, p.AccountName, p.AccountNumber,
+                p.Notes, p.SortOrder, p.BranchId
+            })
+            .ToListAsync();
+        return Ok(methods);
+    }
+
+    /// <summary>إنشاء طريقة دفع جديدة (المدير فقط)</summary>
+    [HttpPost("payment-methods")]
+    public async Task<IActionResult> CreatePaymentMethod([FromBody] CreatePaymentMethodRequest req)
+    {
+        // Only Admin can create
+        if (!currentUser.IsAdmin) return Forbid();
+
+        var method = new PaymentMethodSetting
+        {
+            Name = req.Name,
+            Code = req.Code,
+            IsActive = true,
+            RequiresReferenceNumber = req.RequiresReferenceNumber,
+            AccountName = req.AccountName,
+            AccountNumber = req.AccountNumber,
+            Notes = req.Notes,
+            SortOrder = req.SortOrder,
+            BranchId = req.BranchId
+        };
+        db.PaymentMethodSettings.Add(method);
+        await db.SaveChangesAsync();
+        return Ok(new { method.Id });
+    }
+
+    /// <summary>تحديث طريقة دفع (المدير فقط)</summary>
+    [HttpPut("payment-methods/{id:guid}")]
+    public async Task<IActionResult> UpdatePaymentMethod(Guid id, [FromBody] UpdatePaymentMethodRequest req)
+    {
+        if (!currentUser.IsAdmin) return Forbid();
+        var method = await db.PaymentMethodSettings.FindAsync(id);
+        if (method is null) return NotFound();
+
+        if (req.Name != null) method.Name = req.Name;
+        if (req.Code != null) method.Code = req.Code;
+        if (req.RequiresReferenceNumber.HasValue) method.RequiresReferenceNumber = req.RequiresReferenceNumber.Value;
+        if (req.AccountName != null) method.AccountName = req.AccountName;
+        if (req.AccountNumber != null) method.AccountNumber = req.AccountNumber;
+        if (req.Notes != null) method.Notes = req.Notes;
+        if (req.SortOrder.HasValue) method.SortOrder = req.SortOrder.Value;
+
+        await db.SaveChangesAsync();
+        return Ok(new { id });
+    }
+
+    /// <summary>تفعيل/تعطيل طريقة دفع (المدير فقط)</summary>
+    [HttpPost("payment-methods/{id:guid}/toggle")]
+    public async Task<IActionResult> TogglePaymentMethod(Guid id)
+    {
+        if (!currentUser.IsAdmin) return Forbid();
+        var method = await db.PaymentMethodSettings.FindAsync(id);
+        if (method is null) return NotFound();
+
+        method.IsActive = !method.IsActive;
+        await db.SaveChangesAsync();
+        return Ok(new { id, method.IsActive });
     }
 
     private static Dictionary<string, string> GetWebsiteDefaults() => new()

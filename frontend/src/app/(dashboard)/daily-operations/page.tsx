@@ -9,7 +9,9 @@ import {
   Wallet, UserPlus, Keyboard, Bell, BellOff,
   Printer, Activity, Megaphone, Building2,
   X, Phone, MessageCircle,
+  ClipboardCheck, LogIn, BellRing, CalendarPlus,
 } from "lucide-react";
+import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
@@ -142,6 +144,15 @@ export default function DailyOperationsPage() {
   const isDoctor = isDoctorRole(userRole);
   const canProcessCheckout = userRole === "Admin" || userRole === "Reception";
 
+  // ── Permission checks ──
+  const canCheckIn = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CHECK_IN);
+  const canCreateWalkIn = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CREATE_WALK_IN);
+  const canCallPatient = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CALL_PATIENT);
+  const canRecallPatient = useHasPermission(PERMISSION_KEYS.DAILY_OPS_RECALL_PATIENT);
+  const canCollectPayment = useHasPermission(PERMISSION_KEYS.DAILY_OPS_COLLECT_PAYMENT);
+  const canCreateDraftInvoice = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CREATE_DRAFT_INVOICE);
+  const canCloseVisit = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CLOSE_VISIT);
+
   // ── SignalR real-time updates ──
   const { isConnected: signalrConnected } = useSignalRClinicQueue();
 
@@ -243,6 +254,39 @@ export default function DailyOperationsPage() {
   // ── Selected patient summary (for side panel + modals) ──
   const activePatientId = sidePanelItem?.patientId ?? selectedItem?.patientId ?? null;
   const { data: selectedSummary } = usePatientSummary(activePatientId);
+
+  // ── Active item helper (returns whichever is selected) ──
+  const getActiveItem = useCallback((): TodayJourneyItem | null => {
+    return sidePanelItem ?? selectedItem ?? null;
+  }, [sidePanelItem, selectedItem]);
+
+  // ── Print receipt for active item ──
+  const handlePrintReceipt = useCallback(async () => {
+    const item = getActiveItem();
+    if (!item) {
+      toast.error("يرجى اختيار مريض أولاً");
+      return;
+    }
+    const latestPaymentId = selectedSummary?.financeSummary?.latestPayment?.id;
+    if (!latestPaymentId) {
+      toast.error("لا توجد دفعة حديثة لطباعة سند");
+      return;
+    }
+    try {
+      const { data } = await api.get(`/api/payments/${latestPaymentId}/pdf`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      const receiptNum = selectedSummary?.financeSummary?.latestPayment?.receiptNumber ?? latestPaymentId;
+      link.download = `receipt-${receiptNum}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error("فشل تحميل سند الدفع");
+    }
+  }, [getActiveItem, selectedSummary]);
 
   // ── Computed ──
   const dayStats = useMemo(() => computeDayStats(items, financeSummary), [items, financeSummary]);
@@ -524,7 +568,7 @@ export default function DailyOperationsPage() {
       } else if (confirmDialogType === "CancelQueue") {
         if (!selectedItem.queueItemId) return;
         await cancelQueueMutation.mutateAsync(selectedItem.queueItemId);
-        toast.success("تم إلغاء المريض من الطابور");
+        toast.success("تم إلغاء المريض من قائمة الانتظار");
         pushUndoAction({
           id: crypto.randomUUID(),
           type: "CancelQueue",
@@ -545,7 +589,7 @@ export default function DailyOperationsPage() {
     setConfirmDialogOpen(false);
   }, [selectedItem, confirmDialogType, updateStatusMutation, cancelQueueMutation, completeVisitMutation, pushUndoAction]);
 
-  const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string) => {
+  const handlePaymentConfirm = useCallback(async (amount: number, method: string, desc: string, notes: string, referenceNumber?: string) => {
     if (!selectedItem) return;
     try {
       const result = await createPaymentMutation.mutateAsync({
@@ -555,6 +599,7 @@ export default function DailyOperationsPage() {
         serviceDescription: desc || undefined,
         doctorId: selectedItem.doctorId,
         notes: notes || undefined,
+        referenceNumber: referenceNumber || undefined,
       });
       toast.success("تم تسجيل الدفعة بنجاح");
       setPaymentModalOpen(false);
@@ -713,6 +758,7 @@ export default function DailyOperationsPage() {
     patientId: string; patientName: string;
     amount: number; paymentMethod: string;
     serviceDescription: string; notes: string;
+    referenceNumber?: string;
   }) => {
     try {
       const result = await createPaymentMutation.mutateAsync({
@@ -721,6 +767,7 @@ export default function DailyOperationsPage() {
         paymentMethod: data.paymentMethod,
         serviceDescription: data.serviceDescription || undefined,
         notes: data.notes || undefined,
+        referenceNumber: data.referenceNumber || undefined,
       });
       toast.success(`تم تسجيل دفعة ${fmtRial(data.amount)} للمريض ${data.patientName} بنجاح`);
       setDirectPaymentModalOpen(false);
@@ -846,6 +893,100 @@ export default function DailyOperationsPage() {
           {/* Spacer */}
           <div className="flex-1" />
 
+          {/* ═══ Quick Operation Buttons (compact, permission-gated) ═══ */}
+          <div className="flex items-center gap-0.5">
+
+            {/* 1. تسجيل وصول (CheckIn) — green */}
+            {canCheckIn && (
+              <button onClick={() => {
+                const item = getActiveItem();
+                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                handleIntake(item);
+              }}
+                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-green-50"
+                title="تسجيل وصول" style={{ color: "#16a34a" }}>
+                <ClipboardCheck className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* 2. مريض جديد (New Patient) — navy */}
+            <button onClick={() => router.push("/patients/new")}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-[#1a3a5c08]"
+              title="مريض جديد" style={{ color: NAVY }}>
+              <UserPlus className="w-4 h-4" />
+            </button>
+
+            {/* 3. دخول مباشر (Walk-In) — orange */}
+            {canCreateWalkIn && (
+              <button onClick={() => setWalkInModalOpen(true)}
+                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-orange-50"
+                title="دخول مباشر (Ctrl+N)" style={{ color: ORANGE }}>
+                <LogIn className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* 4. تحصيل (Collect Payment) — emerald */}
+            {canCollectPayment && (
+              <button onClick={() => {
+                const item = getActiveItem();
+                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                handleQuickPayment(item);
+              }}
+                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-emerald-50"
+                title="تحصيل دفعة" style={{ color: "#059669" }}>
+                <CreditCard className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* 5. نداء (Call Patient) — amber */}
+            {canCallPatient && (
+              <button onClick={() => {
+                const item = getActiveItem();
+                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                handleCallPatient(item);
+              }}
+                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-amber-50"
+                title="نداء المريض" style={{ color: "#d97706" }}>
+                <Bell className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* 6. إعادة النداء (Recall) — yellow */}
+            {canRecallPatient && (
+              <button onClick={() => {
+                const item = getActiveItem();
+                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                // Re-call a patient that was already called
+                handleCallPatient(item);
+              }}
+                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-yellow-50"
+                title="إعادة النداء" style={{ color: "#ca8a04" }}>
+                <BellRing className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* 7. موعد قادم (Next Appointment) — blue */}
+            <button onClick={() => {
+              const item = getActiveItem();
+              if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+              handleBookAppointment(item);
+            }}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-blue-50"
+              title="موعد قادم" style={{ color: BLUE }}>
+              <CalendarPlus className="w-4 h-4" />
+            </button>
+
+            {/* 8. طباعة سند (Print Receipt) — purple */}
+            <button onClick={handlePrintReceipt}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-purple-50"
+              title="طباعة سند آخر دفعة" style={{ color: "#7c3aed" }}>
+              <Printer className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div className="w-px h-7 mx-1" style={{ background: "#e5e7eb" }} />
+
           {/* Right Actions */}
           {/* Walk-in (PRIMARY - Orange with text) */}
           <button onClick={() => setWalkInModalOpen(true)}
@@ -857,7 +998,7 @@ export default function DailyOperationsPage() {
           </button>
 
           {/* Direct Payment for unbooked patient (Green with text) */}
-          {!isDoctor && (
+          {canCollectPayment && (
             <button onClick={() => {
               if (!activeCashierSession) {
                 toast.error("يجب فتح وردية (صندوق الكاشير) أولاً قبل تسجيل أي مدفوعات. اذهب إلى المالية > الصندوق لفتح وردية.");
@@ -1490,7 +1631,32 @@ function PatientDetailPanel({
         {/* Financial Summary */}
         {finance && (
           <div>
-            <div className="text-[11px] font-bold mb-1.5" style={{ color: NAVY }}>💰 الملخص المالي</div>
+            <div className="text-[11px] font-bold mb-1.5 flex items-center justify-between" style={{ color: NAVY }}>
+              <span>💰 الملخص المالي</span>
+              {finance.latestPayment?.id && (
+                <button onClick={async () => {
+                  try {
+                    const { data } = await api.get(`/api/payments/${finance.latestPayment!.id}/pdf`, {
+                      responseType: "blob",
+                    });
+                    const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `receipt-${finance.latestPayment!.receiptNumber || finance.latestPayment!.id}.pdf`;
+                    link.click();
+                    window.URL.revokeObjectURL(url);
+                  } catch {
+                    toast.error("فشل تحميل السند");
+                  }
+                }}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold transition hover:bg-purple-100"
+                  style={{ color: "#7c3aed", background: "#7c3aed10", border: "1px solid #7c3aed30" }}
+                  title="طباعة سند آخر دفعة">
+                  <Printer className="w-3 h-3" />
+                  طباعة سند
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-3 gap-1.5">
               <div className="p-2 rounded-lg text-center" style={{ background: "#fff7ed" }}>
                 <div className="text-[9px] font-medium" style={{ color: ORANGE }}>المستحق</div>

@@ -68,9 +68,69 @@ export const PERMISSION_KEYS = {
   // Reports / Commissions
   REPORTS_VIEW: "reports.view", // daily reports
   REPORTS_CREATE: "reports.create", // commissions
+
+  // Daily Operations — Granular
+  DAILY_OPS_VIEW: "dailyOperations.view",
+  DAILY_OPS_CHECK_IN: "dailyOperations.checkIn",
+  DAILY_OPS_CREATE_WALK_IN: "dailyOperations.createWalkIn",
+  DAILY_OPS_CALL_PATIENT: "dailyOperations.callPatient",
+  DAILY_OPS_RECALL_PATIENT: "dailyOperations.recallPatient",
+  DAILY_OPS_ENTER_ROOM: "dailyOperations.enterRoom",
+  DAILY_OPS_CHANGE_ROOM: "dailyOperations.changeRoom",
+  DAILY_OPS_COLLECT_PAYMENT: "dailyOperations.collectPayment",
+  DAILY_OPS_CREATE_DRAFT_INVOICE: "dailyOperations.createDraftInvoice",
+  DAILY_OPS_CLOSE_VISIT: "dailyOperations.closeVisit",
+  DAILY_OPS_MANAGER_OVERRIDE: "dailyOperations.managerOverride",
+  DAILY_OPS_LAB_VIEW: "dailyOperations.lab.view",
+  DAILY_OPS_LAB_MANAGE: "dailyOperations.lab.manage",
+  REPORTS_DAILY_VIEW: "reports.daily.view",
+  COMMISSIONS_VIEW: "commissions.view",
+  SETTINGS_PAYMENT_METHODS_MANAGE: "settings.paymentMethods.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[keyof typeof PERMISSION_KEYS];
+
+/**
+ * Role-based fallback map for daily operations permissions.
+ * When a user has no explicit permissions loaded, we infer from their role.
+ */
+const ROLE_FALLBACK: Record<string, string[]> = {
+  Admin: ["*"], // Admin has all permissions
+  Reception: [
+    "dailyOperations.view", "dailyOperations.checkIn", "dailyOperations.createWalkIn",
+    "dailyOperations.callPatient", "dailyOperations.recallPatient", "dailyOperations.enterRoom",
+    "dailyOperations.changeRoom", "dailyOperations.collectPayment", "dailyOperations.createDraftInvoice",
+    "dailyOperations.closeVisit", "dailyOperations.lab.view",
+    "clinic_queue.view", "clinic_queue.create", "clinic_queue.edit",
+    "appointments.view", "appointments.create", "appointments.edit",
+    "finance.view", "finance.create", "finance.edit",
+    "patients.view", "patients.create",
+    "rooms.view", "rooms.create", "rooms.edit",
+    "visits.view", "visits.edit",
+    "checkout.view", "invoices.view", "invoices.create",
+  ],
+  Accountant: [
+    "dailyOperations.view", "dailyOperations.collectPayment",
+    "finance.view", "finance.create", "finance.edit", "finance.export",
+    "reports.daily.view", "commissions.view",
+  ],
+  Assistant: [
+    "dailyOperations.view", "dailyOperations.callPatient", "dailyOperations.recallPatient",
+    "dailyOperations.enterRoom", "dailyOperations.changeRoom", "dailyOperations.lab.view",
+    "clinic_queue.view", "clinic_queue.create",
+  ],
+  Orthodontist: ["dailyOperations.view", "dailyOperations.lab.view", "dailyOperations.lab.manage"],
+  GeneralDentist: ["dailyOperations.view", "dailyOperations.lab.view"],
+  OralSurgeon: ["dailyOperations.view", "dailyOperations.lab.view"],
+  BranchManager: [
+    "dailyOperations.view", "dailyOperations.checkIn", "dailyOperations.createWalkIn",
+    "dailyOperations.callPatient", "dailyOperations.recallPatient", "dailyOperations.enterRoom",
+    "dailyOperations.changeRoom", "dailyOperations.collectPayment", "dailyOperations.createDraftInvoice",
+    "dailyOperations.closeVisit", "dailyOperations.managerOverride",
+    "dailyOperations.lab.view", "dailyOperations.lab.manage",
+    "reports.daily.view", "commissions.view", "settings.paymentMethods.manage",
+  ],
+};
 
 /**
  * Hook to check if the current user has a specific permission.
@@ -88,8 +148,14 @@ export function useHasPermission(permissionKey: string): boolean {
     return user.permissions.includes(permissionKey);
   }
 
-  // Fallback: no permissions loaded, deny by default for safety
-  // But allow basic access for authenticated users
+  // Fallback: role-based permission inference
+  if (user?.role) {
+    const rolePerms = ROLE_FALLBACK[user.role];
+    if (rolePerms) {
+      return rolePerms.includes("*") || rolePerms.includes(permissionKey);
+    }
+  }
+
   return false;
 }
 

@@ -300,6 +300,62 @@ public class FinanceV3ControllerTests
         result.Should().BeOfType<ForbidResult>("non-admin with empty BranchId must be forbidden");
     }
 
+    [Fact]
+    public async Task FinanceV3_Dashboard_AdminWithFinanceRows_ReturnsOk()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+
+        var treasury = new Treasury
+        {
+            Id = Guid.NewGuid(), Name = "Main Vault", Type = TreasuryType.Vault,
+            Balance = 25_000m, BranchId = branchId, IsActive = true
+        };
+        db.Treasuries.Add(treasury);
+
+        db.JournalEntries.Add(new JournalEntry
+        {
+            Id = Guid.NewGuid(),
+            EntryNumber = "JE-DASH-001",
+            FinancialDocumentId = Guid.NewGuid(),
+            FinancialDocumentType = FinancialDocumentType.Payment,
+            Description = "Dashboard smoke test",
+            EntryDate = DateOnly.FromDateTime(DateTime.Today),
+            BranchId = branchId,
+            PerformedBy = userId,
+            TreasuryId = treasury.Id,
+            IsPosted = true,
+            Lines =
+            [
+                new JournalLine
+                {
+                    AccountType = JournalAccountType.Treasury,
+                    AccountId = treasury.Id,
+                    Debit = 10_000m,
+                    Credit = 0m,
+                    BranchId = branchId
+                },
+                new JournalLine
+                {
+                    AccountType = JournalAccountType.PatientReceivable,
+                    AccountId = Guid.NewGuid(),
+                    Debit = 0m,
+                    Credit = 10_000m,
+                    BranchId = branchId
+                }
+            ]
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser());
+        var result = await controller.GetDashboard();
+
+        result.Should().BeOfType<OkObjectResult>("dashboard must not fail when Finance V3 tables contain real rows");
+        var ok = (OkObjectResult)result;
+        ok.Value!.GetType().GetProperty("TodayInflow").Should().NotBeNull();
+        ok.Value!.GetType().GetProperty("TotalTreasuryBalance").Should().NotBeNull();
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // InvoicesController — /api/patients/{id}/invoices returns Balance
     // ═══════════════════════════════════════════════════════════════════════════
@@ -950,6 +1006,87 @@ public class FinanceV3ControllerTests
     // ═══════════════════════════════════════════════════════════════════════════
     // FinanceV3Controller — Journal Entries returns paginated
     // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task FinanceV3_GetExpenses_ExpenseWithoutJournalEntry_ReturnsNullTreasury()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+
+        db.OperationalExpenses.Add(new OperationalExpense
+        {
+            Id = Guid.NewGuid(),
+            ExpenseNumber = "EXP-SMOKE-001",
+            Title = "Legacy expense without journal entry",
+            Category = ExpenseCategory.Miscellaneous,
+            Amount = 1_000m,
+            PaymentMethod = "cash",
+            ExpenseDate = DateOnly.FromDateTime(DateTime.Today),
+            PaidBy = userId,
+            BranchId = branchId,
+            ApprovalStatus = ApprovalStatus.NotRequired,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.GetExpenses();
+
+        result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result;
+        var response = ok.Value!;
+        var dataProp = response.GetType().GetProperty("data");
+        dataProp.Should().NotBeNull("expenses response must have data wrapper");
+
+        var items = ((System.Collections.IEnumerable)dataProp!.GetValue(response)!).Cast<object>().ToList();
+        items.Should().HaveCount(1);
+        items[0].GetType().GetProperty("TreasuryId")!.GetValue(items[0])
+            .Should().BeNull("legacy expenses without JournalEntry must not resolve Guid.Empty as a treasury");
+    }
+
+    [Fact]
+    public async Task FinanceV3_GetVaultTransfers_ReturnsDataWrapper()
+    {
+        await using var db = CreateDb();
+        var (branchId, userId) = SeedBranchAndUser(db);
+
+        var destination = new Treasury
+        {
+            Id = Guid.NewGuid(),
+            Name = "Destination treasury",
+            Type = TreasuryType.Vault,
+            Balance = 0m,
+            BranchId = branchId,
+            IsActive = true
+        };
+        db.Treasuries.Add(destination);
+        db.VaultTransfers.Add(new VaultTransfer
+        {
+            Id = Guid.NewGuid(),
+            TransferNumber = "TR-SMOKE-001",
+            DestinationTreasuryId = destination.Id,
+            DestinationTreasury = destination,
+            Amount = 500m,
+            TransferDate = DateTime.UtcNow,
+            PerformedBy = userId,
+            PerformedByUser = db.Users.Single(u => u.Id == userId),
+            Status = TransferStatus.Pending,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildFinanceV3Controller(db, CreateAdminUser(branchId));
+        var result = await controller.GetVaultTransfers();
+
+        result.Should().BeOfType<OkObjectResult>();
+        var ok = (OkObjectResult)result;
+        var response = ok.Value!;
+        var dataProp = response.GetType().GetProperty("data");
+        dataProp.Should().NotBeNull("vault transfers response must have data wrapper");
+        var items = ((System.Collections.IEnumerable)dataProp!.GetValue(response)!).Cast<object>().ToList();
+        items.Should().HaveCount(1);
+        items[0].GetType().GetProperty("RequestedBy")!.GetValue(items[0]).Should().Be("admin1");
+    }
 
     [Fact]
     public async Task FinanceV3_GetJournalEntries_ReturnsPaginatedWithLines()

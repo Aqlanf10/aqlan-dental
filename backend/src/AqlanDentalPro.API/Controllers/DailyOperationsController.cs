@@ -3,6 +3,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -105,15 +106,13 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
             //
             //   When an explicit "LeftWithoutCompletion" (or equivalent) status is added
             //   to AppointmentStatus or Visit.CheckoutStatus, update the sets below.
-            var today = DateOnly.FromDateTime(DateTime.Today);
-
             // Terminal CheckoutStatus values that mean "left without completing the visit"
             var leftWithoutCompletionCheckoutStatuses = new HashSet<string?>
             {
-                // "LeftWithoutCompletion",   // uncomment when added to system
-                // "CancelledAfterArrival",    // uncomment when added to system
-                // "Incomplete",               // uncomment when added to system
-                // "Abandoned",                // uncomment when added to system
+                "LeftWithoutCompletion",
+                "CancelledAfterArrival",
+                "Incomplete",
+                "Abandoned",
             };
 
             // Terminal AppointmentStatus values that mean "left without completing"
@@ -126,11 +125,16 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
                 // AppointmentStatus.Abandoned,                // uncomment when added
             };
 
-            var leftWithoutCompletion = reportDate < today
-                ? appointments.Count(a => leftWithoutCompletionAppointmentStatuses.Contains(a.Status))
-                  + visits.Count(v => v.CheckoutStatus != null
-                      && leftWithoutCompletionCheckoutStatuses.Contains(v.CheckoutStatus))
-                : 0;
+            var leftWithoutCompletion = appointments.Count(a => leftWithoutCompletionAppointmentStatuses.Contains(a.Status))
+                + visits.Count(v => v.CheckoutStatus != null
+                    && leftWithoutCompletionCheckoutStatuses.Contains(v.CheckoutStatus));
+
+            var leftWithoutCompletionLogs = await db.AuditLogs
+                .Where(a => a.Resource == "Visit.LeftWithoutCompletion"
+                    && a.CreatedAt >= todayStart
+                    && a.CreatedAt <= todayEnd)
+                .OrderByDescending(a => a.CreatedAt)
+                .ToListAsync();
 
             // NewDebts: outstanding balance on invoices with Issued status only.
             //   Paid invoices are excluded because they should have zero outstanding balance
@@ -195,6 +199,13 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
                     Delivered = labOrders.Count(l => l.Status == "delivered")
                 },
                 ManagerOverrides = managerOverrides,
+                LeftWithoutCompletionEvents = leftWithoutCompletionLogs.Select(a => new
+                {
+                    VisitId = a.ResourceId,
+                    At = a.CreatedAt,
+                    Reason = TryReadAuditString(a.NewData, "reason"),
+                    Status = TryReadAuditString(a.NewData, "checkoutStatus")
+                }),
                 TomorrowAppointments = await db.Appointments
                     .IgnoreQueryFilters()
                     .CountAsync(a => a.AppointmentDate == reportDate.AddDays(1) && a.IsActive)
@@ -211,5 +222,18 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
             logger.LogError(ex, "DailyOperations.GetDailyReport failed");
             return StatusCode(500, new { message = "حدث خطأ أثناء تحميل التقرير اليومي" });
         }
+    }
+
+    private static string? TryReadAuditString(JsonDocument? doc, string propertyName)
+    {
+        if (doc == null)
+            return null;
+
+        var root = doc.RootElement;
+        return root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
     }
 }

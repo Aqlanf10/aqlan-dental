@@ -337,6 +337,24 @@ export function useHandoff() {
   });
 }
 
+export function useMarkLeftWithoutCompletion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { visitId: string; reason: string; status?: string }) => {
+      const { data } = await api.post(`/api/patient-journey/${params.visitId}/left-without-completion`, {
+        reason: params.reason,
+        status: params.status ?? "LeftWithoutCompletion",
+      });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+    },
+  });
+}
+
 export function useCancelQueue() {
   const queryClient = useQueryClient();
   return useMutation({

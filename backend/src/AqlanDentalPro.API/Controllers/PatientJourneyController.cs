@@ -1143,7 +1143,98 @@ public class PatientJourneyController(
         });
     }
 
-    // ─── 7. POST /api/patient-journey/{visitId}/create-draft-invoice ────────
+    // ─── 7. POST /api/patient-journey/{visitId}/left-without-completion ─────
+    /// <summary>Marks a visit as an explicit terminal operational state when
+    /// the patient leaves after arrival without completing care. This does not
+    /// create payments, alter invoices, or change financial balances.</summary>
+    [HttpPost("{visitId:guid}/left-without-completion")]
+    [Authorize(Policy = "AdminOrReception")]
+    public async Task<IActionResult> MarkLeftWithoutCompletion(Guid visitId, [FromBody] LeftWithoutCompletionRequest req)
+    {
+        var reason = req.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+            return BadRequest(new { message = "سبب الخروج بدون إكمال مطلوب" });
+
+        var status = string.IsNullOrWhiteSpace(req.Status)
+            ? "LeftWithoutCompletion"
+            : req.Status.Trim();
+
+        if (!IsLeftWithoutCompletionCheckoutStatus(status))
+            return BadRequest(new { message = "حالة الخروج بدون إكمال غير صالحة" });
+
+        var visit = await db.Visits
+            .Include(v => v.Appointment)
+            .FirstOrDefaultAsync(v => v.Id == visitId);
+
+        if (visit == null)
+            return NotFound(new { message = "الزيارة غير موجودة" });
+        if (!visit.IsActive)
+            return BadRequest(new { message = "الزيارة محذوفة" });
+        if (visit.CheckoutStatus == "CheckedOut")
+            return BadRequest(new { message = "لا يمكن تعليم زيارة مكتملة كمغادرة بدون إكمال" });
+
+        var previousCheckoutStatus = visit.CheckoutStatus;
+        var previousAppointmentStatus = visit.Appointment?.Status.ToString();
+        var now = DateTime.UtcNow;
+
+        visit.CheckoutStatus = status;
+        visit.UpdatedAt = now;
+
+        ClinicQueueItem? queueItem = null;
+        if (visit.AppointmentId.HasValue)
+        {
+            queueItem = await db.ClinicQueueItems
+                .Where(q => q.AppointmentId == visit.AppointmentId.Value
+                    && q.IsActive
+                    && q.Status != ClinicQueueStatus.Completed
+                    && q.Status != ClinicQueueStatus.Cancelled
+                    && q.Status != ClinicQueueStatus.NoShow)
+                .OrderByDescending(q => q.UpdatedAt)
+                .ThenByDescending(q => q.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (queueItem != null)
+            {
+                queueItem.Status = ClinicQueueStatus.Cancelled;
+                queueItem.CancelledAt = now;
+                queueItem.UpdatedAt = now;
+            }
+        }
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            Resource = "Visit.LeftWithoutCompletion",
+            ResourceId = visit.Id,
+            Action = AuditAction.Update,
+            UserId = GetCurrentUserId(),
+            OldData = JsonSerializer.SerializeToDocument(new
+            {
+                checkoutStatus = previousCheckoutStatus,
+                appointmentStatus = previousAppointmentStatus
+            }),
+            NewData = JsonSerializer.SerializeToDocument(new
+            {
+                checkoutStatus = status,
+                reason,
+                visit.PatientId,
+                visit.AppointmentId,
+                queueItemId = queueItem?.Id
+            })
+        });
+
+        await db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            VisitId = visit.Id,
+            visit.AppointmentId,
+            CheckoutStatus = visit.CheckoutStatus,
+            Reason = reason,
+            QueueStatus = queueItem?.Status.ToString(),
+            message = "تم تسجيل خروج المريض بدون إكمال"
+        });
+    }
+
     /// <summary>Creates a Draft Invoice from a visit that is ready for checkout.
     /// Uses Visit.AmountDueReference and linked ServiceId for line item pricing.
     /// Does NOT create a Payment. Does NOT alter Contract or Patient balance.
@@ -1425,6 +1516,8 @@ public class PatientJourneyController(
     private static string DetermineNextAction(AppointmentStatus apptStatus, ClinicQueueStatus? queueStatus, string? checkoutStatus)
     {
         // Blocker-3: checkoutStatus takes precedence for workflow routing
+        if (IsLeftWithoutCompletionCheckoutStatus(checkoutStatus))
+            return "None";
         if (checkoutStatus == "ReadyForCheckout")
             return "Checkout";
         if (checkoutStatus == "CheckedOut")
@@ -1462,9 +1555,14 @@ public class PatientJourneyController(
             || appointmentType.Contains("إسعاف", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsLeftWithoutCompletionCheckoutStatus(string? checkoutStatus)
+    {
+        return checkoutStatus is "LeftWithoutCompletion" or "CancelledAfterArrival" or "Incomplete" or "Abandoned";
+    }
+
     private Guid? GetCurrentUserId()
     {
-        var claim = User.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == "userId");
+        var claim = User?.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == "userId");
         if (claim != null && Guid.TryParse(claim.Value, out var uid))
             return uid;
         return null;
@@ -1520,6 +1618,12 @@ public class CheckoutRequest
     public string? Notes { get; set; }
     public DateOnly? NextAppointmentDate { get; set; }
     public Guid? NextServiceId { get; set; }
+}
+
+public class LeftWithoutCompletionRequest
+{
+    public string? Reason { get; set; }
+    public string? Status { get; set; }
 }
 
 /// <summary>

@@ -150,8 +150,8 @@ export default function DailyOperationsPage() {
   const canCallPatient = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CALL_PATIENT);
   const canRecallPatient = useHasPermission(PERMISSION_KEYS.DAILY_OPS_RECALL_PATIENT);
   const canCollectPayment = useHasPermission(PERMISSION_KEYS.DAILY_OPS_COLLECT_PAYMENT);
-  const canCreateDraftInvoice = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CREATE_DRAFT_INVOICE);
-  const canCloseVisit = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CLOSE_VISIT);
+  const _canCreateDraftInvoice = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CREATE_DRAFT_INVOICE);
+  const _canCloseVisit = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CLOSE_VISIT);
 
   // ── SignalR real-time updates ──
   const { isConnected: signalrConnected } = useSignalRClinicQueue();
@@ -530,7 +530,7 @@ export default function DailyOperationsPage() {
         toast.success("تم التراجع عن الإجراء");
       } else if (undoAction.type === "CancelQueue" && undoAction.queueItemId) {
         await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
-        toast.success("تم التراجع — أعيد المريض للطابور");
+        toast.success("تم التراجع — أعيد المريض لقائمة الانتظار");
       }
     } catch {
       toast.error("فشل التراجع");
@@ -734,7 +734,7 @@ export default function DailyOperationsPage() {
   }) => {
     try {
       await walkInMutation.mutateAsync(data);
-      toast.success("تم تسجيل المريض المشي وإضافته للطابور");
+      toast.success("تم تسجيل المريض المشي وإضافته لقائمة الانتظار");
       setWalkInModalOpen(false);
     } catch {
       toast.error("فشل تسجيل المريض المشي");

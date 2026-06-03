@@ -753,7 +753,7 @@ export function WalkInModal({
       <div className="mb-3 p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#fff7ed" }}>
         <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
         <span className="text-xs font-medium" style={{ color: "#92400e" }}>
-          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة للطابور تلقائياً
+          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة لقائمة الانتظار تلقائياً
         </span>
       </div>
 
@@ -809,7 +809,7 @@ export function WalkInModal({
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
           style={{ background: ORANGE, opacity: !patientName.trim() || !doctorId || isPending ? 0.5 : 1 }}>
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-          تسجيل وإضافة للطابور
+          تسجيل وإضافة لقائمة الانتظار
         </button>
       </div>
     </ModalShell>

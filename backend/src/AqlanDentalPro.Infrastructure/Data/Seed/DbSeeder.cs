@@ -475,6 +475,16 @@ public static class DbSeeder
                 ["GeneralDentist"] = (true, true, true, false, false, false),
                 ["OralSurgeon"]    = (true, true, true, false, false, false),
             },
+            ["lab_orders"] = new()
+            {
+                ["Admin"]          = (true, true, true, true, false, false),
+                ["Reception"]      = (true, false, false, false, false, false),
+                ["Orthodontist"]   = (true, true, true, false, false, false),
+                ["GeneralDentist"] = (true, true, false, false, false, false),
+                ["OralSurgeon"]    = (true, true, false, false, false, false),
+                ["Assistant"]      = (true, false, false, false, false, false),
+                ["BranchManager"]  = (true, true, true, false, false, false),
+            },
         };
 
         var existingPermissions = await context.RolePermissions

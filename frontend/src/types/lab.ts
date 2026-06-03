@@ -38,3 +38,30 @@ export interface UpdateLabOrderStatusRequest {
   status: LabOrderStatus;
   receivedDate?: string;
 }
+
+// Lab Sprint 2 — Lab management
+export interface Lab {
+  id: string;
+  name: string;
+  phone?: string;
+  whatsApp?: string;
+  address?: string;
+  contactPerson?: string;
+  email?: string;
+  notes?: string;
+  branchId?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LabWorkType {
+  id: string;
+  name: string;
+  nameAr?: string;
+  category?: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

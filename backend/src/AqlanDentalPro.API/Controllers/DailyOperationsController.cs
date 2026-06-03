@@ -51,11 +51,10 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
 
             // ── Payments ──────────────────────────────────────────────────
             var payments = await db.Payments
-                .Include(p => p.Invoice)
                 .Where(p => p.PaymentDate == reportDate && p.IsActive)
                 .ToListAsync();
 
-            // ── Invoices ──────────────────────────────────────────────────
+            // ── Invoices (fully loaded with active payments and line items) ─
             var invoices = await db.Invoices
                 .IgnoreQueryFilters()
                 .Include(i => i.Payments.Where(p => p.IsActive))
@@ -77,29 +76,60 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
 
             // ── Calculations ──────────────────────────────────────────────
 
-            // ReadyForCheckout: visits with checkout status "ReadyForCheckout"
+            // ReadyForCheckout: visits where CheckoutStatus is exactly "ReadyForCheckout"
+            // (doctor has finished treatment; visit is awaiting billing/checkout at reception)
             var readyForCheckout = visits.Count(v => v.CheckoutStatus == "ReadyForCheckout");
 
             // Completed: appointments that reached Completed status
             var completed = appointments.Count(a => a.Status == AppointmentStatus.Completed);
 
-            // LeftWithoutCompletion: InProgress appointments from a past date that were never completed
-            // (For today's report, this is 0 since the day is not over yet)
-            var leftWithoutCompletion = 0;
+            // LeftWithoutCompletion:
+            //   Formula: Count appointments on reportDate that entered an active clinical flow
+            //   (Arrived, Waiting, Called, InRoom, InProgress) but were never Completed,
+            //   Cancelled, or marked NoShow — AND the report date is in the past.
+            //   For today, the count is 0 because the day is still in progress and patients
+            //   may still be seen or checked out.
+            //   Additionally, count visits on reportDate where CheckoutStatus is null
+            //   (visit started but never reached ReadyForCheckout or CheckedOut) and
+            //   reportDate is in the past.
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var leftWithoutCompletion = reportDate < today
+                ? appointments.Count(a =>
+                    a.Status != AppointmentStatus.Completed &&
+                    a.Status != AppointmentStatus.Cancelled &&
+                    a.Status != AppointmentStatus.NoShow &&
+                    a.Status != AppointmentStatus.Scheduled &&
+                    a.Status != AppointmentStatus.Confirmed)
+                  + visits.Count(v =>
+                      v.CheckoutStatus == null &&
+                      appointments.Any(a => a.Id == v.AppointmentId &&
+                          a.Status != AppointmentStatus.Completed &&
+                          a.Status != AppointmentStatus.Cancelled &&
+                          a.Status != AppointmentStatus.NoShow))
+                : 0;
 
-            // NewDebts: total of issued invoices minus total payments on those invoices
-            var issuedInvoices = invoices.Where(i => i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid).ToList();
-            var totalInvoiced = issuedInvoices.Sum(i => i.TotalAmount);
-            var totalPaidOnInvoices = issuedInvoices.Sum(i => i.Payments.Sum(p => p.Amount));
-            var newDebts = Math.Max(0, totalInvoiced - totalPaidOnInvoices);
+            // NewDebts: outstanding balance on invoices with Issued status only.
+            //   Paid invoices are excluded because they should have zero outstanding balance
+            //   by definition; including them could mask data inconsistencies.
+            //   Formula: Sum of (TotalAmount − Sum of active Payments) for Issued invoices,
+            //   floored at 0 per-invoice to avoid negative debt from overpayment.
+            var newDebts = invoices
+                .Where(i => i.Status == InvoiceStatus.Issued)
+                .Sum(i => Math.Max(0, i.TotalAmount - i.Payments.Sum(p => p.Amount)));
 
-            // PartialPayments: payments where the invoice is NOT fully paid
-            var partialPayments = payments.Count(p =>
-                p.Invoice != null &&
-                p.Invoice.TotalAmount > 0 &&
-                p.Invoice.Payments.Sum(pay => pay.Amount) < p.Invoice.TotalAmount);
+            // PartialPayments: count of invoices (created on reportDate) that have received
+            //   at least one payment but are NOT fully paid.
+            //   This uses the fully-loaded invoices collection (with all active payments),
+            //   NOT the payments→invoice navigation which only loaded today's payments
+            //   and could miss earlier payments on the same invoice.
+            //   Formula: Count distinct invoices where Sum(ActivePayments) > 0
+            //   AND Sum(ActivePayments) < Invoice.TotalAmount.
+            var partialPayments = invoices.Count(i =>
+                i.Payments.Count > 0 &&
+                i.Payments.Sum(p => p.Amount) > 0 &&
+                i.Payments.Sum(p => p.Amount) < i.TotalAmount);
 
-            // Discounts: sum of LineDiscountAmount across today's invoice line items
+            // Discounts: sum of LineDiscountAmount across today's active invoice line items
             var discounts = invoices.Sum(i => i.LineItems.Sum(l => l.LineDiscountAmount));
 
             // ManagerOverrides: audit logs for daily-operation-specific overrides

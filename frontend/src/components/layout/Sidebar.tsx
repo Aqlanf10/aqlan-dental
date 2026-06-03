@@ -8,7 +8,7 @@ import {
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Clock,
   UserRound, Building2, UserCog,
   Truck, ShoppingCart, ChevronDown,
-  Smartphone, Banknote, CalendarOff, Shield,
+  Smartphone, Banknote, CalendarDays, CalendarOff, Shield,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -55,7 +55,9 @@ const NAV: NavEntry[] = [
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENTS_VIEW },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
-  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], section: "العيادة" },
+  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
+  { href: "/clinic-queue",   label: "قائمة الانتظار",  icon: ClipboardList,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
+  { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 
   // ── تخصصات ───────────────────────────────────────────────────────────────

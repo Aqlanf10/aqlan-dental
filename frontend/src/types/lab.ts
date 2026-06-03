@@ -207,3 +207,102 @@ export interface RecordLabPaymentRequest {
   amount: number;
   notes?: string;
 }
+
+// Lab Sprint 6 — Reports & Analytics
+export interface LabCostReportItem {
+  labId?: string;
+  labName: string;
+  totalOrders: number;
+  totalCost: number;
+  pendingOrders: number;
+  returnedOrders: number;
+  remakeOrders: number;
+}
+
+export interface LabDebtSummary {
+  totalDebt: number;
+  totalPayables: number;
+  pendingCount: number;
+  partialCount: number;
+}
+
+export interface LabPerformanceItem {
+  labId?: string;
+  labName: string;
+  totalOrders: number;
+  deliveredOrders: number;
+  remakeOrders: number;
+  overdueOrders: number;
+  cancelledOrders: number;
+  totalCost: number;
+  avgExecutionDays: number;
+  remakeRate: number;
+  overdueRate: number;
+  onTimeRate: number;
+}
+
+export interface LabPerformanceSummary {
+  totalLabs: number;
+  totalOrders: number;
+  totalDelivered: number;
+  totalOverdue: number;
+  totalRemakes: number;
+  totalCost: number;
+  overallAvgExecutionDays: number;
+  overallRemakeRate: number;
+  overallOverdueRate: number;
+}
+
+export interface LabDashboardKPIs {
+  totalOrders: number;
+  pendingOrders: number;
+  readyOrders: number;
+  receivedOrders: number;
+  overdueOrders: number;
+  deliveredThisMonth: number;
+  returnedOrders: number;
+  remakeOrders: number;
+  totalLabCosts: number;
+  totalDebt: number;
+}
+
+export interface StatusDistributionItem {
+  status: string;
+  count: number;
+}
+
+export interface TopLabItem {
+  labId?: string;
+  labName: string;
+  orderCount: number;
+  totalCost: number;
+}
+
+export interface OverdueOrderItem {
+  id: string;
+  orderNumber: string;
+  patientName: string;
+  labName?: string;
+  labEntityName?: string;
+  applianceType: string;
+  expectedDate?: string;
+  daysOverdue: number;
+  status: string;
+  priority: string;
+}
+
+export interface MonthlyTrendItem {
+  year: number;
+  month: number;
+  totalOrders: number;
+  deliveredOrders: number;
+  totalCost: number;
+}
+
+export interface LabDashboardData {
+  kpis: LabDashboardKPIs;
+  statusDistribution: StatusDistributionItem[];
+  topLabs: TopLabItem[];
+  recentOverdue: OverdueOrderItem[];
+  monthlyTrend: MonthlyTrendItem[];
+}

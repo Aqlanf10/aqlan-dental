@@ -24,6 +24,13 @@ export interface LabOrder {
   visitId?: string;
   cancellationReason?: string;
   createdAt: string;
+  // Lab Sprint 4 — Remake/Return fields
+  remakeReason?: string;
+  returnReason?: string;
+  remakeCost?: number;
+  isFreeRemake?: boolean;
+  originalOrderId?: string;
+  remakeCount?: number;
   // Lab Sprint 3 — order items
   items?: LabOrderItemResponse[];
 }
@@ -144,4 +151,37 @@ export interface UpdateLabWorkPriceRequest {
   urgentSurchargeType?: string;
   estimatedDays?: number;
   notes?: string;
+}
+
+// Lab Sprint 4 — Status History
+export interface LabOrderStatusHistoryEntry {
+  id: string;
+  fromStatus: string;
+  toStatus: string;
+  changedByName?: string;
+  reason?: string;
+  createdAt: string;
+}
+
+// Lab Sprint 4 — Attachments
+export interface LabOrderAttachment {
+  id: string;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  category: string;
+  labOrderItemId?: string;
+  storagePath: string;
+  uploadedByName?: string;
+  createdAt: string;
+}
+
+export interface ReturnLabOrderRequest {
+  reason: string;
+}
+
+export interface RemakeLabOrderRequest {
+  reason: string;
+  isFreeRemake?: boolean;
+  remakeCost?: number;
 }

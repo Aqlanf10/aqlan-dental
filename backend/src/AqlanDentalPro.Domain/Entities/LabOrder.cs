@@ -31,6 +31,14 @@ public class LabOrder : BaseEntity
     public decimal? TotalCost { get; set; }
     public Guid? InvoiceLineItemId { get; set; }
 
+    // Lab Sprint 4 — Remake/Return fields
+    public string? RemakeReason { get; set; }
+    public string? ReturnReason { get; set; }
+    public decimal? RemakeCost { get; set; }
+    public bool IsFreeRemake { get; set; }
+    public Guid? OriginalOrderId { get; set; }
+    public int RemakeCount { get; set; }
+
     public Patient Patient { get; set; } = null!;
     public OrthoCase? OrthoCase { get; set; }
     public Doctor? Doctor { get; set; }
@@ -39,4 +47,11 @@ public class LabOrder : BaseEntity
 
     // Lab Sprint 3 — Navigation to order items
     public ICollection<LabOrderItem> Items { get; set; } = [];
+
+    // Lab Sprint 4 — Navigation to history and attachments
+    public ICollection<LabOrderStatusHistory> StatusHistory { get; set; } = [];
+    public ICollection<LabOrderAttachment> Attachments { get; set; } = [];
+
+    // Lab Sprint 4 — Navigation to original order (for remakes)
+    public LabOrder? OriginalOrder { get; set; }
 }

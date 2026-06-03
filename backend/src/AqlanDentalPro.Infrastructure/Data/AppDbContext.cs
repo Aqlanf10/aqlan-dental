@@ -100,6 +100,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<LabWorkPrice> LabWorkPrices => Set<LabWorkPrice>();
     public DbSet<LabOrderItem> LabOrderItems => Set<LabOrderItem>();
 
+    // Lab Sprint 4 — Remake, Return, Status History & Attachments
+    public DbSet<LabOrderStatusHistory> LabOrderStatusHistories => Set<LabOrderStatusHistory>();
+    public DbSet<LabOrderAttachment> LabOrderAttachments => Set<LabOrderAttachment>();
+
     // Sprint 15 — HR Module
     public DbSet<Attendance> Attendances => Set<Attendance>();
     public DbSet<SalaryRecord> SalaryRecords => Set<SalaryRecord>();

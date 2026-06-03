@@ -570,10 +570,181 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         if (order.Status == "delivered" || order.Status == "cancelled")
             return BadRequest(new { message = "لا يمكن إلغاء طلب مسلم أو ملغي" });
 
+        var oldStatus = order.Status;
         order.Status = "cancelled";
         order.CancellationReason = req.Reason;
+        db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+        {
+            LabOrderId = id, FromStatus = oldStatus, ToStatus = "cancelled",
+            ChangedByUserId = currentUser.UserId, Reason = req.Reason
+        });
         await db.SaveChangesAsync();
         return Ok(new { id, status = "cancelled" });
+    }
+
+    // ─── Lab Sprint 4 — Return lab order ─────────────────────────────────────
+    public sealed class ReturnLabOrderRequest { public string Reason { get; init; } = string.Empty; }
+
+    /// <summary>Marks a lab order as returned to the lab.</summary>
+    [HttpPost("{id:guid}/return")]
+    public async Task<IActionResult> Return(Guid id, [FromBody] ReturnLabOrderRequest req)
+    {
+        var order = await db.LabOrders.FindAsync(id);
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+        var validReturnStatuses = new HashSet<string> { "tryIn", "ready", "received", "delivered" };
+        if (!validReturnStatuses.Contains(order.Status))
+            return BadRequest(new { message = "لا يمكن إرجاع الطلب للحالة الحالية" });
+
+        var oldStatus = order.Status;
+        order.Status = "returned";
+        order.ReturnReason = req.Reason;
+        db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+        {
+            LabOrderId = id, FromStatus = oldStatus, ToStatus = "returned",
+            ChangedByUserId = currentUser.UserId, Reason = req.Reason
+        });
+        await db.SaveChangesAsync();
+        return Ok(new { id, status = "returned" });
+    }
+
+    // ─── Lab Sprint 4 — Remake lab order ─────────────────────────────────────
+    public sealed class RemakeLabOrderRequest
+    {
+        public string Reason { get; init; } = string.Empty;
+        public bool IsFreeRemake { get; init; }
+        public decimal? RemakeCost { get; init; }
+    }
+
+    /// <summary>Creates a remake from a returned lab order.</summary>
+    [HttpPost("{id:guid}/remake")]
+    public async Task<IActionResult> Remake(Guid id, [FromBody] RemakeLabOrderRequest req)
+    {
+        var order = await db.LabOrders.FindAsync(id);
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+        if (order.Status != "returned")
+            return BadRequest(new { message = "لا يمكن إعادة الصنع إلا للطلبات المرتجعة" });
+
+        var oldStatus = order.Status;
+        order.Status = "remake";
+        order.RemakeReason = req.Reason;
+        order.IsFreeRemake = req.IsFreeRemake;
+        order.RemakeCost = req.RemakeCost;
+        order.RemakeCount += 1;
+        order.SentDate = DateOnly.FromDateTime(DateTime.Today);
+
+        db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+        {
+            LabOrderId = id, FromStatus = oldStatus, ToStatus = "remake",
+            ChangedByUserId = currentUser.UserId, Reason = req.Reason
+        });
+        await db.SaveChangesAsync();
+        return Ok(new { id, status = "remake", order.RemakeCount });
+    }
+
+    // ─── Lab Sprint 4 — Status history ───────────────────────────────────────
+    [HttpGet("{id:guid}/history")]
+    public async Task<IActionResult> GetHistory(Guid id)
+    {
+        var order = await db.LabOrders.FindAsync(id);
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        var history = await db.LabOrderStatusHistories
+            .Include(h => h.ChangedByUser)
+            .Where(h => h.LabOrderId == id)
+            .OrderByDescending(h => h.CreatedAt)
+            .Select(h => new
+            {
+                h.Id, h.FromStatus, h.ToStatus,
+                ChangedByName = h.ChangedByUser != null ? h.ChangedByUser.Username : null,
+                h.Reason,
+                CreatedAt = h.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+            })
+            .ToListAsync();
+        return Ok(new { data = history });
+    }
+
+    // ─── Lab Sprint 4 — Attachments ──────────────────────────────────────────
+    [HttpGet("{id:guid}/attachments")]
+    public async Task<IActionResult> GetAttachments(Guid id)
+    {
+        var attachments = await db.LabOrderAttachments
+            .Where(a => a.LabOrderId == id)
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => new
+            {
+                a.Id, a.FileName, a.ContentType, a.FileSize, a.Category,
+                a.LabOrderItemId, a.StoragePath,
+                UploadedByName = a.UploadedByUser != null ? a.UploadedByUser.Username : null,
+                CreatedAt = a.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+            })
+            .ToListAsync();
+        return Ok(new { data = attachments });
+    }
+
+    [HttpPost("{id:guid}/attachments")]
+    public async Task<IActionResult> UploadAttachment(Guid id, IFormFile file,
+        [FromForm] string category = "photo", [FromForm] Guid? labOrderItemId = null)
+    {
+        var order = await db.LabOrders.FindAsync(id);
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+        if (file is null || file.Length == 0) return BadRequest(new { message = "الملف مطلوب" });
+
+        // Category validation with size limits
+        var allowedCategories = new Dictionary<string, long>
+        {
+            ["photo"] = 10 * 1024 * 1024, // 10MB
+            ["stl"] = 50 * 1024 * 1024, // 50MB
+            ["shade-photo"] = 10 * 1024 * 1024,
+            ["impression-photo"] = 10 * 1024 * 1024,
+            ["pdf-instructions"] = 20 * 1024 * 1024, // 20MB
+        };
+
+        if (!allowedCategories.TryGetValue(category, out var maxSize))
+            return BadRequest(new { message = "نوع المرفق غير صالح" });
+        if (file.Length > maxSize)
+            return BadRequest(new { message = $"حجم الملف يتجاوز الحد المسموح ({maxSize / (1024 * 1024)} ميجابايت)" });
+
+        // Save file to uploads directory
+        var uploadsDir = Path.Combine("uploads", "lab-attachments", id.ToString());
+        Directory.CreateDirectory(uploadsDir);
+        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+        var filePath = Path.Combine(uploadsDir, fileName);
+
+        await using (var stream = new FileStream(filePath, FileMode.Create))
+            await file.CopyToAsync(stream);
+
+        var attachment = new LabOrderAttachment
+        {
+            LabOrderId = id,
+            LabOrderItemId = labOrderItemId,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            FileSize = file.Length,
+            Category = category,
+            StoragePath = filePath,
+            UploadedBy = currentUser.UserId,
+        };
+
+        db.LabOrderAttachments.Add(attachment);
+        await db.SaveChangesAsync();
+
+        return Ok(new { attachment.Id, attachment.FileName, attachment.Category });
+    }
+
+    [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
+    public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId)
+    {
+        var attachment = await db.LabOrderAttachments
+            .FirstOrDefaultAsync(a => a.Id == attachmentId && a.LabOrderId == id);
+        if (attachment is null) return NotFound(new { message = "المرفق غير موجود" });
+
+        // Delete physical file
+        if (System.IO.File.Exists(attachment.StoragePath))
+            System.IO.File.Delete(attachment.StoragePath);
+
+        db.LabOrderAttachments.Remove(attachment);
+        await db.SaveChangesAsync();
+        return Ok(new { message = "تم حذف المرفق بنجاح" });
     }
 
     [HttpDelete("{id:guid}")]

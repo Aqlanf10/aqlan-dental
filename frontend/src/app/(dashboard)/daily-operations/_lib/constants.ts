@@ -16,6 +16,7 @@ export interface TodayJourneyItem {
   patientPhone?: string;
   patientNumber?: string;
   appointmentTime: string;
+  appointmentType?: string;
   appointmentStatus: string;
   doctorId: string;
   doctorName: string;
@@ -30,6 +31,17 @@ export interface TodayJourneyItem {
   proposedProcedure?: string;
   consultationFeeRequired?: boolean;
   consultationFeePaid?: boolean;
+  paymentBeforeEntryRequired?: boolean;
+  financialEntryStatus?: string;
+  financialEntryReason?: string | null;
+  canEnterWithoutPayment?: boolean;
+  managerOverrideAllowed?: boolean;
+  hasDraftInvoice?: boolean;
+  hasLabOrder?: boolean;
+  labOrderStatus?: string;
+  amountDueReference?: number;
+  treatmentDone?: string;
+  chiefComplaint?: string;
   checkoutStatus?: string;
   nextAction: string;
   hasMedicalAlerts?: boolean;

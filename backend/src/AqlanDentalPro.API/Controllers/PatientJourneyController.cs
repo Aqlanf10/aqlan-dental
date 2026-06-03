@@ -111,6 +111,39 @@ public class PatientJourneyController(
             .GroupBy(v => v.AppointmentId!.Value)
             .ToDictionary(g => g.Key, g => g.First()); // Handle duplicates safely
 
+        var visitIds = visitsList.Select(v => v.Id).ToList();
+
+        var labOrdersList = visitIds.Count > 0
+            ? await db.LabOrders
+                .IgnoreQueryFilters()
+                .Where(l => l.VisitId.HasValue && visitIds.Contains(l.VisitId.Value) && l.IsActive)
+                .OrderByDescending(l => l.UpdatedAt)
+                .ThenByDescending(l => l.CreatedAt)
+                .ToListAsync()
+            : [];
+
+        var labOrdersByVisit = labOrdersList
+            .GroupBy(l => l.VisitId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var invoiceRefs = await db.Invoices
+            .IgnoreQueryFilters()
+            .Where(i => i.IsActive
+                && ((i.AppointmentId.HasValue && appointmentIds.Contains(i.AppointmentId.Value))
+                    || (i.VisitId.HasValue && visitIds.Contains(i.VisitId.Value))))
+            .Select(i => new { i.AppointmentId, i.VisitId, i.Status })
+            .ToListAsync();
+
+        var draftInvoiceAppointmentIds = invoiceRefs
+            .Where(i => i.Status == InvoiceStatus.Draft && i.AppointmentId.HasValue)
+            .Select(i => i.AppointmentId!.Value)
+            .ToHashSet();
+
+        var draftInvoiceVisitIds = invoiceRefs
+            .Where(i => i.Status == InvoiceStatus.Draft && i.VisitId.HasValue)
+            .Select(i => i.VisitId!.Value)
+            .ToHashSet();
+
         // Load service info for appointments that have ServiceId
         var serviceIds = appointments.Where(a => a.ServiceId.HasValue).Select(a => a.ServiceId!.Value).Distinct().ToList();
         var services = serviceIds.Count > 0
@@ -120,12 +153,15 @@ public class PatientJourneyController(
 
         // Check consultation fee payment status for today
         var patientIds = appointments.Select(a => a.PatientId).Distinct().ToList();
-        var todayPayments = patientIds.Count > 0
+        var todayPaymentsList = patientIds.Count > 0
             ? await db.Payments
                 .Where(p => patientIds.Contains(p.PatientId) && p.PaymentDate == queryDate && p.IsActive)
-                .GroupBy(p => p.PatientId)
-                .ToDictionaryAsync(g => g.Key, g => g.Sum(p => p.Amount))
-            : new Dictionary<Guid, decimal>();
+                .ToListAsync()
+            : [];
+
+        var todayPayments = todayPaymentsList
+            .GroupBy(p => p.PatientId)
+            .ToDictionary(g => g.Key, g => g.Sum(p => p.Amount));
 
         // Privacy: Doctors must not see patient phone numbers
         var isDoctor = patientAccessService.IsDoctor;
@@ -136,6 +172,9 @@ public class PatientJourneyController(
             queueItems.TryGetValue(a.Id, out var queueItem);
             visits.TryGetValue(a.Id, out var visit);
             var service = a.ServiceId.HasValue && services.TryGetValue(a.ServiceId.Value, out var s) ? s : null;
+            var labOrder = visit != null && labOrdersByVisit.TryGetValue(visit.Id, out var lo) ? lo : null;
+            var hasDraftInvoice = draftInvoiceAppointmentIds.Contains(a.Id)
+                || (visit != null && draftInvoiceVisitIds.Contains(visit.Id));
 
             var consultationFeeRequired = service?.RequiresConsultationFee ?? false;
             var consultationFeePaid = false;
@@ -143,6 +182,14 @@ public class PatientJourneyController(
             {
                 consultationFeePaid = paidAmount >= (service?.DefaultPrice ?? 0);
             }
+            var isEmergencyVisit = IsEmergencyAppointmentType(a.AppointmentType);
+            var paymentBeforeEntryRequired = consultationFeeRequired && !consultationFeePaid && !isEmergencyVisit;
+            var financialEntryStatus = paymentBeforeEntryRequired ? "WaitingForPayment" : "Clear";
+            var financialEntryReason = paymentBeforeEntryRequired
+                ? "يتطلب هذا النوع من الزيارة دفع رسوم الكشف قبل الدخول"
+                : isEmergencyVisit
+                    ? "حالة إسعافية — يسمح بالدخول حسب أولوية الحالة"
+                    : null;
 
             string? checkoutStatus = visit?.CheckoutStatus;
             string nextAction = DetermineNextAction(a.Status, queueItem?.Status, checkoutStatus);
@@ -158,6 +205,7 @@ public class PatientJourneyController(
                 PatientNumber = a.Patient?.PatientNumber,
                 PatientPhone = isDoctor ? null : a.Patient?.Phone,
                 AppointmentTime = a.StartTime.ToString("HH:mm"),
+                AppointmentType = a.AppointmentType,
                 AppointmentStatus = a.Status.ToString(),
                 DoctorId = a.DoctorId,
                 DoctorName = a.Doctor?.Name ?? "",
@@ -171,11 +219,19 @@ public class PatientJourneyController(
                 VisitStatus = visit != null ? (checkoutStatus ?? "InProgress") : null,
                 ConsultationFeeRequired = consultationFeeRequired,
                 ConsultationFeePaid = consultationFeePaid,
+                PaymentBeforeEntryRequired = paymentBeforeEntryRequired,
+                FinancialEntryStatus = financialEntryStatus,
+                FinancialEntryReason = financialEntryReason,
+                CanEnterWithoutPayment = !paymentBeforeEntryRequired,
+                ManagerOverrideAllowed = paymentBeforeEntryRequired,
                 CheckoutStatus = checkoutStatus,
                 AmountDueReference = visit?.AmountDueReference,
                 TreatmentDone = visit?.TreatmentDone,
                 ProposedProcedure = visit?.ProposedProcedure,
                 ChiefComplaint = visit?.ChiefComplaint,
+                HasDraftInvoice = hasDraftInvoice,
+                HasLabOrder = labOrder != null,
+                LabOrderStatus = labOrder?.Status,
                 InRoomSince = inRoomSince,
                 NextAction = nextAction
             };
@@ -1395,6 +1451,15 @@ public class PatientJourneyController(
         if (!string.IsNullOrWhiteSpace(patient.MiddleName)) parts.Add(patient.MiddleName.Trim());
         if (!string.IsNullOrWhiteSpace(patient.LastName)) parts.Add(patient.LastName.Trim());
         return parts.Count > 0 ? string.Join(" ", parts) : "—";
+    }
+
+    private static bool IsEmergencyAppointmentType(string? appointmentType)
+    {
+        if (string.IsNullOrWhiteSpace(appointmentType))
+            return false;
+
+        return appointmentType.Equals("Emergency", StringComparison.OrdinalIgnoreCase)
+            || appointmentType.Contains("إسعاف", StringComparison.OrdinalIgnoreCase);
     }
 
     private Guid? GetCurrentUserId()

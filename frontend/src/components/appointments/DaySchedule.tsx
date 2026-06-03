@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus, UserX, Mail } from "lucide-react";
+import { Activity, MoreVertical, Pencil, Stethoscope, Send, Trash2, Plus, UserX, Mail } from "lucide-react";
 import type { Appointment } from "@/types/appointment";
 import api from "@/lib/api";
 import { cn, APPOINTMENT_STATUS_LABELS, formatTime } from "@/lib/utils";
@@ -406,6 +406,14 @@ function AppointmentCard({
             >
               <Pencil className="w-3.5 h-3.5" />
               تعديل الموعد
+            </Link>
+            <Link
+              href={`/daily-operations?patientId=${a.patientId}&appointmentId=${a.id}`}
+              onClick={() => setMenuOpen(false)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition text-[#1a3a5c] font-medium"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              عرض رحلة المريض
             </Link>
             {canStartVisit && (
               <button

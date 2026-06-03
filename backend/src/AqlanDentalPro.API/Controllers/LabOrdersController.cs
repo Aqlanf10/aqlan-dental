@@ -11,6 +11,20 @@ using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
 
+public sealed class CreateLabOrderItemDto
+{
+    public Guid WorkTypeId { get; init; }
+    public string? ToothNumber { get; init; }
+    public string? Arch { get; init; }
+    public string? Shade { get; init; }
+    public string? RestorationType { get; init; }
+    public int UnitsCount { get; init; } = 1;
+    public decimal? UnitPrice { get; init; }
+    public decimal? TotalPrice { get; init; }
+    public string? Instructions { get; init; }
+    public int SortOrder { get; init; }
+}
+
 public sealed class CreateLabOrderRequest
 {
     public Guid PatientId { get; init; }
@@ -28,6 +42,8 @@ public sealed class CreateLabOrderRequest
     public string? Shade { get; init; }
     public string? RestorationType { get; init; }
     public Guid? VisitId { get; init; }
+    // Lab Sprint 3 — professional order items
+    public List<CreateLabOrderItemDto>? Items { get; init; }
 }
 
 public sealed class CreateLabOrderRequestValidator : AbstractValidator<CreateLabOrderRequest>
@@ -248,6 +264,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             .Include(l => l.OrthoCase)
             .Include(l => l.Doctor)
             .Include(l => l.Lab)
+            .Include(l => l.Items).ThenInclude(i => i.WorkType)
             .FirstOrDefaultAsync(l => l.Id == id);
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -272,13 +289,29 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             order.Priority,
             order.Instructions,
             order.Cost,
+            order.TotalCost,
             DoctorName = order.Doctor?.Name,
-            // Sprint 2 — new fields
             order.Shade,
             order.RestorationType,
             order.VisitId,
             order.CancellationReason,
-            CreatedAt = order.CreatedAt.ToString("yyyy-MM-dd")
+            CreatedAt = order.CreatedAt.ToString("yyyy-MM-dd"),
+            // Lab Sprint 3 — order items
+            Items = order.Items.Select(i => new
+            {
+                i.Id,
+                i.WorkTypeId,
+                WorkTypeName = i.WorkType != null ? i.WorkType.Name : null,
+                i.ToothNumber,
+                i.Arch,
+                i.Shade,
+                i.RestorationType,
+                i.UnitsCount,
+                i.UnitPrice,
+                i.TotalPrice,
+                i.Instructions,
+                i.SortOrder
+            }).OrderBy(i => i.SortOrder)
         });
     }
 
@@ -326,6 +359,33 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                     RestorationType  = req.RestorationType,
                     VisitId          = req.VisitId,
                 };
+
+                // Lab Sprint 3 — Add items and auto-calculate TotalCost
+                if (req.Items is { Count: > 0 })
+                {
+                    foreach (var itemDto in req.Items)
+                    {
+                        var itemTotal = itemDto.TotalPrice ?? (itemDto.UnitPrice * itemDto.UnitsCount);
+                        order.Items.Add(new LabOrderItem
+                        {
+                            WorkTypeId = itemDto.WorkTypeId,
+                            ToothNumber = itemDto.ToothNumber,
+                            Arch = itemDto.Arch,
+                            Shade = itemDto.Shade,
+                            RestorationType = itemDto.RestorationType,
+                            UnitsCount = itemDto.UnitsCount,
+                            UnitPrice = itemDto.UnitPrice,
+                            TotalPrice = itemTotal,
+                            Instructions = itemDto.Instructions,
+                            SortOrder = itemDto.SortOrder,
+                        });
+                    }
+                    order.TotalCost = order.Items.Sum(i => i.TotalPrice ?? 0);
+                }
+                else if (req.Cost.HasValue)
+                {
+                    order.TotalCost = req.Cost.Value;
+                }
 
                 db.LabOrders.Add(order);
 

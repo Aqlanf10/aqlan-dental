@@ -62,6 +62,7 @@ public class EmployeesController(AppDbContext db, ILogger<EmployeesController> l
         var query = db.Employees
             .Include(e => e.User)
             .Include(e => e.Branch)
+            .Where(e => e.User != null)
             .AsQueryable();
 
         // Search by name or username

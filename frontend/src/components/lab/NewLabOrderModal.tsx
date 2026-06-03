@@ -24,6 +24,9 @@ export function NewLabOrderModal({ onClose }: Props) {
     expectedDate: "",
     priority: "normal",
     instructions: "",
+    shade: "",
+    restorationType: "",
+    cost: undefined,
   });
 
   const mutation = useMutation({
@@ -48,10 +51,13 @@ export function NewLabOrderModal({ onClose }: Props) {
       patientId: selectedPatientId,
       sentDate: form.sentDate || undefined,
       expectedDate: form.expectedDate || undefined,
+      shade: form.shade || undefined,
+      restorationType: form.restorationType || undefined,
+      cost: form.cost || undefined,
     });
   };
 
-  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: keyof typeof form, v: string | number | undefined) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -97,6 +103,28 @@ export function NewLabOrderModal({ onClose }: Props) {
             />
           </div>
 
+          {/* Shade + Restoration Type */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">الظل (Shade)</label>
+              <input
+                value={form.shade ?? ""}
+                onChange={(e) => set("shade", e.target.value)}
+                placeholder="مثال: A2, B1..."
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">نوع الترميم</label>
+              <input
+                value={form.restorationType ?? ""}
+                onChange={(e) => set("restorationType", e.target.value)}
+                placeholder="مثال: زركونيا، Emax..."
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              />
+            </div>
+          </div>
+
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -139,6 +167,20 @@ export function NewLabOrderModal({ onClose }: Props) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Cost */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700">التكلفة</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.cost ?? ""}
+              onChange={(e) => set("cost", e.target.value === "" ? undefined : Number(e.target.value))}
+              placeholder="التكلفة (اختياري)"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            />
           </div>
 
           {/* Instructions */}

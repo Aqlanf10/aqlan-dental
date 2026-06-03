@@ -114,6 +114,73 @@ public class PatientJourneyFinancialRulesTests
         Get<string>(item, "NextAction").Should().Be("Checkout");
     }
 
+    [Fact]
+    public async Task MarkLeftWithoutCompletion_RequiresReason()
+    {
+        await using var db = CreateDb();
+        var controller = BuildController(db);
+
+        var result = await controller.MarkLeftWithoutCompletion(Guid.NewGuid(), new LeftWithoutCompletionRequest
+        {
+            Reason = " "
+        });
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task MarkLeftWithoutCompletion_SetsVisitStatusCancelsQueueAndWritesAudit()
+    {
+        await using var db = CreateDb();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var seeded = SeedAppointment(db, today, appointmentType: "Treatment", requiresFee: false, fee: 0m);
+        seeded.Appointment.Status = AppointmentStatus.InProgress;
+
+        var visit = new Visit
+        {
+            PatientId = seeded.Patient.Id,
+            AppointmentId = seeded.Appointment.Id,
+            VisitDate = today,
+            CheckoutStatus = null,
+            IsActive = true
+        };
+        db.Visits.Add(visit);
+        db.ClinicQueueItems.Add(new ClinicQueueItem
+        {
+            PatientId = seeded.Patient.Id,
+            AppointmentId = seeded.Appointment.Id,
+            VisitId = visit.Id,
+            DoctorId = seeded.Appointment.DoctorId,
+            QueueDate = today,
+            Status = ClinicQueueStatus.InProgress,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db);
+        var result = await controller.MarkLeftWithoutCompletion(visit.Id, new LeftWithoutCompletionRequest
+        {
+            Reason = "المريض غادر قبل استكمال الإجراء"
+        });
+
+        result.Should().BeOfType<OkObjectResult>();
+
+        var savedVisit = await db.Visits.FindAsync(visit.Id);
+        savedVisit!.CheckoutStatus.Should().Be("LeftWithoutCompletion");
+
+        var queueItem = await db.ClinicQueueItems.SingleAsync(q => q.VisitId == visit.Id);
+        queueItem.Status.Should().Be(ClinicQueueStatus.Cancelled);
+        queueItem.CancelledAt.Should().NotBeNull();
+
+        var audit = await db.AuditLogs.SingleAsync(a => a.Resource == "Visit.LeftWithoutCompletion");
+        audit.ResourceId.Should().Be(visit.Id);
+        audit.NewData.Should().NotBeNull();
+        audit.NewData!.RootElement.GetProperty("reason").GetString()
+            .Should().Be("المريض غادر قبل استكمال الإجراء");
+        audit.NewData.RootElement.GetProperty("checkoutStatus").GetString()
+            .Should().Be("LeftWithoutCompletion");
+    }
+
     private static async Task<object> GetSingleJourneyItem(AppDbContext db, DateOnly date)
     {
         var logger = new CapturingLogger<PatientJourneyController>();

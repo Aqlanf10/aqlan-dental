@@ -50,6 +50,7 @@ import {
   useCreateDraftInvoice,
   useCheckout,
   useHandoff,
+  useMarkLeftWithoutCompletion,
   useCancelQueue,
   useChangeRoom,
   useCreateAppointment,
@@ -239,6 +240,7 @@ export default function DailyOperationsPage() {
   const createDraftInvoiceMutation = useCreateDraftInvoice();
   const checkoutMutation = useCheckout();
   const handoffMutation = useHandoff();
+  const leftWithoutCompletionMutation = useMarkLeftWithoutCompletion();
   const cancelQueueMutation = useCancelQueue();
   const changeRoomMutation = useChangeRoom();
   const createAppointmentMutation = useCreateAppointment();
@@ -249,6 +251,8 @@ export default function DailyOperationsPage() {
   const [selectedItem, setSelectedItem] = useState<TodayJourneyItem | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [completeVisitModalOpen, setCompleteVisitModalOpen] = useState(false);
+  const [leftWithoutModalOpen, setLeftWithoutModalOpen] = useState(false);
+  const [leftWithoutReason, setLeftWithoutReason] = useState("");
   const [bookAppointmentModalOpen, setBookAppointmentModalOpen] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [pendingOverrideAction, setPendingOverrideAction] = useState<{
@@ -543,6 +547,16 @@ export default function DailyOperationsPage() {
     setCompleteVisitModalOpen(true);
   }, []);
 
+  const handleLeftWithoutCompletion = useCallback((item: TodayJourneyItem) => {
+    if (!item.visitId) {
+      toast.error("لا توجد زيارة مفتوحة لتسجيل خروج بدون إكمال");
+      return;
+    }
+    setSelectedItem(item);
+    setLeftWithoutReason("");
+    setLeftWithoutModalOpen(true);
+  }, []);
+
   const handleCreateDraftInvoice = useCallback(async (item: TodayJourneyItem) => {
     if (!item.visitId) {
       toast.error("لا توجد زيارة مرتبطة لإنشاء الفاتورة");
@@ -798,6 +812,34 @@ export default function DailyOperationsPage() {
       toast.error("فشل إنهاء الزيارة");
     }
   }, [selectedItem, checkoutMutation]);
+
+  const handleLeftWithoutCompletionConfirm = useCallback(async () => {
+    if (!selectedItem?.visitId) return;
+
+    const reason = leftWithoutReason.trim();
+    if (!reason) {
+      toast.error("يرجى كتابة سبب الخروج بدون إكمال");
+      return;
+    }
+
+    try {
+      await leftWithoutCompletionMutation.mutateAsync({
+        visitId: selectedItem.visitId,
+        reason,
+        status: "LeftWithoutCompletion",
+      });
+      toast.success("تم تسجيل خروج المريض بدون إكمال");
+      setLeftWithoutModalOpen(false);
+      setLeftWithoutReason("");
+    } catch (err: unknown) {
+      let errorMsg = "فشل تسجيل خروج المريض بدون إكمال";
+      if (err && typeof err === "object" && "response" in err) {
+        const resp = (err as { response?: { data?: { message?: string } } }).response;
+        if (resp?.data?.message) errorMsg = resp.data.message;
+      }
+      toast.error(errorMsg);
+    }
+  }, [selectedItem, leftWithoutReason, leftWithoutCompletionMutation]);
 
   const handleBookConfirm = useCallback(async (data: {
     doctorId: string; date: string; startTime: string; endTime: string;
@@ -1380,6 +1422,7 @@ export default function DailyOperationsPage() {
                     createDraftInvoicePending={createDraftInvoiceMutation.isPending}
                     onBookAppointment={handleBookAppointment}
                     onCompleteVisit={handleCompleteVisit}
+                    onLeftWithoutCompletion={handleLeftWithoutCompletion}
                     onOpenSidePanel={handleOpenSidePanel}
                     selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
                     onContextMenu={handleItemContextMenu}
@@ -1593,6 +1636,59 @@ export default function DailyOperationsPage() {
         onCreateDraftInvoice={handleCreateDraftInvoice}
         createDraftInvoicePending={createDraftInvoiceMutation.isPending}
       />
+
+      {leftWithoutModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setLeftWithoutModalOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center gap-3 border-b border-[#e8f0f9] px-5 py-4">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-red-50">
+                <AlertTriangle className="w-4.5 h-4.5 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-extrabold text-[15px]" style={{ color: NAVY }}>خرج بدون إكمال</h3>
+                <p className="text-[11px] text-gray-500 mt-0.5">{selectedItem?.patientName}</p>
+              </div>
+              <button type="button" onClick={() => setLeftWithoutModalOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition">
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-6 text-red-700">
+                هذه الحالة لا تُسجل دفعاً ولا تلغي بيانات المعمل. ستغلق مسار الزيارة تشغيلياً وتظهر في تقرير نهاية اليوم.
+              </div>
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: NAVY }}>سبب الخروج بدون إكمال *</label>
+                <textarea
+                  value={leftWithoutReason}
+                  onChange={(event) => setLeftWithoutReason(event.target.value)}
+                  rows={4}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-[#3d7ab5] focus:ring-2 focus:ring-[#3d7ab5]/15"
+                  placeholder="مثال: المريض غادر قبل استكمال الإجراء / رفض الانتظار / ظرف طارئ"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLeftWithoutModalOpen(false)}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50"
+                >
+                  تراجع
+                </button>
+                <button
+                  type="button"
+                  disabled={leftWithoutCompletionMutation.isPending}
+                  onClick={handleLeftWithoutCompletionConfirm}
+                  className="rounded-lg px-4 py-2 text-xs font-bold text-white disabled:opacity-60"
+                  style={{ background: "#dc2626" }}
+                >
+                  {leftWithoutCompletionMutation.isPending ? "جار التسجيل..." : "تسجيل الحالة"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BookAppointmentModal
         open={bookAppointmentModalOpen}

@@ -14,13 +14,14 @@ import {
   Search,
   Stethoscope,
   UserCheck,
+  UserX,
 } from "lucide-react";
 
 import type { TodayJourneyItem } from "../_lib/constants";
 import { NAVY, BLUE, ORANGE } from "../_lib/constants";
 import { getFinancialGate, resolveVisitTypeRule } from "../_lib/visitTypeRules";
 
-type JourneyStage = "appointment" | "payment" | "waiting" | "called" | "clinic" | "checkout" | "completed";
+type JourneyStage = "appointment" | "payment" | "waiting" | "called" | "clinic" | "checkout" | "left" | "completed";
 
 interface PatientJourneyViewProps {
   items: TodayJourneyItem[];
@@ -33,6 +34,7 @@ interface PatientJourneyViewProps {
   onQuickPayment: (item: TodayJourneyItem) => void;
   onCreateDraftInvoice: (item: TodayJourneyItem) => void;
   onCompleteVisit: (item: TodayJourneyItem) => void;
+  onLeftWithoutCompletion: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
   onOpenSidePanel: (item: TodayJourneyItem) => void;
   onContextMenu?: (e: React.MouseEvent, item: TodayJourneyItem) => void;
@@ -46,6 +48,7 @@ const STAGES: { key: JourneyStage; label: string; icon: React.ElementType; color
   { key: "called", label: "تم النداء", icon: UserCheck, color: "#0891b2" },
   { key: "clinic", label: "داخل العيادة", icon: Stethoscope, color: "#7c3aed" },
   { key: "checkout", label: "جاهز للمحاسبة", icon: CreditCard, color: "#059669" },
+  { key: "left", label: "خرج بدون إكمال", icon: UserX, color: "#dc2626" },
   { key: "completed", label: "مكتمل", icon: CheckCircle2, color: "#16a34a" },
 ];
 
@@ -60,6 +63,7 @@ export default function PatientJourneyView({
   onQuickPayment,
   onCreateDraftInvoice,
   onCompleteVisit,
+  onLeftWithoutCompletion,
   onBookAppointment,
   onOpenSidePanel,
   onContextMenu,
@@ -67,7 +71,7 @@ export default function PatientJourneyView({
 }: PatientJourneyViewProps) {
   if (loading) {
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-7 gap-3 p-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-8 gap-3 p-4">
         {STAGES.map((stage) => (
           <div key={stage.key} className="rounded-lg border border-gray-100 bg-white p-3">
             <div className="h-4 w-24 rounded bg-gray-100 animate-pulse" />
@@ -98,7 +102,7 @@ export default function PatientJourneyView({
 
   return (
     <div className="h-full overflow-auto bg-[#f8fafc] p-3">
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3 min-w-[1180px]">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-3 min-w-[1320px]">
         {grouped.map((stage) => {
           const StageIcon = stage.icon;
           return (
@@ -133,6 +137,7 @@ export default function PatientJourneyView({
                       onQuickPayment={onQuickPayment}
                       onCreateDraftInvoice={onCreateDraftInvoice}
                       onCompleteVisit={onCompleteVisit}
+                      onLeftWithoutCompletion={onLeftWithoutCompletion}
                       onBookAppointment={onBookAppointment}
                       onOpenSidePanel={onOpenSidePanel}
                       onContextMenu={onContextMenu}
@@ -159,6 +164,7 @@ function JourneyCard({
   onQuickPayment,
   onCreateDraftInvoice,
   onCompleteVisit,
+  onLeftWithoutCompletion,
   onBookAppointment,
   onOpenSidePanel,
   onContextMenu,
@@ -173,6 +179,7 @@ function JourneyCard({
   onQuickPayment: (item: TodayJourneyItem) => void;
   onCreateDraftInvoice: (item: TodayJourneyItem) => void;
   onCompleteVisit: (item: TodayJourneyItem) => void;
+  onLeftWithoutCompletion: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
   onOpenSidePanel: (item: TodayJourneyItem) => void;
   onContextMenu?: (e: React.MouseEvent, item: TodayJourneyItem) => void;
@@ -216,6 +223,7 @@ function JourneyCard({
         {(item.hasLabOrder || rule.code.includes("lab")) && (
           <MiniBadge label={item.labOrderStatus === "Ready" ? "عمل المعمل جاهز" : "يوجد عمل معمل"} color="#8b5cf6" icon={<FlaskConical className="w-3 h-3" />} />
         )}
+        {stage === "left" && <MiniBadge label="خرج بدون إكمال" color="#dc2626" icon={<UserX className="w-3 h-3" />} />}
       </div>
 
       {gate.reason && (
@@ -246,6 +254,9 @@ function JourneyCard({
             <ActionButton label="تحصيل" icon={<CreditCard className="w-3 h-3" />} onClick={() => onQuickPayment(item)} emphasis />
             <ActionButton label="إغلاق" icon={<CheckCircle2 className="w-3 h-3" />} onClick={() => onCompleteVisit(item)} />
           </>
+        )}
+        {item.visitId && stage !== "completed" && stage !== "left" && (
+          <ActionButton label="خرج بدون إكمال" icon={<UserX className="w-3 h-3" />} onClick={() => onLeftWithoutCompletion(item)} />
         )}
         {stage === "completed" && (
           <ActionButton label="موعد قادم" icon={<CalendarCheck className="w-3 h-3" />} onClick={() => onBookAppointment(item)} />
@@ -319,6 +330,7 @@ function ActionButton({
 }
 
 function getJourneyStage(item: TodayJourneyItem): JourneyStage {
+  if (isLeftWithoutCompletionStatus(item.checkoutStatus ?? item.visitStatus)) return "left";
   if (item.checkoutStatus === "CheckedOut" || item.appointmentStatus === "Completed") return "completed";
   if (item.checkoutStatus === "ReadyForCheckout" || item.nextAction === "Checkout") return "checkout";
   if (item.queueStatus === "InRoom" || item.queueStatus === "InProgress" || item.appointmentStatus === "InRoom" || item.appointmentStatus === "InProgress") return "clinic";
@@ -326,4 +338,11 @@ function getJourneyStage(item: TodayJourneyItem): JourneyStage {
   if (item.paymentBeforeEntryRequired || item.financialEntryStatus === "WaitingForPayment") return "payment";
   if (item.queueStatus === "Waiting" || item.appointmentStatus === "Waiting") return "waiting";
   return "appointment";
+}
+
+function isLeftWithoutCompletionStatus(status?: string | null) {
+  return status === "LeftWithoutCompletion"
+    || status === "CancelledAfterArrival"
+    || status === "Incomplete"
+    || status === "Abandoned";
 }

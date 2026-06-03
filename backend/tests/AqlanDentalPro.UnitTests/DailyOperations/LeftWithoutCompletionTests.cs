@@ -16,8 +16,7 @@ namespace AqlanDentalPro.UnitTests.DailyOperations;
 ///
 /// The formula is intentionally conservative: it only counts appointments/visits
 /// with an EXPLICIT terminal non-completed status (e.g. "LeftWithoutCompletion",
-/// "CancelledAfterArrival", "Incomplete", "Abandoned"). Since the system does not
-/// yet define such statuses, the count should always be 0.
+/// "CancelledAfterArrival", "Incomplete", "Abandoned").
 ///
 /// These tests verify that broad/active statuses are never miscounted as
 /// "left without completion", and that when explicit statuses are introduced,
@@ -250,7 +249,7 @@ public class LeftWithoutCompletionTests
         // to assert count == 1.
         // For now, this test documents the expected behavior and serves as a
         // reminder to update the controller when the status is introduced.
-        count.Should().Be(0, "LeftWithoutCompletion checkout status is not yet in the allowed set — update controller when status is introduced");
+        count.Should().Be(1, "LeftWithoutCompletion checkout status is now the explicit terminal marker");
     }
 
     // ─── Multiple statuses mixed: only explicit ones counted ───────────────
@@ -330,6 +329,27 @@ public class LeftWithoutCompletionTests
             Status = AppointmentStatus.Waiting
         });
 
+        var explicitAppointmentId = Guid.NewGuid();
+        db.Appointments.Add(new Appointment
+        {
+            Id = explicitAppointmentId,
+            PatientId = patientId,
+            DoctorId = doctorId,
+            AppointmentDate = pastDate,
+            StartTime = new TimeOnly(14, 0),
+            EndTime = new TimeOnly(14, 30),
+            AppointmentType = "كشف",
+            Status = AppointmentStatus.InProgress
+        });
+        db.Visits.Add(new Visit
+        {
+            PatientId = patientId,
+            AppointmentId = explicitAppointmentId,
+            DoctorId = doctorId,
+            VisitDate = pastDate,
+            CheckoutStatus = "LeftWithoutCompletion"
+        });
+
         await db.SaveChangesAsync();
 
         var controller = CreateController(db);
@@ -340,6 +360,6 @@ public class LeftWithoutCompletionTests
         using var doc = JsonDocument.Parse(json);
         var count = doc.RootElement.GetProperty("PatientCounts").GetProperty("LeftWithoutCompletion").GetInt32();
 
-        count.Should().Be(0, "None of the existing statuses should be counted as LeftWithoutCompletion");
+        count.Should().Be(1, "Only the explicit LeftWithoutCompletion status should be counted");
     }
 }

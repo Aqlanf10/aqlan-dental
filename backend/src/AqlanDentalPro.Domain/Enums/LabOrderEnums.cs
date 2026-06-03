@@ -1,13 +1,18 @@
 namespace AqlanDentalPro.Domain.Enums;
 
-/// <summary>M2 FIX: LabOrder status enum — replaces magic string "sent"/"manufacturing"/"ready"/"received"/"cancelled".</summary>
+/// <summary>Professional lab order workflow statuses.</summary>
 public enum LabOrderStatus
 {
-    Sent = 0,
-    Manufacturing = 1,
-    Ready = 2,
-    Received = 3,
-    Cancelled = 4
+    Draft = 0,
+    Sent = 1,
+    Manufacturing = 2,
+    TryIn = 3,
+    Ready = 4,
+    Received = 5,
+    Delivered = 6,
+    Returned = 7,
+    Remake = 8,
+    Cancelled = 9
 }
 
 /// <summary>M2 FIX: LabOrder priority enum — replaces magic string "urgent"/"normal"/"low".</summary>

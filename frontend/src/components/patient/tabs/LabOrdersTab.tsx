@@ -32,20 +32,28 @@ interface LabOrderDto {
 }
 
 const LAB_STATUS_LABELS: Record<string, string> = {
+  draft: "مسودة",
   sent: "تم الإرسال",
   manufacturing: "قيد التصنيع",
+  tryIn: "تجربة",
   ready: "جاهز",
   received: "تم الاستلام",
   delivered: "تم التسليم",
+  returned: "مرتجع",
+  remake: "إعادة صناعة",
   cancelled: "ملغي",
 };
 
 const LAB_STATUS_COLORS: Record<string, string> = {
+  draft: "bg-gray-50 text-gray-600",
   sent: "bg-blue-50 text-blue-700",
   manufacturing: "bg-amber-50 text-amber-700",
+  tryIn: "bg-teal-50 text-teal-700",
   ready: "bg-green-50 text-green-700",
   received: "bg-emerald-50 text-emerald-700",
   delivered: "bg-teal-50 text-teal-700",
+  returned: "bg-orange-50 text-orange-700",
+  remake: "bg-purple-50 text-purple-700",
   cancelled: "bg-red-50 text-red-700",
 };
 

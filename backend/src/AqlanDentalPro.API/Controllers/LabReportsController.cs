@@ -1,3 +1,5 @@
+using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,12 +10,16 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = "StaffOnly")]
-public class LabReportsController(AppDbContext db) : ControllerBase
+public class LabReportsController(AppDbContext db, ICurrentUserService currentUser) : ControllerBase
 {
+    private Task<bool> CanViewReportsAsync() => PermissionGuard.HasAsync(db, currentUser, "lab_reports", "view");
+
     /// <summary>Lab costs report — total costs per lab.</summary>
     [HttpGet("lab-costs")]
     public async Task<IActionResult> GetLabCosts([FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
+        if (!await CanViewReportsAsync()) return Forbid();
+
         var query = db.LabOrders
             .Include(o => o.Lab)
             .Where(o => o.LabId != null)
@@ -44,6 +50,8 @@ public class LabReportsController(AppDbContext db) : ControllerBase
     [HttpGet("lab-debts")]
     public async Task<IActionResult> GetLabDebts([FromQuery] Guid? labId)
     {
+        if (!await CanViewReportsAsync()) return Forbid();
+
         var query = db.LabPayables
             .Include(p => p.Lab)
             .Include(p => p.LabOrder)
@@ -87,6 +95,8 @@ public class LabReportsController(AppDbContext db) : ControllerBase
     [HttpGet("lab-performance")]
     public async Task<IActionResult> GetLabPerformance([FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
+        if (!await CanViewReportsAsync()) return Forbid();
+
         var query = db.LabOrders
             .Include(o => o.Lab)
             .Where(o => o.LabId != null)
@@ -189,6 +199,8 @@ public class LabReportsController(AppDbContext db) : ControllerBase
     [HttpGet("lab-dashboard")]
     public async Task<IActionResult> GetLabDashboard()
     {
+        if (!await CanViewReportsAsync()) return Forbid();
+
         var today = DateOnly.FromDateTime(DateTime.Today);
         var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
 

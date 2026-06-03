@@ -19,6 +19,7 @@ const STATUS_CONFIG: Record<
   draft:         { label: "مسودة",      color: "bg-gray-100 text-gray-500",   icon: <FileText className="w-3.5 h-3.5" /> },
   sent:          { label: "تم الإرسال",  color: "bg-blue-100 text-blue-700",   icon: <Clock className="w-3.5 h-3.5" /> },
   manufacturing: { label: "قيد الصنع",   color: "bg-amber-100 text-amber-700", icon: <FlaskConical className="w-3.5 h-3.5" /> },
+  tryIn:         { label: "تجربة",       color: "bg-teal-100 text-teal-700",   icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
   ready:         { label: "جاهز",        color: "bg-green-100 text-green-700", icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
   received:      { label: "تم الاستلام", color: "bg-indigo-100 text-indigo-700", icon: <Package className="w-3.5 h-3.5" /> },
   delivered:     { label: "تم التسليم",  color: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
@@ -35,17 +36,37 @@ const PRIORITY_CONFIG = {
 
 const STATUS_FILTERS: Array<{ value: string; label: string }> = [
   { value: "",             label: "الكل" },
+  { value: "draft",        label: "مسودة" },
   { value: "sent",         label: "تم الإرسال" },
   { value: "manufacturing",label: "قيد الصنع" },
+  { value: "tryIn",        label: "تجربة" },
   { value: "ready",        label: "جاهز" },
   { value: "received",     label: "تم الاستلام" },
+  { value: "delivered",    label: "تم التسليم" },
+  { value: "returned",     label: "مرتجع" },
+  { value: "remake",       label: "إعادة صناعة" },
   { value: "cancelled",    label: "ملغى" },
 ];
 
 const NEXT_STATUSES: Partial<Record<LabOrderStatus, LabOrderStatus>> = {
+  draft:         "sent",
   sent:          "manufacturing",
-  manufacturing: "ready",
+  manufacturing: "tryIn",
+  tryIn:         "ready",
   ready:         "received",
+  received:      "delivered",
+  returned:      "remake",
+  remake:        "sent",
+};
+
+const NEXT_STATUS_LABELS: Partial<Record<LabOrderStatus, string>> = {
+  sent: "إرسال",
+  manufacturing: "بدء التصنيع",
+  tryIn: "تجربة",
+  ready: "جاهز",
+  received: "استلام",
+  delivered: "تسليم",
+  remake: "إعادة صناعة",
 };
 
 export default function LabPage() {
@@ -95,7 +116,7 @@ export default function LabPage() {
     search.trim() === "" ||
     o.patientName.includes(search) ||
     o.orderNumber.includes(search) ||
-    (o.labName ?? "").includes(search)
+                    (o.labEntityName ?? o.labName ?? "").includes(search)
   );
 
   const totalPages = Math.ceil((data?.total ?? 0) / 20);
@@ -166,7 +187,7 @@ export default function LabPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  {["رقم الطلب", "المريض", "نوع الجهاز", "المختبر", "تاريخ الاستلام المتوقع", "الأولوية", "الحالة", ""].map((h) => (
+                  {["رقم الطلب", "المريض", "نوع الجهاز", "المختبر", "تاريخ الاستلام المتوقع", "الأولوية", "الحالة", "إجراء"].map((h) => (
                     <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
                       {h}
                     </th>
@@ -187,7 +208,7 @@ export default function LabPage() {
                         <p className="text-xs text-gray-400">{order.patientNumber}</p>
                       </td>
                       <td className="px-4 py-3 text-gray-700">{order.applianceType}</td>
-                      <td className="px-4 py-3 text-gray-500">{order.labName ?? "—"}</td>
+                      <td className="px-4 py-3 text-gray-500">{order.labEntityName ?? order.labName ?? "—"}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs">
                         {order.expectedDate ?? "—"}
                       </td>
@@ -201,15 +222,24 @@ export default function LabPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {nextStatus && (
+                        <div className="flex items-center gap-2">
+                          {nextStatus && (
+                            <button
+                              onClick={() => advanceMutation.mutate({ id: order.id, status: nextStatus })}
+                              disabled={advanceMutation.isPending}
+                              className="text-xs text-cyan-700 hover:text-cyan-800 font-medium disabled:opacity-50"
+                            >
+                              {NEXT_STATUS_LABELS[nextStatus] ?? "تقدّم"} ←
+                            </button>
+                          )}
                           <button
-                            onClick={() => advanceMutation.mutate({ id: order.id, status: nextStatus })}
-                            disabled={advanceMutation.isPending}
-                            className="text-xs text-cyan-700 hover:text-cyan-800 font-medium disabled:opacity-50"
+                            type="button"
+                            onClick={() => window.open(`/api/lab-orders/${order.id}/print`, "_blank")}
+                            className="text-xs text-gray-500 hover:text-gray-800 font-medium"
                           >
-                            تقدّم ←
+                            PDF
                           </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );

@@ -1,3 +1,5 @@
+using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -67,8 +69,10 @@ public sealed class UpdateLabRequestValidator : AbstractValidator<UpdateLabReque
 [ApiController]
 [Route("api/labs")]
 [Authorize(Policy = "StaffOnly")]
-public class LabsController(AppDbContext db, ILogger<LabsController> logger) : ControllerBase
+public class LabsController(AppDbContext db, ICurrentUserService currentUser, ILogger<LabsController> logger) : ControllerBase
 {
+    private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "labs", action);
+
     private static readonly Func<Lab, object> LabProjection = l => new
     {
         l.Id,
@@ -86,14 +90,21 @@ public class LabsController(AppDbContext db, ILogger<LabsController> logger) : C
     };
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] bool? activeOnly = true)
+    public async Task<IActionResult> GetAll([FromQuery] bool? activeOnly = true, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
+        if (!await CanAsync("view")) return Forbid();
+
+        page = Math.Max(1, page);
+        pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.Labs.AsQueryable();
         if (activeOnly == true)
             query = query.Where(l => l.IsActive);
 
+        var total = await query.CountAsync();
         var labs = await query
             .OrderBy(l => l.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(l => new
             {
                 l.Id,
@@ -111,12 +122,14 @@ public class LabsController(AppDbContext db, ILogger<LabsController> logger) : C
             })
             .ToListAsync();
 
-        return Ok(new { data = labs });
+        return Ok(new { data = labs, total, page, pageSize });
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var lab = await db.Labs.FindAsync(id);
         if (lab is null) return NotFound(new { message = "المعمل غير موجود" });
 
@@ -140,6 +153,8 @@ public class LabsController(AppDbContext db, ILogger<LabsController> logger) : C
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabRequest req)
     {
+        if (!await CanAsync("create")) return Forbid();
+
         var lab = new Lab
         {
             Name = req.Name,
@@ -168,6 +183,8 @@ public class LabsController(AppDbContext db, ILogger<LabsController> logger) : C
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateLabRequest req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var lab = await db.Labs.FindAsync(id);
         if (lab is null) return NotFound(new { message = "المعمل غير موجود" });
 
@@ -196,6 +213,8 @@ public class LabsController(AppDbContext db, ILogger<LabsController> logger) : C
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await CanAsync("delete")) return Forbid();
+
         var lab = await db.Labs.FindAsync(id);
         if (lab is null) return NotFound(new { message = "المعمل غير موجود" });
 

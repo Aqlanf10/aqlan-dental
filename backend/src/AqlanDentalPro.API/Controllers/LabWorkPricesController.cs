@@ -1,3 +1,5 @@
+using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -63,11 +65,15 @@ public sealed class UpdateLabWorkPriceRequestValidator : AbstractValidator<Updat
 [ApiController]
 [Route("api/lab-work-prices")]
 [Authorize(Policy = "StaffOnly")]
-public class LabWorkPricesController(AppDbContext db, ILogger<LabWorkPricesController> logger) : ControllerBase
+public class LabWorkPricesController(AppDbContext db, ICurrentUserService currentUser, ILogger<LabWorkPricesController> logger) : ControllerBase
 {
+    private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "lab_work_prices", action);
+
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] Guid? labId, [FromQuery] Guid? workTypeId)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var query = db.LabWorkPrices
             .Include(p => p.Lab)
             .Include(p => p.WorkType)
@@ -103,6 +109,8 @@ public class LabWorkPricesController(AppDbContext db, ILogger<LabWorkPricesContr
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var price = await db.LabWorkPrices
             .Include(p => p.Lab)
             .Include(p => p.WorkType)
@@ -131,6 +139,8 @@ public class LabWorkPricesController(AppDbContext db, ILogger<LabWorkPricesContr
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabWorkPriceRequest req)
     {
+        if (!await CanAsync("create")) return Forbid();
+
         // Check for duplicate
         var exists = await db.LabWorkPrices
             .AnyAsync(p => p.LabId == req.LabId && p.WorkTypeId == req.WorkTypeId);
@@ -165,6 +175,8 @@ public class LabWorkPricesController(AppDbContext db, ILogger<LabWorkPricesContr
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateLabWorkPriceRequest req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var price = await db.LabWorkPrices.FindAsync(id);
         if (price is null) return NotFound(new { message = "سعر العمل غير موجود" });
 
@@ -182,6 +194,8 @@ public class LabWorkPricesController(AppDbContext db, ILogger<LabWorkPricesContr
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await CanAsync("delete")) return Forbid();
+
         var price = await db.LabWorkPrices.FindAsync(id);
         if (price is null) return NotFound(new { message = "سعر العمل غير موجود" });
 

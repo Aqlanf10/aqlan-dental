@@ -11,13 +11,13 @@ import { cn } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "مسودة", sent: "تم الإرسال", manufacturing: "قيد الصنع",
-  ready: "جاهز", received: "تم الاستلام", delivered: "تم التسليم",
+  tryIn: "تجربة", ready: "جاهز", received: "تم الاستلام", delivered: "تم التسليم",
   returned: "مرتجع", remake: "إعادة صناعة", cancelled: "ملغى",
 };
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-500", sent: "bg-blue-100 text-blue-700",
-  manufacturing: "bg-amber-100 text-amber-700", ready: "bg-green-100 text-green-700",
+  manufacturing: "bg-amber-100 text-amber-700", tryIn: "bg-teal-100 text-teal-700", ready: "bg-green-100 text-green-700",
   received: "bg-indigo-100 text-indigo-700", delivered: "bg-emerald-100 text-emerald-700",
   returned: "bg-orange-100 text-orange-700", remake: "bg-purple-100 text-purple-700",
   cancelled: "bg-red-100 text-red-700",
@@ -143,6 +143,15 @@ export default function LabOverduePage() {
                             </button>
                           )}
                           {order.status === "manufacturing" && (
+                            <button
+                              onClick={() => advanceMutation.mutate({ id: order.id, status: "tryIn" as LabOrderStatus })}
+                              disabled={advanceMutation.isPending}
+                              className="text-xs text-teal-700 hover:text-teal-800 font-medium disabled:opacity-50"
+                            >
+                              تجربة
+                            </button>
+                          )}
+                          {order.status === "tryIn" && (
                             <button
                               onClick={() => advanceMutation.mutate({ id: order.id, status: "ready" as LabOrderStatus })}
                               disabled={advanceMutation.isPending}

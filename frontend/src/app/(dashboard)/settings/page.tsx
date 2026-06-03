@@ -5,7 +5,7 @@ import {
   FileSearch, Globe, Stethoscope, DoorOpen, Search, Filter,
   Trash2, RotateCcw, KeyRound, Copy, AlertTriangle,
   UserCog, Loader2, ShieldAlert, CheckCircle2, XCircle,
-  Mail, MailWarning, Clock, Send, CreditCard,
+  Mail, MailWarning, Clock, Send, CreditCard, FlaskConical, Banknote,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -159,6 +159,27 @@ function ClinicTab() {
           placeholder="GM"
           dir="ltr"
         />
+      </div>
+
+      <div className="rounded-xl border border-cyan-100 bg-cyan-50/50 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <FlaskConical className="w-4 h-4 text-cyan-700" />
+          <h3 className="text-sm font-bold text-gray-900">إعدادات المعامل</h3>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Link href="/settings/labs" className="rounded-lg border border-white bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:text-cyan-700 hover:shadow-sm transition">
+            إدارة المعامل
+          </Link>
+          <Link href="/settings/lab-work-types" className="rounded-lg border border-white bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:text-cyan-700 hover:shadow-sm transition">
+            أنواع الأعمال
+          </Link>
+          <Link href="/settings/lab-pricing" className="rounded-lg border border-white bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:text-cyan-700 hover:shadow-sm transition">
+            <span className="inline-flex items-center gap-1">
+              <Banknote className="w-3.5 h-3.5" />
+              تسعير المعامل
+            </span>
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 pt-2">

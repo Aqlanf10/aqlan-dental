@@ -480,13 +480,43 @@ public static class DbSeeder
             },
             ["lab_orders"] = new()
             {
-                ["Admin"]          = (true, true, true, true, false, false),
+                ["Admin"]          = (true, true, true, true, true, false),
                 ["Reception"]      = (true, false, false, false, false, false),
                 ["Orthodontist"]   = (true, true, true, false, false, false),
                 ["GeneralDentist"] = (true, true, false, false, false, false),
                 ["OralSurgeon"]    = (true, true, false, false, false, false),
                 ["Assistant"]      = (true, false, false, false, false, false),
                 ["BranchManager"]  = (true, true, true, false, false, false),
+            },
+            ["labs"] = new()
+            {
+                ["Admin"]         = (true, true, true, true, false, false),
+                ["BranchManager"] = (true, true, true, false, false, false),
+                ["Orthodontist"]  = (true, false, false, false, false, false),
+                ["Reception"]     = (true, false, false, false, false, false),
+            },
+            ["lab_work_types"] = new()
+            {
+                ["Admin"]         = (true, true, true, true, false, false),
+                ["BranchManager"] = (true, true, true, false, false, false),
+                ["Orthodontist"]  = (true, false, false, false, false, false),
+            },
+            ["lab_work_prices"] = new()
+            {
+                ["Admin"]         = (true, true, true, true, false, true),
+                ["BranchManager"] = (true, true, true, false, false, false),
+                ["Orthodontist"]  = (true, false, false, false, false, false),
+            },
+            ["lab_payables"] = new()
+            {
+                ["Admin"]      = (true, false, true, false, true, false),
+                ["Accountant"] = (true, false, true, false, true, false),
+            },
+            ["lab_reports"] = new()
+            {
+                ["Admin"]         = (true, false, false, false, true, false),
+                ["Accountant"]    = (true, false, false, false, true, false),
+                ["BranchManager"] = (true, false, false, false, true, false),
             },
         };
 

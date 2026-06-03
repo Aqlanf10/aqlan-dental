@@ -39,6 +39,21 @@ export const PERMISSION_KEYS = {
   DAILY_OPS_MANAGER_OVERRIDE: "settings.approve",       // manager override → settings.approve
   DAILY_OPS_LAB_VIEW: "lab_orders.view",            // lab view → lab_orders.view
   DAILY_OPS_LAB_MANAGE: "lab_orders.edit",          // lab manage → lab_orders.edit
+  LAB_ORDERS_VIEW: "lab_orders.view",
+  LAB_ORDERS_CREATE: "lab_orders.create",
+  LAB_ORDERS_EDIT: "lab_orders.edit",
+  LAB_ORDERS_DELETE: "lab_orders.delete",
+  LAB_ORDERS_PRINT: "lab_orders.export",
+  LABS_VIEW: "labs.view",
+  LABS_MANAGE: "labs.edit",
+  LAB_WORK_TYPES_VIEW: "lab_work_types.view",
+  LAB_WORK_TYPES_MANAGE: "lab_work_types.edit",
+  LAB_WORK_PRICES_VIEW: "lab_work_prices.view",
+  LAB_WORK_PRICES_MANAGE: "lab_work_prices.edit",
+  LAB_WORK_PRICES_OVERRIDE: "lab_work_prices.approve",
+  LAB_PAYABLES_VIEW: "lab_payables.view",
+  LAB_PAYABLES_MANAGE: "lab_payables.edit",
+  LAB_REPORTS_VIEW: "lab_reports.view",
   REPORTS_DAILY_VIEW: "reports.view",                   // daily report → reports.view
   COMMISSIONS_VIEW: "finance.view",                     // commissions → finance.view
   SETTINGS_PAYMENT_METHODS_MANAGE: "settings.edit",     // payment methods → settings.edit (admin-only)

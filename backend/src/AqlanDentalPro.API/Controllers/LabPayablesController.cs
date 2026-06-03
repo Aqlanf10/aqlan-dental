@@ -1,3 +1,5 @@
+using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -9,8 +11,10 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/lab-payables")]
 [Authorize(Policy = "StaffOnly")]
-public class LabPayablesController(AppDbContext db, ILogger<LabPayablesController> logger) : ControllerBase
+public class LabPayablesController(AppDbContext db, ICurrentUserService currentUser, ILogger<LabPayablesController> logger) : ControllerBase
 {
+    private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "lab_payables", action);
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? labId,
@@ -18,6 +22,8 @@ public class LabPayablesController(AppDbContext db, ILogger<LabPayablesControlle
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.LabPayables
             .Include(p => p.Lab)
@@ -56,6 +62,8 @@ public class LabPayablesController(AppDbContext db, ILogger<LabPayablesControlle
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var payable = await db.LabPayables
             .Include(p => p.Lab)
             .Include(p => p.LabOrder)
@@ -88,6 +96,8 @@ public class LabPayablesController(AppDbContext db, ILogger<LabPayablesControlle
     [HttpPost("{id:guid}/record-payment")]
     public async Task<IActionResult> RecordPayment(Guid id, [FromBody] RecordPaymentRequest req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var payable = await db.LabPayables.FindAsync(id);
         if (payable is null) return NotFound(new { message = "المديونية غير موجودة" });
 

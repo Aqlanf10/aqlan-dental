@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
@@ -73,6 +74,7 @@ public sealed class UpdateLabOrderStatusRequest
 {
     public string Status { get; init; } = string.Empty;
     public string? ReceivedDate { get; init; }
+    public string? Reason { get; init; }
 }
 
 /// <summary>Sprint 2 — DTO for marking a lab order as received.</summary>
@@ -92,6 +94,41 @@ public sealed class CancelLabOrderRequest
 [Authorize(Policy = "StaffOnly")]
 public class LabOrdersController(AppDbContext db, ICurrentUserService currentUser, IServiceScopeFactory scopeFactory, ILogger<LabOrdersController> logger) : ControllerBase
 {
+    private static readonly HashSet<string> ValidStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "draft", "sent", "manufacturing", "tryIn", "ready", "received", "delivered", "returned", "remake", "cancelled"
+    };
+
+    private static readonly Dictionary<string, HashSet<string>> AllowedTransitions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["draft"] = new(StringComparer.OrdinalIgnoreCase) { "sent", "cancelled" },
+        ["sent"] = new(StringComparer.OrdinalIgnoreCase) { "manufacturing", "cancelled" },
+        ["manufacturing"] = new(StringComparer.OrdinalIgnoreCase) { "tryIn", "ready", "cancelled" },
+        ["tryIn"] = new(StringComparer.OrdinalIgnoreCase) { "ready", "returned", "cancelled" },
+        ["ready"] = new(StringComparer.OrdinalIgnoreCase) { "received", "returned", "cancelled" },
+        ["received"] = new(StringComparer.OrdinalIgnoreCase) { "delivered", "returned" },
+        ["returned"] = new(StringComparer.OrdinalIgnoreCase) { "remake", "cancelled" },
+        ["remake"] = new(StringComparer.OrdinalIgnoreCase) { "sent", "cancelled" },
+        ["delivered"] = new(StringComparer.OrdinalIgnoreCase),
+        ["cancelled"] = new(StringComparer.OrdinalIgnoreCase),
+    };
+
+    private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "lab_orders", action);
+
+    private static string CanonicalStatus(string status)
+    {
+        var trimmed = status.Trim();
+        return trimmed.Equals("tryin", StringComparison.OrdinalIgnoreCase) ? "tryIn" : trimmed.ToLowerInvariant();
+    }
+
+    private static bool CanTransition(string fromStatus, string toStatus)
+    {
+        if (string.Equals(fromStatus, toStatus, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return AllowedTransitions.TryGetValue(fromStatus, out var allowed) && allowed.Contains(toStatus);
+    }
+
     /// <summary>Shared projection shape for lab order list responses (Sprint 2).</summary>
     private static readonly Func<LabOrder, object> LabOrderProjection = l => new
     {
@@ -126,6 +163,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         pageSize = Math.Max(1, Math.Min(pageSize, 100));
         var query = db.LabOrders
             .Include(l => l.Patient)
@@ -177,8 +216,10 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("pending-count")]
     public async Task<IActionResult> PendingCount()
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var count = await db.LabOrders
-            .CountAsync(l => l.Status == "sent" || l.Status == "manufacturing");
+            .CountAsync(l => l.Status == "sent" || l.Status == "manufacturing" || l.Status == "tryIn" || l.Status == "remake");
         return Ok(new { count });
     }
 
@@ -187,6 +228,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("today")]
     public async Task<IActionResult> GetToday()
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var today = DateOnly.FromDateTime(DateTime.Today);
         var orders = await db.LabOrders
             .Include(l => l.Patient)
@@ -225,6 +268,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("ready")]
     public async Task<IActionResult> GetReady()
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var orders = await db.LabOrders
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
@@ -262,6 +307,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("overdue")]
     public async Task<IActionResult> GetOverdue()
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var today = DateOnly.FromDateTime(DateTime.Today);
         var orders = await db.LabOrders
             .Include(l => l.Patient)
@@ -306,6 +353,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("ready-for-delivery")]
     public async Task<IActionResult> GetReadyForDelivery()
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var orders = await db.LabOrders
             .Include(l => l.Patient)
             .Include(l => l.Doctor)
@@ -343,6 +392,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var order = await db.LabOrders
             .Include(l => l.Patient)
             .Include(l => l.OrthoCase)
@@ -402,6 +453,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabOrderRequest req)
     {
+        if (!await CanAsync("create")) return Forbid();
+
         // CON-02 FIX: Use advisory lock + unique constraint retry to prevent race condition
         // on order number generation. Strategy: advisory lock serializes generation within
         // the DB, unique index on OrderNumber is the safety net, and retry with fresh count
@@ -421,23 +474,32 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                 var count = await db.LabOrders.IgnoreQueryFilters()
                     .CountAsync(l => l.OrderNumber != null && l.OrderNumber.StartsWith($"LAB-{year}-"));
 
+                Lab? selectedLab = null;
+                if (req.LabId.HasValue)
+                {
+                    selectedLab = await db.Labs.FirstOrDefaultAsync(l => l.Id == req.LabId.Value && l.IsActive);
+                    if (selectedLab is null)
+                        return BadRequest(new { message = "المعمل المحدد غير موجود أو غير مفعل" });
+                }
+
+                var hasExplicitSentDate = !string.IsNullOrWhiteSpace(req.SentDate);
                 var order = new LabOrder
                 {
                     PatientId     = req.PatientId,
                     OrthoCaseId   = req.OrthoCaseId,
                     OrderNumber   = $"LAB-{year}-{(count + 1):D3}",
                     ApplianceType = req.ApplianceType,
-                    LabName       = req.LabName,
+                    LabName       = selectedLab?.Name ?? req.LabName,
                     LabId         = req.LabId,
-                    SentDate      = !string.IsNullOrWhiteSpace(req.SentDate)
-                        ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : DateOnly.FromDateTime(DateTime.Today) : DateOnly.FromDateTime(DateTime.Today),
+                    SentDate      = hasExplicitSentDate
+                        ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : DateOnly.FromDateTime(DateTime.Today) : null,
                     ExpectedDate  = !string.IsNullOrWhiteSpace(req.ExpectedDate)
                         ? DateOnly.TryParse(req.ExpectedDate, out var expectedDate) ? expectedDate : (DateOnly?)null : null,
                     Priority      = req.Priority,
                     Instructions  = req.Instructions,
                     Cost          = req.Cost,
                     DoctorId      = req.DoctorId ?? currentUser.UserId,
-                    Status        = "sent",
+                    Status        = hasExplicitSentDate ? "sent" : "draft",
                     // Sprint 2 — new fields
                     Shade            = req.Shade,
                     RestorationType  = req.RestorationType,
@@ -447,9 +509,35 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                 // Lab Sprint 3 — Add items and auto-calculate TotalCost
                 if (req.Items is { Count: > 0 })
                 {
+                    var workTypeIds = req.Items.Select(i => i.WorkTypeId).Distinct().ToList();
+                    var existingWorkTypeIds = await db.LabWorkTypes
+                        .Where(w => workTypeIds.Contains(w.Id) && w.IsActive)
+                        .Select(w => w.Id)
+                        .ToListAsync();
+                    if (existingWorkTypeIds.Count != workTypeIds.Count)
+                        return BadRequest(new { message = "أحد أنواع أعمال المعمل غير موجود أو غير مفعل" });
+
+                    var priceLookup = req.LabId.HasValue
+                        ? await db.LabWorkPrices
+                            .Where(p => p.LabId == req.LabId.Value && workTypeIds.Contains(p.WorkTypeId) && p.IsActive)
+                            .ToDictionaryAsync(p => p.WorkTypeId)
+                        : new Dictionary<Guid, LabWorkPrice>();
+
                     foreach (var itemDto in req.Items)
                     {
-                        var itemTotal = itemDto.TotalPrice ?? (itemDto.UnitPrice * itemDto.UnitsCount);
+                        var unitsCount = Math.Max(1, itemDto.UnitsCount);
+                        var unitPrice = itemDto.UnitPrice;
+                        if (!unitPrice.HasValue && priceLookup.TryGetValue(itemDto.WorkTypeId, out var price))
+                        {
+                            unitPrice = price.UnitPrice;
+                            if (req.Priority == "urgent" && price.UrgentSurcharge.HasValue)
+                            {
+                                unitPrice += price.UrgentSurchargeType == "percentage"
+                                    ? price.UnitPrice * (price.UrgentSurcharge.Value / 100m)
+                                    : price.UrgentSurcharge.Value;
+                            }
+                        }
+                        var itemTotal = itemDto.TotalPrice ?? (unitPrice * unitsCount);
                         order.Items.Add(new LabOrderItem
                         {
                             WorkTypeId = itemDto.WorkTypeId,
@@ -457,14 +545,15 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                             Arch = itemDto.Arch,
                             Shade = itemDto.Shade,
                             RestorationType = itemDto.RestorationType,
-                            UnitsCount = itemDto.UnitsCount,
-                            UnitPrice = itemDto.UnitPrice,
+                            UnitsCount = unitsCount,
+                            UnitPrice = unitPrice,
                             TotalPrice = itemTotal,
                             Instructions = itemDto.Instructions,
                             SortOrder = itemDto.SortOrder,
                         });
                     }
                     order.TotalCost = order.Items.Sum(i => i.TotalPrice ?? 0);
+                    order.Cost = order.TotalCost;
                 }
                 else if (req.Cost.HasValue)
                 {
@@ -564,24 +653,51 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPut("{id:guid}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateLabOrderStatusRequest req)
     {
-        var validStatuses = new HashSet<string> { "sent", "manufacturing", "ready", "received", "cancelled" };
-        if (!validStatuses.Contains(req.Status))
+        if (!await CanAsync("edit")) return Forbid();
+
+        var nextStatus = CanonicalStatus(req.Status);
+        if (!ValidStatuses.Contains(nextStatus))
             return BadRequest(new { message = "الحالة غير صالحة" });
 
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
-        order.Status = req.Status;
-        if (req.Status == "received" && !string.IsNullOrWhiteSpace(req.ReceivedDate))
+        var oldStatus = order.Status;
+        if (!CanTransition(oldStatus, nextStatus))
+            return BadRequest(new { message = $"لا يمكن نقل الطلب من {oldStatus} إلى {nextStatus}" });
+
+        order.Status = nextStatus;
+        if (nextStatus == "sent" && order.SentDate is null)
+            order.SentDate = DateOnly.FromDateTime(DateTime.Today);
+        if (nextStatus == "delivered")
+            order.DeliveredDate = DateOnly.FromDateTime(DateTime.Today);
+
+        if (nextStatus == "received" && !string.IsNullOrWhiteSpace(req.ReceivedDate))
         {
             if (!DateOnly.TryParse(req.ReceivedDate, out var receivedDate))
                 return BadRequest(new { message = "تنسيق تاريخ الاستلام غير صالح. استخدم YYYY-MM-DD" });
             order.ReceivedDate = receivedDate;
         }
+        else if (nextStatus == "received" && order.ReceivedDate is null)
+        {
+            order.ReceivedDate = DateOnly.FromDateTime(DateTime.Today);
+        }
+
+        if (!string.Equals(oldStatus, nextStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+            {
+                LabOrderId = id,
+                FromStatus = oldStatus,
+                ToStatus = nextStatus,
+                ChangedByUserId = currentUser.UserId,
+                Reason = req.Reason
+            });
+        }
 
         await db.SaveChangesAsync();
 
-        if (req.Status == "ready")
+        if (nextStatus == "ready")
         {
             // M1 FIX: Use IServiceScopeFactory for proper DI in fire-and-forget
             var readyOrderNumber = order.OrderNumber;
@@ -604,7 +720,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             });
         }
 
-        return Ok(new { id, status = req.Status });
+        return Ok(new { id, status = nextStatus });
     }
 
     // ─── Sprint 2 — Mark lab order as received ──────────────────────────────
@@ -612,15 +728,23 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost("{id:guid}/mark-received")]
     public async Task<IActionResult> MarkReceived(Guid id, [FromBody] MarkReceivedRequest? req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
-        if (order.Status != "sent" && order.Status != "manufacturing")
+        if (order.Status != "ready")
             return BadRequest(new { message = "لا يمكن تأكيد الوصول للحالة الحالية" });
 
+        var oldStatus = order.Status;
         order.Status = "received";
         order.ReceivedDate = !string.IsNullOrWhiteSpace(req?.ReceivedDate) && DateOnly.TryParse(req.ReceivedDate, out var rd)
             ? rd
             : DateOnly.FromDateTime(DateTime.Today);
+        db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+        {
+            LabOrderId = id, FromStatus = oldStatus, ToStatus = "received",
+            ChangedByUserId = currentUser.UserId
+        });
         await db.SaveChangesAsync();
 
         // Notify about received lab order
@@ -651,13 +775,21 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost("{id:guid}/mark-delivered")]
     public async Task<IActionResult> MarkDelivered(Guid id)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
-        if (order.Status != "ready" && order.Status != "received")
-            return BadRequest(new { message = "لا يمكن التسليم للحالة الحالية — يجب أن تكون جاهزة أولاً" });
+        if (order.Status != "received")
+            return BadRequest(new { message = "لا يمكن التسليم للحالة الحالية — يجب أن تكون مستلمة أولاً" });
 
+        var oldStatus = order.Status;
         order.Status = "delivered";
         order.DeliveredDate = DateOnly.FromDateTime(DateTime.Today);
+        db.LabOrderStatusHistories.Add(new LabOrderStatusHistory
+        {
+            LabOrderId = id, FromStatus = oldStatus, ToStatus = "delivered",
+            ChangedByUserId = currentUser.UserId
+        });
         await db.SaveChangesAsync();
         return Ok(new { id, status = "delivered" });
     }
@@ -667,6 +799,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost("{id:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] CancelLabOrderRequest req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
         if (order.Status == "delivered" || order.Status == "cancelled")
@@ -691,6 +825,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost("{id:guid}/return")]
     public async Task<IActionResult> Return(Guid id, [FromBody] ReturnLabOrderRequest req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
         var validReturnStatuses = new HashSet<string> { "tryIn", "ready", "received", "delivered" };
@@ -721,6 +857,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpPost("{id:guid}/remake")]
     public async Task<IActionResult> Remake(Guid id, [FromBody] RemakeLabOrderRequest req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
         if (order.Status != "returned")
@@ -747,6 +885,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("{id:guid}/history")]
     public async Task<IActionResult> GetHistory(Guid id)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
@@ -769,6 +909,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("{id:guid}/attachments")]
     public async Task<IActionResult> GetAttachments(Guid id)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var attachments = await db.LabOrderAttachments
             .Where(a => a.LabOrderId == id)
             .OrderByDescending(a => a.CreatedAt)
@@ -787,6 +929,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     public async Task<IActionResult> UploadAttachment(Guid id, IFormFile file,
         [FromForm] string category = "photo", [FromForm] Guid? labOrderItemId = null)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
         if (file is null || file.Length == 0) return BadRequest(new { message = "الملف مطلوب" });
@@ -833,9 +977,26 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         return Ok(new { attachment.Id, attachment.FileName, attachment.Category });
     }
 
+    [HttpGet("{id:guid}/attachments/{attachmentId:guid}/download")]
+    public async Task<IActionResult> DownloadAttachment(Guid id, Guid attachmentId)
+    {
+        if (!await CanAsync("view")) return Forbid();
+
+        var attachment = await db.LabOrderAttachments
+            .FirstOrDefaultAsync(a => a.Id == attachmentId && a.LabOrderId == id);
+        if (attachment is null) return NotFound(new { message = "المرفق غير موجود" });
+        if (!System.IO.File.Exists(attachment.StoragePath))
+            return NotFound(new { message = "ملف المرفق غير موجود على الخادم" });
+
+        var stream = System.IO.File.OpenRead(attachment.StoragePath);
+        return File(stream, attachment.ContentType, attachment.FileName);
+    }
+
     [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
     public async Task<IActionResult> DeleteAttachment(Guid id, Guid attachmentId)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var attachment = await db.LabOrderAttachments
             .FirstOrDefaultAsync(a => a.Id == attachmentId && a.LabOrderId == id);
         if (attachment is null) return NotFound(new { message = "المرفق غير موجود" });
@@ -852,6 +1013,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await CanAsync("delete")) return Forbid();
+
         var order = await db.LabOrders.FindAsync(id);
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
 
@@ -865,6 +1028,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
     [HttpGet("{id:guid}/print")]
     public async Task<IActionResult> PrintPdf(Guid id)
     {
+        if (!await CanAsync("export")) return Forbid();
+
         var order = await db.LabOrders
             .Include(l => l.Patient)
             .Include(l => l.Doctor)

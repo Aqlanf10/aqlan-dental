@@ -84,28 +84,52 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
             var completed = appointments.Count(a => a.Status == AppointmentStatus.Completed);
 
             // LeftWithoutCompletion:
-            //   Formula: Count appointments on reportDate that entered an active clinical flow
-            //   (Arrived, Waiting, Called, InRoom, InProgress) but were never Completed,
-            //   Cancelled, or marked NoShow — AND the report date is in the past.
-            //   For today, the count is 0 because the day is still in progress and patients
-            //   may still be seen or checked out.
-            //   Additionally, count visits on reportDate where CheckoutStatus is null
-            //   (visit started but never reached ReadyForCheckout or CheckedOut) and
-            //   reportDate is in the past.
+            //   Conservative formula: only count visits/appointments that carry an
+            //   EXPLICIT terminal non-completed status indicating the patient left
+            //   without finishing the visit (e.g. "LeftWithoutCompletion",
+            //   "CancelledAfterArrival", "Incomplete", "Abandoned").
+            //
+            //   Currently the system does NOT define such statuses in AppointmentStatus
+            //   or Visit.CheckoutStatus, so this count will be 0 until those statuses
+            //   are introduced. This is intentional — a broad estimate inflates the count
+            //   and misrepresents daily operations.
+            //
+            //   Excluded by design:
+            //     - Scheduled/Confirmed (never arrived)
+            //     - Cancelled (cancelled before arrival)
+            //     - NoShow (never showed up)
+            //     - Completed (finished normally)
+            //     - Active flow (Arrived/Waiting/Called/InRoom/InProgress/ReadyForCheckout)
+            //       — these are patients still in the clinic or mid-visit
+            //     - Draft invoices without proof the patient actually left
+            //
+            //   When an explicit "LeftWithoutCompletion" (or equivalent) status is added
+            //   to AppointmentStatus or Visit.CheckoutStatus, update the sets below.
             var today = DateOnly.FromDateTime(DateTime.Today);
+
+            // Terminal CheckoutStatus values that mean "left without completing the visit"
+            var leftWithoutCompletionCheckoutStatuses = new HashSet<string?>
+            {
+                // "LeftWithoutCompletion",   // uncomment when added to system
+                // "CancelledAfterArrival",    // uncomment when added to system
+                // "Incomplete",               // uncomment when added to system
+                // "Abandoned",                // uncomment when added to system
+            };
+
+            // Terminal AppointmentStatus values that mean "left without completing"
+            // (not Cancelled-before-arrival, not NoShow, not Completed)
+            var leftWithoutCompletionAppointmentStatuses = new HashSet<AppointmentStatus>
+            {
+                // AppointmentStatus.LeftWithoutCompletion,  // uncomment when added
+                // AppointmentStatus.CancelledAfterArrival,   // uncomment when added
+                // AppointmentStatus.Incomplete,               // uncomment when added
+                // AppointmentStatus.Abandoned,                // uncomment when added
+            };
+
             var leftWithoutCompletion = reportDate < today
-                ? appointments.Count(a =>
-                    a.Status != AppointmentStatus.Completed &&
-                    a.Status != AppointmentStatus.Cancelled &&
-                    a.Status != AppointmentStatus.NoShow &&
-                    a.Status != AppointmentStatus.Scheduled &&
-                    a.Status != AppointmentStatus.Confirmed)
-                  + visits.Count(v =>
-                      v.CheckoutStatus == null &&
-                      appointments.Any(a => a.Id == v.AppointmentId &&
-                          a.Status != AppointmentStatus.Completed &&
-                          a.Status != AppointmentStatus.Cancelled &&
-                          a.Status != AppointmentStatus.NoShow))
+                ? appointments.Count(a => leftWithoutCompletionAppointmentStatuses.Contains(a.Status))
+                  + visits.Count(v => v.CheckoutStatus != null
+                      && leftWithoutCompletionCheckoutStatuses.Contains(v.CheckoutStatus))
                 : 0;
 
             // NewDebts: outstanding balance on invoices with Issued status only.

@@ -200,8 +200,24 @@ export function useSendToQueue() {
 export function useCallPatient() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (queueItemId: string) => {
-      const { data } = await api.post(`/api/clinic-queue/${queueItemId}/call`);
+    mutationFn: async (params: { queueItemId: string; roomName?: string }) => {
+      const body = params.roomName ? { roomName: params.roomName } : {};
+      const { data } = await api.post(`/api/clinic-queue/${params.queueItemId}/call`, body);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+    },
+  });
+}
+
+export function useRecallPatient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { queueItemId: string; roomName?: string }) => {
+      const body = params.roomName ? { roomName: params.roomName } : {};
+      const { data } = await api.post(`/api/clinic-queue/${params.queueItemId}/recall`, body);
       return data;
     },
     onSuccess: () => {

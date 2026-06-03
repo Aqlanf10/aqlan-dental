@@ -1064,119 +1064,147 @@ public class ClinicQueueController(
     [AllowAnonymous] // TV display should work without staff login
     public async Task<IActionResult> GetDisplay()
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        var items = await db.ClinicQueueItems
-            .Include(q => q.Patient)
-            .Include(q => q.Doctor)
-            .Where(q => q.QueueDate == today && q.IsActive
-                && (q.Status == ClinicQueueStatus.Waiting
-                    || q.Status == ClinicQueueStatus.Called
-                    || q.Status == ClinicQueueStatus.InRoom
-                    || q.Status == ClinicQueueStatus.InProgress))
-            .OrderByDescending(q => q.Priority)
-            .ThenBy(q => q.SortOrder)
-            .ThenBy(q => q.CreatedAt)
-            .ToListAsync();
-
-        // Calculate avg service time for estimated wait
-        var completedToday = await db.ClinicQueueItems
-            .Where(q => q.QueueDate == today && q.Status == ClinicQueueStatus.Completed
-                     && q.StartedAt.HasValue && q.CompletedAt.HasValue && q.IsActive)
-            .Select(q => new { q.StartedAt, q.CompletedAt })
-            .ToListAsync();
-
-        double avgServiceTime = 15;
-        if (completedToday.Count > 0)
+        try
         {
-            avgServiceTime = Math.Max(1, completedToday
-                .Where(q => q.CompletedAt!.Value > q.StartedAt!.Value)
-                .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
-                .DefaultIfEmpty(15).Average());
-        }
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Latest called patient (only Called status — for voice announcement trigger)
-        var latestCalled = items
-            .Where(q => q.Status == ClinicQueueStatus.Called && q.CalledAt != null)
-            .OrderByDescending(q => q.CalledAt)
-            .Select(q => new
+            var items = await db.ClinicQueueItems
+                .Include(q => q.Patient)
+                .Include(q => q.Doctor)
+                .Where(q => q.QueueDate == today && q.IsActive
+                    && (q.Status == ClinicQueueStatus.Waiting
+                        || q.Status == ClinicQueueStatus.Called
+                        || q.Status == ClinicQueueStatus.InRoom
+                        || q.Status == ClinicQueueStatus.InProgress))
+                .OrderByDescending(q => q.Priority)
+                .ThenBy(q => q.SortOrder)
+                .ThenBy(q => q.CreatedAt)
+                .ToListAsync();
+
+            // Calculate avg service time for estimated wait
+            double avgServiceTime = 15;
+            try
+            {
+                var completedToday = await db.ClinicQueueItems
+                    .Where(q => q.QueueDate == today && q.Status == ClinicQueueStatus.Completed
+                             && q.StartedAt.HasValue && q.CompletedAt.HasValue && q.IsActive)
+                    .Select(q => new { q.StartedAt, q.CompletedAt })
+                    .ToListAsync();
+
+                if (completedToday.Count > 0)
+                {
+                    avgServiceTime = Math.Max(1, completedToday
+                        .Where(q => q.CompletedAt!.Value > q.StartedAt!.Value)
+                        .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
+                        .DefaultIfEmpty(15).Average());
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to calculate avg service time for display endpoint, using default");
+                avgServiceTime = 15;
+            }
+
+            // Latest called patient (only Called status — for voice announcement trigger)
+            var latestCalled = items
+                .Where(q => q.Status == ClinicQueueStatus.Called && q.CalledAt != null)
+                .OrderByDescending(q => q.CalledAt)
+                .Select(q => new
+                {
+                    QueueItemId = q.Id,
+                    PatientNumber = q.Patient?.PatientNumber ?? "",
+                    PatientName = BuildPatientDisplayName(q.Patient),
+                    DoctorName = q.Doctor?.Name ?? "",
+                    q.RoomName,
+                    q.CalledAt,
+                    q.RecallCount,
+                    Priority = q.Priority.ToString(),
+                    PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority)
+                })
+                .FirstOrDefault();
+
+            // Waiting list with priority + position + estimated wait
+            var waitingItems = items
+                .Where(q => q.Status == ClinicQueueStatus.Waiting)
+                .OrderByDescending(q => q.Priority)
+                .ThenBy(q => q.SortOrder)
+                .ThenBy(q => q.CreatedAt)
+                .ToList();
+
+            var waitingList = waitingItems.Select((q, idx) => new
             {
                 QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
                 PatientName = BuildPatientDisplayName(q.Patient),
-                DoctorName = q.Doctor != null ? q.Doctor.Name : "",
-                q.RoomName,
-                q.CalledAt,
-                q.RecallCount,
+                DoctorName = q.Doctor?.Name ?? "",
+                Status = "في الانتظار",
+                Position = idx + 1,
+                EstimatedWaitMinutes = (int)Math.Ceiling((idx + 1) * avgServiceTime),
                 Priority = q.Priority.ToString(),
                 PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority)
-            })
-            .FirstOrDefault();
+            }).ToList();
 
-        // Waiting list with priority + position + estimated wait
-        var waitingItems = items
-            .Where(q => q.Status == ClinicQueueStatus.Waiting)
-            .OrderByDescending(q => q.Priority)
-            .ThenBy(q => q.SortOrder)
-            .ThenBy(q => q.CreatedAt)
-            .ToList();
+            // Recently called (Called + InRoom, most recent first)
+            var recentlyCalled = items
+                .Where(q => (q.Status == ClinicQueueStatus.Called || q.Status == ClinicQueueStatus.InRoom) && q.CalledAt != null)
+                .OrderByDescending(q => q.CalledAt)
+                .Take(5)
+                .Select(q => new
+                {
+                    QueueItemId = q.Id,
+                    PatientNumber = q.Patient?.PatientNumber ?? "",
+                    PatientName = BuildPatientDisplayName(q.Patient),
+                    DoctorName = q.Doctor?.Name ?? "",
+                    q.RoomName,
+                    StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
+                    Status = q.Status.ToString(),
+                    q.CalledAt,
+                    q.RecallCount
+                })
+                .ToList();
 
-        var waitingList = waitingItems.Select((q, idx) => new
-        {
-            QueueItemId = q.Id,
-            PatientNumber = q.Patient?.PatientNumber ?? "",
-            PatientName = BuildPatientDisplayName(q.Patient),
-            DoctorName = q.Doctor != null ? q.Doctor.Name : "",
-            Status = "في الانتظار",
-            Position = idx + 1,
-            EstimatedWaitMinutes = (int)Math.Ceiling((idx + 1) * avgServiceTime),
-            Priority = q.Priority.ToString(),
-            PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority)
-        }).ToList();
+            // Now Serving — room-by-room view: which doctor is in which room with which patient
+            // Filter out items with null Doctor/Patient before grouping to prevent .First() crashes
+            var nowServing = items
+                .Where(q => q.Status == ClinicQueueStatus.InProgress
+                         && !string.IsNullOrWhiteSpace(q.RoomName)
+                         && q.Doctor != null
+                         && q.Patient != null)
+                .GroupBy(q => q.RoomName!)
+                .Select(g => new
+                {
+                    RoomName = g.Key,
+                    DoctorName = g.First().Doctor?.Name ?? "",
+                    PatientName = BuildPatientDisplayName(g.First().Patient),
+                    PatientNumber = g.First().Patient?.PatientNumber ?? "",
+                    StartedAt = g.First().StartedAt
+                })
+                .OrderBy(r => r.RoomName)
+                .ToList();
 
-        // Recently called (Called + InRoom, most recent first)
-        var recentlyCalled = items
-            .Where(q => (q.Status == ClinicQueueStatus.Called || q.Status == ClinicQueueStatus.InRoom) && q.CalledAt != null)
-            .OrderByDescending(q => q.CalledAt)
-            .Take(5)
-            .Select(q => new
+            return Ok(new
             {
-                QueueItemId = q.Id,
-                PatientNumber = q.Patient?.PatientNumber ?? "",
-                PatientName = BuildPatientDisplayName(q.Patient),
-                DoctorName = q.Doctor != null ? q.Doctor.Name : "",
-                q.RoomName,
-                StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
-                Status = q.Status.ToString(),
-                q.CalledAt,
-                q.RecallCount
-            })
-            .ToList();
-
-        // Now Serving — room-by-room view: which doctor is in which room with which patient
-        var nowServing = items
-            .Where(q => q.Status == ClinicQueueStatus.InProgress && !string.IsNullOrWhiteSpace(q.RoomName))
-            .GroupBy(q => q.RoomName!)
-            .Select(g => new
-            {
-                RoomName = g.Key,
-                DoctorName = g.First().Doctor != null ? g.First().Doctor!.Name : "",
-                PatientName = BuildPatientDisplayName(g.First().Patient),
-                PatientNumber = g.First().Patient?.PatientNumber ?? "",
-                StartedAt = g.First().StartedAt
-            })
-            .OrderBy(r => r.RoomName)
-            .ToList();
-
-        return Ok(new
+                LatestCalled = latestCalled,
+                WaitingCount = waitingList.Count,
+                WaitingList = waitingList,
+                RecentlyCalled = recentlyCalled,
+                NowServing = nowServing,
+                AverageServiceTimeMinutes = Math.Round(avgServiceTime, 1)
+            });
+        }
+        catch (Exception ex)
         {
-            LatestCalled = latestCalled,
-            WaitingCount = waitingList.Count,
-            WaitingList = waitingList,
-            RecentlyCalled = recentlyCalled,
-            NowServing = nowServing,
-            AverageServiceTimeMinutes = Math.Round(avgServiceTime, 1)
-        });
+            logger.LogError(ex, "Unhandled error in GetDisplay endpoint — returning safe empty data");
+            return Ok(new
+            {
+                LatestCalled = (object?)null,
+                WaitingCount = 0,
+                WaitingList = Array.Empty<object>(),
+                RecentlyCalled = Array.Empty<object>(),
+                NowServing = Array.Empty<object>(),
+                AverageServiceTimeMinutes = 15.0
+            });
+        }
     }
 
     // ─── GET /api/clinic-queue/rooms ─────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   Printer, Activity, Megaphone, Building2,
   X, Phone, MessageCircle,
   ClipboardCheck, LogIn, BellRing, CalendarPlus,
+  Monitor, MoreHorizontal,
 } from "lucide-react";
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
@@ -42,6 +43,7 @@ import {
   useIntake,
   useSendToQueue,
   useCallPatient,
+  useRecallPatient,
   useEnterRoom,
   useUpdateAppointmentStatus,
   useCreatePayment,
@@ -135,6 +137,43 @@ const TAB_ICONS: Record<string, React.ElementType> = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   RoomSelectDialog — Room selector for call/recall patient
+   ═══════════════════════════════════════════════════════════════════════════ */
+function RoomSelectDialog({ rooms, onConfirm, onCancel, loading }: {
+  rooms: { id: string; arabicName: string }[];
+  onConfirm: (roomName: string) => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const [selectedRoom, setSelectedRoom] = useState(rooms[0]?.arabicName || "غرفة 1");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
+      <div className="bg-white rounded-xl shadow-xl p-5 min-w-[300px]" onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-bold mb-3" style={{ color: NAVY }}>اختر الغرفة</h3>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {rooms.map(r => (
+            <button key={r.id} onClick={() => setSelectedRoom(r.arabicName)}
+              className="px-3 py-2 rounded-lg text-xs font-bold transition"
+              style={{ background: selectedRoom === r.arabicName ? BLUE + "20" : "#f5f7fa", color: selectedRoom === r.arabicName ? BLUE : "#64748b", border: selectedRoom === r.arabicName ? `2px solid ${BLUE}` : "2px solid transparent" }}>
+              {r.arabicName}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => onConfirm(selectedRoom)} disabled={loading}
+            className="flex-1 py-2 rounded-lg text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-50" style={{ background: BLUE }}>
+            {loading ? "جاري النداء..." : "تأكيد"}
+          </button>
+          <button onClick={onCancel} className="flex-1 py-2 rounded-lg text-xs font-bold transition" style={{ background: "#f5f7fa", color: "#64748b" }}>
+            إلغاء
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MAIN PAGE — Microsoft Fluent Design
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function DailyOperationsPage() {
@@ -150,6 +189,7 @@ export default function DailyOperationsPage() {
   const canCallPatient = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CALL_PATIENT);
   const canRecallPatient = useHasPermission(PERMISSION_KEYS.DAILY_OPS_RECALL_PATIENT);
   const canCollectPayment = useHasPermission(PERMISSION_KEYS.DAILY_OPS_COLLECT_PAYMENT);
+  const canViewClinicDisplay = useHasPermission(PERMISSION_KEYS.CLINIC_DISPLAY_VIEW);
   const _canCreateDraftInvoice = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CREATE_DRAFT_INVOICE);
   const _canCloseVisit = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CLOSE_VISIT);
 
@@ -191,6 +231,7 @@ export default function DailyOperationsPage() {
   const intakeMutation = useIntake();
   const sendToQueueMutation = useSendToQueue();
   const callPatientMutation = useCallPatient();
+  const recallPatientMutation = useRecallPatient();
   const enterRoomMutation = useEnterRoom();
   const updateStatusMutation = useUpdateAppointmentStatus();
   const createPaymentMutation = useCreatePayment();
@@ -237,6 +278,15 @@ export default function DailyOperationsPage() {
 
   // ── Direct payment modal (for unbooked patients) ──
   const [directPaymentModalOpen, setDirectPaymentModalOpen] = useState(false);
+
+  // ── More menu dropdown ──
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // ── Room selection for call/recall ──
+  const [roomSelectOpen, setRoomSelectOpen] = useState(false);
+  const [pendingCallItem, setPendingCallItem] = useState<TodayJourneyItem | null>(null);
+  const [callActionType, setCallActionType] = useState<"call" | "recall">("call");
 
   // ── Active cashier session check ──
   const { data: activeCashierSession } = useActiveCashierSession();
@@ -324,6 +374,18 @@ export default function DailyOperationsPage() {
   // ── Search input ref for keyboard shortcut ──
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Click outside handler for more menu ──
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [moreMenuOpen]);
+
   // ── Keyboard shortcuts ──
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -331,6 +393,8 @@ export default function DailyOperationsPage() {
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
 
       if (e.key === "Escape") {
+        if (moreMenuOpen) { setMoreMenuOpen(false); return; }
+        if (roomSelectOpen) { setRoomSelectOpen(false); setPendingCallItem(null); return; }
         if (ctxMenu) { setCtxMenu(null); return; }
         if (paymentModalOpen) { setPaymentModalOpen(false); return; }
         if (completeVisitModalOpen) { setCompleteVisitModalOpen(false); return; }
@@ -381,7 +445,7 @@ export default function DailyOperationsPage() {
   }, [
     paymentModalOpen, completeVisitModalOpen, bookAppointmentModalOpen, overrideOpen,
     confirmDialogOpen, whatsAppMenuOpen, changeRoomModalOpen,
-    walkInModalOpen, sidePanelOpen, shortcutsHelpOpen, ctxMenu, refetchItems,
+    walkInModalOpen, sidePanelOpen, shortcutsHelpOpen, ctxMenu, moreMenuOpen, roomSelectOpen, refetchItems,
   ]);
 
   // ── Action handlers ──
@@ -434,11 +498,27 @@ export default function DailyOperationsPage() {
 
   const handleCallPatient = useCallback((item: TodayJourneyItem) => {
     if (!item.queueItemId) return;
-    callPatientMutation.mutate(
-      item.queueItemId,
-      { onSuccess: () => toast.success("تم نداء المريض"), onError: () => toast.error("فشل نداء المريض") },
-    );
-  }, [callPatientMutation]);
+    setPendingCallItem(item);
+    setCallActionType("call");
+    setRoomSelectOpen(true);
+  }, []);
+
+  const handleRoomConfirm = useCallback((roomName: string) => {
+    if (!pendingCallItem?.queueItemId) return;
+    if (callActionType === "recall") {
+      recallPatientMutation.mutate(
+        { queueItemId: pendingCallItem.queueItemId, roomName },
+        { onSuccess: () => toast.success("تم إعادة النداء"), onError: () => toast.error("فشل إعادة النداء") }
+      );
+    } else {
+      callPatientMutation.mutate(
+        { queueItemId: pendingCallItem.queueItemId, roomName },
+        { onSuccess: () => toast.success("تم نداء المريض"), onError: () => toast.error("فشل نداء المريض") }
+      );
+    }
+    setRoomSelectOpen(false);
+    setPendingCallItem(null);
+  }, [pendingCallItem, callActionType, callPatientMutation, recallPatientMutation]);
 
   const handleEnterRoom = useCallback((item: TodayJourneyItem) => {
     if (!item.queueItemId) return;
@@ -826,9 +906,9 @@ export default function DailyOperationsPage() {
 
       <div className="h-screen flex flex-col bg-[#f8fafc] overflow-hidden">
         {/* ═══════════════════════════════════════════════════════════════════
-            COMMAND BAR (52px)
+            COMMAND BAR (52px) — Redesigned: Primary visible + More dropdown
             ═══════════════════════════════════════════════════════════════════ */}
-        <div className="h-[52px] flex-shrink-0 bg-white flex items-center px-3 gap-2 overflow-x-auto"
+        <div className="h-[52px] flex-shrink-0 bg-white flex items-center px-3 gap-2"
           style={{ borderBottom: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
 
           {/* Left: Icon + Title */}
@@ -890,102 +970,23 @@ export default function DailyOperationsPage() {
             {statusFilters.map(s => <option key={s.value} value={s.value}>📊 {s.label}</option>)}
           </select>
 
-          {/* ═══ Quick Operation Buttons (compact, permission-gated) ═══ */}
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-
-            {/* 1. تسجيل وصول (CheckIn) — green */}
-            {canCheckIn && (
-              <button onClick={() => {
-                const item = getActiveItem();
-                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
-                handleIntake(item);
-              }}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-green-50"
-                title="تسجيل وصول" style={{ color: "#16a34a" }}>
-                <ClipboardCheck className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* 2. مريض جديد (New Patient) — navy */}
-            <button onClick={() => router.push("/patients/new")}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-[#1a3a5c08]"
-              title="مريض جديد" style={{ color: NAVY }}>
-              <UserPlus className="w-4 h-4" />
-            </button>
-
-            {/* 3. دخول مباشر (Walk-In) — orange */}
-            {canCreateWalkIn && (
-              <button onClick={() => setWalkInModalOpen(true)}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-orange-50"
-                title="دخول مباشر (Ctrl+N)" style={{ color: ORANGE }}>
-                <LogIn className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* 4. تحصيل (Collect Payment) — emerald */}
-            {canCollectPayment && (
-              <button onClick={() => {
-                const item = getActiveItem();
-                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
-                handleQuickPayment(item);
-              }}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-emerald-50"
-                title="تحصيل دفعة" style={{ color: "#059669" }}>
-                <CreditCard className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* 5. نداء (Call Patient) — amber */}
-            {canCallPatient && (
-              <button onClick={() => {
-                const item = getActiveItem();
-                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
-                handleCallPatient(item);
-              }}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-amber-50"
-                title="نداء المريض" style={{ color: "#d97706" }}>
-                <Bell className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* 6. إعادة النداء (Recall) — yellow */}
-            {canRecallPatient && (
-              <button onClick={() => {
-                const item = getActiveItem();
-                if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
-                // Re-call a patient that was already called
-                handleCallPatient(item);
-              }}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-yellow-50"
-                title="إعادة النداء" style={{ color: "#ca8a04" }}>
-                <BellRing className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* 7. موعد قادم (Next Appointment) — blue */}
-            <button onClick={() => {
-              const item = getActiveItem();
-              if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
-              handleBookAppointment(item);
-            }}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-blue-50"
-              title="موعد قادم" style={{ color: BLUE }}>
-              <CalendarPlus className="w-4 h-4" />
-            </button>
-
-            {/* 8. طباعة سند (Print Receipt) — purple */}
-            <button onClick={handlePrintReceipt}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-purple-50"
-              title="طباعة سند آخر دفعة" style={{ color: "#7c3aed" }}>
-              <Printer className="w-4 h-4" />
-            </button>
-          </div>
-
           {/* Divider */}
           <div className="w-px h-7 mx-1" style={{ background: "#e5e7eb" }} />
 
-          {/* Right Actions */}
-          {/* Walk-in (PRIMARY - Orange with text) */}
+          {/* ═══ PRIMARY ACTIONS (always visible) ═══ */}
+
+          {/* شاشة النداء (Clinic Display) — navy outline */}
+          {canViewClinicDisplay && (
+            <button onClick={() => window.open("/clinic-display", "_blank")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition hover:opacity-90 flex-shrink-0"
+              style={{ color: NAVY, border: `1.5px solid ${NAVY}40`, background: `${NAVY}08` }}
+              title="شاشة النداء">
+              <Monitor className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">شاشة النداء</span>
+            </button>
+          )}
+
+          {/* مريض مشي (Walk-in) — Orange solid */}
           <button onClick={() => setWalkInModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0"
             style={{ background: ORANGE }}
@@ -994,7 +995,7 @@ export default function DailyOperationsPage() {
             <span className="hidden md:inline">مريض مشي</span>
           </button>
 
-          {/* Direct Payment for unbooked patient (Green with text) */}
+          {/* تحصيل/دفع (Collect Payment) — Green solid with cashier session indicator */}
           {canCollectPayment && (
             <button onClick={() => {
               if (!activeCashierSession) {
@@ -1003,61 +1004,186 @@ export default function DailyOperationsPage() {
               }
               setDirectPaymentModalOpen(true);
             }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0 relative"
               style={{ background: activeCashierSession ? "#22c55e" : "#94a3b8" }}
-              title={activeCashierSession ? "دفع لمريض بدون موعد" : "يجب فتح وردية أولاً"}>
+              title={activeCashierSession ? "تحصيل/دفع" : "يجب فتح وردية أولاً"}>
+              {/* Cashier session status dot */}
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white"
+                style={{ background: activeCashierSession ? "#16a34a" : "#ef4444" }} />
               <CreditCard className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">دفع لمريض</span>
+              <span className="hidden md:inline">تحصيل/دفع</span>
             </button>
           )}
 
-          {/* SMS Reminders (blue outline) */}
-          {!isDoctor && (
-            <button onClick={() => { refetchTomorrow(); setBulkSmsModalOpen(true); }}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-[#3d7ab508]"
-              style={{ border: "1px solid #3d7ab530" }}
-              title="إرسال تذكيرات لمواعيد الغد">
-              <Megaphone className="w-4 h-4" style={{ color: BLUE }} />
+          {/* ═══ المزيد (More) dropdown ═══ */}
+          <div ref={moreMenuRef} className="relative flex-shrink-0">
+            <button onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
+              title="المزيد">
+              <MoreHorizontal className="w-4 h-4" style={{ color: "#64748b" }} />
             </button>
-          )}
 
-          {/* Print */}
-          <button onClick={() => window.print()}
-            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-            title="طباعة جدول اليوم">
-            <Printer className="w-4 h-4" style={{ color: "#64748b" }} />
-          </button>
+            {moreMenuOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border py-1.5 min-w-[200px] z-50"
+                style={{ borderColor: "#e5e7eb" }}>
 
-          {/* Refresh */}
-          <button onClick={() => refetchItems()}
-            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-            title="تحديث (Ctrl+R)">
-            <RefreshCw className="w-4 h-4" style={{ color: "#64748b" }} />
-          </button>
+                {/* تسجيل وصول (CheckIn) */}
+                {canCheckIn && (
+                  <button onClick={() => {
+                    setMoreMenuOpen(false);
+                    const item = getActiveItem();
+                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    handleIntake(item);
+                  }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-green-50"
+                    style={{ color: "#16a34a" }}>
+                    <ClipboardCheck className="w-4 h-4" />
+                    <span>تسجيل وصول</span>
+                  </button>
+                )}
 
-          {/* Sound toggle */}
-          <button onClick={() => setSoundEnabled(!soundEnabled)}
-            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-            title={soundEnabled ? "إيقاف صوت التنبيه" : "تشغيل صوت التنبيه"}>
-            {soundEnabled ? <Bell className="w-4 h-4" style={{ color: "#64748b" }} /> : <BellOff className="w-4 h-4" style={{ color: "#94a3b8" }} />}
-          </button>
+                {/* مريض جديد (New Patient) */}
+                <button onClick={() => { setMoreMenuOpen(false); router.push("/patients/new"); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-[#1a3a5c08]"
+                  style={{ color: NAVY }}>
+                  <UserPlus className="w-4 h-4" />
+                  <span>مريض جديد</span>
+                </button>
 
-          {/* Shortcuts help */}
-          <button onClick={() => setShortcutsHelpOpen(true)}
-            className="w-9 h-9 rounded-lg flex items-center justify-center transition hover:bg-gray-100"
-            title="اختصارات لوحة المفاتيح">
-            <Keyboard className="w-4 h-4" style={{ color: "#64748b" }} />
-          </button>
+                {/* دخول مباشر (Walk-In) */}
+                {canCreateWalkIn && (
+                  <button onClick={() => { setMoreMenuOpen(false); setWalkInModalOpen(true); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-orange-50"
+                    style={{ color: ORANGE }}>
+                    <LogIn className="w-4 h-4" />
+                    <span>دخول مباشر</span>
+                  </button>
+                )}
+
+                {/* تحصيل دفعة (Collect Payment) */}
+                {canCollectPayment && (
+                  <button onClick={() => {
+                    setMoreMenuOpen(false);
+                    const item = getActiveItem();
+                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    handleQuickPayment(item);
+                  }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-emerald-50"
+                    style={{ color: "#059669" }}>
+                    <CreditCard className="w-4 h-4" />
+                    <span>تحصيل دفعة</span>
+                  </button>
+                )}
+
+                {/* نداء المريض (Call Patient) */}
+                {canCallPatient && (
+                  <button onClick={() => {
+                    setMoreMenuOpen(false);
+                    const item = getActiveItem();
+                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    handleCallPatient(item);
+                  }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-amber-50"
+                    style={{ color: "#d97706" }}>
+                    <Bell className="w-4 h-4" />
+                    <span>نداء المريض</span>
+                  </button>
+                )}
+
+                {/* إعادة النداء (Recall) */}
+                {canRecallPatient && (
+                  <button onClick={() => {
+                    setMoreMenuOpen(false);
+                    const item = getActiveItem();
+                    if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                    setPendingCallItem(item);
+                    setCallActionType("recall");
+                    setRoomSelectOpen(true);
+                  }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-yellow-50"
+                    style={{ color: "#ca8a04" }}>
+                    <BellRing className="w-4 h-4" />
+                    <span>إعادة النداء</span>
+                  </button>
+                )}
+
+                {/* موعد قادم (Next Appointment) */}
+                <button onClick={() => {
+                  setMoreMenuOpen(false);
+                  const item = getActiveItem();
+                  if (!item) { toast.error("يرجى اختيار مريض أولاً"); return; }
+                  handleBookAppointment(item);
+                }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-blue-50"
+                  style={{ color: BLUE }}>
+                  <CalendarPlus className="w-4 h-4" />
+                  <span>موعد قادم</span>
+                </button>
+
+                {/* طباعة سند (Print Receipt) */}
+                <button onClick={() => { setMoreMenuOpen(false); handlePrintReceipt(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-purple-50"
+                  style={{ color: "#7c3aed" }}>
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة سند</span>
+                </button>
+
+                <div className="my-1 border-t" style={{ borderColor: "#f1f5f9" }} />
+
+                {/* SMS Reminders */}
+                {!isDoctor && (
+                  <button onClick={() => { setMoreMenuOpen(false); refetchTomorrow(); setBulkSmsModalOpen(true); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-[#3d7ab508]"
+                    style={{ color: BLUE }}>
+                    <Megaphone className="w-4 h-4" />
+                    <span>إرسال تذكيرات</span>
+                  </button>
+                )}
+
+                {/* Print */}
+                <button onClick={() => { setMoreMenuOpen(false); window.print(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
+                  style={{ color: "#64748b" }}>
+                  <Printer className="w-4 h-4" />
+                  <span>طباعة جدول اليوم</span>
+                </button>
+
+                {/* Refresh */}
+                <button onClick={() => { setMoreMenuOpen(false); refetchItems(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
+                  style={{ color: "#64748b" }}>
+                  <RefreshCw className="w-4 h-4" />
+                  <span>تحديث (Ctrl+R)</span>
+                </button>
+
+                {/* Sound toggle */}
+                <button onClick={() => { setMoreMenuOpen(false); setSoundEnabled(!soundEnabled); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
+                  style={{ color: soundEnabled ? "#64748b" : "#94a3b8" }}>
+                  {soundEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+                  <span>{soundEnabled ? "إيقاف صوت التنبيه" : "تشغيل صوت التنبيه"}</span>
+                </button>
+
+                {/* Shortcuts help */}
+                <button onClick={() => { setMoreMenuOpen(false); setShortcutsHelpOpen(true); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-gray-50"
+                  style={{ color: "#64748b" }}>
+                  <Keyboard className="w-4 h-4" />
+                  <span>اختصارات لوحة المفاتيح</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* SignalR indicator */}
-          <div className="flex items-center gap-1 w-9 h-9 rounded-lg justify-center" title={signalrConnected ? "متصل مباشر" : "غير متصل"}>
+          <div className="flex items-center gap-1 w-6 h-6 rounded-full justify-center flex-shrink-0" title={signalrConnected ? "متصل مباشر" : "غير متصل"}>
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: signalrConnected ? "#16a34a" : "#ef4444" }} />
           </div>
         </div>
 
         {/* ═══════════ Module Tabs Row (42px) — Microsoft Fluent Tabs ═══════════ */}
-        <div className="h-[42px] flex-shrink-0 bg-white flex items-center px-3 gap-0.5"
-          style={{ borderBottom: "2px solid #f1f5f9" }}>
+        <div className="h-[42px] flex-shrink-0 bg-white flex items-center px-3 gap-0.5 overflow-x-auto"
+          style={{ borderBottom: "2px solid #f1f5f9", scrollbarWidth: "thin" }}>
           {MODULE_TABS.map(tab => {
             const isActive = activeModule === tab.key;
             const TabIcon = tab.icon;
@@ -1066,7 +1192,7 @@ export default function DailyOperationsPage() {
                 onClick={() => {
                   setActiveModule(tab.key);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-bold relative transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-bold relative transition-all flex-shrink-0"
                 style={{
                   color: isActive ? tab.color : "#64748b",
                   background: isActive ? tab.color + "08" : "transparent",
@@ -1518,6 +1644,16 @@ export default function DailyOperationsPage() {
         onViewPatient={handleViewPatient}
         onOpenSidePanel={handleOpenSidePanel}
       />
+
+      {/* Room Selection Dialog for Call/Recall */}
+      {roomSelectOpen && (
+        <RoomSelectDialog
+          rooms={rooms}
+          onConfirm={handleRoomConfirm}
+          onCancel={() => { setRoomSelectOpen(false); setPendingCallItem(null); }}
+          loading={callPatientMutation.isPending || recallPatientMutation.isPending}
+        />
+      )}
     </>
   );
 }

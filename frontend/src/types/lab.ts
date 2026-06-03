@@ -185,3 +185,25 @@ export interface RemakeLabOrderRequest {
   isFreeRemake?: boolean;
   remakeCost?: number;
 }
+
+// Lab Sprint 5 — Payables
+export interface LabPayable {
+  id: string;
+  labOrderId: string;
+  labName?: string;
+  orderNumber?: string;
+  patientName?: string;
+  amount: number;
+  paidAmount: number;
+  balance: number;
+  status: "pending" | "partial" | "paid";
+  dueDate?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecordLabPaymentRequest {
+  amount: number;
+  notes?: string;
+}

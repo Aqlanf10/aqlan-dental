@@ -1,4 +1,5 @@
 using AqlanDentalPro.Application.Interfaces.Services;
+using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -389,6 +390,24 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
 
                 db.LabOrders.Add(order);
 
+                // Lab Sprint 5 — Auto-create LabPayable if order has a lab and cost
+                if (order.LabId.HasValue && (order.TotalCost > 0 || order.Cost > 0))
+                {
+                    var payableAmount = order.TotalCost ?? order.Cost ?? 0;
+                    if (payableAmount > 0)
+                    {
+                        db.LabPayables.Add(new LabPayable
+                        {
+                            LabOrderId = order.Id,
+                            LabId = order.LabId!.Value,
+                            Amount = payableAmount,
+                            PaidAmount = 0,
+                            Status = "pending",
+                            DueDate = order.ExpectedDate?.ToDateTime(TimeOnly.MinValue),
+                        });
+                    }
+                }
+
                 try
                 {
                     await db.SaveChangesAsync();
@@ -756,5 +775,35 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         order.IsActive = false;
         await db.SaveChangesAsync();
         return Ok(new { message = "تم حذف الطلب بنجاح" });
+    }
+
+    // ─── Lab Sprint 5 — PDF Generation ─────────────────────────────────────────
+    /// <summary>Generates a PDF for the lab order.</summary>
+    [HttpGet("{id:guid}/print")]
+    public async Task<IActionResult> PrintPdf(Guid id)
+    {
+        var order = await db.LabOrders
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .Include(l => l.Lab)
+            .Include(l => l.Items).ThenInclude(i => i.WorkType)
+            .FirstOrDefaultAsync(l => l.Id == id);
+
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        var clinicName = await db.Settings.Where(s => s.Key == "clinic.name").Select(s => s.Value).FirstOrDefaultAsync() ?? "مركز طب الأسنان";
+        var clinicPhone = await db.Settings.Where(s => s.Key == "clinic.phones").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
+        var clinicAddress = await db.Settings.Where(s => s.Key == "clinic.location").Select(s => s.Value).FirstOrDefaultAsync() ?? "";
+
+        try
+        {
+            var pdfBytes = LabOrderPdfGenerator.Generate(order, clinicName, clinicPhone, clinicAddress);
+            return File(pdfBytes, "application/pdf", $"lab-order-{order.OrderNumber}.pdf");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate PDF for lab order {OrderId}", id);
+            return StatusCode(500, new { message = "فشل إنشاء ملف PDF" });
+        }
     }
 }

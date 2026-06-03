@@ -18,8 +18,8 @@ import { useAuthStore } from "@/stores/authStore";
  *   createDraftInvoice       → invoices.create
  *   closeVisit               → visits.edit
  *   managerOverride          → settings.approve
- *   lab.view                 → daily_operations.view
- *   lab.manage               → daily_operations.edit
+ *   lab.view                 → lab_orders.view
+ *   lab.manage               → lab_orders.edit
  *   reports.daily.view       → reports.view
  *   commissions.view         → finance.view
  *   settings.paymentMethods  → settings.edit (admin-only)

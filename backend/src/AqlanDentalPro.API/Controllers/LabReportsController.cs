@@ -8,7 +8,7 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/reports")]
 [Authorize(Policy = "StaffOnly")]
-public class LabReportsController(AppDbContext db, ILogger<LabReportsController> logger) : ControllerBase
+public class LabReportsController(AppDbContext db) : ControllerBase
 {
     /// <summary>Lab costs report — total costs per lab.</summary>
     [HttpGet("lab-costs")]

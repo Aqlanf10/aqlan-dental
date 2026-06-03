@@ -147,7 +147,7 @@ public static class LabOrderPdfGenerator
             column.Item().Row(row =>
             {
                 row.RelativeItem();
-                row.ConstantColumn(200).Column(col =>
+                row.ConstantItem(200).Column(col =>
                 {
                     col.Item().PaddingBottom(30).LineHorizontal(1).LineColor(Colors.Grey.Darken1);
                     col.Item().AlignCenter().Text("توقيع الطبيب").FontSize(9);

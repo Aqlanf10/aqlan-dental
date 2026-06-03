@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Calendar, ClipboardList, CreditCard, Clock, CheckCircle,
   Stethoscope, AlertTriangle, Search, RefreshCw,
@@ -85,6 +85,7 @@ import ClinicQueueView from "./_modules/ClinicQueueView";
 import RoomsView from "./_modules/RoomsView";
 import LabView from "./_modules/LabView";
 import ReportView from "./_modules/ReportView";
+import PatientJourneyView from "./_modules/PatientJourneyView";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Inline styles for animations
@@ -179,6 +180,7 @@ function RoomSelectDialog({ rooms, onConfirm, onCancel, loading }: {
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function DailyOperationsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuthStore();
   const userRole = user?.role ?? "";
   const isDoctor = isDoctorRole(userRole);
@@ -592,6 +594,19 @@ export default function DailyOperationsPage() {
     setSidePanelItem(item);
     setSidePanelOpen(true);
   }, []);
+
+  useEffect(() => {
+    const appointmentId = searchParams.get("appointmentId");
+    const patientId = searchParams.get("patientId");
+    if (!appointmentId && !patientId) return;
+
+    setActiveModule("journey");
+    const match = items.find((item) =>
+      (appointmentId && item.appointmentId === appointmentId) ||
+      (patientId && item.patientId === patientId)
+    );
+    if (match) handleOpenSidePanel(match);
+  }, [searchParams, items, handleOpenSidePanel]);
 
   const pushUndoAction = useCallback((action: UndoAction) => {
     if (undoAction) setUndoAction(null);
@@ -1352,15 +1367,10 @@ export default function DailyOperationsPage() {
                   )}
                 </div>
 
-                <div className="flex-1 overflow-auto bg-white">
-                  <AppointmentsTable
+                <div className="flex-1 overflow-hidden bg-white">
+                  <PatientJourneyView
                     items={items}
                     loading={itemsLoading}
-                    isDoctor={isDoctor}
-                    canProcessCheckout={canProcessCheckout}
-                    isReception={userRole === "Reception"}
-                    isAccountant={userRole === "Accountant"}
-                    queueWaitTime={queueWaitTime}
                     onIntake={handleIntake}
                     onSendToQueue={handleSendToQueue}
                     onCallPatient={handleCallPatient}
@@ -1369,10 +1379,6 @@ export default function DailyOperationsPage() {
                     onCreateDraftInvoice={handleCreateDraftInvoice}
                     createDraftInvoicePending={createDraftInvoiceMutation.isPending}
                     onBookAppointment={handleBookAppointment}
-                    onWhatsApp={handleWhatsApp}
-                    onNoShow={handleNoShow}
-                    onCancel={handleCancel}
-                    onViewPatient={handleViewPatient}
                     onCompleteVisit={handleCompleteVisit}
                     onOpenSidePanel={handleOpenSidePanel}
                     selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}

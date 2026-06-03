@@ -86,7 +86,21 @@ const NAV: NavEntry[] = [
     ],
   },
   { href: "/prescriptions",  label: "الوصفات الطبية",  icon: Pill,            roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
-  { href: "/lab",            label: "المختبر",          icon: FlaskConical,    roles: ["Admin","Orthodontist"] },
+  {
+    kind: "group",
+    label: "المعامل",
+    icon: FlaskConical,
+    roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon", "Assistant", "BranchManager", "Accountant"],
+    children: [
+      { href: "/lab", label: "طلبات المعمل", icon: FlaskConical, roles: ["Admin", "Reception", "Orthodontist", "GeneralDentist", "OralSurgeon", "Assistant", "BranchManager"], permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
+      { href: "/lab/dashboard", label: "لوحة المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/lab/overdue", label: "طلبات متأخرة", icon: Clock, roles: ["Admin", "Reception", "Orthodontist", "BranchManager"], permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
+      { href: "/lab/reports", label: "تقارير المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/settings/labs", label: "إدارة المعامل", icon: Settings, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LABS_VIEW },
+      { href: "/settings/lab-work-types", label: "أنواع الأعمال", icon: ClipboardList, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LAB_WORK_TYPES_VIEW },
+      { href: "/settings/lab-pricing", label: "تسعير المعامل", icon: Banknote, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LAB_WORK_PRICES_VIEW },
+    ],
+  },
 
   // ── تقارير ───────────────────────────────────────────────────────────────
   { href: "/reports",        label: "التقارير",         icon: BarChart2,       roles: ["Admin","Accountant"],                                         section: "تقارير" },

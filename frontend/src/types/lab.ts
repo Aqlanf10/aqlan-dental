@@ -35,7 +35,7 @@ export interface LabOrder {
   items?: LabOrderItemResponse[];
 }
 
-export type LabOrderStatus = "draft" | "sent" | "manufacturing" | "ready" | "received" | "delivered" | "returned" | "remake" | "cancelled";
+export type LabOrderStatus = "draft" | "sent" | "manufacturing" | "tryIn" | "ready" | "received" | "delivered" | "returned" | "remake" | "cancelled";
 export type LabOrderPriority = "urgent" | "normal" | "low";
 
 export interface LabOrderItemResponse {

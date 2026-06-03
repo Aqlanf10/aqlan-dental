@@ -45,6 +45,7 @@ public static class LabOrderPdfGenerator
                 column.Item().Text(clinicPhone).FontSize(9);
                 column.Item().Text(clinicAddress).FontSize(9);
             });
+            row.ConstantItem(130).Element(compose => ComposeTrackingCode(compose, order.OrderNumber ?? order.Id.ToString("N")));
             row.RelativeItem().AlignRight().Column(column =>
             {
                 column.Item().Text($"أمر عمل معمل").Bold().FontSize(16);
@@ -55,6 +56,28 @@ public static class LabOrderPdfGenerator
         });
 
         container.PaddingVertical(5).LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+    }
+
+    private static void ComposeTrackingCode(IContainer container, string value)
+    {
+        var seed = Math.Abs(value.Aggregate(17, (current, ch) => (current * 31) + ch));
+        var bars = Enumerable.Range(0, 36)
+            .Select(index => ((seed >> (index % 24)) + index) % 3 != 0)
+            .ToArray();
+
+        container.Border(1).BorderColor(Colors.Grey.Lighten2).Padding(4).Column(column =>
+        {
+            column.Item().AlignCenter().Text("LAB TRACKING").FontSize(7).FontColor(Colors.Grey.Darken1);
+            column.Item().PaddingVertical(3).Height(28).Row(row =>
+            {
+                foreach (var isBlack in bars)
+                {
+                    row.ConstantItem(2).Background(isBlack ? Colors.Black : Colors.White);
+                    row.ConstantItem(1).Background(Colors.White);
+                }
+            });
+            column.Item().AlignCenter().Text(value).FontSize(8).Bold();
+        });
     }
 
     private static void ComposeContent(IContainer container, LabOrder order, List<LabOrderItem> items)

@@ -27,7 +27,7 @@ export default function LabPricingPage() {
   const showToast = useCallback((message: string, type: "success" | "error" = "success") => { setToast({ message, type }); setTimeout(() => setToast(null), 4000); }, []);
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void; }>({ open: false, title: "", message: "", onConfirm: () => {} });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [pricesRes, labsRes, typesRes] = await Promise.all([
         api.get<{ data: LabWorkPrice[] }>("/api/lab-work-prices"),
@@ -39,9 +39,9 @@ export default function LabPricingPage() {
       setWorkTypes(typesRes.data.data);
     } catch { showToast("فشل تحميل البيانات", "error"); }
     finally { setLoading(false); }
-  };
+  }, [showToast]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const openCreateModal = () => {
     setModalMode("create");

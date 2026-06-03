@@ -723,6 +723,12 @@ public class UsersController(
         ["checkout"] = "جاهز للدفع",
         ["invoices"] = "الفواتير",
         ["rooms"] = "الغرف / الكراسي",
+        ["lab_orders"] = "طلبات المعمل",
+        ["labs"] = "إدارة المعامل",
+        ["lab_work_types"] = "أنواع أعمال المعمل",
+        ["lab_work_prices"] = "تسعير المعامل",
+        ["lab_payables"] = "مستحقات المعامل",
+        ["lab_reports"] = "تقارير المعامل",
     };
 
     /// <summary>

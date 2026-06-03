@@ -1,3 +1,5 @@
+using AqlanDentalPro.API.Authorization;
+using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentValidation;
@@ -51,11 +53,15 @@ public sealed class UpdateLabWorkTypeRequestValidator : AbstractValidator<Update
 [ApiController]
 [Route("api/lab-work-types")]
 [Authorize(Policy = "StaffOnly")]
-public class LabWorkTypesController(AppDbContext db, ILogger<LabWorkTypesController> logger) : ControllerBase
+public class LabWorkTypesController(AppDbContext db, ICurrentUserService currentUser, ILogger<LabWorkTypesController> logger) : ControllerBase
 {
+    private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "lab_work_types", action);
+
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] bool? activeOnly = true)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var query = db.LabWorkTypes.AsQueryable();
         if (activeOnly == true)
             query = query.Where(w => w.IsActive);
@@ -82,6 +88,8 @@ public class LabWorkTypesController(AppDbContext db, ILogger<LabWorkTypesControl
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (!await CanAsync("view")) return Forbid();
+
         var workType = await db.LabWorkTypes.FindAsync(id);
         if (workType is null) return NotFound(new { message = "نوع العمل غير موجود" });
 
@@ -101,6 +109,8 @@ public class LabWorkTypesController(AppDbContext db, ILogger<LabWorkTypesControl
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateLabWorkTypeRequest req)
     {
+        if (!await CanAsync("create")) return Forbid();
+
         var workType = new LabWorkType
         {
             Name = req.Name,
@@ -125,6 +135,8 @@ public class LabWorkTypesController(AppDbContext db, ILogger<LabWorkTypesControl
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateLabWorkTypeRequest req)
     {
+        if (!await CanAsync("edit")) return Forbid();
+
         var workType = await db.LabWorkTypes.FindAsync(id);
         if (workType is null) return NotFound(new { message = "نوع العمل غير موجود" });
 
@@ -149,6 +161,8 @@ public class LabWorkTypesController(AppDbContext db, ILogger<LabWorkTypesControl
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await CanAsync("delete")) return Forbid();
+
         var workType = await db.LabWorkTypes.FindAsync(id);
         if (workType is null) return NotFound(new { message = "نوع العمل غير موجود" });
 

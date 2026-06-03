@@ -96,6 +96,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Lab> Labs => Set<Lab>();
     public DbSet<LabWorkType> LabWorkTypes => Set<LabWorkType>();
 
+    // Lab Sprint 3 — Professional Orders, Items & Pricing
+    public DbSet<LabWorkPrice> LabWorkPrices => Set<LabWorkPrice>();
+    public DbSet<LabOrderItem> LabOrderItems => Set<LabOrderItem>();
+
     // Sprint 15 — HR Module
     public DbSet<Attendance> Attendances => Set<Attendance>();
     public DbSet<SalaryRecord> SalaryRecords => Set<SalaryRecord>();

@@ -20,9 +20,7 @@ public static class CorsConfiguration
         // Always include Vercel deployment origins so the frontend can call the API directly
         allowedOrigins = [..allowedOrigins,
             "https://aqlan-dental-pro.vercel.app",
-            "https://aqlan-dental.vercel.app",
-            // PR #281 Vercel preview — allows Railway backend to accept calls from this preview deployment
-            "https://aqlan-dental-6g7ji6s9y-aqlanf10-9871s-projects.vercel.app"];
+            "https://aqlan-dental.vercel.app"];
         services.AddCors(opts =>
         {
             // Authenticated staff endpoints — strict origins, cookies allowed

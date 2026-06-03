@@ -828,7 +828,7 @@ export default function DailyOperationsPage() {
         {/* ═══════════════════════════════════════════════════════════════════
             COMMAND BAR (52px)
             ═══════════════════════════════════════════════════════════════════ */}
-        <div className="h-[52px] flex-shrink-0 bg-white flex items-center px-3 gap-2"
+        <div className="h-[52px] flex-shrink-0 bg-white flex items-center px-3 gap-2 overflow-x-auto"
           style={{ borderBottom: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
 
           {/* Left: Icon + Title */}
@@ -846,7 +846,7 @@ export default function DailyOperationsPage() {
           <div className="w-px h-7 mx-1" style={{ background: "#e5e7eb" }} />
 
           {/* Center: Search */}
-          <div className="flex-1 max-w-md relative">
+          <div className="flex-1 max-w-md min-w-0 relative">
             <Search className="w-4 h-4 absolute top-1/2 right-3 -translate-y-1/2" style={{ color: "#94a3b8" }} />
             <input
               ref={searchInputRef}
@@ -865,7 +865,7 @@ export default function DailyOperationsPage() {
 
           {/* Inline Filters (compact, no labels) */}
           {/* Date picker */}
-          <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+          <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold flex-shrink-0"
             style={{ background: "#f5f7fa", color: NAVY }}>
             <Calendar className="w-3.5 h-3.5" />
             <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
@@ -876,7 +876,7 @@ export default function DailyOperationsPage() {
           {/* Doctor filter */}
           {!isDoctor && (
             <select value={filterDoctor} onChange={e => setFilterDoctor(e.target.value)}
-              className="text-xs font-semibold rounded-lg px-2 py-1.5 outline-none border-0 focus:ring-2 focus:ring-[#3d7ab5]/20"
+              className="text-xs font-semibold rounded-lg px-2 py-1.5 outline-none border-0 focus:ring-2 focus:ring-[#3d7ab5]/20 flex-shrink-0"
               style={{ background: "#f5f7fa", color: NAVY, maxWidth: 120 }}>
               <option value="">👨‍⚕️ كل الأطباء</option>
               {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -885,16 +885,13 @@ export default function DailyOperationsPage() {
 
           {/* Status filter */}
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            className="text-xs font-semibold rounded-lg px-2 py-1.5 outline-none border-0 focus:ring-2 focus:ring-[#3d7ab5]/20"
+            className="text-xs font-semibold rounded-lg px-2 py-1.5 outline-none border-0 focus:ring-2 focus:ring-[#3d7ab5]/20 flex-shrink-0"
             style={{ background: "#f5f7fa", color: NAVY, maxWidth: 110 }}>
             {statusFilters.map(s => <option key={s.value} value={s.value}>📊 {s.label}</option>)}
           </select>
 
-          {/* Spacer */}
-          <div className="flex-1" />
-
           {/* ═══ Quick Operation Buttons (compact, permission-gated) ═══ */}
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 flex-shrink-0">
 
             {/* 1. تسجيل وصول (CheckIn) — green */}
             {canCheckIn && (
@@ -990,11 +987,11 @@ export default function DailyOperationsPage() {
           {/* Right Actions */}
           {/* Walk-in (PRIMARY - Orange with text) */}
           <button onClick={() => setWalkInModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0"
             style={{ background: ORANGE }}
             title="مريض مشي (Ctrl+N)">
             <UserPlus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">مريض مشي</span>
+            <span className="hidden md:inline">مريض مشي</span>
           </button>
 
           {/* Direct Payment for unbooked patient (Green with text) */}
@@ -1006,11 +1003,11 @@ export default function DailyOperationsPage() {
               }
               setDirectPaymentModalOpen(true);
             }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0"
               style={{ background: activeCashierSession ? "#22c55e" : "#94a3b8" }}
               title={activeCashierSession ? "دفع لمريض بدون موعد" : "يجب فتح وردية أولاً"}>
               <CreditCard className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">دفع لمريض</span>
+              <span className="hidden md:inline">دفع لمريض</span>
             </button>
           )}
 

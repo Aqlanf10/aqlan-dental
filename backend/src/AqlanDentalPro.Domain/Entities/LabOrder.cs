@@ -16,7 +16,16 @@ public class LabOrder : BaseEntity
     public decimal? Cost { get; set; }
     public Guid? DoctorId { get; set; }
 
+    // Sprint 2 — Daily Operations: extended fields
+    public string? Shade { get; set; }
+    public string? RestorationType { get; set; }
+    public Guid? VisitId { get; set; }
+    public DateOnly? DeliveredDate { get; set; }
+    public string? CancellationReason { get; set; }
+    public Guid? BranchId { get; set; }
+
     public Patient Patient { get; set; } = null!;
     public OrthoCase? OrthoCase { get; set; }
     public Doctor? Doctor { get; set; }
+    public Visit? Visit { get; set; }
 }

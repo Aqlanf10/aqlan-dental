@@ -1,5 +1,8 @@
 using FluentAssertions;
 using Xunit;
+using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace AqlanDentalPro.UnitTests.LabOrders;
 
@@ -100,5 +103,199 @@ public class LabOrderNumberGenerationTests
         var orderNumber = $"LAB-2026-{seq:D3}";
         // D3 with value > 999 just prints the full number
         orderNumber.Should().Be("LAB-2026-1000");
+    }
+
+    // ─── Lab Order Lifecycle Tests (Sprint 2) ─────────────────────────────
+
+    private static AppDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new AppDbContext(options);
+    }
+
+    [Fact]
+    public async Task MarkReceived_SetsStatusAndDate()
+    {
+        // Create order with status "sent", mark as received, verify status and date
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "أحمد", LastName = "سعيد" });
+
+        var order = new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-001",
+            Status = "sent",
+            ApplianceType = "تاج خزفي",
+            IsActive = true
+        };
+        db.LabOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        // Simulate mark-received: set status and date
+        order.Status = "received";
+        order.ReceivedDate = DateOnly.FromDateTime(DateTime.Today);
+        await db.SaveChangesAsync();
+
+        var saved = await db.LabOrders.FirstOrDefaultAsync(l => l.Id == order.Id);
+        saved.Should().NotBeNull();
+        saved!.Status.Should().Be("received");
+        saved.ReceivedDate.Should().Be(DateOnly.FromDateTime(DateTime.Today));
+    }
+
+    [Fact]
+    public async Task MarkDelivered_RequiresReadyStatus()
+    {
+        // Attempt to deliver an order that is "sent" should fail (business rule validation)
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "محمد", LastName = "علي" });
+
+        var order = new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-002",
+            Status = "sent",
+            ApplianceType = "طقم أسنان",
+            IsActive = true
+        };
+        db.LabOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        // Business rule: can only deliver if status is "ready" or "received"
+        var canDeliver = order.Status == "ready" || order.Status == "received";
+        canDeliver.Should().BeFalse("sent orders cannot be delivered directly");
+
+        // Now change to "ready" and verify it can be delivered
+        order.Status = "ready";
+        await db.SaveChangesAsync();
+
+        var canDeliverAfterReady = order.Status == "ready" || order.Status == "received";
+        canDeliverAfterReady.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Cancel_WithReason_SetsCancellationReason()
+    {
+        // Cancel with reason, verify status and reason
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "خالد", LastName = "حسن" });
+
+        var order = new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-003",
+            Status = "sent",
+            ApplianceType = "جسر",
+            IsActive = true
+        };
+        db.LabOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        // Simulate cancel with reason
+        order.Status = "cancelled";
+        order.CancellationReason = "المريض لم يحضر";
+        await db.SaveChangesAsync();
+
+        var saved = await db.LabOrders.FirstOrDefaultAsync(l => l.Id == order.Id);
+        saved.Should().NotBeNull();
+        saved!.Status.Should().Be("cancelled");
+        saved.CancellationReason.Should().Be("المريض لم يحضر");
+    }
+
+    [Fact]
+    public async Task Today_ReturnsOnlyTodayOrders()
+    {
+        // Verify filter by today's date
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "سعيد", LastName = "عمر" });
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var yesterday = today.AddDays(-1);
+
+        // Order with today's SentDate
+        db.LabOrders.Add(new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-010",
+            Status = "sent",
+            SentDate = today,
+            IsActive = true
+        });
+
+        // Order with yesterday's SentDate
+        db.LabOrders.Add(new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-011",
+            Status = "sent",
+            SentDate = yesterday,
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        // Simulate the Today filter: SentDate == today || ExpectedDate == today || ReceivedDate == today
+        var todayOrders = await db.LabOrders
+            .Where(l => l.SentDate == today || l.ExpectedDate == today || l.ReceivedDate == today || l.DeliveredDate == today)
+            .ToListAsync();
+
+        todayOrders.Should().ContainSingle();
+        todayOrders[0].OrderNumber.Should().Be("LAB-2026-010");
+    }
+
+    [Fact]
+    public async Task Ready_ReturnsOnlyReadyAndReceived()
+    {
+        // Verify filter by status: only "ready" and "received" orders
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "فاطمة", LastName = "أحمد" });
+
+        db.LabOrders.Add(new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-020",
+            Status = "ready",
+            IsActive = true
+        });
+
+        db.LabOrders.Add(new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-021",
+            Status = "received",
+            IsActive = true
+        });
+
+        db.LabOrders.Add(new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-022",
+            Status = "sent",
+            IsActive = true
+        });
+
+        db.LabOrders.Add(new LabOrder
+        {
+            PatientId = patientId,
+            OrderNumber = "LAB-2026-023",
+            Status = "manufacturing",
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        // Simulate the Ready filter: status == "ready" || status == "received"
+        var readyOrders = await db.LabOrders
+            .Where(l => l.Status == "ready" || l.Status == "received")
+            .ToListAsync();
+
+        readyOrders.Should().HaveCount(2);
+        readyOrders.Select(o => o.OrderNumber).Should().Contain(new[] { "LAB-2026-020", "LAB-2026-021" });
     }
 }

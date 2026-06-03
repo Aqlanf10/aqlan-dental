@@ -166,4 +166,178 @@ public partial class FinanceV3Controller
 
         return Ok(resultList);
     }
+
+    /// <summary>
+    /// GET /api/finance-v3/doctor-commissions/earned-from-collections
+    /// Returns commission calculated based on ACTUAL payment collections, not just invoice amounts.
+    /// Commission = (Collected Amount - Lab Cost - Material Cost - Other Direct Costs) * Doctor Percentage
+    /// Only payments that have been actually collected are counted.
+    /// </summary>
+    [HttpGet("doctor-commissions/earned-from-collections")]
+    public async Task<IActionResult> GetDoctorCommissionsEarnedFromCollections(
+        [FromQuery] Guid? doctorId,
+        [FromQuery] string? from,
+        [FromQuery] string? to)
+    {
+        // Branch isolation guard for non-admin users
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+
+        // Verify requested doctor belongs to the branch for non-admins
+        if (doctorId.HasValue && branchId.HasValue)
+        {
+            var doctorExistsInBranch = await db.Doctors.AnyAsync(d => d.Id == doctorId.Value && d.BranchId == branchId.Value);
+            if (!doctorExistsInBranch)
+            {
+                return Forbid("ليس لديك صلاحية الوصول إلى بيانات طبيب من فرع آخر");
+            }
+        }
+
+        // 1. Safe parsing of the date range
+        DateOnly fromDate;
+        DateOnly toDate;
+
+        if (string.IsNullOrEmpty(from))
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            fromDate = new DateOnly(today.Year, today.Month, 1);
+        }
+        else if (!DateOnly.TryParse(from, out fromDate))
+        {
+            return BadRequest(new { message = "تاريخ البداية غير صالح" });
+        }
+
+        if (string.IsNullOrEmpty(to))
+        {
+            toDate = DateOnly.FromDateTime(DateTime.Today);
+        }
+        else if (!DateOnly.TryParse(to, out toDate))
+        {
+            return BadRequest(new { message = "تاريخ النهاية غير صالح" });
+        }
+
+        var startDateTime = DateTime.SpecifyKind(fromDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var endDateTime = DateTime.SpecifyKind(toDate.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
+
+        // 2. Get all invoices in date range with their payments and line items
+        var invoicesQuery = db.Invoices
+            .Include(i => i.Patient)
+            .Include(i => i.LineItems)
+            .Include(i => i.Payments)
+            .Where(i => i.IsActive && i.CreatedAt >= startDateTime && i.CreatedAt <= endDateTime);
+
+        if (branchId.HasValue)
+            invoicesQuery = invoicesQuery.Where(i => i.Patient.BranchId == branchId.Value);
+        if (doctorId.HasValue)
+            invoicesQuery = invoicesQuery.Where(i => i.LineItems.Any(l => l.DoctorId == doctorId.Value));
+
+        var invoices = await invoicesQuery.ToListAsync();
+
+        // Explicitly filter inactive line items and payments in-memory
+        // (ensures correct behavior across all database providers including InMemory)
+        foreach (var inv in invoices)
+        {
+            inv.LineItems = inv.LineItems.Where(l => l.IsActive).ToList();
+            inv.Payments = inv.Payments.Where(p => p.IsActive).ToList();
+        }
+
+        // 3. Get doctor commission payments
+        var commissionPaymentsQuery = db.DoctorCommissionPayments
+            .Where(p => p.IsActive && p.PaymentDate >= fromDate && p.PaymentDate <= toDate);
+        if (branchId.HasValue)
+            commissionPaymentsQuery = commissionPaymentsQuery.Where(p => p.Doctor.BranchId == branchId.Value);
+        if (doctorId.HasValue)
+            commissionPaymentsQuery = commissionPaymentsQuery.Where(p => p.DoctorId == doctorId.Value);
+
+        var commissionPayments = await commissionPaymentsQuery.ToListAsync();
+
+        // 4. Group by doctor
+        var doctorIds = invoices
+            .SelectMany(i => i.LineItems.Where(l => l.DoctorId.HasValue).Select(l => l.DoctorId!.Value))
+            .Distinct()
+            .ToList();
+        if (doctorId.HasValue && !doctorIds.Contains(doctorId.Value))
+            doctorIds.Add(doctorId.Value);
+
+        var doctorsMapQuery = db.Doctors.Where(d => doctorIds.Contains(d.Id));
+        if (branchId.HasValue)
+            doctorsMapQuery = doctorsMapQuery.Where(d => d.BranchId == branchId.Value);
+        var doctorsMap = await doctorsMapQuery.ToDictionaryAsync(d => d.Id, d => d);
+
+        // 5. Build results per doctor
+        var result = new List<DoctorCommissionEarnedFromCollectionsDto>();
+        foreach (var docId in doctorIds)
+        {
+            var doctor = doctorsMap.GetValueOrDefault(docId);
+            if (doctor == null) continue;
+
+            // For this doctor, collect all line items from invoices
+            var docLineItems = invoices
+                .SelectMany(i => i.LineItems.Where(l => l.DoctorId == docId))
+                .ToList();
+
+            // For each invoice containing this doctor's items, calculate collection ratio
+            decimal totalCollected = 0;
+            decimal totalLabCost = 0;
+            decimal totalMaterialCost = 0;
+            decimal totalOtherDirectCosts = 0;
+            decimal totalServiceValue = 0;
+            decimal totalEarnedCommission = 0;
+            int casesCount = 0;
+
+            foreach (var invoice in invoices.Where(inv => inv.LineItems.Any(l => l.DoctorId == docId)))
+            {
+                var invoiceTotal = invoice.TotalAmount;
+                var invoicePaid = invoice.Payments.Sum(p => p.Amount);
+                var collectionRatio = invoiceTotal > 0 ? Math.Min(1m, invoicePaid / invoiceTotal) : 0m;
+
+                var docItems = invoice.LineItems.Where(l => l.DoctorId == docId).ToList();
+                foreach (var item in docItems)
+                {
+                    casesCount++;
+                    var itemServiceValue = item.TotalPrice;
+                    var proportionalCollected = itemServiceValue * collectionRatio;
+                    var proportionalLabCost = item.LabCost * collectionRatio;
+                    var proportionalMaterialCost = item.MaterialCost * collectionRatio;
+                    var proportionalOtherCosts = item.OtherDirectCost * collectionRatio;
+
+                    totalServiceValue += itemServiceValue;
+                    totalCollected += proportionalCollected;
+                    totalLabCost += proportionalLabCost;
+                    totalMaterialCost += proportionalMaterialCost;
+                    totalOtherDirectCosts += proportionalOtherCosts;
+
+                    // Net commissionable = collected - costs
+                    var netCommissionable = Math.Max(0, proportionalCollected - proportionalLabCost - proportionalMaterialCost - proportionalOtherCosts);
+                    var earnedCommission = netCommissionable * (item.DoctorCommissionPercentage / 100m);
+                    totalEarnedCommission += earnedCommission;
+                }
+            }
+
+            var commissionPaid = commissionPayments.Where(p => p.DoctorId == docId).Sum(p => p.Amount);
+            var commissionRemaining = Math.Max(0, totalEarnedCommission - commissionPaid);
+            var netCommissionableAmount = Math.Max(0, totalCollected - totalLabCost - totalMaterialCost - totalOtherDirectCosts);
+
+            result.Add(new DoctorCommissionEarnedFromCollectionsDto
+            {
+                DoctorId = docId,
+                DoctorName = doctor.Name,
+                CasesCount = casesCount,
+                TotalServiceValue = totalServiceValue,
+                TotalCollected = totalCollected,
+                TotalLabCost = totalLabCost,
+                TotalMaterialCost = totalMaterialCost,
+                TotalOtherDirectCosts = totalOtherDirectCosts,
+                NetCommissionableAmount = netCommissionableAmount,
+                DoctorPercentage = doctor.DefaultCommissionPercentage ?? 0m,
+                CommissionDue = totalEarnedCommission,
+                CommissionPaid = commissionPaid,
+                CommissionRemaining = commissionRemaining
+            });
+        }
+
+        return Ok(result);
+    }
 }

@@ -8,6 +8,7 @@ namespace AqlanDentalPro.Infrastructure.Data.Configurations;
 /// DB-01 FIX: Fluent API configuration for LabOrder entity indexes.
 /// CON-02 FIX: Added unique index on OrderNumber to prevent duplicate order numbers
 /// under concurrent requests (belt-and-suspenders alongside advisory lock).
+/// Sprint 2: Added index on BranchId, VisitId for multi-branch and visit linkage.
 /// </summary>
 public class LabOrderConfiguration : IEntityTypeConfiguration<LabOrder>
 {
@@ -25,5 +26,17 @@ public class LabOrderConfiguration : IEntityTypeConfiguration<LabOrder>
         builder.HasIndex(l => l.OrderNumber)
             .IsUnique()
             .HasFilter("\"OrderNumber\" IS NOT NULL");
+
+        // Sprint 2: Index for querying lab orders by branch (multi-branch support)
+        builder.HasIndex(l => l.BranchId);
+
+        // Sprint 2: Index for querying lab orders linked to a visit
+        builder.HasIndex(l => l.VisitId);
+
+        // Sprint 2: Navigation property — Visit
+        builder.HasOne(l => l.Visit)
+            .WithMany()
+            .HasForeignKey(l => l.VisitId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

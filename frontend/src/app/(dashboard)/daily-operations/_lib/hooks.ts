@@ -7,6 +7,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
+import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { canViewFinanceReports } from "@/lib/roles";
 import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceOption, FinanceSummaryData } from "./constants";
@@ -199,8 +200,24 @@ export function useSendToQueue() {
 export function useCallPatient() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (queueItemId: string) => {
-      const { data } = await api.post(`/api/clinic-queue/${queueItemId}/call`);
+    mutationFn: async (params: { queueItemId: string; roomName?: string }) => {
+      const body = params.roomName ? { roomName: params.roomName } : {};
+      const { data } = await api.post(`/api/clinic-queue/${params.queueItemId}/call`, body);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
+    },
+  });
+}
+
+export function useRecallPatient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { queueItemId: string; roomName?: string }) => {
+      const body = params.roomName ? { roomName: params.roomName } : {};
+      const { data } = await api.post(`/api/clinic-queue/${params.queueItemId}/recall`, body);
       return data;
     },
     onSuccess: () => {
@@ -251,6 +268,7 @@ export function useCreatePayment() {
       serviceDescription?: string;
       doctorId?: string;
       notes?: string;
+      referenceNumber?: string;
     }) => {
       const { data } = await api.post("/api/payments", body);
       return data;
@@ -598,5 +616,195 @@ export function useActiveCashierSession() {
     },
     staleTime: 15_000,
     refetchInterval: 30_000,
+  });
+}
+
+// ─── Lab Orders ──────────────────────────────────────────────────────────────
+
+export interface LabOrderRow {
+  id: string;
+  orderNumber: string;
+  patientId: string;
+  patientName: string;
+  patientNumber: string;
+  orthoCaseNumber?: string | null;
+  applianceType: string;
+  labName: string | null;
+  sentDate: string | null;
+  expectedDate: string | null;
+  receivedDate: string | null;
+  status: string;
+  priority: string;
+  cost: number | null;
+  doctorName: string | null;
+  createdAt: string;
+}
+
+export interface LabOrdersResponse {
+  data: LabOrderRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export function useLabOrders(filters?: { status?: string; patientId?: string; page?: number }) {
+  return useQuery<LabOrdersResponse>({
+    queryKey: ["daily-ops", "lab-orders", filters],
+    queryFn: async () => {
+      const params: Record<string, string> = { page: String(filters?.page ?? 1), pageSize: "50" };
+      if (filters?.status) params.status = filters.status;
+      if (filters?.patientId) params.patientId = filters.patientId;
+      const { data } = await api.get("/api/lab-orders", { params });
+      return data;
+    },
+    staleTime: 15_000,
+  });
+}
+
+export function useLabOrdersReady() {
+  return useQuery<LabOrderRow[]>({
+    queryKey: ["daily-ops", "lab-orders-ready"],
+    queryFn: async () => {
+      const { data } = await api.get("/api/lab-orders/ready");
+      return data;
+    },
+    staleTime: 15_000,
+  });
+}
+
+export function useMarkLabReceived() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/api/lab-orders/${id}/mark-received`);
+    },
+    onSuccess: () => {
+      toast.success("تم تأكيد وصول العمل المخبري");
+      qc.invalidateQueries({ queryKey: ["daily-ops", "lab-orders"] });
+    },
+    onError: () => toast.error("فشل تأكيد الوصول"),
+  });
+}
+
+export function useMarkLabDelivered() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/api/lab-orders/${id}/mark-delivered`);
+    },
+    onSuccess: () => {
+      toast.success("تم تسليم العمل للمريض");
+      qc.invalidateQueries({ queryKey: ["daily-ops", "lab-orders"] });
+    },
+    onError: () => toast.error("فشل التسليم"),
+  });
+}
+
+export function useCancelLabOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      await api.post(`/api/lab-orders/${id}/cancel`, { reason });
+    },
+    onSuccess: () => {
+      toast.success("تم إلغاء الطلب");
+      qc.invalidateQueries({ queryKey: ["daily-ops", "lab-orders"] });
+    },
+    onError: () => toast.error("فشل إلغاء الطلب"),
+  });
+}
+
+export function useCreateLabOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      patientId: string;
+      applianceType: string;
+      labName?: string;
+      sentDate?: string;
+      expectedDate?: string;
+      priority?: string;
+      instructions?: string;
+      cost?: number;
+      doctorId?: string;
+      shade?: string;
+      restorationType?: string;
+      visitId?: string;
+    }) => {
+      const { data } = await api.post("/api/lab-orders", body);
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("تم إنشاء طلب المعمل بنجاح");
+      qc.invalidateQueries({ queryKey: ["daily-ops", "lab-orders"] });
+    },
+    onError: () => toast.error("فشل إنشاء طلب المعمل"),
+  });
+}
+
+// ─── Payment Methods (from settings) ─────────────────────────────────────────
+export interface PaymentMethodSetting {
+  id: string;
+  name: string;
+  code: string;
+  isActive: boolean;
+  requiresReferenceNumber: boolean;
+  accountName: string | null;
+  accountNumber: string | null;
+  notes: string | null;
+  sortOrder: number;
+  branchId: string | null;
+}
+
+export function usePaymentMethodSettings() {
+  return useQuery<PaymentMethodSetting[]>({
+    queryKey: ["settings", "payment-methods"],
+    queryFn: async () => {
+      const { data } = await api.get("/api/settings/payment-methods");
+      return data;
+    },
+    staleTime: 60_000,
+  });
+}
+
+// ─── Daily Operations Report ─────────────────────────────────────────────────
+export interface DailyOpsReport {
+  date: string;
+  patientCounts: {
+    total: number;
+    waiting: number;
+    inRoom: number;
+    readyForCheckout: number;
+    completed: number;
+    noShow: number;
+    leftWithoutCompletion: number;
+    emergency: number;
+  };
+  financial: {
+    totalCollected: number;
+    byPaymentMethod: Array<{ method: string; amount: number; count: number }>;
+    newDebts: number;
+    partialPayments: number;
+    draftInvoices: number;
+    discounts: number;
+  };
+  labOrders: {
+    sent: number;
+    received: number;
+    delivered: number;
+  };
+  managerOverrides: number;
+  tomorrowAppointments: number;
+}
+
+export function useDailyOpsReport(date?: string) {
+  return useQuery<DailyOpsReport>({
+    queryKey: ["daily-ops", "report", date],
+    queryFn: async () => {
+      const params = date ? { date } : {};
+      const { data } = await api.get("/api/daily-operations/report", { params });
+      return data;
+    },
+    staleTime: 30_000,
   });
 }

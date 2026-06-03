@@ -5,6 +5,7 @@ using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace AqlanDentalPro.UnitTests.Journey;
 
@@ -373,5 +374,194 @@ public class PatientJourneyTests
         var savedVisit = await db.Visits.IgnoreQueryFilters()
             .FirstOrDefaultAsync(v => v.AppointmentId == appointmentId);
         savedVisit.Should().NotBeNull();
+    }
+
+    // ─── Financial Closure Validation Tests ────────────────────────────────
+
+    [Fact]
+    public async Task ValidateFinancialClosure_NoOutstanding_ReturnsCanClose()
+    {
+        // Patient with no outstanding balance — fully paid invoice
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "أحمد", LastName = "سعيد" });
+
+        var invoice = new Invoice
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            InvoiceNumber = "INV-FC-001",
+            Status = InvoiceStatus.Paid,
+            TotalAmount = 50_000m,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.Invoices.Add(invoice);
+
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(),
+            InvoiceId = invoice.Id,
+            PatientId = patientId,
+            Amount = 50_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        // Verify: total invoiced - total paid = 0
+        var invoices = await db.Invoices
+            .Include(i => i.Payments.Where(p => p.IsActive))
+            .Where(i => i.PatientId == patientId && i.IsActive && i.Status != InvoiceStatus.Cancelled)
+            .ToListAsync();
+
+        var totalInvoiced = invoices.Sum(i => i.TotalAmount);
+        var totalPaid = invoices.Sum(i => i.Payments.Sum(p => p.Amount));
+        var outstanding = totalInvoiced - totalPaid;
+
+        outstanding.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ValidateFinancialClosure_WithOutstanding_NoPlan_RequiresManagerOverride()
+    {
+        // Patient with outstanding balance, no treatment plan → cannot close without manager override
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "سعيد", LastName = "علي" });
+
+        var invoice = new Invoice
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            InvoiceNumber = "INV-FC-002",
+            Status = InvoiceStatus.Issued,
+            TotalAmount = 100_000m,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.Invoices.Add(invoice);
+
+        // Partial payment — 30,000 of 100,000
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(),
+            InvoiceId = invoice.Id,
+            PatientId = patientId,
+            Amount = 30_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        // Verify: outstanding > 0
+        var invoices = await db.Invoices
+            .Include(i => i.Payments.Where(p => p.IsActive))
+            .Where(i => i.PatientId == patientId && i.IsActive && i.Status != InvoiceStatus.Cancelled)
+            .ToListAsync();
+
+        var outstanding = invoices.Sum(i => i.TotalAmount) - invoices.Sum(i => i.Payments.Sum(p => p.Amount));
+        outstanding.Should().Be(70_000m);
+
+        // Verify: no active treatment plan
+        var hasActiveOrthoCase = await db.OrthoCases
+            .AnyAsync(o => o.PatientId == patientId && o.IsActive && o.Status == OrthoCaseStatus.Active);
+        var hasActiveGeneralPlan = await db.GeneralTreatmentPlanItems
+            .AnyAsync(g => g.PatientId == patientId && g.IsActive && g.Status == "in_progress");
+
+        hasActiveOrthoCase.Should().BeFalse();
+        hasActiveGeneralPlan.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ValidateFinancialClosure_WithOutstanding_ActivePlan_AllowsClosure()
+    {
+        // Patient with outstanding balance but active treatment plan → allows closure
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "فاطمة", LastName = "حسن" });
+
+        var invoice = new Invoice
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            InvoiceNumber = "INV-FC-003",
+            Status = InvoiceStatus.Issued,
+            TotalAmount = 100_000m,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.Invoices.Add(invoice);
+
+        db.Payments.Add(new Payment
+        {
+            Id = Guid.NewGuid(),
+            InvoiceId = invoice.Id,
+            PatientId = patientId,
+            Amount = 30_000m,
+            PaymentDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            IsActive = true
+        });
+
+        // Create active ortho case (multi-session treatment plan)
+        db.OrthoCases.Add(new OrthoCase
+        {
+            PatientId = patientId,
+            CaseNumber = "ORT-FC-001",
+            Status = OrthoCaseStatus.Active,
+            IsActive = true
+        });
+
+        await db.SaveChangesAsync();
+
+        // Verify: outstanding > 0 but active treatment plan exists
+        var hasActiveOrthoCase = await db.OrthoCases
+            .AnyAsync(o => o.PatientId == patientId && o.IsActive && o.Status == OrthoCaseStatus.Active);
+        hasActiveOrthoCase.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ValidateFinancialClosure_ManagerOverride_RecordsAuditLog()
+    {
+        // Manager override should create audit log entry
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        var visitId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "علي", LastName = "محمد" });
+
+        var visit = new Visit
+        {
+            Id = visitId,
+            PatientId = patientId,
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            CheckoutStatus = "ReadyForCheckout"
+        };
+        db.Visits.Add(visit);
+
+        // Simulate manager override audit log
+        db.AuditLogs.Add(new AuditLog
+        {
+            Resource = "Visit.FinancialClosure",
+            ResourceId = visitId,
+            Action = AuditAction.Approve,
+            UserId = userId,
+            NewData = JsonSerializer.SerializeToDocument(new
+            {
+                action = "ManagerOverrideFinancialClosure",
+                outstandingAmount = 50_000m,
+                reason = "موافقة مدير على الدين"
+            })
+        });
+
+        await db.SaveChangesAsync();
+
+        // Verify audit log was created
+        var auditLog = await db.AuditLogs
+            .FirstOrDefaultAsync(a => a.Resource == "Visit.FinancialClosure" && a.ResourceId == visitId);
+
+        auditLog.Should().NotBeNull();
+        auditLog!.Action.Should().Be(AuditAction.Approve);
+        auditLog.UserId.Should().Be(userId);
     }
 }

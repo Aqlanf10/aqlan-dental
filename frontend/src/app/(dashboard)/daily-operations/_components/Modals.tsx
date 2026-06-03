@@ -22,6 +22,7 @@ import {
 } from "../_lib/constants";
 import type { TodayJourneyItem, DoctorOption, ServiceOption, RoomOption, BranchOption } from "../_lib/constants";
 import type { DailyJourneySummary } from "@/types/journey";
+import { usePaymentMethodSettings } from "../_lib/hooks";
 import api from "@/lib/api";
 import axios from "axios";
 
@@ -68,7 +69,7 @@ export function QuickPaymentModal({
   item: TodayJourneyItem | null;
   summary: DailyJourneySummary | null;
   isPending: boolean;
-  onConfirm: (amount: number, method: string, desc: string, notes: string) => void;
+  onConfirm: (amount: number, method: string, desc: string, notes: string, referenceNumber?: string) => void;
 }) {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("Cash");
@@ -76,6 +77,14 @@ export function QuickPaymentModal({
   const [notes, setNotes] = useState("");
   const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [referenceError, setReferenceError] = useState("");
+
+  // Dynamic payment methods from API
+  const { data: paymentMethodSettings = [] } = usePaymentMethodSettings();
+  const activePaymentMethods = paymentMethodSettings.filter(m => m.isActive);
+  const selectedMethodSetting = activePaymentMethods.find(m => m.code.toLowerCase() === method.toLowerCase());
+  const requiresRef = selectedMethodSetting?.requiresReferenceNumber ?? false;
 
   const outstanding = summary?.financeSummary?.outstandingBalance ?? 0;
   const overdue = summary?.financeSummary?.overdueAmount ?? 0;
@@ -85,9 +94,16 @@ export function QuickPaymentModal({
   const handleSubmit = () => {
     const num = parseFloat(amount);
     if (!num || num <= 0) return;
+    // Validate reference number if required
+    if (requiresRef && !referenceNumber.trim()) {
+      setReferenceError("الرقم المرجعي مطلوب لطريقة الدفع هذه");
+      return;
+    }
+    setReferenceError("");
     const voucherPrefix = voucherType === "consultation" ? "[سند معاينة] " : "[إجراءات شغل/خدمة مقدمة] ";
-    onConfirm(num, method, desc ? voucherPrefix + desc : voucherPrefix.trim(), notes);
+    onConfirm(num, method, desc ? voucherPrefix + desc : voucherPrefix.trim(), notes, requiresRef ? referenceNumber.trim() : undefined);
     setAmount(""); setMethod("Cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
+    setReferenceNumber(""); setReferenceError("");
   };
 
   const handleDownloadReceipt = async () => {
@@ -200,10 +216,23 @@ export function QuickPaymentModal({
         </div>
         <div>
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>طريقة الدفع</label>
-          <select value={method} onChange={e => setMethod(e.target.value)} className={inputCls()}>
-            {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          <select value={method} onChange={e => { setMethod(e.target.value); setReferenceError(""); }} className={inputCls()}>
+            {activePaymentMethods.length > 0 ? (
+              activePaymentMethods.map(m => <option key={m.id} value={m.code}>{m.name}</option>)
+            ) : (
+              PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)
+            )}
           </select>
         </div>
+        {/* Reference Number (shown when required) */}
+        {requiresRef && (
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>الرقم المرجعي <span className="text-red-500">*</span></label>
+            <input value={referenceNumber} onChange={e => { setReferenceNumber(e.target.value); setReferenceError(""); }}
+              placeholder="أدخل الرقم المرجعي" className={inputCls(!!referenceError)} dir="ltr" />
+            {referenceError && <p className="text-[10px] text-red-500 mt-1">{referenceError}</p>}
+          </div>
+        )}
         <div>
           <label className="text-xs font-semibold block mb-1" style={{ color: "#1a3a5c" }}>وصف الخدمة</label>
           <input value={desc} onChange={e => setDesc(e.target.value)} placeholder={voucherType === "consultation" ? "مثال: كشف + فحص أشعة" : "مثال: حشوة تجميلية + تنظيف"} className={inputCls()} />
@@ -724,7 +753,7 @@ export function WalkInModal({
       <div className="mb-3 p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#fff7ed" }}>
         <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: ORANGE }} />
         <span className="text-xs font-medium" style={{ color: "#92400e" }}>
-          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة للطابور تلقائياً
+          سيتم إنشاء مريض + موعد + تسجيل وصول + إضافة لقائمة الانتظار تلقائياً
         </span>
       </div>
 
@@ -780,7 +809,7 @@ export function WalkInModal({
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
           style={{ background: ORANGE, opacity: !patientName.trim() || !doctorId || isPending ? 0.5 : 1 }}>
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-          تسجيل وإضافة للطابور
+          تسجيل وإضافة لقائمة الانتظار
         </button>
       </div>
     </ModalShell>
@@ -802,7 +831,7 @@ export function ConfirmDialog({
   const configs: Record<string, { title: string; body: string; btnColor: string }> = {
     Cancel:      { title: "إلغاء الموعد",     body: `هل أنت متأكد من إلغاء موعد المريض ${patientName}؟`, btnColor: "#ef4444" },
     NoShow:      { title: "لم يحضر",          body: `هل تريد تسجيل المريض ${patientName} كـ "لم يحضر"؟`, btnColor: "#f5922e" },
-    CancelQueue: { title: "إلغاء من الطابور", body: `هل أنت متأكد من إلغاء المريض ${patientName} من الطابور؟`, btnColor: "#ef4444" },
+    CancelQueue: { title: "إلغاء من الانتظار", body: `هل أنت متأكد من إلغاء المريض ${patientName} من قائمة الانتظار؟`, btnColor: "#ef4444" },
     ChangeRoom:  { title: "تغيير الغرفة",     body: `هل تريد تغيير غرفة المريض ${patientName}؟`, btnColor: "#3d7ab5" },
     Complete:    { title: "إنهاء الزيارة",     body: `هل تريد إنهاء زيارة المريض ${patientName}؟`, btnColor: "#16a34a" },
   };
@@ -969,7 +998,7 @@ export function UndoToast({
   const actionLabels: Record<string, string> = {
     Cancel: "إلغاء الموعد",
     NoShow: "لم يحضر",
-    CancelQueue: "إلغاء من الطابور",
+    CancelQueue: "إلغاء من الانتظار",
   };
 
   return (
@@ -1351,6 +1380,7 @@ export function DirectPaymentModal({
     patientId: string; patientName: string;
     amount: number; paymentMethod: string;
     serviceDescription: string; notes: string;
+    referenceNumber?: string;
   }) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -1365,6 +1395,14 @@ export function DirectPaymentModal({
   const [desc, setDesc] = useState("");
   const [notes, setNotes] = useState("");
   const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");
+  const [referenceNumber, setReferenceNumber] = useState("");
+  const [referenceError, setReferenceError] = useState("");
+
+  // Dynamic payment methods from API
+  const { data: paymentMethodSettings = [] } = usePaymentMethodSettings();
+  const activePaymentMethods = paymentMethodSettings.filter(m => m.isActive);
+  const selectedMethodSetting = activePaymentMethods.find(m => m.code.toLowerCase() === method.toLowerCase());
+  const requiresRef = selectedMethodSetting?.requiresReferenceNumber ?? false;
 
   // Search patients with debounce
   useEffect(() => {
@@ -1397,6 +1435,7 @@ export function DirectPaymentModal({
     if (!open) {
       setSearchQuery(""); setSearchResults([]); setSelectedPatient(null);
       setAmount(""); setMethod("Cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
+      setReferenceNumber(""); setReferenceError("");
     }
   }, [open]);
 
@@ -1404,6 +1443,12 @@ export function DirectPaymentModal({
     if (!selectedPatient) return;
     const num = parseFloat(amount);
     if (!num || num <= 0) return;
+    // Validate reference number if required
+    if (requiresRef && !referenceNumber.trim()) {
+      setReferenceError("الرقم المرجعي مطلوب لطريقة الدفع هذه");
+      return;
+    }
+    setReferenceError("");
     const voucherPrefix = voucherType === "consultation" ? "[سند معاينة] " : "[إجراءات شغل/خدمة مقدمة] ";
     onConfirm({
       patientId: selectedPatient.id,
@@ -1412,6 +1457,7 @@ export function DirectPaymentModal({
       paymentMethod: method,
       serviceDescription: desc ? voucherPrefix + desc : voucherPrefix.trim(),
       notes: notes,
+      referenceNumber: requiresRef ? referenceNumber.trim() : undefined,
     });
   };
 
@@ -1548,10 +1594,24 @@ export function DirectPaymentModal({
           {/* Payment Method */}
           <div>
             <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>طريقة الدفع</label>
-            <select value={method} onChange={e => setMethod(e.target.value)} className={inputCls()}>
-              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            <select value={method} onChange={e => { setMethod(e.target.value); setReferenceError(""); }} className={inputCls()}>
+              {activePaymentMethods.length > 0 ? (
+                activePaymentMethods.map(m => <option key={m.id} value={m.code}>{m.name}</option>)
+              ) : (
+                PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)
+              )}
             </select>
           </div>
+
+          {/* Reference Number (shown when required) */}
+          {requiresRef && (
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الرقم المرجعي <span className="text-red-500">*</span></label>
+              <input value={referenceNumber} onChange={e => { setReferenceNumber(e.target.value); setReferenceError(""); }}
+                placeholder="أدخل الرقم المرجعي" className={inputCls(!!referenceError)} dir="ltr" />
+              {referenceError && <p className="text-[10px] text-red-500 mt-1">{referenceError}</p>}
+            </div>
+          )}
 
           {/* Service Description */}
           <div>

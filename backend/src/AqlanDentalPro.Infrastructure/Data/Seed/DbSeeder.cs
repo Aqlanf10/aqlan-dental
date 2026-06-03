@@ -58,6 +58,9 @@ public static class DbSeeder
             if (!await context.ClinicRooms.AnyAsync())
                 await SeedClinicRoomsAsync(context);
 
+            // Sprint 2: Always upsert payment methods — safe to run every startup
+            await SeedPaymentMethodSettingsAsync(context);
+
             await context.SaveChangesAsync();
 
             // Test data (patients, appointments, ortho, finance)
@@ -472,6 +475,16 @@ public static class DbSeeder
                 ["GeneralDentist"] = (true, true, true, false, false, false),
                 ["OralSurgeon"]    = (true, true, true, false, false, false),
             },
+            ["lab_orders"] = new()
+            {
+                ["Admin"]          = (true, true, true, true, false, false),
+                ["Reception"]      = (true, false, false, false, false, false),
+                ["Orthodontist"]   = (true, true, true, false, false, false),
+                ["GeneralDentist"] = (true, true, false, false, false, false),
+                ["OralSurgeon"]    = (true, true, false, false, false, false),
+                ["Assistant"]      = (true, false, false, false, false, false),
+                ["BranchManager"]  = (true, true, true, false, false, false),
+            },
         };
 
         var existingPermissions = await context.RolePermissions
@@ -637,6 +650,52 @@ public static class DbSeeder
             new ClinicRoom { ArabicName = "الاستقبال", EnglishName = "Reception", Code = "RECP-1", RoomType = RoomType.Reception, SortOrder = 6 },
         };
         await context.ClinicRooms.AddRangeAsync(rooms);
+    }
+
+    /// <summary>
+    /// Sprint 2: Seed default payment method settings.
+    /// Upsert-by-Code: inserts missing methods, updates existing ones.
+    /// Safe to run every startup.
+    /// </summary>
+    private static async Task SeedPaymentMethodSettingsAsync(AppDbContext context)
+    {
+        var canonical = new[]
+        {
+            new PaymentMethodSetting { Name = "نقداً", Code = "cash", RequiresReferenceNumber = false, SortOrder = 1 },
+            new PaymentMethodSetting { Name = "بطاقة/شبكة", Code = "card", RequiresReferenceNumber = true, SortOrder = 2 },
+            new PaymentMethodSetting { Name = "تحويل بنكي", Code = "bank_transfer", RequiresReferenceNumber = true, SortOrder = 3 },
+            new PaymentMethodSetting { Name = "كريمي", Code = "karimey", RequiresReferenceNumber = true, SortOrder = 4 },
+            new PaymentMethodSetting { Name = "جوالي", Code = "jawaly", RequiresReferenceNumber = true, SortOrder = 5 },
+            new PaymentMethodSetting { Name = "حوالة", Code = "transfer", RequiresReferenceNumber = false, SortOrder = 6 },
+            new PaymentMethodSetting { Name = "أخرى", Code = "other", RequiresReferenceNumber = false, SortOrder = 99 },
+        };
+
+        var existing = await context.PaymentMethodSettings
+            .IgnoreQueryFilters()
+            .ToDictionaryAsync(p => p.Code);
+
+        foreach (var c in canonical)
+        {
+            if (existing.TryGetValue(c.Code, out var existingMethod))
+            {
+                // Sync display name and sort order
+                existingMethod.Name = c.Name;
+                existingMethod.RequiresReferenceNumber = c.RequiresReferenceNumber;
+                existingMethod.SortOrder = c.SortOrder;
+            }
+            else
+            {
+                var newMethod = new PaymentMethodSetting
+                {
+                    Name = c.Name,
+                    Code = c.Code,
+                    IsActive = true,
+                    RequiresReferenceNumber = c.RequiresReferenceNumber,
+                    SortOrder = c.SortOrder,
+                };
+                await context.PaymentMethodSettings.AddAsync(newMethod);
+            }
+        }
     }
 
     private static async Task SeedTestDataAsync(AppDbContext context)

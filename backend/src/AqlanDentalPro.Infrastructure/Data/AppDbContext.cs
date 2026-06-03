@@ -89,6 +89,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SmsMessage> SmsMessages => Set<SmsMessage>();
     public DbSet<SmsTemplate> SmsTemplates => Set<SmsTemplate>();
 
+    // Sprint 2 — Payment Method Settings
+    public DbSet<PaymentMethodSetting> PaymentMethodSettings => Set<PaymentMethodSetting>();
+
     // Sprint 15 — HR Module
     public DbSet<Attendance> Attendances => Set<Attendance>();
     public DbSet<SalaryRecord> SalaryRecords => Set<SalaryRecord>();

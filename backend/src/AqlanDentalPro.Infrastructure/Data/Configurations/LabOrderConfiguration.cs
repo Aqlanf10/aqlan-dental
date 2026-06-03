@@ -38,5 +38,12 @@ public class LabOrderConfiguration : IEntityTypeConfiguration<LabOrder>
             .WithMany()
             .HasForeignKey(l => l.VisitId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // Lab Sprint 2: Navigation property — Lab (nullable for backward compat)
+        builder.HasIndex(l => l.LabId);
+        builder.HasOne(l => l.Lab)
+            .WithMany(lab => lab.LabOrders)
+            .HasForeignKey(l => l.LabId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

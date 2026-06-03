@@ -24,8 +24,12 @@ public class LabOrder : BaseEntity
     public string? CancellationReason { get; set; }
     public Guid? BranchId { get; set; }
 
+    // Lab Sprint 2 — Lab entity reference (nullable for backward compatibility with free-text LabName)
+    public Guid? LabId { get; set; }
+
     public Patient Patient { get; set; } = null!;
     public OrthoCase? OrthoCase { get; set; }
     public Doctor? Doctor { get; set; }
     public Visit? Visit { get; set; }
+    public Lab? Lab { get; set; }
 }

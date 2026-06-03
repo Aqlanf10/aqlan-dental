@@ -61,6 +61,9 @@ public static class DbSeeder
             // Sprint 2: Always upsert payment methods — safe to run every startup
             await SeedPaymentMethodSettingsAsync(context);
 
+            // Lab Sprint 2: Always upsert lab work types — safe to run every startup
+            await SeedLabWorkTypesAsync(context);
+
             await context.SaveChangesAsync();
 
             // Test data (patients, appointments, ortho, finance)
@@ -785,6 +788,52 @@ public static class DbSeeder
     /// Generates a cryptographically random 16-byte salt encoded as Base64.
     /// Each user gets a unique salt for maximum security.
     /// </summary>
+    /// <summary>
+    /// Lab Sprint 2: Seed default lab work types.
+    /// Upsert-by-Name: inserts missing types, updates existing ones.
+    /// Safe to run every startup.
+    /// </summary>
+    private static async Task SeedLabWorkTypesAsync(AppDbContext context)
+    {
+        var canonical = new[]
+        {
+            new { Name = "Crown",          NameAr = "تاج",          Category = "Crown",    SortOrder = 1 },
+            new { Name = "Bridge",         NameAr = "جسر",          Category = "Crown",    SortOrder = 2 },
+            new { Name = "Veneer",         NameAr = "قشرة",         Category = "Crown",    SortOrder = 3 },
+            new { Name = "Denture",        NameAr = "طقم",          Category = "Denture",  SortOrder = 4 },
+            new { Name = "Implant Crown",  NameAr = "تاج زراعة",    Category = "Crown",    SortOrder = 5 },
+            new { Name = "Retainer",       NameAr = "مثبت",         Category = "Ortho",    SortOrder = 6 },
+            new { Name = "Night Guard",    NameAr = "واقي ليلي",    Category = "Ortho",    SortOrder = 7 },
+            new { Name = "Ortho Appliance",NameAr = "جهاز تقويم",   Category = "Ortho",    SortOrder = 8 },
+            new { Name = "Surgical Guide", NameAr = "دليل جراحي",   Category = "Surgical", SortOrder = 9 },
+            new { Name = "Inlay/Onlay",    NameAr = "حشوة داخلية",  Category = "Crown",    SortOrder = 10 },
+        };
+
+        var existing = await context.LabWorkTypes
+            .IgnoreQueryFilters()
+            .ToDictionaryAsync(w => w.Name);
+
+        foreach (var c in canonical)
+        {
+            if (existing.TryGetValue(c.Name, out var existingType))
+            {
+                existingType.NameAr = c.NameAr;
+                existingType.Category = c.Category;
+                existingType.SortOrder = c.SortOrder;
+            }
+            else
+            {
+                await context.LabWorkTypes.AddAsync(new LabWorkType
+                {
+                    Name = c.Name,
+                    NameAr = c.NameAr,
+                    Category = c.Category,
+                    SortOrder = c.SortOrder,
+                });
+            }
+        }
+    }
+
     private static string GenerateSalt()
     {
         var saltBytes = RandomNumberGenerator.GetBytes(16);

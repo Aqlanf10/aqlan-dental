@@ -17,6 +17,7 @@ public sealed class CreateLabOrderRequest
     public Guid? OrthoCaseId { get; init; }
     public string ApplianceType { get; init; } = string.Empty;
     public string? LabName { get; init; }
+    public Guid? LabId { get; init; }
     public string? SentDate { get; init; }
     public string? ExpectedDate { get; init; }
     public string Priority { get; init; } = "normal";
@@ -113,6 +114,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             .Include(l => l.Patient)
             .Include(l => l.OrthoCase)
             .Include(l => l.Doctor)
+            .Include(l => l.Lab)
             .AsQueryable();
 
         if (patientId.HasValue)  query = query.Where(l => l.PatientId == patientId.Value);
@@ -133,6 +135,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                 OrthoCaseNumber = l.OrthoCase != null ? l.OrthoCase.CaseNumber : null,
                 l.ApplianceType,
                 l.LabName,
+                LabEntityName = l.Lab != null ? l.Lab.Name : null,
+                l.LabId,
                 SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
                 ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
                 ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
@@ -243,6 +247,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             .Include(l => l.Patient)
             .Include(l => l.OrthoCase)
             .Include(l => l.Doctor)
+            .Include(l => l.Lab)
             .FirstOrDefaultAsync(l => l.Id == id);
 
         if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
@@ -257,6 +262,8 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             OrthoCaseNumber = order.OrthoCase?.CaseNumber,
             order.ApplianceType,
             order.LabName,
+            LabEntityName = order.Lab?.Name,
+            order.LabId,
             SentDate = order.SentDate?.ToString("yyyy-MM-dd"),
             ExpectedDate = order.ExpectedDate?.ToString("yyyy-MM-dd"),
             ReceivedDate = order.ReceivedDate?.ToString("yyyy-MM-dd"),
@@ -304,6 +311,7 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
                     OrderNumber   = $"LAB-{year}-{(count + 1):D3}",
                     ApplianceType = req.ApplianceType,
                     LabName       = req.LabName,
+                    LabId         = req.LabId,
                     SentDate      = !string.IsNullOrWhiteSpace(req.SentDate)
                         ? DateOnly.TryParse(req.SentDate, out var sentDate) ? sentDate : DateOnly.FromDateTime(DateTime.Today) : DateOnly.FromDateTime(DateTime.Today),
                     ExpectedDate  = !string.IsNullOrWhiteSpace(req.ExpectedDate)

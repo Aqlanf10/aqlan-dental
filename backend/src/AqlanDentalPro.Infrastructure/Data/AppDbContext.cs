@@ -92,6 +92,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Sprint 2 — Payment Method Settings
     public DbSet<PaymentMethodSetting> PaymentMethodSettings => Set<PaymentMethodSetting>();
 
+    // Lab Sprint 2 — Lab Management Foundation
+    public DbSet<Lab> Labs => Set<Lab>();
+    public DbSet<LabWorkType> LabWorkTypes => Set<LabWorkType>();
+
     // Sprint 15 — HR Module
     public DbSet<Attendance> Attendances => Set<Attendance>();
     public DbSet<SalaryRecord> SalaryRecords => Set<SalaryRecord>();

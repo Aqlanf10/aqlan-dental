@@ -257,6 +257,89 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
         return Ok(new { data = orders });
     }
 
+    // ─── Lab Sprint 6 — Overdue lab orders ──────────────────────────────────
+    /// <summary>Returns lab orders that are past their expected date and not yet delivered/cancelled.</summary>
+    [HttpGet("overdue")]
+    public async Task<IActionResult> GetOverdue()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var orders = await db.LabOrders
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .Include(l => l.Lab)
+            .Where(l => l.ExpectedDate != null
+                && l.ExpectedDate < today
+                && l.Status != "delivered"
+                && l.Status != "cancelled")
+            .OrderBy(l => l.ExpectedDate)
+            .Select(l => new
+            {
+                l.Id,
+                l.OrderNumber,
+                l.PatientId,
+                PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
+                PatientNumber = l.Patient.PatientNumber,
+                l.ApplianceType,
+                l.LabName,
+                LabEntityName = l.Lab != null ? l.Lab.Name : null,
+                l.LabId,
+                SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
+                ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
+                ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
+                DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
+                l.Status,
+                l.Priority,
+                l.Cost,
+                l.TotalCost,
+                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
+                l.Shade,
+                l.RestorationType,
+                DaysOverdue = l.ExpectedDate != null ? (int)(today.DayNumber - l.ExpectedDate.Value.DayNumber) : 0,
+                CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
+            })
+            .ToListAsync();
+        return Ok(new { data = orders, count = orders.Count });
+    }
+
+    // ─── Lab Sprint 6 — Ready for delivery to patient ──────────────────────
+    /// <summary>Returns lab orders that are received and ready for patient delivery.</summary>
+    [HttpGet("ready-for-delivery")]
+    public async Task<IActionResult> GetReadyForDelivery()
+    {
+        var orders = await db.LabOrders
+            .Include(l => l.Patient)
+            .Include(l => l.Doctor)
+            .Include(l => l.Lab)
+            .Where(l => l.Status == "received")
+            .OrderBy(l => l.ReceivedDate)
+            .Select(l => new
+            {
+                l.Id,
+                l.OrderNumber,
+                l.PatientId,
+                PatientName = l.Patient.FirstName + " " + l.Patient.LastName,
+                PatientNumber = l.Patient.PatientNumber,
+                l.ApplianceType,
+                l.LabName,
+                LabEntityName = l.Lab != null ? l.Lab.Name : null,
+                l.LabId,
+                SentDate = l.SentDate != null ? l.SentDate.Value.ToString("yyyy-MM-dd") : null,
+                ExpectedDate = l.ExpectedDate != null ? l.ExpectedDate.Value.ToString("yyyy-MM-dd") : null,
+                ReceivedDate = l.ReceivedDate != null ? l.ReceivedDate.Value.ToString("yyyy-MM-dd") : null,
+                DeliveredDate = l.DeliveredDate != null ? l.DeliveredDate.Value.ToString("yyyy-MM-dd") : null,
+                l.Status,
+                l.Priority,
+                l.Cost,
+                l.TotalCost,
+                DoctorName = l.Doctor != null ? l.Doctor.Name : null,
+                l.Shade,
+                l.RestorationType,
+                CreatedAt = l.CreatedAt.ToString("yyyy-MM-dd")
+            })
+            .ToListAsync();
+        return Ok(new { data = orders, count = orders.Count });
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {

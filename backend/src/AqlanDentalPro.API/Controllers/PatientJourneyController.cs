@@ -88,18 +88,28 @@ public class PatientJourneyController(
 
         // Load related queue items for today
         var appointmentIds = appointments.Select(a => a.Id).ToList();
-        var queueItems = await db.ClinicQueueItems
+        var queueItemsList = await db.ClinicQueueItems
             .IgnoreQueryFilters()
             .Where(q => q.AppointmentId != null && appointmentIds.Contains(q.AppointmentId.Value) && q.QueueDate == queryDate && q.IsActive)
+            .OrderByDescending(q => q.UpdatedAt)
+            .ThenByDescending(q => q.CreatedAt)
+            .ToListAsync();
+
+        var queueItems = queueItemsList
             .GroupBy(q => q.AppointmentId!.Value)
-            .ToDictionaryAsync(g => g.Key, g => g.First()); // Handle duplicates safely
+            .ToDictionary(g => g.Key, g => g.First()); // Handle duplicates safely
 
         // Load visits for these appointments
-        var visits = await db.Visits
+        var visitsList = await db.Visits
             .IgnoreQueryFilters()
             .Where(v => v.AppointmentId != null && appointmentIds.Contains(v.AppointmentId.Value) && v.IsActive)
+            .OrderByDescending(v => v.UpdatedAt)
+            .ThenByDescending(v => v.CreatedAt)
+            .ToListAsync();
+
+        var visits = visitsList
             .GroupBy(v => v.AppointmentId!.Value)
-            .ToDictionaryAsync(g => g.Key, g => g.First()); // Handle duplicates safely
+            .ToDictionary(g => g.Key, g => g.First()); // Handle duplicates safely
 
         // Load service info for appointments that have ServiceId
         var serviceIds = appointments.Where(a => a.ServiceId.HasValue).Select(a => a.ServiceId!.Value).Distinct().ToList();

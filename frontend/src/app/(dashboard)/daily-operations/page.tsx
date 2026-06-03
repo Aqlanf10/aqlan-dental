@@ -112,10 +112,11 @@ const animationStyles = `
 /* ═══════════════════════════════════════════════════════════════════════════
    Module tabs (top level navigation within daily operations)
    ═══════════════════════════════════════════════════════════════════════════ */
-type ModuleTab = "appointments" | "queue" | "rooms" | "checkout" | "booking" | "lab" | "report";
+type ModuleTab = "appointments" | "journey" | "queue" | "rooms" | "checkout" | "booking" | "lab" | "report";
 
 const MODULE_TABS: { key: ModuleTab; label: string; icon: React.ElementType; color: string }[] = [
   { key: "appointments", label: "وصول اليوم",         icon: Calendar,      color: BLUE },
+  { key: "journey",      label: "رحلة المرضى",       icon: Activity,      color: NAVY },
   { key: "queue",        label: "قائمة الانتظار",      icon: ClipboardList, color: ORANGE },
   { key: "rooms",        label: "الغرف والعيادات",      icon: Building2,     color: NAVY },
   { key: "checkout",     label: "جاهز للمحاسبة",      icon: CreditCard,    color: "#22c55e" },
@@ -190,8 +191,6 @@ export default function DailyOperationsPage() {
   const canRecallPatient = useHasPermission(PERMISSION_KEYS.DAILY_OPS_RECALL_PATIENT);
   const canCollectPayment = useHasPermission(PERMISSION_KEYS.DAILY_OPS_COLLECT_PAYMENT);
   const canViewClinicDisplay = useHasPermission(PERMISSION_KEYS.CLINIC_DISPLAY_VIEW);
-  const _canCreateDraftInvoice = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CREATE_DRAFT_INVOICE);
-  const _canCloseVisit = useHasPermission(PERMISSION_KEYS.DAILY_OPS_CLOSE_VISIT);
 
   // ── SignalR real-time updates ──
   const { isConnected: signalrConnected } = useSignalRClinicQueue();
@@ -1205,6 +1204,12 @@ export default function DailyOperationsPage() {
                     {items.length}
                   </span>
                 )}
+                {tab.key === "journey" && items.length > 0 && (
+                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                    style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
+                    {items.length}
+                  </span>
+                )}
                 {tab.key === "queue" && tabCounts.queue > 0 && (
                   <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
                     style={{ background: isActive ? tab.color : tab.color + "20", color: isActive ? "#fff" : tab.color }}>
@@ -1299,6 +1304,57 @@ export default function DailyOperationsPage() {
                 <div className="flex-1 overflow-auto bg-white">
                   <AppointmentsTable
                     items={filteredItems}
+                    loading={itemsLoading}
+                    isDoctor={isDoctor}
+                    canProcessCheckout={canProcessCheckout}
+                    isReception={userRole === "Reception"}
+                    isAccountant={userRole === "Accountant"}
+                    queueWaitTime={queueWaitTime}
+                    onIntake={handleIntake}
+                    onSendToQueue={handleSendToQueue}
+                    onCallPatient={handleCallPatient}
+                    onEnterRoom={handleEnterRoom}
+                    onQuickPayment={handleQuickPayment}
+                    onCreateDraftInvoice={handleCreateDraftInvoice}
+                    createDraftInvoicePending={createDraftInvoiceMutation.isPending}
+                    onBookAppointment={handleBookAppointment}
+                    onWhatsApp={handleWhatsApp}
+                    onNoShow={handleNoShow}
+                    onCancel={handleCancel}
+                    onViewPatient={handleViewPatient}
+                    onCompleteVisit={handleCompleteVisit}
+                    onOpenSidePanel={handleOpenSidePanel}
+                    selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
+                    onContextMenu={handleItemContextMenu}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Tab: رحلة المرضى */}
+            {activeModule === "journey" && (
+              <div className="flex-1 flex flex-col min-w-0">
+                <div className="bg-white p-3 border-b flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-5 h-5" style={{ color: NAVY }} />
+                    <div>
+                      <h3 className="text-xs font-bold" style={{ color: NAVY }}>رحلة المرضى اليومية</h3>
+                      <p className="text-[10px] text-gray-400 font-medium">
+                        متابعة كل مريض من تسجيل الوصول حتى قائمة الانتظار والعيادة والمحاسبة والخروج
+                      </p>
+                    </div>
+                  </div>
+                  {items.length > 0 && (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border"
+                      style={{ background: NAVY + "08", color: NAVY, borderColor: NAVY + "22" }}>
+                      {items.length} حالة اليوم
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-auto bg-white">
+                  <AppointmentsTable
+                    items={items}
                     loading={itemsLoading}
                     isDoctor={isDoctor}
                     canProcessCheckout={canProcessCheckout}

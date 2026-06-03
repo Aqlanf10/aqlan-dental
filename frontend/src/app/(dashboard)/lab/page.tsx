@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search } from "lucide-react";
+import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, Truck } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { TableSkeleton } from "@/components/ui/skeleton";
@@ -19,7 +19,8 @@ const STATUS_CONFIG: Record<
   sent:          { label: "تم الإرسال",  color: "bg-blue-100 text-blue-700",   icon: <Clock className="w-3.5 h-3.5" /> },
   manufacturing: { label: "قيد الصنع",   color: "bg-amber-100 text-amber-700", icon: <FlaskConical className="w-3.5 h-3.5" /> },
   ready:         { label: "جاهز",        color: "bg-green-100 text-green-700", icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
-  received:      { label: "تم الاستلام", color: "bg-gray-100 text-gray-600",   icon: <Package className="w-3.5 h-3.5" /> },
+  received:      { label: "تم الاستلام", color: "bg-emerald-100 text-emerald-700", icon: <Package className="w-3.5 h-3.5" /> },
+  delivered:     { label: "تم التسليم",  color: "bg-teal-100 text-teal-700",  icon: <Truck className="w-3.5 h-3.5" /> },
   cancelled:     { label: "ملغى",        color: "bg-red-100 text-red-700",     icon: <XCircle className="w-3.5 h-3.5" /> },
 };
 
@@ -35,6 +36,7 @@ const STATUS_FILTERS: Array<{ value: string; label: string }> = [
   { value: "manufacturing",label: "قيد الصنع" },
   { value: "ready",        label: "جاهز" },
   { value: "received",     label: "تم الاستلام" },
+  { value: "delivered",    label: "تم التسليم" },
   { value: "cancelled",    label: "ملغى" },
 ];
 
@@ -42,6 +44,7 @@ const NEXT_STATUSES: Partial<Record<LabOrderStatus, LabOrderStatus>> = {
   sent:          "manufacturing",
   manufacturing: "ready",
   ready:         "received",
+  received:      "delivered",
 };
 
 export default function LabPage() {
@@ -87,11 +90,24 @@ export default function LabPage() {
     onError: () => toast.error("فشل تحديث الحالة"),
   });
 
+  const markDeliveredMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/api/lab-orders/${id}/mark-delivered`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lab-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-orders-pending-count"] });
+      toast.success("تم تسليم الطلب للمريض");
+    },
+    onError: () => toast.error("فشل تسليم الطلب"),
+  });
+
   const orders = (data?.data ?? []).filter((o) =>
     search.trim() === "" ||
     o.patientName.includes(search) ||
     o.orderNumber.includes(search) ||
-    (o.labName ?? "").includes(search)
+    (o.labName ?? "").includes(search) ||
+    (o.patientNumber ?? "").includes(search)
   );
 
   const totalPages = Math.ceil((data?.total ?? 0) / 20);
@@ -125,17 +141,17 @@ export default function LabPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="بحث بالمريض أو رقم الطلب أو المختبر..."
+              placeholder="بحث بالمريض أو رقم الطلب أو المختبر أو رقم الملف..."
               className="w-full border border-gray-200 rounded-lg pr-9 pl-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-lg overflow-x-auto">
             {STATUS_FILTERS.map((f) => (
               <button
                 key={f.value}
                 onClick={() => { setStatusFilter(f.value); setPage(1); }}
                 className={cn(
-                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
                   statusFilter === f.value
                     ? "bg-white text-gray-900 shadow-sm"
                     : "text-gray-500 hover:text-gray-700"
@@ -159,59 +175,79 @@ export default function LabPage() {
               <p className="font-medium">لا توجد طلبات</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  {["رقم الطلب", "المريض", "نوع الجهاز", "المختبر", "تاريخ الاستلام المتوقع", "الأولوية", "الحالة", ""].map((h) => (
-                    <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {orders.map((order) => {
-                  const statusCfg = STATUS_CONFIG[order.status];
-                  const nextStatus = NEXT_STATUSES[order.status];
-                  const priorityCfg = PRIORITY_CONFIG[order.priority];
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {["رقم الطلب", "المريض", "نوع الجهاز", "المختبر", "الظل / الترميم", "التكلفة", "تاريخ الاستلام المتوقع", "الأولوية", "الحالة", ""].map((h) => (
+                      <th key={h} className="text-right px-4 py-3 font-medium text-gray-500 text-xs whitespace-nowrap">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {orders.map((order) => {
+                    const statusCfg = STATUS_CONFIG[order.status];
+                    const nextStatus = NEXT_STATUSES[order.status];
+                    const priorityCfg = PRIORITY_CONFIG[order.priority];
 
-                  return (
-                    <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs text-gray-500">{order.orderNumber}</td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{order.patientName}</p>
-                        <p className="text-xs text-gray-400">{order.patientNumber}</p>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">{order.applianceType}</td>
-                      <td className="px-4 py-3 text-gray-500">{order.labName ?? "—"}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">
-                        {order.expectedDate ?? "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn("text-xs", priorityCfg.color)}>{priorityCfg.label}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", statusCfg.color)}>
-                          {statusCfg.icon}
-                          {statusCfg.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {nextStatus && (
-                          <button
-                            onClick={() => advanceMutation.mutate({ id: order.id, status: nextStatus })}
-                            disabled={advanceMutation.isPending}
-                            className="text-xs text-cyan-700 hover:text-cyan-800 font-medium disabled:opacity-50"
-                          >
-                            تقدّم ←
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    return (
+                      <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500">{order.orderNumber}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-gray-900">{order.patientName}</p>
+                          <p className="text-xs text-gray-400">{order.patientNumber}</p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{order.applianceType}</td>
+                        <td className="px-4 py-3 text-gray-500">{order.labName ?? "—"}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {order.shade && <span>ظل: {order.shade}</span>}
+                          {order.shade && order.restorationType && <br />}
+                          {order.restorationType && <span>ترميم: {order.restorationType}</span>}
+                          {!order.shade && !order.restorationType && "—"}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {order.cost != null && order.cost > 0 ? `${order.cost}` : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">
+                          {order.expectedDate ?? "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={cn("text-xs", priorityCfg.color)}>{priorityCfg.label}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium", statusCfg.color)}>
+                            {statusCfg.icon}
+                            {statusCfg.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {nextStatus && (
+                            <button
+                              onClick={() => advanceMutation.mutate({ id: order.id, status: nextStatus })}
+                              disabled={advanceMutation.isPending}
+                              className="text-xs text-cyan-700 hover:text-cyan-800 font-medium disabled:opacity-50"
+                            >
+                              تقدّم ←
+                            </button>
+                          )}
+                          {order.status === "received" && (
+                            <button
+                              onClick={() => markDeliveredMutation.mutate(order.id)}
+                              disabled={markDeliveredMutation.isPending}
+                              className="text-xs text-teal-700 hover:text-teal-800 font-medium disabled:opacity-50"
+                            >
+                              تسليم
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 

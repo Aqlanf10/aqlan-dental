@@ -53,24 +53,11 @@ public class PatientJourneyController(
         }
 
         // Build base query for today's appointments
-        // Also include past appointments that are still "active" (Arrived/Waiting/Called/InRoom/InProgress)
-        // so patients who were admitted on a previous day but not yet checked out still appear for the doctor.
-        var activePastStatuses = new List<AppointmentStatus>
-        {
-            AppointmentStatus.Arrived,
-            AppointmentStatus.Waiting,
-            AppointmentStatus.Called,
-            AppointmentStatus.InRoom,
-            AppointmentStatus.InProgress,
-        };
         var query = db.Appointments
             .IgnoreQueryFilters()
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
-            .Where(a => a.IsActive && (
-                a.AppointmentDate == queryDate ||
-                (a.AppointmentDate < queryDate && activePastStatuses.Contains(a.Status))
-            ))
+            .Where(a => a.AppointmentDate == queryDate && a.IsActive)
             .AsQueryable();
 
         // Doctor access control: only show appointments for patients they can access
@@ -99,16 +86,11 @@ public class PatientJourneyController(
         if (appointments.Count == 0)
             return Ok(new List<object>());
 
-        // Load related queue items — include items from any date for past active appointments
+        // Load related queue items for today
         var appointmentIds = appointments.Select(a => a.Id).ToList();
-        var pastAppointmentIds = appointments
-            .Where(a => a.AppointmentDate < queryDate)
-            .Select(a => a.Id)
-            .ToHashSet();
         var queueItemsList = await db.ClinicQueueItems
             .IgnoreQueryFilters()
-            .Where(q => q.AppointmentId != null && appointmentIds.Contains(q.AppointmentId.Value) && q.IsActive &&
-                (q.QueueDate == queryDate || pastAppointmentIds.Contains(q.AppointmentId.Value)))
+            .Where(q => q.AppointmentId != null && appointmentIds.Contains(q.AppointmentId.Value) && q.QueueDate == queryDate && q.IsActive)
             .OrderByDescending(q => q.UpdatedAt)
             .ThenByDescending(q => q.CreatedAt)
             .ToListAsync();

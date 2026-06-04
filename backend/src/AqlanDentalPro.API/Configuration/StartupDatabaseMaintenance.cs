@@ -43,6 +43,7 @@ public static class StartupDatabaseMaintenance
         await EnsureSmsGatewaySchemaAsync(app);
         await EnsureSmsGatewaySettingsSeedAsync(app, configuration);
         await EnsureLabOrdersSchemaAsync(app);
+        await EnsureInvoicesNullableTaxAmountAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1670,6 +1671,40 @@ public static class StartupDatabaseMaintenance
         {
             var labLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
             labLogger2.LogError(ex, "HOTFIX: Failed to ensure LabOrders schema. PatientJourney.GetToday may return 500!");
+        }
+    }
+
+    /// <summary>
+    /// Invoices.TaxAmount nullable hotfix — the EF model declares TaxAmount as decimal?
+    /// but the database column was created NOT NULL, causing 23502 on insert when TaxAmount
+    /// is not explicitly set. This hotfix alters the column to allow NULL.
+    /// Fixes: "null value in column \"TaxAmount\" of relation \"Invoices\" violates not-null constraint"
+    /// </summary>
+    private static async Task EnsureInvoicesNullableTaxAmountAsync(WebApplication app)
+    {
+        try
+        {
+            using var invScope = app.Services.CreateScope();
+            var invDb     = invScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var invLogger = invScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            await invDb.Database.ExecuteSqlRawAsync("""
+                DO $$ BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'Invoices' AND column_name = 'TaxAmount' AND is_nullable = 'NO'
+                    ) THEN
+                        ALTER TABLE "Invoices" ALTER COLUMN "TaxAmount" DROP NOT NULL;
+                    END IF;
+                END $$;
+            """);
+
+            invLogger.LogInformation("HOTFIX: Invoices.TaxAmount column altered to nullable (idempotent)");
+        }
+        catch (Exception ex)
+        {
+            var invLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+            invLogger2.LogError(ex, "HOTFIX: Failed to alter Invoices.TaxAmount to nullable. Draft invoice creation may fail with 500!");
         }
     }
 

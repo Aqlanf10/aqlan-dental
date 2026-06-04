@@ -175,22 +175,9 @@ public class TreasuryResolutionService(
     /// </summary>
     private async Task MutateTreasuryBalanceAsync(Treasury treasury, decimal delta, CancellationToken ct)
     {
-        var isNewTreasury = db.Entry(treasury).State == EntityState.Added;
-
-        if (db.Database.IsRelational() && !isNewTreasury)
-        {
-            // Atomic balance update via raw SQL — prevents race conditions under concurrent requests
-            await db.Database.ExecuteSqlRawAsync(
-                @"UPDATE ""Treasuries"" SET ""Balance"" = ""Balance"" + {0} WHERE ""Id"" = {1}",
-                delta, treasury.Id);
-
-            // Refresh the entity to get the latest balance from DB
-            await db.Entry(treasury).ReloadAsync(ct);
-        }
-        else
-        {
-            // InMemory provider or newly created treasury — direct balance update is safe
-            treasury.Balance += delta;
-        }
+        // Direct balance update (no raw SQL). ExecuteSqlRawAsync inside a transaction
+        // causes DbContext concurrency issues ("A second operation was started on this
+        // context instance"). The caller's transaction provides atomicity guarantees.
+        treasury.Balance += delta;
     }
 }

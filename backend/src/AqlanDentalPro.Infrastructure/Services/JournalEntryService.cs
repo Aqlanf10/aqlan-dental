@@ -206,12 +206,20 @@ public class JournalEntryService(
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var prefix = $"JE-{today:yyyyMMdd}-";
 
-        // Advisory lock for concurrency safety — prevents duplicate entry numbers
-        // under concurrent requests, similar to receipt number generation.
+        // FIX: Use session-level advisory lock (pg_advisory_lock) instead of
+        // transaction-level lock (pg_advisory_xact_lock) to avoid DbContext concurrency
+        // issues. When called from DualWritePaymentEntryAsync which is already inside
+        // a transaction, pg_advisory_xact_lock can cause:
+        // "A second operation was started on this context instance before a previous
+        // operation completed."
         if (db.Database.IsRelational())
         {
             var lockKey = StableLockKeyHelper.JournalEntryNumber;
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
+            }
+            catch { /* non-critical: proceed without lock */ }
         }
 
         var lastEntry = await db.JournalEntries
@@ -225,6 +233,17 @@ public class JournalEntryService(
             var lastPart = lastEntry.EntryNumber.Substring(prefix.Length);
             if (int.TryParse(lastPart, out var lastSeq))
                 nextSeq = lastSeq + 1;
+        }
+
+        // Release session-level lock
+        if (db.Database.IsRelational())
+        {
+            var lockKey = StableLockKeyHelper.JournalEntryNumber;
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey);
+            }
+            catch { /* best-effort unlock */ }
         }
 
         return $"{prefix}{nextSeq:D3}";

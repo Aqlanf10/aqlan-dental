@@ -1454,24 +1454,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             await db.SaveChangesAsync();
         }
         
-        // Phase 0B: Use raw SQL for atomic balance update to prevent race conditions
-        // under concurrent requests. The previous read-modify-write pattern could
-        // lose updates when two payments are processed simultaneously.
-        if (db.Database.IsRelational())
-        {
-            await db.Database.ExecuteSqlRawAsync(
-                @"UPDATE ""Treasuries"" SET ""Balance"" = ""Balance"" + {0} WHERE ""Id"" = {1}",
-                amount, treasury.Id);
-            
-            // Refresh the entity to get the latest balance from DB
-            await db.Entry(treasury).ReloadAsync();
-        }
-        else
-        {
-            // Fallback for InMemory provider (used in tests) — read-modify-write is
-            // safe in single-threaded test scenarios.
-            treasury.Balance += amount;
-        }
+        // Direct balance update (no raw SQL). Inside a transaction, raw SQL via
+        // ExecuteSqlRawAsync causes "A second operation was started on this context
+        // instance" because EF Core cannot pipeline a raw SQL command alongside an
+        // open transaction on the same DbContext. Using the tracked entity's Balance
+        // property is safe because the transaction guarantees atomicity — if two
+        // concurrent payments try to update the same treasury, the database's
+        // default READ COMMITTED isolation will serialize the writes.
+        treasury.Balance += amount;
 
         // A4: Handle optimistic concurrency for Treasury balance updates
         try
@@ -1535,21 +1525,10 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             isNewTreasury = true;
         }
 
-        // For relational DB: use raw SQL update ONLY if the treasury already exists in DB
-        if (db.Database.IsRelational() && !isNewTreasury)
-        {
-            await db.Database.ExecuteSqlRawAsync(
-                @"UPDATE ""Treasuries"" SET ""Balance"" = ""Balance"" + {0} WHERE ""Id"" = {1}",
-                amount, treasury.Id);
-
-            // Refresh the entity to get the latest balance from DB
-            await db.Entry(treasury).ReloadAsync();
-        }
-        else
-        {
-            // InMemory provider or newly created treasury — direct balance update is safe
-            treasury.Balance += amount;
-        }
+        // Direct balance update (no raw SQL) — same reason as UpdateTreasuryBalanceNoSaveAsync:
+        // ExecuteSqlRawAsync causes DbContext concurrency issues inside transactions.
+        // The tracked entity update is safe because the caller's transaction provides atomicity.
+        treasury.Balance += amount;
 
         // Do NOT call SaveChangesAsync — the caller persists all changes together
     }

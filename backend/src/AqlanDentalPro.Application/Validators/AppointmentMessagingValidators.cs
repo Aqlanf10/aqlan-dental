@@ -13,12 +13,13 @@ public sealed class UpdateAppointmentStatusRequestValidator : AbstractValidator<
     {
         RuleFor(x => x.Status)
             .NotEmpty().WithMessage("الحالة مطلوبة")
-            .Must(BeAValidStatus).WithMessage("الحالة يجب أن تكون: scheduled, confirmed, completed, cancelled, no_show");
+            .Must(BeAValidStatus).WithMessage("الحالة يجب أن تكون إحدى القيم الصالحة: scheduled, confirmed, arrived, waiting, called, inroom, inprogress, completed, cancelled, noshow");
 
     }
 
     private static bool BeAValidStatus(string status) =>
-        status is "scheduled" or "confirmed" or "completed" or "cancelled" or "no_show";
+        status.ToLowerInvariant() is "scheduled" or "confirmed" or "arrived" or "waiting"
+            or "called" or "inroom" or "inprogress" or "completed" or "cancelled" or "noshow";
 }
 
 /// <summary>

@@ -1260,10 +1260,45 @@ public static class StartupDatabaseMaintenance
                     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'ProposedProcedure') THEN
                         ALTER TABLE "Visits" ADD COLUMN "ProposedProcedure" character varying(500) NULL;
                     END IF;
+
+                    -- ── ClinicQueueItems: add Priority if missing (migration 20260616) ──
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicQueueItems') THEN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'Priority') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "Priority" character varying(20) NOT NULL DEFAULT 'Normal';
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'SortOrder') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "SortOrder" integer NOT NULL DEFAULT 0;
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'RecallCount') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "RecallCount" integer NOT NULL DEFAULT 0;
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'NoShowAt') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "NoShowAt" timestamp with time zone NULL;
+                        END IF;
+
+                        -- Recreate unique index with NoShow filter if old index exists
+                        IF EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'ClinicQueueItems' AND indexname = 'IX_ClinicQueueItems_PatientId_QueueDate') THEN
+                            DROP INDEX IF EXISTS "IX_ClinicQueueItems_PatientId_QueueDate";
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'ClinicQueueItems' AND indexname = 'IX_ClinicQueueItems_PatientId_QueueDate') THEN
+                            CREATE UNIQUE INDEX "IX_ClinicQueueItems_PatientId_QueueDate"
+                                ON "ClinicQueueItems" ("PatientId", "QueueDate")
+                                WHERE "Status" NOT IN ('Completed', 'Cancelled', 'NoShow');
+                        END IF;
+
+                        -- Priority-based ordering index
+                        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'ClinicQueueItems' AND indexname = 'IX_ClinicQueueItems_QueueDate_Priority_SortOrder') THEN
+                            CREATE INDEX "IX_ClinicQueueItems_QueueDate_Priority_SortOrder"
+                                ON "ClinicQueueItems" ("QueueDate", "Priority", "SortOrder");
+                        END IF;
+                    END IF;
                 END $$;
             """);
 
-            pjLogger.LogInformation("HOTFIX: Patient Journey columns ensured on Appointments and Visits (idempotent)");
+            pjLogger.LogInformation("HOTFIX: Patient Journey columns ensured on Appointments, Visits, and ClinicQueueItems (idempotent)");
         }
         catch (Exception ex)
         {

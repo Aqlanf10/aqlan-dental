@@ -344,6 +344,7 @@ export default function PatientJourneyPage() {
   const handleSimpleAction = useCallback(async (item: JourneyItem) => {
     try {
       if (item.nextAction === "SendToQueue") {
+        if (!item.appointmentId) { toast.error("لا يمكن إضافة المريض للانتظار بدون موعد"); return; }
         await sendToQueueMutation.mutateAsync({ appointmentId: item.appointmentId });
         toast.success("تم إضافة المريض للانتظار");
       } else if (item.nextAction === "CallPatient") {
@@ -353,6 +354,7 @@ export default function PatientJourneyPage() {
         await api.post(`/api/clinic-queue/${item.queueItemId}/enter-room`);
         toast.success("تم تسجيل دخول الغرفة");
       } else if (item.nextAction === "StartVisit") {
+        if (!item.appointmentId) { toast.error("لا يمكن بدء الزيارة بدون موعد"); return; }
         await startVisitMutation.mutateAsync(item.appointmentId);
         toast.success("تم بدء الزيارة");
       }
@@ -367,6 +369,7 @@ export default function PatientJourneyPage() {
   const handleIntakeSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem) return;
+    if (!selectedItem.appointmentId) { toast.error("لا يمكن تسجيل الوصول بدون موعد"); return; }
     try {
       await intakeMutation.mutateAsync({
         appointmentId: selectedItem.appointmentId,
@@ -424,6 +427,7 @@ export default function PatientJourneyPage() {
       // Checkout only marks the appointment as completed.
       // Payment creation is handled separately via the payment flow,
       // not auto-created during checkout.
+      if (!selectedItem.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
       await checkoutMutation.mutateAsync({
         appointmentId: selectedItem.appointmentId,
         body: {
@@ -920,7 +924,7 @@ export default function PatientJourneyPage() {
               const isSelected = item.patientId === selectedPatientId;
               return (
                 <button
-                  key={item.appointmentId}
+                  key={item.appointmentId ?? item.queueItemId ?? item.patientId}
                   onClick={() => setSelectedPatientId(item.patientId)}
                   className={cn(
                     "w-full text-start rounded-xl border p-3 transition-all",

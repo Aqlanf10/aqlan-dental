@@ -118,13 +118,13 @@ export const TIMELINE_DOT_COLORS: Record<string, string> = {
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface JourneyItem {
-  appointmentId: string;
+  appointmentId: string | null;
   patientId: string;
   patientName: string;
   patientPhone?: string;
-  appointmentTime: string;
+  appointmentTime?: string;
   appointmentStatus: string;
-  doctorId: string;
+  doctorId?: string;
   doctorName: string;
   serviceId?: string;
   serviceName?: string;

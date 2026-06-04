@@ -18,7 +18,7 @@ import { useActiveCashierSession } from "@/hooks/useCashierSession";
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ReadyForCheckoutPatient {
   visitId?: string | null;
-  appointmentId: string;
+  appointmentId: string | null;
   patientId: string;
   patientName: string;
   doctorName: string;
@@ -184,6 +184,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
 
   const handleSubmitCheckout = useCallback(async () => {
     if (!checkoutPatient) return;
+    if (!checkoutPatient.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
     try {
       await checkoutMutation.mutateAsync({
         appointmentId: checkoutPatient.appointmentId,
@@ -279,7 +280,7 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
           <div className="space-y-2">
             {readyPatients.map((p) => (
               <div
-                key={p.appointmentId}
+                key={p.appointmentId ?? p.patientId}
                 className="flex items-center justify-between bg-white rounded-lg border px-3 py-2.5 cursor-context-menu"
                 style={{ borderColor: "#e5e7eb" }}
                 onContextMenu={(e) => {

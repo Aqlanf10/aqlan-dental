@@ -474,11 +474,13 @@ export default function DailyOperationsPage() {
       const notesSuffix = overrideManager ? `[تجاوز متأخرات: بواسطة المدير ${overrideManager}]` : "";
 
       if (actionType === "Intake") {
+        if (!item.appointmentId) { toast.error("لا يمكن تسجيل الوصول بدون موعد"); return; }
         intakeMutation.mutate(
           { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
           { onSuccess: () => toast.success("تم تسجيل وصول المريض"), onError: () => toast.error("فشل تسجيل الوصول") }
         );
       } else {
+        if (!item.appointmentId) { toast.error("لا يمكن إضافة المريض للانتظار بدون موعد"); return; }
         sendToQueueMutation.mutate(
           { appointmentId: item.appointmentId, body: notesSuffix ? { notes: notesSuffix } : {} },
           { onSuccess: () => toast.success("تمت إضافة المريض للانتظار"), onError: () => toast.error("فشل إضافة المريض للانتظار") }
@@ -640,12 +642,14 @@ export default function DailyOperationsPage() {
     if (!undoAction) return;
     try {
       if (undoAction.type === "NoShow" || undoAction.type === "Cancel") {
+        if (!undoAction.appointmentId) { toast.error("لا يمكن التراجع بدون موعد"); return; }
         await updateStatusMutation.mutateAsync({
           appointmentId: undoAction.appointmentId,
           status: undoAction.previousStatus,
         });
         toast.success("تم التراجع عن الإجراء");
       } else if (undoAction.type === "CancelQueue" && undoAction.queueItemId) {
+        if (!undoAction.appointmentId) { toast.error("لا يمكن التراجع بدون موعد"); return; }
         await sendToQueueMutation.mutateAsync({ appointmentId: undoAction.appointmentId });
         toast.success("تم التراجع — أعيد المريض لقائمة الانتظار");
       }
@@ -659,6 +663,7 @@ export default function DailyOperationsPage() {
     if (!selectedItem) return;
     try {
       if (confirmDialogType === "NoShow") {
+        if (!selectedItem.appointmentId) { toast.error("لا يمكن تسجيل عدم الحضور بدون موعد"); return; }
         const prevStatus = selectedItem.appointmentStatus;
         await updateStatusMutation.mutateAsync({ appointmentId: selectedItem.appointmentId, status: "NoShow" });
         toast.success("تم تسجيل عدم الحضور");
@@ -671,6 +676,7 @@ export default function DailyOperationsPage() {
           timestamp: Date.now(),
         });
       } else if (confirmDialogType === "Cancel") {
+        if (!selectedItem.appointmentId) { toast.error("لا يمكن إلغاء الموعد بدون موعد"); return; }
         const prevStatus = selectedItem.appointmentStatus;
         await updateStatusMutation.mutateAsync({ appointmentId: selectedItem.appointmentId, status: "Cancelled" });
         toast.success("تم إلغاء الموعد");
@@ -781,6 +787,7 @@ export default function DailyOperationsPage() {
         // Checkout should only mark the appointment as completed.
         // Payment creation is handled separately via the payment flow,
         // not auto-created during checkout with a hardcoded method.
+        if (!selectedItem.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
         await checkoutMutation.mutateAsync({
           appointmentId: selectedItem.appointmentId,
           body: {
@@ -804,6 +811,7 @@ export default function DailyOperationsPage() {
     nextDate?: string; nextServiceId?: string;
   }) => {
     if (!selectedItem) return;
+    if (!selectedItem.appointmentId) { toast.error("لا يمكن إكمال الخروج بدون موعد"); return; }
     try {
       // Checkout only marks the appointment as completed.
       // Payment creation is handled separately via the payment flow,
@@ -889,7 +897,7 @@ export default function DailyOperationsPage() {
   const handleBulkSms = useCallback(async () => {
     try {
       const result = await bulkSmsMutation.mutateAsync({
-        appointmentIds: tomorrowItems.map(i => i.appointmentId),
+        appointmentIds: tomorrowItems.map(i => i.appointmentId).filter((id): id is string => !!id),
       });
       toast.success(`تم إرسال ${result.succeeded} تذكير${result.failed > 0 ? ` (فشل ${result.failed})` : ""}`);
       setBulkSmsModalOpen(false);

@@ -1,7 +1,7 @@
 import api from "@/lib/api";
 
 export interface ReadyCheckoutItemRef {
-  appointmentId: string;
+  appointmentId: string | null;
   visitId?: string | null;
   checkoutStatus?: string | null;
   nextAction?: string | null;
@@ -53,6 +53,15 @@ export async function completeReceptionCheckout(
       action: "checkout",
       skipped: true,
       reason: "not_ready_for_checkout",
+    };
+  }
+
+  if (!item.appointmentId) {
+    return {
+      ok: false,
+      action: "checkout",
+      skipped: true,
+      reason: "missing_appointment_id",
     };
   }
 

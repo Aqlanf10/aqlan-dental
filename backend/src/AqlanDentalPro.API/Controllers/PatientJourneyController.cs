@@ -231,7 +231,7 @@ public class PatientJourneyController(
 
             return new
             {
-                AppointmentId = a.Id,
+                AppointmentId = (Guid?)a.Id,
                 PatientId = a.PatientId,
                 PatientName = BuildPatientDisplayName(a.Patient),
                 PatientNumber = a.Patient?.PatientNumber,
@@ -239,13 +239,13 @@ public class PatientJourneyController(
                 AppointmentTime = a.StartTime.ToString("HH:mm"),
                 AppointmentType = a.AppointmentType,
                 AppointmentStatus = a.Status.ToString(),
-                DoctorId = a.DoctorId,
+                DoctorId = (Guid?)a.DoctorId,
                 DoctorName = a.Doctor?.Name ?? "",
                 ServiceId = a.ServiceId,
                 ServiceName = service?.ArabicName,
                 RoomId = a.ClinicRoomId ?? queueItem?.ClinicRoomId,
                 RoomName = a.RoomName ?? queueItem?.RoomName,
-                QueueItemId = queueItem?.Id,
+                QueueItemId = (Guid?)queueItem?.Id,
                 QueueStatus = queueItem?.Status.ToString(),
                 VisitId = visit?.Id,
                 VisitStatus = visit != null ? (checkoutStatus ?? "InProgress") : null,
@@ -268,6 +268,100 @@ public class PatientJourneyController(
                 NextAction = nextAction
             };
         }).ToList();
+
+        // Also include walk-in patients: ClinicQueueItems for today with no appointment
+        var walkInQueueItems = await db.ClinicQueueItems
+            .IgnoreQueryFilters()
+            .Include(q => q.Patient)
+            .Include(q => q.Doctor)
+            .Where(q => q.QueueDate == queryDate && q.IsActive && q.AppointmentId == null)
+            .ToListAsync();
+
+        if (walkInQueueItems.Count > 0)
+        {
+            // Doctor access control for walk-ins
+            if (patientAccessService.IsDoctor)
+            {
+                var accessibleIds = await patientAccessService.GetAccessiblePatientIdsAsync();
+                if (accessibleIds != null)
+                    walkInQueueItems = walkInQueueItems.Where(q => accessibleIds.Contains(q.PatientId)).ToList();
+            }
+
+            // Load visits for walk-in queue items (linked via VisitId)
+            var walkInVisitIds = walkInQueueItems
+                .Where(q => q.VisitId.HasValue)
+                .Select(q => q.VisitId!.Value)
+                .ToList();
+            var walkInVisits = walkInVisitIds.Count > 0
+                ? await db.Visits.IgnoreQueryFilters()
+                    .Where(v => walkInVisitIds.Contains(v.Id) && v.IsActive)
+                    .ToDictionaryAsync(v => v.Id)
+                : new Dictionary<Guid, Visit>();
+
+            // Load payments for walk-in patients
+            var walkInPatientIds = walkInQueueItems.Select(q => q.PatientId).Distinct().ToList();
+            var walkInPayments = walkInPatientIds.Count > 0
+                ? (await db.Payments
+                    .Where(p => walkInPatientIds.Contains(p.PatientId) && p.PaymentDate == queryDate && p.IsActive)
+                    .ToListAsync())
+                    .GroupBy(p => p.PatientId)
+                    .ToDictionary(g => g.Key, g => g.Sum(p => p.Amount))
+                : new Dictionary<Guid, decimal>();
+
+            foreach (var q in walkInQueueItems)
+            {
+                var patientName = BuildPatientDisplayName(q.Patient);
+                var queueStatus = q.Status;
+                Visit? visit = q.VisitId.HasValue && walkInVisits.TryGetValue(q.VisitId.Value, out var v) ? v : null;
+                string? checkoutStatus = visit?.CheckoutStatus;
+                string nextAction = DetermineNextAction(
+                    queueStatus == ClinicQueueStatus.Waiting ? AppointmentStatus.Waiting :
+                    queueStatus == ClinicQueueStatus.Called ? AppointmentStatus.Called :
+                    queueStatus == ClinicQueueStatus.InRoom ? AppointmentStatus.InRoom :
+                    queueStatus == ClinicQueueStatus.InProgress ? AppointmentStatus.InProgress :
+                    AppointmentStatus.Completed,
+                    queueStatus, checkoutStatus);
+
+                result.Add(new
+                {
+                    AppointmentId = (Guid?)null,
+                    PatientId = q.PatientId,
+                    PatientName = patientName,
+                    PatientNumber = q.Patient?.PatientNumber,
+                    PatientPhone = isDoctor ? null : q.Patient?.Phone,
+                    AppointmentTime = (string?)null,
+                    AppointmentType = (string?)null,
+                    AppointmentStatus = nextAction == "None" ? "Completed" : queueStatus.ToString(),
+                    DoctorId = q.DoctorId,
+                    DoctorName = q.Doctor?.Name ?? "",
+                    ServiceId = (Guid?)q.ServiceId,
+                    ServiceName = (string?)null,
+                    RoomId = (Guid?)q.ClinicRoomId,
+                    RoomName = q.RoomName,
+                    QueueItemId = (Guid?)q.Id,
+                    QueueStatus = queueStatus.ToString(),
+                    VisitId = visit?.Id,
+                    VisitStatus = visit != null ? (checkoutStatus ?? "InProgress") : null,
+                    ConsultationFeeRequired = false,
+                    ConsultationFeePaid = false,
+                    PaymentBeforeEntryRequired = false,
+                    FinancialEntryStatus = "Clear",
+                    FinancialEntryReason = (string?)null,
+                    CanEnterWithoutPayment = true,
+                    ManagerOverrideAllowed = false,
+                    CheckoutStatus = checkoutStatus,
+                    AmountDueReference = visit?.AmountDueReference,
+                    TreatmentDone = visit?.TreatmentDone,
+                    ProposedProcedure = visit?.ProposedProcedure,
+                    ChiefComplaint = visit?.ChiefComplaint,
+                    HasDraftInvoice = false,
+                    HasLabOrder = false,
+                    LabOrderStatus = (string?)null,
+                    InRoomSince = q.InRoomAt ?? q.StartedAt,
+                    NextAction = nextAction
+                });
+            }
+        }
 
         return Ok(result);
         }

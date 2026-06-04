@@ -10,15 +10,15 @@ export const ORANGE = "#f5922e";
 
 // ─── Journey Item (from GET /api/patient-journey/today) ──────────────────────
 export interface TodayJourneyItem {
-  appointmentId: string;
+  appointmentId: string | null; // null for walk-in patients without an appointment
   patientId: string;
   patientName: string;
   patientPhone?: string;
   patientNumber?: string;
-  appointmentTime: string;
+  appointmentTime?: string;
   appointmentType?: string;
   appointmentStatus: string;
-  doctorId: string;
+  doctorId?: string;
   doctorName: string;
   serviceId?: string;
   serviceName?: string;
@@ -128,7 +128,7 @@ export interface FinanceSummaryData {
 export interface UndoAction {
   id: string;
   type: "Cancel" | "NoShow" | "CancelQueue";
-  appointmentId: string;
+  appointmentId: string | null;
   previousStatus: string;
   queueItemId?: string;
   patientName: string;
@@ -396,10 +396,11 @@ export function computeRoomOccupancy(
 export function computeDoctorWorkload(items: TodayJourneyItem[]): DoctorWorkload[] {
   const map = new Map<string, DoctorWorkload>();
   for (const item of items) {
-    let entry = map.get(item.doctorId);
+    const docId = item.doctorId ?? "unknown";
+    let entry = map.get(docId);
     if (!entry) {
-      entry = { doctorId: item.doctorId, doctorName: item.doctorName, totalPatients: 0, completed: 0, inClinic: 0, waiting: 0 };
-      map.set(item.doctorId, entry);
+      entry = { doctorId: docId, doctorName: item.doctorName, totalPatients: 0, completed: 0, inClinic: 0, waiting: 0 };
+      map.set(docId, entry);
     }
     entry.totalPatients++;
     if (item.appointmentStatus === "Completed") entry.completed++;

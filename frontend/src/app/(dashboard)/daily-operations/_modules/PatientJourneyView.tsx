@@ -129,7 +129,7 @@ export default function PatientJourneyView({
                 ) : (
                   stage.items.map((item) => (
                     <JourneyCard
-                      key={item.appointmentId}
+                      key={item.appointmentId ?? item.queueItemId ?? item.patientId}
                       item={item}
                       selected={selectedPatientId === item.patientId}
                       onIntake={onIntake}

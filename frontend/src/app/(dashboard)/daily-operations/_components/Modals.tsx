@@ -1269,7 +1269,7 @@ export function BulkSmsModal({
 
   useEffect(() => {
     if (open && tomorrowItems.length > 0) {
-      setSelectedIds(new Set(tomorrowItems.map(i => i.appointmentId)));
+      setSelectedIds(new Set(tomorrowItems.map(i => i.appointmentId).filter((id): id is string => !!id)));
     }
   }, [open, tomorrowItems]);
 
@@ -1285,7 +1285,7 @@ export function BulkSmsModal({
     if (selectedIds.size === tomorrowItems.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(tomorrowItems.map(i => i.appointmentId)));
+      setSelectedIds(new Set(tomorrowItems.map(i => i.appointmentId).filter((id): id is string => !!id)));
     }
   };
 
@@ -1324,11 +1324,11 @@ export function BulkSmsModal({
 
           <div className="max-h-[300px] overflow-y-auto space-y-1.5">
             {tomorrowItems.map(item => (
-              <label key={item.appointmentId}
+              <label key={item.appointmentId ?? item.patientId}
                 className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer hover:bg-gray-50"
-                style={{ background: selectedIds.has(item.appointmentId) ? "#f0f5fb" : undefined }}>
-                <input type="checkbox" checked={selectedIds.has(item.appointmentId)}
-                  onChange={() => toggleItem(item.appointmentId)}
+                style={{ background: item.appointmentId && selectedIds.has(item.appointmentId) ? "#f0f5fb" : undefined }}>
+                <input type="checkbox" checked={!!item.appointmentId && selectedIds.has(item.appointmentId)}
+                  onChange={() => item.appointmentId && toggleItem(item.appointmentId)}
                   className="w-4 h-4 rounded border-gray-300 accent-[#3d7ab5]" />
                 <div className="flex-1">
                   <span className="text-xs font-bold" style={{ color: NAVY }}>{item.patientName}</span>

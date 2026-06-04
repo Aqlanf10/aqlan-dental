@@ -412,27 +412,43 @@ public class ClinicQueueController(
             // Create a Visit if not already linked
             if (item.VisitId == null)
             {
-                var visit = new Visit
+                // FIX: Check for existing visit for this appointment to prevent duplicates.
+                // A visit may have been created through AppointmentsController.StartVisit
+                // or PatientJourneyController.StartVisit without updating the queue item's VisitId.
+                if (item.AppointmentId.HasValue)
                 {
-                    PatientId = item.PatientId,
-                    AppointmentId = item.AppointmentId,
-                    VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
-                    DoctorId = item.DoctorId ?? item.Appointment?.DoctorId,
-                    Specialty = item.Appointment?.Specialty,
-                    ServiceId = item.ServiceId ?? item.Appointment?.ServiceId
-                };
+                    var existingVisit = await db.Visits
+                        .FirstOrDefaultAsync(v => v.AppointmentId == item.AppointmentId.Value && v.IsActive);
+                    if (existingVisit != null)
+                    {
+                        item.VisitId = existingVisit.Id;
+                    }
+                }
 
-                db.Visits.Add(visit);
-                try
+                if (item.VisitId == null)
                 {
-                    await db.SaveChangesAsync(); // Save to get the ID
+                    var visit = new Visit
+                    {
+                        PatientId = item.PatientId,
+                        AppointmentId = item.AppointmentId,
+                        VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                        DoctorId = item.DoctorId ?? item.Appointment?.DoctorId,
+                        Specialty = item.Appointment?.Specialty,
+                        ServiceId = item.ServiceId ?? item.Appointment?.ServiceId
+                    };
+
+                    db.Visits.Add(visit);
+                    try
+                    {
+                        await db.SaveChangesAsync(); // Save to get the ID
+                    }
+                    catch (DbUpdateException ex)
+                    {
+                        logger.LogError(ex, "Failed to create visit for queue item {QueueItemId}", id);
+                        throw;
+                    }
+                    item.VisitId = visit.Id;
                 }
-                catch (DbUpdateException ex)
-                {
-                    logger.LogError(ex, "Failed to create visit for queue item {QueueItemId}", id);
-                    throw;
-                }
-                item.VisitId = visit.Id;
             }
 
             item.Status = ClinicQueueStatus.InProgress;

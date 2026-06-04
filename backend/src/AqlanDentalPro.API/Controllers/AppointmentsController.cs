@@ -541,6 +541,7 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
             VisitType = "Consultation",
             Specialty = appointment.Specialty,
             ChiefComplaint = appointment.Notes,
+            ServiceId = appointment.ServiceId,  // FIX: Copy ServiceId from appointment
         };
 
         db.Visits.Add(visit);
@@ -548,6 +549,19 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         // 6. Update appointment status to InProgress (transition already validated above)
         appointment.Status = targetStatus;
         appointment.UpdatedAt = DateTime.UtcNow;
+
+        // FIX: Update linked ClinicQueueItem with the new VisitId and status
+        var linkedQueueItem = await db.ClinicQueueItems
+            .FirstOrDefaultAsync(q => q.AppointmentId == id && q.IsActive
+                && q.Status != ClinicQueueStatus.Completed
+                && q.Status != ClinicQueueStatus.Cancelled);
+        if (linkedQueueItem != null)
+        {
+            linkedQueueItem.VisitId = visit.Id;
+            linkedQueueItem.Status = ClinicQueueStatus.InProgress;
+            linkedQueueItem.StartedAt = DateTime.UtcNow;
+            linkedQueueItem.UpdatedAt = DateTime.UtcNow;
+        }
 
         await db.SaveChangesAsync();
 

@@ -168,7 +168,10 @@ const ACTION_CARDS: ActionCardDef[] = [
 export default function DoctorClinicPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === "Admin";
-  const doctorId = user?.doctorId ?? user?.id ?? "";
+  // FIX: Only use user.doctorId — do NOT fall back to user.id (auth user ID)
+  // because Doctors table IDs differ from Users table IDs.
+  // If doctorId is missing, the page shows an error message instead of an empty list.
+  const doctorId = user?.doctorId ?? "";
   const doctorName = user?.doctorName ?? user?.username ?? "الطبيب";
 
   // ── SignalR ──
@@ -309,7 +312,7 @@ export default function DoctorClinicPage() {
           nextVisitPlan: clinicalNotes.nextVisitPlan || undefined,
           instructions: clinicalNotes.instructions || undefined,
           followUpDate: clinicalNotes.followUpDate || undefined,
-          amountDue: clinicalNotes.amountDue || undefined,
+          amountDue: clinicalNotes.amountDue !== 0 ? clinicalNotes.amountDue || undefined : 0,
           suggestedServiceId: clinicalNotes.suggestedServiceId || undefined,
         },
       });

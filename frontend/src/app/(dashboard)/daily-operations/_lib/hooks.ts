@@ -14,7 +14,10 @@ import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceO
 import type { DailyJourneySummary } from "@/types/journey";
 import type { DashboardStats } from "@/types/dashboard";
 
-let lastHandoffToReceptionAt = 0;
+// FIX: Removed global lastHandoffToReceptionAt cooldown.
+// It was causing checkout to silently fail for unrelated patients
+// when another patient's handoff happened within 5 seconds.
+// Per-appointment debouncing is handled by React Query's mutation state.
 
 // ─── Today's Journey Items ───────────────────────────────────────────────────
 export function useTodayJourneyItems(params: {
@@ -285,7 +288,8 @@ export function useCheckout() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
-      appointmentId: string;
+      appointmentId?: string;
+      visitId?: string;
       body: {
         paymentAmount?: number;
         paymentMethod?: string;
@@ -294,9 +298,13 @@ export function useCheckout() {
         nextServiceId?: string;
       };
     }) => {
-      if (Date.now() - lastHandoffToReceptionAt < 5_000) {
-        return { skipped: true, reason: "recent_handoff_to_reception" };
+      // FIX: Support both appointment-based and visit-based checkout.
+      // Walk-in patients have no appointmentId, so use visitId instead.
+      if (params.visitId && !params.appointmentId) {
+        const { data } = await api.post(`/api/patient-journey/${params.visitId}/checkout`, params.body);
+        return data;
       }
+      if (!params.appointmentId) throw new Error("لا يمكن إكمال الخروج بدون موعد أو زيارة");
       const { data } = await api.post(`/api/patient-journey/${params.appointmentId}/checkout`, params.body);
       return data;
     },
@@ -325,7 +333,6 @@ export function useHandoff() {
       };
     }) => {
       const { data } = await api.post(`/api/patient-journey/${params.visitId}/handoff-to-reception`, params.body);
-      lastHandoffToReceptionAt = Date.now();
       return data;
     },
     onSuccess: () => {
@@ -480,12 +487,16 @@ export function useWalkInPatient() {
       const endHour = now.getHours() + Math.floor(endMinutes / 60);
       const endTime = `${String(endHour).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
 
+      // FIX: Convert endTime to durationMinutes like useCreateAppointment does.
+      // The backend expects durationMinutes, not endTime.
+      const durationMinutes = 30; // Default walk-in duration
+
       const apptRes = await api.post("/api/appointments", {
         patientId,
         doctorId: params.doctorId,
         appointmentDate: today,
         startTime,
-        endTime,
+        durationMinutes,
         serviceId: params.serviceId || undefined,
         appointmentType: "Consultation",
         notes: params.notes || "مريض مشي (Walk-in)",

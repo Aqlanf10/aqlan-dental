@@ -1008,6 +1008,8 @@ public class PatientJourneyController(
             PatientId = appointment.PatientId,
             AppointmentId = appointment.Id,
             DoctorId = appointment.DoctorId,
+            ServiceId = appointment.ServiceId,           // FIX: Copy ServiceId from appointment
+            ClinicRoomId = appointment.ClinicRoomId,     // FIX: Copy ClinicRoomId from appointment
             RoomName = roomName,
             Status = ClinicQueueStatus.Waiting,
             QueueDate = today,
@@ -1049,6 +1051,17 @@ public class PatientJourneyController(
         // Must be in InRoom or Called status
         if (appointment.Status != AppointmentStatus.InRoom && appointment.Status != AppointmentStatus.Called)
             return BadRequest(new { message = "يجب أن يكون المريض داخل الغرفة قبل بدء الزيارة" });
+
+        // FIX: If appointment is Called, transition to InRoom first since Called→InProgress is not a valid transition.
+        // This ensures the appointment status stays in sync with the queue/visit progression.
+        if (appointment.Status == AppointmentStatus.Called)
+        {
+            if (AppointmentStatusTransitions.IsValidTransition(AppointmentStatus.Called, AppointmentStatus.InRoom))
+            {
+                appointment.Status = AppointmentStatus.InRoom;
+                appointment.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
@@ -1157,6 +1170,12 @@ public class PatientJourneyController(
         if (!visit.IsActive)
             return BadRequest(new { message = "الزيارة محذوفة" });
 
+        // FIX: Guard against overwriting terminal checkout states
+        if (visit.CheckoutStatus == "CheckedOut")
+            return BadRequest(new { message = "لا يمكن تسليم زيارة مكتملة الفاتورة للاستقبال" });
+        if (IsLeftWithoutCompletionCheckoutStatus(visit.CheckoutStatus))
+            return BadRequest(new { message = "لا يمكن تسليم زيارة مغادرة بدون إكمال" });
+
         // Update visit clinical data
         if (!string.IsNullOrWhiteSpace(req.TreatmentDone))
             visit.TreatmentDone = req.TreatmentDone;
@@ -1264,6 +1283,75 @@ public class PatientJourneyController(
             VisitId = visit.Id,
             CheckoutStatus = visit.CheckoutStatus,
             AppointmentStatus = appointment.Status.ToString(),
+            NextActions = nextActions,
+            message = "تم إنهاء الحساب بنجاح"
+        });
+    }
+
+    // ─── 6B. POST /api/patient-journey/{visitId}/checkout ─────────────────
+    /// <summary>Complete checkout by visitId — supports walk-in patients
+    /// who have no appointmentId. Same logic as appointmentId-based checkout.</summary>
+    [HttpPost("{visitId:guid}/checkout")]
+    [Authorize(Policy = "AdminOrReception")]
+    public async Task<IActionResult> CheckoutByVisit(Guid visitId, [FromBody] CheckoutRequest req)
+    {
+        var visit = await db.Visits
+            .Include(v => v.Appointment)
+            .FirstOrDefaultAsync(v => v.Id == visitId);
+
+        if (visit == null)
+            return NotFound(new { message = "الزيارة غير موجودة" });
+        if (!visit.IsActive)
+            return BadRequest(new { message = "الزيارة محذوفة" });
+        if (visit.CheckoutStatus != "ReadyForCheckout")
+            return BadRequest(new { message = "الزيارة ليست جاهزة للحساب بعد" });
+
+        // Mark visit as checked out
+        visit.CheckoutStatus = "CheckedOut";
+        visit.UpdatedAt = DateTime.UtcNow;
+
+        // Complete appointment if linked and valid
+        if (visit.Appointment != null && visit.Appointment.IsActive)
+        {
+            if (AppointmentStatusTransitions.IsValidTransition(visit.Appointment.Status, AppointmentStatus.Completed))
+            {
+                visit.Appointment.Status = AppointmentStatus.Completed;
+                visit.Appointment.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        // Complete queue item if still active
+        if (visit.AppointmentId.HasValue)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var queueItem = await db.ClinicQueueItems
+                .FirstOrDefaultAsync(q => q.AppointmentId == visit.AppointmentId && q.QueueDate == today && q.IsActive
+                    && q.Status != ClinicQueueStatus.Completed && q.Status != ClinicQueueStatus.Cancelled);
+            if (queueItem != null && ClinicQueueStatusTransitions.IsValidTransition(queueItem.Status, ClinicQueueStatus.Completed))
+            {
+                queueItem.Status = ClinicQueueStatus.Completed;
+                queueItem.CompletedAt = DateTime.UtcNow;
+                queueItem.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        await db.SaveChangesAsync();
+
+        // Build recommended next actions
+        var nextActions = new List<string>();
+        if (req.NextAppointmentDate.HasValue)
+            nextActions.Add("حجز موعد متابعة");
+        if (req.PaymentAmount.HasValue && req.PaymentAmount.Value > 0)
+            nextActions.Add("تسجيل الدفع عبر صفحة المالية");
+        if (visit.AmountDueReference.HasValue && visit.AmountDueReference.Value > 0)
+            nextActions.Add("المبلغ المستحق: " + visit.AmountDueReference.Value.ToString("N0") + " ر.ي");
+
+        return Ok(new
+        {
+            VisitId = visit.Id,
+            AppointmentId = visit.AppointmentId,
+            CheckoutStatus = visit.CheckoutStatus,
+            AppointmentStatus = visit.Appointment?.Status.ToString(),
             NextActions = nextActions,
             message = "تم إنهاء الحساب بنجاح"
         });

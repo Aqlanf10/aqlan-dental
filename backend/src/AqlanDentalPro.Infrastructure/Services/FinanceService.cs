@@ -1450,8 +1450,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 IsActive = true
             };
             db.Treasuries.Add(treasury);
-            // Save first so the treasury row exists before the atomic update
-            await db.SaveChangesAsync();
+            // Do NOT call SaveChangesAsync — the caller's transaction will persist this.
+            // Previously, SaveChangesAsync here caused "A second operation was started on
+            // this context instance" because it conflicts with the caller's open transaction.
         }
         
         // Direct balance update (no raw SQL). Inside a transaction, raw SQL via

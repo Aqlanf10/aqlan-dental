@@ -11,6 +11,6 @@ public class LabWorkType : BaseEntity
     public string? Category { get; set; }
     public int SortOrder { get; set; }
 
-    // Navigation — will be used in Sprint 3 (LabOrderItem)
-    // public ICollection<LabOrderItem> LabOrderItems { get; set; } = [];
+    // Navigation — LabOrderItem references WorkTypeId FK
+    public ICollection<LabOrderItem> LabOrderItems { get; set; } = [];
 }

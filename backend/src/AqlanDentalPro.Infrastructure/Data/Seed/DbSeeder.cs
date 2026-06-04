@@ -509,8 +509,9 @@ public static class DbSeeder
             },
             ["lab_payables"] = new()
             {
-                ["Admin"]      = (true, false, true, false, true, false),
-                ["Accountant"] = (true, false, true, false, true, false),
+                ["Admin"]         = (true, false, true, false, true, false),
+                ["Accountant"]    = (true, false, true, false, true, false),
+                ["BranchManager"] = (true, false, true, false, false, false),
             },
             ["lab_reports"] = new()
             {

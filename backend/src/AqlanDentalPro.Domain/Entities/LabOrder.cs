@@ -1,3 +1,5 @@
+using AqlanDentalPro.Domain.Enums;
+
 namespace AqlanDentalPro.Domain.Entities;
 
 public class LabOrder : BaseEntity
@@ -12,6 +14,19 @@ public class LabOrder : BaseEntity
     public DateOnly? ReceivedDate { get; set; }
     public string Status { get; set; } = "sent";
     public string Priority { get; set; } = "normal";
+
+    /// <summary>
+    /// Type-safe accessor for Status — converts the stored string to <see cref="LabOrderStatus"/> enum.
+    /// Returns null if the stored string doesn't match any enum value.
+    /// The underlying database column remains string for backward compatibility.
+    /// </summary>
+    public LabOrderStatus? StatusEnum => Enum.TryParse<LabOrderStatus>(Status, ignoreCase: true, out var s) ? s : null;
+
+    /// <summary>
+    /// Type-safe accessor for Priority — converts the stored string to <see cref="LabOrderPriority"/> enum.
+    /// Returns null if the stored string doesn't match any enum value.
+    /// </summary>
+    public LabOrderPriority? PriorityEnum => Enum.TryParse<LabOrderPriority>(Priority, ignoreCase: true, out var p) ? p : null;
     public string? Instructions { get; set; }
     public decimal? Cost { get; set; }
     public Guid? DoctorId { get; set; }

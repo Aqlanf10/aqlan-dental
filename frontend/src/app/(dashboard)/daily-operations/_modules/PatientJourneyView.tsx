@@ -36,6 +36,7 @@ interface PatientJourneyViewProps {
   onCompleteVisit: (item: TodayJourneyItem) => void;
   onLeftWithoutCompletion: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
+  onCreateLabOrder: (item: TodayJourneyItem) => void;
   onOpenSidePanel: (item: TodayJourneyItem) => void;
   onContextMenu?: (e: React.MouseEvent, item: TodayJourneyItem) => void;
   createDraftInvoicePending?: boolean;
@@ -65,6 +66,7 @@ export default function PatientJourneyView({
   onCompleteVisit,
   onLeftWithoutCompletion,
   onBookAppointment,
+  onCreateLabOrder,
   onOpenSidePanel,
   onContextMenu,
   createDraftInvoicePending,
@@ -139,6 +141,7 @@ export default function PatientJourneyView({
                       onCompleteVisit={onCompleteVisit}
                       onLeftWithoutCompletion={onLeftWithoutCompletion}
                       onBookAppointment={onBookAppointment}
+                      onCreateLabOrder={onCreateLabOrder}
                       onOpenSidePanel={onOpenSidePanel}
                       onContextMenu={onContextMenu}
                       createDraftInvoicePending={createDraftInvoicePending}
@@ -166,6 +169,7 @@ function JourneyCard({
   onCompleteVisit,
   onLeftWithoutCompletion,
   onBookAppointment,
+  onCreateLabOrder,
   onOpenSidePanel,
   onContextMenu,
   createDraftInvoicePending,
@@ -181,6 +185,7 @@ function JourneyCard({
   onCompleteVisit: (item: TodayJourneyItem) => void;
   onLeftWithoutCompletion: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
+  onCreateLabOrder: (item: TodayJourneyItem) => void;
   onOpenSidePanel: (item: TodayJourneyItem) => void;
   onContextMenu?: (e: React.MouseEvent, item: TodayJourneyItem) => void;
   createDraftInvoicePending?: boolean;
@@ -255,6 +260,9 @@ function JourneyCard({
             <ActionButton label="إغلاق" icon={<CheckCircle2 className="w-3 h-3" />} onClick={() => onCompleteVisit(item)} />
           </>
         )}
+        {(stage === "clinic" || (item.hasLabOrder === false && item.visitId)) && (
+          <ActionButton label="طلب معمل" icon={<FlaskConical className="w-3 h-3" />} onClick={() => onCreateLabOrder(item)} color="#8b5cf6" />
+        )}
         {item.visitId && stage !== "completed" && stage !== "left" && (
           <ActionButton label="خرج بدون إكمال" icon={<UserX className="w-3 h-3" />} onClick={() => onLeftWithoutCompletion(item)} />
         )}
@@ -301,13 +309,21 @@ function ActionButton({
   onClick,
   emphasis,
   disabled,
+  color,
 }: {
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
   emphasis?: boolean;
   disabled?: boolean;
+  color?: string;
 }) {
+  const customStyle = color
+    ? { background: `${color}14`, borderColor: color, color }
+    : emphasis
+      ? { background: BLUE, borderColor: BLUE, color: "#fff" }
+      : { background: "#fff", borderColor: "#e5e7eb", color: NAVY };
+
   return (
     <button
       type="button"
@@ -317,11 +333,7 @@ function ActionButton({
         onClick();
       }}
       className="inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-bold transition disabled:opacity-50"
-      style={{
-        background: emphasis ? BLUE : "#fff",
-        borderColor: emphasis ? BLUE : "#e5e7eb",
-        color: emphasis ? "#fff" : NAVY,
-      }}
+      style={customStyle}
     >
       {icon}
       {label}

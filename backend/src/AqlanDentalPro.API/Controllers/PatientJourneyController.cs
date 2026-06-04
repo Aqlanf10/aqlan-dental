@@ -53,11 +53,23 @@ public class PatientJourneyController(
         }
 
         // Build base query for today's appointments
+        // Also include past-dated appointments that have an active ClinicQueueItem for today,
+        // so patients who were transferred to today's queue (even from a past appointment) appear.
+        var todayQueueAppointmentIds = await db.ClinicQueueItems
+            .IgnoreQueryFilters()
+            .Where(q => q.QueueDate == queryDate && q.IsActive && q.AppointmentId != null)
+            .Select(q => q.AppointmentId!.Value)
+            .Distinct()
+            .ToListAsync();
+
         var query = db.Appointments
             .IgnoreQueryFilters()
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
-            .Where(a => a.AppointmentDate == queryDate && a.IsActive)
+            .Where(a => a.IsActive && (
+                a.AppointmentDate == queryDate ||
+                todayQueueAppointmentIds.Contains(a.Id)
+            ))
             .AsQueryable();
 
         // Doctor access control: only show appointments for patients they can access
@@ -87,10 +99,16 @@ public class PatientJourneyController(
             return Ok(new List<object>());
 
         // Load related queue items for today
+        // For past-dated appointments, include queue items from any date (they were transferred today)
         var appointmentIds = appointments.Select(a => a.Id).ToList();
+        var pastAppointmentIds = appointments
+            .Where(a => a.AppointmentDate != queryDate)
+            .Select(a => a.Id)
+            .ToHashSet();
         var queueItemsList = await db.ClinicQueueItems
             .IgnoreQueryFilters()
-            .Where(q => q.AppointmentId != null && appointmentIds.Contains(q.AppointmentId.Value) && q.QueueDate == queryDate && q.IsActive)
+            .Where(q => q.AppointmentId != null && appointmentIds.Contains(q.AppointmentId.Value) && q.IsActive &&
+                (q.QueueDate == queryDate || pastAppointmentIds.Contains(q.AppointmentId.Value)))
             .OrderByDescending(q => q.UpdatedAt)
             .ThenByDescending(q => q.CreatedAt)
             .ToListAsync();

@@ -147,6 +147,7 @@ public class RoomsSettingsController(AppDbContext db) : ControllerBase
     private static object MapToDto(ClinicRoom r) => new
     {
         r.Id,
+        Name = !string.IsNullOrWhiteSpace(r.ArabicName) ? r.ArabicName : r.EnglishName,
         r.ArabicName,
         r.EnglishName,
         r.Code,

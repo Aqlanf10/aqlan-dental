@@ -461,10 +461,16 @@ export function filterByTab(items: TodayJourneyItem[], tab: TabKey): TodayJourne
     case "completed":
       return items.filter(i => i.appointmentStatus === "Completed");
     case "payments":
+      // FIX: Only show patients who actually need payment action.
+      // Previously, ALL completed patients were shown, making the tab
+      // a dumping ground. Now only shows:
+      // - Ready for checkout (needs billing)
+      // - Next action is checkout
+      // - Completed with outstanding amount (still needs payment)
       return items.filter(i =>
         i.checkoutStatus === "ReadyForCheckout" ||
         i.nextAction === "Checkout" ||
-        i.appointmentStatus === "Completed"
+        (i.appointmentStatus === "Completed" && i.checkoutStatus !== "CheckedOut" && i.amountDueReference != null && i.amountDueReference > 0)
       );
     case "overdue":
       // Patients with NoShow or overdue — will be enhanced with finance data

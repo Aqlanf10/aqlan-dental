@@ -46,5 +46,12 @@ public class InvoiceLineItemConfiguration : IEntityTypeConfiguration<InvoiceLine
             .WithMany()
             .HasForeignKey(l => l.RelatedVisitId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // LabOrder relationship — must be explicitly configured to prevent EF Core
+        // from creating a shadow "LabOrderId1" column (conflict with LabOrderId FK property)
+        builder.HasOne(l => l.LabOrder)
+            .WithMany()
+            .HasForeignKey(l => l.LabOrderId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

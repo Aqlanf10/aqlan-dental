@@ -46,6 +46,11 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
             logger.LogWarning(ex, "Payment creation validation failed");
             return BadRequest(new { message = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Payment creation operation failed");
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPut("payments/{id:guid}")]

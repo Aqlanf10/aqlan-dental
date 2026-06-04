@@ -182,6 +182,11 @@ public partial class FinanceV3Controller(
             logger.LogWarning(ex, "Payment creation validation failed");
             return BadRequest(new { message = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Payment creation operation failed");
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     /// <summary>

@@ -44,6 +44,7 @@ public static class StartupDatabaseMaintenance
         await EnsureSmsGatewaySettingsSeedAsync(app, configuration);
         await EnsureLabOrdersSchemaAsync(app);
         await EnsureInvoicesNullableTaxAmountAsync(app);
+        await EnsureLabTablesSchemaAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1705,6 +1706,291 @@ public static class StartupDatabaseMaintenance
         {
             var invLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
             invLogger2.LogError(ex, "HOTFIX: Failed to alter Invoices.TaxAmount to nullable. Draft invoice creation may fail with 500!");
+        }
+    }
+
+    /// <summary>
+    /// Lab tables creation hotfix — creates Labs, LabWorkTypes, LabOrderItems, LabWorkPrices,
+    /// LabOrderStatusHistories, LabOrderAttachments, and LabPayables tables if they don't exist.
+    /// Also adds missing columns to existing tables. Fixes 500 errors on /api/labs, /api/lab-work-types,
+    /// and /api/lab-orders (full list with Lab include).
+    /// </summary>
+    private static async Task EnsureLabTablesSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var ltScope = app.Services.CreateScope();
+            var ltDb     = ltScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var ltLogger = ltScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            await ltDb.Database.ExecuteSqlRawAsync("""
+                DO $$ BEGIN
+                    -- ── Labs table ────────────────────────────────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Labs') THEN
+                        CREATE TABLE "Labs" (
+                            "Id"            uuid                      NOT NULL DEFAULT gen_random_uuid(),
+                            "Name"          character varying(200)    NOT NULL,
+                            "Phone"         character varying(30)     NULL,
+                            "WhatsApp"      character varying(30)     NULL,
+                            "Address"       character varying(500)    NULL,
+                            "ContactPerson" character varying(200)    NULL,
+                            "Email"         character varying(200)    NULL,
+                            "Notes"         text                      NULL,
+                            "BranchId"      uuid                      NULL,
+                            "CreatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                            "UpdatedAt"     timestamp with time zone  NOT NULL DEFAULT now(),
+                            "IsActive"      boolean                   NOT NULL DEFAULT true,
+                            "DeletedAt"     timestamp with time zone  NULL,
+                            "DeletedBy"     uuid                      NULL,
+                            CONSTRAINT "PK_Labs" PRIMARY KEY ("Id")
+                        );
+                        CREATE INDEX "IX_Labs_Name" ON "Labs" ("Name");
+                        CREATE INDEX "IX_Labs_BranchId" ON "Labs" ("BranchId");
+                    END IF;
+                    -- Add missing columns to Labs if table exists but columns missing
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Labs') THEN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Labs' AND column_name = 'BranchId') THEN
+                            ALTER TABLE "Labs" ADD COLUMN "BranchId" uuid NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Labs' AND column_name = 'Notes') THEN
+                            ALTER TABLE "Labs" ADD COLUMN "Notes" text NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Labs' AND column_name = 'DeletedAt') THEN
+                            ALTER TABLE "Labs" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Labs' AND column_name = 'DeletedBy') THEN
+                            ALTER TABLE "Labs" ADD COLUMN "DeletedBy" uuid NULL;
+                        END IF;
+                    END IF;
+                    -- FK: Labs → Branches
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Labs_Branches_BranchId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Branches') THEN
+                            ALTER TABLE "Labs" ADD CONSTRAINT "FK_Labs_Branches_BranchId"
+                                FOREIGN KEY ("BranchId") REFERENCES "Branches"("Id") ON DELETE SET NULL;
+                        END IF;
+                    END IF;
+
+                    -- ── LabWorkTypes table ────────────────────────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabWorkTypes') THEN
+                        CREATE TABLE "LabWorkTypes" (
+                            "Id"        uuid                      NOT NULL DEFAULT gen_random_uuid(),
+                            "Name"      character varying(100)    NOT NULL,
+                            "NameAr"    character varying(100)    NULL,
+                            "Category"  character varying(50)     NULL,
+                            "SortOrder" integer                   NOT NULL DEFAULT 0,
+                            "CreatedAt" timestamp with time zone  NOT NULL DEFAULT now(),
+                            "UpdatedAt" timestamp with time zone  NOT NULL DEFAULT now(),
+                            "IsActive"  boolean                   NOT NULL DEFAULT true,
+                            "DeletedAt" timestamp with time zone  NULL,
+                            "DeletedBy" uuid                      NULL,
+                            CONSTRAINT "PK_LabWorkTypes" PRIMARY KEY ("Id")
+                        );
+                        CREATE INDEX "IX_LabWorkTypes_Name" ON "LabWorkTypes" ("Name");
+                        CREATE INDEX "IX_LabWorkTypes_SortOrder" ON "LabWorkTypes" ("SortOrder");
+                    END IF;
+                    -- Add missing columns to LabWorkTypes
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabWorkTypes') THEN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabWorkTypes' AND column_name = 'NameAr') THEN
+                            ALTER TABLE "LabWorkTypes" ADD COLUMN "NameAr" character varying(100) NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabWorkTypes' AND column_name = 'Category') THEN
+                            ALTER TABLE "LabWorkTypes" ADD COLUMN "Category" character varying(50) NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabWorkTypes' AND column_name = 'SortOrder') THEN
+                            ALTER TABLE "LabWorkTypes" ADD COLUMN "SortOrder" integer NOT NULL DEFAULT 0;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabWorkTypes' AND column_name = 'DeletedAt') THEN
+                            ALTER TABLE "LabWorkTypes" ADD COLUMN "DeletedAt" timestamp with time zone NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabWorkTypes' AND column_name = 'DeletedBy') THEN
+                            ALTER TABLE "LabWorkTypes" ADD COLUMN "DeletedBy" uuid NULL;
+                        END IF;
+                    END IF;
+
+                    -- ── LabOrderItems table ───────────────────────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabOrderItems') THEN
+                        CREATE TABLE "LabOrderItems" (
+                            "Id"              uuid                      NOT NULL DEFAULT gen_random_uuid(),
+                            "LabOrderId"      uuid                      NOT NULL,
+                            "WorkTypeId"      uuid                      NOT NULL,
+                            "ToothNumber"     character varying(20)     NULL,
+                            "Arch"            character varying(20)     NULL,
+                            "Shade"           character varying(50)     NULL,
+                            "RestorationType" character varying(100)    NULL,
+                            "UnitsCount"      integer                   NOT NULL DEFAULT 1,
+                            "UnitPrice"       numeric                   NULL,
+                            "TotalPrice"      numeric                   NULL,
+                            "Instructions"    text                      NULL,
+                            "SortOrder"       integer                   NOT NULL DEFAULT 0,
+                            "CreatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
+                            "UpdatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
+                            "IsActive"        boolean                   NOT NULL DEFAULT true,
+                            "DeletedAt"       timestamp with time zone  NULL,
+                            "DeletedBy"       uuid                      NULL,
+                            CONSTRAINT "PK_LabOrderItems" PRIMARY KEY ("Id")
+                        );
+                        CREATE INDEX "IX_LabOrderItems_LabOrderId" ON "LabOrderItems" ("LabOrderId");
+                        CREATE INDEX "IX_LabOrderItems_WorkTypeId" ON "LabOrderItems" ("WorkTypeId");
+                    END IF;
+                    -- FK: LabOrderItems → LabOrders
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderItems_LabOrders_LabOrderId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrders') THEN
+                            ALTER TABLE "LabOrderItems" ADD CONSTRAINT "FK_LabOrderItems_LabOrders_LabOrderId"
+                                FOREIGN KEY ("LabOrderId") REFERENCES "LabOrders"("Id") ON DELETE CASCADE;
+                        END IF;
+                    END IF;
+                    -- FK: LabOrderItems → LabWorkTypes
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderItems_LabWorkTypes_WorkTypeId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabWorkTypes') THEN
+                            ALTER TABLE "LabOrderItems" ADD CONSTRAINT "FK_LabOrderItems_LabWorkTypes_WorkTypeId"
+                                FOREIGN KEY ("WorkTypeId") REFERENCES "LabWorkTypes"("Id") ON DELETE RESTRICT;
+                        END IF;
+                    END IF;
+
+                    -- ── LabWorkPrices table ───────────────────────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabWorkPrices') THEN
+                        CREATE TABLE "LabWorkPrices" (
+                            "Id"                 uuid                      NOT NULL DEFAULT gen_random_uuid(),
+                            "LabId"              uuid                      NOT NULL,
+                            "WorkTypeId"         uuid                      NOT NULL,
+                            "UnitPrice"          numeric                   NOT NULL,
+                            "UrgentSurcharge"    numeric                   NULL,
+                            "UrgentSurchargeType" character varying(20)    NULL,
+                            "EstimatedDays"      integer                   NULL,
+                            "Notes"              text                      NULL,
+                            "CreatedAt"          timestamp with time zone  NOT NULL DEFAULT now(),
+                            "UpdatedAt"          timestamp with time zone  NOT NULL DEFAULT now(),
+                            "IsActive"           boolean                   NOT NULL DEFAULT true,
+                            "DeletedAt"          timestamp with time zone  NULL,
+                            "DeletedBy"          uuid                      NULL,
+                            CONSTRAINT "PK_LabWorkPrices" PRIMARY KEY ("Id")
+                        );
+                        CREATE UNIQUE INDEX "IX_LabWorkPrices_LabId_WorkTypeId" ON "LabWorkPrices" ("LabId", "WorkTypeId");
+                        CREATE INDEX "IX_LabWorkPrices_LabId" ON "LabWorkPrices" ("LabId");
+                        CREATE INDEX "IX_LabWorkPrices_WorkTypeId" ON "LabWorkPrices" ("WorkTypeId");
+                    END IF;
+                    -- FK: LabWorkPrices → Labs
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabWorkPrices_Labs_LabId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Labs') THEN
+                            ALTER TABLE "LabWorkPrices" ADD CONSTRAINT "FK_LabWorkPrices_Labs_LabId"
+                                FOREIGN KEY ("LabId") REFERENCES "Labs"("Id") ON DELETE CASCADE;
+                        END IF;
+                    END IF;
+                    -- FK: LabWorkPrices → LabWorkTypes
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabWorkPrices_LabWorkTypes_WorkTypeId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabWorkTypes') THEN
+                            ALTER TABLE "LabWorkPrices" ADD CONSTRAINT "FK_LabWorkPrices_LabWorkTypes_WorkTypeId"
+                                FOREIGN KEY ("WorkTypeId") REFERENCES "LabWorkTypes"("Id") ON DELETE CASCADE;
+                        END IF;
+                    END IF;
+
+                    -- ── LabOrderStatusHistories table ────────────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabOrderStatusHistories') THEN
+                        CREATE TABLE "LabOrderStatusHistories" (
+                            "Id"              uuid                      NOT NULL DEFAULT gen_random_uuid(),
+                            "LabOrderId"      uuid                      NOT NULL,
+                            "FromStatus"      character varying(50)     NOT NULL,
+                            "ToStatus"        character varying(50)     NOT NULL,
+                            "ChangedByUserId" uuid                      NULL,
+                            "Reason"          text                      NULL,
+                            "CreatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
+                            "UpdatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
+                            "IsActive"        boolean                   NOT NULL DEFAULT true,
+                            "DeletedAt"       timestamp with time zone  NULL,
+                            "DeletedBy"       uuid                      NULL,
+                            CONSTRAINT "PK_LabOrderStatusHistories" PRIMARY KEY ("Id")
+                        );
+                        CREATE INDEX "IX_LabOrderStatusHistories_LabOrderId" ON "LabOrderStatusHistories" ("LabOrderId");
+                    END IF;
+                    -- FK: LabOrderStatusHistories → LabOrders
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderStatusHistories_LabOrders_LabOrderId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrders') THEN
+                            ALTER TABLE "LabOrderStatusHistories" ADD CONSTRAINT "FK_LabOrderStatusHistories_LabOrders_LabOrderId"
+                                FOREIGN KEY ("LabOrderId") REFERENCES "LabOrders"("Id") ON DELETE CASCADE;
+                        END IF;
+                    END IF;
+
+                    -- ── LabOrderAttachments table ────────────────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabOrderAttachments') THEN
+                        CREATE TABLE "LabOrderAttachments" (
+                            "Id"              uuid                      NOT NULL DEFAULT gen_random_uuid(),
+                            "LabOrderId"      uuid                      NOT NULL,
+                            "LabOrderItemId"  uuid                      NULL,
+                            "FileName"        character varying(255)    NOT NULL,
+                            "ContentType"     character varying(100)    NOT NULL,
+                            "FileSize"        bigint                    NOT NULL DEFAULT 0,
+                            "Category"        character varying(50)     NOT NULL DEFAULT 'photo',
+                            "StoragePath"     character varying(1000)   NOT NULL,
+                            "UploadedBy"      uuid                      NULL,
+                            "CreatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
+                            "UpdatedAt"       timestamp with time zone  NOT NULL DEFAULT now(),
+                            "IsActive"        boolean                   NOT NULL DEFAULT true,
+                            "DeletedAt"       timestamp with time zone  NULL,
+                            "DeletedBy"       uuid                      NULL,
+                            CONSTRAINT "PK_LabOrderAttachments" PRIMARY KEY ("Id")
+                        );
+                        CREATE INDEX "IX_LabOrderAttachments_LabOrderId" ON "LabOrderAttachments" ("LabOrderId");
+                    END IF;
+                    -- FK: LabOrderAttachments → LabOrders
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderAttachments_LabOrders_LabOrderId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrders') THEN
+                            ALTER TABLE "LabOrderAttachments" ADD CONSTRAINT "FK_LabOrderAttachments_LabOrders_LabOrderId"
+                                FOREIGN KEY ("LabOrderId") REFERENCES "LabOrders"("Id") ON DELETE CASCADE;
+                        END IF;
+                    END IF;
+
+                    -- ── LabPayables table ────────────────────────────────────
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabPayables') THEN
+                        CREATE TABLE "LabPayables" (
+                            "Id"         uuid                      NOT NULL DEFAULT gen_random_uuid(),
+                            "LabOrderId" uuid                      NOT NULL,
+                            "LabId"      uuid                      NOT NULL,
+                            "Amount"     numeric                   NOT NULL,
+                            "PaidAmount" numeric                   NOT NULL DEFAULT 0,
+                            "DueDate"    timestamp with time zone  NULL,
+                            "Status"     character varying(20)     NOT NULL DEFAULT 'pending',
+                            "Notes"      text                      NULL,
+                            "CreatedAt"  timestamp with time zone  NOT NULL DEFAULT now(),
+                            "UpdatedAt"  timestamp with time zone  NOT NULL DEFAULT now(),
+                            "IsActive"   boolean                   NOT NULL DEFAULT true,
+                            "DeletedAt"  timestamp with time zone  NULL,
+                            "DeletedBy"  uuid                      NULL,
+                            CONSTRAINT "PK_LabPayables" PRIMARY KEY ("Id")
+                        );
+                        CREATE INDEX "IX_LabPayables_LabOrderId" ON "LabPayables" ("LabOrderId");
+                        CREATE INDEX "IX_LabPayables_LabId" ON "LabPayables" ("LabId");
+                    END IF;
+                    -- FK: LabPayables → LabOrders
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabPayables_LabOrders_LabOrderId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrders') THEN
+                            ALTER TABLE "LabPayables" ADD CONSTRAINT "FK_LabPayables_LabOrders_LabOrderId"
+                                FOREIGN KEY ("LabOrderId") REFERENCES "LabOrders"("Id") ON DELETE CASCADE;
+                        END IF;
+                    END IF;
+                    -- FK: LabPayables → Labs
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabPayables_Labs_LabId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Labs') THEN
+                            ALTER TABLE "LabPayables" ADD CONSTRAINT "FK_LabPayables_Labs_LabId"
+                                FOREIGN KEY ("LabId") REFERENCES "Labs"("Id") ON DELETE CASCADE;
+                        END IF;
+                    END IF;
+
+                    -- ── FK: LabOrders → Labs (if Labs just created) ──────────
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrders_Labs_LabId') THEN
+                        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'LabId') THEN
+                            ALTER TABLE "LabOrders" ADD CONSTRAINT "FK_LabOrders_Labs_LabId"
+                                FOREIGN KEY ("LabId") REFERENCES "Labs"("Id") ON DELETE SET NULL;
+                        END IF;
+                    END IF;
+                END $$;
+            """);
+
+            ltLogger.LogInformation("HOTFIX: Lab tables (Labs, LabWorkTypes, LabOrderItems, LabWorkPrices, LabOrderStatusHistories, LabOrderAttachments, LabPayables) schema ensured (idempotent)");
+        }
+        catch (Exception ex)
+        {
+            var ltLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+            ltLogger2.LogError(ex, "HOTFIX: Failed to ensure Lab tables schema. /api/labs, /api/lab-work-types, /api/lab-orders may return 500!");
         }
     }
 

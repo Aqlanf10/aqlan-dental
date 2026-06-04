@@ -1251,83 +1251,43 @@ public class PatientJourneyController(
         });
     }
 
-    // ─── 6. POST /api/patient-journey/{appointmentId}/checkout ──────────────
-    /// <summary>Complete checkout — workflow-status only. No payment is created;
-    /// the frontend should redirect to the Payments module for actual payment processing.</summary>
-    [HttpPost("{appointmentId:guid}/checkout")]
+    // ─── 6. POST /api/patient-journey/{id}/checkout ──────────────
+    /// <summary>Complete checkout by appointmentId or visitId.
+    /// First attempts to find by appointmentId; if not found, tries by visitId.
+    /// This supports both appointment-based and walk-in patients.</summary>
+    [HttpPost("{id:guid}/checkout")]
     [Authorize(Policy = "AdminOrReception")]
-    public async Task<IActionResult> Checkout(Guid appointmentId, [FromBody] CheckoutRequest? req)
+    public async Task<IActionResult> Checkout(Guid id, [FromBody] CheckoutRequest? req)
     {
         req ??= new CheckoutRequest();
-        var appointment = await db.Appointments.FindAsync(appointmentId);
-        if (appointment == null)
-            return NotFound(new { message = "الموعد غير موجود" });
-        if (!appointment.IsActive)
-            return BadRequest(new { message = "الموعد محذوف" });
 
-        // Find the visit for this appointment
-        var visit = await db.Visits
-            .FirstOrDefaultAsync(v => v.AppointmentId == appointmentId && v.IsActive);
+        // Try appointment-based lookup first
+        var appointment = await db.Appointments.FindAsync(id);
+        Visit? visit = null;
 
-        if (visit == null)
-            return BadRequest(new { message = "لا توجد زيارة مرتبطة بهذا الموعد" });
-
-        if (visit.CheckoutStatus != "ReadyForCheckout")
-            return BadRequest(new { message = "الزيارة ليست جاهزة للحساب بعد" });
-
-        // Checkout is workflow-status only — no direct Payment creation.
-        // Actual payment processing should be done via the existing Payments module
-        // (FinanceService.CreatePaymentAsync) to ensure receipt generation, notifications,
-        // contract linking, and audit trail are handled correctly.
-
-        // Mark visit as checked out
-        visit.CheckoutStatus = "CheckedOut";
-        visit.UpdatedAt = DateTime.UtcNow;
-
-        // Complete appointment if valid
-        if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Completed))
+        if (appointment != null && appointment.IsActive)
         {
-            appointment.Status = AppointmentStatus.Completed;
-            appointment.UpdatedAt = DateTime.UtcNow;
+            visit = await db.Visits
+                .Include(v => v.Appointment)
+                .FirstOrDefaultAsync(v => v.AppointmentId == id && v.IsActive);
+        }
+        else
+        {
+            // Fallback: lookup by visitId (walk-in patients)
+            visit = await db.Visits
+                .Include(v => v.Appointment)
+                .FirstOrDefaultAsync(v => v.Id == id);
+
+            if (visit != null)
+                appointment = visit.Appointment;
         }
 
-        await db.SaveChangesAsync();
-
-        // Build recommended next actions
-        var nextActions = new List<string>();
-        if (req.NextAppointmentDate.HasValue)
-            nextActions.Add("حجز موعد متابعة");
-        if (req.PaymentAmount.HasValue && req.PaymentAmount.Value > 0)
-            nextActions.Add("تسجيل الدفع عبر صفحة المالية");
-        if (visit.AmountDueReference.HasValue && visit.AmountDueReference.Value > 0)
-            nextActions.Add("المبلغ المستحق: " + visit.AmountDueReference.Value.ToString("N0") + " ر.ي");
-
-        return Ok(new
-        {
-            AppointmentId = appointment.Id,
-            VisitId = visit.Id,
-            CheckoutStatus = visit.CheckoutStatus,
-            AppointmentStatus = appointment.Status.ToString(),
-            NextActions = nextActions,
-            message = "تم إنهاء الحساب بنجاح"
-        });
-    }
-
-    // ─── 6B. POST /api/patient-journey/{visitId}/checkout ─────────────────
-    /// <summary>Complete checkout by visitId — supports walk-in patients
-    /// who have no appointmentId. Same logic as appointmentId-based checkout.</summary>
-    [HttpPost("{visitId:guid}/checkout")]
-    [Authorize(Policy = "AdminOrReception")]
-    public async Task<IActionResult> CheckoutByVisit(Guid visitId, [FromBody] CheckoutRequest req)
-    {
-        var visit = await db.Visits
-            .Include(v => v.Appointment)
-            .FirstOrDefaultAsync(v => v.Id == visitId);
-
         if (visit == null)
-            return NotFound(new { message = "الزيارة غير موجودة" });
+            return BadRequest(new { message = "لا توجد زيارة مرتبطة" });
+
         if (!visit.IsActive)
             return BadRequest(new { message = "الزيارة محذوفة" });
+
         if (visit.CheckoutStatus != "ReadyForCheckout")
             return BadRequest(new { message = "الزيارة ليست جاهزة للحساب بعد" });
 
@@ -1336,12 +1296,12 @@ public class PatientJourneyController(
         visit.UpdatedAt = DateTime.UtcNow;
 
         // Complete appointment if linked and valid
-        if (visit.Appointment != null && visit.Appointment.IsActive)
+        if (appointment != null && appointment.IsActive)
         {
-            if (AppointmentStatusTransitions.IsValidTransition(visit.Appointment.Status, AppointmentStatus.Completed))
+            if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Completed))
             {
-                visit.Appointment.Status = AppointmentStatus.Completed;
-                visit.Appointment.UpdatedAt = DateTime.UtcNow;
+                appointment.Status = AppointmentStatus.Completed;
+                appointment.UpdatedAt = DateTime.UtcNow;
             }
         }
 
@@ -1373,10 +1333,10 @@ public class PatientJourneyController(
 
         return Ok(new
         {
+            AppointmentId = appointment?.Id,
             VisitId = visit.Id,
-            AppointmentId = visit.AppointmentId,
             CheckoutStatus = visit.CheckoutStatus,
-            AppointmentStatus = visit.Appointment?.Status.ToString(),
+            AppointmentStatus = appointment?.Status.ToString(),
             NextActions = nextActions,
             message = "تم إنهاء الحساب بنجاح"
         });

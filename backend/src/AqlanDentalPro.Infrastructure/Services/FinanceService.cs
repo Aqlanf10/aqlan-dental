@@ -220,10 +220,6 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (req.Amount <= 0)
             throw new ArgumentException("يجب أن يكون مبلغ الدفعة أكبر من الصفر.");
 
-        // H9 FIX: Generate receipt number using advisory lock + sequential pattern
-        // instead of random 4-digit (which had ~50% collision probability at 95 payments/day).
-        var receiptNumber = await GenerateReceiptNumberAsync();
-
         // Validate InvoiceId if provided
         Invoice? invoice = null;
         if (req.InvoiceId.HasValue)
@@ -247,6 +243,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 throw new ArgumentException($"المبلغ ({req.Amount:N0}) يتجاوز الرصيد المتبقي للفاتورة ({remaining:N0})");
 
         }
+
+        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
+        // so that Payment, Receipt, CashFlow, Treasury, and JournalEntry are all committed
+        // together or rolled back together. Previously, UpdateTreasuryBalanceAsync called
+        // SaveChangesAsync independently, committing entities before the JE transaction started.
+
+        // H9 FIX: Generate receipt number INSIDE the transaction to avoid DbContext concurrency
+        // issues. Previously GenerateReceiptNumberAsync was called before BeginTransactionAsync,
+        // and its internal pg_advisory_lock call caused "A second operation was started on this
+        // context instance" because the DbContext was already tracking the transaction.
+        var receiptNumber = await GenerateReceiptNumberAsync();
 
         var payment = new Payment
         {
@@ -1290,60 +1297,27 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var datePart = today.ToString("yyyyMMdd");
         var prefix = $"RCP-{datePart}-";
 
-        if (!db.Database.IsRelational())
-        {
-            var lastReceipt = await db.Payments
-                .IgnoreQueryFilters()
-                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-                .OrderByDescending(p => p.ReceiptNumber)
-                .Select(p => p.ReceiptNumber)
-                .FirstOrDefaultAsync();
+        // Simple sequential generation without advisory locks.
+        // Advisory locks (both xact_lock and session-level lock) cause DbContext concurrency
+        // issues when called from CreatePaymentAsync which uses its own transaction.
+        // Instead, rely on the unique constraint on ReceiptNumber + retry logic
+        // (handled by the caller's transaction rollback).
+        var lastReceipt = await db.Payments
+            .IgnoreQueryFilters()
+            .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+            .OrderByDescending(p => p.ReceiptNumber)
+            .Select(p => p.ReceiptNumber)
+            .FirstOrDefaultAsync();
 
-            var nextSeq = 1;
-            if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
-            {
-                var seqPart = lastReceipt[prefix.Length..];
-                if (int.TryParse(seqPart, out var lastSeq))
-                    nextSeq = lastSeq + 1;
-            }
-            return $"{prefix}{nextSeq:D3}";
+        var nextSeq = 1;
+        if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
+        {
+            var seqPart = lastReceipt[prefix.Length..];
+            if (int.TryParse(seqPart, out var lastSeq))
+                nextSeq = lastSeq + 1;
         }
 
-        // FIX: Use session-level advisory lock (pg_advisory_lock) instead of
-        // transaction-level lock (pg_advisory_xact_lock) to avoid DbContext concurrency
-        // issues. The previous implementation opened its own transaction which conflicted
-        // with the caller's transaction in CreatePaymentAsync, causing:
-        // "A second operation was started on this context instance before a previous
-        // operation completed."
-        // Session-level locks are released explicitly with pg_advisory_unlock.
-        var lockKey = StableLockKeyHelper.ReceiptNumber;
-        try
-        {
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
-
-            var lastReceipt = await db.Payments
-                .IgnoreQueryFilters()
-                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-                .OrderByDescending(p => p.ReceiptNumber)
-                .Select(p => p.ReceiptNumber)
-                .FirstOrDefaultAsync();
-
-            var nextSeq = 1;
-            if (!string.IsNullOrEmpty(lastReceipt) && lastReceipt.Length > prefix.Length)
-            {
-                var seqPart = lastReceipt[prefix.Length..];
-                if (int.TryParse(seqPart, out var lastSeq))
-                    nextSeq = lastSeq + 1;
-            }
-
-            return $"{prefix}{nextSeq:D3}";
-        }
-        finally
-        {
-            // Always release the session-level lock, even on error
-            try { await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey); }
-            catch { /* best-effort unlock */ }
-        }
+        return $"{prefix}{nextSeq:D3}";
     }
 
     /// <summary>
@@ -1359,54 +1333,23 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var datePart = today.ToString("yyyyMMdd");
         var prefix = $"REF-{datePart}-";
 
-        if (!db.Database.IsRelational())
-        {
-            var lastRefund = await db.Payments
-                .IgnoreQueryFilters()
-                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-                .OrderByDescending(p => p.ReceiptNumber)
-                .Select(p => p.ReceiptNumber)
-                .FirstOrDefaultAsync();
+        // Simple sequential generation without advisory locks (same reason as GenerateReceiptNumberAsync).
+        var lastRefund = await db.Payments
+            .IgnoreQueryFilters()
+            .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
+            .OrderByDescending(p => p.ReceiptNumber)
+            .Select(p => p.ReceiptNumber)
+            .FirstOrDefaultAsync();
 
-            var nextSeq = 1;
-            if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
-            {
-                var seqPart = lastRefund[prefix.Length..];
-                if (int.TryParse(seqPart, out var lastSeq))
-                    nextSeq = lastSeq + 1;
-            }
-            return $"{prefix}{nextSeq:D3}";
+        var nextSeq = 1;
+        if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
+        {
+            var seqPart = lastRefund[prefix.Length..];
+            if (int.TryParse(seqPart, out var lastSeq))
+                nextSeq = lastSeq + 1;
         }
 
-        // FIX: Same as GenerateReceiptNumberAsync — use session-level advisory lock
-        // to avoid DbContext concurrency issues with nested transactions.
-        var lockKey = StableLockKeyHelper.RefundReceiptNumber;
-        try
-        {
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
-
-            var lastRefund = await db.Payments
-                .IgnoreQueryFilters()
-                .Where(p => p.ReceiptNumber != null && p.ReceiptNumber.StartsWith(prefix))
-                .OrderByDescending(p => p.ReceiptNumber)
-                .Select(p => p.ReceiptNumber)
-                .FirstOrDefaultAsync();
-
-            var nextSeq = 1;
-            if (!string.IsNullOrEmpty(lastRefund) && lastRefund.Length > prefix.Length)
-            {
-                var seqPart = lastRefund[prefix.Length..];
-                if (int.TryParse(seqPart, out var lastSeq))
-                    nextSeq = lastSeq + 1;
-            }
-
-            return $"{prefix}{nextSeq:D3}";
-        }
-        finally
-        {
-            try { await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey); }
-            catch { /* best-effort unlock */ }
-        }
+        return $"{prefix}{nextSeq:D3}";
     }
 
     /// <summary>

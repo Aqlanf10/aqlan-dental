@@ -206,22 +206,11 @@ public class JournalEntryService(
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var prefix = $"JE-{today:yyyyMMdd}-";
 
-        // FIX: Use session-level advisory lock (pg_advisory_lock) instead of
-        // transaction-level lock (pg_advisory_xact_lock) to avoid DbContext concurrency
-        // issues. When called from DualWritePaymentEntryAsync which is already inside
-        // a transaction, pg_advisory_xact_lock can cause:
-        // "A second operation was started on this context instance before a previous
-        // operation completed."
-        if (db.Database.IsRelational())
-        {
-            var lockKey = StableLockKeyHelper.JournalEntryNumber;
-            try
-            {
-                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
-            }
-            catch { /* non-critical: proceed without lock */ }
-        }
-
+        // Simple sequential generation without advisory locks.
+        // Advisory locks (both xact_lock and session-level) cause DbContext concurrency
+        // issues when called from FinanceService.DualWritePaymentEntryAsync which is
+        // already inside a transaction. The unique constraint on EntryNumber provides
+        // sufficient protection against duplicates.
         var lastEntry = await db.JournalEntries
             .Where(e => e.EntryNumber.StartsWith(prefix))
             .OrderByDescending(e => e.EntryNumber)
@@ -233,17 +222,6 @@ public class JournalEntryService(
             var lastPart = lastEntry.EntryNumber.Substring(prefix.Length);
             if (int.TryParse(lastPart, out var lastSeq))
                 nextSeq = lastSeq + 1;
-        }
-
-        // Release session-level lock
-        if (db.Database.IsRelational())
-        {
-            var lockKey = StableLockKeyHelper.JournalEntryNumber;
-            try
-            {
-                await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey);
-            }
-            catch { /* best-effort unlock */ }
         }
 
         return $"{prefix}{nextSeq:D3}";

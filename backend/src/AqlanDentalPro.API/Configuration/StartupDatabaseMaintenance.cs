@@ -1261,6 +1261,34 @@ public static class StartupDatabaseMaintenance
                         ALTER TABLE "Visits" ADD COLUMN "ProposedProcedure" character varying(500) NULL;
                     END IF;
 
+                    -- ── Visits: add ServiceId if missing (needed for draft invoice flow) ──
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Visits' AND column_name = 'ServiceId') THEN
+                        ALTER TABLE "Visits" ADD COLUMN "ServiceId" uuid NULL;
+                    END IF;
+
+                    -- ── InvoiceLineItems: add ServiceNameSnapshot if missing ──
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'InvoiceLineItems') THEN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'ServiceNameSnapshot') THEN
+                            ALTER TABLE "InvoiceLineItems" ADD COLUMN "ServiceNameSnapshot" character varying(200) NULL;
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'ServiceId') THEN
+                            ALTER TABLE "InvoiceLineItems" ADD COLUMN "ServiceId" uuid NULL;
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'RelatedVisitId') THEN
+                            ALTER TABLE "InvoiceLineItems" ADD COLUMN "RelatedVisitId" uuid NULL;
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'MaterialCost') THEN
+                            ALTER TABLE "InvoiceLineItems" ADD COLUMN "MaterialCost" numeric(12,2) NOT NULL DEFAULT 0;
+                        END IF;
+
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'InvoiceLineItems' AND column_name = 'LineDiscountAmount') THEN
+                            ALTER TABLE "InvoiceLineItems" ADD COLUMN "LineDiscountAmount" numeric NOT NULL DEFAULT 0;
+                        END IF;
+                    END IF;
+
                     -- ── ClinicQueueItems: add Priority if missing (migration 20260616) ──
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ClinicQueueItems') THEN
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'Priority') THEN
@@ -1277,6 +1305,41 @@ public static class StartupDatabaseMaintenance
 
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'NoShowAt') THEN
                             ALTER TABLE "ClinicQueueItems" ADD COLUMN "NoShowAt" timestamp with time zone NULL;
+                        END IF;
+
+                        -- ── ClinicQueueItems: add ServiceId if missing (daily-ops flow) ──
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'ServiceId') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "ServiceId" uuid NULL;
+                        END IF;
+
+                        -- ── ClinicQueueItems: add ClinicRoomId if missing (daily-ops flow) ──
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'ClinicRoomId') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "ClinicRoomId" uuid NULL;
+                        END IF;
+
+                        -- ── ClinicQueueItems: add VisitId if missing (daily-ops flow) ──
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'VisitId') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "VisitId" uuid NULL;
+                        END IF;
+
+                        -- ── ClinicQueueItems: add CalledByUserId if missing ──
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CalledByUserId') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "CalledByUserId" uuid NULL;
+                        END IF;
+
+                        -- ── ClinicQueueItems: add AddedByUserId if missing ──
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'AddedByUserId') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "AddedByUserId" uuid NULL;
+                        END IF;
+
+                        -- ── ClinicQueueItems: add CancelledAt if missing ──
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'CancelledAt') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "CancelledAt" timestamp with time zone NULL;
+                        END IF;
+
+                        -- ── ClinicQueueItems: add EstimatedWaitMinutes if missing ──
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ClinicQueueItems' AND column_name = 'EstimatedWaitMinutes') THEN
+                            ALTER TABLE "ClinicQueueItems" ADD COLUMN "EstimatedWaitMinutes" integer NULL;
                         END IF;
 
                         -- Recreate unique index with NoShow filter if old index exists

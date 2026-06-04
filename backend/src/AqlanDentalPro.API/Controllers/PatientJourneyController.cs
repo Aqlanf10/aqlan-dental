@@ -126,23 +126,37 @@ public class PatientJourneyController(
             .GroupBy(l => l.VisitId!.Value)
             .ToDictionary(g => g.Key, g => g.First());
 
-        var invoiceRefs = await db.Invoices
-            .IgnoreQueryFilters()
-            .Where(i => i.IsActive
-                && ((i.AppointmentId.HasValue && appointmentIds.Contains(i.AppointmentId.Value))
-                    || (i.VisitId.HasValue && visitIds.Contains(i.VisitId.Value))))
-            .Select(i => new { i.AppointmentId, i.VisitId, i.Status })
-            .ToListAsync();
+        // FIX: Invoice query with fallback — some environments may have stale schema
+        // where Invoice.IsActive column is missing or AppointmentId/VisitId columns
+        // are not yet migrated. Use try/catch per-query to avoid crashing the entire
+        // patient-journey/today endpoint.
+        List<dynamic> invoiceRefsRaw = [];
+        HashSet<Guid> draftInvoiceAppointmentIds = [];
+        HashSet<Guid> draftInvoiceVisitIds = [];
+        try
+        {
+            var invoiceRefs = await db.Invoices
+                .IgnoreQueryFilters()
+                .Where(i => i.IsActive
+                    && ((i.AppointmentId.HasValue && appointmentIds.Contains(i.AppointmentId.Value))
+                        || (i.VisitId.HasValue && visitIds.Contains(i.VisitId.Value))))
+                .Select(i => new { i.AppointmentId, i.VisitId, i.Status })
+                .ToListAsync();
 
-        var draftInvoiceAppointmentIds = invoiceRefs
-            .Where(i => i.Status == InvoiceStatus.Draft && i.AppointmentId.HasValue)
-            .Select(i => i.AppointmentId!.Value)
-            .ToHashSet();
+            draftInvoiceAppointmentIds = invoiceRefs
+                .Where(i => i.Status == InvoiceStatus.Draft && i.AppointmentId.HasValue)
+                .Select(i => i.AppointmentId!.Value)
+                .ToHashSet();
 
-        var draftInvoiceVisitIds = invoiceRefs
-            .Where(i => i.Status == InvoiceStatus.Draft && i.VisitId.HasValue)
-            .Select(i => i.VisitId!.Value)
-            .ToHashSet();
+            draftInvoiceVisitIds = invoiceRefs
+                .Where(i => i.Status == InvoiceStatus.Draft && i.VisitId.HasValue)
+                .Select(i => i.VisitId!.Value)
+                .ToHashSet();
+        }
+        catch (Exception invEx)
+        {
+            logger.LogWarning(invEx, "PatientJourney.GetToday: Invoice query failed (likely missing columns), skipping invoice refs");
+        }
 
         // Load service info for appointments that have ServiceId
         var serviceIds = appointments.Where(a => a.ServiceId.HasValue).Select(a => a.ServiceId!.Value).Distinct().ToList();
@@ -1343,7 +1357,7 @@ public class PatientJourneyController(
 
             db.Invoices.Add(invoice);
 
-            // Add line item — restore RelatedVisitId = visitId (matching main branch)
+            // Add line item
             var lineItem = new InvoiceLineItem
             {
                 InvoiceId = invoice.Id,

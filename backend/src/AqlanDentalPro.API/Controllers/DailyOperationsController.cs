@@ -1,3 +1,4 @@
+using AqlanDentalPro.Domain.Entities;
 using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -56,18 +57,28 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
                 .ToListAsync();
 
             // ── Invoices (fully loaded with active payments and line items) ─
-            var invoices = await db.Invoices
-                .IgnoreQueryFilters()
-                .Include(i => i.Payments.Where(p => p.IsActive))
-                .Include(i => i.LineItems.Where(l => l.IsActive))
-                .Where(i => i.IsActive && i.CreatedAt >= todayStart && i.CreatedAt <= todayEnd)
-                .ToListAsync();
-
-            // Filter inactive in-memory for InMemory provider compatibility
-            foreach (var inv in invoices)
+            // FIX: Wrap in try/catch — Invoices table may have stale schema in some environments
+            // (missing LineItems navigation, missing AppointmentId column, etc.)
+            var invoices = new List<Invoice>();
+            try
             {
-                inv.Payments = inv.Payments.Where(p => p.IsActive).ToList();
-                inv.LineItems = inv.LineItems.Where(l => l.IsActive).ToList();
+                invoices = await db.Invoices
+                    .IgnoreQueryFilters()
+                    .Include(i => i.Payments.Where(p => p.IsActive))
+                    .Include(i => i.LineItems.Where(l => l.IsActive))
+                    .Where(i => i.IsActive && i.CreatedAt >= todayStart && i.CreatedAt <= todayEnd)
+                    .ToListAsync();
+
+                // Filter inactive in-memory for InMemory provider compatibility
+                foreach (var inv in invoices)
+                {
+                    inv.Payments = inv.Payments.Where(p => p.IsActive).ToList();
+                    inv.LineItems = inv.LineItems.Where(l => l.IsActive).ToList();
+                }
+            }
+            catch (Exception invEx)
+            {
+                logger.LogWarning(invEx, "DailyOperations.GetDailyReport: Invoice query failed, using empty list");
             }
 
             // ── Lab orders ───────────────────────────────────────────────

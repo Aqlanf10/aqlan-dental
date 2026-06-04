@@ -6,6 +6,21 @@ import api from "@/lib/api";
 import { EmptyState } from "./EmptyState";
 import { cn, formatArabicDate } from "@/lib/utils";
 
+interface LabOrderItemDto {
+  id: string;
+  workTypeId: string;
+  workTypeName?: string;
+  toothNumber?: string;
+  arch?: string;
+  shade?: string;
+  restorationType?: string;
+  unitsCount: number;
+  unitPrice?: number;
+  totalPrice?: number;
+  instructions?: string;
+  sortOrder: number;
+}
+
 interface LabOrderDto {
   id: string;
   orderNumber?: string;
@@ -23,11 +38,16 @@ interface LabOrderDto {
   priority?: string;
   instructions?: string;
   cost?: number;
+  totalCost?: number;
   doctorName?: string;
   shade?: string;
   restorationType?: string;
   visitId?: string;
   cancellationReason?: string;
+  remakeReason?: string;
+  returnReason?: string;
+  remakeCount?: number;
+  items?: LabOrderItemDto[];
   createdAt?: string;
 }
 
@@ -156,7 +176,7 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
           </div>
 
           {/* Row 3: Shade / Restoration type / Cost */}
-          {(order.shade || order.restorationType || (order.cost != null && order.cost > 0)) && (
+          {(order.shade || order.restorationType || (order.totalCost != null && order.totalCost > 0) || (order.cost != null && order.cost > 0)) && (
             <div className="flex items-center gap-3 mt-1 flex-wrap">
               {order.shade && (
                 <span className="text-xs text-[#3d7ab5] bg-[#3d7ab510] px-1.5 py-0.5 rounded">ظل: {order.shade}</span>
@@ -164,9 +184,41 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
               {order.restorationType && (
                 <span className="text-xs text-[#3d7ab5] bg-[#3d7ab510] px-1.5 py-0.5 rounded">نوع الترميم: {order.restorationType}</span>
               )}
-              {order.cost != null && order.cost > 0 && (
+              {order.totalCost != null && order.totalCost > 0 && (
+                <span className="text-xs text-[#64748b] font-bold">التكلفة الإجمالية: {order.totalCost.toLocaleString()}</span>
+              )}
+              {!order.totalCost && order.cost != null && order.cost > 0 && (
                 <span className="text-xs text-[#64748b]">التكلفة: {order.cost}</span>
               )}
+            </div>
+          )}
+
+          {/* Row 3.5: Order items (line items) */}
+          {order.items && order.items.length > 0 && (
+            <div className="mt-1.5 space-y-1">
+              {order.items.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 text-[11px] text-[#475569] bg-[#f8fafc] rounded px-2 py-1">
+                  {item.workTypeName && <span className="font-medium">{item.workTypeName}</span>}
+                  {item.toothNumber && <span className="text-[#94a3b8]">سن: {item.toothNumber}</span>}
+                  {item.shade && <span className="text-[#94a3b8]">ظل: {item.shade}</span>}
+                  <span className="text-[#94a3b8]">العدد: {item.unitsCount}</span>
+                  {item.totalPrice != null && <span className="font-medium text-[#0d2137] mr-auto">{item.totalPrice.toLocaleString()}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Row 3.6: Remake/Return info */}
+          {(order.remakeCount != null && order.remakeCount > 0) && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">إعادة صناعة ({order.remakeCount})</span>
+              {order.remakeReason && <span className="text-xs text-purple-500">{order.remakeReason}</span>}
+            </div>
+          )}
+          {order.returnReason && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">مرتجع</span>
+              <span className="text-xs text-orange-500">{order.returnReason}</span>
             </div>
           )}
 

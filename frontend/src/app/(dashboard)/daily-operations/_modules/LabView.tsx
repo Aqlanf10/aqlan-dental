@@ -7,23 +7,27 @@ import {
   useMarkLabReceived,
   useMarkLabDelivered,
   useCancelLabOrder,
-  useCreateLabOrder,
   type LabOrderRow,
 } from "../_lib/hooks";
 import { toast } from "@/stores/toastStore";
 import {
   Search, Activity, CheckCircle2, Clock, Check, AlertTriangle,
-  Plus, Loader2, XCircle, Package
+  Plus, Loader2, XCircle, Package, FileEdit, RotateCcw, RefreshCw
 } from "lucide-react";
 import { NAVY, BLUE, fmtRial, fmtDate } from "../_lib/constants";
+import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
 
-// Status labels and colors
+// Status labels and colors — all 10 LabOrderStatus values
 const LAB_STATUS_MAP: Record<string, { label: string; color: string; bgColor: string; borderColor: string; icon: React.ElementType }> = {
+  draft: { label: "مسودة", color: "#6b7280", bgColor: "#f9fafb", borderColor: "#e5e7eb", icon: FileEdit },
   sent: { label: "تم الإرسال", color: "#d97706", bgColor: "#fff7ed", borderColor: "#fde68a", icon: Clock },
   manufacturing: { label: "قيد العمل", color: "#7c3aed", bgColor: "#faf5ff", borderColor: "#e9d5ff", icon: Activity },
+  tryIn: { label: "تجربة", color: "#0d9488", bgColor: "#f0fdfa", borderColor: "#99f6e4", icon: CheckCircle2 },
   ready: { label: "جاهز للتسليم", color: "#2563eb", bgColor: "#eff6ff", borderColor: "#bfdbfe", icon: Package },
   received: { label: "جاهز بالعيادة", color: "#0891b2", bgColor: "#ecfeff", borderColor: "#a5f3fc", icon: CheckCircle2 },
   delivered: { label: "تم التسليم", color: "#16a34a", bgColor: "#f0fdf4", borderColor: "#bbf7d0", icon: Check },
+  returned: { label: "مرتجع", color: "#ea580c", bgColor: "#fff7ed", borderColor: "#fed7aa", icon: RotateCcw },
+  remake: { label: "إعادة صناعة", color: "#9333ea", bgColor: "#faf5ff", borderColor: "#e9d5ff", icon: RefreshCw },
   cancelled: { label: "ملغي", color: "#6b7280", bgColor: "#f9fafb", borderColor: "#e5e7eb", icon: XCircle },
 };
 
@@ -41,11 +45,6 @@ export default function LabView() {
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [newOrderModalOpen, setNewOrderModalOpen] = useState(false);
-  // New lab order form state
-  const [newPatientId, setNewPatientId] = useState("");
-  const [newApplianceType, setNewApplianceType] = useState("");
-  const [newLabName, setNewLabName] = useState("");
-  const [newCost, setNewCost] = useState("");
 
   // Fetch lab orders
   const { data, isLoading, isError } = useLabOrders({
@@ -77,9 +76,6 @@ export default function LabView() {
   // Cancel mutation
   const cancelMutation = useCancelLabOrder();
 
-  // Create lab order mutation
-  const createMutation = useCreateLabOrder();
-
   const getStatusBadge = (status: string) => {
     const info = LAB_STATUS_MAP[status] || LAB_STATUS_MAP.sent;
     const Icon = info.icon;
@@ -88,31 +84,6 @@ export default function LabView() {
         style={{ background: info.bgColor, color: info.color, borderColor: info.borderColor }}>
         <Icon className="w-3 h-3" /> {info.label}
       </span>
-    );
-  };
-
-  const handleCreateOrder = () => {
-    if (!newPatientId.trim() || !newApplianceType.trim()) {
-      toast.error("المريض ونوع التركيبة مطلوبان");
-      return;
-    }
-    createMutation.mutate(
-      {
-        patientId: newPatientId.trim(),
-        applianceType: newApplianceType.trim(),
-        labName: newLabName.trim() || undefined,
-        cost: newCost ? parseFloat(newCost) : undefined,
-        sentDate: new Date().toISOString().split("T")[0],
-      },
-      {
-        onSuccess: () => {
-          setNewOrderModalOpen(false);
-          setNewPatientId("");
-          setNewApplianceType("");
-          setNewLabName("");
-          setNewCost("");
-        },
-      }
     );
   };
 
@@ -149,11 +120,15 @@ export default function LabView() {
             style={{ color: NAVY }}
           >
             <option value="All">كل حالات المعمل</option>
+            <option value="draft">مسودة</option>
             <option value="sent">المرسلة</option>
             <option value="manufacturing">قيد العمل</option>
+            <option value="tryIn">تجربة</option>
             <option value="ready">جاهز للتسليم</option>
             <option value="received">جاهز بالعيادة</option>
             <option value="delivered">تم التسليم</option>
+            <option value="returned">مرتجع</option>
+            <option value="remake">إعادة صناعة</option>
             <option value="cancelled">ملغي</option>
           </select>
 
@@ -333,79 +308,9 @@ export default function LabView() {
         </div>
       )}
 
-      {/* New Lab Order Modal */}
+      {/* New Lab Order Modal — uses full-featured NewLabOrderModal */}
       {newOrderModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setNewOrderModalOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
-            <h3 className="font-extrabold text-[15px] mb-1" style={{ color: NAVY }}>طلب معمل جديد</h3>
-            <p className="text-xs text-gray-400 mb-4">سيتم إنشاء طلب معمل جديد وإضافته للتتبع</p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>معرف المريض (GUID) *</label>
-                <input
-                  value={newPatientId}
-                  onChange={e => setNewPatientId(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
-                  placeholder="أدخل معرف المريض أو ابحث"
-                  dir="ltr"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>نوع التركيبة *</label>
-                <input
-                  value={newApplianceType}
-                  onChange={e => setNewApplianceType(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
-                  placeholder="مثال: تاج زركونيا"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>اسم المعمل</label>
-                <input
-                  value={newLabName}
-                  onChange={e => setNewLabName(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
-                  placeholder="اسم المختبر"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>التكلفة</label>
-                <input
-                  type="number"
-                  value={newCost}
-                  onChange={e => setNewCost(e.target.value)}
-                  className="w-full text-xs rounded-lg border border-gray-200 px-3 py-2 outline-none focus:border-blue-500"
-                  placeholder="0"
-                  dir="ltr"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={() => {
-                  setNewOrderModalOpen(false);
-                  setNewPatientId("");
-                  setNewApplianceType("");
-                  setNewLabName("");
-                  setNewCost("");
-                }}
-                className="flex-1 py-2 rounded-xl text-sm font-bold bg-gray-100 text-gray-500 hover:bg-gray-200 transition"
-              >
-                إلغاء
-              </button>
-              <button
-                onClick={handleCreateOrder}
-                disabled={createMutation.isPending}
-                className="flex-1 py-2 rounded-xl text-sm font-bold text-white hover:opacity-90 transition disabled:opacity-50"
-                style={{ background: BLUE }}
-              >
-                {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "إنشاء الطلب"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <NewLabOrderModal onClose={() => setNewOrderModalOpen(false)} />
       )}
     </div>
   );

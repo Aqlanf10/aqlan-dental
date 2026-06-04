@@ -89,6 +89,38 @@ public sealed class CancelLabOrderRequest
     public string Reason { get; init; } = string.Empty;
 }
 
+/// <summary>DTO for updating an existing lab order (only draft/sent statuses).</summary>
+public sealed class UpdateLabOrderRequest
+{
+    public string? ApplianceType { get; init; }
+    public string? LabName { get; init; }
+    public Guid? LabId { get; init; }
+    public string? Instructions { get; init; }
+    public string? ExpectedDate { get; init; }
+    public string? Priority { get; init; }
+    public string? Shade { get; init; }
+    public string? RestorationType { get; init; }
+}
+
+public sealed class UpdateLabOrderRequestValidator : AbstractValidator<UpdateLabOrderRequest>
+{
+    private static readonly HashSet<string> ValidPriorities = ["urgent", "normal", "low"];
+
+    public UpdateLabOrderRequestValidator()
+    {
+        RuleFor(x => x.ApplianceType)
+            .NotEmpty().WithMessage("نوع الجهاز مطلوب")
+            .MaximumLength(200)
+            .When(x => x.ApplianceType is not null);
+        RuleFor(x => x.Priority)
+            .Must(p => ValidPriorities.Contains(p)).WithMessage("الأولوية غير صالحة")
+            .When(x => !string.IsNullOrWhiteSpace(x.Priority));
+        RuleFor(x => x.ExpectedDate)
+            .Must(d => DateOnly.TryParse(d, out _)).WithMessage("تنسيق تاريخ الاستلام المتوقع غير صالح")
+            .When(x => !string.IsNullOrWhiteSpace(x.ExpectedDate));
+    }
+}
+
 [ApiController]
 [Route("api/lab-orders")]
 [Authorize(Policy = "StaffOnly")]
@@ -648,6 +680,122 @@ public class LabOrdersController(AppDbContext db, ICurrentUserService currentUse
             inner = inner.InnerException;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Updates editable fields on a lab order. Only allowed when status is draft or sent.
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateLabOrderRequest req)
+    {
+        if (!await CanAsync("edit")) return Forbid();
+
+        var validator = new UpdateLabOrderRequestValidator();
+        var validationResult = await validator.ValidateAsync(req);
+        if (!validationResult.IsValid)
+            return BadRequest(new { message = string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)) });
+
+        var order = await db.LabOrders
+            .Include(l => l.Patient)
+            .Include(l => l.OrthoCase)
+            .Include(l => l.Doctor)
+            .Include(l => l.Lab)
+            .Include(l => l.Items).ThenInclude(i => i.WorkType)
+            .FirstOrDefaultAsync(l => l.Id == id);
+
+        if (order is null) return NotFound(new { message = "طلب المختبر غير موجود" });
+
+        // Only allow edits when the order is in draft or sent status
+        var editableStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "draft", "sent" };
+        if (!editableStatuses.Contains(order.Status))
+            return BadRequest(new { message = "لا يمكن تعديل الطلب بعد بدء التصنيع" });
+
+        // Apply updates only for fields that are provided (non-null)
+        if (req.ApplianceType is not null)
+            order.ApplianceType = req.ApplianceType;
+
+        if (req.LabId.HasValue)
+        {
+            // If LabId is being changed, look up the lab and update LabName to match
+            var selectedLab = await db.Labs.FirstOrDefaultAsync(l => l.Id == req.LabId.Value && l.IsActive);
+            if (selectedLab is null)
+                return BadRequest(new { message = "المعمل المحدد غير موجود أو غير مفعل" });
+            order.LabId = req.LabId;
+            order.LabName = selectedLab.Name;
+        }
+        else if (req.LabName is not null)
+        {
+            // Free-text LabName update (LabId is not provided, so keep existing LabId as-is)
+            order.LabName = req.LabName;
+        }
+
+        if (req.Instructions is not null)
+            order.Instructions = req.Instructions;
+
+        if (!string.IsNullOrWhiteSpace(req.ExpectedDate) && DateOnly.TryParse(req.ExpectedDate, out var expectedDate))
+            order.ExpectedDate = expectedDate;
+
+        if (!string.IsNullOrWhiteSpace(req.Priority))
+            order.Priority = req.Priority;
+
+        if (req.Shade is not null)
+            order.Shade = req.Shade;
+
+        if (req.RestorationType is not null)
+            order.RestorationType = req.RestorationType;
+
+        await db.SaveChangesAsync();
+
+        // Re-fetch navigation properties that may have changed (Lab)
+        if (req.LabId.HasValue)
+        {
+            await db.Entry(order).Reference(o => o.Lab).LoadAsync();
+        }
+
+        // Return the same projection as GetById
+        return Ok(new
+        {
+            order.Id,
+            order.OrderNumber,
+            order.PatientId,
+            PatientName = order.Patient.FirstName + " " + order.Patient.LastName,
+            PatientNumber = order.Patient.PatientNumber,
+            OrthoCaseNumber = order.OrthoCase?.CaseNumber,
+            order.ApplianceType,
+            order.LabName,
+            LabEntityName = order.Lab?.Name,
+            order.LabId,
+            SentDate = order.SentDate?.ToString("yyyy-MM-dd"),
+            ExpectedDate = order.ExpectedDate?.ToString("yyyy-MM-dd"),
+            ReceivedDate = order.ReceivedDate?.ToString("yyyy-MM-dd"),
+            DeliveredDate = order.DeliveredDate?.ToString("yyyy-MM-dd"),
+            order.Status,
+            order.Priority,
+            order.Instructions,
+            order.Cost,
+            order.TotalCost,
+            DoctorName = order.Doctor?.Name,
+            order.Shade,
+            order.RestorationType,
+            order.VisitId,
+            order.CancellationReason,
+            CreatedAt = order.CreatedAt.ToString("yyyy-MM-dd"),
+            Items = order.Items.Select(i => new
+            {
+                i.Id,
+                i.WorkTypeId,
+                WorkTypeName = i.WorkType != null ? i.WorkType.Name : null,
+                i.ToothNumber,
+                i.Arch,
+                i.Shade,
+                i.RestorationType,
+                i.UnitsCount,
+                i.UnitPrice,
+                i.TotalPrice,
+                i.Instructions,
+                i.SortOrder
+            }).OrderBy(i => i.SortOrder)
+        });
     }
 
     [HttpPut("{id:guid}/status")]

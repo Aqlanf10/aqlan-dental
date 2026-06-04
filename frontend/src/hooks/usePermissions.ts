@@ -160,6 +160,7 @@ const ROLE_FALLBACK: Record<string, string[]> = {
     "clinic_queue.view", "clinic_queue.create", "clinic_queue.edit", "clinic_queue.approve",
     "finance.view", "finance.create",
     "lab_orders.view", "lab_orders.edit",
+    "lab_payables.view", "lab_payables.edit",
     "rooms.view", "rooms.create", "rooms.edit",
     "visits.view", "visits.edit",
     "invoices.view", "invoices.create",

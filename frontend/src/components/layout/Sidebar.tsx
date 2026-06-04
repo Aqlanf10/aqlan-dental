@@ -8,7 +8,7 @@ import {
   Pill, X, Menu, MessageCircle, MessageSquare, ClipboardList, Clock,
   UserRound, Building2, UserCog,
   Truck, ShoppingCart, ChevronDown,
-  Smartphone, Banknote, CalendarDays, CalendarOff, Shield,
+  Smartphone, Banknote, CalendarDays, CalendarOff, Shield, DollarSign,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -96,6 +96,7 @@ const NAV: NavEntry[] = [
       { href: "/lab/dashboard", label: "لوحة المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
       { href: "/lab/overdue", label: "طلبات متأخرة", icon: Clock, roles: ["Admin", "Reception", "Orthodontist", "BranchManager"], permission: PERMISSION_KEYS.LAB_ORDERS_VIEW },
       { href: "/lab/reports", label: "تقارير المعامل", icon: BarChart2, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_REPORTS_VIEW },
+      { href: "/lab/payables", label: "مستحقات المعامل", icon: DollarSign, roles: ["Admin", "BranchManager", "Accountant"], permission: PERMISSION_KEYS.LAB_PAYABLES_VIEW },
       { href: "/settings/labs", label: "إدارة المعامل", icon: Settings, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LABS_VIEW },
       { href: "/settings/lab-work-types", label: "أنواع الأعمال", icon: ClipboardList, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LAB_WORK_TYPES_VIEW },
       { href: "/settings/lab-pricing", label: "تسعير المعامل", icon: Banknote, roles: ["Admin", "BranchManager"], permission: PERMISSION_KEYS.LAB_WORK_PRICES_VIEW },

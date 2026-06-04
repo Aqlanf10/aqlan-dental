@@ -17,6 +17,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
 import { useSignalRClinicQueue } from "@/hooks/useSignalRClinicQueue";
 import api from "@/lib/api";
+import { NewLabOrderModal } from "@/components/lab/NewLabOrderModal";
 
 import {
   NAVY, BLUE, ORANGE,
@@ -283,6 +284,9 @@ export default function DailyOperationsPage() {
 
   // ── Direct payment modal (for unbooked patients) ──
   const [directPaymentModalOpen, setDirectPaymentModalOpen] = useState(false);
+
+  // ── Lab Order Modal ──
+  const [labOrderModalOpen, setLabOrderModalOpen] = useState(false);
 
   // ── More menu dropdown ──
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -581,6 +585,11 @@ export default function DailyOperationsPage() {
   const handleBookAppointment = useCallback((item: TodayJourneyItem) => {
     setSelectedItem(item);
     setBookAppointmentModalOpen(true);
+  }, []);
+
+  const handleCreateLabOrder = useCallback((item: TodayJourneyItem) => {
+    setSelectedItem(item);
+    setLabOrderModalOpen(true);
   }, []);
 
   const handleWhatsApp = useCallback((item: TodayJourneyItem) => {
@@ -1421,6 +1430,7 @@ export default function DailyOperationsPage() {
                     onCreateDraftInvoice={handleCreateDraftInvoice}
                     createDraftInvoicePending={createDraftInvoiceMutation.isPending}
                     onBookAppointment={handleBookAppointment}
+                    onCreateLabOrder={handleCreateLabOrder}
                     onCompleteVisit={handleCompleteVisit}
                     onLeftWithoutCompletion={handleLeftWithoutCompletion}
                     onOpenSidePanel={handleOpenSidePanel}
@@ -1699,6 +1709,11 @@ export default function DailyOperationsPage() {
         isPending={createAppointmentMutation.isPending}
         onConfirm={handleBookConfirm}
       />
+
+      {/* Lab Order Modal — opened from PatientJourneyView */}
+      {labOrderModalOpen && (
+        <NewLabOrderModal onClose={() => setLabOrderModalOpen(false)} />
+      )}
 
       <ConfirmDialog
         open={confirmDialogOpen}

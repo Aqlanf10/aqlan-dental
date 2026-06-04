@@ -13,6 +13,7 @@ import { useFinanceSummary, useTodayJourneyItems, useCreatePayment, useCheckout,
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { canViewFinanceReports } from "@/lib/roles";
+import { useActiveCashierSession } from "@/hooks/useCashierSession";
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 interface ReadyForCheckoutPatient {
@@ -71,6 +72,7 @@ interface FinanceViewProps {
 export default function FinanceView({ onContextMenu }: FinanceViewProps) {
   const { user } = useAuthStore();
   const showDeepFinanceKpis = canViewFinanceReports(user?.role);
+  const { data: activeCashierSession } = useActiveCashierSession();
 
   // ── Data hooks ──
   const { data: summaryRaw, isLoading: summaryLoading, refetch: refetchSummary } = useFinanceSummary();
@@ -137,12 +139,16 @@ export default function FinanceView({ onContextMenu }: FinanceViewProps) {
 
   /** Quick payment: opens in-page payment form */
   const handleOpenPayment = useCallback((patient: ReadyForCheckoutPatient) => {
+    if (!activeCashierSession) {
+      toast.error("يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات");
+      return;
+    }
     const amount = patient.amountDueReference ?? patient.amountDue ?? 0;
     setPaymentPatient(patient);
     setPaymentAmount(amount > 0 ? String(amount) : "");
     setPaymentMethod("Cash");
     setPaymentNotes("");
-  }, []);
+  }, [activeCashierSession]);
 
   /** Submit quick payment */
   const handleSubmitPayment = useCallback(async () => {

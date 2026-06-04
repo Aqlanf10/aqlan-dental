@@ -13,6 +13,7 @@ import {
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useActiveCashierSession } from "@/hooks/useCashierSession";
 import type { PaymentListItem, RegisterPaymentRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
@@ -61,6 +62,7 @@ export function CollectionsTab() {
   // Fix 3: Get current user role for permission checks
   const { user } = useAuthStore();
   const isAdmin = user?.role === "Admin";
+  const { data: activeCashierSession } = useActiveCashierSession();
 
   // Register payment form state
   const [patientSearch, setPatientSearch] = useState("");
@@ -135,6 +137,10 @@ export function CollectionsTab() {
   })();
 
   const handleRegister = async () => {
+    if (!activeCashierSession) {
+      toast.error("يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات");
+      return;
+    }
     if (!selectedPatient || !payAmount || Number(payAmount) <= 0) {
       toast.error("يرجى اختيار المريض وإدخال المبلغ");
       return;
@@ -187,7 +193,21 @@ export function CollectionsTab() {
     <div className="p-6 space-y-4">
       <SectionHeader title="التحصيل" action={
         <div className="flex items-center gap-2">
-          <button onClick={() => { resetForm(); setShowRegister(true); }} style={btnPrimary}><Plus className="w-4 h-4" /> تسجيل دفعة</button>
+          <button
+            onClick={() => {
+              if (!activeCashierSession) {
+                toast.error("يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات");
+                return;
+              }
+              resetForm();
+              setShowRegister(true);
+            }}
+            style={{ ...btnPrimary, opacity: activeCashierSession ? 1 : 0.6, cursor: activeCashierSession ? undefined : "not-allowed" }}
+            title={!activeCashierSession ? "يجب فتح صندوق الكاشير أولاً" : undefined}
+          >
+            <span className="w-2 h-2 rounded-full inline-block" style={{ background: activeCashierSession ? "#86efac" : "#ef4444" }} />
+            <Plus className="w-4 h-4" /> تسجيل دفعة
+          </button>
           <button onClick={fetchPayments} className="w-8 h-8 rounded-md flex items-center justify-center" style={{ color: tokens.brand, border: `1px solid ${tokens.border}` }} title="تحديث"><RefreshCw className="w-4 h-4" /></button>
         </div>
       } />

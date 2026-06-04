@@ -13,6 +13,7 @@ import { toast } from "@/stores/toastStore";
 import { useDoctors } from "@/hooks/useDoctors";
 import { useAuthStore } from "@/stores/authStore";
 import { isAdminRole, isAccountantRole } from "@/lib/roles";
+import { useActiveCashierSession } from "@/hooks/useCashierSession";
 import type { Payment, Contract, CreatePaymentRequest, UpdatePaymentRequest } from "@/types/finance";
 import { PAYMENT_METHODS, PAYMENT_METHOD_OPTIONS, SPECIALTY_OPTIONS } from "@/types/finance";
 
@@ -48,6 +49,7 @@ const EMPTY_FORM: PaymentForm = {
 export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
   const { user } = useAuthStore();
   const canModifyPayment = isAdminRole(user?.role) || isAccountantRole(user?.role);
+  const { data: activeCashierSession } = useActiveCashierSession();
 
   const [payments, setPayments] = useState<Payment[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -101,6 +103,10 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
   const openAddModal = () => {
+    if (!activeCashierSession) {
+      toast.error("يجب فتح صندوق الكاشير (الوردية اليومية) أولاً قبل تسجيل أي مدفوعات");
+      return;
+    }
     setEditingPayment(null);
     setForm({ ...EMPTY_FORM });
     setShowModal(true);
@@ -186,9 +192,17 @@ export function PaymentsTab({ patientId, onPaymentChanged }: PaymentsTabProps) {
         <h3 className="text-sm font-bold text-[#0d2137]">المدفوعات</h3>
         <button
           onClick={openAddModal}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-[#22c55e] text-white hover:opacity-90 transition"
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg text-white hover:opacity-90 transition"
+          style={{
+            background: activeCashierSession ? "#22c55e" : "#94a3b8",
+            cursor: activeCashierSession ? undefined : "not-allowed",
+          }}
+          title={!activeCashierSession ? "يجب فتح صندوق الكاشير أولاً" : undefined}
         >
-          <Plus className="w-3.5 h-3.5" />
+          <span
+            className="w-2 h-2 rounded-full inline-block"
+            style={{ background: activeCashierSession ? "#86efac" : "#ef4444" }}
+          />
           إضافة دفعة
         </button>
       </div>

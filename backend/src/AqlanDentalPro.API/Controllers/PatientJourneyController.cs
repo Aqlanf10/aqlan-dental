@@ -1105,6 +1105,7 @@ public class PatientJourneyController(
                 QueueItemId = queueItem.Id,
                 QueueStatus = queueItem.Status.ToString(),
                 AppointmentStatus = appointment.Status.ToString(),
+                VisitStatus = existingVisit.CheckoutStatus ?? "InProgress",
                 message = "تم بدء الزيارة بنجاح (زيارة موجودة)"
             });
         }
@@ -1119,6 +1120,14 @@ public class PatientJourneyController(
             Specialty = appointment.Specialty,
             ServiceId = appointment.ServiceId
         };
+
+        // FIX: Populate AmountDueReference from the service catalog price
+        if (appointment.ServiceId.HasValue)
+        {
+            var service = await db.ClinicServices.FindAsync(appointment.ServiceId.Value);
+            if (service != null && service.DefaultPrice > 0)
+                visit.AmountDueReference = service.DefaultPrice;
+        }
 
         db.Visits.Add(visit);
 
@@ -1153,6 +1162,8 @@ public class PatientJourneyController(
             QueueItemId = queueItem.Id,
             QueueStatus = queueItem.Status.ToString(),
             AppointmentStatus = appointment.Status.ToString(),
+            VisitStatus = visit.CheckoutStatus ?? "InProgress",
+            AmountDueReference = visit.AmountDueReference,
             message = "تم بدء الزيارة بنجاح"
         });
     }
@@ -1191,6 +1202,17 @@ public class PatientJourneyController(
             visit.NextVisitDate = req.FollowUpDate;
         if (req.AmountDue.HasValue)
             visit.AmountDueReference = req.AmountDue;
+        // FIX: Fallback — if AmountDueReference is still null, look up service default price
+        else if (!visit.AmountDueReference.HasValue)
+        {
+            var serviceId = visit.ServiceId ?? visit.Appointment?.ServiceId;
+            if (serviceId.HasValue)
+            {
+                var svc = await db.ClinicServices.FindAsync(serviceId.Value);
+                if (svc != null && svc.DefaultPrice > 0)
+                    visit.AmountDueReference = svc.DefaultPrice;
+            }
+        }
         if (!string.IsNullOrWhiteSpace(req.ProposedProcedure))
             visit.ProposedProcedure = req.ProposedProcedure;
 
@@ -1219,6 +1241,8 @@ public class PatientJourneyController(
         return Ok(new
         {
             visit.Id,
+            AppointmentId = visit.AppointmentId,
+            VisitStatus = visit.CheckoutStatus ?? "InProgress",
             CheckoutStatus = visit.CheckoutStatus,
             ReadyForCheckoutAt = visit.ReadyForCheckoutAt,
             AmountDueReference = visit.AmountDueReference,
@@ -1232,8 +1256,9 @@ public class PatientJourneyController(
     /// the frontend should redirect to the Payments module for actual payment processing.</summary>
     [HttpPost("{appointmentId:guid}/checkout")]
     [Authorize(Policy = "AdminOrReception")]
-    public async Task<IActionResult> Checkout(Guid appointmentId, [FromBody] CheckoutRequest req)
+    public async Task<IActionResult> Checkout(Guid appointmentId, [FromBody] CheckoutRequest? req)
     {
+        req ??= new CheckoutRequest();
         var appointment = await db.Appointments.FindAsync(appointmentId);
         if (appointment == null)
             return NotFound(new { message = "الموعد غير موجود" });
@@ -1737,6 +1762,12 @@ public class PatientJourneyController(
         if (checkoutStatus == "CheckedOut")
             return "None";
 
+        // FIX: If the appointment is Completed but checkoutStatus is null,
+        // the visit is still InProgress — the doctor needs to hand off to reception.
+        // This happens when the queue item is completed but the visit hasn't been handed off yet.
+        if (apptStatus == AppointmentStatus.Completed && string.IsNullOrEmpty(checkoutStatus))
+            return "HandoffToReception";
+
         return apptStatus switch
         {
             AppointmentStatus.Scheduled or AppointmentStatus.Confirmed => "Intake",
@@ -1744,7 +1775,7 @@ public class PatientJourneyController(
             AppointmentStatus.Waiting => queueStatus == ClinicQueueStatus.Waiting ? "CallPatient" : "EnterRoom",
             AppointmentStatus.Called => "EnterRoom",
             AppointmentStatus.InRoom => "StartVisit",
-            AppointmentStatus.InProgress => "InProgress",
+            AppointmentStatus.InProgress => "HandoffToReception",
             AppointmentStatus.Completed => "None",
             _ => "None"
         };

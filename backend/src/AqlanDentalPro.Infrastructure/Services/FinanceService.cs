@@ -1309,11 +1309,17 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             return $"{prefix}{nextSeq:D3}";
         }
 
+        // FIX: Use session-level advisory lock (pg_advisory_lock) instead of
+        // transaction-level lock (pg_advisory_xact_lock) to avoid DbContext concurrency
+        // issues. The previous implementation opened its own transaction which conflicted
+        // with the caller's transaction in CreatePaymentAsync, causing:
+        // "A second operation was started on this context instance before a previous
+        // operation completed."
+        // Session-level locks are released explicitly with pg_advisory_unlock.
         var lockKey = StableLockKeyHelper.ReceiptNumber;
-        await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
 
             var lastReceipt = await db.Payments
                 .IgnoreQueryFilters()
@@ -1330,13 +1336,13 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                     nextSeq = lastSeq + 1;
             }
 
-            await tx.CommitAsync();
             return $"{prefix}{nextSeq:D3}";
         }
-        catch
+        finally
         {
-            await tx.RollbackAsync();
-            throw;
+            // Always release the session-level lock, even on error
+            try { await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey); }
+            catch { /* best-effort unlock */ }
         }
     }
 
@@ -1372,11 +1378,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             return $"{prefix}{nextSeq:D3}";
         }
 
+        // FIX: Same as GenerateReceiptNumberAsync — use session-level advisory lock
+        // to avoid DbContext concurrency issues with nested transactions.
         var lockKey = StableLockKeyHelper.RefundReceiptNumber;
-        await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock({0})", lockKey);
 
             var lastRefund = await db.Payments
                 .IgnoreQueryFilters()
@@ -1393,13 +1400,12 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                     nextSeq = lastSeq + 1;
             }
 
-            await tx.CommitAsync();
             return $"{prefix}{nextSeq:D3}";
         }
-        catch
+        finally
         {
-            await tx.RollbackAsync();
-            throw;
+            try { await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock({0})", lockKey); }
+            catch { /* best-effort unlock */ }
         }
     }
 

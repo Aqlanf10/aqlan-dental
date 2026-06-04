@@ -1658,7 +1658,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             performedBy: payment.ReceivedBy ?? Guid.Empty,
             cashierSessionId: cashflow.CashierSessionId,
             treasuryId: treasury.Id,
-            lines: lines);
+            lines: lines,
+            autoSave: false);
 
         // Auto-post since this is an operational posting
         entry.IsPosted = true;
@@ -1705,7 +1706,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             performedBy: invoice.UpdatedBy ?? invoice.CreatedBy ?? Guid.Empty,
             cashierSessionId: null,
             treasuryId: null,
-            lines: lines);
+            lines: lines,
+            autoSave: false);
 
         // Auto-post
         entry.IsPosted = true;
@@ -1808,7 +1810,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             performedBy: refundPayment.ReceivedBy ?? Guid.Empty,
             cashierSessionId: null,
             treasuryId: treasury.Id,
-            lines: lines);
+            lines: lines,
+            autoSave: false);
 
         // Auto-post
         entry.IsPosted = true;

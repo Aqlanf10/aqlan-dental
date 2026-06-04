@@ -31,6 +31,7 @@ public class JournalEntryService(
         Guid? cashierSessionId,
         Guid? treasuryId,
         IEnumerable<(JournalAccountType accountType, Guid accountId, decimal debit, decimal credit, string? description)> lines,
+        bool autoSave = true,
         CancellationToken ct = default)
     {
         // Validate required fields — never Guid.Empty (Finance V3 Section 6.1 & 6.6)
@@ -105,7 +106,12 @@ public class JournalEntryService(
             throw new InvalidOperationException("A JournalEntry must have at least two lines (double-entry).");
 
         db.JournalEntries.Add(entry);
-        await db.SaveChangesAsync(ct);
+        // Auto-save by default. Callers managing their own transaction can set autoSave: false
+        // to avoid "A second operation was started on this context instance" errors.
+        if (autoSave)
+        {
+            await db.SaveChangesAsync(ct);
+        }
 
         logger.LogInformation(
             "Created JournalEntry {EntryNumber} (Type={DocType}, Branch={BranchId}, Debit={Debit}, Credit={Credit})",

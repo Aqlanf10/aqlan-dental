@@ -46,8 +46,9 @@ public class TreasuryVaultTests
             It.IsAny<Guid?>(),
             It.IsAny<Guid?>(),
             It.IsAny<IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)>>(),
+            It.IsAny<bool>(),
             It.IsAny<CancellationToken>()))
-            .ReturnsAsync((FinancialDocumentType docType, Guid docId, string desc, DateOnly date, Guid branch, Guid performedBy, Guid? sessionId, Guid? treasuryId, IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)> lines, CancellationToken ct) =>
+            .ReturnsAsync((FinancialDocumentType docType, Guid docId, string desc, DateOnly date, Guid branch, Guid performedBy, Guid? sessionId, Guid? treasuryId, IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)> lines, bool autoSave, CancellationToken ct) =>
             {
                 var entry = new JournalEntry
                 {

@@ -28,6 +28,7 @@ public interface IJournalEntryService
         Guid? cashierSessionId,
         Guid? treasuryId,
         IEnumerable<(JournalAccountType accountType, Guid accountId, decimal debit, decimal credit, string? description)> lines,
+        bool autoSave = true,
         CancellationToken ct = default);
 
     /// <summary>

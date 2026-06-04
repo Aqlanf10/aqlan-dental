@@ -866,6 +866,7 @@ public class FinanceV3AccountingSafetyTests
                 It.IsAny<Guid?>(),
                 It.IsAny<Guid?>(),
                 It.IsAny<IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)>>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Simulated JE creation failure"));
 
@@ -1746,6 +1747,7 @@ public class FinanceV3AccountingSafetyTests
                 It.IsAny<Guid?>(),
                 It.IsAny<Guid?>(),
                 It.IsAny<IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)>>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Simulated JE creation failure"));
 

@@ -42,6 +42,7 @@ public static class StartupDatabaseMaintenance
         await EnsurePatientJourneyPermissionsAsync(app);
         await EnsureSmsGatewaySchemaAsync(app);
         await EnsureSmsGatewaySettingsSeedAsync(app, configuration);
+        await EnsureLabOrdersSchemaAsync(app);
 
         // ── Gated DB maintenance (ENABLE_STARTUP_DB_MAINTENANCE) ──────
         await RunGatedDbMaintenanceAsync(app, configuration);
@@ -1578,6 +1579,98 @@ public static class StartupDatabaseMaintenance
             smsSettingsLogger2.LogError(ex, "Failed to seed SMS Gateway settings");
         }
 
+    }
+
+    /// <summary>
+    /// LabOrders table schema hotfix — adds BranchId, VisitId, Shade, RestorationType, DeliveredDate,
+    /// CancellationReason, LabId, TotalCost, InvoiceLineItemId, RemakeReason, ReturnReason, RemakeCost,
+    /// IsFreeRemake, OriginalOrderId, RemakeCount columns if missing.
+    /// Fixes "column l.BranchId does not exist" 500 error on patient-journey/today.
+    /// </summary>
+    private static async Task EnsureLabOrdersSchemaAsync(WebApplication app)
+    {
+        try
+        {
+            using var labScope = app.Services.CreateScope();
+            var labDb     = labScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var labLogger = labScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+            await labDb.Database.ExecuteSqlRawAsync("""
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'LabOrders') THEN
+                        -- Sprint 2 — Daily Operations extended fields
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'BranchId') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "BranchId" uuid NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'VisitId') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "VisitId" uuid NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'Shade') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "Shade" character varying(100) NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'RestorationType') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "RestorationType" character varying(200) NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'DeliveredDate') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "DeliveredDate" date NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'CancellationReason') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "CancellationReason" character varying(500) NULL;
+                        END IF;
+                        -- Lab Sprint 2 — Lab entity reference
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'LabId') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "LabId" uuid NULL;
+                        END IF;
+                        -- Lab Sprint 3 — Professional order fields
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'TotalCost') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "TotalCost" numeric NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'InvoiceLineItemId') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "InvoiceLineItemId" uuid NULL;
+                        END IF;
+                        -- Lab Sprint 4 — Remake/Return fields
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'RemakeReason') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "RemakeReason" character varying(500) NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'ReturnReason') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "ReturnReason" character varying(500) NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'RemakeCost') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "RemakeCost" numeric NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'IsFreeRemake') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "IsFreeRemake" boolean NOT NULL DEFAULT false;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'OriginalOrderId') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "OriginalOrderId" uuid NULL;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'RemakeCount') THEN
+                            ALTER TABLE "LabOrders" ADD COLUMN "RemakeCount" integer NOT NULL DEFAULT 0;
+                        END IF;
+                        -- Indexes for FK lookups
+                        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'LabOrders' AND indexname = 'IX_LabOrders_BranchId') THEN
+                            CREATE INDEX "IX_LabOrders_BranchId" ON "LabOrders" ("BranchId");
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'LabOrders' AND indexname = 'IX_LabOrders_VisitId') THEN
+                            CREATE INDEX "IX_LabOrders_VisitId" ON "LabOrders" ("VisitId");
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'LabOrders' AND indexname = 'IX_LabOrders_LabId') THEN
+                            CREATE INDEX "IX_LabOrders_LabId" ON "LabOrders" ("LabId");
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'LabOrders' AND indexname = 'IX_LabOrders_OriginalOrderId') THEN
+                            CREATE INDEX "IX_LabOrders_OriginalOrderId" ON "LabOrders" ("OriginalOrderId");
+                        END IF;
+                    END IF;
+                END $$;
+            """);
+
+            labLogger.LogInformation("HOTFIX: LabOrders table schema ensured — BranchId, VisitId, LabId, TotalCost, remake columns verified (idempotent)");
+        }
+        catch (Exception ex)
+        {
+            var labLogger2 = app.Services.GetRequiredService<ILogger<Program>>();
+            labLogger2.LogError(ex, "HOTFIX: Failed to ensure LabOrders schema. PatientJourney.GetToday may return 500!");
+        }
     }
 
     /// <summary>

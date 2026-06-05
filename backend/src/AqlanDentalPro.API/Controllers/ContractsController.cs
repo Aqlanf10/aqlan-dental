@@ -55,17 +55,9 @@ public class ContractsController(IFinanceService service) : ControllerBase
         if (!allowed.Contains(body.Status))
             return BadRequest(new { message = "الحالة غير صالحة — القيم المسموحة: active، completed، cancelled" });
 
-        try
-        {
-            var result = await service.UpdateContractStatusAsync(id, body.Status);
-            if (result == null) return NotFound(new { message = "العقد غير موجود" });
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            // DEBUG: Expose actual exception for diagnosis (remove before merge)
-            return StatusCode(500, new { error = ex.Message, type = ex.GetType().Name, inner = ex.InnerException?.Message, innerType = ex.InnerException?.GetType().Name, stack = ex.StackTrace?.Split('\n').Take(5).ToArray() });
-        }
+        var result = await service.UpdateContractStatusAsync(id, body.Status);
+        if (result == null) return NotFound(new { message = "العقد غير موجود" });
+        return Ok(result);
     }
 }
 

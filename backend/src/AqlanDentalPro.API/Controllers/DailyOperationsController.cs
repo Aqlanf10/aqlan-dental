@@ -14,6 +14,7 @@ namespace AqlanDentalPro.API.Controllers;
 /// for a given date to support the daily operations dashboard.
 /// </summary>
 [ApiController]
+[Route("api/daily-operations")]
 [Authorize(Policy = "StaffOnly")]
 public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsController> logger) : ControllerBase
 {
@@ -21,7 +22,7 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
     /// Returns the daily operations report for a given date (defaults to today).
     /// Includes patient counts, financial summary, lab order status, and audit overrides.
     /// </summary>
-    [HttpGet("/api/daily-operations/report")]
+    [HttpGet("report")]
     public async Task<IActionResult> GetDailyReport([FromQuery] string? date)
     {
         try

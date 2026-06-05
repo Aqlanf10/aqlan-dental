@@ -106,14 +106,15 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                       AND data_type IN ('character varying', 'text')
                 ) THEN
                     -- STRICT VALIDATION: find first value that is neither a known
-                    -- enum name nor a valid numeric string (0-9)
+                    -- enum name, nor a valid numeric string (0-9), nor a legacy alias
                     SELECT ""Category""::text INTO unknown_cat
                     FROM ""CashFlowTransactions""
                     WHERE ""Category""::text NOT IN (
                         'PatientPayment', 'SupplierPayment', 'SalaryPayment',
                         'DoctorCommission', 'OperationalExpense', 'Refund',
                         'GeneralCost', 'InternalTransfer', 'SalaryAdvance', 'Reversal',
-                        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
+                        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                        'Installment'
                     )
                     LIMIT 1;
 
@@ -122,7 +123,9 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                     END IF;
 
                     -- All values validated; safe to convert.
-                    -- CASE handles both enum name strings and numeric strings.
+                    -- CASE handles enum name strings, numeric strings, and legacy aliases.
+                    -- 'Installment' is a legacy alias for PatientPayment (contract installments
+                    -- are patient payments toward a treatment plan).
                     ALTER TABLE ""CashFlowTransactions""
                     ALTER COLUMN ""Category"" TYPE integer USING CASE ""Category""::text
                         WHEN 'PatientPayment'     THEN 0
@@ -135,6 +138,7 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                         WHEN 'InternalTransfer'   THEN 7
                         WHEN 'SalaryAdvance'      THEN 8
                         WHEN 'Reversal'           THEN 9
+                        WHEN 'Installment'        THEN 0
                         WHEN '0' THEN 0
                         WHEN '1' THEN 1
                         WHEN '2' THEN 2

@@ -9,37 +9,44 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 ///
 /// PROBLEM:
 ///   PostgreSQL error 42883: operator does not exist: character varying = integer
-///   The "Category" column in CashFlowTransactions is stored as varchar/text in the
-///   production database, but EF Core treats FinancialCategory enum as integer
-///   (no HasConversion&lt;string&gt;() configured). Queries like
+///   The "Category" and "Type" columns in CashFlowTransactions are stored as
+///   varchar/text in the production database, but EF Core treats the enums
+///   (FinancialCategory, TransactionType) as integers. Queries like
 ///     WHERE "Category" = 0
 ///   fail because the column type is varchar, not integer.
 ///
-///   Similarly, the "Type" column (TransactionType enum) may have the same mismatch.
+///   EF Core sends integer parameter values for INSERT. PostgreSQL implicitly
+///   casts integer 0 to text '0' when inserting into a varchar column. So the
+///   stored values may be numeric strings ('0','1','2',...) OR enum names
+///   ('PatientPayment','SupplierPayment',...) depending on the provider behavior
+///   and any prior HasConversion configuration.
 ///
 /// FIX:
-///   Convert both columns from varchar to integer using CASE mapping that maps
-///   the string enum names to their corresponding integer values.
+///   Convert both columns from varchar to integer. The CASE mapping handles
+///   BOTH possible varchar formats:
+///     - Enum name strings: 'PatientPayment', 'Inflow', etc.
+///     - Numeric strings: '0', '1', etc. (from PostgreSQL implicit int-to-text cast)
 ///
-///   FinancialCategory enum values (in order):
+///   FinancialCategory enum values:
 ///     PatientPayment=0, SupplierPayment=1, SalaryPayment=2, DoctorCommission=3,
 ///     OperationalExpense=4, Refund=5, GeneralCost=6, InternalTransfer=7,
 ///     SalaryAdvance=8, Reversal=9
 ///
-///   TransactionType enum values (in order):
+///   TransactionType enum values:
 ///     Inflow=0, Outflow=1
 ///
 /// SAFETY (STRICT - no silent financial recoding):
 ///   - Idempotent: only converts if column is currently varchar (not already integer).
-///   - Pre-conversion validation: if ANY unknown string value exists in Category or Type,
-///     the migration RAISES EXCEPTION and FAILS immediately. No fallback, no ELSE 0.
+///   - Pre-conversion validation: if ANY unknown string value exists in Category or Type
+///     (not a known enum name AND not a valid numeric string in range), the migration
+///     RAISES EXCEPTION and FAILS immediately. No fallback, no ELSE 0.
 ///   - This prevents silent misclassification of financial transactions.
 ///   - Diagnostic queries log all distinct values before the validation check.
 ///
 /// RISK:
-///   - If there are existing varchar values that don't match any enum name, the
-///     migration will FAIL. The DBA must manually resolve the unknown values first
-///     (e.g., update or delete them), then re-run the migration.
+///   - If there are existing varchar values that match neither enum names nor numeric
+///     strings in valid range, the migration will FAIL. The DBA must manually resolve
+///     the unknown values first, then re-run the migration.
 ///   - This is a DDL change on a live table; brief AccessExclusiveLock is required.
 ///     Apply during low-traffic period if the table is large.
 /// </summary>
@@ -84,9 +91,9 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
         // ====================================================================
         // 3. Convert CashFlowTransactions.Category from varchar to integer
         // ====================================================================
-        // STRICT: Any unknown value causes RAISE EXCEPTION and migration FAILS.
-        // No ELSE 0, no silent fallback. Financial data must never be
-        // silently reclassified.
+        // Handles BOTH formats: enum name strings ('PatientPayment') AND
+        // numeric strings ('0','1',...) from PostgreSQL implicit int-to-text cast.
+        // STRICT: Any unknown value causes RAISE EXCEPTION. No silent fallback.
         migrationBuilder.Sql(@"
             DO $$
             DECLARE
@@ -98,13 +105,15 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                       AND column_name = 'Category'
                       AND data_type IN ('character varying', 'text')
                 ) THEN
-                    -- STRICT VALIDATION: find first unknown value
+                    -- STRICT VALIDATION: find first value that is neither a known
+                    -- enum name nor a valid numeric string (0-9)
                     SELECT ""Category""::text INTO unknown_cat
                     FROM ""CashFlowTransactions""
                     WHERE ""Category""::text NOT IN (
                         'PatientPayment', 'SupplierPayment', 'SalaryPayment',
                         'DoctorCommission', 'OperationalExpense', 'Refund',
-                        'GeneralCost', 'InternalTransfer', 'SalaryAdvance', 'Reversal'
+                        'GeneralCost', 'InternalTransfer', 'SalaryAdvance', 'Reversal',
+                        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
                     )
                     LIMIT 1;
 
@@ -112,7 +121,8 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                         RAISE EXCEPTION 'Unknown CashFlowTransactions.Category value: %', unknown_cat;
                     END IF;
 
-                    -- All values validated; safe to convert (no ELSE needed in CASE)
+                    -- All values validated; safe to convert.
+                    -- CASE handles both enum name strings and numeric strings.
                     ALTER TABLE ""CashFlowTransactions""
                     ALTER COLUMN ""Category"" TYPE integer USING CASE ""Category""::text
                         WHEN 'PatientPayment'     THEN 0
@@ -125,6 +135,16 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                         WHEN 'InternalTransfer'   THEN 7
                         WHEN 'SalaryAdvance'      THEN 8
                         WHEN 'Reversal'           THEN 9
+                        WHEN '0' THEN 0
+                        WHEN '1' THEN 1
+                        WHEN '2' THEN 2
+                        WHEN '3' THEN 3
+                        WHEN '4' THEN 4
+                        WHEN '5' THEN 5
+                        WHEN '6' THEN 6
+                        WHEN '7' THEN 7
+                        WHEN '8' THEN 8
+                        WHEN '9' THEN 9
                     END;
                     RAISE NOTICE 'CashFlowTransactions.Category converted from varchar to integer.';
                 ELSE
@@ -136,7 +156,9 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
         // ====================================================================
         // 4. Convert CashFlowTransactions.Type from varchar to integer
         // ====================================================================
-        // STRICT: Any unknown value causes RAISE EXCEPTION and migration FAILS.
+        // Handles BOTH formats: enum name strings ('Inflow','Outflow') AND
+        // numeric strings ('0','1') from PostgreSQL implicit int-to-text cast.
+        // STRICT: Any unknown value causes RAISE EXCEPTION. No silent fallback.
         migrationBuilder.Sql(@"
             DO $$
             DECLARE
@@ -148,21 +170,25 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                       AND column_name = 'Type'
                       AND data_type IN ('character varying', 'text')
                 ) THEN
-                    -- STRICT VALIDATION: find first unknown value
+                    -- STRICT VALIDATION: find first value that is neither a known
+                    -- enum name nor a valid numeric string (0-1)
                     SELECT ""Type""::text INTO unknown_type
                     FROM ""CashFlowTransactions""
-                    WHERE ""Type""::text NOT IN ('Inflow', 'Outflow')
+                    WHERE ""Type""::text NOT IN ('Inflow', 'Outflow', '0', '1')
                     LIMIT 1;
 
                     IF unknown_type IS NOT NULL THEN
                         RAISE EXCEPTION 'Unknown CashFlowTransactions.Type value: %', unknown_type;
                     END IF;
 
-                    -- All values validated; safe to convert (no ELSE needed in CASE)
+                    -- All values validated; safe to convert.
+                    -- CASE handles both enum name strings and numeric strings.
                     ALTER TABLE ""CashFlowTransactions""
                     ALTER COLUMN ""Type"" TYPE integer USING CASE ""Type""::text
                         WHEN 'Inflow'  THEN 0
                         WHEN 'Outflow' THEN 1
+                        WHEN '0' THEN 0
+                        WHEN '1' THEN 1
                     END;
                     RAISE NOTICE 'CashFlowTransactions.Type converted from varchar to integer.';
                 ELSE

@@ -411,67 +411,90 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // left its payments active, causing incorrect balance calculations.
         if (contractStatus == ContractStatus.Cancelled)
         {
-            var activePayments = contract.Payments.Where(p => p.IsActive).ToList();
-            foreach (var payment in activePayments)
+            // Finance Transaction Safety: Wrap the entire cancellation in a single
+            // atomic transaction so that treasury balance, CashFlow reversals,
+            // JournalEntry reversals, payment deactivation, and contract status
+            // are committed together or rolled back together.
+            // Previously, UpdateTreasuryBalanceAsync called SaveChangesAsync
+            // independently, and DualWriteReversalEntryAsync also called
+            // SaveChangesAsync, causing partial commits if a later step failed.
+            var useTx = db.Database.IsRelational();
+            var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+            try
             {
-                payment.IsActive = false;
-                payment.DeletedAt = DateTime.UtcNow;
-            }
-
-            // C3: Instead of soft-deleting linked CashFlowTransactions, create reversal entries.
-            // CashFlowTransaction entries are immutable — they MUST NEVER be soft-deleted for
-            // financial ledger integrity.
-            foreach (var payment in activePayments)
-            {
-                var linkedCashflow = await db.CashFlowTransactions
-                    .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
-                if (linkedCashflow != null)
+                var activePayments = contract.Payments.Where(p => p.IsActive).ToList();
+                foreach (var payment in activePayments)
                 {
-                    var reversalCashflow = new CashFlowTransaction
-                    {
-                        TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-REV-{Guid.NewGuid().ToString()[..8].ToUpper()}",
-                        Type = linkedCashflow.Type == TransactionType.Inflow ? TransactionType.Outflow : TransactionType.Inflow,
-                        Category = FinancialCategory.Reversal,
-                        Amount = linkedCashflow.Amount,
-                        PaymentMethod = linkedCashflow.PaymentMethod,
-                        TransactionDate = DateOnly.FromDateTime(DateTime.Today),
-                        ReferenceId = payment.Id,
-                        ReferenceNumber = linkedCashflow.ReferenceNumber,
-                        Description = $"قيد عكسي لإلغاء عقد - {linkedCashflow.Description}",
-                        PerformedBy = currentUser.UserId ?? Guid.Empty,
-                        BranchId = linkedCashflow.BranchId,
-                        CashierSessionId = linkedCashflow.CashierSessionId,
-                        IsReversal = true,
-                        ReversalOfTransactionId = linkedCashflow.Id
-                    };
-                    db.CashFlowTransactions.Add(reversalCashflow);
-
-                    // Link original to the reversal
-                    linkedCashflow.ReversedByTransactionId = reversalCashflow.Id;
-                    // Keep original's IsActive = true (never soft-delete CashFlowTransactions)
+                    payment.IsActive = false;
+                    payment.DeletedAt = DateTime.UtcNow;
                 }
-                // Reverse treasury balance
-                await UpdateTreasuryBalanceAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
 
-                // Finance V3: Dual-write reversal entry for each reversed payment
-                await DualWriteReversalEntryAsync(payment.Id, "إلغاء عقد");
+                // C3: Instead of soft-deleting linked CashFlowTransactions, create reversal entries.
+                // CashFlowTransaction entries are immutable — they MUST NEVER be soft-deleted for
+                // financial ledger integrity.
+                foreach (var payment in activePayments)
+                {
+                    var linkedCashflow = await db.CashFlowTransactions
+                        .FirstOrDefaultAsync(t => t.ReferenceId == payment.Id && t.Category == FinancialCategory.PatientPayment && t.IsActive);
+                    if (linkedCashflow != null)
+                    {
+                        var reversalCashflow = new CashFlowTransaction
+                        {
+                            TransactionNumber = $"TX-{DateTime.UtcNow:yyyyMMdd}-REV-{Guid.NewGuid().ToString()[..8].ToUpper()}",
+                            Type = linkedCashflow.Type == TransactionType.Inflow ? TransactionType.Outflow : TransactionType.Inflow,
+                            Category = FinancialCategory.Reversal,
+                            Amount = linkedCashflow.Amount,
+                            PaymentMethod = linkedCashflow.PaymentMethod,
+                            TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                            ReferenceId = payment.Id,
+                            ReferenceNumber = linkedCashflow.ReferenceNumber,
+                            Description = $"قيد عكسي لإلغاء عقد - {linkedCashflow.Description}",
+                            PerformedBy = currentUser.UserId ?? Guid.Empty,
+                            BranchId = linkedCashflow.BranchId,
+                            CashierSessionId = linkedCashflow.CashierSessionId,
+                            IsReversal = true,
+                            ReversalOfTransactionId = linkedCashflow.Id
+                        };
+                        db.CashFlowTransactions.Add(reversalCashflow);
+
+                        // Link original to the reversal
+                        linkedCashflow.ReversedByTransactionId = reversalCashflow.Id;
+                        // Keep original's IsActive = true (never soft-delete CashFlowTransactions)
+                    }
+                    // Reverse treasury balance — use NoSave variant inside the transaction
+                    await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, -payment.Amount, payment.PaymentMethod);
+
+                    // Finance V3: Dual-write reversal entry for each reversed payment
+                    // DualWriteReversalEntryAsync calls SaveChangesAsync internally,
+                    // which persists all tracked changes within the current transaction.
+                    await DualWriteReversalEntryAsync(payment.Id, "إلغاء عقد");
+                }
+
+                // Persist all tracked changes (contract status, payment deactivations,
+                // CashFlow reversals, treasury balance, JournalEntry reversals)
+                await db.SaveChangesAsync();
+
+                // H8 FIX: Re-evaluate linked invoice statuses after cancelling payments.
+                // TryMarkInvoicePaidAsync calls SaveChangesAsync internally, but since
+                // we are still inside the same transaction, it persists within the tx scope.
+                var affectedInvoiceIds = activePayments
+                    .Where(p => p.InvoiceId.HasValue)
+                    .Select(p => p.InvoiceId!.Value)
+                    .Distinct()
+                    .ToList();
+
+                foreach (var invoiceId in affectedInvoiceIds)
+                {
+                    try { await TryMarkInvoicePaidAsync(invoiceId); }
+                    catch (Exception ex) { logger.LogWarning(ex, "H8: Failed to re-evaluate invoice {InvoiceId} after contract cancellation", invoiceId); }
+                }
+
+                if (useTx) await tx!.CommitAsync();
             }
-
-            // H8 FIX: Re-evaluate linked invoice statuses after cancelling payments
-            var affectedInvoiceIds = activePayments
-                .Where(p => p.InvoiceId.HasValue)
-                .Select(p => p.InvoiceId!.Value)
-                .Distinct()
-                .ToList();
-
-            // Save the contract + payment changes first
-            await db.SaveChangesAsync();
-
-            // Then re-evaluate each affected invoice
-            foreach (var invoiceId in affectedInvoiceIds)
+            catch
             {
-                try { await TryMarkInvoicePaidAsync(invoiceId); }
-                catch (Exception ex) { logger.LogWarning(ex, "H8: Failed to re-evaluate invoice {InvoiceId} after contract cancellation", invoiceId); }
+                if (useTx) await tx!.RollbackAsync();
+                throw;
             }
         }
         else

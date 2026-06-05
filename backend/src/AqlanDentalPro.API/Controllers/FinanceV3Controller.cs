@@ -1073,6 +1073,182 @@ public partial class FinanceV3Controller(
             return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
         }
     }
+
+    // ─── POST /api/finance-v3/diagnostic/apply-cashflow-hotfix — Apply CashFlow Category/Type migration manually ──
+    /// <summary>
+    /// Manually applies the CashFlow Category/Type varchar-to-integer migration.
+    /// This is needed because the EF Core migration chain is blocked by earlier
+    /// pending migrations. This endpoint executes the raw SQL directly.
+    /// Idempotent — only converts if columns are currently varchar.
+    /// </summary>
+    [HttpPost("diagnostic/apply-cashflow-hotfix")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> ApplyCashFlowHotfix()
+    {
+        try
+        {
+            var results = new List<string>();
+
+            // Apply Category conversion
+            var conn = db.Database.GetDbConnection();
+            await conn.OpenAsync();
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    DO $$
+                    DECLARE
+                        unknown_cat TEXT;
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'CashFlowTransactions'
+                              AND column_name = 'Category'
+                              AND data_type IN ('character varying', 'text')
+                        ) THEN
+                            -- STRICT VALIDATION
+                            SELECT ""Category""::text INTO unknown_cat
+                            FROM ""CashFlowTransactions""
+                            WHERE ""Category""::text NOT IN (
+                                'PatientPayment', 'SupplierPayment', 'SalaryPayment',
+                                'DoctorCommission', 'OperationalExpense', 'Refund',
+                                'GeneralCost', 'InternalTransfer', 'SalaryAdvance', 'Reversal',
+                                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                                'Installment'
+                            )
+                            LIMIT 1;
+
+                            IF unknown_cat IS NOT NULL THEN
+                                RAISE EXCEPTION 'Unknown CashFlowTransactions.Category value: %', unknown_cat;
+                            END IF;
+
+                            ALTER TABLE ""CashFlowTransactions""
+                            ALTER COLUMN ""Category"" TYPE integer USING CASE ""Category""::text
+                                WHEN 'PatientPayment'     THEN 0
+                                WHEN 'SupplierPayment'    THEN 1
+                                WHEN 'SalaryPayment'      THEN 2
+                                WHEN 'DoctorCommission'   THEN 3
+                                WHEN 'OperationalExpense' THEN 4
+                                WHEN 'Refund'             THEN 5
+                                WHEN 'GeneralCost'        THEN 6
+                                WHEN 'InternalTransfer'   THEN 7
+                                WHEN 'SalaryAdvance'      THEN 8
+                                WHEN 'Reversal'           THEN 9
+                                WHEN 'Installment'        THEN 0
+                                WHEN '0' THEN 0
+                                WHEN '1' THEN 1
+                                WHEN '2' THEN 2
+                                WHEN '3' THEN 3
+                                WHEN '4' THEN 4
+                                WHEN '5' THEN 5
+                                WHEN '6' THEN 6
+                                WHEN '7' THEN 7
+                                WHEN '8' THEN 8
+                                WHEN '9' THEN 9
+                            END;
+                            RAISE NOTICE 'Category converted from varchar to integer';
+                        ELSE
+                            RAISE NOTICE 'Category is already integer; skipping';
+                        END IF;
+                    END$$;
+                ";
+                await cmd.ExecuteNonQueryAsync();
+                results.Add("Category column processed");
+            }
+            finally { await conn.CloseAsync(); }
+
+            // Apply Type conversion
+            await conn.OpenAsync();
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    DO $$
+                    DECLARE
+                        unknown_type TEXT;
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'CashFlowTransactions'
+                              AND column_name = 'Type'
+                              AND data_type IN ('character varying', 'text')
+                        ) THEN
+                            -- STRICT VALIDATION
+                            SELECT ""Type""::text INTO unknown_type
+                            FROM ""CashFlowTransactions""
+                            WHERE ""Type""::text NOT IN ('Inflow', 'Outflow', '0', '1')
+                            LIMIT 1;
+
+                            IF unknown_type IS NOT NULL THEN
+                                RAISE EXCEPTION 'Unknown CashFlowTransactions.Type value: %', unknown_type;
+                            END IF;
+
+                            ALTER TABLE ""CashFlowTransactions""
+                            ALTER COLUMN ""Type"" TYPE integer USING CASE ""Type""::text
+                                WHEN 'Inflow'  THEN 0
+                                WHEN 'Outflow' THEN 1
+                                WHEN '0' THEN 0
+                                WHEN '1' THEN 1
+                            END;
+                            RAISE NOTICE 'Type converted from varchar to integer';
+                        ELSE
+                            RAISE NOTICE 'Type is already integer; skipping';
+                        END IF;
+                    END$$;
+                ";
+                await cmd.ExecuteNonQueryAsync();
+                results.Add("Type column processed");
+            }
+            finally { await conn.CloseAsync(); }
+
+            // Also reconcile the migration history — mark the hotfix as applied
+            // This prevents EF Core from trying to re-apply it later
+            await conn.OpenAsync();
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+                    VALUES ('20260621000000_Hotfix_CashFlowCategorySchemaMismatch', '8.0')
+                    ON CONFLICT (""MigrationId"") DO NOTHING;
+                ";
+                await cmd.ExecuteNonQueryAsync();
+                results.Add("Migration history updated");
+            }
+            finally { await conn.CloseAsync(); }
+
+            // Verify
+            string? catType = null, typeType = null;
+            await conn.OpenAsync();
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    SELECT column_name, data_type FROM information_schema.columns
+                    WHERE table_name = 'CashFlowTransactions' AND column_name IN ('Category', 'Type')
+                ";
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    if (reader.GetString(0) == "Category") catType = reader.GetString(1);
+                    if (reader.GetString(0) == "Type") typeType = reader.GetString(1);
+                }
+            }
+            finally { await conn.CloseAsync(); }
+
+            return Ok(new
+            {
+                message = "Hotfix applied successfully",
+                steps = results,
+                categoryType = catType,
+                typeType = typeType,
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message, stack = ex.StackTrace?.Substring(0, Math.Min(500, ex.StackTrace?.Length ?? 0)) });
+        }
+    }
 }
 
 /// <summary>

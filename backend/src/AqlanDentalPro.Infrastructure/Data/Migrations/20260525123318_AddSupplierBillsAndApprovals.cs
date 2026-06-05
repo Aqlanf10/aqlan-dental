@@ -65,7 +65,7 @@ BEGIN
 END $$;
 ");
 
-        // 7. CreateTable SupplierBills
+        // 7. CreateTable SupplierBills (no inline FKs — added separately below)
         migrationBuilder.Sql(@"
 CREATE TABLE IF NOT EXISTS ""SupplierBills"" (
     ""Id"" uuid NOT NULL,
@@ -88,15 +88,11 @@ CREATE TABLE IF NOT EXISTS ""SupplierBills"" (
     ""IsActive"" boolean NOT NULL,
     ""DeletedAt"" timestamptz NULL,
     ""DeletedBy"" uuid NULL,
-    CONSTRAINT ""PK_SupplierBills"" PRIMARY KEY (""Id""),
-    CONSTRAINT ""FK_SupplierBills_Suppliers_SupplierId"" FOREIGN KEY (""SupplierId"") REFERENCES ""Suppliers"" (""Id"") ON DELETE CASCADE,
-    CONSTRAINT ""FK_SupplierBills_PurchaseOrders_PurchaseOrderId"" FOREIGN KEY (""PurchaseOrderId"") REFERENCES ""PurchaseOrders"" (""Id"") ON DELETE RESTRICT,
-    CONSTRAINT ""FK_SupplierBills_LabOrders_LabOrderId"" FOREIGN KEY (""LabOrderId"") REFERENCES ""LabOrders"" (""Id"") ON DELETE RESTRICT,
-    CONSTRAINT ""FK_SupplierBills_Branches_BranchId"" FOREIGN KEY (""BranchId"") REFERENCES ""Branches"" (""Id"") ON DELETE CASCADE
+    CONSTRAINT ""PK_SupplierBills"" PRIMARY KEY (""Id"")
 );
 ");
 
-        // 8. CreateTable SupplierBillPayments
+        // 8. CreateTable SupplierBillPayments (no inline FKs — added separately below)
         migrationBuilder.Sql(@"
 CREATE TABLE IF NOT EXISTS ""SupplierBillPayments"" (
     ""Id"" uuid NOT NULL,
@@ -113,23 +109,129 @@ CREATE TABLE IF NOT EXISTS ""SupplierBillPayments"" (
     ""IsActive"" boolean NOT NULL,
     ""DeletedAt"" timestamptz NULL,
     ""DeletedBy"" uuid NULL,
-    CONSTRAINT ""PK_SupplierBillPayments"" PRIMARY KEY (""Id""),
-    CONSTRAINT ""FK_SupplierBillPayments_SupplierBills_SupplierBillId"" FOREIGN KEY (""SupplierBillId"") REFERENCES ""SupplierBills"" (""Id"") ON DELETE CASCADE,
-    CONSTRAINT ""FK_SupplierBillPayments_CashFlowTransactions_CashFlowTransactionId"" FOREIGN KEY (""CashFlowTransactionId"") REFERENCES ""CashFlowTransactions"" (""Id"") ON DELETE RESTRICT
+    CONSTRAINT ""PK_SupplierBillPayments"" PRIMARY KEY (""Id"")
 );
 ");
 
         // 9. Create indexes
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_OperationalExpenses_ApprovedById"" ON ""OperationalExpenses"" (""ApprovedById"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_OperationalExpenses_CashFlowTransactionId"" ON ""OperationalExpenses"" (""CashFlowTransactionId"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_SupplierBillPayments_CashFlowTransactionId"" ON ""SupplierBillPayments"" (""CashFlowTransactionId"");");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'OperationalExpenses' AND column_name = 'ApprovedById') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_OperationalExpenses_ApprovedById"" ON ""OperationalExpenses"" (""ApprovedById"");
+    END IF;
+END $$;
+");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'OperationalExpenses' AND column_name = 'CashFlowTransactionId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_OperationalExpenses_CashFlowTransactionId"" ON ""OperationalExpenses"" (""CashFlowTransactionId"");
+    END IF;
+END $$;
+");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'SupplierBillPayments' AND column_name = 'CashFlowTransactionId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_SupplierBillPayments_CashFlowTransactionId"" ON ""SupplierBillPayments"" (""CashFlowTransactionId"");
+    END IF;
+END $$;
+");
         migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_SupplierBillPayments_SupplierBillId"" ON ""SupplierBillPayments"" (""SupplierBillId"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_BranchId"" ON ""SupplierBills"" (""BranchId"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_LabOrderId"" ON ""SupplierBills"" (""LabOrderId"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_PurchaseOrderId"" ON ""SupplierBills"" (""PurchaseOrderId"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_SupplierId"" ON ""SupplierBills"" (""SupplierId"");");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'SupplierBills' AND column_name = 'BranchId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_BranchId"" ON ""SupplierBills"" (""BranchId"");
+    END IF;
+END $$;
+");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'SupplierBills' AND column_name = 'LabOrderId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_LabOrderId"" ON ""SupplierBills"" (""LabOrderId"");
+    END IF;
+END $$;
+");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'SupplierBills' AND column_name = 'PurchaseOrderId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_PurchaseOrderId"" ON ""SupplierBills"" (""PurchaseOrderId"");
+    END IF;
+END $$;
+");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'SupplierBills' AND column_name = 'SupplierId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_SupplierBills_SupplierId"" ON ""SupplierBills"" (""SupplierId"");
+    END IF;
+END $$;
+");
 
-        // 10-11. AddForeignKey constraints
+        // 10. AddForeignKey constraints — SupplierBills (idempotent)
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_SupplierBills_Suppliers_SupplierId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Suppliers') THEN
+            ALTER TABLE ""SupplierBills"" ADD CONSTRAINT ""FK_SupplierBills_Suppliers_SupplierId""
+                FOREIGN KEY (""SupplierId"") REFERENCES ""Suppliers""(""Id"") ON DELETE CASCADE;
+        END IF;
+    END IF;
+END $$;
+");
+
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_SupplierBills_PurchaseOrders_PurchaseOrderId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PurchaseOrders') THEN
+            ALTER TABLE ""SupplierBills"" ADD CONSTRAINT ""FK_SupplierBills_PurchaseOrders_PurchaseOrderId""
+                FOREIGN KEY (""PurchaseOrderId"") REFERENCES ""PurchaseOrders""(""Id"") ON DELETE RESTRICT;
+        END IF;
+    END IF;
+END $$;
+");
+
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_SupplierBills_LabOrders_LabOrderId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrders') THEN
+            ALTER TABLE ""SupplierBills"" ADD CONSTRAINT ""FK_SupplierBills_LabOrders_LabOrderId""
+                FOREIGN KEY (""LabOrderId"") REFERENCES ""LabOrders""(""Id"") ON DELETE RESTRICT;
+        END IF;
+    END IF;
+END $$;
+");
+
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_SupplierBills_Branches_BranchId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Branches') THEN
+            ALTER TABLE ""SupplierBills"" ADD CONSTRAINT ""FK_SupplierBills_Branches_BranchId""
+                FOREIGN KEY (""BranchId"") REFERENCES ""Branches""(""Id"") ON DELETE CASCADE;
+        END IF;
+    END IF;
+END $$;
+");
+
+        // 11. AddForeignKey constraints — SupplierBillPayments (idempotent)
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_SupplierBillPayments_SupplierBills_SupplierBillId') THEN
+        ALTER TABLE ""SupplierBillPayments"" ADD CONSTRAINT ""FK_SupplierBillPayments_SupplierBills_SupplierBillId""
+            FOREIGN KEY (""SupplierBillId"") REFERENCES ""SupplierBills""(""Id"") ON DELETE CASCADE;
+    END IF;
+END $$;
+");
+
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_SupplierBillPayments_CashFlowTransactions_CashFlowTransactionId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CashFlowTransactions') THEN
+            ALTER TABLE ""SupplierBillPayments"" ADD CONSTRAINT ""FK_SupplierBillPayments_CashFlowTransactions_CashFlowTransactionId""
+                FOREIGN KEY (""CashFlowTransactionId"") REFERENCES ""CashFlowTransactions""(""Id"") ON DELETE RESTRICT;
+        END IF;
+    END IF;
+END $$;
+");
+
+        // 12. AddForeignKey constraints — OperationalExpenses (idempotent)
         migrationBuilder.Sql(@"
 DO $$
 BEGIN

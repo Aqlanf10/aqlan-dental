@@ -958,6 +958,91 @@ public partial class FinanceV3Controller(
         }
         catch { await tx.RollbackAsync(); throw; }
     }
+
+    // ─── GET /api/finance-v3/diagnostic/cashflow-columns — Diagnostic: Category & Type column values ──
+    /// <summary>
+    /// Temporary diagnostic endpoint to inspect the distinct values in
+    /// CashFlowTransactions.Category and CashFlowTransactions.Type columns.
+    /// This is needed to debug migration failures. Uses raw SQL to bypass EF Core
+    /// enum mapping issues.
+    /// </summary>
+    [HttpGet("diagnostic/cashflow-columns")]
+    [Authorize(Policy = "AdminOnly")]
+    public async Task<IActionResult> GetCashFlowColumnDiagnostic()
+    {
+        try
+        {
+            var categories = new List<string>();
+            var types = new List<string>();
+            string? categoryDataType = null;
+            string? typeDataType = null;
+
+            // Get column data types
+            var colConn = db.Database.GetDbConnection();
+            await colConn.OpenAsync();
+            try
+            {
+                using var colCmd = colConn.CreateCommand();
+                colCmd.CommandText = @"
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_name = 'CashFlowTransactions'
+                      AND column_name IN ('Category', 'Type')";
+                using var colReader = await colCmd.ExecuteReaderAsync();
+                while (await colReader.ReadAsync())
+                {
+                    var colName = colReader.GetString(0);
+                    var dtype = colReader.GetString(1);
+                    if (colName == "Category") categoryDataType = dtype;
+                    if (colName == "Type") typeDataType = dtype;
+                }
+            }
+            finally { await colConn.CloseAsync(); }
+
+            // Get distinct Category values using raw SQL
+            var catConn = db.Database.GetDbConnection();
+            await catConn.OpenAsync();
+            try
+            {
+                using var catCmd = catConn.CreateCommand();
+                catCmd.CommandText = @"SELECT DISTINCT ""Category""::text FROM ""CashFlowTransactions"" ORDER BY ""Category""::text";
+                using var catReader = await catCmd.ExecuteReaderAsync();
+                while (await catReader.ReadAsync())
+                {
+                    categories.Add(catReader.GetString(0));
+                }
+            }
+            finally { await catConn.CloseAsync(); }
+
+            // Get distinct Type values using raw SQL
+            var typeConn = db.Database.GetDbConnection();
+            await typeConn.OpenAsync();
+            try
+            {
+                using var typeCmd = typeConn.CreateCommand();
+                typeCmd.CommandText = @"SELECT DISTINCT ""Type""::text FROM ""CashFlowTransactions"" ORDER BY ""Type""::text";
+                using var typeReader = await typeCmd.ExecuteReaderAsync();
+                while (await typeReader.ReadAsync())
+                {
+                    types.Add(typeReader.GetString(0));
+                }
+            }
+            finally { await typeConn.CloseAsync(); }
+
+            return Ok(new
+            {
+                categoryDataType,
+                typeDataType,
+                distinctCategories = categories,
+                distinctTypes = types,
+                totalRows = categories.Count > 0 || types.Count > 0 ? (int?)null : 0,
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message, inner = ex.InnerException?.Message });
+        }
+    }
 }
 
 /// <summary>

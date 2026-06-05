@@ -39,7 +39,8 @@ public class AuthController(
     ILoginAttemptService loginAttempts,
     IAuditService auditService,
     IEmailService emailService,
-    AppDbContext db) : ControllerBase
+    AppDbContext db,
+    ILogger<AuthController> logger) : ControllerBase
 {
     private const string RefreshTokenCookie = "refresh_token";
 
@@ -127,7 +128,7 @@ public class AuthController(
             // Sprint 1 Fix: Log refresh failure safely WITHOUT printing tokens
             // The user is logged out only if refresh genuinely fails (expired/invalid token),
             // not due to transient server errors (Redis timeout, etc.)
-            Console.WriteLine($"[Auth] RefreshToken failed: {ex.GetType().Name}");
+            logger.LogError(ex, "RefreshToken failed: {ExceptionType}", ex.GetType().Name);
             
             // For transient errors (Redis timeout, network issues), return 500 instead of 401
             // so the frontend can retry instead of force-logging-out the user

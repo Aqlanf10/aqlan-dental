@@ -345,22 +345,24 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
         var dto = MapPayment(payment);
 
-        // Notify accountants and admins
-        _ = Task.Run(async () =>
+        // Notify accountants and admins — fire-and-forget replaced with direct await
+        // to avoid DbContext concurrent operation. If the notification service shares
+        // the same DI scope, running on a different thread via Task.Run could access
+        // a disposed DbContext or cause concurrent access. Instead, we await the
+        // notification after the financial transaction is fully committed. If the
+        // notification fails, we log a warning but do not fail the payment.
+        try
         {
-            try
-            {
-                var patientName = dto.PatientName ?? "مريض";
-                var amountStr = req.Amount.ToString("N0");
-                var msg = $"تم استلام دفعة {amountStr} ر.ي من {patientName}";
-                await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
-                await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "[FinanceService] Non-blocking notification failed after payment {PaymentId}", payment.Id);
-            }
-        });
+            var patientName = dto.PatientName ?? "مريض";
+            var amountStr = req.Amount.ToString("N0");
+            var msg = $"تم استلام دفعة {amountStr} ر.ي من {patientName}";
+            await notifications.NotifyRoleAsync("Accountant", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
+            await notifications.NotifyRoleAsync("Admin", "payment", "دفعة جديدة", msg, "Payment", payment.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[FinanceService] Payment notification failed after payment {PaymentId} — payment is still saved", payment.Id);
+        }
 
         return dto;
     }

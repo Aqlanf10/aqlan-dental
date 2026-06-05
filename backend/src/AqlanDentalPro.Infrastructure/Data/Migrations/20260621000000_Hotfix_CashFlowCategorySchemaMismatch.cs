@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 
 /// <summary>
-/// Hotfix — CashFlowTransactions.Category and Type schema mismatch.
+/// Hotfix - CashFlowTransactions.Category and Type schema mismatch.
 ///
 /// PROBLEM:
 ///   PostgreSQL error 42883: operator does not exist: character varying = integer
@@ -29,17 +29,17 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations;
 ///   TransactionType enum values (in order):
 ///     Inflow=0, Outflow=1
 ///
-/// SAFETY:
+/// SAFETY (STRICT - no silent financial recoding):
 ///   - Idempotent: only converts if column is currently varchar (not already integer).
-///   - Unknown string values are NOT silently mapped; they raise a notice and default
-///     to PatientPayment (0) / Inflow (0) respectively, but the operator should
-///     review the output of the diagnostic query before applying this migration.
-///   - The migration first logs any distinct values that don't match expected enum
-///     names so the DBA can review before the ALTER COLUMN executes.
+///   - Pre-conversion validation: if ANY unknown string value exists in Category or Type,
+///     the migration RAISES EXCEPTION and FAILS immediately. No fallback, no ELSE 0.
+///   - This prevents silent misclassification of financial transactions.
+///   - Diagnostic queries log all distinct values before the validation check.
 ///
 /// RISK:
-///   - If there are existing varchar values that don't match any enum name, they will
-///     be mapped to 0. The pre-conversion diagnostic SELECT helps catch this.
+///   - If there are existing varchar values that don't match any enum name, the
+///     migration will FAIL. The DBA must manually resolve the unknown values first
+///     (e.g., update or delete them), then re-run the migration.
 ///   - This is a DDL change on a live table; brief AccessExclusiveLock is required.
 ///     Apply during low-traffic period if the table is large.
 /// </summary>
@@ -47,15 +47,15 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        // ════════════════════════════════════════════════════════════════════
+        // ====================================================================
         // 1. Diagnostic: log distinct Category values before conversion
-        // ════════════════════════════════════════════════════════════════════
+        // ====================================================================
         migrationBuilder.Sql(@"
             DO $$
             DECLARE
                 cat_val TEXT;
             BEGIN
-                RAISE NOTICE '=== CashFlowTransactions.Category — Pre-conversion distinct values ===';
+                RAISE NOTICE '=== CashFlowTransactions.Category - Pre-conversion distinct values ===';
                 FOR cat_val IN
                     SELECT DISTINCT ""Category""::text FROM ""CashFlowTransactions""
                 LOOP
@@ -64,15 +64,15 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
             END$$;
         ");
 
-        // ════════════════════════════════════════════════════════════════════
+        // ====================================================================
         // 2. Diagnostic: log distinct Type values before conversion
-        // ════════════════════════════════════════════════════════════════════
+        // ====================================================================
         migrationBuilder.Sql(@"
             DO $$
             DECLARE
                 type_val TEXT;
             BEGIN
-                RAISE NOTICE '=== CashFlowTransactions.Type — Pre-conversion distinct values ===';
+                RAISE NOTICE '=== CashFlowTransactions.Type - Pre-conversion distinct values ===';
                 FOR type_val IN
                     SELECT DISTINCT ""Type""::text FROM ""CashFlowTransactions""
                 LOOP
@@ -81,18 +81,16 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
             END$$;
         ");
 
-        // ════════════════════════════════════════════════════════════════════
-        // 3. Convert CashFlowTransactions.Category from varchar → integer
-        // ════════════════════════════════════════════════════════════════════
-        // Mapping based on FinancialCategory enum (C# zero-based order):
-        //   PatientPayment=0, SupplierPayment=1, SalaryPayment=2, DoctorCommission=3,
-        //   OperationalExpense=4, Refund=5, GeneralCost=6, InternalTransfer=7,
-        //   SalaryAdvance=8, Reversal=9
-        //
-        // Idempotent: only converts if column is currently varchar/character varying.
-        // Unknown values are logged and mapped to 0 (PatientPayment) as safe default.
+        // ====================================================================
+        // 3. Convert CashFlowTransactions.Category from varchar to integer
+        // ====================================================================
+        // STRICT: Any unknown value causes RAISE EXCEPTION and migration FAILS.
+        // No ELSE 0, no silent fallback. Financial data must never be
+        // silently reclassified.
         migrationBuilder.Sql(@"
             DO $$
+            DECLARE
+                unknown_cat TEXT;
             BEGIN
                 IF EXISTS (
                     SELECT 1 FROM information_schema.columns
@@ -100,20 +98,21 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                       AND column_name = 'Category'
                       AND data_type IN ('character varying', 'text')
                 ) THEN
-                    -- Check for unknown values before converting
-                    IF EXISTS (
-                        SELECT 1 FROM ""CashFlowTransactions""
-                        WHERE ""Category""::text NOT IN (
-                            'PatientPayment', 'SupplierPayment', 'SalaryPayment',
-                            'DoctorCommission', 'OperationalExpense', 'Refund',
-                            'GeneralCost', 'InternalTransfer', 'SalaryAdvance', 'Reversal'
-                        )
-                    ) THEN
-                        RAISE WARNING 'CashFlowTransactions.Category contains unexpected values! '
-                            'These will be mapped to 0 (PatientPayment). '
-                            'Review the diagnostic output above.';
+                    -- STRICT VALIDATION: find first unknown value
+                    SELECT ""Category""::text INTO unknown_cat
+                    FROM ""CashFlowTransactions""
+                    WHERE ""Category""::text NOT IN (
+                        'PatientPayment', 'SupplierPayment', 'SalaryPayment',
+                        'DoctorCommission', 'OperationalExpense', 'Refund',
+                        'GeneralCost', 'InternalTransfer', 'SalaryAdvance', 'Reversal'
+                    )
+                    LIMIT 1;
+
+                    IF unknown_cat IS NOT NULL THEN
+                        RAISE EXCEPTION 'Unknown CashFlowTransactions.Category value: %', unknown_cat;
                     END IF;
 
+                    -- All values validated; safe to convert (no ELSE needed in CASE)
                     ALTER TABLE ""CashFlowTransactions""
                     ALTER COLUMN ""Category"" TYPE integer USING CASE ""Category""::text
                         WHEN 'PatientPayment'     THEN 0
@@ -126,25 +125,22 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                         WHEN 'InternalTransfer'   THEN 7
                         WHEN 'SalaryAdvance'      THEN 8
                         WHEN 'Reversal'           THEN 9
-                        ELSE 0
                     END;
                     RAISE NOTICE 'CashFlowTransactions.Category converted from varchar to integer.';
                 ELSE
-                    RAISE NOTICE 'CashFlowTransactions.Category is already integer — skipping.';
+                    RAISE NOTICE 'CashFlowTransactions.Category is already integer; skipping.';
                 END IF;
             END$$;
         ");
 
-        // ════════════════════════════════════════════════════════════════════
-        // 4. Convert CashFlowTransactions.Type from varchar → integer
-        // ════════════════════════════════════════════════════════════════════
-        // Mapping based on TransactionType enum (C# zero-based order):
-        //   Inflow=0, Outflow=1
-        //
-        // Same idempotent pattern. Type may or may not be varchar in production
-        // but converting it preventively avoids the same class of error.
+        // ====================================================================
+        // 4. Convert CashFlowTransactions.Type from varchar to integer
+        // ====================================================================
+        // STRICT: Any unknown value causes RAISE EXCEPTION and migration FAILS.
         migrationBuilder.Sql(@"
             DO $$
+            DECLARE
+                unknown_type TEXT;
             BEGIN
                 IF EXISTS (
                     SELECT 1 FROM information_schema.columns
@@ -152,25 +148,25 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                       AND column_name = 'Type'
                       AND data_type IN ('character varying', 'text')
                 ) THEN
-                    -- Check for unknown values before converting
-                    IF EXISTS (
-                        SELECT 1 FROM ""CashFlowTransactions""
-                        WHERE ""Type""::text NOT IN ('Inflow', 'Outflow')
-                    ) THEN
-                        RAISE WARNING 'CashFlowTransactions.Type contains unexpected values! '
-                            'These will be mapped to 0 (Inflow). '
-                            'Review the diagnostic output above.';
+                    -- STRICT VALIDATION: find first unknown value
+                    SELECT ""Type""::text INTO unknown_type
+                    FROM ""CashFlowTransactions""
+                    WHERE ""Type""::text NOT IN ('Inflow', 'Outflow')
+                    LIMIT 1;
+
+                    IF unknown_type IS NOT NULL THEN
+                        RAISE EXCEPTION 'Unknown CashFlowTransactions.Type value: %', unknown_type;
                     END IF;
 
+                    -- All values validated; safe to convert (no ELSE needed in CASE)
                     ALTER TABLE ""CashFlowTransactions""
                     ALTER COLUMN ""Type"" TYPE integer USING CASE ""Type""::text
                         WHEN 'Inflow'  THEN 0
                         WHEN 'Outflow' THEN 1
-                        ELSE 0
                     END;
                     RAISE NOTICE 'CashFlowTransactions.Type converted from varchar to integer.';
                 ELSE
-                    RAISE NOTICE 'CashFlowTransactions.Type is already integer — skipping.';
+                    RAISE NOTICE 'CashFlowTransactions.Type is already integer; skipping.';
                 END IF;
             END$$;
         ");
@@ -178,13 +174,16 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        // ════════════════════════════════════════════════════════════════════
-        // Revert: Convert Category and Type back from integer → varchar
-        // ════════════════════════════════════════════════════════════════════
+        // ====================================================================
+        // Revert: Convert Category and Type back from integer to varchar
+        // STRICT: Any unknown integer causes RAISE EXCEPTION and rollback FAILS.
+        // ====================================================================
 
-        // Revert Category: integer → varchar(30)
+        // Revert Category: integer -> varchar(30)
         migrationBuilder.Sql(@"
             DO $$
+            DECLARE
+                unknown_cat_int INTEGER;
             BEGIN
                 IF EXISTS (
                     SELECT 1 FROM information_schema.columns
@@ -192,6 +191,17 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                       AND column_name = 'Category'
                       AND data_type = 'integer'
                 ) THEN
+                    -- STRICT VALIDATION: find first unknown integer
+                    SELECT ""Category"" INTO unknown_cat_int
+                    FROM ""CashFlowTransactions""
+                    WHERE ""Category"" NOT IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+                    LIMIT 1;
+
+                    IF unknown_cat_int IS NOT NULL THEN
+                        RAISE EXCEPTION 'Unknown CashFlowTransactions.Category integer value: %', unknown_cat_int;
+                    END IF;
+
+                    -- All values validated; safe to convert (no ELSE needed in CASE)
                     ALTER TABLE ""CashFlowTransactions""
                     ALTER COLUMN ""Category"" TYPE varchar(30) USING CASE ""Category""
                         WHEN 0 THEN 'PatientPayment'
@@ -204,15 +214,16 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                         WHEN 7 THEN 'InternalTransfer'
                         WHEN 8 THEN 'SalaryAdvance'
                         WHEN 9 THEN 'Reversal'
-                        ELSE 'PatientPayment'
                     END;
                 END IF;
             END$$;
         ");
 
-        // Revert Type: integer → varchar(20)
+        // Revert Type: integer -> varchar(20)
         migrationBuilder.Sql(@"
             DO $$
+            DECLARE
+                unknown_type_int INTEGER;
             BEGIN
                 IF EXISTS (
                     SELECT 1 FROM information_schema.columns
@@ -220,11 +231,21 @@ public partial class Hotfix_CashFlowCategorySchemaMismatch : Migration
                       AND column_name = 'Type'
                       AND data_type = 'integer'
                 ) THEN
+                    -- STRICT VALIDATION: find first unknown integer
+                    SELECT ""Type"" INTO unknown_type_int
+                    FROM ""CashFlowTransactions""
+                    WHERE ""Type"" NOT IN (0, 1)
+                    LIMIT 1;
+
+                    IF unknown_type_int IS NOT NULL THEN
+                        RAISE EXCEPTION 'Unknown CashFlowTransactions.Type integer value: %', unknown_type_int;
+                    END IF;
+
+                    -- All values validated; safe to convert (no ELSE needed in CASE)
                     ALTER TABLE ""CashFlowTransactions""
                     ALTER COLUMN ""Type"" TYPE varchar(20) USING CASE ""Type""
                         WHEN 0 THEN 'Inflow'
                         WHEN 1 THEN 'Outflow'
-                        ELSE 'Inflow'
                     END;
                 END IF;
             END$$;

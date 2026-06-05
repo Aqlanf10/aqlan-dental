@@ -48,94 +48,102 @@ public class ClinicQueueController(
     [HttpGet("today")]
     public async Task<IActionResult> GetTodayQueue([FromQuery] Guid? doctorId)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        var query = db.ClinicQueueItems
-            .Include(q => q.Patient)
-            .Include(q => q.Doctor)
-            .Include(q => q.Appointment)
-            .Where(q => q.QueueDate == today && q.IsActive);
-
-        if (doctorId.HasValue)
-            query = query.Where(q => q.DoctorId == doctorId.Value);
-
-        var items = await query
-            .OrderByDescending(q => q.Priority)
-            .ThenBy(q => q.SortOrder)
-            .ThenBy(q => q.CreatedAt)
-            .ToListAsync();
-
-        // Calculate average service time for per-patient estimated wait
-        var completedItems = await db.ClinicQueueItems
-            .Where(q => q.QueueDate == today
-                     && q.Status == ClinicQueueStatus.Completed
-                     && q.StartedAt.HasValue
-                     && q.CompletedAt.HasValue
-                     && q.IsActive)
-            .Select(q => new { q.StartedAt, q.CompletedAt })
-            .ToListAsync();
-
-        double avgServiceTime = 15; // Default fallback
-        if (completedItems.Count > 0)
+        try
         {
-            avgServiceTime = Math.Max(1, completedItems
-                .Where(q => q.CompletedAt!.Value > q.StartedAt!.Value)
-                .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
-                .DefaultIfEmpty(15)
-                .Average());
-        }
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Count waiting patients for position calculation
-        var waitingItems = items
-            .Where(i => i.Status == ClinicQueueStatus.Waiting)
-            .OrderByDescending(i => i.Priority)
-            .ThenBy(i => i.SortOrder)
-            .ThenBy(i => i.CreatedAt)
-            .ToList();
+            var query = db.ClinicQueueItems
+                .Include(q => q.Patient)
+                .Include(q => q.Doctor)
+                .Include(q => q.Appointment)
+                .Where(q => q.QueueDate == today && q.IsActive);
 
-        var result = items.Select(q =>
-        {
-            // Calculate position for waiting patients
-            int? position = null;
-            int? estimatedWaitMinutes = null;
-            if (q.Status == ClinicQueueStatus.Waiting)
+            if (doctorId.HasValue)
+                query = query.Where(q => q.DoctorId == doctorId.Value);
+
+            var items = await query
+                .OrderByDescending(q => q.Priority)
+                .ThenBy(q => q.SortOrder)
+                .ThenBy(q => q.CreatedAt)
+                .ToListAsync();
+
+            // Calculate average service time for per-patient estimated wait
+            var completedItems = await db.ClinicQueueItems
+                .Where(q => q.QueueDate == today
+                         && q.Status == ClinicQueueStatus.Completed
+                         && q.StartedAt.HasValue
+                         && q.CompletedAt.HasValue
+                         && q.IsActive)
+                .Select(q => new { q.StartedAt, q.CompletedAt })
+                .ToListAsync();
+
+            double avgServiceTime = 15; // Default fallback
+            if (completedItems.Count > 0)
             {
-                position = waitingItems.FindIndex(w => w.Id == q.Id) + 1;
-                if (position > 0)
-                    estimatedWaitMinutes = (int)Math.Ceiling(position.Value * avgServiceTime);
+                avgServiceTime = Math.Max(1, completedItems
+                    .Where(q => q.CompletedAt!.Value > q.StartedAt!.Value)
+                    .Select(q => (q.CompletedAt!.Value - q.StartedAt!.Value).TotalMinutes)
+                    .DefaultIfEmpty(15)
+                    .Average());
             }
 
-            return new
-            {
-                q.Id,
-                q.PatientId,
-                PatientName = BuildPatientDisplayName(q.Patient),
-                PatientNumber = q.Patient != null ? q.Patient.PatientNumber : "",
-                q.AppointmentId,
-                AppointmentTime = q.Appointment != null ? q.Appointment.StartTime.ToString("HH:mm") : (string?)null,
-                q.VisitId,
-                DoctorName = q.Doctor != null ? q.Doctor.Name : "",
-                q.DoctorId,
-                q.RoomName,
-                Status = q.Status.ToString(),
-                StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
-                Priority = q.Priority.ToString(),
-                PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority),
-                q.SortOrder,
-                q.RecallCount,
-                q.CalledAt,
-                q.InRoomAt,
-                q.StartedAt,
-                q.CompletedAt,
-                q.NoShowAt,
-                q.Notes,
-                Position = position,
-                EstimatedWaitMinutes = estimatedWaitMinutes,
-                q.CreatedAt
-            };
-        });
+            // Count waiting patients for position calculation
+            var waitingItems = items
+                .Where(i => i.Status == ClinicQueueStatus.Waiting)
+                .OrderByDescending(i => i.Priority)
+                .ThenBy(i => i.SortOrder)
+                .ThenBy(i => i.CreatedAt)
+                .ToList();
 
-        return Ok(result);
+            var result = items.Select(q =>
+            {
+                // Calculate position for waiting patients
+                int? position = null;
+                int? estimatedWaitMinutes = null;
+                if (q.Status == ClinicQueueStatus.Waiting)
+                {
+                    position = waitingItems.FindIndex(w => w.Id == q.Id) + 1;
+                    if (position > 0)
+                        estimatedWaitMinutes = (int)Math.Ceiling(position.Value * avgServiceTime);
+                }
+
+                return new
+                {
+                    q.Id,
+                    q.PatientId,
+                    PatientName = BuildPatientDisplayName(q.Patient),
+                    PatientNumber = q.Patient != null ? q.Patient.PatientNumber : "",
+                    q.AppointmentId,
+                    AppointmentTime = q.Appointment != null ? q.Appointment.StartTime.ToString("HH:mm") : (string?)null,
+                    q.VisitId,
+                    DoctorName = q.Doctor != null ? q.Doctor.Name : "",
+                    q.DoctorId,
+                    q.RoomName,
+                    Status = q.Status.ToString(),
+                    StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
+                    Priority = q.Priority.ToString(),
+                    PriorityArabic = ClinicQueueStatusTransitions.GetPriorityArabicLabel(q.Priority),
+                    q.SortOrder,
+                    q.RecallCount,
+                    q.CalledAt,
+                    q.InRoomAt,
+                    q.StartedAt,
+                    q.CompletedAt,
+                    q.NoShowAt,
+                    q.Notes,
+                    Position = position,
+                    EstimatedWaitMinutes = estimatedWaitMinutes,
+                    q.CreatedAt
+                };
+            });
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetTodayQueue failed");
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل قائمة الانتظار" });
+        }
     }
 
     // ─── POST /api/clinic-queue ──────────────────────────────────────────────

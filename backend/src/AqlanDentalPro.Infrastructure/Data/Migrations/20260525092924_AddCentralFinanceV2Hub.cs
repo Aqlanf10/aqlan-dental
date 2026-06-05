@@ -12,6 +12,63 @@ namespace AqlanDentalPro.Infrastructure.Data.Migrations
         {
             migrationBuilder.Sql(@"
 -- ============================================================
+-- Step 0: Create Employees table (MUST be before any FK to Employees)
+-- This table was never created by any previous migration or startup SQL,
+-- yet this migration and others reference it via FK.
+-- ============================================================
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'Employees'
+    ) THEN
+        CREATE TABLE ""Employees"" (
+            ""Id""               UUID                      NOT NULL DEFAULT gen_random_uuid(),
+            ""UserId""           UUID                      NOT NULL,
+            ""FullName""         VARCHAR(200)              NOT NULL,
+            ""Phone""            VARCHAR(20)               NULL,
+            ""NationalId""       VARCHAR(50)               NULL,
+            ""Position""         VARCHAR(100)              NULL,
+            ""BranchId""         UUID                      NULL,
+            ""HireDate""         TIMESTAMPTZ               NULL,
+            ""BaseSalary""       NUMERIC(12,2)             NULL,
+            ""EmergencyContact"" VARCHAR(200)              NULL,
+            ""EmergencyPhone""   VARCHAR(20)               NULL,
+            ""Notes""            VARCHAR(1000)             NULL,
+            ""CreatedAt""        TIMESTAMPTZ               NOT NULL DEFAULT now(),
+            ""UpdatedAt""        TIMESTAMPTZ               NOT NULL DEFAULT now(),
+            ""IsActive""         BOOLEAN                   NOT NULL DEFAULT true,
+            ""DeletedAt""        TIMESTAMPTZ               NULL,
+            ""DeletedBy""        UUID                      NULL,
+            CONSTRAINT ""PK_Employees"" PRIMARY KEY (""Id"")
+        );
+    END IF;
+END $$;
+
+-- FK: Employees.UserId -> Users.Id (ON DELETE RESTRICT)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Employees_Users_UserId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Users') THEN
+            ALTER TABLE ""Employees"" ADD CONSTRAINT ""FK_Employees_Users_UserId""
+                FOREIGN KEY (""UserId"") REFERENCES ""Users""(""Id"") ON DELETE RESTRICT;
+        END IF;
+    END IF;
+END $$;
+
+-- FK: Employees.BranchId -> Branches.Id (ON DELETE SET NULL)
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_Employees_Branches_BranchId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Branches') THEN
+            ALTER TABLE ""Employees"" ADD CONSTRAINT ""FK_Employees_Branches_BranchId""
+                FOREIGN KEY (""BranchId"") REFERENCES ""Branches""(""Id"") ON DELETE SET NULL;
+        END IF;
+    END IF;
+END $$;
+
+-- Indexes on Employees
+CREATE INDEX IF NOT EXISTS ""IX_Employees_UserId"" ON ""Employees"" (""UserId"");
+CREATE INDEX IF NOT EXISTS ""IX_Employees_BranchId"" ON ""Employees"" (""BranchId"");
+
+-- ============================================================
 -- Step 1: Idempotent column additions on existing tables
 -- ============================================================
 ALTER TABLE ""Patients"" ADD COLUMN IF NOT EXISTS ""Email"" TEXT NULL;
@@ -419,6 +476,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SmsTemplates_TemplateKey"" ON ""SmsTempla
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Drop Employees table (only if empty — safety net against data loss)
+            // Must drop AFTER child tables that reference it
+            // Child tables are dropped first below, then Employees at the end
+
             migrationBuilder.DropTable(
                 name: "AdvancePayments");
 
@@ -457,6 +518,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SmsTemplates_TemplateKey"" ON ""SmsTempla
 
             migrationBuilder.DropTable(
                 name: "CashierSessions");
+
+            // Drop Employees table after all child tables (AdvancePayments, Attendances, etc.)
+            // that reference it have been dropped above.
+            // Safety: only drop if empty to prevent accidental data loss.
+            migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Employees') THEN
+        IF NOT EXISTS (SELECT 1 FROM ""Employees"" LIMIT 1) THEN
+            DROP TABLE ""Employees"";
+        END IF;
+    END IF;
+END $$;
+");
 
             // Drop columns — this migration is the schema owner for these overlapping columns.
             // Later migration AddSeparateReminderTrackingAndPatientEmail (20260610000000) has

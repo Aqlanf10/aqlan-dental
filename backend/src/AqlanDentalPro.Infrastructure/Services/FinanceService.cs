@@ -249,66 +249,63 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // together or rolled back together. Previously, UpdateTreasuryBalanceAsync called
         // SaveChangesAsync independently, committing entities before the JE transaction started.
 
-        // H9 FIX: Generate receipt number INSIDE the transaction to avoid DbContext concurrency
-        // issues. Previously GenerateReceiptNumberAsync was called before BeginTransactionAsync,
-        // and its internal pg_advisory_lock call caused "A second operation was started on this
-        // context instance" because the DbContext was already tracking the transaction.
-        var receiptNumber = await GenerateReceiptNumberAsync();
-
-        var payment = new Payment
-        {
-            PatientId = req.PatientId,
-            ContractId = req.ContractId,
-            InvoiceId = req.InvoiceId,
-            Amount = req.Amount,
-            PaymentDate = DateOnly.FromDateTime(DateTime.Today),
-            PaymentMethod = req.PaymentMethod,
-            ServiceDescription = req.ServiceDescription,
-            Specialty = req.Specialty,
-            DoctorId = req.DoctorId,
-            BranchId = branchId,
-            ReceivedBy = currentUser.UserId,
-            ReceiptNumber = receiptNumber,
-            Notes = req.Notes
-        };
-
-        db.Payments.Add(payment);
-
-        // Auto-create receipt record
-        db.Receipts.Add(new Receipt
-        {
-            PaymentId = payment.Id,
-            ReceiptNumber = receiptNumber,
-            PrintedBy = currentUser.UserId
-        });
-
-        // Auto-create central ledger cashflow transaction (Inflow)
-        var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
-        var cashflow = new CashFlowTransaction
-        {
-            TransactionNumber = $"TX-{datePart}-IN-{payment.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
-            Type = TransactionType.Inflow,
-            Category = FinancialCategory.PatientPayment,
-            Amount = payment.Amount,
-            PaymentMethod = payment.PaymentMethod ?? "cash",
-            TransactionDate = payment.PaymentDate,
-            ReferenceId = payment.Id,
-            ReferenceNumber = payment.ReceiptNumber,
-            Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
-            PerformedBy = userId,
-            BranchId = branchId,
-            CashierSessionId = activeSession.Id
-        };
-        db.CashFlowTransactions.Add(cashflow);
-
-        // Finance V3: True atomic dual-write — start transaction BEFORE any entity mutation
-        // so that Payment, Receipt, CashFlow, Treasury, and JournalEntry are all committed
-        // together or rolled back together. Previously, UpdateTreasuryBalanceAsync called
-        // SaveChangesAsync independently, committing entities before the JE transaction started.
+        // H9 FIX: Generate receipt number and ALL entity mutations INSIDE the transaction
+        // to avoid DbContext concurrency issues. Any DbContext query (like GenerateReceiptNumberAsync)
+        // before BeginTransactionAsync can conflict with the transaction's DbContext tracking.
         var useTx = db.Database.IsRelational();
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
+        Payment payment;
         try
         {
+            var receiptNumber = await GenerateReceiptNumberAsync();
+
+            payment = new Payment
+            {
+                PatientId = req.PatientId,
+                ContractId = req.ContractId,
+                InvoiceId = req.InvoiceId,
+                Amount = req.Amount,
+                PaymentDate = DateOnly.FromDateTime(DateTime.Today),
+                PaymentMethod = req.PaymentMethod,
+                ServiceDescription = req.ServiceDescription,
+                Specialty = req.Specialty,
+                DoctorId = req.DoctorId,
+                BranchId = branchId,
+                ReceivedBy = currentUser.UserId,
+                ReceiptNumber = receiptNumber,
+                Notes = req.Notes
+            };
+
+            db.Payments.Add(payment);
+
+            // Auto-create receipt record
+            db.Receipts.Add(new Receipt
+            {
+                PaymentId = payment.Id,
+                ReceiptNumber = receiptNumber,
+                PrintedBy = currentUser.UserId
+            });
+
+            // Auto-create central ledger cashflow transaction (Inflow)
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-IN-{payment.ReceiptNumber?[4..] ?? Guid.NewGuid().ToString()[..8]}",
+                Type = TransactionType.Inflow,
+                Category = FinancialCategory.PatientPayment,
+                Amount = payment.Amount,
+                PaymentMethod = payment.PaymentMethod ?? "cash",
+                TransactionDate = payment.PaymentDate,
+                ReferenceId = payment.Id,
+                ReferenceNumber = payment.ReceiptNumber,
+                Description = $"تحصيل دفعة مريض - سند قبض {payment.ReceiptNumber}",
+                PerformedBy = userId,
+                BranchId = branchId,
+                CashierSessionId = activeSession.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+
+            // All entity mutations are inside the transaction started above
             await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, payment.Amount, payment.PaymentMethod);
             await DualWritePaymentEntryAsync(payment, cashflow, invoice);
             // CreateEntryAsync (inside DualWrite) calls SaveChangesAsync, which persists

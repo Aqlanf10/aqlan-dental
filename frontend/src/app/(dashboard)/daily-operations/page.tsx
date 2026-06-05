@@ -87,7 +87,7 @@ import ClinicQueueView from "./_modules/ClinicQueueView";
 import RoomsView from "./_modules/RoomsView";
 import LabView from "./_modules/LabView";
 import ReportView from "./_modules/ReportView";
-import PatientJourneyView from "./_modules/PatientJourneyView";
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Inline styles for animations
@@ -1405,46 +1405,30 @@ export default function DailyOperationsPage() {
               </div>
             )}
 
-            {/* Tab: رحلة المرضى */}
+            {/* Tab: رحلة المرضى — يفتح الواجهة الأصلية المعتمدة */}
             {activeModule === "journey" && (
-              <div className="flex-1 flex flex-col min-w-0">
-                <div className="bg-white p-3 border-b flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-5 h-5" style={{ color: NAVY }} />
-                    <div>
-                      <h3 className="text-xs font-bold" style={{ color: NAVY }}>رحلة المرضى اليومية</h3>
-                      <p className="text-[10px] text-gray-400 font-medium">
-                        متابعة كل مريض من تسجيل الوصول حتى قائمة الانتظار والعيادة والمحاسبة والخروج
-                      </p>
-                    </div>
+              <div className="flex-1 flex flex-col min-w-0 items-center justify-center bg-gradient-to-b from-white to-gray-50 p-8">
+                <div className="max-w-md w-full rounded-2xl border border-gray-200 bg-white shadow-lg p-8 text-center">
+                  <div
+                    className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl"
+                    style={{ background: `${NAVY}12` }}
+                  >
+                    <Activity className="w-8 h-8" style={{ color: NAVY }} />
                   </div>
-                  {items.length > 0 && (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border"
-                      style={{ background: NAVY + "08", color: NAVY, borderColor: NAVY + "22" }}>
-                      {items.length} حالة اليوم
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex-1 overflow-hidden bg-white">
-                  <PatientJourneyView
-                    items={items}
-                    loading={itemsLoading}
-                    onIntake={handleIntake}
-                    onSendToQueue={handleSendToQueue}
-                    onCallPatient={handleCallPatient}
-                    onEnterRoom={handleEnterRoom}
-                    onQuickPayment={handleQuickPayment}
-                    onCreateDraftInvoice={handleCreateDraftInvoice}
-                    createDraftInvoicePending={createDraftInvoiceMutation.isPending}
-                    onBookAppointment={handleBookAppointment}
-                    onCreateLabOrder={handleCreateLabOrder}
-                    onCompleteVisit={handleCompleteVisit}
-                    onLeftWithoutCompletion={handleLeftWithoutCompletion}
-                    onOpenSidePanel={handleOpenSidePanel}
-                    selectedPatientId={sidePanelOpen ? sidePanelItem?.patientId : undefined}
-                    onContextMenu={handleItemContextMenu}
-                  />
+                  <h2 className="text-lg font-extrabold mb-2" style={{ color: NAVY }}>
+                    رحلة المرضى اليومية
+                  </h2>
+                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                    يتم فتح الواجهة الكاملة المعتمدة لرحلة المرضى — من تسجيل الوصول حتى إنهاء الحساب والخروج
+                  </p>
+                  <button
+                    onClick={() => router.push("/patient-journey")}
+                    className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold text-white shadow-md transition hover:shadow-lg hover:opacity-90 active:scale-[0.98]"
+                    style={{ background: NAVY }}
+                  >
+                    <Activity className="w-5 h-5" />
+                    فتح رحلة المرضى
+                  </button>
                 </div>
               </div>
             )}
@@ -1718,7 +1702,7 @@ export default function DailyOperationsPage() {
         onConfirm={handleBookConfirm}
       />
 
-      {/* Lab Order Modal — opened from PatientJourneyView */}
+      {/* Lab Order Modal */}
       {labOrderModalOpen && (
         <NewLabOrderModal onClose={() => setLabOrderModalOpen(false)} />
       )}

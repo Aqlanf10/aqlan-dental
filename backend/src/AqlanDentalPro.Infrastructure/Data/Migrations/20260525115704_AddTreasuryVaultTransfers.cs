@@ -1,162 +1,100 @@
-﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AqlanDentalPro.Infrastructure.Data.Migrations
+namespace AqlanDentalPro.Infrastructure.Data.Migrations;
+
+/// <inheritdoc />
+public partial class AddTreasuryVaultTransfers : Migration
 {
     /// <inheritdoc />
-    public partial class AddTreasuryVaultTransfers : Migration
+    protected override void Up(MigrationBuilder migrationBuilder)
     {
-        /// <inheritdoc />
-        protected override void Up(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.AlterColumn<string>(
-                name: "PlanLabel",
-                table: "TreatmentPlans",
-                type: "character varying(5)",
-                maxLength: 5,
-                nullable: false,
-                defaultValue: "A",
-                oldClrType: typeof(string),
-                oldType: "character varying(5)",
-                oldMaxLength: 5,
-                oldNullable: true,
-                oldDefaultValue: "A");
+        // 1. AlterColumn PlanLabel on TreatmentPlans: only alter if column is currently nullable
+        migrationBuilder.Sql(@"
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'TreatmentPlans' AND column_name = 'PlanLabel' AND is_nullable = 'YES'
+    ) THEN
+        ALTER TABLE ""TreatmentPlans"" ALTER COLUMN ""PlanLabel"" SET NOT NULL;
+        ALTER TABLE ""TreatmentPlans"" ALTER COLUMN ""PlanLabel"" SET DEFAULT 'A';
+        UPDATE ""TreatmentPlans"" SET ""PlanLabel"" = 'A' WHERE ""PlanLabel"" IS NULL;
+    END IF;
+END $$;
+");
 
-            migrationBuilder.CreateTable(
-                name: "Treasuries",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "text", nullable: false),
-                    Type = table.Column<int>(type: "integer", nullable: false),
-                    Balance = table.Column<decimal>(type: "numeric", nullable: false),
-                    BranchId = table.Column<Guid>(type: "uuid", nullable: false),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Treasuries", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Treasuries_Branches_BranchId",
-                        column: x => x.BranchId,
-                        principalTable: "Branches",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+        // 2. CreateTable Treasuries
+        migrationBuilder.Sql(@"
+CREATE TABLE IF NOT EXISTS ""Treasuries"" (
+    ""Id"" uuid NOT NULL,
+    ""Name"" text NULL,
+    ""Type"" integer NOT NULL,
+    ""Balance"" numeric NOT NULL,
+    ""BranchId"" uuid NULL,
+    ""IsActive"" boolean NOT NULL,
+    ""CreatedAt"" timestamptz NOT NULL,
+    ""UpdatedAt"" timestamptz NOT NULL,
+    ""DeletedAt"" timestamptz NULL,
+    ""DeletedBy"" uuid NULL,
+    CONSTRAINT ""PK_Treasuries"" PRIMARY KEY (""Id""),
+    CONSTRAINT ""FK_Treasuries_Branches_BranchId"" FOREIGN KEY (""BranchId"") REFERENCES ""Branches"" (""Id"") ON DELETE CASCADE
+);
+");
 
-            migrationBuilder.CreateTable(
-                name: "VaultTransfers",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    TransferNumber = table.Column<string>(type: "text", nullable: false),
-                    SourceTreasuryId = table.Column<Guid>(type: "uuid", nullable: true),
-                    DestinationTreasuryId = table.Column<Guid>(type: "uuid", nullable: false),
-                    CashierSessionId = table.Column<Guid>(type: "uuid", nullable: true),
-                    Amount = table.Column<decimal>(type: "numeric", nullable: false),
-                    TransferDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    PerformedBy = table.Column<Guid>(type: "uuid", nullable: false),
-                    PerformedByUserId = table.Column<Guid>(type: "uuid", nullable: false),
-                    ApprovedBy = table.Column<Guid>(type: "uuid", nullable: true),
-                    ApprovedByUserId = table.Column<Guid>(type: "uuid", nullable: true),
-                    ApprovalDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    Status = table.Column<int>(type: "integer", nullable: false),
-                    Notes = table.Column<string>(type: "text", nullable: true),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_VaultTransfers", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_VaultTransfers_CashierSessions_CashierSessionId",
-                        column: x => x.CashierSessionId,
-                        principalTable: "CashierSessions",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_VaultTransfers_Treasuries_DestinationTreasuryId",
-                        column: x => x.DestinationTreasuryId,
-                        principalTable: "Treasuries",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_VaultTransfers_Treasuries_SourceTreasuryId",
-                        column: x => x.SourceTreasuryId,
-                        principalTable: "Treasuries",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_VaultTransfers_Users_ApprovedByUserId",
-                        column: x => x.ApprovedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_VaultTransfers_Users_PerformedByUserId",
-                        column: x => x.PerformedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+        // 3. CreateTable VaultTransfers
+        migrationBuilder.Sql(@"
+CREATE TABLE IF NOT EXISTS ""VaultTransfers"" (
+    ""Id"" uuid NOT NULL,
+    ""TransferNumber"" text NULL,
+    ""SourceTreasuryId"" uuid NULL,
+    ""DestinationTreasuryId"" uuid NULL,
+    ""CashierSessionId"" uuid NULL,
+    ""Amount"" numeric NOT NULL,
+    ""TransferDate"" timestamptz NOT NULL,
+    ""PerformedBy"" uuid NULL,
+    ""PerformedByUserId"" uuid NULL,
+    ""ApprovedBy"" uuid NULL,
+    ""ApprovedByUserId"" uuid NULL,
+    ""ApprovalDate"" timestamptz NULL,
+    ""Status"" integer NOT NULL,
+    ""Notes"" text NULL,
+    ""IsActive"" boolean NOT NULL,
+    ""CreatedAt"" timestamptz NOT NULL,
+    ""UpdatedAt"" timestamptz NOT NULL,
+    ""DeletedAt"" timestamptz NULL,
+    ""DeletedBy"" uuid NULL,
+    CONSTRAINT ""PK_VaultTransfers"" PRIMARY KEY (""Id""),
+    CONSTRAINT ""FK_VaultTransfers_Treasuries_SourceTreasuryId"" FOREIGN KEY (""SourceTreasuryId"") REFERENCES ""Treasuries"" (""Id"") ON DELETE RESTRICT,
+    CONSTRAINT ""FK_VaultTransfers_Treasuries_DestinationTreasuryId"" FOREIGN KEY (""DestinationTreasuryId"") REFERENCES ""Treasuries"" (""Id"") ON DELETE CASCADE,
+    CONSTRAINT ""FK_VaultTransfers_CashierSessions_CashierSessionId"" FOREIGN KEY (""CashierSessionId"") REFERENCES ""CashierSessions"" (""Id"") ON DELETE RESTRICT,
+    CONSTRAINT ""FK_VaultTransfers_Users_PerformedByUserId"" FOREIGN KEY (""PerformedByUserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE,
+    CONSTRAINT ""FK_VaultTransfers_Users_ApprovedByUserId"" FOREIGN KEY (""ApprovedByUserId"") REFERENCES ""Users"" (""Id"") ON DELETE RESTRICT
+);
+");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Treasuries_BranchId",
-                table: "Treasuries",
-                column: "BranchId");
+        // 4. Create indexes
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_Treasuries_BranchId"" ON ""Treasuries"" (""BranchId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_VaultTransfers_ApprovedByUserId"" ON ""VaultTransfers"" (""ApprovedByUserId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_VaultTransfers_CashierSessionId"" ON ""VaultTransfers"" (""CashierSessionId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_VaultTransfers_DestinationTreasuryId"" ON ""VaultTransfers"" (""DestinationTreasuryId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_VaultTransfers_PerformedByUserId"" ON ""VaultTransfers"" (""PerformedByUserId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_VaultTransfers_SourceTreasuryId"" ON ""VaultTransfers"" (""SourceTreasuryId"");");
+    }
 
-            migrationBuilder.CreateIndex(
-                name: "IX_VaultTransfers_ApprovedByUserId",
-                table: "VaultTransfers",
-                column: "ApprovedByUserId");
+    /// <inheritdoc />
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropTable(name: "VaultTransfers");
+        migrationBuilder.DropTable(name: "Treasuries");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_VaultTransfers_CashierSessionId",
-                table: "VaultTransfers",
-                column: "CashierSessionId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_VaultTransfers_DestinationTreasuryId",
-                table: "VaultTransfers",
-                column: "DestinationTreasuryId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_VaultTransfers_PerformedByUserId",
-                table: "VaultTransfers",
-                column: "PerformedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_VaultTransfers_SourceTreasuryId",
-                table: "VaultTransfers",
-                column: "SourceTreasuryId");
-        }
-
-        /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropTable(
-                name: "VaultTransfers");
-
-            migrationBuilder.DropTable(
-                name: "Treasuries");
-
-            migrationBuilder.AlterColumn<string>(
-                name: "PlanLabel",
-                table: "TreatmentPlans",
-                type: "character varying(5)",
-                maxLength: 5,
-                nullable: true,
-                defaultValue: "A",
-                oldClrType: typeof(string),
-                oldType: "character varying(5)",
-                oldMaxLength: 5,
-                oldDefaultValue: "A");
-        }
+        migrationBuilder.AlterColumn<string>(
+            name: "PlanLabel",
+            table: "TreatmentPlans",
+            type: "character varying(5)",
+            nullable: true,
+            oldType: "character varying(5)",
+            oldDefaultValue: "A");
     }
 }

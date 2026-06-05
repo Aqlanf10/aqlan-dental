@@ -1,126 +1,95 @@
-﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace AqlanDentalPro.Infrastructure.Data.Migrations
+namespace AqlanDentalPro.Infrastructure.Data.Migrations;
+
+/// <inheritdoc />
+public partial class AddLabManagementFoundation : Migration
 {
     /// <inheritdoc />
-    public partial class AddLabManagementFoundation : Migration
+    protected override void Up(MigrationBuilder migrationBuilder)
     {
-        /// <inheritdoc />
-        protected override void Up(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.AddColumn<Guid>(
-                name: "LabId",
-                table: "LabOrders",
-                type: "uuid",
-                nullable: true);
+        // 1. AddColumn LabId (uuid, NULL) on LabOrders
+        migrationBuilder.Sql(@"
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrders' AND column_name = 'LabId') THEN
+        ALTER TABLE ""LabOrders"" ADD COLUMN ""LabId"" uuid NULL;
+    END IF;
+END $$;
+");
 
-            migrationBuilder.CreateTable(
-                name: "Labs",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    Phone = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
-                    WhatsApp = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: true),
-                    Address = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    ContactPerson = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
-                    Email = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
-                    Notes = table.Column<string>(type: "text", nullable: true),
-                    BranchId = table.Column<Guid>(type: "uuid", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Labs", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Labs_Branches_BranchId",
-                        column: x => x.BranchId,
-                        principalTable: "Branches",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                });
+        // 2. CreateTable Labs
+        migrationBuilder.Sql(@"
+CREATE TABLE IF NOT EXISTS ""Labs"" (
+    ""Id"" uuid NOT NULL,
+    ""Name"" character varying(200) NULL,
+    ""Phone"" character varying(30) NULL,
+    ""WhatsApp"" character varying(30) NULL,
+    ""Address"" character varying(500) NULL,
+    ""ContactPerson"" character varying(200) NULL,
+    ""Email"" character varying(200) NULL,
+    ""Notes"" text NULL,
+    ""BranchId"" uuid NULL,
+    ""CreatedAt"" timestamptz NOT NULL,
+    ""UpdatedAt"" timestamptz NOT NULL,
+    ""IsActive"" boolean NOT NULL,
+    ""DeletedAt"" timestamptz NULL,
+    ""DeletedBy"" uuid NULL,
+    CONSTRAINT ""PK_Labs"" PRIMARY KEY (""Id""),
+    CONSTRAINT ""FK_Labs_Branches_BranchId"" FOREIGN KEY (""BranchId"") REFERENCES ""Branches"" (""Id"") ON DELETE SET NULL
+);
+");
 
-            migrationBuilder.CreateTable(
-                name: "LabWorkTypes",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    NameAr = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    Category = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    SortOrder = table.Column<int>(type: "integer", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedBy = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_LabWorkTypes", x => x.Id);
-                });
+        // 3. CreateTable LabWorkTypes
+        migrationBuilder.Sql(@"
+CREATE TABLE IF NOT EXISTS ""LabWorkTypes"" (
+    ""Id"" uuid NOT NULL,
+    ""Name"" character varying(100) NULL,
+    ""NameAr"" character varying(100) NULL,
+    ""Category"" character varying(50) NULL,
+    ""SortOrder"" integer NOT NULL,
+    ""CreatedAt"" timestamptz NOT NULL,
+    ""UpdatedAt"" timestamptz NOT NULL,
+    ""IsActive"" boolean NOT NULL,
+    ""DeletedAt"" timestamptz NULL,
+    ""DeletedBy"" uuid NULL,
+    CONSTRAINT ""PK_LabWorkTypes"" PRIMARY KEY (""Id"")
+);
+");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_LabOrders_LabId",
-                table: "LabOrders",
-                column: "LabId");
+        // 4. Create indexes
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabOrders_LabId"" ON ""LabOrders"" (""LabId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_Labs_BranchId"" ON ""Labs"" (""BranchId"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_Labs_Name"" ON ""Labs"" (""Name"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabWorkTypes_Name"" ON ""LabWorkTypes"" (""Name"");");
+        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabWorkTypes_SortOrder"" ON ""LabWorkTypes"" (""SortOrder"");");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Labs_BranchId",
-                table: "Labs",
-                column: "BranchId");
+        // 5. AddForeignKey FK_LabOrders_Labs_LabId
+        migrationBuilder.Sql(@"
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrders_Labs_LabId') THEN
+        ALTER TABLE ""LabOrders"" ADD CONSTRAINT ""FK_LabOrders_Labs_LabId""
+            FOREIGN KEY (""LabId"") REFERENCES ""Labs"" (""Id"") ON DELETE SET NULL;
+    END IF;
+END $$;
+");
+    }
 
-            migrationBuilder.CreateIndex(
-                name: "IX_Labs_Name",
-                table: "Labs",
-                column: "Name");
+    /// <inheritdoc />
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropForeignKey(
+            name: "FK_LabOrders_Labs_LabId",
+            table: "LabOrders");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_LabWorkTypes_Name",
-                table: "LabWorkTypes",
-                column: "Name");
+        migrationBuilder.DropTable(name: "LabWorkTypes");
+        migrationBuilder.DropTable(name: "Labs");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_LabWorkTypes_SortOrder",
-                table: "LabWorkTypes",
-                column: "SortOrder");
+        migrationBuilder.DropIndex(name: "IX_LabOrders_LabId", table: "LabOrders");
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_LabOrders_Labs_LabId",
-                table: "LabOrders",
-                column: "LabId",
-                principalTable: "Labs",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
-        }
-
-        /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropForeignKey(
-                name: "FK_LabOrders_Labs_LabId",
-                table: "LabOrders");
-
-            migrationBuilder.DropTable(
-                name: "Labs");
-
-            migrationBuilder.DropTable(
-                name: "LabWorkTypes");
-
-            migrationBuilder.DropIndex(
-                name: "IX_LabOrders_LabId",
-                table: "LabOrders");
-
-            migrationBuilder.DropColumn(
-                name: "LabId",
-                table: "LabOrders");
-        }
+        migrationBuilder.DropColumn(name: "LabId", table: "LabOrders");
     }
 }

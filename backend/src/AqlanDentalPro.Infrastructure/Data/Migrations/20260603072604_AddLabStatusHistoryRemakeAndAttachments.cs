@@ -70,7 +70,7 @@ BEGIN
 END $$;
 ");
 
-        // 7. CreateTable LabOrderAttachments
+        // 7. CreateTable LabOrderAttachments (no inline FKs — added separately below)
         migrationBuilder.Sql(@"
 CREATE TABLE IF NOT EXISTS ""LabOrderAttachments"" (
     ""Id"" uuid NOT NULL,
@@ -87,14 +87,11 @@ CREATE TABLE IF NOT EXISTS ""LabOrderAttachments"" (
     ""IsActive"" boolean NOT NULL,
     ""DeletedAt"" timestamptz NULL,
     ""DeletedBy"" uuid NULL,
-    CONSTRAINT ""PK_LabOrderAttachments"" PRIMARY KEY (""Id""),
-    CONSTRAINT ""FK_LabOrderAttachments_LabOrders_LabOrderId"" FOREIGN KEY (""LabOrderId"") REFERENCES ""LabOrders"" (""Id"") ON DELETE CASCADE,
-    CONSTRAINT ""FK_LabOrderAttachments_LabOrderItems_LabOrderItemId"" FOREIGN KEY (""LabOrderItemId"") REFERENCES ""LabOrderItems"" (""Id"") ON DELETE SET NULL,
-    CONSTRAINT ""FK_LabOrderAttachments_Users_UploadedBy"" FOREIGN KEY (""UploadedBy"") REFERENCES ""Users"" (""Id"") ON DELETE SET NULL
+    CONSTRAINT ""PK_LabOrderAttachments"" PRIMARY KEY (""Id"")
 );
 ");
 
-        // 8. CreateTable LabOrderStatusHistories
+        // 8. CreateTable LabOrderStatusHistories (no inline FKs — added separately below)
         migrationBuilder.Sql(@"
 CREATE TABLE IF NOT EXISTS ""LabOrderStatusHistories"" (
     ""Id"" uuid NOT NULL,
@@ -108,21 +105,94 @@ CREATE TABLE IF NOT EXISTS ""LabOrderStatusHistories"" (
     ""IsActive"" boolean NOT NULL,
     ""DeletedAt"" timestamptz NULL,
     ""DeletedBy"" uuid NULL,
-    CONSTRAINT ""PK_LabOrderStatusHistories"" PRIMARY KEY (""Id""),
-    CONSTRAINT ""FK_LabOrderStatusHistories_LabOrders_LabOrderId"" FOREIGN KEY (""LabOrderId"") REFERENCES ""LabOrders"" (""Id"") ON DELETE CASCADE,
-    CONSTRAINT ""FK_LabOrderStatusHistories_Users_ChangedByUserId"" FOREIGN KEY (""ChangedByUserId"") REFERENCES ""Users"" (""Id"") ON DELETE SET NULL
+    CONSTRAINT ""PK_LabOrderStatusHistories"" PRIMARY KEY (""Id"")
 );
 ");
 
-        // 9. Create indexes
+        // 9. Create indexes (all IF NOT EXISTS, with column existence guards where needed)
         migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabOrders_OriginalOrderId"" ON ""LabOrders"" (""OriginalOrderId"");");
         migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabOrderAttachments_LabOrderId"" ON ""LabOrderAttachments"" (""LabOrderId"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabOrderAttachments_LabOrderItemId"" ON ""LabOrderAttachments"" (""LabOrderItemId"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabOrderAttachments_UploadedBy"" ON ""LabOrderAttachments"" (""UploadedBy"");");
-        migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabOrderStatusHistories_ChangedByUserId"" ON ""LabOrderStatusHistories"" (""ChangedByUserId"");");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrderAttachments' AND column_name = 'LabOrderItemId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_LabOrderAttachments_LabOrderItemId"" ON ""LabOrderAttachments"" (""LabOrderItemId"");
+    END IF;
+END $$;
+");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrderAttachments' AND column_name = 'UploadedBy') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_LabOrderAttachments_UploadedBy"" ON ""LabOrderAttachments"" (""UploadedBy"");
+    END IF;
+END $$;
+");
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LabOrderStatusHistories' AND column_name = 'ChangedByUserId') THEN
+        CREATE INDEX IF NOT EXISTS ""IX_LabOrderStatusHistories_ChangedByUserId"" ON ""LabOrderStatusHistories"" (""ChangedByUserId"");
+    END IF;
+END $$;
+");
         migrationBuilder.Sql(@"CREATE INDEX IF NOT EXISTS ""IX_LabOrderStatusHistories_LabOrderId"" ON ""LabOrderStatusHistories"" (""LabOrderId"");");
 
-        // 10. AddForeignKey FK_LabOrders_LabOrders_OriginalOrderId
+        // 10. AddForeignKey — LabOrderAttachments (idempotent)
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderAttachments_LabOrders_LabOrderId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrders') THEN
+            ALTER TABLE ""LabOrderAttachments"" ADD CONSTRAINT ""FK_LabOrderAttachments_LabOrders_LabOrderId""
+                FOREIGN KEY (""LabOrderId"") REFERENCES ""LabOrders""(""Id"") ON DELETE CASCADE;
+        END IF;
+    END IF;
+END $$;
+");
+
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderAttachments_LabOrderItems_LabOrderItemId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrderItems') THEN
+            ALTER TABLE ""LabOrderAttachments"" ADD CONSTRAINT ""FK_LabOrderAttachments_LabOrderItems_LabOrderItemId""
+                FOREIGN KEY (""LabOrderItemId"") REFERENCES ""LabOrderItems""(""Id"") ON DELETE SET NULL;
+        END IF;
+    END IF;
+END $$;
+");
+
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderAttachments_Users_UploadedBy') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Users') THEN
+            ALTER TABLE ""LabOrderAttachments"" ADD CONSTRAINT ""FK_LabOrderAttachments_Users_UploadedBy""
+                FOREIGN KEY (""UploadedBy"") REFERENCES ""Users""(""Id"") ON DELETE SET NULL;
+        END IF;
+    END IF;
+END $$;
+");
+
+        // 11. AddForeignKey — LabOrderStatusHistories (idempotent)
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderStatusHistories_LabOrders_LabOrderId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LabOrders') THEN
+            ALTER TABLE ""LabOrderStatusHistories"" ADD CONSTRAINT ""FK_LabOrderStatusHistories_LabOrders_LabOrderId""
+                FOREIGN KEY (""LabOrderId"") REFERENCES ""LabOrders""(""Id"") ON DELETE CASCADE;
+        END IF;
+    END IF;
+END $$;
+");
+
+        migrationBuilder.Sql(@"
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'FK_LabOrderStatusHistories_Users_ChangedByUserId') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Users') THEN
+            ALTER TABLE ""LabOrderStatusHistories"" ADD CONSTRAINT ""FK_LabOrderStatusHistories_Users_ChangedByUserId""
+                FOREIGN KEY (""ChangedByUserId"") REFERENCES ""Users""(""Id"") ON DELETE SET NULL;
+        END IF;
+    END IF;
+END $$;
+");
+
+        // 12. AddForeignKey FK_LabOrders_LabOrders_OriginalOrderId (idempotent)
         migrationBuilder.Sql(@"
 DO $$
 BEGIN

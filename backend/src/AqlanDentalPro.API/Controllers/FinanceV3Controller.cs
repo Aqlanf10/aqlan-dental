@@ -1029,13 +1029,43 @@ public partial class FinanceV3Controller(
             }
             finally { await typeConn.CloseAsync(); }
 
+            // Also check migration history
+            var appliedMigrations = new List<string>();
+            var pendingMigrations = new List<string>();
+            try
+            {
+                var migConn = db.Database.GetDbConnection();
+                await migConn.OpenAsync();
+                try
+                {
+                    using var migCmd = migConn.CreateCommand();
+                    migCmd.CommandText = @"SELECT ""MigrationId"" FROM ""__EFMigrationsHistory"" ORDER BY ""MigrationId""";
+                    using var migReader = await migCmd.ExecuteReaderAsync();
+                    while (await migReader.ReadAsync())
+                    {
+                        appliedMigrations.Add(migReader.GetString(0));
+                    }
+                }
+                finally { await migConn.CloseAsync(); }
+
+                // Check pending migrations
+                var allMigrations = db.Database.GetPendingMigrations();
+                pendingMigrations = allMigrations.ToList();
+            }
+            catch (Exception migEx)
+            {
+                // If we can't read migration history, just note it
+                appliedMigrations.Add($"ERROR: {migEx.Message}");
+            }
+
             return Ok(new
             {
                 categoryDataType,
                 typeDataType,
                 distinctCategories = categories,
                 distinctTypes = types,
-                totalRows = categories.Count > 0 || types.Count > 0 ? (int?)null : 0,
+                appliedMigrations,
+                pendingMigrations,
             });
         }
         catch (Exception ex)

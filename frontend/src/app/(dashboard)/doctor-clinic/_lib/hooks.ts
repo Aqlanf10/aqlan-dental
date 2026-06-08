@@ -138,13 +138,17 @@ export function useHandoffToReception() {
     mutationFn: async (params: {
       visitId: string;
       body: {
+        chiefComplaint?: string;
         treatmentDone?: string;
         diagnosis?: string;
         nextVisitPlan?: string;
         instructions?: string;
+        extraoralExamination?: string;
+        intraoralExamination?: string;
+        suggestedServiceId?: string;
+        additionalServicesText?: string;
         followUpDate?: string;
         amountDue?: number;
-        suggestedServiceId?: string;
         notes?: string;
       };
     }) => {
@@ -157,6 +161,7 @@ export function useHandoffToReception() {
       queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
       queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
       queryClient.invalidateQueries({ queryKey: ["finance"] });
+      queryClient.invalidateQueries({ queryKey: ["visits"] });
     },
   });
 }
@@ -183,6 +188,7 @@ export function useUpdateVisit() {
       queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
       queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["visits"] });
       if (variables.patientId) {
         queryClient.invalidateQueries({ queryKey: ["doctor-clinic", "summary", variables.patientId] });
       }
@@ -197,6 +203,7 @@ export function useDoctorCreatePrescription() {
     mutationFn: async (body: {
       patientId: string;
       doctorId?: string;
+      visitId?: string;
       diagnosis?: string;
       notes?: string;
       drugs: Array<{
@@ -214,6 +221,7 @@ export function useDoctorCreatePrescription() {
       queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
       queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
       queryClient.invalidateQueries({ queryKey: ["prescriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["visits"] });
     },
   });
 }
@@ -241,6 +249,7 @@ export function useDoctorCreateLabOrder() {
       queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
       queryClient.invalidateQueries({ queryKey: ["daily-ops", "lab-orders"] });
       queryClient.invalidateQueries({ queryKey: ["lab-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["visits"] });
     },
   });
 }
@@ -269,6 +278,7 @@ export function useDoctorCreateFollowUpAppointment() {
       queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
       queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["visits"] });
     },
   });
 }
@@ -284,6 +294,9 @@ export function useCreateDraftInvoice() {
       queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
       queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
       queryClient.invalidateQueries({ queryKey: ["finance"] });
+      queryClient.invalidateQueries({ queryKey: ["visits"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["prescriptions"] });
     },
   });
 }

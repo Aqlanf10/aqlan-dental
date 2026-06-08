@@ -1187,7 +1187,9 @@ public class PatientJourneyController(
         if (IsLeftWithoutCompletionCheckoutStatus(visit.CheckoutStatus))
             return BadRequest(new { message = "لا يمكن تسليم زيارة مغادرة بدون إكمال" });
 
-        // Update visit clinical data
+        // Update visit clinical data (F3: map structured fields to existing Visit fields)
+        if (!string.IsNullOrWhiteSpace(req.ChiefComplaint))
+            visit.ChiefComplaint = req.ChiefComplaint;
         if (!string.IsNullOrWhiteSpace(req.TreatmentDone))
             visit.TreatmentDone = req.TreatmentDone;
         if (!string.IsNullOrWhiteSpace(req.Diagnosis))
@@ -1196,8 +1198,42 @@ public class PatientJourneyController(
             visit.NextVisitPlan = req.NextVisitPlan;
         if (!string.IsNullOrWhiteSpace(req.Instructions))
             visit.Instructions = req.Instructions;
+
+        // F3: Append extraoral/intraoral examination notes into ClinicalNotes with Arabic labels
+        var clinicalNotesParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(req.ExtraoralExamination))
+            clinicalNotesParts.Add($"[فحص خارج الفم] {req.ExtraoralExamination}");
+        if (!string.IsNullOrWhiteSpace(req.IntraoralExamination))
+            clinicalNotesParts.Add($"[فحص داخل الفم] {req.IntraoralExamination}");
+
+        if (clinicalNotesParts.Count > 0)
+        {
+            var appendedNotes = string.Join(" | ", clinicalNotesParts);
+            visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+                ? appendedNotes
+                : $"{visit.ClinicalNotes} | {appendedNotes}";
+        }
+
+        // F1: Append handoff notes to ClinicalNotes with Arabic label (don't overwrite)
+        if (!string.IsNullOrWhiteSpace(req.Notes))
+        {
+            var handoffLabel = $"[ملاحظات التسليم] {req.Notes}";
+            visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+                ? handoffLabel
+                : $"{visit.ClinicalNotes} | {handoffLabel}";
+        }
+
+        // F6: First service goes to Visit.ServiceId; additional services text appended to ClinicalNotes
         if (req.SuggestedServiceId.HasValue)
             visit.ServiceId = req.SuggestedServiceId;
+        if (!string.IsNullOrWhiteSpace(req.AdditionalServicesText))
+        {
+            var additionalLabel = $"[خدمات إضافية] {req.AdditionalServicesText}";
+            visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+                ? additionalLabel
+                : $"{visit.ClinicalNotes} | {additionalLabel}";
+        }
+
         if (req.FollowUpDate.HasValue)
             visit.NextVisitDate = req.FollowUpDate;
         if (req.AmountDue.HasValue)
@@ -1804,11 +1840,18 @@ public class SendToQueueRequest
 
 public class HandoffRequest
 {
+    public string? ChiefComplaint { get; set; }
     public string? TreatmentDone { get; set; }
     public string? Diagnosis { get; set; }
     public string? NextVisitPlan { get; set; }
     public string? Instructions { get; set; }
+    /// <summary>Extraoral examination findings — appended to ClinicalNotes with Arabic label.</summary>
+    public string? ExtraoralExamination { get; set; }
+    /// <summary>Intraoral examination findings — appended to ClinicalNotes with Arabic label.</summary>
+    public string? IntraoralExamination { get; set; }
     public Guid? SuggestedServiceId { get; set; }
+    /// <summary>Additional services beyond the first — appended as text to ClinicalNotes (temporary compatibility, F6).</summary>
+    public string? AdditionalServicesText { get; set; }
     public DateOnly? FollowUpDate { get; set; }
     public decimal? AmountDue { get; set; }
     public string? Notes { get; set; }

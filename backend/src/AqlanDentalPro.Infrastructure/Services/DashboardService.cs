@@ -36,7 +36,7 @@ public class OrthoStatusCounts
 
 public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
 {
-    public async Task<DashboardStats> GetStatsAsync()
+    public async Task<DashboardStats> GetStatsAsync(bool includeFinance = true)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
         var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
@@ -82,7 +82,9 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var totalPatients      = await totalPatientsQuery.CountAsync();
         var activeOrthoCases   = await orthoQuery.CountAsync();
         var pendingLabOrders   = await labQuery.CountAsync();
-        var totalRevenueMTD    = await revenueQuery.SumAsync(p => (decimal?)p.Amount) ?? 0;
+        var totalRevenueMTD    = includeFinance
+            ? await revenueQuery.SumAsync(p => (decimal?)p.Amount) ?? 0
+            : 0;
 
         // Queue waiting count
         var queueWaitingCount = await db.ClinicQueueItems
@@ -105,7 +107,7 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
             overdueCount, totalRevenueMTD, queueWaitingCount, pendingBookingRequestsCount, todayArrivedCount);
     }
 
-    public async Task<DashboardCharts> GetChartsAsync()
+    public async Task<DashboardCharts> GetChartsAsync(bool includeFinance = true)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
         var thirtyDaysAgo = today.AddDays(-29);
@@ -113,13 +115,17 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var chartBranchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
 
         // Revenue by day (last 30 days) - fetch raw then format
-        var revenueQuery = db.Payments
-            .Where(p => p.PaymentDate >= thirtyDaysAgo && p.PaymentDate <= today && p.IsActive);
-        if (chartBranchId.HasValue) revenueQuery = revenueQuery.Where(p => p.BranchId == chartBranchId);
-        var revenueRaw = await revenueQuery
-            .GroupBy(p => p.PaymentDate)
-            .Select(g => new { date = g.Key, amount = g.Sum(p => p.Amount) })
-            .ToListAsync();
+        var revenueRaw = new List<RevenuePoint>();
+        if (includeFinance)
+        {
+            var revenueQuery = db.Payments
+                .Where(p => p.PaymentDate >= thirtyDaysAgo && p.PaymentDate <= today && p.IsActive);
+            if (chartBranchId.HasValue) revenueQuery = revenueQuery.Where(p => p.BranchId == chartBranchId);
+            revenueRaw = await revenueQuery
+                .GroupBy(p => p.PaymentDate)
+                .Select(g => new RevenuePoint(g.Key, g.Sum(p => p.Amount)))
+                .ToListAsync();
+        }
 
         // Appointments by day (last 30 days) - fetch raw then format
         var apptQuery = db.Appointments
@@ -143,7 +149,7 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
             .Select(i => today.AddDays(-29 + i))
             .Select(d => new DailyRevenue(
                 d.ToString("MM/dd"),
-                revenueRaw.FirstOrDefault(r => r.date == d)?.amount ?? 0))
+                revenueRaw.FirstOrDefault(r => r.Date == d)?.Amount ?? 0))
             .ToList();
 
         var apptByDay = Enumerable.Range(0, 30)
@@ -165,4 +171,6 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
             }
         };
     }
+
+    private sealed record RevenuePoint(DateOnly Date, decimal Amount);
 }

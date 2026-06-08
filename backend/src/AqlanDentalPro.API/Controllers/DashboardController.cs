@@ -12,14 +12,20 @@ public class DashboardController(DashboardService service) : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats()
     {
-        var stats = await service.GetStatsAsync();
+        var stats = await service.GetStatsAsync(CanViewFinance());
         return Ok(stats);
     }
 
     [HttpGet("charts")]
     public async Task<IActionResult> GetCharts()
     {
-        var charts = await service.GetChartsAsync();
+        var charts = await service.GetChartsAsync(CanViewFinance());
         return Ok(charts);
     }
+
+    private bool CanViewFinance() =>
+        User.IsInRole("Admin")
+        || User.IsInRole("Accountant")
+        || User.IsInRole("Reception")
+        || User.HasClaim("permission", "finance.view");
 }

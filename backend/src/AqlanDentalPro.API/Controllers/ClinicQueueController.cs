@@ -1137,7 +1137,7 @@ public class ClinicQueueController(
                 {
                     QueueItemId = q.Id,
                     PatientNumber = q.Patient?.PatientNumber ?? "",
-                    PatientName = BuildPatientDisplayName(q.Patient),
+                    PatientName = BuildPublicPatientDisplayName(q.Patient),
                     DoctorName = q.Doctor?.Name ?? "",
                     q.RoomName,
                     q.CalledAt,
@@ -1159,7 +1159,7 @@ public class ClinicQueueController(
             {
                 QueueItemId = q.Id,
                 PatientNumber = q.Patient?.PatientNumber ?? "",
-                PatientName = BuildPatientDisplayName(q.Patient),
+                PatientName = BuildPublicPatientDisplayName(q.Patient),
                 DoctorName = q.Doctor?.Name ?? "",
                 Status = "في الانتظار",
                 Position = idx + 1,
@@ -1177,7 +1177,7 @@ public class ClinicQueueController(
                 {
                     QueueItemId = q.Id,
                     PatientNumber = q.Patient?.PatientNumber ?? "",
-                    PatientName = BuildPatientDisplayName(q.Patient),
+                    PatientName = BuildPublicPatientDisplayName(q.Patient),
                     DoctorName = q.Doctor?.Name ?? "",
                     q.RoomName,
                     StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(q.Status),
@@ -1199,7 +1199,7 @@ public class ClinicQueueController(
                 {
                     RoomName = g.Key,
                     DoctorName = g.First().Doctor?.Name ?? "",
-                    PatientName = BuildPatientDisplayName(g.First().Patient),
+                    PatientName = BuildPublicPatientDisplayName(g.First().Patient),
                     PatientNumber = g.First().Patient?.PatientNumber ?? "",
                     StartedAt = g.First().StartedAt
                 })
@@ -1522,6 +1522,25 @@ public class ClinicQueueController(
             parts.Add(patient.LastName.Trim());
 
         return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Public TV display must not expose full patient names. Show enough context
+    /// for the patient to recognize their turn while avoiding full-name disclosure.
+    /// </summary>
+    private static string BuildPublicPatientDisplayName(Patient? patient)
+    {
+        if (patient == null) return "";
+
+        var firstName = patient.FirstName?.Trim();
+        if (string.IsNullOrWhiteSpace(firstName))
+            return "مريض";
+
+        var lastName = patient.LastName?.Trim();
+        if (string.IsNullOrWhiteSpace(lastName))
+            return firstName;
+
+        return $"{firstName} {lastName[0]}.";
     }
 }
 

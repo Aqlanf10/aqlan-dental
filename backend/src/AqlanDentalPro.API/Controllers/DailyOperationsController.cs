@@ -23,6 +23,7 @@ public class DailyOperationsController(AppDbContext db, ILogger<DailyOperationsC
     /// Includes patient counts, financial summary, lab order status, and audit overrides.
     /// </summary>
     [HttpGet("report")]
+    [Authorize(Policy = "FinanceAccess")]
     public async Task<IActionResult> GetDailyReport([FromQuery] string? date)
     {
         try

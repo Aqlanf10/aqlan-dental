@@ -130,6 +130,48 @@ public class ClinicQueueDisplayTests
     }
 
     [Fact]
+    public async Task GetDisplay_PublicWaitingList_DoesNotExposeFullPatientName()
+    {
+        using var db = CreateDb();
+        var patientId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+
+        db.Patients.Add(new Patient
+        {
+            Id = patientId,
+            FirstName = "Ali",
+            MiddleName = "Aqlan",
+            LastName = "Alkamel",
+            PatientNumber = "P-PRIVACY",
+            IsActive = true
+        });
+        db.Doctors.Add(new Doctor { Id = doctorId, Name = "Dr Test", IsActive = true });
+        db.ClinicQueueItems.Add(new ClinicQueueItem
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            DoctorId = doctorId,
+            Status = ClinicQueueStatus.Waiting,
+            QueueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+
+        var result = await controller.GetDisplay();
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var waitingList = ok.Value!.GetType().GetProperty("WaitingList")!.GetValue(ok.Value) as System.Collections.IEnumerable;
+        var first = waitingList!.Cast<object>().Single();
+        var patientName = first.GetType().GetProperty("PatientName")!.GetValue(first)?.ToString();
+
+        patientName.Should().Be("Ali A.");
+        patientName.Should().NotContain("Aqlan");
+        patientName.Should().NotContain("Alkamel");
+    }
+
+    [Fact]
     public async Task GetDisplay_CalledPatient_AppearsInLatestCalled()
     {
         // Arrange
@@ -183,6 +225,48 @@ public class ClinicQueueDisplayTests
         latestCalledProp.Should().NotBeNull();
         var latestCalled = latestCalledProp!.GetValue(response);
         latestCalled.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetDisplay_PublicLatestCalled_DoesNotExposeFullPatientName()
+    {
+        using var db = CreateDb();
+        var patientId = Guid.NewGuid();
+        var doctorId = Guid.NewGuid();
+
+        db.Patients.Add(new Patient
+        {
+            Id = patientId,
+            FirstName = "Sara",
+            MiddleName = "Aqlan",
+            LastName = "Alkamel",
+            PatientNumber = "P-CALL",
+            IsActive = true
+        });
+        db.Doctors.Add(new Doctor { Id = doctorId, Name = "Dr Test", IsActive = true });
+        db.ClinicQueueItems.Add(new ClinicQueueItem
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            DoctorId = doctorId,
+            Status = ClinicQueueStatus.Called,
+            QueueDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            IsActive = true,
+            CalledAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+
+        var result = await controller.GetDisplay();
+
+        var ok = result.Should().BeOfType<OkObjectResult>().Subject;
+        var latestCalled = ok.Value!.GetType().GetProperty("LatestCalled")!.GetValue(ok.Value);
+        var patientName = latestCalled!.GetType().GetProperty("PatientName")!.GetValue(latestCalled)?.ToString();
+
+        patientName.Should().Be("Sara A.");
+        patientName.Should().NotContain("Aqlan");
+        patientName.Should().NotContain("Alkamel");
     }
 
     [Fact]

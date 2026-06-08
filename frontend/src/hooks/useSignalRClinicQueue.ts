@@ -14,7 +14,14 @@ const HUB_URL = process.env.NEXT_PUBLIC_API_URL
  * يستمع لأحداث: نداء مريض، تحديث الطابور، إشعارات جديدة.
  * يشغّل صوت تنبيه ويحدّث React Query cache تلقائياً.
  */
-export function useSignalRClinicQueue() {
+interface UseSignalRClinicQueueOptions {
+  enabled?: boolean;
+  playSoundOnPatientCalled?: boolean;
+}
+
+export function useSignalRClinicQueue(options: UseSignalRClinicQueueOptions = {}) {
+  const enabled = options.enabled ?? true;
+  const playSoundOnPatientCalled = options.playSoundOnPatientCalled ?? false;
   const connectionRef = useRef<HubConnection | null>(null);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -69,7 +76,9 @@ export function useSignalRClinicQueue() {
       connection.on("PatientCalled", () => {
         queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
         queryClient.invalidateQueries({ queryKey: ["clinic-queue"] });
-        playNotification();
+        if (playSoundOnPatientCalled) {
+          playNotification();
+        }
       });
 
       // إشعار عام (نستخدم نفس الحدث من messaging hub)
@@ -96,7 +105,7 @@ export function useSignalRClinicQueue() {
       console.warn("Clinic Queue SignalR connection failed:", err);
       setIsConnected(false);
     }
-  }, [token, queryClient, playNotification]);
+  }, [token, queryClient, playNotification, playSoundOnPatientCalled]);
 
   const disconnect = useCallback(async () => {
     if (connectionRef.current) {
@@ -111,7 +120,7 @@ export function useSignalRClinicQueue() {
   }, []);
 
   useEffect(() => {
-    if (user && token) {
+    if (enabled && user && token) {
       connect();
     } else {
       disconnect();
@@ -119,7 +128,7 @@ export function useSignalRClinicQueue() {
     return () => {
       disconnect();
     };
-  }, [user, token, connect, disconnect]);
+  }, [enabled, user, token, connect, disconnect]);
 
   return {
     isConnected,

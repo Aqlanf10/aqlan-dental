@@ -25,10 +25,10 @@ public class PatientFinanceLedgerTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
 
-    private static ICurrentUserService CreateAdminUser(Guid? branchId = null)
+    private static ICurrentUserService CreateAdminUser(Guid userId, Guid? branchId = null)
     {
         var mock = new Mock<ICurrentUserService>();
-        mock.Setup(u => u.UserId).Returns(Guid.NewGuid());
+        mock.Setup(u => u.UserId).Returns(userId);
         mock.Setup(u => u.Role).Returns(UserRole.Admin);
         mock.Setup(u => u.IsAdmin).Returns(true);
         mock.Setup(u => u.IsAuthenticated).Returns(true);
@@ -38,9 +38,8 @@ public class PatientFinanceLedgerTests
         return mock.Object;
     }
 
-    private static FinanceService CreateFinanceService(AppDbContext db, ICurrentUserService? currentUser = null)
+    private static FinanceService CreateFinanceService(AppDbContext db, ICurrentUserService currentUser)
     {
-        currentUser ??= CreateAdminUser();
         var notifications = new Mock<INotificationService>().Object;
         var logger = new Mock<ILogger<FinanceService>>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
@@ -48,16 +47,23 @@ public class PatientFinanceLedgerTests
         return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryService);
     }
 
-    private static (Guid branchId, Guid patientId, Guid userId, Guid treasuryId) SeedPatient(AppDbContext db)
+    /// <summary>
+    /// Seeds a patient and returns all IDs including the admin userId which
+    /// also serves as the CashierSession.CashierId so payment creation works.
+    /// </summary>
+    private static (Guid branchId, Guid patientId, Guid userId, Guid treasuryId, ICurrentUserService currentUser) SeedPatientWithUser(AppDbContext db)
     {
         var branchId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         var treasuryId = Guid.NewGuid();
+        var currentUser = CreateAdminUser(userId, branchId);
+
         db.Branches.Add(new Branch { Id = branchId, Name = "الفرع الرئيسي" });
         db.Patients.Add(new Patient { Id = patientId, FirstName = "أحمد", LastName = "محمد", BranchId = branchId, PatientNumber = "P-001" });
         db.Users.Add(new User { Id = userId, Username = "admin1", BranchId = branchId });
         db.Treasuries.Add(new Treasury { Id = treasuryId, Name = "الخزنة", Type = TreasuryType.Vault, Balance = 0, BranchId = branchId, IsActive = true });
+        // CashierSession.CashierId must match currentUser.UserId for payment creation
         db.CashierSessions.Add(new CashierSession
         {
             Id = Guid.NewGuid(),
@@ -71,7 +77,7 @@ public class PatientFinanceLedgerTests
             OpeningTime = DateTime.UtcNow
         });
         db.SaveChanges();
-        return (branchId, patientId, userId, treasuryId);
+        return (branchId, patientId, userId, treasuryId, currentUser);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -82,10 +88,9 @@ public class PatientFinanceLedgerTests
     public async Task Payment_WithPatientId_IsVisibleInFinanceSummary()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create a contract with down payment
         var contractResult = await service.CreateContractAsync(new CreateContractRequest
         {
             PatientId = patientId,
@@ -110,10 +115,9 @@ public class PatientFinanceLedgerTests
     public async Task Payment_WithInvoiceIdAndPatientId_IsVisibleInPatientPayments()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create an invoice
         var invoiceId = Guid.NewGuid();
         db.Invoices.Add(new Invoice
         {
@@ -128,7 +132,6 @@ public class PatientFinanceLedgerTests
         });
         await db.SaveChangesAsync();
 
-        // Create payment linked to invoice
         await service.CreatePaymentAsync(new CreatePaymentRequest
         {
             PatientId = patientId,
@@ -151,10 +154,9 @@ public class PatientFinanceLedgerTests
     public async Task DraftInvoice_NotCountedInOutstandingBalance()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create a DRAFT invoice — should NOT inflate outstanding balance
         db.Invoices.Add(new Invoice
         {
             Id = Guid.NewGuid(),
@@ -167,7 +169,6 @@ public class PatientFinanceLedgerTests
             CreatedBy = userId
         });
 
-        // Create an ISSUED invoice — SHOULD be counted
         db.Invoices.Add(new Invoice
         {
             Id = Guid.NewGuid(),
@@ -197,10 +198,9 @@ public class PatientFinanceLedgerTests
     public async Task CancelledInvoice_NotCountedAsOutstanding()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create a CANCELLED invoice
         db.Invoices.Add(new Invoice
         {
             Id = Guid.NewGuid(),
@@ -230,10 +230,9 @@ public class PatientFinanceLedgerTests
     public async Task FinanceSummary_AndAccountStatement_Agree()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create a contract with down payment
         await service.CreateContractAsync(new CreateContractRequest
         {
             PatientId = patientId,
@@ -261,10 +260,9 @@ public class PatientFinanceLedgerTests
     public async Task ContractDownPayment_UsesSpecifiedPaymentMethod()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create contract with bank_transfer down payment
         var contract = await service.CreateContractAsync(new CreateContractRequest
         {
             PatientId = patientId,
@@ -287,10 +285,9 @@ public class PatientFinanceLedgerTests
     public async Task ContractDownPayment_DefaultsToCash_WhenMethodNotSpecified()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create contract without specifying payment method — should default to cash
         var contract = await service.CreateContractAsync(new CreateContractRequest
         {
             PatientId = patientId,
@@ -316,10 +313,9 @@ public class PatientFinanceLedgerTests
     public async Task DeletedPayment_NotCountedInPatientBalance()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create contract with down payment
         var contract = await service.CreateContractAsync(new CreateContractRequest
         {
             PatientId = patientId,
@@ -329,16 +325,13 @@ public class PatientFinanceLedgerTests
             Specialty = "تقويم"
         });
 
-        // Verify initial state
         var summaryBefore = await service.GetPatientFinanceSummaryAsync(patientId);
         summaryBefore.TotalPaid.Should().Be(2000m);
 
-        // Delete the down payment
         var payments = await service.GetPaymentsAsync(1, 50, patientId);
         var downPayment = payments.First(p => p.ContractId == contract.Id);
         await service.DeletePaymentAsync(downPayment.Id);
 
-        // Verify balance updated
         var summaryAfter = await service.GetPatientFinanceSummaryAsync(patientId);
         summaryAfter.TotalPaid.Should().Be(0m, "deleted payment should not be counted in balance");
         summaryAfter.OutstandingBalance.Should().Be(5000m, "outstanding should revert to full amount");
@@ -363,10 +356,9 @@ public class PatientFinanceLedgerTests
     public async Task AccountStatement_ExcludesDraftInvoices()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
-        var service = CreateFinanceService(db, CreateAdminUser(branchId));
+        var (branchId, patientId, userId, treasuryId, currentUser) = SeedPatientWithUser(db);
+        var service = CreateFinanceService(db, currentUser);
 
-        // Create a DRAFT invoice
         db.Invoices.Add(new Invoice
         {
             Id = Guid.NewGuid(),

@@ -11,7 +11,9 @@ const HUB_URL = process.env.NEXT_PUBLIC_API_URL
 
 /**
  * Hook لإدارة اتصال SignalR لأحداث الطابور والعيادة.
- * يستمع لأحداث: نداء مريض، تحديث الطابور، إشعارات جديدة.
+ * يستمع لأحداث: نداء مريض، تحديث الطابور.
+ * إشعارات النظام العامة تُدار من useSignalRMessaging داخل dashboard layout
+ * حتى لا تُعالَج مرتين عند فتح صفحات التشغيل اليومي أو عيادة الطبيب.
  * يشغّل صوت تنبيه ويحدّث React Query cache تلقائياً.
  */
 interface UseSignalRClinicQueueOptions {
@@ -79,12 +81,6 @@ export function useSignalRClinicQueue(options: UseSignalRClinicQueueOptions = {}
         if (playSoundOnPatientCalled) {
           playNotification();
         }
-      });
-
-      // إشعار عام (نستخدم نفس الحدث من messaging hub)
-      connection.on("NewNotification", () => {
-        queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
-        queryClient.invalidateQueries({ queryKey: ["notificationUnreadCount"] });
       });
 
       // Reconnect

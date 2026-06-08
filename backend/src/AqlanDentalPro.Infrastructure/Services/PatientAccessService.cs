@@ -28,6 +28,9 @@ public class PatientAccessService(
 
     public bool HasFullAccess => !IsDoctor;
 
+    public bool IsReception =>
+        currentUser.Role.HasValue && currentUser.Role.Value == UserRole.Reception;
+
     public async Task<Guid?> GetCurrentDoctorIdAsync()
     {
         if (!IsDoctor || currentUser.UserId == null)

@@ -20,6 +20,12 @@ public interface IPatientAccessService
     bool HasFullAccess { get; }
 
     /// <summary>
+    /// True when the current user has the Reception role.
+    /// Used to grant checkout-related finance visibility without full admin access.
+    /// </summary>
+    bool IsReception { get; }
+
+    /// <summary>
     /// Returns the Doctor.Id for the currently logged-in user, or null if they are
     /// not a doctor or have no Doctor record in the database.
     /// </summary>

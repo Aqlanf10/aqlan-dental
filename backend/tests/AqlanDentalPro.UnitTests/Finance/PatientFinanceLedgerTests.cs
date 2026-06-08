@@ -43,8 +43,74 @@ public class PatientFinanceLedgerTests
         var notifications = new Mock<INotificationService>().Object;
         var logger = new Mock<ILogger<FinanceService>>().Object;
         var commissionService = new Mock<ICommissionService>().Object;
-        var journalEntryService = new Mock<IJournalEntryService>().Object;
-        return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryService);
+
+        // Mock IJournalEntryService — DualWritePaymentEntryAsync calls CreateEntryAsync
+        var journalEntryServiceMock = new Mock<IJournalEntryService>();
+        journalEntryServiceMock
+            .Setup(j => j.CreateEntryAsync(
+                It.IsAny<FinancialDocumentType>(),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<DateOnly>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)>>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FinancialDocumentType docType, Guid docId, string desc, DateOnly date,
+                Guid branch, Guid performedBy, Guid? sessionId, Guid? treasuryId,
+                IEnumerable<(JournalAccountType, Guid, decimal, decimal, string?)> lines,
+                bool autoSave, CancellationToken ct) =>
+            {
+                var entry = new JournalEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EntryNumber = "JE-TEST-001",
+                    FinancialDocumentType = docType,
+                    FinancialDocumentId = docId,
+                    Description = desc,
+                    EntryDate = date,
+                    BranchId = branch,
+                    PerformedBy = performedBy,
+                    IsPosted = true,
+                    IsReversal = false
+                };
+                if (!autoSave)
+                {
+                    db.JournalEntries.Add(entry);
+                    // Don't call SaveChanges — caller will do it
+                }
+                return entry;
+            });
+
+        // Mock reversal entry for delete payment
+        journalEntryServiceMock
+            .Setup(j => j.CreateReversalEntryAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid originalId, string reason, Guid performedBy, CancellationToken ct) =>
+            {
+                return new JournalEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EntryNumber = "JE-REV-001",
+                    FinancialDocumentType = FinancialDocumentType.PaymentDeletion,
+                    FinancialDocumentId = Guid.NewGuid(),
+                    Description = reason,
+                    EntryDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    BranchId = Guid.Empty,
+                    PerformedBy = performedBy,
+                    IsPosted = true,
+                    IsReversal = true,
+                    ReversalOfEntryId = originalId
+                };
+            });
+
+        return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryServiceMock.Object);
     }
 
     /// <summary>

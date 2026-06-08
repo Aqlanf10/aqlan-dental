@@ -23,6 +23,9 @@ import {
   useDoctorServices,
   useStartVisit,
   useHandoffToReception,
+  useDoctorCreatePrescription,
+  useDoctorCreateLabOrder,
+  useDoctorCreateFollowUpAppointment,
   type DoctorPatientItem,
   type ServiceWithPrice,
 } from "./_lib/hooks";
@@ -55,6 +58,32 @@ type PanelType =
   | "followUp"
   | "handoff"
   | null;
+
+const EMPTY_CLINICAL_NOTES = {
+  diagnosis: "",
+  treatmentDone: "",
+  instructions: "",
+  nextVisitPlan: "",
+  amountDue: 0,
+  suggestedServiceId: "",
+  followUpDate: "",
+};
+
+function buildPrescriptionDrugs(prescriptionText: string, instructions: string) {
+  const lines = prescriptionText
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const source = lines.length > 0 ? lines : [instructions.trim()];
+  return source.filter(Boolean).map(line => ({
+    name: line,
+    dose: "حسب الوصفة",
+    frequency: "حسب تعليمات الطبيب",
+    duration: "حسب الخطة العلاجية",
+    notes: instructions.trim() || undefined,
+  }));
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Action card definitions
@@ -191,6 +220,9 @@ export default function DoctorClinicPage() {
   const { data: services = [] } = useDoctorServices();
   const startVisitMutation = useStartVisit();
   const handoffMutation = useHandoffToReception();
+  const createPrescriptionMutation = useDoctorCreatePrescription();
+  const createLabOrderMutation = useDoctorCreateLabOrder();
+  const createFollowUpMutation = useDoctorCreateFollowUpAppointment();
 
   // ── Selected patient ──
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatientItem | null>(null);
@@ -208,15 +240,7 @@ export default function DoctorClinicPage() {
   const [sentPatients, setSentPatients] = useState<Set<string>>(new Set());
 
   // ── Clinical notes (accumulated before handoff) ──
-  const [clinicalNotes, setClinicalNotes] = useState({
-    diagnosis: "",
-    treatmentDone: "",
-    instructions: "",
-    nextVisitPlan: "",
-    amountDue: 0,
-    suggestedServiceId: "",
-    followUpDate: "",
-  });
+  const [clinicalNotes, setClinicalNotes] = useState(EMPTY_CLINICAL_NOTES);
 
   // ── Admin filter dropdowns ──
   const availableDoctors = useMemo(() => {
@@ -541,13 +565,72 @@ export default function DoctorClinicPage() {
                     <ImagesRadiographsPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ الصور"); }} />
                   )}
                   {activePanel === "prescription" && (
-                    <PrescriptionPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ الوصفة"); }} />
+                    <PrescriptionPanel patient={selectedPatient} onClose={() => setActivePanel(null)} isPending={createPrescriptionMutation.isPending}
+                      onSave={async (data) => {
+                        if (!selectedPatient) return;
+                        const drugs = buildPrescriptionDrugs(data.prescriptionText, data.instructions);
+                        await createPrescriptionMutation.mutateAsync({
+                          patientId: selectedPatient.patientId,
+                          doctorId: selectedPatient.doctorId || undefined,
+                          diagnosis: clinicalNotes.diagnosis || undefined,
+                          notes: data.instructions || undefined,
+                          drugs,
+                        });
+                        updateClinicalNotes({
+                          instructions: data.instructions || clinicalNotes.instructions,
+                          treatmentDone: clinicalNotes.treatmentDone ? `${clinicalNotes.treatmentDone} | وصفة طبية` : "وصفة طبية",
+                        });
+                        setActivePanel(null);
+                        toast.success("تم إنشاء الوصفة الطبية وربطها بالمريض");
+                      }}
+                    />
                   )}
                   {activePanel === "labOrder" && (
-                    <LabOrderPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ طلب المعمل"); }} />
+                    <LabOrderPanel patient={selectedPatient} onClose={() => setActivePanel(null)} isPending={createLabOrderMutation.isPending}
+                      onSave={async (data) => {
+                        if (!selectedPatient) return;
+                        const applianceType = data.labWorkType || data.referralDepartment || "طلب معمل";
+                        await createLabOrderMutation.mutateAsync({
+                          patientId: selectedPatient.patientId,
+                          applianceType,
+                          expectedDate: data.deliveryDate || undefined,
+                          instructions: data.labInstructions || undefined,
+                          doctorId: selectedPatient.doctorId || undefined,
+                          shade: data.shade || undefined,
+                          restorationType: data.labWorkType || undefined,
+                          visitId: selectedPatient.visitId || undefined,
+                        });
+                        updateClinicalNotes({
+                          treatmentDone: clinicalNotes.treatmentDone ? `${clinicalNotes.treatmentDone} | طلب معمل: ${applianceType}` : `طلب معمل: ${applianceType}`,
+                        });
+                        setActivePanel(null);
+                        toast.success("تم إنشاء طلب المعمل وربطه بالزيارة");
+                      }}
+                    />
                   )}
                   {activePanel === "followUp" && (
-                    <FollowUpSuggestPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ موعد المتابعة"); }} />
+                    <FollowUpSuggestPanel patient={selectedPatient} services={services} onClose={() => setActivePanel(null)} isPending={createFollowUpMutation.isPending}
+                      onSave={async (data) => {
+                        if (!selectedPatient?.doctorId) {
+                          toast.error("لا يوجد طبيب مرتبط لإنشاء موعد المتابعة");
+                          return;
+                        }
+                        await createFollowUpMutation.mutateAsync({
+                          patientId: selectedPatient.patientId,
+                          doctorId: selectedPatient.doctorId,
+                          appointmentDate: data.followUpDate,
+                          startTime: data.followUpTime || "09:00",
+                          serviceId: data.serviceId || undefined,
+                          notes: data.reason || "موعد متابعة من عيادة الطبيب",
+                        });
+                        updateClinicalNotes({
+                          followUpDate: data.followUpDate,
+                          nextVisitPlan: data.reason || clinicalNotes.nextVisitPlan,
+                        });
+                        setActivePanel(null);
+                        toast.success("تم إنشاء موعد المتابعة");
+                      }}
+                    />
                   )}
                   {activePanel === "handoff" && (
                     <HandoffPanel patient={selectedPatient} clinicalNotes={clinicalNotes} selectedServicesTotal={clinicalNotes.amountDue} onClose={() => setActivePanel(null)} onConfirm={handleHandoff} isPending={handoffMutation.isPending} />

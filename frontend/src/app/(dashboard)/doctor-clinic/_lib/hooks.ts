@@ -162,6 +162,88 @@ export function useHandoffToReception() {
 }
 
 // ─── Create Draft Invoice (for reception checkout flow) ────────────────────
+export function useDoctorCreatePrescription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      patientId: string;
+      doctorId?: string;
+      diagnosis?: string;
+      notes?: string;
+      drugs: Array<{
+        name: string;
+        dose: string;
+        frequency: string;
+        duration: string;
+        notes?: string;
+      }>;
+    }) => {
+      const { data } = await api.post("/api/prescriptions", body);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["prescriptions"] });
+    },
+  });
+}
+
+export function useDoctorCreateLabOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      patientId: string;
+      applianceType: string;
+      labName?: string;
+      expectedDate?: string;
+      priority?: string;
+      instructions?: string;
+      doctorId?: string;
+      shade?: string;
+      restorationType?: string;
+      visitId?: string;
+    }) => {
+      const { data } = await api.post("/api/lab-orders", body);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-ops", "lab-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["lab-orders"] });
+    },
+  });
+}
+
+export function useDoctorCreateFollowUpAppointment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      patientId: string;
+      doctorId: string;
+      appointmentDate: string;
+      startTime: string;
+      durationMinutes?: number;
+      appointmentType?: string;
+      serviceId?: string;
+      notes?: string;
+    }) => {
+      const { data } = await api.post("/api/appointments", {
+        ...body,
+        durationMinutes: body.durationMinutes ?? 30,
+        appointmentType: body.appointmentType ?? "FollowUp",
+      });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+    },
+  });
+}
+
 export function useCreateDraftInvoice() {
   const queryClient = useQueryClient();
   return useMutation({

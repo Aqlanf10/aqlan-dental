@@ -161,6 +161,35 @@ export function useHandoffToReception() {
   });
 }
 
+export function useUpdateVisit() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      visitId: string;
+      patientId?: string;
+      body: {
+        diagnosis?: string;
+        treatmentDone?: string;
+        instructions?: string;
+        nextVisitPlan?: string;
+        cost?: number;
+        nextVisitDate?: string;
+      };
+    }) => {
+      const { data } = await api.put(`/api/visits/${params.visitId}`, params.body);
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-ops"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      if (variables.patientId) {
+        queryClient.invalidateQueries({ queryKey: ["doctor-clinic", "summary", variables.patientId] });
+      }
+    },
+  });
+}
+
 // ─── Create Draft Invoice (for reception checkout flow) ────────────────────
 export function useDoctorCreatePrescription() {
   const queryClient = useQueryClient();

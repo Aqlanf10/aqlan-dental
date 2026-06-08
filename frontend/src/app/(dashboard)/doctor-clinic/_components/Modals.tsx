@@ -750,12 +750,21 @@ export function ImagesRadiographsPanel({
    Lab Order Panel — Placeholder with TODO
    TODO: Connect to lab order API when backend is ready
    ═══════════════════════════════════════════════════════════════════════════ */
+export interface LabOrderPanelData {
+  labWorkType: string;
+  shade: string;
+  deliveryDate: string;
+  labInstructions: string;
+  referralDepartment: string;
+}
+
 export function LabOrderPanel({
-  onClose, patient, onSave,
+  onClose, patient, onSave, isPending = false,
 }: {
   onClose: () => void;
   patient: DoctorPatientItem | null;
-  onSave: () => void;
+  onSave: (data: LabOrderPanelData) => Promise<void> | void;
+  isPending?: boolean;
 }) {
   const [labWorkType, setLabWorkType] = useState("");
   const [shade, setShade] = useState("");
@@ -763,8 +772,14 @@ export function LabOrderPanel({
   const [labInstructions, setLabInstructions] = useState("");
   const [referralDepartment, setReferralDepartment] = useState("");
 
-  const handleSave = () => {
-    onSave();
+  const handleSave = async () => {
+    await onSave({
+      labWorkType,
+      shade,
+      deliveryDate,
+      labInstructions,
+      referralDepartment,
+    });
     setLabWorkType("");
     setShade("");
     setDeliveryDate("");
@@ -840,8 +855,8 @@ export function LabOrderPanel({
           style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
         <button onClick={handleSave} disabled={!hasAnyField}
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: "#0891b2", opacity: !hasAnyField ? 0.5 : 1 }}>
-          <Check className="w-4 h-4" />
+          style={{ background: "#0891b2", opacity: !hasAnyField || isPending ? 0.5 : 1 }}>
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           حفظ طلب المختبر
         </button>
       </div>
@@ -852,18 +867,24 @@ export function LabOrderPanel({
 /* ═══════════════════════════════════════════════════════════════════════════
    Prescription & Instructions Panel — Enhanced
    ═══════════════════════════════════════════════════════════════════════════ */
+export interface PrescriptionPanelData {
+  prescriptionText: string;
+  instructions: string;
+}
+
 export function PrescriptionPanel({
-  onClose, patient, onSave,
+  onClose, patient, onSave, isPending = false,
 }: {
   onClose: () => void;
   patient: DoctorPatientItem | null;
-  onSave: () => void;
+  onSave: (data: PrescriptionPanelData) => Promise<void> | void;
+  isPending?: boolean;
 }) {
   const [prescriptionText, setPrescriptionText] = useState("");
   const [instructions, setInstructions] = useState("");
 
-  const handleSave = () => {
-    onSave();
+  const handleSave = async () => {
+    await onSave({ prescriptionText, instructions });
     setPrescriptionText("");
     setInstructions("");
   };
@@ -922,10 +943,10 @@ export function PrescriptionPanel({
       <div className="flex gap-2 pt-3">
         <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
           style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
-        <button onClick={handleSave} disabled={!prescriptionText.trim() && !instructions.trim()}
+        <button onClick={handleSave} disabled={(!prescriptionText.trim() && !instructions.trim()) || isPending}
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: "#dc2626", opacity: !prescriptionText.trim() && !instructions.trim() ? 0.5 : 1 }}>
-          <Check className="w-4 h-4" />
+          style={{ background: "#dc2626", opacity: (!prescriptionText.trim() && !instructions.trim()) || isPending ? 0.5 : 1 }}>
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           حفظ الوصفة والتعليمات
         </button>
       </div>
@@ -936,21 +957,29 @@ export function PrescriptionPanel({
 /* ═══════════════════════════════════════════════════════════════════════════
    Follow-up Appointment Suggest Panel — Enhanced
    ═══════════════════════════════════════════════════════════════════════════ */
+export interface FollowUpPanelData {
+  followUpDate: string;
+  followUpTime: string;
+  serviceId: string;
+  reason: string;
+}
+
 export function FollowUpSuggestPanel({
-  onClose, patient, services, onSave,
+  onClose, patient, services, onSave, isPending = false,
 }: {
   onClose: () => void;
   patient: DoctorPatientItem | null;
   services?: ServiceWithPrice[];
-  onSave: () => void;
+  onSave: (data: FollowUpPanelData) => Promise<void> | void;
+  isPending?: boolean;
 }) {
   const [followUpDate, setFollowUpDate] = useState("");
   const [followUpTime, setFollowUpTime] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [reason, setReason] = useState("");
 
-  const handleSave = () => {
-    onSave();
+  const handleSave = async () => {
+    await onSave({ followUpDate, followUpTime, serviceId, reason });
     setFollowUpDate("");
     setFollowUpTime("");
     setServiceId("");
@@ -1006,10 +1035,10 @@ export function FollowUpSuggestPanel({
       <div className="flex gap-2 pt-3">
         <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
           style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
-        <button onClick={handleSave} disabled={!followUpDate}
+        <button onClick={handleSave} disabled={!followUpDate || isPending}
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: "#7c3aed", opacity: !followUpDate ? 0.5 : 1 }}>
-          <Check className="w-4 h-4" />
+          style={{ background: "#7c3aed", opacity: !followUpDate || isPending ? 0.5 : 1 }}>
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           اقتراح الموعد
         </button>
       </div>

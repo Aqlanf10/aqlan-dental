@@ -483,12 +483,8 @@ export function useWalkInPatient() {
       const today = new Date().toISOString().split("T")[0];
       const now = new Date();
       const startTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      const endMinutes = now.getMinutes() + 30;
-      const endHour = now.getHours() + Math.floor(endMinutes / 60);
-      const endTime = `${String(endHour).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
 
-      // FIX: Convert endTime to durationMinutes like useCreateAppointment does.
-      // The backend expects durationMinutes, not endTime.
+      // Walk-ins use durationMinutes because the backend does not accept endTime.
       const durationMinutes = 30; // Default walk-in duration
 
       const apptRes = await api.post("/api/appointments", {

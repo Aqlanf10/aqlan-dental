@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  CreditCard, Plus, Pencil, Trash2, X, AlertCircle,
+  CreditCard, Pencil, Trash2, X, AlertCircle,
   Search, FileText, Printer,
 } from "lucide-react";
 import api from "@/lib/api";

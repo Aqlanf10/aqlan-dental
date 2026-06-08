@@ -614,7 +614,7 @@ export default function DoctorClinicPage() {
                     />
                   )}
                   {activePanel === "images" && (
-                    <ImagesRadiographsPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => { setActivePanel(null); toast.success("تم حفظ الصور"); }} />
+                    <ImagesRadiographsPanel patient={selectedPatient} onClose={() => setActivePanel(null)} onSave={() => setActivePanel(null)} />
                   )}
                   {activePanel === "prescription" && (
                     <PrescriptionPanel patient={selectedPatient} onClose={() => setActivePanel(null)} isPending={createPrescriptionMutation.isPending}

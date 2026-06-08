@@ -1437,6 +1437,7 @@ export default function DailyOperationsPage() {
                   onClearSelected={() => setSidePanelItem(null)}
                   onContextMenu={handleItemContextMenu}
                   onQuickPayment={handleQuickPayment}
+                  onCreateLabOrder={handleCreateLabOrder}
                   onBookAppointment={handleBookAppointment}
                   onWhatsApp={handleWhatsApp}
                   onViewPatient={handleViewPatient}
@@ -1542,6 +1543,7 @@ export default function DailyOperationsPage() {
                   waitTime={queueWaitTime}
                   onClose={() => setSidePanelOpen(false)}
                   onQuickPayment={handleQuickPayment}
+                  onCreateLabOrder={handleCreateLabOrder}
                   onBookAppointment={handleBookAppointment}
                   onWhatsApp={handleWhatsApp}
                   onViewPatient={handleViewPatient}
@@ -1562,6 +1564,7 @@ export default function DailyOperationsPage() {
                     waitTime={queueWaitTime}
                     onClose={() => setSidePanelOpen(false)}
                     onQuickPayment={handleQuickPayment}
+                    onCreateLabOrder={handleCreateLabOrder}
                     onBookAppointment={handleBookAppointment}
                     onWhatsApp={handleWhatsApp}
                     onViewPatient={handleViewPatient}
@@ -1719,7 +1722,10 @@ export default function DailyOperationsPage() {
 
       {/* Lab Order Modal */}
       {labOrderModalOpen && (
-        <NewLabOrderModal onClose={() => setLabOrderModalOpen(false)} />
+        <NewLabOrderModal
+          onClose={() => setLabOrderModalOpen(false)}
+          initialPatient={selectedItem ? { id: selectedItem.patientId, displayName: selectedItem.patientName } : undefined}
+        />
       )}
 
       <ConfirmDialog
@@ -1817,6 +1823,8 @@ export default function DailyOperationsPage() {
         onQuickPayment={handleQuickPayment}
         onCreateDraftInvoice={handleCreateDraftInvoice}
         onCompleteVisit={handleCompleteVisit}
+        onCreateLabOrder={handleCreateLabOrder}
+        onLeftWithoutCompletion={handleLeftWithoutCompletion}
         onBookAppointment={handleBookAppointment}
         onWhatsApp={handleWhatsApp}
         onNoShow={handleNoShow}
@@ -1854,6 +1862,7 @@ function DailyOperationsJourneyWorkspace({
   onClearSelected,
   onContextMenu,
   onQuickPayment,
+  onCreateLabOrder,
   onBookAppointment,
   onWhatsApp,
   onViewPatient,
@@ -1874,6 +1883,7 @@ function DailyOperationsJourneyWorkspace({
   onClearSelected: () => void;
   onContextMenu: (e: React.MouseEvent, item: TodayJourneyItem) => void;
   onQuickPayment: (item: TodayJourneyItem) => void;
+  onCreateLabOrder: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
   onWhatsApp: (item: TodayJourneyItem) => void;
   onViewPatient: (item: TodayJourneyItem) => void;
@@ -1977,6 +1987,7 @@ function DailyOperationsJourneyWorkspace({
             waitTime={waitTime}
             onClose={onClearSelected}
             onQuickPayment={onQuickPayment}
+            onCreateLabOrder={onCreateLabOrder}
             onBookAppointment={onBookAppointment}
             onWhatsApp={onWhatsApp}
             onViewPatient={onViewPatient}
@@ -2003,7 +2014,7 @@ function DailyOperationsJourneyWorkspace({
 
 function PatientDetailPanel({
   item, summary, waitTime, onClose,
-  onQuickPayment, onBookAppointment, onWhatsApp, onViewPatient,
+  onQuickPayment, onCreateLabOrder, onBookAppointment, onWhatsApp, onViewPatient,
   medicalAlerts, finance, activeContract, activeOrtho,
 }: {
   item: TodayJourneyItem;
@@ -2011,6 +2022,7 @@ function PatientDetailPanel({
   waitTime?: { estimatedMinutes: number; patientsAhead: number } | null;
   onClose: () => void;
   onQuickPayment: (item: TodayJourneyItem) => void;
+  onCreateLabOrder: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
   onWhatsApp: (item: TodayJourneyItem) => void;
   onViewPatient: (item: TodayJourneyItem) => void;
@@ -2217,6 +2229,12 @@ function PatientDetailPanel({
           style={{ background: BLUE + "12", color: BLUE, border: `1px solid ${BLUE}30` }}>
           <Calendar className="w-3 h-3" />
           حجز
+        </button>
+        <button onClick={() => onCreateLabOrder(item)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition hover:opacity-80"
+          style={{ background: "#0891b214", color: "#0891b2", border: "1px solid #0891b230" }}>
+          <ClipboardList className="w-3 h-3" />
+          طلب معمل
         </button>
         {item.patientPhone && (
           <button onClick={() => onWhatsApp(item)}

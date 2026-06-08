@@ -19,6 +19,10 @@ import { PatientCombobox } from "@/components/shared/PatientCombobox";
 
 interface Props {
   onClose: () => void;
+  initialPatient?: {
+    id: string;
+    displayName: string;
+  };
 }
 
 type DraftItem = CreateLabOrderItemDto & { key: string };
@@ -36,9 +40,9 @@ const emptyItem = (): DraftItem => ({
   instructions: "",
 });
 
-export function NewLabOrderModal({ onClose }: Props) {
+export function NewLabOrderModal({ onClose, initialPatient }: Props) {
   const queryClient = useQueryClient();
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(initialPatient?.id ?? null);
   const [items, setItems] = useState<DraftItem[]>([emptyItem()]);
   const [form, setForm] = useState<Omit<CreateLabOrderRequest, "patientId" | "items">>({
     applianceType: "",
@@ -171,7 +175,10 @@ export function NewLabOrderModal({ onClose }: Props) {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700">المريض *</label>
-              <PatientCombobox defaultDisplayValue="" onSelect={(p: PatientListItem) => setSelectedPatientId(p.id)} />
+              <PatientCombobox
+                defaultDisplayValue={initialPatient?.displayName ?? ""}
+                onSelect={(p: PatientListItem) => setSelectedPatientId(p.id)}
+              />
             </div>
 
             <div className="space-y-1.5">

@@ -15,6 +15,7 @@ import {
   UserCheck, ClipboardList, Phone, DoorOpen, CreditCard,
   CalendarPlus, MessageCircle, UserX, XCircle,
   Eye, CheckCircle, PanelRight, Wallet, Copy,
+  FlaskConical, LogOut,
 } from "lucide-react";
 import type { TodayJourneyItem } from "../_lib/constants";
 import { normalizePhone, NAVY } from "../_lib/constants";
@@ -48,6 +49,8 @@ interface JourneyContextMenuProps {
   onQuickPayment: (item: TodayJourneyItem) => void;
   onCreateDraftInvoice: (item: TodayJourneyItem) => void;
   onCompleteVisit: (item: TodayJourneyItem) => void;
+  onCreateLabOrder: (item: TodayJourneyItem) => void;
+  onLeftWithoutCompletion: (item: TodayJourneyItem) => void;
   onBookAppointment: (item: TodayJourneyItem) => void;
   onWhatsApp: (item: TodayJourneyItem) => void;
   onNoShow: (item: TodayJourneyItem) => void;
@@ -69,6 +72,8 @@ export default function JourneyContextMenu({
   onQuickPayment,
   onCreateDraftInvoice,
   onCompleteVisit,
+  onCreateLabOrder,
+  onLeftWithoutCompletion,
   onBookAppointment,
   onWhatsApp,
   onNoShow,
@@ -204,6 +209,15 @@ export default function JourneyContextMenu({
       divider: true,
     },
 
+    // ── Clinical operations ──
+    {
+      icon: <FlaskConical className="w-4 h-4" />,
+      label: "طلب معمل",
+      action: () => { onCreateLabOrder(item); close(); },
+      color: "#0891b2",
+      show: canAct && !!item.patientId,
+    },
+
     // ── Communication ──
     {
       icon: <MessageCircle className="w-4 h-4" />,
@@ -238,6 +252,15 @@ export default function JourneyContextMenu({
       color: "#3d7ab5",
       show: true,
       divider: true,
+    },
+
+    {
+      icon: <LogOut className="w-4 h-4" />,
+      label: "خرج بدون إكمال",
+      action: () => { onLeftWithoutCompletion(item); close(); },
+      color: "#dc2626",
+      show: canAct && !!item.visitId,
+      danger: true,
     },
 
     // ── Negative actions ──

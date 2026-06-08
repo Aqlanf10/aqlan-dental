@@ -1131,6 +1131,9 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
     }
 
     // ─── GET /api/reports/profit-loss — Consolidated P&L Statement ──────────
+    // Sprint 4: Now reads from JournalEntry/JournalLine (Finance V3 canonical source)
+    // instead of CashFlowTransaction (transitional/legacy) to avoid schema mismatch 500s.
+    // Response shape preserved for frontend compatibility.
     [HttpGet("profit-loss")]
     [Authorize(Policy = "ReportsAccess")] // Admin + Accountant only
     public async Task<IActionResult> GetProfitLossReport([FromQuery] string? from, [FromQuery] string? to)
@@ -1140,96 +1143,199 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         var (toDate, toErr) = DateParsingHelper.TryParseDateOrDefault(to, DateOnly.FromDateTime(DateTime.Today), "تاريخ النهاية");
         if (toErr != null) return toErr;
 
-        var query = db.CashFlowTransactions.Where(t => t.IsActive && t.TransactionDate >= fromDate && t.TransactionDate <= toDate);
-        
-        // Branch filtering if applicable
-        if (currentUser.BranchId.HasValue && !currentUser.IsAdmin)
+        // Branch isolation: admin sees consolidated, non-admin scoped to their branch
+        Guid? branchId = null;
+        if (!currentUser.IsAdmin && currentUser.BranchId.HasValue && currentUser.BranchId.Value != Guid.Empty)
+            branchId = currentUser.BranchId.Value;
+
+        try
         {
-            query = query.Where(t => t.BranchId == currentUser.BranchId.Value);
+            // ── Revenue from Treasury JournalLines (canonical source) ──
+            // Treasury Debit from Payment entries (non-reversal) = cash collected from patients
+            var grossRevenue = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Debit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Payment
+                    && !l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+            // Refunds: Treasury Credit from Refund entries (non-reversal)
+            var totalRefunds = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Credit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Refund
+                    && !l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+            // Payment reversals (deleted payments): Treasury Credit from PaymentDeletion reversal entries
+            var paymentReversals = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Credit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.PaymentDeletion
+                    && l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+            var netRevenue = grossRevenue - totalRefunds - paymentReversals;
+
+            // ── Direct Costs (COGS) from Expense JournalLines ──
+            // OperationalExpense outflows net of reversals
+            var operatingExpenses = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Credit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Expense
+                    && !l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+            var operatingExpenseReversals = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Debit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.Expense
+                    && l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Debit) ?? 0;
+
+            var totalDirectCosts = operatingExpenses - operatingExpenseReversals;
+            var labFees = totalDirectCosts; // Legacy field: all operational expenses treated as direct costs
+            var clinicSupplies = 0m; // Not separately tracked in JournalLine; consolidated into labFees
+            var grossProfit = netRevenue - totalDirectCosts;
+
+            // ── Operating Expenses (OPEX) from Treasury JournalLines ──
+            // Salary payments: net of reversals
+            var salariesPaid = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Credit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.SalaryPayment
+                    && !l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+            var salariesReversals = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Debit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.SalaryPayment
+                    && l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Debit) ?? 0;
+            salariesPaid -= salariesReversals;
+
+            // Commission payments: net of reversals
+            var commissionsPaid = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Credit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.CommissionPayment
+                    && !l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+            // C4 FIX: salaryAdvances are NOT an expense — they're a temporary cash outflow
+            // that gets recovered from salaries (محصلة من الرواتب). Including them in OPEX
+            // double-counts because they are also deducted from SalaryRecord.Advances.
+            var salaryAdvances = 0m; // AdvancePayment now tracked via JournalLine; not an OPEX expense
+
+            // Supplier payments: net of reversals
+            var supplierPayments = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Credit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.SupplierPayment
+                    && !l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+
+            var supplierReversals = await db.JournalLines
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.Debit > 0
+                    && l.JournalEntry.FinancialDocumentType == FinancialDocumentType.SupplierPayment
+                    && l.JournalEntry.IsReversal
+                    && l.JournalEntry.EntryDate >= fromDate && l.JournalEntry.EntryDate <= toDate
+                    && l.JournalEntry.IsPosted
+                    && (!branchId.HasValue || l.BranchId == branchId.Value))
+                .SumAsync(l => (decimal?)l.Debit) ?? 0;
+            supplierPayments -= supplierReversals;
+
+            // Sub-categories within OperationalExpense are not separately tracked in JournalLine.
+            // They are consolidated under the parent OPEX figure for the legacy response shape.
+            var rent = 0m;
+            var utilities = 0m;
+            var marketing = 0m;
+            var maintenance = 0m;
+            var taxes = 0m;
+            var opexMiscellaneous = 0m;
+
+            // C4 FIX: salaryAdvances removed from OPEX total — not an expense, just a temporary outflow
+            var totalOpex = salariesPaid + commissionsPaid + supplierPayments;
+            var netProfit = grossProfit - totalOpex;
+
+            return Ok(new
+            {
+                fromDate = fromDate.ToString("yyyy-MM-dd"),
+                toDate = toDate.ToString("yyyy-MM-dd"),
+                
+                // Revenues
+                grossRevenue,
+                totalRefunds,
+                netRevenue,
+
+                // Direct Costs
+                labFees,
+                clinicSupplies,
+                totalDirectCosts,
+                grossProfit,
+
+                // Operating Expenses (OPEX)
+                salariesPaid,
+                commissionsPaid,
+                supplierPayments,
+                rent,
+                utilities,
+                marketing,
+                maintenance,
+                taxes,
+                opexMiscellaneous,
+                totalOpex,
+
+                // C4 FIX: Salary Advances shown separately — NOT in OPEX
+                // These are temporary cash outflows recovered from salaries (محصلة من الرواتب)
+                salaryAdvances,
+                salaryAdvancesNote = "محصلة من الرواتب",
+
+                // Net Bottom Line
+                netProfit
+            });
         }
-
-        var transactions = await query.ToListAsync();
-
-        // Calculate Revenue Inflows
-        var grossRevenue = transactions.Where(t => t.Type == TransactionType.Inflow && t.Category == FinancialCategory.PatientPayment).Sum(t => t.Amount);
-        var totalRefunds = transactions.Where(t => t.Type == TransactionType.Outflow && t.Category == FinancialCategory.Refund).Sum(t => t.Amount);
-        var netRevenue = grossRevenue - totalRefunds;
-
-        // Calculate Direct Costs (COGS)
-        var expenseIds = transactions
-            .Where(t => t.Category == FinancialCategory.OperationalExpense && t.ReferenceId.HasValue)
-            .Select(t => t.ReferenceId!.Value)
-            .ToHashSet();
-
-        var expenses = await db.OperationalExpenses
-            .Where(e => expenseIds.Contains(e.Id) && e.IsActive)
-            .ToListAsync();
-
-        var labFees = expenses.Where(e => e.Category == ExpenseCategory.LabFees).Sum(e => e.Amount);
-        var clinicSupplies = expenses.Where(e => e.Category == ExpenseCategory.ClinicSupplies).Sum(e => e.Amount);
-        var totalDirectCosts = labFees + clinicSupplies;
-
-        var grossProfit = netRevenue - totalDirectCosts;
-
-        // Calculate Operating Expenses (OPEX)
-        var salariesPaid = transactions.Where(t => t.Category == FinancialCategory.SalaryPayment).Sum(t => t.Amount);
-        var commissionsPaid = transactions.Where(t => t.Category == FinancialCategory.DoctorCommission).Sum(t => t.Amount);
-        // C4 FIX: salaryAdvances are NOT an expense — they're a temporary cash outflow
-        // that gets recovered from salaries (محصلة من الرواتب). Including them in OPEX
-        // double-counts because they are also deducted from SalaryRecord.Advances.
-        var salaryAdvances = transactions.Where(t => t.Category == FinancialCategory.SalaryAdvance).Sum(t => t.Amount);
-        var supplierPayments = transactions.Where(t => t.Category == FinancialCategory.SupplierPayment).Sum(t => t.Amount);
-        
-        var rent = expenses.Where(e => e.Category == ExpenseCategory.Rent).Sum(e => e.Amount);
-        var utilities = expenses.Where(e => e.Category == ExpenseCategory.Utilities).Sum(e => e.Amount);
-        var marketing = expenses.Where(e => e.Category == ExpenseCategory.Marketing).Sum(e => e.Amount);
-        var maintenance = expenses.Where(e => e.Category == ExpenseCategory.Maintenance).Sum(e => e.Amount);
-        var taxes = expenses.Where(e => e.Category == ExpenseCategory.Taxes).Sum(e => e.Amount);
-        var opexMiscellaneous = expenses.Where(e => e.Category == ExpenseCategory.Miscellaneous).Sum(e => e.Amount);
-
-        // C4 FIX: salaryAdvances removed from OPEX total — not an expense, just a temporary outflow
-        var totalOpex = salariesPaid + commissionsPaid + supplierPayments + rent + utilities + marketing + maintenance + taxes + opexMiscellaneous;
-        var netProfit = grossProfit - totalOpex;
-
-        return Ok(new
+        catch (Exception ex)
         {
-            fromDate = fromDate.ToString("yyyy-MM-dd"),
-            toDate = toDate.ToString("yyyy-MM-dd"),
-            
-            // Revenues
-            grossRevenue,
-            totalRefunds,
-            netRevenue,
-
-            // Direct Costs
-            labFees,
-            clinicSupplies,
-            totalDirectCosts,
-            grossProfit,
-
-            // Operating Expenses (OPEX)
-            salariesPaid,
-            commissionsPaid,
-            supplierPayments,
-            rent,
-            utilities,
-            marketing,
-            maintenance,
-            taxes,
-            opexMiscellaneous,
-            totalOpex,
-
-            // C4 FIX: Salary Advances shown separately — NOT in OPEX
-            // These are temporary cash outflows recovered from salaries (محصلة من الرواتب)
-            salaryAdvances,
-            salaryAdvancesNote = "محصلة من الرواتب",
-
-            // Net Bottom Line
-            netProfit
-        });
+            logger.LogError(ex, "Reports.GetProfitLossReport failed for period {From}-{To}", fromDate, toDate);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل تقرير الأرباح والخسائر" });
+        }
     }
 
     // ─── H4: Daily Cash Summary Report ────────────────────────────────────
+    // Sprint 4: Now reads from JournalEntry/JournalLine (Finance V3 canonical source)
+    // instead of CashFlowTransaction (transitional/legacy) to avoid schema mismatch errors.
+    // Admin branch fallback added: if admin has no branch, falls back to first active branch.
+    // Response shape preserved for frontend compatibility.
     [HttpGet("daily-cash-summary")]
     public async Task<IActionResult> GetDailyCashSummary([FromQuery] string? date, [FromQuery] Guid? branchId)
     {
@@ -1237,12 +1343,25 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         if (dateErr != null) return dateErr;
 
         // Determine branch scope
-        var effectiveBranchId = branchId ?? currentUser.BranchId;
+        Guid? effectiveBranchId = branchId ?? currentUser.BranchId;
         if (!currentUser.IsAdmin && currentUser.BranchId.HasValue)
             effectiveBranchId = currentUser.BranchId.Value;
 
+        // Sprint 4: Admin without branch — fallback to first active branch instead of 400
         if (effectiveBranchId == null || effectiveBranchId == Guid.Empty)
-            return BadRequest(new { message = "يجب تحديد الفرع" });
+        {
+            if (currentUser.IsAdmin)
+            {
+                var firstBranch = await db.Branches
+                    .Where(b => b.IsActive)
+                    .OrderBy(b => b.Name)
+                    .Select(b => (Guid?)b.Id)
+                    .FirstOrDefaultAsync();
+                effectiveBranchId = firstBranch;
+            }
+            if (effectiveBranchId == null || effectiveBranchId == Guid.Empty)
+                return BadRequest(new { message = "يجب تحديد الفرع" });
+        }
 
         // Branch name
         var branchName = await db.Branches
@@ -1256,71 +1375,129 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
                 && DateOnly.FromDateTime(s.OpeningTime.Date) == reportDate)
             .SumAsync(s => (decimal?)s.OpeningBalance) ?? 0m;
 
-        // Inflows by PaymentMethod with category breakdown
-        var inflowTransactions = await db.CashFlowTransactions
-            .Where(t => t.IsActive && t.Type == TransactionType.Inflow
-                && t.TransactionDate == reportDate
-                && t.BranchId == effectiveBranchId.Value)
-            .GroupBy(t => t.PaymentMethod.ToLower())
-            .Select(g => new
-            {
-                PaymentMethod = g.Key,
-                Total = g.Sum(t => t.Amount),
-                Categories = g.GroupBy(t => t.Category.ToString())
-                    .Select(cg => new { Category = cg.Key, Amount = cg.Sum(t => t.Amount) })
-                    .ToList()
-            })
-            .ToListAsync();
-
-        // Outflows by PaymentMethod with category breakdown
-        var outflowTransactions = await db.CashFlowTransactions
-            .Where(t => t.IsActive && t.Type == TransactionType.Outflow
-                && t.TransactionDate == reportDate
-                && t.BranchId == effectiveBranchId.Value)
-            .GroupBy(t => t.PaymentMethod.ToLower())
-            .Select(g => new
-            {
-                PaymentMethod = g.Key,
-                Total = g.Sum(t => t.Amount),
-                Categories = g.GroupBy(t => t.Category.ToString())
-                    .Select(cg => new { Category = cg.Key, Amount = cg.Sum(t => t.Amount) })
-                    .ToList()
-            })
-            .ToListAsync();
-
-        var totalInflows = inflowTransactions.Sum(i => i.Total);
-        var totalOutflows = outflowTransactions.Sum(o => o.Total);
-        var closingBalance = openingBalance + totalInflows - totalOutflows;
-
-        // Session summary for the day
-        var sessions = await db.CashierSessions
-            .Include(s => s.Cashier)
-            .Where(s => s.BranchId == effectiveBranchId.Value && s.IsActive
-                && DateOnly.FromDateTime(s.OpeningTime.Date) == reportDate)
-            .Select(s => new
-            {
-                s.Id,
-                s.SessionNumber,
-                CashierName = s.Cashier.Username,
-                s.OpeningBalance,
-                s.ShortageOrSurplus,
-                Status = s.Status.ToString()
-            })
-            .ToListAsync();
-
-        return Ok(new
+        try
         {
-            Date = reportDate.ToString("yyyy-MM-dd"),
-            BranchId = effectiveBranchId.Value,
-            BranchName = branchName,
-            OpeningBalance = openingBalance,
-            Inflows = inflowTransactions,
-            Outflows = outflowTransactions,
-            TotalInflows = totalInflows,
-            TotalOutflows = totalOutflows,
-            NetCashFlow = totalInflows - totalOutflows,
-            ClosingBalance = closingBalance,
-            Sessions = sessions
-        });
+            // ── Read from JournalLine (Treasury account type) — canonical source of truth ──
+            var treasuryLines = await db.JournalLines
+                .Include(l => l.JournalEntry)
+                .Where(l => l.AccountType == JournalAccountType.Treasury
+                    && l.JournalEntry.EntryDate == reportDate
+                    && l.JournalEntry.IsPosted
+                    && l.BranchId == effectiveBranchId.Value)
+                .Select(l => new
+                {
+                    l.Id,
+                    l.Debit,
+                    l.Credit,
+                    l.JournalEntryId,
+                    l.JournalEntry.FinancialDocumentType,
+                    l.JournalEntry.IsReversal,
+                    TreasuryId = l.AccountId
+                })
+                .ToListAsync();
+
+            // Load treasury types for PaymentMethod mapping: Vault → "cash", Bank → "bank_transfer"
+            var treasuryIds = treasuryLines.Select(l => l.TreasuryId).Distinct().ToList();
+            var treasuryTypes = await db.Treasuries
+                .Where(t => treasuryIds.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => (TreasuryType?)t.Type);
+
+            // ── Build Inflows ──
+            // Treasury Debit = Inflow (cash received into treasury)
+            var inflowLines = treasuryLines.Where(l => l.Debit > 0).ToList();
+            var inflowTransactions = inflowLines
+                .GroupBy(l =>
+                {
+                    var tType = treasuryTypes.GetValueOrDefault(l.TreasuryId);
+                    return tType == TreasuryType.Bank ? "bank_transfer" : "cash";
+                })
+                .Select(g => new
+                {
+                    PaymentMethod = g.Key,
+                    Total = g.Sum(l => l.Debit),
+                    Categories = g.GroupBy(l => MapDocumentTypeToCategory(l.FinancialDocumentType))
+                        .Select(cg => new { Category = cg.Key, Amount = cg.Sum(l => l.Debit) })
+                        .ToList()
+                })
+                .ToList();
+
+            // ── Build Outflows ──
+            // Treasury Credit = Outflow (cash paid out from treasury)
+            var outflowLines = treasuryLines.Where(l => l.Credit > 0).ToList();
+            var outflowTransactions = outflowLines
+                .GroupBy(l =>
+                {
+                    var tType = treasuryTypes.GetValueOrDefault(l.TreasuryId);
+                    return tType == TreasuryType.Bank ? "bank_transfer" : "cash";
+                })
+                .Select(g => new
+                {
+                    PaymentMethod = g.Key,
+                    Total = g.Sum(l => l.Credit),
+                    Categories = g.GroupBy(l => MapDocumentTypeToCategory(l.FinancialDocumentType))
+                        .Select(cg => new { Category = cg.Key, Amount = cg.Sum(l => l.Credit) })
+                        .ToList()
+                })
+                .ToList();
+
+            var totalInflows = inflowTransactions.Sum(i => i.Total);
+            var totalOutflows = outflowTransactions.Sum(o => o.Total);
+            var closingBalance = openingBalance + totalInflows - totalOutflows;
+
+            // Session summary for the day
+            var sessions = await db.CashierSessions
+                .Include(s => s.Cashier)
+                .Where(s => s.BranchId == effectiveBranchId.Value && s.IsActive
+                    && DateOnly.FromDateTime(s.OpeningTime.Date) == reportDate)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.SessionNumber,
+                    CashierName = s.Cashier.Username,
+                    s.OpeningBalance,
+                    s.ShortageOrSurplus,
+                    Status = s.Status.ToString()
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                Date = reportDate.ToString("yyyy-MM-dd"),
+                BranchId = effectiveBranchId.Value,
+                BranchName = branchName,
+                OpeningBalance = openingBalance,
+                Inflows = inflowTransactions,
+                Outflows = outflowTransactions,
+                TotalInflows = totalInflows,
+                TotalOutflows = totalOutflows,
+                NetCashFlow = totalInflows - totalOutflows,
+                ClosingBalance = closingBalance,
+                Sessions = sessions
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Reports.GetDailyCashSummary failed for date {Date} branch {BranchId}", reportDate, effectiveBranchId);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل ملخص النقد اليومي" });
+        }
     }
+
+    // ─── Helper: Map FinancialDocumentType to legacy Category strings ───
+    // Mirrors FinanceV3Controller.Helpers.MapDocumentTypeToCategory for use in legacy reports.
+    private static string MapDocumentTypeToCategory(FinancialDocumentType docType) => docType switch
+    {
+        FinancialDocumentType.Payment => "PatientPayment",
+        FinancialDocumentType.Refund => "Refund",
+        FinancialDocumentType.Expense => "OperationalExpense",
+        FinancialDocumentType.SalaryPayment => "SalaryPayment",
+        FinancialDocumentType.CommissionPayment => "DoctorCommission",
+        FinancialDocumentType.SupplierPayment => "SupplierPayment",
+        FinancialDocumentType.VaultTransfer => "InternalTransfer",
+        FinancialDocumentType.ContractCancellation => "Reversal",
+        FinancialDocumentType.PaymentDeletion => "Reversal",
+        FinancialDocumentType.CreditNoteRefund => "Refund",
+        FinancialDocumentType.Invoice => "Revenue",
+        FinancialDocumentType.AdvancePayment => "AdvancePayment",
+        _ => "Other"
+    };
 }

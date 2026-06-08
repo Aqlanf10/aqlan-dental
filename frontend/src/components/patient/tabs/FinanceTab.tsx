@@ -12,9 +12,10 @@ import { financeV3ContractsUrl, financeV3InvoicesUrl } from "@/lib/financeRoutes
 
 interface FinanceTabProps {
   patientId: string;
+  refreshKey?: number; // Sprint Patient-Finance-Ledger: triggers re-fetch when payment changes
 }
 
-export function FinanceTab({ patientId }: FinanceTabProps) {
+export function FinanceTab({ patientId, refreshKey }: FinanceTabProps) {
   const [statement, setStatement] = useState<AccountStatement | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,7 @@ export function FinanceTab({ patientId }: FinanceTabProps) {
       .get<Invoice[]>(`/api/patients/${patientId}/invoices`)
       .then((r) => setInvoices(r.data))
       .catch(() => { setInvoicesError(true); });
-  }, [patientId]);
+  }, [patientId, refreshKey]);
 
   if (loading) {
     return (

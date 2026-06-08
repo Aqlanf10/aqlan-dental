@@ -64,12 +64,12 @@ export default function RoomsView() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذه الغرفة؟")) return;
+    if (!confirm("هل أنت متأكد من تعطيل هذه الغرفة؟")) return;
     try {
-      await api.delete(`/api/settings/rooms/${id}`);
-      toast.success("تم حذف الغرفة");
+      await api.patch(`/api/settings/rooms/${id}/deactivate`);
+      toast.success("تم تعطيل الغرفة");
       fetchRooms();
-    } catch { toast.error("فشل الحذف"); }
+    } catch { toast.error("فشل تعطيل الغرفة"); }
   };
 
   const openEdit = (room: Room) => {

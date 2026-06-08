@@ -58,6 +58,36 @@ public class DashboardFinancePrivacyTests
     }
 
     [Fact]
+    public async Task GetStatsAsync_WhenFinanceHidden_DoesNotExposeOverdueContractCount()
+    {
+        await using var db = CreateDb();
+        var branchId = Guid.NewGuid();
+        var patientId = Guid.NewGuid();
+
+        db.Branches.Add(new Branch { Id = branchId, Name = "Main" });
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "Ali", BranchId = branchId, IsActive = true });
+        db.Contracts.Add(new Contract
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            TotalAmount = 12000,
+            DownPayment = 0,
+            InstallmentsCount = 12,
+            InstallmentAmount = 1000,
+            StartDate = DateOnly.FromDateTime(DateTime.Today.AddMonths(-3)),
+            Status = ContractStatus.Active,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db, branchId);
+
+        var stats = await service.GetStatsAsync(includeFinance: false);
+
+        stats.OverdueContractsCount.Should().Be(0, "doctor-facing dashboard stats must not expose overdue financial counts");
+    }
+
+    [Fact]
     public async Task GetChartsAsync_WhenFinanceHidden_ReturnsZeroRevenueSeries()
     {
         await using var db = CreateDb();

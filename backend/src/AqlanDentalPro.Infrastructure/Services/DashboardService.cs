@@ -59,21 +59,30 @@ public class DashboardService(AppDbContext db, ICurrentUserService currentUser)
         var revenueQuery = db.Payments.Where(p => p.PaymentDate >= monthStart && p.PaymentDate <= today);
         if (branchId.HasValue) revenueQuery = revenueQuery.Where(p => p.BranchId == branchId);
 
-        // Overdue: active contracts where expected paid > actual paid
-        var activeContracts = await db.Contracts
-            .Include(c => c.Payments)
-            .Where(c => c.Status == ContractStatus.Active && c.StartDate.HasValue && c.InstallmentsCount > 0)
-            .ToListAsync();
-
-        var overdueCount = activeContracts.Count(c =>
+        var overdueCount = 0;
+        if (includeFinance)
         {
-            var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12)
-                                + (today.Month - c.StartDate.Value.Month);
-            var expectedPaid = c.DownPayment
-                + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
-            var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
-            return expectedPaid - actualPaid > 0;
-        });
+            // Overdue: active contracts where expected paid > actual paid.
+            // Hidden entirely when finance data is not allowed, because even counts
+            // of overdue contracts are financial exposure for clinical-only roles.
+            var activeContractsQuery = db.Contracts
+                .Include(c => c.Payments)
+                .Where(c => c.Status == ContractStatus.Active && c.StartDate.HasValue && c.InstallmentsCount > 0);
+            if (branchId.HasValue)
+                activeContractsQuery = activeContractsQuery.Where(c => c.Patient.BranchId == branchId);
+
+            var activeContracts = await activeContractsQuery.ToListAsync();
+
+            overdueCount = activeContracts.Count(c =>
+            {
+                var monthsElapsed = ((today.Year - c.StartDate!.Value.Year) * 12)
+                                    + (today.Month - c.StartDate.Value.Month);
+                var expectedPaid = c.DownPayment
+                    + (Math.Min(monthsElapsed, c.InstallmentsCount) * (c.InstallmentAmount ?? 0));
+                var actualPaid = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount);
+                return expectedPaid - actualPaid > 0;
+            });
+        }
 
         var appointmentsToday  = await apptQuery.CountAsync();
         var newPatientsToday   = await patientQuery.CountAsync();

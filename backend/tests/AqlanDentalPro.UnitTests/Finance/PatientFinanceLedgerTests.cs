@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Controllers;
 using AqlanDentalPro.Application.DTOs.Finance;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
@@ -37,19 +38,6 @@ public class PatientFinanceLedgerTests
         return mock.Object;
     }
 
-    private static ICurrentUserService CreateDoctorUser(Guid userId, Guid? branchId = null)
-    {
-        var mock = new Mock<ICurrentUserService>();
-        mock.Setup(u => u.UserId).Returns(userId);
-        mock.Setup(u => u.Role).Returns(UserRole.Orthodontist);
-        mock.Setup(u => u.IsAdmin).Returns(false);
-        mock.Setup(u => u.IsAuthenticated).Returns(true);
-        mock.Setup(u => u.BranchId).Returns(branchId);
-        mock.Setup(u => u.IsImpersonating).Returns(false);
-        mock.Setup(u => u.OriginalUserId).Returns((Guid?)null);
-        return mock.Object;
-    }
-
     private static FinanceService CreateFinanceService(AppDbContext db, ICurrentUserService? currentUser = null)
     {
         currentUser ??= CreateAdminUser();
@@ -60,16 +48,15 @@ public class PatientFinanceLedgerTests
         return new FinanceService(db, currentUser, notifications, logger, commissionService, journalEntryService);
     }
 
-    private static (Guid branchId, Guid patientId, Guid userId) SeedPatient(AppDbContext db)
+    private static (Guid branchId, Guid patientId, Guid userId, Guid treasuryId) SeedPatient(AppDbContext db)
     {
         var branchId = Guid.NewGuid();
         var patientId = Guid.NewGuid();
         var userId = Guid.NewGuid();
+        var treasuryId = Guid.NewGuid();
         db.Branches.Add(new Branch { Id = branchId, Name = "الفرع الرئيسي" });
         db.Patients.Add(new Patient { Id = patientId, FirstName = "أحمد", LastName = "محمد", BranchId = branchId, PatientNumber = "P-001" });
         db.Users.Add(new User { Id = userId, Username = "admin1", BranchId = branchId });
-        // Active cashier session required for payment creation
-        var treasuryId = Guid.NewGuid();
         db.Treasuries.Add(new Treasury { Id = treasuryId, Name = "الخزنة", Type = TreasuryType.Vault, Balance = 0, BranchId = branchId, IsActive = true });
         db.CashierSessions.Add(new CashierSession
         {
@@ -78,13 +65,13 @@ public class PatientFinanceLedgerTests
             BranchId = branchId,
             TreasuryId = treasuryId,
             OpeningBalance = 0,
-            Status = CashierSessionStatus.Open,
+            Status = SessionStatus.Open,
             IsActive = true,
             SessionNumber = "CS-001",
             OpeningTime = DateTime.UtcNow
         });
         db.SaveChanges();
-        return (branchId, patientId, userId);
+        return (branchId, patientId, userId, treasuryId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -95,10 +82,10 @@ public class PatientFinanceLedgerTests
     public async Task Payment_WithPatientId_IsVisibleInFinanceSummary()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
-        // Create a contract first so payment has something to link to
+        // Create a contract with down payment
         var contractResult = await service.CreateContractAsync(new CreateContractRequest
         {
             PatientId = patientId,
@@ -123,7 +110,7 @@ public class PatientFinanceLedgerTests
     public async Task Payment_WithInvoiceIdAndPatientId_IsVisibleInPatientPayments()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create an invoice
@@ -136,7 +123,6 @@ public class PatientFinanceLedgerTests
             Status = InvoiceStatus.Issued,
             TotalAmount = 3000,
             Subtotal = 3000,
-            BranchId = branchId,
             IsActive = true,
             CreatedBy = userId
         });
@@ -153,7 +139,7 @@ public class PatientFinanceLedgerTests
         });
 
         var payments = await service.GetPaymentsAsync(1, 50, patientId);
-        payments.Items.Should().ContainSingle(p => p.InvoiceId == invoiceId && p.Amount == 1500m,
+        payments.Should().ContainSingle(p => p.InvoiceId == invoiceId && p.Amount == 1500m,
             "payment linked to invoice should appear in patient payments");
     }
 
@@ -165,7 +151,7 @@ public class PatientFinanceLedgerTests
     public async Task DraftInvoice_NotCountedInOutstandingBalance()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create a DRAFT invoice — should NOT inflate outstanding balance
@@ -177,7 +163,6 @@ public class PatientFinanceLedgerTests
             Status = InvoiceStatus.Draft,
             TotalAmount = 5000,
             Subtotal = 5000,
-            BranchId = branchId,
             IsActive = true,
             CreatedBy = userId
         });
@@ -191,7 +176,6 @@ public class PatientFinanceLedgerTests
             Status = InvoiceStatus.Issued,
             TotalAmount = 2000,
             Subtotal = 2000,
-            BranchId = branchId,
             IsActive = true,
             CreatedBy = userId
         });
@@ -213,7 +197,7 @@ public class PatientFinanceLedgerTests
     public async Task CancelledInvoice_NotCountedAsOutstanding()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create a CANCELLED invoice
@@ -225,7 +209,6 @@ public class PatientFinanceLedgerTests
             Status = InvoiceStatus.Cancelled,
             TotalAmount = 10000,
             Subtotal = 10000,
-            BranchId = branchId,
             IsActive = true,
             CreatedBy = userId
         });
@@ -247,7 +230,7 @@ public class PatientFinanceLedgerTests
     public async Task FinanceSummary_AndAccountStatement_Agree()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create a contract with down payment
@@ -278,7 +261,7 @@ public class PatientFinanceLedgerTests
     public async Task ContractDownPayment_UsesSpecifiedPaymentMethod()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create contract with bank_transfer down payment
@@ -293,7 +276,7 @@ public class PatientFinanceLedgerTests
         });
 
         var payments = await service.GetPaymentsAsync(1, 50, patientId);
-        var downPayment = payments.Items.FirstOrDefault(p => p.ContractId == contract.Id);
+        var downPayment = payments.FirstOrDefault(p => p.ContractId == contract.Id);
 
         downPayment.Should().NotBeNull("contract down payment should exist");
         downPayment!.PaymentMethod.Should().Be("bank_transfer",
@@ -304,7 +287,7 @@ public class PatientFinanceLedgerTests
     public async Task ContractDownPayment_DefaultsToCash_WhenMethodNotSpecified()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create contract without specifying payment method — should default to cash
@@ -318,7 +301,7 @@ public class PatientFinanceLedgerTests
         });
 
         var payments = await service.GetPaymentsAsync(1, 50, patientId);
-        var downPayment = payments.Items.FirstOrDefault(p => p.ContractId == contract.Id);
+        var downPayment = payments.FirstOrDefault(p => p.ContractId == contract.Id);
 
         downPayment.Should().NotBeNull("contract down payment should exist");
         downPayment!.PaymentMethod.Should().Be("cash",
@@ -333,7 +316,7 @@ public class PatientFinanceLedgerTests
     public async Task DeletedPayment_NotCountedInPatientBalance()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create contract with down payment
@@ -352,7 +335,7 @@ public class PatientFinanceLedgerTests
 
         // Delete the down payment
         var payments = await service.GetPaymentsAsync(1, 50, patientId);
-        var downPayment = payments.Items.First(p => p.ContractId == contract.Id);
+        var downPayment = payments.First(p => p.ContractId == contract.Id);
         await service.DeletePaymentAsync(downPayment.Id);
 
         // Verify balance updated
@@ -380,7 +363,7 @@ public class PatientFinanceLedgerTests
     public async Task AccountStatement_ExcludesDraftInvoices()
     {
         await using var db = CreateDb();
-        var (branchId, patientId, userId) = SeedPatient(db);
+        var (branchId, patientId, userId, treasuryId) = SeedPatient(db);
         var service = CreateFinanceService(db, CreateAdminUser(branchId));
 
         // Create a DRAFT invoice
@@ -392,7 +375,6 @@ public class PatientFinanceLedgerTests
             Status = InvoiceStatus.Draft,
             TotalAmount = 7000,
             Subtotal = 7000,
-            BranchId = branchId,
             IsActive = true,
             CreatedBy = userId
         });

@@ -217,7 +217,7 @@ export function PricedProceduresPanel({
   services: ServiceWithPrice[];
   currentAmountDue?: number;
   currentTreatmentDone: string;
-  onSave: (data: { treatmentDone: string; totalAmount: number; suggestedServiceId: string }) => void;
+  onSave: (data: { treatmentDone: string; totalAmount: number; suggestedServiceId: string; additionalServicesText: string }) => void;
 }) {
   const [searchService, setSearchService] = useState("");
   const [selectedServices, setSelectedServices] = useState<Map<string, ServiceWithPrice & { quantity: number }>>(new Map());
@@ -283,16 +283,22 @@ export function PricedProceduresPanel({
 
   const handleSave = () => {
     if (!isFreeVisit && selectedServices.size === 0) return;
-    const names = Array.from(selectedServices.values()).map(s =>
+    const selected = Array.from(selectedServices.values());
+    const names = selected.map(s =>
       s.quantity > 1 ? `${s.arabicName} ×${s.quantity}` : s.arabicName
     );
     const treatmentText = names.join(" + ") || currentTreatmentDone || "زيارة بدون رسوم";
     const firstServiceId = selectedServices.keys().next().value ?? "";
+    // F6: Additional services beyond the first are listed as readable text
+    const additionalNames = selected.length > 1
+      ? selected.slice(1).map(s => s.quantity > 1 ? `${s.arabicName} ×${s.quantity}` : s.arabicName).join("، ")
+      : "";
 
     onSave({
       treatmentDone: treatmentText,
       totalAmount: finalAmount,
       suggestedServiceId: firstServiceId,
+      additionalServicesText: additionalNames,
     });
     setSelectedServices(new Map());
     setSearchService("");
@@ -1136,7 +1142,7 @@ export function FollowUpSuggestPanel({
       <div className="p-2.5 rounded-lg flex items-center gap-2" style={{ background: "#f5f3ff" }}>
         <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#7c3aed" }} />
         <span className="text-[11px] font-medium" style={{ color: "#5b21b6" }}>
-          سيتم حفظ الاقتراح فقط — لن يتم إنشاء موعد تلقائياً
+          سيتم إنشاء موعد متابعة فعلي في جدول المواعيد
         </span>
       </div>
 
@@ -1148,7 +1154,7 @@ export function FollowUpSuggestPanel({
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
           style={{ background: "#7c3aed", opacity: !followUpDate || isPending ? 0.5 : 1 }}>
           {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          اقتراح الموعد
+          إنشاء موعد المتابعة
         </button>
       </div>
     </div>

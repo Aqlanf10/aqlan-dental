@@ -22,6 +22,7 @@ public sealed class CreatePrescriptionRequest
 {
     public Guid PatientId { get; init; }
     public Guid? DoctorId { get; init; }
+    public Guid? VisitId { get; init; }
     public string? Diagnosis { get; init; }
     public List<DrugItem> Drugs { get; init; } = [];
     public string? Notes { get; init; }
@@ -120,6 +121,7 @@ public class PrescriptionsController(AppDbContext db, ICurrentUserService curren
         {
             PatientId = req.PatientId,
             DoctorId  = req.DoctorId ?? currentUser.UserId,
+            VisitId   = req.VisitId,
             Diagnosis = req.Diagnosis,
             Drugs     = drugsJson,
             Notes     = req.Notes

@@ -14,6 +14,8 @@ import {
   Plus, Minus, Trash2, Stethoscope,
   MessageSquare, Camera, Upload,
 } from "lucide-react";
+import api from "@/lib/api";
+import { toast } from "@/stores/toastStore";
 import {
   NAVY, BLUE, ORANGE, inputCls, fmtRial,
 } from "../../daily-operations/_lib/constants";
@@ -671,8 +673,7 @@ export function OrthoFollowUpPanel({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Images & Radiographs Panel — Placeholder
-   TODO: Connect to file upload API when ready
+   Images & Radiographs Panel
    ═══════════════════════════════════════════════════════════════════════════ */
 export function ImagesRadiographsPanel({
   onClose, patient, onSave,
@@ -681,6 +682,70 @@ export function ImagesRadiographsPanel({
   patient: DoctorPatientItem | null;
   onSave: () => void;
 }) {
+  const [recordType, setRecordType] = useState<"Radiograph" | "ClinicalPhoto">("Radiograph");
+  const [xrayType, setXrayType] = useState("Panoramic");
+  const [photoType, setPhotoType] = useState("Clinical");
+  const [notes, setNotes] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const canSave = !!patient?.patientId && !!file && !isSaving;
+
+  const handleSave = async () => {
+    if (!patient?.patientId) {
+      toast.error("اختر مريضاً أولاً");
+      return;
+    }
+    if (!file) {
+      toast.error("اختر ملف الصورة أو الأشعة");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await api.post<{
+        url: string;
+        originalName: string;
+        size: number;
+        contentType: string;
+      }>("/api/uploads", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      const uploaded = uploadRes.data;
+      if (recordType === "Radiograph") {
+        await api.post("/api/radiographs", {
+          patientId: patient.patientId,
+          fileUrl: uploaded.url,
+          fileName: uploaded.originalName,
+          fileSize: uploaded.size,
+          mimeType: uploaded.contentType,
+          xrayType,
+          doctorId: patient.doctorId || undefined,
+          notes: notes.trim() || null,
+        });
+      } else {
+        await api.post("/api/clinical-photos", {
+          patientId: patient.patientId,
+          fileUrl: uploaded.url,
+          category: "clinical",
+          photoType,
+          stage: patient.visitStatus || patient.appointmentStatus || null,
+          notes: notes.trim() || null,
+        });
+      }
+
+      toast.success(recordType === "Radiograph" ? "تم رفع الأشعة وربطها بالمريض" : "تم رفع الصورة وربطها بالمريض");
+      onSave();
+    } catch {
+      toast.error("فشل رفع الملف أو حفظه في أرشيف المريض");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="p-5 space-y-3">
       {/* Patient info header */}
@@ -691,55 +756,99 @@ export function ImagesRadiographsPanel({
         </div>
       </div>
 
-      {/* Placeholder area for clinical images/radiographs */}
-      <div className="border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-4"
+      <div className="border-2 border-dashed rounded-2xl p-5 space-y-4"
         style={{ borderColor: "#e2e8f0", background: "#fafafa" }}>
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: "#f1f5f9" }}>
-          <Camera className="w-8 h-8" style={{ color: "#94a3b8" }} />
-        </div>
-        <div className="text-center">
-          <div className="text-sm font-bold mb-1" style={{ color: NAVY }}>منطقة الأشعة والصور</div>
-          <div className="text-xs font-medium" style={{ color: "#64748b" }}>
-            سيتم عرض الأشعة والصور السريرية هنا
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "#f1f5f9" }}>
+            <Camera className="w-6 h-6" style={{ color: "#64748b" }} />
+          </div>
+          <div>
+            <div className="text-sm font-bold mb-1" style={{ color: NAVY }}>رفع صورة أو أشعة</div>
+            <div className="text-xs font-medium" style={{ color: "#64748b" }}>
+              سيتم حفظ الملف مباشرة في أرشيف المريض
+            </div>
           </div>
         </div>
 
-        {/* Upload placeholder */}
-        <div className="flex gap-2">
-          <button disabled
-            className="px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 opacity-50 cursor-not-allowed"
-            style={{ background: "#f1f5f9", color: "#64748b" }}>
-            <Upload className="w-3.5 h-3.5" />
-            رفع أشعة
-          </button>
-          <button disabled
-            className="px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 opacity-50 cursor-not-allowed"
-            style={{ background: "#f1f5f9", color: "#64748b" }}>
-            <Camera className="w-3.5 h-3.5" />
-            رفع صورة سريرية
-          </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>نوع السجل</label>
+            <select value={recordType} onChange={e => setRecordType(e.target.value as "Radiograph" | "ClinicalPhoto")} className={inputCls()}>
+              <option value="Radiograph">أشعة</option>
+              <option value="ClinicalPhoto">صورة سريرية</option>
+            </select>
+          </div>
+          {recordType === "Radiograph" ? (
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>نوع الأشعة</label>
+              <select value={xrayType} onChange={e => setXrayType(e.target.value)} className={inputCls()}>
+                <option value="Panoramic">بانوراما</option>
+                <option value="Periapical">حول ذروية</option>
+                <option value="Bitewing">بايت وينغ</option>
+                <option value="CBCT">CBCT</option>
+                <option value="Cephalometric">سيفالومتريك</option>
+                <option value="Other">أخرى</option>
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>نوع الصورة</label>
+              <select value={photoType} onChange={e => setPhotoType(e.target.value)} className={inputCls()}>
+                <option value="Clinical">سريرية</option>
+                <option value="Intraoral">داخل الفم</option>
+                <option value="Extraoral">خارج الفم</option>
+                <option value="Progress">متابعة</option>
+                <option value="Other">أخرى</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الملف</label>
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,.pdf"
+            onChange={e => setFile(e.target.files?.[0] ?? null)}
+            disabled={isSaving}
+            className="w-full text-xs file:ml-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:text-white file:cursor-pointer disabled:opacity-50"
+            style={{ color: "#334155" }}
+          />
+          {file && (
+            <p className="text-[10px] mt-1" style={{ color: "#16a34a" }}>
+              تم اختيار: {file.name}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>ملاحظات</label>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            rows={3}
+            placeholder="مثال: قبل العلاج، بعد التنظيف، متابعة الجذر..."
+            className={inputCls()}
+          />
+        </div>
+
+        <div className="p-3 rounded-xl flex items-center gap-2" style={{ background: "#eff6ff", border: "1px solid #dbeafe" }}>
+          <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: BLUE }} />
+          <div className="text-xs font-medium" style={{ color: "#64748b" }}>
+            الملفات المسموحة: JPG، PNG، WEBP، PDF. الحد الأقصى 10 ميجابايت.
+          </div>
         </div>
       </div>
-
-      {/* Development message */}
-      <div className="p-3 rounded-xl flex items-center gap-2" style={{ background: "#fef3c7", border: "1px solid #fde68a" }}>
-        <AlertCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#d97706" }} />
-        <span className="text-xs font-medium" style={{ color: "#92400e" }}>
-          هذه الميزة قيد التطوير — سيتم إضافة رفع الصور والأشعة قريباً
-        </span>
-      </div>
-
-      {/* TODO: Connect to file upload API when ready */}
 
       {/* Action buttons */}
       <div className="flex gap-2 pt-3">
         <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
           style={{ background: "#f1f5f9", color: "#64748b" }}>إغلاق</button>
-        <button onClick={onSave}
+        <button onClick={handleSave} disabled={!canSave}
           className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: "#64748b" }}>
-          <Check className="w-4 h-4" />
-          حفظ مرجع الأشعة
+          style={{ background: BLUE, opacity: !canSave ? 0.55 : 1 }}>
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+          {isSaving ? "جارٍ الرفع..." : "رفع وحفظ"}
         </button>
       </div>
     </div>

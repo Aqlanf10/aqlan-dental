@@ -97,7 +97,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 PatientId = req.PatientId,
                 ContractId = contract.Id,
                 Amount = req.DownPayment,
-                PaymentMethod = "cash",
+                PaymentMethod = req.DownPaymentMethod ?? "cash", // Sprint Patient-Finance-Ledger: was hardcoded "cash"
                 ServiceDescription = "دفعة أولى"
             });
         }
@@ -526,9 +526,11 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             .Where(p => p.PatientId == patientId && p.IsActive)
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
 
+        // Sprint Patient-Finance-Ledger: Exclude Draft invoices — same as GetPatientFinanceSummaryAsync
         var invoices = await db.Invoices
             .Where(i => i.PatientId == patientId
                      && i.Status != InvoiceStatus.Cancelled
+                     && i.Status != InvoiceStatus.Draft
                      && i.IsActive)
             .ToListAsync();
 
@@ -937,10 +939,14 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var contractPaid    = contracts.Sum(c => c.Payments.Where(p => p.IsActive).Sum(p => p.Amount));
 
         // ── Invoice-based financials (new invoice system) ───────────────────
+        // Sprint Patient-Finance-Ledger: Exclude Draft invoices from outstanding balance.
+        // Draft invoices are not yet committed — only Issued and Paid represent actual obligation.
+        // This aligns with FinanceV3 GetPatientBalance which also excludes Drafts.
         var invoices = await db.Invoices
             .Include(i => i.Payments)
             .Where(i => i.PatientId == patientId
                      && i.Status != InvoiceStatus.Cancelled
+                     && i.Status != InvoiceStatus.Draft
                      && i.IsActive)
             .ToListAsync();
 

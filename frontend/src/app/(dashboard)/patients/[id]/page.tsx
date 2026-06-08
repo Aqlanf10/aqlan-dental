@@ -115,6 +115,8 @@ export default function PatientProfilePage() {
   const [summary,      setSummary]      = useState<PatientSummary | null>(null);
   const [orthoCases,   setOrthoCases]   = useState<OrthoCase[]>([]);
   const [surgeryCases, setSurgeryCases] = useState<SurgeryCase[]>([]);
+  // Sprint Patient-Finance-Ledger: financeRefreshKey triggers re-fetch of summary & finance tab
+  const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [activeTab,    setActiveTab]    = useState<Tab>("overview");
@@ -291,7 +293,7 @@ export default function PatientProfilePage() {
       .then(r => setOrthoCases(r.data)).catch(() => {});
     api.get<{ data: SurgeryCase[] }>(`/api/surgery-cases?patientId=${id}&pageSize=10`)
       .then(r => setSurgeryCases(r.data.data ?? [])).catch(() => {});
-  }, [id]);
+  }, [id, financeRefreshKey]);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -435,9 +437,9 @@ export default function PatientProfilePage() {
               financeSubTab,
               setFinanceSubTab
             )}
-            {financeSubTab === "finance" && <FinanceTab patientId={id} />}
+            {financeSubTab === "finance" && <FinanceTab patientId={id} refreshKey={financeRefreshKey} />}
             {financeSubTab === "contracts" && <ContractsTab patientId={id} />}
-            {financeSubTab === "payments" && <PaymentsTab patientId={id} />}
+            {financeSubTab === "payments" && <PaymentsTab patientId={id} onPaymentChanged={() => setFinanceRefreshKey(k => k + 1)} />}
           </div>
         );
 

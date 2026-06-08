@@ -770,10 +770,17 @@ public partial class FinanceV3Controller
         var journalNetBalance = journalReceivable + journalAdvance;
 
         // ── Entity-based detail fields (for UI compatibility) ──
+        // Sprint Patient-Finance-Ledger: Now includes contract totals and all active payments
+        // so EntityBalance matches FinanceService.GetPatientFinanceSummaryAsync.
         var totalInvoiced = await db.Invoices
             .Where(i => i.PatientId == patientId && i.IsActive
                 && (i.Status == InvoiceStatus.Issued || i.Status == InvoiceStatus.Paid))
             .SumAsync(i => (decimal?)i.TotalAmount) ?? 0;
+
+        // Contract-based costs (same calculation as GetPatientFinanceSummaryAsync)
+        var totalContracted = await db.Contracts
+            .Where(c => c.PatientId == patientId && c.IsActive)
+            .SumAsync(c => (decimal?)(c.TotalAmount - c.DiscountAmount)) ?? 0;
 
         var totalPaid = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive && p.Amount > 0)
@@ -788,7 +795,9 @@ public partial class FinanceV3Controller
             .SumAsync(c => (decimal?)c.DiscountAmount) ?? 0;
 
         var netPaid = totalPaid + totalRefunds; // refunds are negative
-        var entityBalance = totalInvoiced - netPaid;
+        // Sprint Patient-Finance-Ledger: EntityBalance now includes contract totals
+        // so it matches the patient-facing outstanding balance from FinanceService
+        var entityBalance = (totalInvoiced + totalContracted) - netPaid;
 
         // Contract outstanding
         var contractOutstanding = await db.Contracts
@@ -803,12 +812,13 @@ public partial class FinanceV3Controller
             PatientName = (patient.FirstName + " " + patient.LastName).Trim(),
             PatientNumber = patient.PatientNumber,
             TotalInvoiced = totalInvoiced,
+            TotalContracted = totalContracted, // Sprint Patient-Finance-Ledger: new field
             TotalPaid = totalPaid,
             TotalRefunds = Math.Abs(totalRefunds),
             NetPaid = netPaid,
             TotalDiscounts = totalDiscounts,
             Balance = journalNetBalance, // JournalLine-based canonical balance
-            EntityBalance = entityBalance, // Entity-based balance for reconciliation
+            EntityBalance = entityBalance, // Entity-based balance for reconciliation (now includes contracts)
             ContractOutstanding = contractOutstanding,
             HasOutstanding = journalNetBalance > 0,
             JournalReceivable = journalReceivable,

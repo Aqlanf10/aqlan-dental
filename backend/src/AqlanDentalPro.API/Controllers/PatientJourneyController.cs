@@ -1607,6 +1607,11 @@ public class PatientJourneyController(
         var patient = await db.Patients.FindAsync(patientId);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
 
+        // Sprint Patient-Finance-Ledger: Hide financial details from non-finance roles
+        var canViewFinanceAmounts = currentUser.IsAdmin
+            || currentUser.Role == UserRole.Accountant
+            || currentUser.Role == UserRole.Reception;
+
         // Get the latest active visit
         var visit = await db.Visits
             .Include(v => v.Appointment)
@@ -1627,7 +1632,7 @@ public class PatientJourneyController(
 
         if (outstanding <= 0)
         {
-            return Ok(new { canClose = true, reason = "الرصيد متساوي", outstandingAmount = 0 });
+            return Ok(new { canClose = true, reason = "الرصيد متساوي", outstandingAmount = canViewFinanceAmounts ? 0 : (decimal?)null });
         }
 
         // Check if there's a multi-session treatment plan (active ortho case or in-progress general treatment items)
@@ -1644,7 +1649,7 @@ public class PatientJourneyController(
                 canClose = true,
                 reason = "خطة علاج متعددة الجلسات",
                 reasonCode = "MULTI_SESSION_PLAN",
-                outstandingAmount = outstanding,
+                outstandingAmount = canViewFinanceAmounts ? outstanding : (decimal?)null,
                 requiresAuditLog = true
             });
         }
@@ -1674,7 +1679,7 @@ public class PatientJourneyController(
                 canClose = true,
                 reason = "موافقة مدير على الدين",
                 reasonCode = "MANAGER_OVERRIDE",
-                outstandingAmount = outstanding,
+                outstandingAmount = canViewFinanceAmounts ? outstanding : (decimal?)null,
                 requiresAuditLog = true
             });
         }
@@ -1685,7 +1690,7 @@ public class PatientJourneyController(
             canClose = false,
             reason = "يوجد مبلغ متبقي. يلزم دفع كامل أو موافقة مدير أو تحويل لخطة أقساط.",
             reasonCode = "OUTSTANDING_BALANCE",
-            outstandingAmount = outstanding
+            outstandingAmount = canViewFinanceAmounts ? outstanding : (decimal?)null
         });
     }
 

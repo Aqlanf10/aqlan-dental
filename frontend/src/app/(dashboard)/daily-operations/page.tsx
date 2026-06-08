@@ -361,19 +361,27 @@ export default function DailyOperationsPage() {
   // ── Next patient to call ──
   const nextPatient = useMemo(() => getNextPatient(items), [items]);
 
+  const matchesSearch = useCallback((item: TodayJourneyItem, query: string) => (
+    item.patientName.toLowerCase().includes(query) ||
+    (item.patientPhone && item.patientPhone.includes(query)) ||
+    item.doctorName.toLowerCase().includes(query) ||
+    (item.serviceName && item.serviceName.toLowerCase().includes(query))
+  ), []);
+
   const filteredItems = useMemo(() => {
     let result = filterByTab(items, activeTab);
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
-      result = result.filter(i =>
-        i.patientName.toLowerCase().includes(q) ||
-        (i.patientPhone && i.patientPhone.includes(q)) ||
-        i.doctorName.toLowerCase().includes(q) ||
-        (i.serviceName && i.serviceName.toLowerCase().includes(q))
-      );
+      result = result.filter(i => matchesSearch(i, q));
     }
     return result;
-  }, [items, activeTab, searchQuery]);
+  }, [items, activeTab, searchQuery, matchesSearch]);
+
+  const journeyItems = useMemo(() => {
+    if (!searchQuery.trim()) return items;
+    const q = searchQuery.trim().toLowerCase();
+    return items.filter(i => matchesSearch(i, q));
+  }, [items, searchQuery, matchesSearch]);
 
   // ── Tab counts ──
   const tabCounts = useMemo(() => ({
@@ -1414,7 +1422,7 @@ export default function DailyOperationsPage() {
             {activeModule === "journey" && (
               <div className="flex-1 flex min-w-0 overflow-hidden bg-[#f4f8fc]">
                 <DailyOperationsJourneyWorkspace
-                  items={filteredItems}
+                  items={journeyItems}
                   loading={itemsLoading}
                   selectedItem={sidePanelItem}
                   summary={selectedSummary ?? null}
@@ -1437,28 +1445,6 @@ export default function DailyOperationsPage() {
                   activeContract={panelActiveContract}
                   activeOrtho={panelActiveOrtho}
                 />
-                <div className="hidden">
-                  <div
-                    className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl"
-                    style={{ background: `${NAVY}12` }}
-                  >
-                    <Activity className="w-8 h-8" style={{ color: NAVY }} />
-                  </div>
-                  <h2 className="text-lg font-extrabold mb-2" style={{ color: NAVY }}>
-                    رحلة المرضى اليومية
-                  </h2>
-                  <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-                    يتم فتح الواجهة الكاملة المعتمدة لرحلة المرضى — من تسجيل الوصول حتى إنهاء الحساب والخروج
-                  </p>
-                  <button
-                    onClick={() => router.push("/patient-journey")}
-                    className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold text-white shadow-md transition hover:shadow-lg hover:opacity-90 active:scale-[0.98]"
-                    style={{ background: NAVY }}
-                  >
-                    <Activity className="w-5 h-5" />
-                    فتح رحلة المرضى
-                  </button>
-                </div>
               </div>
             )}
 

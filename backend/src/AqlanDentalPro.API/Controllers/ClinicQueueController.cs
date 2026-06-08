@@ -1532,7 +1532,9 @@ public class ClinicQueueController(
     {
         if (patient == null) return "";
 
-        var firstName = patient.FirstName?.Trim();
+        var firstName = patient.FirstName?.Trim()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
         if (string.IsNullOrWhiteSpace(firstName))
             return "مريض";
 

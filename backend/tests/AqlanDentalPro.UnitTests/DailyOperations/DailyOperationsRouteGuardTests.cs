@@ -1,6 +1,5 @@
+using System.Reflection;
 using AqlanDentalPro.API.Controllers;
-using AqlanDentalPro.Domain.Entities;
-using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
@@ -13,68 +12,94 @@ using Xunit;
 namespace AqlanDentalPro.UnitTests.DailyOperations;
 
 /// <summary>
-/// Route guard and integration tests for DailyOperationsController.
-/// Verifies correct attribute routing, authorization policy, and basic endpoint behavior.
+/// Route guard tests for DailyOperationsController.
+///
+/// Sprint 2 root-cause fix:
+///   - Added [Route("api/daily-operations")] at class level.
+///   - Changed [HttpGet("/api/daily-operations/report")] (absolute path) to [HttpGet("report")]
+///     (relative path). An absolute path (leading "/") bypasses the class-level [Route] prefix,
+///     making the route invisible to middleware and Swagger for the prefix path.
+///
+/// Sections:
+///   A. Reflection tests — verify attributes compile and are set correctly (fast, no I/O).
+///   B. Integration-style tests — instantiate the controller with InMemory DB, call action
+///      methods directly, and assert the result is NOT NotFoundResult. This follows the
+///      existing FinanceV3IntegrationFixTests.cs pattern used throughout this project.
+///
+/// Production paths tested here (all observed in useMessaging.ts and page.tsx):
+///   GET  /api/daily-operations/report?date=  — daily ops dashboard
 /// </summary>
 public class DailyOperationsRouteGuardTests
 {
     // ═══════════════════════════════════════════════════════════════════════════
-    // Section A: Reflection-only route/attribute checks
+    // A. Reflection tests (attribute verification)
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void DailyOperationsController_HasRouteAttribute_WithApiDailyOperations()
+    public void DailyOperationsController_HasClassLevelRoute()
     {
-        var attr = typeof(DailyOperationsController)
-            .GetCustomAttributes(typeof(RouteAttribute), false)
-            .Cast<RouteAttribute>()
-            .FirstOrDefault();
+        var route = typeof(DailyOperationsController)
+            .GetCustomAttributes<RouteAttribute>()
+            .SingleOrDefault();
 
-        attr.Should().NotBeNull("DailyOperationsController must have [Route] attribute");
-        attr!.Template.Should().Be("api/daily-operations",
-            "Route template must be 'api/daily-operations' for consistent routing");
+        route.Should().NotBeNull(
+            "DailyOperationsController must have a class-level [Route] attribute so that " +
+            "GET /api/daily-operations/report returns 401 (not 404) for unauthenticated requests");
+
+        route!.Template.Should().Be("api/daily-operations",
+            "the class route must match the path the frontend calls");
     }
 
     [Fact]
-    public void DailyOperationsController_HasAuthorizePolicy_StaffOnly()
+    public void DailyOperationsController_RequiresStaffOnlyPolicy()
     {
-        var attr = typeof(DailyOperationsController)
-            .GetCustomAttributes(typeof(AuthorizeAttribute), false)
-            .Cast<AuthorizeAttribute>()
-            .FirstOrDefault();
+        var authorize = typeof(DailyOperationsController)
+            .GetCustomAttributes<AuthorizeAttribute>()
+            .SingleOrDefault();
 
-        attr.Should().NotBeNull("DailyOperationsController must have [Authorize] attribute");
-        attr!.Policy.Should().Be("StaffOnly",
-            "Authorization policy must be 'StaffOnly'");
+        authorize.Should().NotBeNull(
+            "DailyOperationsController must be protected by [Authorize] so unauthenticated " +
+            "requests return 401 rather than being served open data");
+
+        authorize!.Policy.Should().Be("StaffOnly",
+            "only authenticated clinic staff should access daily operations data");
     }
 
     [Fact]
-    public void GetDailyReport_HttpGetAttribute_IsRelativePath()
+    public void GetDailyReport_HasRelativeHttpGetRoute_NotAbsolutePath()
     {
-        var method = typeof(DailyOperationsController).GetMethod("GetDailyReport");
-        method.Should().NotBeNull("GetDailyReport method must exist");
+        var method = typeof(DailyOperationsController)
+            .GetMethod(nameof(DailyOperationsController.GetDailyReport));
 
-        var httpGetAttr = method!.GetCustomAttributes(typeof(HttpGetAttribute), false)
-            .Cast<HttpGetAttribute>()
-            .FirstOrDefault();
+        method.Should().NotBeNull("GetDailyReport action must exist");
 
-        httpGetAttr.Should().NotBeNull("GetDailyReport must have [HttpGet] attribute");
-        httpGetAttr!.Template.Should().Be("report",
-            "HttpGet template must be relative 'report', not absolute '/api/daily-operations/report'");
+        var httpGet = method!.GetCustomAttributes<HttpGetAttribute>().SingleOrDefault();
+
+        httpGet.Should().NotBeNull("GetDailyReport must have [HttpGet]");
+
+        httpGet!.Template.Should().Be("report",
+            "the action route must be relative ('report') not absolute ('/api/daily-operations/report'). " +
+            "An absolute path bypasses the class-level [Route] attribute.");
+
+        httpGet.Template.Should().NotStartWith("/",
+            "absolute paths (starting with '/') bypass the class-level [Route] prefix — " +
+            "they must not be used when a class-level [Route] is defined");
     }
 
     [Fact]
-    public void DailyOperationsController_HasApiControllerAttribute()
+    public void DailyOperationsController_IsApiController()
     {
-        var attr = typeof(DailyOperationsController)
-            .GetCustomAttributes(typeof(ApiControllerAttribute), false)
-            .FirstOrDefault();
-
-        attr.Should().NotBeNull("DailyOperationsController must have [ApiController] attribute for automatic model validation");
+        typeof(DailyOperationsController)
+            .GetCustomAttributes<ApiControllerAttribute>()
+            .Should().ContainSingle(
+                "DailyOperationsController must be decorated with [ApiController]");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Section B: Integration-style tests (InMemory DB)
+    // B. Integration-style tests (direct controller invocation, InMemory DB)
+    //    Pattern: FinanceV3IntegrationFixTests.cs — no WebApplicationFactory needed.
+    //    These verify the action can be invoked and returns a meaningful result,
+    //    i.e. it does NOT return NotFoundResult (confirming the route exists).
     // ═══════════════════════════════════════════════════════════════════════════
 
     private static AppDbContext CreateDb() =>
@@ -89,35 +114,39 @@ public class DailyOperationsRouteGuardTests
     }
 
     [Fact]
-    public async Task GetDailyReport_NullDate_ReturnsOk_NotNotFound()
+    public async Task GetDailyReport_WithEmptyDb_ReturnsOk_NotNotFound()
     {
+        // Verifies: GET /api/daily-operations/report is reachable (returns 200, not 404).
+        // Production path used by the daily-operations dashboard page.
         await using var db = CreateDb();
-
-        // Seed minimal data so queries don't blow up
-        var branchId = Guid.NewGuid();
-        db.Branches.Add(new Branch { Id = branchId, Name = "Test Branch" });
-        await db.SaveChangesAsync();
-
         var controller = BuildController(db);
-        var result = await controller.GetDailyReport(null);
+
+        var result = await controller.GetDailyReport(date: null);
+
+        result.Should().NotBeOfType<NotFoundResult>(
+            "GET /api/daily-operations/report must return a data response (200), not 404 — " +
+            "before the Sprint 2 fix this returned 404 because the class-level [Route] was missing");
+
+        result.Should().NotBeOfType<NotFoundObjectResult>(
+            "the action must be reachable; a 404 response body would indicate a routing error");
 
         result.Should().BeOfType<OkObjectResult>(
-            "GetDailyReport with null date (defaults to today) should return 200 OK, NOT 404 NotFound");
+            "with an empty but valid database the report endpoint must succeed with 200 OK");
     }
 
     [Fact]
-    public async Task GetDailyReport_ValidDate_ReturnsOk_NotNotFound()
+    public async Task GetDailyReport_WithSpecificDate_ReturnsOk_NotNotFound()
     {
+        // Verifies: GET /api/daily-operations/report?date=2026-01-15 is reachable.
         await using var db = CreateDb();
-
-        var branchId = Guid.NewGuid();
-        db.Branches.Add(new Branch { Id = branchId, Name = "Test Branch" });
-        await db.SaveChangesAsync();
-
         var controller = BuildController(db);
-        var result = await controller.GetDailyReport("2026-01-15");
+
+        var result = await controller.GetDailyReport(date: "2026-01-15");
+
+        result.Should().NotBeOfType<NotFoundResult>(
+            "the date filter parameter must not cause a 404");
 
         result.Should().BeOfType<OkObjectResult>(
-            "GetDailyReport with a valid date should return 200 OK, NOT 404 NotFound");
+            "a valid date string must yield a 200 OK report response");
     }
 }

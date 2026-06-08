@@ -1,154 +1,214 @@
+using System.Reflection;
 using AqlanDentalPro.API.Controllers;
 using AqlanDentalPro.Application.DTOs.Commission;
-using AqlanDentalPro.Application.DTOs.Common;
 using AqlanDentalPro.Application.Interfaces.Services;
-using AqlanDentalPro.Domain.Entities;
-using AqlanDentalPro.Domain.Enums;
-using AqlanDentalPro.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
 namespace AqlanDentalPro.UnitTests.Commissions;
 
 /// <summary>
-/// Route guard and integration tests for CommissionsController.
-/// Verifies correct attribute routing, authorization policy, and basic endpoint behavior.
+/// Route guard tests for CommissionsController.
+///
+/// Sprint 1.5 smoke audit finding (P1): GET /api/commissions returned 404.
+/// Sprint 2 analysis conclusion: FALSE POSITIVE.
+///
+/// Evidence:
+///   - CommissionsController already had [Route("api/commissions")] before Sprint 2.
+///   - The root GET /api/commissions was tested with curl but does NOT exist by design —
+///     there is no root GET action on this controller (all actions use sub-paths).
+///   - A curl GET to a controller root with no root action correctly returns 404; this
+///     is normal ASP.NET Core behaviour, not a bug. No fix required.
+///   - Note: the Finance V3 commissions tab uses /api/finance-v3/doctor-commissions
+///     (a separate controller, confirmed by grep on CommissionsTab.tsx).
+///
+/// Real production paths called by the frontend (grep: frontend/src/hooks/useCommissions.ts):
+///   GET  /api/commissions/report?from=&to=&...        ← GetReport (main report page)
+///   GET  /api/commissions/payments?...                ← GetPayments (payment history)
+///   POST /api/commissions/payments                    ← RecordPayment
+///   GET  /api/commissions/line-items/{id}             ← GetLineItem
+///   GET  /api/commissions/invoices/{id}               ← GetInvoiceCommissions
+///   PATCH /api/commissions/line-items/{id}/costs      ← UpdateCosts
+///   POST  /api/commissions/line-items/{id}/approve    ← Approve
+///   POST  /api/commissions/line-items/{id}/unlock     ← Unlock
+///   POST  /api/commissions/line-items/{id}/auto-fill  ← AutoFill
+///   Root GET /api/commissions — NOT called by frontend → audit finding was a false positive.
+///
+/// Sections:
+///   A. Reflection tests — verify class route, auth policy, and sub-route attributes.
+///   B. Integration-style tests — instantiate controller with mocked ICommissionService,
+///      call the two most critical frontend actions, assert result is NOT NotFoundResult.
 /// </summary>
 public class CommissionsRouteGuardTests
 {
     // ═══════════════════════════════════════════════════════════════════════════
-    // Section A: Reflection-only route/attribute checks
+    // A. Reflection tests
     // ═══════════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void CommissionsController_HasRouteAttribute_WithApiCommissions()
+    public void CommissionsController_HasClassLevelRoute()
     {
-        var attr = typeof(CommissionsController)
-            .GetCustomAttributes(typeof(RouteAttribute), false)
-            .Cast<RouteAttribute>()
-            .FirstOrDefault();
+        var route = typeof(CommissionsController)
+            .GetCustomAttributes<RouteAttribute>()
+            .SingleOrDefault();
 
-        attr.Should().NotBeNull("CommissionsController must have [Route] attribute");
-        attr!.Template.Should().Be("api/commissions",
-            "Route template must be 'api/commissions' for consistent routing");
+        route.Should().NotBeNull(
+            "CommissionsController must have a class-level [Route] attribute so all sub-paths " +
+            "under /api/commissions return 401 (not 404) for unauthenticated requests");
+
+        route!.Template.Should().Be("api/commissions",
+            "the class route must match the path prefix the frontend uses for all commission calls");
     }
 
     [Fact]
-    public void CommissionsController_HasAuthorizePolicy_CommissionView()
+    public void CommissionsController_RequiresCommissionViewPolicy()
     {
-        var attr = typeof(CommissionsController)
-            .GetCustomAttributes(typeof(AuthorizeAttribute), false)
-            .Cast<AuthorizeAttribute>()
-            .FirstOrDefault();
+        var authorize = typeof(CommissionsController)
+            .GetCustomAttributes<AuthorizeAttribute>()
+            .SingleOrDefault();
 
-        attr.Should().NotBeNull("CommissionsController must have [Authorize] attribute");
-        attr!.Policy.Should().Be("CommissionView",
-            "Authorization policy must be 'CommissionView'");
+        authorize.Should().NotBeNull(
+            "CommissionsController must be protected by [Authorize] so unauthenticated " +
+            "requests return 401 before reaching commission data");
+
+        authorize!.Policy.Should().Be("CommissionView",
+            "commission data is role-restricted; only users with CommissionView policy may access it");
     }
 
     [Fact]
-    public void CommissionsController_HasApiControllerAttribute()
+    public void CommissionsController_IsApiController()
     {
-        var attr = typeof(CommissionsController)
-            .GetCustomAttributes(typeof(ApiControllerAttribute), false)
-            .FirstOrDefault();
-
-        attr.Should().NotBeNull("CommissionsController must have [ApiController] attribute");
+        typeof(CommissionsController)
+            .GetCustomAttributes<ApiControllerAttribute>()
+            .Should().ContainSingle(
+                "CommissionsController must be decorated with [ApiController]");
     }
 
-    [Fact]
-    public void CommissionsController_KeySubRoutes_Exist()
+    [Theory]
+    [InlineData("GetReport", typeof(HttpGetAttribute), "report")]
+    [InlineData("GetPayments", typeof(HttpGetAttribute), "payments")]
+    [InlineData("RecordPayment", typeof(HttpPostAttribute), "payments")]
+    [InlineData("GetServiceDefaults", typeof(HttpGetAttribute), "services/{serviceId:guid}/defaults")]
+    [InlineData("GetBackfillPreview", typeof(HttpGetAttribute), "backfill-preview")]
+    public void CommissionsController_KeyActions_HaveExpectedHttpAttributes(
+        string methodName, Type httpAttributeType, string expectedTemplate)
     {
-        var type = typeof(CommissionsController);
+        var method = typeof(CommissionsController).GetMethod(methodName);
 
-        // GET report
-        var getReport = type.GetMethod("GetReport");
-        getReport.Should().NotBeNull("GET report endpoint must exist");
-        getReport!.GetCustomAttributes(typeof(HttpGetAttribute), false)
-            .Cast<HttpGetAttribute>().First().Template.Should().Be("report");
+        method.Should().NotBeNull(
+            $"CommissionsController must contain action '{methodName}' " +
+            $"— it serves requests to /api/commissions/{expectedTemplate}");
 
-        // GET payments
-        var getPayments = type.GetMethod("GetPayments");
-        getPayments.Should().NotBeNull("GET payments endpoint must exist");
+        var attribute = method!.GetCustomAttributes()
+            .SingleOrDefault(a => a.GetType() == httpAttributeType);
 
-        // POST payments (RecordPayment)
-        var recordPayment = type.GetMethod("RecordPayment");
-        recordPayment.Should().NotBeNull("POST payments endpoint must exist");
+        attribute.Should().NotBeNull(
+            $"{methodName} must have [{httpAttributeType.Name}]");
 
-        // GET services/{id}/defaults (service defaults)
-        var getServiceDefaults = type.GetMethod("GetServiceDefaults");
-        getServiceDefaults.Should().NotBeNull("GET services/{id}/defaults endpoint must exist");
+        var template = attribute switch
+        {
+            HttpGetAttribute g  => g.Template,
+            HttpPostAttribute p => p.Template,
+            _                   => null
+        };
 
-        // GET backfill-preview
-        var getBackfillPreview = type.GetMethod("GetBackfillPreview");
-        getBackfillPreview.Should().NotBeNull("GET backfill-preview endpoint must exist");
+        template.Should().Be(expectedTemplate,
+            $"{methodName} must be reachable at /api/commissions/{expectedTemplate}");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Section B: Integration-style tests (mocked ICommissionService)
+    // B. Integration-style tests (direct controller invocation, mocked services)
+    //    These verify the most critical frontend-facing actions can be invoked
+    //    and do NOT return NotFoundResult. Pattern: FinanceV3IntegrationFixTests.cs.
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private static (CommissionsController controller, Mock<ICommissionService> commissionMock, Mock<ICurrentUserService> currentUserMock) BuildController()
+    private static (ICommissionService service, Mock<ICommissionService> mock) BuildCommissionServiceMock()
     {
-        var commissionMock = new Mock<ICommissionService>();
-        var currentUserMock = new Mock<ICurrentUserService>();
-        currentUserMock.Setup(u => u.UserId).Returns(Guid.NewGuid());
-        currentUserMock.Setup(u => u.IsAdmin).Returns(true);
-        currentUserMock.Setup(u => u.Role).Returns(UserRole.Admin);
-        currentUserMock.Setup(u => u.IsAuthenticated).Returns(true);
+        var mock = new Mock<ICommissionService>();
 
-        var controller = new CommissionsController(commissionMock.Object, currentUserMock.Object);
-        return (controller, commissionMock, currentUserMock);
-    }
+        var emptySummary = new CommissionReportSummary(
+            TotalGross: 0, TotalDiscount: 0, TotalMaterialCost: 0,
+            TotalLabCost: 0, TotalOtherCosts: 0, TotalNet: 0,
+            TotalDoctorCommission: 0, TotalPaid: 0, TotalRemaining: 0);
 
-    [Fact]
-    public async Task GetReport_ValidDates_ReturnsOk_NotNotFound()
-    {
-        var (controller, commissionMock, _) = BuildController();
-
-        commissionMock
-            .Setup(c => c.GetReportAsync(
+        mock.Setup(s => s.GetReportAsync(
                 It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
                 It.IsAny<Guid?>(), It.IsAny<Guid?>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-            .ReturnsAsync(new CommissionReportResponse(
-                new CommissionReportSummary(0, 0, 0, 0, 0, 0, 0, 0, 0),
-                []));
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(new CommissionReportResponse(emptySummary, []));
 
-        var result = await controller.GetReport("2026-01-01", "2026-01-31", null, null, null, null, null);
-
-        result.Should().BeOfType<OkObjectResult>(
-            "GetReport with valid dates should return 200 OK, NOT 404 NotFound");
-    }
-
-    [Fact]
-    public async Task GetReport_InvalidDate_ReturnsBadRequest_NotNotFound()
-    {
-        var (controller, _, _) = BuildController();
-
-        var result = await controller.GetReport("not-a-date", "2026-01-31", null, null, null, null, null);
-
-        result.Should().BeOfType<BadRequestObjectResult>(
-            "GetReport with invalid date should return 400 BadRequest, NOT 404 NotFound");
-    }
-
-    [Fact]
-    public async Task GetPayments_NullDoctorId_ReturnsOk_NotNotFound()
-    {
-        var (controller, commissionMock, _) = BuildController();
-
-        commissionMock
-            .Setup(c => c.GetPaymentsAsync(It.IsAny<Guid?>()))
+        mock.Setup(s => s.GetPaymentsAsync(It.IsAny<Guid?>()))
             .ReturnsAsync([]);
 
-        var result = await controller.GetPayments(null);
+        return (mock.Object, mock);
+    }
+
+    private static ICurrentUserService BuildAdminUserMock()
+    {
+        var mock = new Mock<ICurrentUserService>();
+        mock.Setup(u => u.IsAdmin).Returns(true);
+        mock.Setup(u => u.UserId).Returns(Guid.NewGuid());
+        mock.Setup(u => u.IsAuthenticated).Returns(true);
+        return mock.Object;
+    }
+
+    [Fact]
+    public async Task GetReport_WithValidDateRange_ReturnsOk_NotNotFound()
+    {
+        // Verifies: GET /api/commissions/report?from=2026-01-01&to=2026-01-31 is reachable.
+        // This is the primary endpoint of the /commissions page.
+        var (service, _) = BuildCommissionServiceMock();
+        var controller = new CommissionsController(service, BuildAdminUserMock());
+
+        var result = await controller.GetReport(
+            from: "2026-01-01", to: "2026-01-31",
+            doctorId: null, branchId: null,
+            serviceCategory: null, commissionStatus: null, paymentStatus: null);
+
+        result.Should().NotBeOfType<NotFoundResult>(
+            "GET /api/commissions/report must return data (200), not 404 — " +
+            "this is the main entry point for the commissions report page");
 
         result.Should().BeOfType<OkObjectResult>(
-            "GetPayments should return 200 OK with data, NOT 404 NotFound");
+            "a valid date range with no data still returns 200 OK with an empty report");
+    }
+
+    [Fact]
+    public async Task GetReport_WithInvalidFromDate_ReturnsBadRequest_NotNotFound()
+    {
+        // Verifies: bad input produces 400, not 404. Route is still reachable.
+        var (service, _) = BuildCommissionServiceMock();
+        var controller = new CommissionsController(service, BuildAdminUserMock());
+
+        var result = await controller.GetReport(
+            from: "not-a-date", to: "2026-01-31",
+            doctorId: null, branchId: null,
+            serviceCategory: null, commissionStatus: null, paymentStatus: null);
+
+        result.Should().NotBeOfType<NotFoundResult>(
+            "an invalid date must return 400 (bad request), never 404 (not found)");
+
+        result.Should().BeOfType<BadRequestObjectResult>(
+            "the controller must validate the date and return a 400 with an Arabic error message");
+    }
+
+    [Fact]
+    public async Task GetPayments_ReturnsOk_NotNotFound()
+    {
+        // Verifies: GET /api/commissions/payments is reachable (200, not 404).
+        // Called by the commissions page to show the payment disbursement history.
+        var (service, _) = BuildCommissionServiceMock();
+        var controller = new CommissionsController(service, BuildAdminUserMock());
+
+        var result = await controller.GetPayments(doctorId: null);
+
+        result.Should().NotBeOfType<NotFoundResult>(
+            "GET /api/commissions/payments must return 200 (not 404)");
+
+        result.Should().BeOfType<OkObjectResult>(
+            "an empty payments list is still a valid 200 OK response");
     }
 }

@@ -243,6 +243,33 @@ export default function DoctorClinicPage() {
 
   // ── Clinical notes (accumulated before handoff) ──
   const [clinicalNotes, setClinicalNotes] = useState(EMPTY_CLINICAL_NOTES);
+  const [hasUnsavedClinicalNotes, setHasUnsavedClinicalNotes] = useState(false);
+
+  const resetClinicalWorkspace = useCallback(() => {
+    setSelectedServices([]);
+    setClinicalNotes(EMPTY_CLINICAL_NOTES);
+    setHasUnsavedClinicalNotes(false);
+  }, []);
+
+  const confirmDiscardUnsavedClinicalNotes = useCallback(() => {
+    if (!hasUnsavedClinicalNotes) return true;
+    return window.confirm("توجد بيانات زيارة غير محفوظة. هل تريد تجاهلها والانتقال؟");
+  }, [hasUnsavedClinicalNotes]);
+
+  const clearSelectedPatient = useCallback(() => {
+    if (!confirmDiscardUnsavedClinicalNotes()) return;
+    setActivePanel(null);
+    setSelectedPatient(null);
+    resetClinicalWorkspace();
+  }, [confirmDiscardUnsavedClinicalNotes, resetClinicalWorkspace]);
+
+  const selectPatient = useCallback((patient: DoctorPatientItem) => {
+    if (selectedPatient?.appointmentId === patient.appointmentId) return;
+    if (!confirmDiscardUnsavedClinicalNotes()) return;
+    setActivePanel(null);
+    setSelectedPatient(patient);
+    resetClinicalWorkspace();
+  }, [selectedPatient?.appointmentId, confirmDiscardUnsavedClinicalNotes, resetClinicalWorkspace]);
 
   // ── Admin filter dropdowns ──
   const availableDoctors = useMemo(() => {
@@ -288,7 +315,7 @@ export default function DoctorClinicPage() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (activePanel) setActivePanel(null);
-        else setSelectedPatient(null);
+        else clearSelectedPatient();
         return;
       }
       if (e.ctrlKey && e.key === "r") { e.preventDefault(); refetch(); return; }
@@ -296,7 +323,7 @@ export default function DoctorClinicPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [refetch, activePanel]);
+  }, [refetch, activePanel, clearSelectedPatient]);
 
   // ── Action handler — opens in-page panel, never navigates ──
   const handleAction = useCallback((cardKey: PanelType) => {
@@ -346,14 +373,14 @@ export default function DoctorClinicPage() {
       setActivePanel(null);
       setSentPatients(prev => new Set(prev).add(selectedPatient.appointmentId));
       setSelectedPatient(null);
-      setSelectedServices([]);
-      setClinicalNotes({ diagnosis: "", treatmentDone: "", instructions: "", nextVisitPlan: "", amountDue: 0, suggestedServiceId: "", followUpDate: "" });
+      resetClinicalWorkspace();
     } catch { toast.error("فشل إرسال المريض للاستقبال"); }
-  }, [selectedPatient, handoffMutation, clinicalNotes, sentPatients]);
+  }, [selectedPatient, handoffMutation, clinicalNotes, sentPatients, resetClinicalWorkspace]);
 
   // ── Update clinical notes ──
   const updateClinicalNotes = useCallback((updates: Partial<typeof clinicalNotes>) => {
     setClinicalNotes(prev => ({ ...prev, ...updates }));
+    setHasUnsavedClinicalNotes(true);
   }, []);
 
   // ── Save visit button ──
@@ -374,6 +401,7 @@ export default function DoctorClinicPage() {
           nextVisitDate: clinicalNotes.followUpDate || undefined,
         },
       });
+      setHasUnsavedClinicalNotes(false);
       toast.success("تم حفظ بيانات الزيارة");
     } catch {
       toast.error("فشل حفظ بيانات الزيارة");
@@ -744,11 +772,7 @@ export default function DoctorClinicPage() {
               return (
                 <button
                   key={p.appointmentId}
-                  onClick={() => {
-                    setSelectedPatient(p);
-                    setSelectedServices([]);
-                    setClinicalNotes({ diagnosis: "", treatmentDone: "", instructions: "", nextVisitPlan: "", amountDue: 0, suggestedServiceId: "", followUpDate: "" });
-                  }}
+                  onClick={() => selectPatient(p)}
                   className="w-full px-3 py-2.5 text-right transition-all hover:bg-[#f8fafc]"
                   style={{
                     background: isSelected ? "#eff6ff" : "transparent",

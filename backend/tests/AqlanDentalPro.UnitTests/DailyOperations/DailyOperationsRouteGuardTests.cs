@@ -64,6 +64,20 @@ public class DailyOperationsRouteGuardTests
     }
 
     [Fact]
+    public void GetDailyReport_RequiresFinanceAccess_NotJustStaffOnly()
+    {
+        var method = typeof(DailyOperationsController).GetMethod("GetDailyReport");
+        method.Should().NotBeNull("GetDailyReport method must exist");
+
+        var authorize = method!.GetCustomAttributes(typeof(AuthorizeAttribute), false)
+            .Cast<AuthorizeAttribute>()
+            .SingleOrDefault(a => a.Policy == "FinanceAccess");
+
+        authorize.Should().NotBeNull(
+            "the daily report includes clinic financial totals and must not be visible to doctor-only StaffOnly users");
+    }
+
+    [Fact]
     public void DailyOperationsController_HasApiControllerAttribute()
     {
         var attr = typeof(DailyOperationsController)

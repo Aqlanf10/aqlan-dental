@@ -196,9 +196,6 @@ export default function DailyOperationsPage() {
   const canCollectPayment = useHasPermission(PERMISSION_KEYS.DAILY_OPS_COLLECT_PAYMENT);
   const canViewClinicDisplay = useHasPermission(PERMISSION_KEYS.CLINIC_DISPLAY_VIEW);
 
-  // ── SignalR real-time updates ──
-  const { isConnected: signalrConnected } = useSignalRClinicQueue();
-
   // ── Filters ──
   const [filterDate, setFilterDate] = useState(getTodayStr());
   const [filterDoctor, setFilterDoctor] = useState("");
@@ -206,6 +203,14 @@ export default function DailyOperationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("appointments");
   const [activeModule, setActiveModule] = useState<ModuleTab>("appointments");
+
+  // ── SignalR real-time updates ──
+  // The embedded queue tab owns a dedicated queue connection, so the page-level
+  // connection pauses there to avoid duplicate event processing and duplicate sounds.
+  const { isConnected: signalrConnected } = useSignalRClinicQueue({
+    enabled: activeModule !== "queue",
+    playSoundOnPatientCalled: activeModule !== "queue",
+  });
 
   // ── Data ──
   const { data: items = [], isLoading: itemsLoading, refetch: refetchItems } = useTodayJourneyItems({

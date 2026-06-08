@@ -1607,10 +1607,8 @@ public class PatientJourneyController(
         var patient = await db.Patients.FindAsync(patientId);
         if (patient == null) return NotFound(new { message = "المريض غير موجود" });
 
-        // Sprint Patient-Finance-Ledger: Hide financial details from non-finance roles
-        var canViewFinanceAmounts = currentUser.IsAdmin
-            || currentUser.Role == UserRole.Accountant
-            || currentUser.Role == UserRole.Reception;
+        // Sprint Patient-Finance-Ledger: Hide financial details from non-finance roles (doctors)
+        var canViewFinanceAmounts = !patientAccessService.IsDoctor && patientAccessService.HasFullAccess;
 
         // Get the latest active visit
         var visit = await db.Visits

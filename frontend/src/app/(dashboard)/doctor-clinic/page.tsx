@@ -23,6 +23,7 @@ import {
   useDoctorServices,
   useStartVisit,
   useHandoffToReception,
+  useUpdateVisit,
   useDoctorCreatePrescription,
   useDoctorCreateLabOrder,
   useDoctorCreateFollowUpAppointment,
@@ -220,6 +221,7 @@ export default function DoctorClinicPage() {
   const { data: services = [] } = useDoctorServices();
   const startVisitMutation = useStartVisit();
   const handoffMutation = useHandoffToReception();
+  const updateVisitMutation = useUpdateVisit();
   const createPrescriptionMutation = useDoctorCreatePrescription();
   const createLabOrderMutation = useDoctorCreateLabOrder();
   const createFollowUpMutation = useDoctorCreateFollowUpAppointment();
@@ -355,10 +357,28 @@ export default function DoctorClinicPage() {
   }, []);
 
   // ── Save visit button ──
-  const handleSaveVisit = useCallback(() => {
+  const handleSaveVisit = useCallback(async () => {
     if (!selectedPatient) { toast.error("اختر مريضاً أولاً"); return; }
-    toast.success("تم حفظ بيانات الزيارة مؤقتاً");
-  }, [selectedPatient]);
+    if (!selectedPatient.visitId) { toast.error("لا توجد زيارة نشطة لحفظها"); return; }
+
+    try {
+      await updateVisitMutation.mutateAsync({
+        visitId: selectedPatient.visitId,
+        patientId: selectedPatient.patientId,
+        body: {
+          diagnosis: clinicalNotes.diagnosis,
+          treatmentDone: clinicalNotes.treatmentDone,
+          instructions: clinicalNotes.instructions,
+          nextVisitPlan: clinicalNotes.nextVisitPlan,
+          cost: clinicalNotes.amountDue > 0 ? clinicalNotes.amountDue : undefined,
+          nextVisitDate: clinicalNotes.followUpDate || undefined,
+        },
+      });
+      toast.success("تم حفظ بيانات الزيارة");
+    } catch {
+      toast.error("فشل حفظ بيانات الزيارة");
+    }
+  }, [selectedPatient, updateVisitMutation, clinicalNotes]);
 
   // ── Patient initials ──
   const getInitials = (name: string) => {
@@ -418,9 +438,13 @@ export default function DoctorClinicPage() {
             </button>
 
             {/* Save */}
-            <button onClick={handleSaveVisit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#444] hover:bg-[#f0f0f0] transition-colors">
+            <button
+              onClick={handleSaveVisit}
+              disabled={updateVisitMutation.isPending || !selectedPatient?.visitId}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#444] hover:bg-[#f0f0f0] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
               <Save className="w-3.5 h-3.5" />
-              <span className="hidden lg:inline">حفظ الزيارة</span>
+              <span className="hidden lg:inline">{updateVisitMutation.isPending ? "جار الحفظ..." : "حفظ الزيارة"}</span>
             </button>
 
             {/* Handoff */}

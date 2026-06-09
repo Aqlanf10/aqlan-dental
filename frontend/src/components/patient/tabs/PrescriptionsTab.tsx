@@ -12,6 +12,7 @@ interface PrescriptionDto {
   doctorName?: string;
   status?: string;
   notes?: string;
+  visitId?: string;
   items?: { medicationName: string; dosage: string; frequency: string; duration: string }[];
 }
 
@@ -81,6 +82,11 @@ export function PrescriptionsTab({ patientId }: PrescriptionsTabProps) {
               <Pill className="w-4 h-4 text-rose-500 flex-shrink-0" />
               <span className="text-sm font-medium text-[#0d2137]">{formatArabicDate(rx.date)}</span>
               {rx.doctorName && <span className="text-xs text-[#64748b]">{rx.doctorName}</span>}
+              {rx.visitId && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium">
+                  مرتبط بزيارة
+                </span>
+              )}
             </div>
             {rx.status && (
               <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",

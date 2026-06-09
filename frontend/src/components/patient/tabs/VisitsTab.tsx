@@ -45,6 +45,13 @@ interface VisitDto {
   createdAt: string;
   updatedAt: string;
   appointment?: AppointmentInfo | null;
+  serviceId?: string;
+  serviceName?: string;
+  amountDueReference?: number;
+  checkoutStatus?: string;
+  proposedProcedure?: string;
+  prescriptionsCount?: number;
+  labOrdersCount?: number;
 }
 
 interface VisitForm {
@@ -142,6 +149,49 @@ const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
 
 type SpecialtyFilter = "all" | "General" | "Orthodontics" | "OralSurgery" | "Periodontics" | "Endodontics" | "Prosthodontics";
 type DateFilter = "all" | "today" | "thisMonth";
+
+// ─── Clinical Notes Parser ────────────────────────────────────────────────────────
+
+function parseClinicalNotes(notes: string | null | undefined): { label: string; content: string }[] {
+  if (!notes) return [];
+  const sections: { label: string; content: string }[] = [];
+  const labelMap: Record<string, string> = {
+    "فحص خارج الفم": "فحص خارج الفم",
+    "فحص داخل الفم": "فحص داخل الفم",
+    "ملاحظات التسليم": "ملاحظات التسليم",
+    "خدمات إضافية": "خدمات إضافية",
+  };
+
+  // Split by | and identify labeled sections
+  const parts = notes.split(" | ");
+  const unlabeledParts: string[] = [];
+
+  for (const part of parts) {
+    let matched = false;
+    for (const [key, label] of Object.entries(labelMap)) {
+      if (part.startsWith(`[${key}]`)) {
+        sections.push({ label, content: part.replace(`[${key}]`, "").trim() });
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      unlabeledParts.push(part.trim());
+    }
+  }
+
+  // If there are unlabeled parts, add them as "ملاحظات سريرية"
+  if (unlabeledParts.length > 0) {
+    sections.unshift({ label: "ملاحظات سريرية", content: unlabeledParts.join(" | ") });
+  }
+
+  return sections;
+}
+
+const CHECKOUT_STATUS_LABELS: Record<string, string> = {
+  ReadyForCheckout: "جاهز للخروج",
+  CheckedOut: "تم الخروج",
+};
 
 // ─── Component ──────────────────────────────────────────────────────────────────
 
@@ -605,17 +655,70 @@ export function VisitsTab({ patientId, onVisitChanged, openAddModal, onModalOpen
                         </div>
                       )}
 
-                      {/* Section: Clinical Notes */}
-                      {visit.clinicalNotes && (
+                      {/* Section: Clinical Notes — parsed into labeled sections */}
+                      {visit.clinicalNotes && parseClinicalNotes(visit.clinicalNotes).length > 0 && (
                         <div className="rounded-lg p-2.5 bg-[#f7fafd] border border-[#e8f0f9]">
                           <div className="flex items-center gap-1.5 mb-1.5">
                             <Stethoscope className="w-3.5 h-3.5 text-[#3d7ab5]" />
                             <span className="text-xs font-semibold text-[#3d7ab5]">ملاحظات سريرية</span>
                           </div>
-                          <p className="text-sm text-[#0d2137] whitespace-pre-wrap">{visit.clinicalNotes}</p>
+                          {parseClinicalNotes(visit.clinicalNotes).map((section, i) => (
+                            <div key={i} className="mb-2 last:mb-0">
+                              <span className="text-[11px] font-semibold text-[#6b7280]">{section.label}:</span>
+                              <p className="text-[12px] text-[#1a1a1a] mt-0.5 whitespace-pre-wrap">{section.content}</p>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
+
+                    {/* Additional Visit Fields */}
+                    {(visit.serviceId || visit.amountDueReference != null || visit.checkoutStatus || visit.proposedProcedure || visit.prescriptionsCount != null || visit.labOrdersCount != null) && (
+                      <div className="rounded-lg p-2.5 bg-[#fafafa] border border-[#f0f0f0] space-y-1.5">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                          {visit.serviceId && (
+                            <span className="text-xs text-[#0d2137]">
+                              <span className="text-[#6b7280] font-medium">الخدمة:</span>{" "}
+                              {visit.serviceName ?? visit.serviceId}
+                            </span>
+                          )}
+                          {visit.amountDueReference != null && visit.amountDueReference > 0 && (
+                            <span className="text-xs text-[#0d2137]">
+                              <span className="text-[#6b7280] font-medium">المبلغ المستحق:</span>{" "}
+                              {visit.amountDueReference.toLocaleString()} ر.س
+                            </span>
+                          )}
+                          {visit.proposedProcedure && (
+                            <span className="text-xs text-[#0d2137]">
+                              <span className="text-[#6b7280] font-medium">الإجراء المقترح:</span>{" "}
+                              {visit.proposedProcedure}
+                            </span>
+                          )}
+                          {visit.prescriptionsCount != null && visit.prescriptionsCount > 0 && (
+                            <span className="text-xs text-[#0d2137]">
+                              <span className="text-[#6b7280] font-medium">الوصفات:</span>{" "}
+                              {visit.prescriptionsCount}
+                            </span>
+                          )}
+                          {visit.labOrdersCount != null && visit.labOrdersCount > 0 && (
+                            <span className="text-xs text-[#0d2137]">
+                              <span className="text-[#6b7280] font-medium">طلبات المختبر:</span>{" "}
+                              {visit.labOrdersCount}
+                            </span>
+                          )}
+                        </div>
+                        {visit.checkoutStatus && (
+                          <span className={cn(
+                            "inline-block text-[10px] px-2 py-0.5 rounded-full font-medium",
+                            visit.checkoutStatus === "CheckedOut"
+                              ? "bg-green-50 text-green-700"
+                              : "bg-amber-50 text-amber-700"
+                          )}>
+                            {CHECKOUT_STATUS_LABELS[visit.checkoutStatus] ?? visit.checkoutStatus}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Meta info */}
                     <div className="flex flex-wrap items-center gap-3 text-[10px] text-[#94a3b8] pt-1">

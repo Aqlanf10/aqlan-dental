@@ -215,6 +215,22 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
                 t.Id, session.Id);
         }
 
+        if (unlinkedTransactions.Count > 0)
+        {
+            sessionTransactions = await db.CashFlowTransactions
+                .Where(t => t.CashierSessionId == session.Id && t.IsActive)
+                .ToListAsync();
+
+            var expected = CalculateExpectedAmounts(session.OpeningBalance, sessionTransactions);
+            session.ExpectedClosingCash = expected.Cash;
+            session.ExpectedClosingCard = expected.Card;
+            session.ExpectedClosingBank = expected.Bank;
+
+            expectedTotal = session.ExpectedClosingCash + session.ExpectedClosingCard + session.ExpectedClosingBank;
+            actualTotal = req.ActualClosingCash + req.ActualClosingCard + req.ActualClosingBank;
+            session.ShortageOrSurplus = actualTotal - expectedTotal;
+        }
+
         await db.SaveChangesAsync();
 
         // H3: Audit logging for session close
@@ -240,15 +256,44 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         });
     }
 
-    private static bool IsCashMethod(string method) =>
-        string.Equals(method, "cash", StringComparison.OrdinalIgnoreCase);
+    private static (decimal Cash, decimal Card, decimal Bank) CalculateExpectedAmounts(
+        decimal openingBalance,
+        IReadOnlyCollection<CashFlowTransaction> transactions)
+    {
+        var cashInflows = transactions.Where(t => t.Type == TransactionType.Inflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cashOutflows = transactions.Where(t => t.Type == TransactionType.Outflow && IsCashMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardInflows = transactions.Where(t => t.Type == TransactionType.Inflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var cardOutflows = transactions.Where(t => t.Type == TransactionType.Outflow && IsCardMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankInflows = transactions.Where(t => t.Type == TransactionType.Inflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
+        var bankOutflows = transactions.Where(t => t.Type == TransactionType.Outflow && IsBankMethod(t.PaymentMethod)).Sum(t => t.Amount);
 
-    private static bool IsCardMethod(string method) =>
-        string.Equals(method, "card", StringComparison.OrdinalIgnoreCase);
+        return (
+            openingBalance + cashInflows - cashOutflows,
+            cardInflows - cardOutflows,
+            bankInflows - bankOutflows
+        );
+    }
 
-    private static bool IsBankMethod(string method) =>
-        string.Equals(method, "bank_transfer", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(method, "bank", StringComparison.OrdinalIgnoreCase);
+    private static string NormalizePaymentMethod(string? method)
+    {
+        var value = (method ?? string.Empty).Trim().ToLowerInvariant()
+            .Replace("_", " ")
+            .Replace("-", " ");
+
+        return value switch
+        {
+            "cash" or "نقدي" or "نقدا" => "cash",
+            "card" or "credit card" or "debit card" or "بطاقة" => "card",
+            "bank" or "bank transfer" or "transfer" or "تحويل بنكي" or "حوالة" or "karimey" or "jawaly" or "check" => "bank",
+            _ => value
+        };
+    }
+
+    private static bool IsCashMethod(string? method) => NormalizePaymentMethod(method) == "cash";
+
+    private static bool IsCardMethod(string? method) => NormalizePaymentMethod(method) == "card";
+
+    private static bool IsBankMethod(string? method) => NormalizePaymentMethod(method) == "bank";
 
     /// <summary>
     /// Resolves the branch cash Vault treasury for a CashierSession.
@@ -399,6 +444,18 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
         var cardOutflows = bankOutflows;
         var totalCollections = sessionJournalLines.Where(l => l.Debit > 0).Sum(l => l.Debit);
 
+        var cashflowTransactions = await db.CashFlowTransactions
+            .Where(t => t.IsActive
+                && (t.CashierSessionId == session.Id
+                    || (t.CashierSessionId == null
+                        && t.PerformedBy == cashierId
+                        && t.CreatedAt >= session.OpeningTime)))
+            .ToListAsync();
+        var cashflowExpected = CalculateExpectedAmounts(session.OpeningBalance, cashflowTransactions);
+        var cashflowCollections = cashflowTransactions
+            .Where(t => t.Type == TransactionType.Inflow)
+            .Sum(t => t.Amount);
+
         return Ok(new
         {
             hasActiveSession = true,
@@ -410,9 +467,9 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             OpenedAt = session.OpeningTime,
             session.ClosingTime,
             session.OpeningBalance,
-            ExpectedClosingCash = session.OpeningBalance + cashInflows - cashOutflows,
-            ExpectedClosingCard = cardInflows - cardOutflows,
-            ExpectedClosingBank = bankInflows - bankOutflows,
+            ExpectedClosingCash = cashflowExpected.Cash,
+            ExpectedClosingCard = cashflowExpected.Card,
+            ExpectedClosingBank = cashflowExpected.Bank,
             ActualClosingCash = (decimal?)session.ActualClosingCash,
             ActualClosingCard = (decimal?)session.ActualClosingCard,
             ActualClosingBank = (decimal?)session.ActualClosingBank,
@@ -420,7 +477,7 @@ public class CashierSessionsController(AppDbContext db, ICurrentUserService curr
             Status = session.Status.ToString(),
             session.Notes,
             session.TreasuryId,
-            TotalCollections = totalCollections
+            TotalCollections = cashflowCollections
         });
     }
 

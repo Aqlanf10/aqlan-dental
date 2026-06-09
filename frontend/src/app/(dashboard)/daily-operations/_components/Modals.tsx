@@ -104,7 +104,7 @@ export function QuickPaymentModal({
     setReferenceError("");
     const voucherPrefix = voucherType === "consultation" ? "[سند معاينة] " : "[إجراءات شغل/خدمة مقدمة] ";
     onConfirm(num, method, desc ? voucherPrefix + desc : voucherPrefix.trim(), notes, requiresRef ? referenceNumber.trim() : undefined);
-    setAmount(""); setMethod("Cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
+    setAmount(""); setMethod("cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
     setReferenceNumber(""); setReferenceError("");
   };
 
@@ -288,7 +288,7 @@ export function CompleteVisitModal({
   const [diagnosis, setDiagnosis] = useState("");
   const [instructions, setInstructions] = useState("");
   const [amountDue, setAmountDue] = useState("");
-  const [, setPaymentMethod] = useState("Cash");
+  const [, setPaymentMethod] = useState("cash");
   const [isPaid, setIsPaid] = useState(false);
   const [needsFollowUp, setNeedsFollowUp] = useState(false);
   const [nextDate, setNextDate] = useState("");
@@ -341,7 +341,7 @@ export function CompleteVisitModal({
       });
     }
     setServiceDesc(""); setDiagnosis(""); setInstructions("");
-    setAmountDue(""); setPaymentMethod("Cash"); setIsPaid(false);
+    setAmountDue(""); setPaymentMethod("cash"); setIsPaid(false);
     setNeedsFollowUp(false); setNextDate(""); setNotes(""); setProposedProcedure("");
   };
 
@@ -1404,7 +1404,7 @@ export function DirectPaymentModal({
 
   // Payment form state
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("Cash");
+  const [method, setMethod] = useState("cash");
   const [desc, setDesc] = useState("");
   const [notes, setNotes] = useState("");
   const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");
@@ -1447,7 +1447,7 @@ export function DirectPaymentModal({
   useEffect(() => {
     if (!open) {
       setSearchQuery(""); setSearchResults([]); setSelectedPatient(null);
-      setAmount(""); setMethod("Cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
+      setAmount(""); setMethod("cash"); setDesc(""); setNotes(""); setVoucherType("consultation");
       setReferenceNumber(""); setReferenceError("");
     }
   }, [open]);

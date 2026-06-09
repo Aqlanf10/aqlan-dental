@@ -191,7 +191,7 @@ export default function JourneyContextMenu({
       label: "دفعة مالية سريعة",
       action: () => { onQuickPayment(item); close(); },
       color: "#22c55e",
-      show: !isDoctor,
+      show: canProcessCheckout,
     },
     {
       icon: <Wallet className="w-4 h-4" />,

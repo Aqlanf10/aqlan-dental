@@ -48,7 +48,8 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/lab', allowedRoles: ['Admin', 'Orthodontist'] },
   { path: '/doctors', allowedRoles: ['Admin'] },
   { path: '/hr', allowedRoles: ['Admin'] },
-  { path: '/appointments', allowedRoles: ['Admin', 'Reception', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/appointments', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
+  { path: '/clinic-queue', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
   { path: '/patient-journey', allowedRoles: ['Admin', 'GeneralDentist', 'OralSurgeon', 'Orthodontist'] },
 ];
 

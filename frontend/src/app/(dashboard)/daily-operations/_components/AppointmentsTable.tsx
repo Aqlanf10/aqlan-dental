@@ -14,25 +14,22 @@ import {
   ChevronDown, ChevronUp,
 } from "lucide-react";
 import {
-  APPT_STATUS_LABELS, STATUS_COLORS, ACTION_LABELS,
+  APPT_STATUS_LABELS, ACTION_LABELS,
   fmtTime, normalizePhone, ORANGE, NAVY,
   isAppointmentOverdue, fmtOverdueMinutes, fmtSessionDuration,
   type TodayJourneyItem,
 } from "../_lib/constants";
+import { StatusBadge as SharedStatusBadge, NextActionBadge as SharedNextActionBadge } from "@/components/shared/journey";
 
-/* ─── Status badge ────────────────────────────────────────────────────────── */
+/* ─── Status badge (wraps shared component) ─────────────────────────────── */
 function StatusBadge({ status }: { status: string }) {
-  const c = STATUS_COLORS[status] ?? STATUS_COLORS.Scheduled;
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold"
-      style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}>
-      {APPT_STATUS_LABELS[status] ?? status}
-    </span>
-  );
+  return <SharedStatusBadge status={status} variant="hex" />;
 }
 
-/* ─── Next Action badge ───────────────────────────────────────────────────── */
+/* ─── Next Action badge (wraps shared component with hex-style overrides) ─ */
 function NextActionBadge({ action }: { action: string }) {
+  // The daily-ops page uses hex-style inline colors for the NextActionBadge.
+  // We wrap the shared NextActionBadge and apply the hex color scheme.
   const label = ACTION_LABELS[action] ?? "—";
   const colorMap: Record<string, string> = {
     Intake: "#16a34a",

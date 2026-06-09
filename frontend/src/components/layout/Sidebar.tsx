@@ -9,6 +9,7 @@ import {
   UserRound, Building2, UserCog,
   Truck, ShoppingCart, ChevronDown,
   Smartphone, Banknote, CalendarDays, CalendarOff, Shield, DollarSign,
+  Route,
 } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,7 @@ const NAV: NavEntry[] = [
   // ── العيادة ───────────────────────────────────────────────────────────────
   { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
   { href: "/clinic-queue",   label: "قائمة الانتظار",  icon: ClipboardList,   roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
+  { href: "/patient-journey", label: "رحلة المرضى",   icon: Route,           roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENT_JOURNEY_VIEW },
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 

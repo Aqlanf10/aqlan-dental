@@ -17,18 +17,18 @@ import type {
   TimelineEvent,
 } from "@/types/journey";
 import {
-  JOURNEY_STEPS, STATUS_LABELS, STATUS_COLORS, ACTION_LABELS, ACTION_COLORS,
+  ACTION_LABELS, ACTION_COLORS,
   PAYMENT_METHODS, SEVERITY_STYLES, TIMELINE_DOT_COLORS,
-  inputCls, fmtRial, fmtDate, fmtTime, getInitials, getStepIndex, getStepStatus,
+  inputCls, fmtRial, fmtDate, fmtTime, getInitials,
 } from "../_lib/constants";
 import type { JourneyItem, ServiceOption, RoomOption } from "../_lib/constants";
+import { StatusBadge as SharedStatusBadge, JourneyStepProgressBar } from "@/components/shared/journey";
 import { financeV3InvoicesUrl } from "@/lib/financeRoutes";
 
 // ─── 1. Patient Header Card ──────────────────────────────────────────────────
 
 export function PatientHeaderCard({ summary, isDoctor }: { summary: DailyJourneySummary; isDoctor: boolean }) {
   const { patient, journeyStep } = summary;
-  const currentStepIdx = getStepIndex(journeyStep);
 
   return (
     <div className="bg-[#1a3a5c] rounded-xl p-4 text-white">
@@ -61,45 +61,7 @@ export function PatientHeaderCard({ summary, isDoctor }: { summary: DailyJourney
       </div>
 
       {/* Journey Step Progress Bar */}
-      <div className="mt-4">
-        <div className="flex items-center gap-0 overflow-x-auto pb-1">
-          {JOURNEY_STEPS.map((step, idx) => {
-            const status = getStepStatus(step.key, journeyStep);
-            return (
-              <div key={step.key} className="flex items-center">
-                <div className="flex flex-col items-center gap-0.5 min-w-[52px]">
-                  <div
-                    className={cn(
-                      "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-all",
-                      status === "done" && "bg-[#3d7ab5] text-white border-[#3d7ab5]",
-                      status === "current" && "bg-white text-[#f5922e] border-[#f5922e] shadow-[0_0_8px_rgba(245,146,46,0.4)]",
-                      status === "pending" && "bg-white/10 text-white/40 border-white/20"
-                    )}
-                  >
-                    {status === "done" ? <CheckCircle2 className="w-3.5 h-3.5" /> : idx + 1}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-[8px] text-center leading-tight",
-                      status === "current" ? "text-[#f5922e] font-bold" : "text-white/50"
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-                {idx < JOURNEY_STEPS.length - 1 && (
-                  <div
-                    className={cn(
-                      "flex-1 h-0.5 min-w-[8px]",
-                      getStepIndex(step.key) < currentStepIdx ? "bg-[#3d7ab5]" : "bg-white/20"
-                    )}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <JourneyStepProgressBar journeyStep={journeyStep} variant="dark" className="mt-4" />
     </div>
   );
 }
@@ -114,12 +76,7 @@ export function TodaysAppointmentCard({ summary }: { summary: DailyJourneySummar
       <div className="flex items-center gap-2 mb-3">
         <CalendarDays className="w-4 h-4 text-[#3d7ab5]" />
         <span className="text-sm font-bold text-[#1a3a5c]">موعد اليوم</span>
-        <span className={cn(
-          "text-[10px] px-2 py-0.5 rounded-full font-medium mr-auto",
-          STATUS_COLORS[apt.status] ?? "bg-gray-50 text-gray-700"
-        )}>
-          {STATUS_LABELS[apt.status] ?? apt.status}
-        </span>
+        <SharedStatusBadge status={apt.status} variant="tailwind" className="mr-auto" />
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px]">
         <div>
@@ -347,11 +304,11 @@ export function JourneyActionsPanel({
                   setIntakeService(e.target.value);
                   const svc = services.find((s) => s.id === e.target.value);
                   if (svc) {
-                    setIntakeConsultFee(svc.requiresConsultationFee);
-                    setIntakeConsultAmount(svc.defaultPrice);
+                    setIntakeConsultFee(svc.requiresConsultationFee ?? false);
+                    setIntakeConsultAmount(svc.defaultPrice ?? 0);
                   }
                 }}
-                className={inputCls}
+                className={inputCls()}
               >
                 <option value="">— اختر خدمة —</option>
                 {services.map((s) => (
@@ -364,7 +321,7 @@ export function JourneyActionsPanel({
               <input
                 value={intakeComplaint}
                 onChange={(e) => setIntakeComplaint(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
                 placeholder="مثل: ألم في الضرس"
               />
             </div>
@@ -373,7 +330,7 @@ export function JourneyActionsPanel({
               <select
                 value={intakeRoom}
                 onChange={(e) => setIntakeRoom(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
               >
                 <option value="">— اختر غرفة —</option>
                 {rooms.map((r) => (
@@ -396,7 +353,7 @@ export function JourneyActionsPanel({
                   type="number"
                   value={intakeConsultAmount}
                   onChange={(e) => setIntakeConsultAmount(parseInt(e.target.value) || 0)}
-                  className={cn(inputCls, "w-28")}
+                  className={cn(inputCls(), "w-28")}
                   dir="ltr"
                   min={0}
                 />
@@ -408,7 +365,7 @@ export function JourneyActionsPanel({
             <textarea
               value={intakeNotes}
               onChange={(e) => setIntakeNotes(e.target.value)}
-              className={cn(inputCls, "h-16 resize-none")}
+              className={cn(inputCls(), "h-16 resize-none")}
               placeholder="ملاحظات إضافية"
             />
           </div>
@@ -462,7 +419,7 @@ export function JourneyActionsPanel({
               <textarea
                 value={handoffForm.treatmentDone}
                 onChange={(e) => setHandoffForm({ ...handoffForm, treatmentDone: e.target.value })}
-                className={cn(inputCls, "h-16 resize-none")}
+                className={cn(inputCls(), "h-16 resize-none")}
               />
             </div>
             <div>
@@ -470,7 +427,7 @@ export function JourneyActionsPanel({
               <input
                 value={handoffForm.diagnosis}
                 onChange={(e) => setHandoffForm({ ...handoffForm, diagnosis: e.target.value })}
-                className={inputCls}
+                className={inputCls()}
               />
             </div>
             <div>
@@ -478,7 +435,7 @@ export function JourneyActionsPanel({
               <textarea
                 value={handoffForm.instructions}
                 onChange={(e) => setHandoffForm({ ...handoffForm, instructions: e.target.value })}
-                className={cn(inputCls, "h-16 resize-none")}
+                className={cn(inputCls(), "h-16 resize-none")}
               />
             </div>
             <div>
@@ -487,7 +444,7 @@ export function JourneyActionsPanel({
                 type="number"
                 value={handoffForm.amountDue}
                 onChange={(e) => setHandoffForm({ ...handoffForm, amountDue: parseInt(e.target.value) || 0 })}
-                className={inputCls}
+                className={inputCls()}
                 dir="ltr"
                 min={0}
               />
@@ -599,7 +556,7 @@ export function JourneyActionsPanel({
                     type="number"
                     value={checkoutAmount}
                     onChange={(e) => setCheckoutAmount(parseInt(e.target.value) || 0)}
-                    className={inputCls}
+                    className={inputCls()}
                     dir="ltr"
                     min={0}
                   />
@@ -609,7 +566,7 @@ export function JourneyActionsPanel({
                   <select
                     value={checkoutPayment}
                     onChange={(e) => setCheckoutPayment(e.target.value)}
-                    className={inputCls}
+                    className={inputCls()}
                   >
                     {PAYMENT_METHODS.map((m) => (
                       <option key={m.value} value={m.value}>{m.label}</option>
@@ -622,7 +579,7 @@ export function JourneyActionsPanel({
                     type="date"
                     value={checkoutNextDate}
                     onChange={(e) => setCheckoutNextDate(e.target.value)}
-                    className={inputCls}
+                    className={inputCls()}
                     dir="ltr"
                   />
                 </div>
@@ -631,7 +588,7 @@ export function JourneyActionsPanel({
                   <select
                     value={checkoutNextService}
                     onChange={(e) => setCheckoutNextService(e.target.value)}
-                    className={inputCls}
+                    className={inputCls()}
                   >
                     <option value="">— اختر خدمة —</option>
                     {services.map((s) => (
@@ -645,7 +602,7 @@ export function JourneyActionsPanel({
                 <textarea
                   value={checkoutNotes}
                   onChange={(e) => setCheckoutNotes(e.target.value)}
-                  className={cn(inputCls, "h-14 resize-none")}
+                  className={cn(inputCls(), "h-14 resize-none")}
                   placeholder="ملاحظات إضافية"
                 />
               </div>

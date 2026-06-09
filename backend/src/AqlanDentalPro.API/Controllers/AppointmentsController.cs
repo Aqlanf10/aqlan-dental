@@ -503,10 +503,16 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
     }
 
     // ─── POST /api/appointments/{id}/start-visit ──────────────────────────────
+    /// <summary>
+    /// Start a visit for an appointment.
+    /// Sprint 1 FIX: Added transaction + advisory lock to prevent race condition
+    /// that could create duplicate visits when concurrent requests hit this endpoint.
+    /// Pattern matches ClinicQueueController.StartVisit.
+    /// </summary>
     [HttpPost("{id:guid}/start-visit")]
     public async Task<IActionResult> StartVisit(Guid id)
     {
-        // 1. Find appointment
+        // 1. Pre-flight validation (outside transaction for fast rejection)
         var appointment = await db.Appointments
             .Include(a => a.Patient)
             .Include(a => a.Doctor)
@@ -519,63 +525,81 @@ public class AppointmentsController(AppointmentService service, AppDbContext db,
         if (appointment.Patient == null || !appointment.Patient.IsActive)
             return BadRequest(new { message = "المريض غير موجود أو مؤرشف" });
 
-        // 3. Prevent duplicate visit for same appointment
-        var existingVisit = await db.Visits
-            .AnyAsync(v => v.AppointmentId == id && v.IsActive);
-
-        if (existingVisit)
-            return Conflict(new { message = "تم إنشاء زيارة لهذا الموعد مسبقًا" });
-
-        // 4. Validate appointment status transition using centralized rules
+        // 3. Validate appointment status transition using centralized rules
         var targetStatus = AppointmentStatus.InProgress;
         if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
             return BadRequest(new { message = $"لا يمكن تغيير حالة الموعد من {appointment.Status} إلى {targetStatus}. يجب اتباع تسلسل الحالات الصحيح" });
 
-        // 5. Create visit linked to appointment
-        var visit = new Visit
+        // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate visits
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            PatientId = appointment.PatientId,
-            AppointmentId = appointment.Id,
-            DoctorId = appointment.DoctorId,
-            VisitDate = appointment.AppointmentDate,
-            VisitType = "Consultation",
-            Specialty = appointment.Specialty,
-            ChiefComplaint = appointment.Notes,
-            ServiceId = appointment.ServiceId,  // FIX: Copy ServiceId from appointment
-        };
+            // Acquire advisory lock scoped to this appointment
+            var lockKey = (int)(id.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        db.Visits.Add(visit);
+            // Re-check for existing visit INSIDE the lock (to prevent race condition)
+            var existingVisit = await db.Visits
+                .AnyAsync(v => v.AppointmentId == id && v.IsActive);
 
-        // 6. Update appointment status to InProgress (transition already validated above)
-        appointment.Status = targetStatus;
-        appointment.UpdatedAt = DateTime.UtcNow;
+            if (existingVisit)
+            {
+                await tx.RollbackAsync();
+                return Conflict(new { message = "تم إنشاء زيارة لهذا الموعد مسبقًا" });
+            }
 
-        // FIX: Update linked ClinicQueueItem with the new VisitId and status
-        var linkedQueueItem = await db.ClinicQueueItems
-            .FirstOrDefaultAsync(q => q.AppointmentId == id && q.IsActive
-                && q.Status != ClinicQueueStatus.Completed
-                && q.Status != ClinicQueueStatus.Cancelled);
-        if (linkedQueueItem != null)
-        {
-            linkedQueueItem.VisitId = visit.Id;
-            linkedQueueItem.Status = ClinicQueueStatus.InProgress;
-            linkedQueueItem.StartedAt = DateTime.UtcNow;
-            linkedQueueItem.UpdatedAt = DateTime.UtcNow;
+            // 4. Create visit linked to appointment
+            var visit = new Visit
+            {
+                PatientId = appointment.PatientId,
+                AppointmentId = appointment.Id,
+                DoctorId = appointment.DoctorId,
+                VisitDate = appointment.AppointmentDate,
+                VisitType = "Consultation",
+                Specialty = appointment.Specialty,
+                ChiefComplaint = appointment.Notes,
+                ServiceId = appointment.ServiceId,
+            };
+
+            db.Visits.Add(visit);
+
+            // 5. Update appointment status to InProgress (transition already validated above)
+            appointment.Status = targetStatus;
+            appointment.UpdatedAt = DateTime.UtcNow;
+
+            // Update linked ClinicQueueItem with the new VisitId and status
+            var linkedQueueItem = await db.ClinicQueueItems
+                .FirstOrDefaultAsync(q => q.AppointmentId == id && q.IsActive
+                    && q.Status != ClinicQueueStatus.Completed
+                    && q.Status != ClinicQueueStatus.Cancelled);
+            if (linkedQueueItem != null)
+            {
+                linkedQueueItem.VisitId = visit.Id;
+                linkedQueueItem.Status = ClinicQueueStatus.InProgress;
+                linkedQueueItem.StartedAt = DateTime.UtcNow;
+                linkedQueueItem.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            // Load navigation for response
+            await db.Entry(visit).Reference(v => v.Doctor).LoadAsync();
+
+            return Ok(new
+            {
+                visit.Id,
+                visit.PatientId,
+                visit.AppointmentId,
+                VisitDate = visit.VisitDate.ToString("yyyy-MM-dd"),
+                DoctorName = visit.Doctor?.Name,
+                message = "تم إنشاء الزيارة بنجاح"
+            });
         }
-
-        await db.SaveChangesAsync();
-
-        // Load navigation for response
-        await db.Entry(visit).Reference(v => v.Doctor).LoadAsync();
-
-        return Ok(new
+        catch
         {
-            visit.Id,
-            visit.PatientId,
-            visit.AppointmentId,
-            VisitDate = visit.VisitDate.ToString("yyyy-MM-dd"),
-            DoctorName = visit.Doctor?.Name,
-            message = "تم إنشاء الزيارة بنجاح"
-        });
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 }

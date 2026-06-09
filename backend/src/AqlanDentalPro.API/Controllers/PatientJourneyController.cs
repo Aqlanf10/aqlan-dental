@@ -963,10 +963,16 @@ public class PatientJourneyController(
 
     // ─── 3. POST /api/patient-journey/{appointmentId}/send-to-queue ─────────
     /// <summary>Create or reuse queue item for the appointment.</summary>
+    /// <remarks>
+    /// Sprint 1 FIX: Added transaction + advisory lock to prevent race condition
+    /// that could create duplicate queue items when concurrent requests hit this endpoint.
+    /// Pattern matches ClinicQueueController.AddToQueue.
+    /// </remarks>
     [HttpPost("{appointmentId:guid}/send-to-queue")]
     [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> SendToQueue(Guid appointmentId, [FromBody] SendToQueueRequest? req = null)
     {
+        // Pre-flight validation (outside transaction for fast rejection)
         var appointment = await db.Appointments.FindAsync(appointmentId);
         if (appointment == null)
             return NotFound(new { message = "الموعد غير موجود" });
@@ -979,69 +985,112 @@ public class PatientJourneyController(
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Check for existing active queue item for this appointment
-        var existingQueueItem = await db.ClinicQueueItems
-            .AnyAsync(q => q.AppointmentId == appointmentId && q.QueueDate == today
-                && q.Status != ClinicQueueStatus.Completed
-                && q.Status != ClinicQueueStatus.Cancelled
-                && q.IsActive);
-
-        if (existingQueueItem)
-            return Conflict(new { message = "المريض موجود بالفعل في قائمة الانتظار" });
-
-        // Determine room name
-        string? roomName = appointment.RoomName;
-        if (req?.RoomId.HasValue == true)
+        // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate queue items
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var room = await db.ClinicRooms.FindAsync(req.RoomId.Value);
-            if (room != null)
+            // Acquire advisory lock scoped to this patient (same as ClinicQueueController.AddToQueue)
+            var lockKey = (int)(appointment.PatientId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // Re-check for existing active queue item for this appointment (inside lock)
+            var existingQueueItem = await db.ClinicQueueItems
+                .AnyAsync(q => q.AppointmentId == appointmentId && q.QueueDate == today
+                    && q.Status != ClinicQueueStatus.Completed
+                    && q.Status != ClinicQueueStatus.Cancelled
+                    && q.IsActive);
+
+            if (existingQueueItem)
             {
-                roomName = room.ArabicName;
-                appointment.ClinicRoomId = room.Id;
-                appointment.RoomName = roomName;
+                await tx.RollbackAsync();
+                return Conflict(new { message = "المريض موجود بالفعل في قائمة الانتظار" });
             }
+
+            // Also check for duplicate queue item by patient for today (like ClinicQueueController.AddToQueue)
+            var activeStatuses = new HashSet<ClinicQueueStatus>
+            {
+                ClinicQueueStatus.Waiting,
+                ClinicQueueStatus.Called,
+                ClinicQueueStatus.InRoom,
+                ClinicQueueStatus.InProgress
+            };
+            var duplicatePatientQueue = await db.ClinicQueueItems
+                .AnyAsync(q => q.PatientId == appointment.PatientId && q.QueueDate == today
+                    && activeStatuses.Contains(q.Status)
+                    && q.IsActive);
+
+            if (duplicatePatientQueue)
+            {
+                await tx.RollbackAsync();
+                return Conflict(new { message = "يوجد عنصر نشط لهذا المريض في قائمة الانتظار اليوم بالفعل" });
+            }
+
+            // Determine room name
+            string? roomName = appointment.RoomName;
+            if (req?.RoomId.HasValue == true)
+            {
+                var room = await db.ClinicRooms.FindAsync(req.RoomId.Value);
+                if (room != null)
+                {
+                    roomName = room.ArabicName;
+                    appointment.ClinicRoomId = room.Id;
+                    appointment.RoomName = roomName;
+                }
+            }
+
+            // Create queue item
+            var queueItem = new ClinicQueueItem
+            {
+                PatientId = appointment.PatientId,
+                AppointmentId = appointment.Id,
+                DoctorId = appointment.DoctorId,
+                ServiceId = appointment.ServiceId,
+                ClinicRoomId = appointment.ClinicRoomId,
+                RoomName = roomName,
+                Status = ClinicQueueStatus.Waiting,
+                QueueDate = today,
+                AddedByUserId = GetCurrentUserId(),
+                Notes = req?.Notes
+            };
+
+            db.ClinicQueueItems.Add(queueItem);
+
+            // Update appointment status to Waiting
+            if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Waiting))
+            {
+                appointment.Status = AppointmentStatus.Waiting;
+                appointment.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                queueItem.Id,
+                QueueStatus = queueItem.Status.ToString(),
+                StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(queueItem.Status),
+                message = "تمت إضافة المريض إلى قائمة الانتظار بنجاح"
+            });
         }
-
-        // Create queue item
-        var queueItem = new ClinicQueueItem
+        catch
         {
-            PatientId = appointment.PatientId,
-            AppointmentId = appointment.Id,
-            DoctorId = appointment.DoctorId,
-            ServiceId = appointment.ServiceId,           // FIX: Copy ServiceId from appointment
-            ClinicRoomId = appointment.ClinicRoomId,     // FIX: Copy ClinicRoomId from appointment
-            RoomName = roomName,
-            Status = ClinicQueueStatus.Waiting,
-            QueueDate = today,
-            AddedByUserId = GetCurrentUserId(),
-            Notes = req?.Notes
-        };
-
-        db.ClinicQueueItems.Add(queueItem);
-
-        // Update appointment status to Waiting
-        if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Waiting))
-        {
-            appointment.Status = AppointmentStatus.Waiting;
-            appointment.UpdatedAt = DateTime.UtcNow;
+            await tx.RollbackAsync();
+            throw;
         }
-
-        await db.SaveChangesAsync();
-
-        return Ok(new
-        {
-            queueItem.Id,
-            QueueStatus = queueItem.Status.ToString(),
-            StatusArabic = ClinicQueueStatusTransitions.GetArabicLabel(queueItem.Status),
-            message = "تمت إضافة المريض إلى قائمة الانتظار بنجاح"
-        });
     }
 
     // ─── 4. POST /api/patient-journey/{appointmentId}/start-visit ───────────
     /// <summary>Doctor starts the visit. Reuses existing visit/queue logic.</summary>
+    /// <remarks>
+    /// Sprint 1 FIX: Added transaction + advisory lock to prevent race condition
+    /// that could create duplicate visits when concurrent requests hit this endpoint.
+    /// Pattern matches ClinicQueueController.StartVisit.
+    /// </remarks>
     [HttpPost("{appointmentId:guid}/start-visit")]
     public async Task<IActionResult> StartVisit(Guid appointmentId)
     {
+        // Pre-flight validation (outside transaction for fast rejection)
         var appointment = await db.Appointments.FindAsync(appointmentId);
         if (appointment == null)
             return NotFound(new { message = "الموعد غير موجود" });
@@ -1078,32 +1127,105 @@ public class PatientJourneyController(
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Find the queue item for this appointment
-        var queueItem = await db.ClinicQueueItems
-            .FirstOrDefaultAsync(q => q.AppointmentId == appointmentId && q.QueueDate == today
-                && q.IsActive
-                && q.Status != ClinicQueueStatus.Completed
-                && q.Status != ClinicQueueStatus.Cancelled);
-
-        if (queueItem == null)
-            return BadRequest(new { message = "لا يوجد عنصر انتظار نشط لهذا الموعد" });
-
-        // Validate queue transition to InProgress
-        var validationError = ClinicQueueStatusTransitions.GetValidationError(queueItem.Status, ClinicQueueStatus.InProgress);
-        if (validationError != null)
-            return BadRequest(new { message = validationError });
-
-        // Check for existing visit
-        var existingVisit = await db.Visits
-            .FirstOrDefaultAsync(v => v.AppointmentId == appointmentId && v.IsActive);
-
-        if (existingVisit != null)
+        // Sprint 1 FIX: Wrap in transaction + advisory lock to prevent duplicate visits
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            // Visit already exists, just update statuses
+            // Acquire advisory lock scoped to this appointment
+            var lockKey = (int)(appointmentId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // Re-check for existing visit INSIDE the lock (to prevent race condition)
+            var existingVisit = await db.Visits
+                .FirstOrDefaultAsync(v => v.AppointmentId == appointmentId && v.IsActive);
+
+            // Find the queue item for this appointment (inside transaction for consistency)
+            var queueItem = await db.ClinicQueueItems
+                .FirstOrDefaultAsync(q => q.AppointmentId == appointmentId && q.QueueDate == today
+                    && q.IsActive
+                    && q.Status != ClinicQueueStatus.Completed
+                    && q.Status != ClinicQueueStatus.Cancelled);
+
+            if (queueItem == null)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يوجد عنصر انتظار نشط لهذا الموعد" });
+            }
+
+            // Validate queue transition to InProgress
+            var validationError = ClinicQueueStatusTransitions.GetValidationError(queueItem.Status, ClinicQueueStatus.InProgress);
+            if (validationError != null)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = validationError });
+            }
+
+            if (existingVisit != null)
+            {
+                // Visit already exists, just update statuses
+                queueItem.Status = ClinicQueueStatus.InProgress;
+                queueItem.StartedAt = DateTime.UtcNow;
+                queueItem.UpdatedAt = DateTime.UtcNow;
+
+                if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InProgress))
+                {
+                    appointment.Status = AppointmentStatus.InProgress;
+                    appointment.UpdatedAt = DateTime.UtcNow;
+                }
+
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                return Ok(new
+                {
+                    existingVisit.Id,
+                    QueueItemId = queueItem.Id,
+                    QueueStatus = queueItem.Status.ToString(),
+                    AppointmentStatus = appointment.Status.ToString(),
+                    VisitStatus = existingVisit.CheckoutStatus ?? "InProgress",
+                    message = "تم بدء الزيارة بنجاح (زيارة موجودة)"
+                });
+            }
+
+            // Create new visit
+            var visit = new Visit
+            {
+                PatientId = appointment.PatientId,
+                AppointmentId = appointment.Id,
+                VisitDate = today,
+                DoctorId = appointment.DoctorId,
+                Specialty = appointment.Specialty,
+                ServiceId = appointment.ServiceId
+            };
+
+            // FIX: Populate AmountDueReference from the service catalog price
+            if (appointment.ServiceId.HasValue)
+            {
+                var service = await db.ClinicServices.FindAsync(appointment.ServiceId.Value);
+                if (service != null && service.DefaultPrice > 0)
+                    visit.AmountDueReference = service.DefaultPrice;
+            }
+
+            db.Visits.Add(visit);
+
+            try
+            {
+                await db.SaveChangesAsync(); // Save to get the visit ID
+            }
+            catch (DbUpdateException ex)
+            {
+                logger.LogError(ex, "Failed to create visit for appointment {AppointmentId}", appointmentId);
+                await tx.RollbackAsync();
+                return StatusCode(500, new { message = "فشل إنشاء الزيارة — يرجى المحاولة مرة أخرى" });
+            }
+
+            // Update queue item
+            queueItem.VisitId = visit.Id;
             queueItem.Status = ClinicQueueStatus.InProgress;
             queueItem.StartedAt = DateTime.UtcNow;
             queueItem.UpdatedAt = DateTime.UtcNow;
 
+            // Update appointment
             if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InProgress))
             {
                 appointment.Status = AppointmentStatus.InProgress;
@@ -1111,74 +1233,24 @@ public class PatientJourneyController(
             }
 
             await db.SaveChangesAsync();
+            await tx.CommitAsync();
 
             return Ok(new
             {
-                existingVisit.Id,
+                visit.Id,
                 QueueItemId = queueItem.Id,
                 QueueStatus = queueItem.Status.ToString(),
                 AppointmentStatus = appointment.Status.ToString(),
-                VisitStatus = existingVisit.CheckoutStatus ?? "InProgress",
-                message = "تم بدء الزيارة بنجاح (زيارة موجودة)"
+                VisitStatus = visit.CheckoutStatus ?? "InProgress",
+                AmountDueReference = visit.AmountDueReference,
+                message = "تم بدء الزيارة بنجاح"
             });
         }
-
-        // Create new visit
-        var visit = new Visit
+        catch
         {
-            PatientId = appointment.PatientId,
-            AppointmentId = appointment.Id,
-            VisitDate = today,
-            DoctorId = appointment.DoctorId,
-            Specialty = appointment.Specialty,
-            ServiceId = appointment.ServiceId
-        };
-
-        // FIX: Populate AmountDueReference from the service catalog price
-        if (appointment.ServiceId.HasValue)
-        {
-            var service = await db.ClinicServices.FindAsync(appointment.ServiceId.Value);
-            if (service != null && service.DefaultPrice > 0)
-                visit.AmountDueReference = service.DefaultPrice;
+            await tx.RollbackAsync();
+            throw;
         }
-
-        db.Visits.Add(visit);
-
-        try
-        {
-            await db.SaveChangesAsync(); // Save to get the visit ID
-        }
-        catch (DbUpdateException ex)
-        {
-            logger.LogError(ex, "Failed to create visit for appointment {AppointmentId}", appointmentId);
-            return StatusCode(500, new { message = "فشل إنشاء الزيارة — يرجى المحاولة مرة أخرى" });
-        }
-
-        // Update queue item
-        queueItem.VisitId = visit.Id;
-        queueItem.Status = ClinicQueueStatus.InProgress;
-        queueItem.StartedAt = DateTime.UtcNow;
-        queueItem.UpdatedAt = DateTime.UtcNow;
-
-        // Update appointment
-        if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InProgress))
-        {
-            appointment.Status = AppointmentStatus.InProgress;
-            appointment.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await db.SaveChangesAsync();
-
-        return Ok(new
-        {
-            visit.Id,
-            QueueItemId = queueItem.Id,
-            QueueStatus = queueItem.Status.ToString(),
-            AppointmentStatus = appointment.Status.ToString(),
-            VisitStatus = visit.CheckoutStatus ?? "InProgress",
-            AmountDueReference = visit.AmountDueReference,
-            message = "تم بدء الزيارة بنجاح"
-        });
     }
 
     // ─── 5. POST /api/patient-journey/{visitId}/handoff-to-reception ────────

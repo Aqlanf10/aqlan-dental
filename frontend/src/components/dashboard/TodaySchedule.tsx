@@ -19,7 +19,7 @@ const STATUS_STYLES: Record<string, { color: string; bg: string }> = {
 };
 const STATUS_LABELS: Record<string, string> = {
   Scheduled: "مجدول", Confirmed: "مؤكد", Arrived: "وصل",
-  InProgress: "جارٍ", Completed: "مكتمل", Cancelled: "ملغى", NoShow: "غياب",
+  InProgress: "جاري العلاج", Completed: "مكتمل", Cancelled: "ملغي", NoShow: "غياب",
 };
 
 export function TodaySchedule() {

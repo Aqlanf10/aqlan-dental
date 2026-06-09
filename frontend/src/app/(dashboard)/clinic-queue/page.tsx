@@ -79,7 +79,7 @@ const STATUS_CONFIG: Record<QueueStatus, { label: string; color: string; bg: str
   Waiting:    { label: "في الانتظار",  color: "text-amber-700",  bg: "bg-amber-50 border-amber-200",  icon: <Clock className="w-3.5 h-3.5" /> },
   Called:     { label: "تم النداء",    color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",    icon: <PhoneCall className="w-3.5 h-3.5" /> },
   InRoom:     { label: "داخل الغرفة",  color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: <DoorOpen className="w-3.5 h-3.5" /> },
-  InProgress: { label: "قيد المعالجة", color: "text-green-700",  bg: "bg-green-50 border-green-200",  icon: <Play className="w-3.5 h-3.5" /> },
+  InProgress: { label: "جاري العلاج", color: "text-green-700",  bg: "bg-green-50 border-green-200",  icon: <Play className="w-3.5 h-3.5" /> },
   Completed:  { label: "مكتمل",        color: "text-gray-500",   bg: "bg-gray-100 border-gray-200",   icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
   Cancelled:  { label: "ملغي",         color: "text-red-600",    bg: "bg-red-50 border-red-200",      icon: <XCircle className="w-3.5 h-3.5" /> },
 };
@@ -89,7 +89,7 @@ const FILTER_OPTIONS = [
   { value: "Waiting",    label: "في الانتظار" },
   { value: "Called",     label: "تم النداء" },
   { value: "InRoom",     label: "داخل الغرفة" },
-  { value: "InProgress", label: "قيد المعالجة" },
+  { value: "InProgress", label: "جاري العلاج" },
   { value: "Completed",  label: "مكتمل" },
   { value: "Cancelled",  label: "ملغي" },
 ] as const;
@@ -358,7 +358,7 @@ export default function ClinicQueuePage() {
         <CounterCard label="في الانتظار" count={waitingCount} icon={<Clock className="w-5 h-5" />} color="#f59e0b" bgColor="#fffbeb" borderColor="#fde68a" />
         <CounterCard label="تم النداء" count={calledCount} icon={<PhoneCall className="w-5 h-5" />} color="#3b82f6" bgColor="#eff6ff" borderColor="#bfdbfe" />
         <CounterCard label="داخل الغرفة" count={inRoomCount} icon={<DoorOpen className="w-5 h-5" />} color="#8b5cf6" bgColor="#f5f3ff" borderColor="#ddd6fe" />
-        <CounterCard label="قيد المعالجة" count={inProgressCount} icon={<Play className="w-5 h-5" />} color="#10b981" bgColor="#ecfdf5" borderColor="#a7f3d0" />
+        <CounterCard label="جاري العلاج" count={inProgressCount} icon={<Play className="w-5 h-5" />} color="#10b981" bgColor="#ecfdf5" borderColor="#a7f3d0" />
       </div>
 
       {/* Estimated wait + Doctor filter */}

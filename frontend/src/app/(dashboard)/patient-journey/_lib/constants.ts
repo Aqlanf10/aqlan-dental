@@ -45,7 +45,7 @@ export const STATUS_LABELS: Record<string, string> = {
   Waiting: "في الانتظار",
   Called: "تم النداء",
   InRoom: "داخل الغرفة",
-  InProgress: "قيد المعالجة",
+  InProgress: "جاري العلاج",
   Completed: "مكتمل",
   Cancelled: "ملغي",
   NoShow: "لم يحضر",
@@ -201,5 +201,5 @@ export function isAccountantRole(role: string): boolean {
 }
 
 export function isReceptionRole(role: string): boolean {
-  return role === "Receptionist";
+  return role === "Reception";
 }

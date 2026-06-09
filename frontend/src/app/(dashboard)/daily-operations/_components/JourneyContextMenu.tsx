@@ -292,7 +292,7 @@ export default function JourneyContextMenu({
     InRoom: "داخل الغرفة",
     InProgress: "جاري العلاج",
     Completed: "مكتمل",
-    Cancelled: "ملغى",
+    Cancelled: "ملغي",
     NoShow: "لم يحضر",
   };
 

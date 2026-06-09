@@ -75,7 +75,7 @@ export interface DailyJourneyVisit {
   nextVisitPlan?: string;
   cost?: number;
   nextVisitDate?: string;
-  checkoutStatus?: string;
+  checkoutStatus?: CheckoutStatus;
   readyForCheckoutAt?: string;
   amountDueReference?: number;
   appointmentId?: string;
@@ -178,7 +178,9 @@ export function getStepIndex(status: string): number {
   return idx >= 0 ? idx : -1;
 }
 
-// ─── Status Arabic Labels ───────────────────────────────────────────────
+// ─── Status Arabic Labels (Single Source of Truth) ──────────────────────
+// Sprint 1 FIX: Unified Arabic labels — all other files should import from here.
+// "ملغي" (not "ملغى") to match backend ClinicQueueStatusTransitions.
 
 export const APPOINTMENT_STATUS_ARABIC: Record<string, string> = {
   Scheduled: "مجدول",
@@ -189,7 +191,7 @@ export const APPOINTMENT_STATUS_ARABIC: Record<string, string> = {
   InRoom: "داخل الغرفة",
   InProgress: "جاري العلاج",
   Completed: "مكتمل",
-  Cancelled: "ملغى",
+  Cancelled: "ملغي",
   NoShow: "لم يحضر",
 };
 
@@ -199,7 +201,17 @@ export const QUEUE_STATUS_ARABIC: Record<string, string> = {
   InRoom: "داخل الغرفة",
   InProgress: "جاري العلاج",
   Completed: "مكتمل",
-  Cancelled: "ملغى",
+  Cancelled: "ملغي",
+  NoShow: "لم يحضر",
+};
+
+export const CHECKOUT_STATUS_ARABIC: Record<string, string> = {
+  ReadyForCheckout: "جاهز للحساب",
+  CheckedOut: "تم الخروج",
+  LeftWithoutCompletion: "خرج بدون إكمال",
+  CancelledAfterArrival: "إلغاء بعد الوصول",
+  Incomplete: "غير مكتمل",
+  Abandoned: "متروك",
 };
 
 export const NEXT_ACTION_ARABIC: Record<string, string> = {
@@ -209,6 +221,44 @@ export const NEXT_ACTION_ARABIC: Record<string, string> = {
   EnterRoom: "دخول الغرفة",
   StartVisit: "بدء الزيارة",
   InProgress: "جاري العلاج",
+  Handoff: "تسليم للاستقبال",
   Checkout: "الحساب والخروج",
   None: "لا يوجد إجراء",
 };
+
+// ─── Checkout Status Type ───────────────────────────────────────────────
+// Sprint 1 FIX: Type-safe checkout status values instead of raw strings.
+// Matches backend Visit.CheckoutStatus (magic strings until enum migration).
+
+export type CheckoutStatus =
+  | "ReadyForCheckout"
+  | "CheckedOut"
+  | "LeftWithoutCompletion"
+  | "CancelledAfterArrival"
+  | "Incomplete"
+  | "Abandoned";
+
+/** Type guard for CheckoutStatus values */
+export function isCheckoutStatus(value: string): value is CheckoutStatus {
+  return [
+    "ReadyForCheckout",
+    "CheckedOut",
+    "LeftWithoutCompletion",
+    "CancelledAfterArrival",
+    "Incomplete",
+    "Abandoned",
+  ].includes(value);
+}
+
+/** Terminal checkout statuses — no further transitions allowed */
+export const TERMINAL_CHECKOUT_STATUSES: readonly CheckoutStatus[] = [
+  "CheckedOut",
+  "LeftWithoutCompletion",
+  "CancelledAfterArrival",
+  "Incomplete",
+  "Abandoned",
+] as const;
+
+export function isTerminalCheckoutStatus(status: string): boolean {
+  return (TERMINAL_CHECKOUT_STATUSES as readonly string[]).includes(status);
+}

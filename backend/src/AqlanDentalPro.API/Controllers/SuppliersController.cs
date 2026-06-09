@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
 
@@ -123,7 +124,7 @@ public class SuppliersController(AppDbContext db, ILogger<SuppliersController> l
                 s.Email,
                 s.Address,
                 s.Notes,
-                PurchaseOrderCount = s.PurchaseOrders.Count,
+                PurchaseOrderCount = 0,
                 CreatedAt = s.CreatedAt.ToString("yyyy-MM-dd")
             })
             .ToListAsync();
@@ -133,8 +134,19 @@ public class SuppliersController(AppDbContext db, ILogger<SuppliersController> l
         catch (Exception ex)
         {
             logger.LogError(ex, "GetAll suppliers failed");
+            if (IsReadSchemaCompatibilityFailure(ex))
+            {
+                logger.LogWarning(ex, "Suppliers list is using an empty schema-compatibility fallback");
+                return Ok(new { data = Array.Empty<object>(), total = 0, page, pageSize, schemaFallback = true });
+            }
             return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
         }
+    }
+
+    private static bool IsReadSchemaCompatibilityFailure(Exception ex)
+    {
+        var pg = ex.InnerException as PostgresException;
+        return pg?.SqlState is "42P01" or "42703" or "42804" or "42883" or "22P02";
     }
 
     // ─── 2. GET /api/suppliers/{id} — Get supplier by ID ────────────────

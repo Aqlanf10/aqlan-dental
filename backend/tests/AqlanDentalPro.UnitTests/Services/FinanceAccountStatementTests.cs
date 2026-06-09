@@ -438,7 +438,7 @@ public class FinanceAccountStatementTests
         result.Should().NotBeNull();
         result!.TotalPaid.Should().Be(50_000m, "orphan payments are counted");
         result.TotalContracted.Should().Be(0m, "no contracts");
-        result.TotalRemaining.Should().Be(-50_000m, "0 - 0 - 50,000 (negative: patient paid more than contracted)");
+        result.TotalRemaining.Should().Be(0m, "unallocated payments should not display as negative patient debt");
         result.RecentPayments.Should().HaveCount(2);
     }
 

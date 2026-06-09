@@ -252,6 +252,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         // H9 FIX: Generate receipt number and ALL entity mutations INSIDE the transaction
         // to avoid DbContext concurrency issues. Any DbContext query (like GenerateReceiptNumberAsync)
         // before BeginTransactionAsync can conflict with the transaction's DbContext tracking.
+        var storedPaymentMethod = string.IsNullOrWhiteSpace(req.PaymentMethod) ? "cash" : req.PaymentMethod.Trim();
+        var normalizedPaymentMethod = NormalizePaymentMethod(storedPaymentMethod);
         var useTx = db.Database.IsRelational();
         var tx = useTx ? await db.Database.BeginTransactionAsync() : null;
         Payment payment;
@@ -266,7 +268,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 InvoiceId = req.InvoiceId,
                 Amount = req.Amount,
                 PaymentDate = DateOnly.FromDateTime(DateTime.Today),
-                PaymentMethod = req.PaymentMethod,
+                PaymentMethod = storedPaymentMethod,
                 ServiceDescription = req.ServiceDescription,
                 Specialty = req.Specialty,
                 DoctorId = req.DoctorId,
@@ -294,7 +296,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                 Type = TransactionType.Inflow,
                 Category = FinancialCategory.PatientPayment,
                 Amount = payment.Amount,
-                PaymentMethod = payment.PaymentMethod ?? "cash",
+                PaymentMethod = storedPaymentMethod,
                 TransactionDate = payment.PaymentDate,
                 ReferenceId = payment.Id,
                 ReferenceNumber = payment.ReceiptNumber,
@@ -306,7 +308,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
             db.CashFlowTransactions.Add(cashflow);
 
             // All entity mutations are inside the transaction started above
-            await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, payment.Amount, payment.PaymentMethod);
+            await UpdateTreasuryBalanceNoSaveAsync(payment.BranchId ?? Guid.Empty, payment.Amount, normalizedPaymentMethod);
             await DualWritePaymentEntryAsync(payment, cashflow, invoice);
             // CreateEntryAsync (inside DualWrite) calls SaveChangesAsync, which persists
             // ALL tracked entities within the transaction (Payment, Receipt, CashFlow, Treasury, JE).
@@ -538,7 +540,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
                             + invoices.Sum(i => i.Subtotal + (i.TaxAmount ?? 0m));
         var totalDiscounts  = contracts.Sum(c => c.DiscountAmount)
                             + invoices.Sum(i => i.DiscountAmount ?? 0m);
-        var totalRemaining  = totalContracted - totalDiscounts - totalPaid;
+        var totalRemaining  = Math.Max(0m, totalContracted - totalDiscounts - totalPaid);
 
         // FIX: Filter recentPayments to active only — inactive/refunded/cancelled
         // payments should not appear in the recent list.
@@ -971,7 +973,7 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         var totalPaid      = await db.Payments
             .Where(p => p.PatientId == patientId && p.IsActive)
             .SumAsync(p => (decimal?)p.Amount) ?? 0m;
-        var outstanding    = totalCost - totalPaid;
+        var outstanding    = Math.Max(0m, totalCost - totalPaid);
 
         var today          = DateOnly.FromDateTime(DateTime.Today);
         var overdueAmount  = 0m;
@@ -1454,8 +1456,9 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
 
     private async Task UpdateTreasuryBalanceAsync(Guid branchId, decimal amount, string? paymentMethod)
     {
-        var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank") 
-            ? TreasuryType.Bank 
+        var normalizedPaymentMethod = NormalizePaymentMethod(paymentMethod);
+        var type = (normalizedPaymentMethod == "card" || normalizedPaymentMethod == "bank")
+            ? TreasuryType.Bank
             : TreasuryType.Vault;
         
         // Phase 6: Lookup by BranchId + Type instead of hardcoded name.
@@ -1503,6 +1506,21 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         }
     }
 
+    private static string NormalizePaymentMethod(string? method)
+    {
+        var value = (method ?? "cash").Trim().ToLowerInvariant()
+            .Replace("_", " ")
+            .Replace("-", " ");
+
+        return value switch
+        {
+            "" or "cash" or "نقدي" or "نقدا" => "cash",
+            "card" or "credit card" or "debit card" or "بطاقة" => "card",
+            "bank" or "bank transfer" or "transfer" or "تحويل بنكي" or "حوالة" or "karimey" or "jawaly" or "check" => "bank",
+            _ => value
+        };
+    }
+
     /// <summary>
     /// Same as UpdateTreasuryBalanceAsync but does NOT call SaveChangesAsync.
     /// Used within atomic dual-write transactions (CreatePaymentAsync, DeletePaymentAsync, RefundPaymentAsync)
@@ -1514,7 +1532,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (branchId == Guid.Empty)
             throw new ArgumentException("BranchId is required for treasury balance update");
 
-        var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank")
+        var normalizedPaymentMethod = NormalizePaymentMethod(paymentMethod);
+        var type = (normalizedPaymentMethod == "card" || normalizedPaymentMethod == "bank")
             ? TreasuryType.Bank
             : TreasuryType.Vault;
 
@@ -1574,7 +1593,8 @@ public class FinanceService(AppDbContext db, ICurrentUserService currentUser, IN
         if (branchId == Guid.Empty)
             throw new ArgumentException("BranchId is required for treasury resolution and cannot be Guid.Empty");
 
-        var type = (paymentMethod == "card" || paymentMethod == "bank_transfer" || paymentMethod == "bank")
+        var normalizedPaymentMethod = NormalizePaymentMethod(paymentMethod);
+        var type = (normalizedPaymentMethod == "card" || normalizedPaymentMethod == "bank")
             ? TreasuryType.Bank
             : TreasuryType.Vault;
 

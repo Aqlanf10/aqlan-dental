@@ -21,6 +21,13 @@ import type { FinanceSummaryData } from "./constants";
 import type { DailyJourneySummary } from "@/types/journey";
 import type { DashboardStats } from "@/types/dashboard";
 
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 // FIX: Removed global lastHandoffToReceptionAt cooldown.
 // It was causing checkout to silently fail for unrelated patients
 // when another patient's handoff happened within 5 seconds.
@@ -498,8 +505,8 @@ export function useWalkInPatient() {
 
       if (!patientId) throw new Error("فشل إنشاء المريض");
 
-      const today = new Date().toISOString().split("T")[0];
       const now = new Date();
+      const today = formatLocalDate(now);
       const startTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
       // Walk-ins use durationMinutes because the backend does not accept endTime.
@@ -579,7 +586,7 @@ export function useFinanceSummary() {
 export function useTomorrowAppointments(doctorId?: string) {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split("T")[0];
+  const tomorrowStr = formatLocalDate(tomorrow);
 
   return useQuery<TodayJourneyItem[]>({
     queryKey: ["daily-ops", "tomorrow", tomorrowStr, doctorId],

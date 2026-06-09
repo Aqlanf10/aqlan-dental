@@ -261,6 +261,54 @@ export function useDoctorCreateLabOrder() {
   });
 }
 
+export function useDoctorUpdateToothCondition() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      patientId: string;
+      body: {
+        toothNumber: string;
+        condition?: string | null;
+        surfacesAffected?: string | null;
+        treatmentDone?: string | null;
+        notes?: string | null;
+      };
+    }) => {
+      const { data } = await api.put(`/api/dental-chart/${params.patientId}/teeth`, params.body);
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["dental-chart", variables.patientId] });
+    },
+  });
+}
+
+export function useDoctorCreateGeneralTreatment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      patientId: string;
+      treatmentType: string;
+      toothNumber?: string;
+      materialUsed?: string;
+      anesthesiaType?: string;
+      cost?: number;
+      doctorId?: string;
+      notes?: string;
+    }) => {
+      const { data } = await api.post("/api/general-treatments", body);
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["doctor-clinic"] });
+      queryClient.invalidateQueries({ queryKey: ["patient-journey"] });
+      queryClient.invalidateQueries({ queryKey: ["general-treatments", variables.patientId] });
+    },
+  });
+}
+
 export function useDoctorCreateFollowUpAppointment() {
   const queryClient = useQueryClient();
   return useMutation({

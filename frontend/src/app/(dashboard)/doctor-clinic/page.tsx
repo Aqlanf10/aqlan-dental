@@ -726,6 +726,7 @@ export default function DoctorClinicPage() {
 
                         await createGeneralTreatmentMutation.mutateAsync({
                           patientId: selectedPatient.patientId,
+                          visitId: selectedPatient.visitId || undefined,
                           doctorId: selectedPatient.doctorId || undefined,
                           toothNumber: data.toothNumber,
                           treatmentType: data.procedureType,

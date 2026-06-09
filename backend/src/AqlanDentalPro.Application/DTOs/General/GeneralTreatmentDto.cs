@@ -4,6 +4,7 @@ public class GeneralTreatmentDto
 {
     public Guid Id { get; set; }
     public Guid PatientId { get; set; }
+    public Guid? VisitId { get; set; }
     public string? PatientName { get; set; }
     public string TreatmentType { get; set; } = string.Empty;
     public string? ToothNumber { get; set; }
@@ -18,6 +19,7 @@ public class GeneralTreatmentDto
 public class CreateGeneralTreatmentRequest
 {
     public Guid PatientId { get; set; }
+    public Guid? VisitId { get; set; }
     public string TreatmentType { get; set; } = string.Empty;
     public string? ToothNumber { get; set; }
     public string? MaterialUsed { get; set; }

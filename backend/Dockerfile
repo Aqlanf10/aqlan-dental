@@ -23,6 +23,8 @@ RUN dotnet publish src/AqlanDentalPro.API/AqlanDentalPro.API.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends libfontconfig1 fontconfig && rm -rf /var/lib/apt/lists/*
+
 # Non-root user for security
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup appuser

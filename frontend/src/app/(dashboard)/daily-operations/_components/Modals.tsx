@@ -25,6 +25,8 @@ import type { DailyJourneySummary } from "@/types/journey";
 import { usePaymentMethodSettings } from "../_lib/hooks";
 import api from "@/lib/api";
 import axios from "axios";
+import { toast } from "@/stores/toastStore";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Shared overlay wrapper
@@ -110,18 +112,13 @@ export function QuickPaymentModal({
     if (!latestPayment?.id) return;
     setDownloadingPdf(true);
     try {
-      const { data } = await api.get(`/api/payments/${latestPayment.id}/pdf`, {
-        responseType: "blob",
-      });
-      const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `receipt-${latestPayment.receiptNumber || latestPayment.id}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
+      const filename = latestPayment.receiptNumber
+        ? `receipt-${latestPayment.receiptNumber}.pdf`
+        : `receipt-${latestPayment.id}.pdf`;
+      await downloadPdfFromApi(`/api/payments/${latestPayment.id}/pdf`, filename);
+      toast.success("تم تحميل السند بنجاح");
     } catch {
-      // Fallback to print
-      window.print();
+      toast.error("فشل تحميل السند المالي");
     }
     setDownloadingPdf(false);
   };
@@ -312,17 +309,13 @@ export function CompleteVisitModal({
     if (!latestPayment?.id) return;
     setDownloadingPdf(true);
     try {
-      const { data } = await api.get(`/api/payments/${latestPayment.id}/pdf`, {
-        responseType: "blob",
-      });
-      const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `receipt-${latestPayment.receiptNumber || latestPayment.id}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
+      const filename = latestPayment.receiptNumber
+        ? `receipt-${latestPayment.receiptNumber}.pdf`
+        : `receipt-${latestPayment.id}.pdf`;
+      await downloadPdfFromApi(`/api/payments/${latestPayment.id}/pdf`, filename);
+      toast.success("تم تحميل السند بنجاح");
     } catch {
-      window.print();
+      toast.error("فشل تحميل السند المالي");
     }
     setDownloadingPdf(false);
   };

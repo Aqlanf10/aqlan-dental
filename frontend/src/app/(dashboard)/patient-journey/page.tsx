@@ -15,6 +15,7 @@ import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { WorkflowNav, WORKFLOW_LINKS } from "@/components/shared/WorkflowNav";
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import {
@@ -588,16 +589,7 @@ export default function PatientJourneyPage() {
   const handleDownloadPdf = useCallback(async (url: string, filename: string) => {
     setPdfDownloading(true);
     try {
-      const res = await api.get(url, { responseType: "blob" });
-      const blob = new Blob([res.data as BlobPart], { type: "application/pdf" });
-      const linkUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = linkUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(linkUrl);
+      await downloadPdfFromApi(url, filename);
       toast.success("تم تحميل الملف بنجاح");
     } catch {
       toast.error("فشل تحميل الملف");

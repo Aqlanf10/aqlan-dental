@@ -8,7 +8,9 @@ import {
   Loader2,
   RotateCcw,
   HandCoins,
+  Printer,
 } from "lucide-react";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { InvoiceListItem, InvoiceDetail, CreditNoteDto, CreateCreditNoteRequest, ProcessRefundRequest } from "./types";
@@ -222,18 +224,35 @@ export function InvoicesTab() {
 
             {/* Actions */}
             <div className="flex justify-between pt-2 border-t" style={{ borderColor: tokens.border }}>
-              {/* Refund button */}
-              {detail.paidAmount > 0 && detail.status !== "Cancelled" && (
-                <button
-                  onClick={() => {
-                    const inv = data.find((i) => i.id === detail.id);
-                    if (inv) setShowCreditNote(inv);
-                  }}
-                  style={{ ...btnPrimary, backgroundColor: tokens.warningBorder }}
-                >
-                  <RotateCcw className="w-4 h-4" /> إرجاع مبلغ
-                </button>
-              )}
+              <div className="flex gap-2">
+                {/* Refund button */}
+                {detail.paidAmount > 0 && detail.status !== "Cancelled" && (
+                  <button
+                    onClick={() => {
+                      const inv = data.find((i) => i.id === detail.id);
+                      if (inv) setShowCreditNote(inv);
+                    }}
+                    style={{ ...btnPrimary, backgroundColor: tokens.warningBorder }}
+                  >
+                    <RotateCcw className="w-4 h-4" /> إرجاع مبلغ
+                  </button>
+                )}
+                {/* Print button */}
+                {detail.status !== "Draft" && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await downloadPdfFromApi(`/api/invoices/${detail.id}/pdf`, `invoice-${detail.invoiceNumber}.pdf`);
+                      } catch {
+                        toast.error("فشل في تحميل الفاتورة");
+                      }
+                    }}
+                    style={{ ...btnPrimary, backgroundColor: tokens.brand }}
+                  >
+                    <Printer className="w-4 h-4" /> طباعة الفاتورة
+                  </button>
+                )}
+              </div>
               <div className="flex-1" />
               {/* Cancel button */}
               {detail.status === "Draft" && (

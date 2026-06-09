@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import type { PatientListItem } from "@/types/patient";
 import { formatPhoneForWhatsApp, normalizePhone } from "@/lib/utils";
+import { toast } from "@/stores/toastStore";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 
 export interface ContextMenuPosition {
   x: number;
@@ -225,7 +227,16 @@ export function PatientContextMenu({
                 </button>
                 {canViewFinance && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); router.push(`/patients/${patient.id}/print/financial`); onClose(); }}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      onClose();
+                      try {
+                        const filename = `financial-statement-${patient.patientNumber || patient.id}.pdf`;
+                        await downloadPdfFromApi(`/api/patients/${patient.id}/financial-statement/pdf`, filename);
+                      } catch {
+                        toast.error("فشل في تحميل كشف الحساب المالي");
+                      }
+                    }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 transition text-gray-700"
                   >
                     <Wallet className="w-4 h-4 text-gray-400" />

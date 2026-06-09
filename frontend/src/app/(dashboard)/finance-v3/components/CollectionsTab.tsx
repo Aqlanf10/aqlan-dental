@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useActiveCashierSession } from "@/hooks/useCashierSession";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import type { PaymentListItem, RegisterPaymentRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
@@ -230,7 +231,22 @@ export function CollectionsTab() {
                 {isAdmin && (
                   <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(r.id); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="عكس الدفعة"><Trash2 className="w-3.5 h-3.5" /></button>
                 )}
-                <button onClick={(e) => { e.stopPropagation(); window.print(); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.brand }} title="طباعة إيصال"><Printer className="w-3.5 h-3.5" /></button>
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      const filename = r.receiptNumber ? `receipt-${r.receiptNumber}.pdf` : `receipt-${r.id}.pdf`;
+                      await downloadPdfFromApi(`/api/payments/${r.id}/pdf`, filename);
+                    } catch {
+                      toast.error("فشل في تحميل إيصال الدفعة");
+                    }
+                  }}
+                  className="w-7 h-7 rounded-md flex items-center justify-center"
+                  style={{ color: tokens.brand }}
+                  title="طباعة إيصال"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                </button>
               </div>
             ) : null },
           ]}

@@ -110,6 +110,21 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
         return Ok(result);
     }
 
+    [HttpGet("patients/{patientId:guid}/financial-statement/pdf")]
+    public async Task<IActionResult> GetPatientFinancialStatementPdf(Guid patientId)
+    {
+        try
+        {
+            var pdfBytes = await pdfService.GenerateFinancialStatementAsync(patientId);
+            return File(pdfBytes, "application/pdf", $"financial-statement-{patientId}.pdf");
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(ex, "Financial statement PDF generation failed for patient {PatientId}", patientId);
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
     [HttpGet("payments/{id:guid}/pdf")]
     public async Task<IActionResult> GetPaymentPdf(Guid id)
     {

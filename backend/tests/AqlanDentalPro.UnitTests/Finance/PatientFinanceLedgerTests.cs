@@ -6,6 +6,7 @@ using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using AqlanDentalPro.Infrastructure.Services;
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -445,5 +446,150 @@ public class PatientFinanceLedgerTests
             "draft invoice should not inflate totalContracted in account statement");
         statement.TotalRemaining.Should().Be(0m,
             "draft invoice should not create remaining balance in account statement");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 10. GET /api/payments/{id}/pdf returns application/pdf and non-empty bytes
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task PaymentsController_GetPaymentPdf_ReturnsPdfFileContent()
+    {
+        // Arrange
+        var paymentId = Guid.NewGuid();
+        var pdfBytes = new byte[] { 0x25, 0x50, 0x44, 0x46 }; // %PDF
+        
+        var mockFinanceService = new Mock<IFinanceService>();
+        var mockPdfService = new Mock<IPdfService>();
+        mockPdfService
+            .Setup(p => p.GeneratePaymentReceiptAsync(paymentId))
+            .ReturnsAsync(pdfBytes);
+        
+        var mockAuditService = new Mock<IAuditService>();
+        var mockLogger = new Mock<ILogger<PaymentsController>>();
+        
+        var controller = new PaymentsController(
+            mockFinanceService.Object,
+            mockPdfService.Object,
+            mockAuditService.Object,
+            mockLogger.Object);
+
+        // Act
+        var result = await controller.GetPaymentPdf(paymentId);
+
+        // Assert
+        result.Should().BeOfType<FileContentResult>();
+        var fileResult = (FileContentResult)result;
+        fileResult.ContentType.Should().Be("application/pdf");
+        fileResult.FileDownloadName.Should().Be($"receipt-{paymentId}.pdf");
+        fileResult.FileContents.Should().BeEquivalentTo(pdfBytes);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 11. GET /api/invoices/{id}/pdf returns application/pdf and non-empty bytes
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task InvoicesController_GetInvoicePdf_ReturnsPdfFileContent()
+    {
+        // Arrange
+        var invoiceId = Guid.NewGuid();
+        var pdfBytes = new byte[] { 0x25, 0x50, 0x44, 0x46 }; // %PDF
+        
+        await using var db = CreateDb();
+        var mockPdfService = new Mock<IPdfService>();
+        mockPdfService
+            .Setup(p => p.GenerateInvoicePdfAsync(invoiceId))
+            .ReturnsAsync(pdfBytes);
+            
+        var mockAuditService = new Mock<IAuditService>();
+        var mockLogger = new Mock<ILogger<InvoicesController>>();
+        var mockCommissionService = new Mock<ICommissionService>();
+        var mockCurrentUser = new Mock<ICurrentUserService>();
+        
+        var controller = new InvoicesController(
+            db,
+            mockPdfService.Object,
+            mockAuditService.Object,
+            mockLogger.Object,
+            mockCommissionService.Object,
+            mockCurrentUser.Object);
+
+        // Act
+        var result = await controller.GetInvoicePdf(invoiceId);
+
+        // Assert
+        result.Should().BeOfType<FileContentResult>();
+        var fileResult = (FileContentResult)result;
+        fileResult.ContentType.Should().Be("application/pdf");
+        fileResult.FileDownloadName.Should().Be($"invoice-{invoiceId}.pdf");
+        fileResult.FileContents.Should().BeEquivalentTo(pdfBytes);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 12. GET /api/patients/{id}/financial-statement/pdf returns PDF and non-empty bytes (and 404 for invalid patient)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task PaymentsController_GetPatientFinancialStatementPdf_ReturnsPdfFileContent()
+    {
+        // Arrange
+        var patientId = Guid.NewGuid();
+        var pdfBytes = new byte[] { 0x25, 0x50, 0x44, 0x46 }; // %PDF
+        
+        var mockFinanceService = new Mock<IFinanceService>();
+        var mockPdfService = new Mock<IPdfService>();
+        mockPdfService
+            .Setup(p => p.GenerateFinancialStatementAsync(patientId))
+            .ReturnsAsync(pdfBytes);
+        
+        var mockAuditService = new Mock<IAuditService>();
+        var mockLogger = new Mock<ILogger<PaymentsController>>();
+        
+        var controller = new PaymentsController(
+            mockFinanceService.Object,
+            mockPdfService.Object,
+            mockAuditService.Object,
+            mockLogger.Object);
+
+        // Act
+        var result = await controller.GetPatientFinancialStatementPdf(patientId);
+
+        // Assert
+        result.Should().BeOfType<FileContentResult>();
+        var fileResult = (FileContentResult)result;
+        fileResult.ContentType.Should().Be("application/pdf");
+        fileResult.FileDownloadName.Should().Be($"financial-statement-{patientId}.pdf");
+        fileResult.FileContents.Should().BeEquivalentTo(pdfBytes);
+    }
+
+    [Fact]
+    public async Task PaymentsController_GetPatientFinancialStatementPdf_ReturnsNotFound_WhenPatientInvalid()
+    {
+        // Arrange
+        var invalidPatientId = Guid.NewGuid();
+        
+        var mockFinanceService = new Mock<IFinanceService>();
+        var mockPdfService = new Mock<IPdfService>();
+        mockPdfService
+            .Setup(p => p.GenerateFinancialStatementAsync(invalidPatientId))
+            .ThrowsAsync(new ArgumentException("المريض غير موجود"));
+        
+        var mockAuditService = new Mock<IAuditService>();
+        var mockLogger = new Mock<ILogger<PaymentsController>>();
+        
+        var controller = new PaymentsController(
+            mockFinanceService.Object,
+            mockPdfService.Object,
+            mockAuditService.Object,
+            mockLogger.Object);
+
+        // Act
+        var result = await controller.GetPatientFinancialStatementPdf(invalidPatientId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = (NotFoundObjectResult)result;
+        notFoundResult.Value.Should().BeEquivalentTo(new { message = "المريض غير موجود" });
     }
 }

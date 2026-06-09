@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "@/stores/toastStore";
+import { downloadPdfFromApi } from "@/lib/pdfDownload";
 import { useHasPermission, PERMISSION_KEYS } from "@/hooks/usePermissions";
 import {
   useDailyJourneySummary,
@@ -1300,13 +1301,27 @@ export default function PatientDailyJourneyHub() {
                             دفع فاتورة صادرة
                           </Link>
                         )}
-                        <Link
-                          href={`/patients/${patientId}`}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-[#d3d1c7] bg-white text-[#1a3a5c] hover:bg-[#f8f9fa] transition"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          طباعة إيصال
-                        </Link>
+                        {financeSummary?.latestPayment?.id ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const filename = financeSummary.latestPayment!.receiptNumber
+                                  ? `receipt-${financeSummary.latestPayment!.receiptNumber}.pdf`
+                                  : `receipt-${financeSummary.latestPayment!.id}.pdf`;
+                                await downloadPdfFromApi(`/api/payments/${financeSummary.latestPayment!.id}/pdf`, filename);
+                              } catch {
+                                toast.error("فشل تحميل إيصال الدفعة");
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-[#d3d1c7] bg-white text-[#1a3a5c] hover:bg-[#f8f9fa] transition text-right"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            طباعة إيصال
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">لا توجد دفعة لطباعة إيصال</span>
+                        )}
                       </>
                     ) : (
                       <div className="flex gap-2 p-3 rounded-lg bg-[#e6f1fb] border border-[#85b7eb]/50 text-[#185fa5]">
@@ -1688,13 +1703,20 @@ export default function PatientDailyJourneyHub() {
                     <Printer className="w-4 h-4 text-[#1a3a5c]" />
                     <span className="text-[11px] font-semibold text-[#1a3a5c]">طباعة ملخص المريض</span>
                   </Link>
-                  <Link
-                    href={`/patients/${patientId}/print/financial`}
-                    className="flex items-center gap-2 p-3 rounded-lg border border-[#d3d1c7] hover:bg-[#f8f9fa] transition"
+                  <button
+                    onClick={async () => {
+                      try {
+                        const filename = `financial-statement-${patient?.patientNumber || patientId}.pdf`;
+                        await downloadPdfFromApi(`/api/patients/${patientId}/financial-statement/pdf`, filename);
+                      } catch {
+                        toast.error("فشل تحميل كشف الحساب المالي");
+                      }
+                    }}
+                    className="flex items-center gap-2 p-3 rounded-lg border border-[#d3d1c7] hover:bg-[#f8f9fa] transition text-right w-full"
                   >
                     <Receipt className="w-4 h-4 text-[#1a3a5c]" />
                     <span className="text-[11px] font-semibold text-[#1a3a5c]">طباعة ملخص مالي</span>
-                  </Link>
+                  </button>
                   <Link
                     href={`/patients/${patientId}/print/media`}
                     className="flex items-center gap-2 p-3 rounded-lg border border-[#d3d1c7] hover:bg-[#f8f9fa] transition"

@@ -1,6 +1,7 @@
 using AqlanDentalPro.API.Authorization;
 using AqlanDentalPro.Application.Interfaces.Services;
 using AqlanDentalPro.Domain.Entities;
+using AqlanDentalPro.Domain.Enums;
 using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,7 +12,13 @@ namespace AqlanDentalPro.API.Controllers;
 [ApiController]
 [Route("api/lab-payables")]
 [Authorize(Policy = "StaffOnly")]
-public class LabPayablesController(AppDbContext db, ICurrentUserService currentUser, ILogger<LabPayablesController> logger) : ControllerBase
+public class LabPayablesController(
+    AppDbContext db,
+    ICurrentUserService currentUser,
+    ILogger<LabPayablesController> logger,
+    ITreasuryResolutionService treasuryResolution,
+    IJournalEntryService journalEntryService,
+    IAuditService audit) : ControllerBase
 {
     private Task<bool> CanAsync(string action) => PermissionGuard.HasAsync(db, currentUser, "lab_payables", action);
 
@@ -98,20 +105,160 @@ public class LabPayablesController(AppDbContext db, ICurrentUserService currentU
     {
         if (!await CanAsync("edit")) return Forbid();
 
-        var payable = await db.LabPayables.FindAsync(id);
-        if (payable is null) return NotFound(new { message = "المديونية غير موجودة" });
+        if (req.Amount <= 0)
+            return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
 
-        if (req.Amount <= 0) return BadRequest(new { message = "المبلغ يجب أن يكون أكبر من صفر" });
-        if (req.Amount > payable.Amount - payable.PaidAmount)
-            return BadRequest(new { message = "المبلغ يتجاوز الرصيد المتبقي" });
+        var userId = currentUser.UserId ?? Guid.Empty;
 
-        payable.PaidAmount += req.Amount;
-        payable.Status = payable.PaidAmount >= payable.Amount ? "paid" : "partial";
-        if (req.Notes != null) payable.Notes = req.Notes;
+        // Require active open cashier session
+        var activeSession = await db.CashierSessions
+            .FirstOrDefaultAsync(s => s.CashierId == userId && s.Status == SessionStatus.Open && s.IsActive);
+        if (activeSession == null)
+            return BadRequest(new { message = "يجب فتح وردية الكاشير أولاً قبل تسجيل دفعة معملية." });
 
-        await db.SaveChangesAsync();
-        logger.LogInformation("LabPayable payment recorded: {Id} — {Amount}", id, req.Amount);
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Acquire row lock to prevent race conditions
+            if (db.Database.IsRelational())
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    @"SELECT 1 FROM ""LabPayables"" WHERE ""Id"" = {0} FOR UPDATE",
+                    id);
+            }
 
-        return Ok(new { payable.Id, payable.PaidAmount, payable.Status, Balance = payable.Amount - payable.PaidAmount });
+            var payable = await db.LabPayables
+                .Include(p => p.Lab)
+                .Include(p => p.LabOrder)
+                .FirstOrDefaultAsync(p => p.Id == id && p.IsActive);
+
+            if (payable == null)
+            {
+                await tx.RollbackAsync();
+                return NotFound(new { message = "المديونية غير موجودة" });
+            }
+
+            var remaining = payable.Amount - payable.PaidAmount;
+            if (remaining <= 0)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "هذه المستحقات مدفوعة بالكامل بالفعل" });
+            }
+
+            if (req.Amount > remaining)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = $"مبلغ الدفعة ({req.Amount:N0}) يتجاوز المبلغ المتبقي ({remaining:N0} ريال)" });
+            }
+
+            // Resolve branch ID
+            var branchId = payable.LabOrder?.BranchId 
+                           ?? currentUser.BranchId 
+                           ?? Guid.Empty;
+            if (branchId == Guid.Empty)
+            {
+                var firstBranch = await db.Branches
+                    .Where(b => b.IsActive)
+                    .OrderBy(b => b.CreatedAt)
+                    .FirstOrDefaultAsync();
+                branchId = firstBranch?.Id ?? Guid.Empty;
+            }
+
+            if (branchId == Guid.Empty)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لم يتم تحديد فرع صالح لتسجيل المعاملة المالية." });
+            }
+
+            // Resolve treasury
+            Treasury treasury;
+            try
+            {
+                treasury = await treasuryResolution.ResolveTreasuryAsync(branchId, "cash", activeSession.Id);
+            }
+            catch (ArgumentException ex)
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = ex.Message });
+            }
+
+            // Update Payable
+            payable.PaidAmount += req.Amount;
+            payable.Status = payable.PaidAmount >= payable.Amount ? "paid" : "partial";
+            if (req.Notes != null)
+            {
+                payable.Notes = string.IsNullOrWhiteSpace(payable.Notes) 
+                    ? req.Notes 
+                    : $"{payable.Notes}\n{req.Notes}";
+            }
+            payable.UpdatedAt = DateTime.UtcNow;
+
+            // Create CashFlowTransaction
+            var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
+            var timePart = DateTime.UtcNow.ToString("HHmmss");
+            var cashflow = new CashFlowTransaction
+            {
+                TransactionNumber = $"TX-{datePart}-LAB-{timePart}",
+                Type = TransactionType.Outflow,
+                Category = FinancialCategory.SupplierPayment,
+                Amount = req.Amount,
+                PaymentMethod = "cash",
+                TransactionDate = DateOnly.FromDateTime(DateTime.Today),
+                ReferenceId = payable.Id,
+                ReferenceNumber = payable.LabOrder?.OrderNumber,
+                Description = $"سداد مستحقات معمل: {payable.Lab?.Name ?? "معمل"} — طلب رقم {payable.LabOrder?.OrderNumber ?? "غير محدد"}",
+                PerformedBy = userId,
+                BranchId = branchId,
+                CashierSessionId = activeSession.Id,
+                TreasuryId = treasury.Id
+            };
+            db.CashFlowTransactions.Add(cashflow);
+
+            // Create JournalEntry
+            var je = await journalEntryService.CreateEntryAsync(
+                documentType: FinancialDocumentType.SupplierPayment,
+                financialDocumentId: payable.Id,
+                description: $"سداد مستحقات معمل: {payable.Lab?.Name ?? "معمل"} — طلب رقم {payable.LabOrder?.OrderNumber ?? "غير محدد"}",
+                entryDate: DateOnly.FromDateTime(DateTime.Today),
+                branchId: branchId,
+                performedBy: userId,
+                cashierSessionId: activeSession.Id,
+                treasuryId: treasury.Id,
+                lines: new[]
+                {
+                    (JournalAccountType.Payable, payable.LabId, req.Amount, 0m, (string?)$"سداد مستحقات: {payable.Lab?.Name}"),
+                    (JournalAccountType.Treasury, treasury.Id, 0m, req.Amount, (string?)$"سداد من: {treasury.Name}")
+                });
+            je.IsPosted = true;
+            je.PostedAt = DateTime.UtcNow;
+
+            // Decrement Treasury Balance
+            await treasuryResolution.DecrementTreasuryBalanceAsync(branchId, "cash", req.Amount, activeSession.Id);
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            await audit.LogAsync(AuditAction.Update, "LabPayable", payable.Id);
+            logger.LogInformation("LabPayable payment recorded securely: {Id} — {Amount}", id, req.Amount);
+
+            return Ok(new
+            {
+                payable.Id,
+                payable.PaidAmount,
+                payable.Status,
+                Balance = payable.Amount - payable.PaidAmount,
+                cashierSessionId = activeSession.Id,
+                cashFlowTransactionId = cashflow.Id,
+                journalEntryId = je.Id,
+                message = "تم تسجيل الدفعة معملياً ومالياً بنجاح"
+            });
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            logger.LogError(ex, "Error recording LabPayable payment: {Id}", id);
+            throw;
+        }
     }
 }
+

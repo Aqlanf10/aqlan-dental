@@ -5,6 +5,7 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -158,23 +159,31 @@ public class WhatsAppService(
 
     public async Task<WhatsAppDashboardDto> GetDashboardAsync()
     {
-        var today = DateTime.UtcNow.Date;
-        var tomorrow = today.AddDays(1);
-
-        return new WhatsAppDashboardDto
+        try
         {
-            SentToday = await db.WhatsAppMessages.CountAsync(m => m.SentAt != null && m.SentAt.Value.Date == today),
-            DeliveredToday = await db.WhatsAppMessages.CountAsync(m => m.DeliveredAt != null && m.DeliveredAt.Value.Date == today),
-            FailedToday = await db.WhatsAppMessages.CountAsync(m => m.Status == "failed" && m.CreatedAt.Date == today),
-            PendingCount = await db.WhatsAppMessages.CountAsync(m => m.Status == "pending"),
-            RecentMessages = (await db.WhatsAppMessages
-                .Include(m => m.Patient)
-                .OrderByDescending(m => m.CreatedAt)
-                .Take(20)
-                .ToListAsync())
-                .Select(m => MapToDto(m, m.Patient!))
-                .ToList()
-        };
+            var today = DateTime.UtcNow.Date;
+
+            return new WhatsAppDashboardDto
+            {
+                SentToday = await db.WhatsAppMessages.CountAsync(m => m.SentAt != null && m.SentAt.Value.Date == today),
+                DeliveredToday = await db.WhatsAppMessages.CountAsync(m => m.DeliveredAt != null && m.DeliveredAt.Value.Date == today),
+                FailedToday = await db.WhatsAppMessages.CountAsync(m => m.Status == "failed" && m.CreatedAt.Date == today),
+                PendingCount = await db.WhatsAppMessages.CountAsync(m => m.Status == "pending"),
+                RecentMessages = (await db.WhatsAppMessages
+                    .Include(m => m.Patient)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Take(20)
+                    .ToListAsync())
+                    .Where(m => m.Patient != null)
+                    .Select(m => MapToDto(m, m.Patient!))
+                    .ToList()
+            };
+        }
+        catch (Exception ex) when (IsReadSchemaCompatibilityFailure(ex))
+        {
+            logger.LogWarning(ex, "WhatsApp dashboard is using an empty schema-compatibility fallback");
+            return new WhatsAppDashboardDto();
+        }
     }
 
     public async Task<List<WhatsAppMessageDto>> GetMessageHistoryAsync(Guid? patientId = null, int page = 1, int pageSize = 20)
@@ -384,4 +393,10 @@ public class WhatsAppService(
         RelatedEntityId = m.RelatedEntityId,
         RelatedEntityType = m.RelatedEntityType
     };
+
+    private static bool IsReadSchemaCompatibilityFailure(Exception ex)
+    {
+        var pg = ex.InnerException as PostgresException;
+        return pg?.SqlState is "42P01" or "42703" or "42804" or "42883" or "22P02";
+    }
 }

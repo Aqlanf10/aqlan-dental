@@ -204,8 +204,19 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
         catch (Exception ex)
         {
             logger.LogError(ex, "GetAll purchase orders failed");
+            if (IsReadSchemaCompatibilityFailure(ex))
+            {
+                logger.LogWarning(ex, "Purchase orders list is using an empty schema-compatibility fallback");
+                return Ok(new { data = Array.Empty<object>(), total = 0, page, pageSize, schemaFallback = true });
+            }
             return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
         }
+    }
+
+    private static bool IsReadSchemaCompatibilityFailure(Exception ex)
+    {
+        var pg = ex.InnerException as PostgresException;
+        return pg?.SqlState is "42P01" or "42703" or "42804" or "42883" or "22P02";
     }
 
     // ─── 2. GET /api/purchase-orders/{id} — Get PO with line items ──────

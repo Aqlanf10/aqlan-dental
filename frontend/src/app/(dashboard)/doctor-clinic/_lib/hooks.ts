@@ -290,6 +290,7 @@ export function useDoctorCreateGeneralTreatment() {
   return useMutation({
     mutationFn: async (body: {
       patientId: string;
+      visitId?: string;
       treatmentType: string;
       toothNumber?: string;
       materialUsed?: string;

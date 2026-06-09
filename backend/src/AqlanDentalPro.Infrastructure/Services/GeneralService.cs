@@ -105,6 +105,7 @@ public class GeneralService(AppDbContext db)
             {
                 Id = t.Id,
                 PatientId = t.PatientId,
+                VisitId = t.VisitId,
                 TreatmentType = t.TreatmentType,
                 ToothNumber = t.ToothNumber,
                 MaterialUsed = t.MaterialUsed,
@@ -122,6 +123,7 @@ public class GeneralService(AppDbContext db)
         var treatment = new GeneralTreatment
         {
             PatientId = req.PatientId,
+            VisitId = req.VisitId,
             TreatmentType = req.TreatmentType,
             ToothNumber = req.ToothNumber,
             MaterialUsed = req.MaterialUsed,
@@ -140,6 +142,7 @@ public class GeneralService(AppDbContext db)
         {
             Id = treatment.Id,
             PatientId = treatment.PatientId,
+            VisitId = treatment.VisitId,
             TreatmentType = treatment.TreatmentType,
             ToothNumber = treatment.ToothNumber,
             MaterialUsed = treatment.MaterialUsed,
@@ -162,6 +165,7 @@ public class GeneralService(AppDbContext db)
             {
                 Id = t.Id,
                 PatientId = t.PatientId,
+                VisitId = t.VisitId,
                 PatientName = t.Patient.FirstName + " " + t.Patient.LastName,
                 TreatmentType = t.TreatmentType,
                 ToothNumber = t.ToothNumber,

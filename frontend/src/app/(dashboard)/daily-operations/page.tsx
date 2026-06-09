@@ -1486,7 +1486,7 @@ export default function DailyOperationsPage() {
 
                 <div className="flex-1 overflow-auto bg-white">
                   <AppointmentsTable
-                    items={items.filter(i => i.checkoutStatus === "ReadyForCheckout" || i.nextAction === "Checkout" || i.appointmentStatus === "Completed")}
+                    items={items.filter(i => i.checkoutStatus === "ReadyForCheckout" || i.nextAction === "Checkout" || (i.appointmentStatus === "Completed" && i.checkoutStatus !== "CheckedOut"))}
                     loading={itemsLoading}
                     isDoctor={isDoctor}
                     canProcessCheckout={canProcessCheckout}

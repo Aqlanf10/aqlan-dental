@@ -389,7 +389,7 @@ export default function DailyOperationsPage() {
     queue: items.filter(i => i.queueStatus === "Waiting" || i.queueStatus === "Called" || (i.appointmentStatus === "Waiting" && !i.queueStatus)).length,
     inClinic: items.filter(i => i.appointmentStatus === "InRoom" || i.appointmentStatus === "InProgress" || i.queueStatus === "InRoom" || i.queueStatus === "InProgress").length,
     completed: items.filter(i => i.appointmentStatus === "Completed").length,
-    payments: items.filter(i => i.checkoutStatus === "ReadyForCheckout" || i.nextAction === "Checkout" || i.appointmentStatus === "Completed").length,
+    payments: items.filter(i => i.checkoutStatus === "ReadyForCheckout" || i.nextAction === "Checkout").length,
     overdue: items.filter(i => i.appointmentStatus === "NoShow" || i.appointmentStatus === "Cancelled").length,
   }), [items]);
 
@@ -1073,6 +1073,7 @@ export default function DailyOperationsPage() {
           )}
 
           {/* مريض مشي (Walk-in) — Orange solid */}
+          {canCreateWalkIn && (
           <button onClick={() => setWalkInModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition hover:opacity-90 flex-shrink-0"
             style={{ background: ORANGE }}
@@ -1080,6 +1081,7 @@ export default function DailyOperationsPage() {
             <UserPlus className="w-3.5 h-3.5" />
             <span className="hidden md:inline">مريض مشي</span>
           </button>
+          )}
 
           {/* تحصيل/دفع (Collect Payment) — Green solid with cashier session indicator */}
           {canCollectPayment && (

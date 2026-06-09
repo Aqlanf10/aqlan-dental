@@ -902,10 +902,16 @@ public class PatientJourneyController(
 
     // ─── 2. POST /api/patient-journey/{appointmentId}/intake ────────────────
     /// <summary>Reception confirms patient arrival and records intake info.</summary>
+    /// <remarks>
+    /// Sprint 2 FIX: Added transaction + advisory lock to prevent race condition
+    /// that could allow double-intake when concurrent requests hit this endpoint.
+    /// Pattern matches Sprint 1 SendToQueue/StartVisit fixes.
+    /// </remarks>
     [HttpPost("{appointmentId:guid}/intake")]
     [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> Intake(Guid appointmentId, [FromBody] IntakeRequest req)
     {
+        // Pre-flight validation (outside transaction for fast rejection)
         var appointment = await db.Appointments.FindAsync(appointmentId);
         if (appointment == null)
             return NotFound(new { message = "الموعد غير موجود" });
@@ -917,48 +923,76 @@ public class PatientJourneyController(
         if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
             return BadRequest(new { message = $"لا يمكن تسجيل الوصول لموعد بحالة {appointment.Status}" });
 
-        // Update appointment
-        appointment.Status = targetStatus;
-        appointment.ArrivedAt = DateTime.UtcNow;
-        appointment.UpdatedAt = DateTime.UtcNow;
-
-        // Attach service if provided
-        if (req.ServiceId.HasValue)
+        // Sprint 2 FIX: Wrap in transaction + advisory lock to prevent double-intake
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var serviceExists = await db.ClinicServices.AnyAsync(s => s.Id == req.ServiceId.Value && s.IsActive);
-            if (serviceExists)
-                appointment.ServiceId = req.ServiceId.Value;
-        }
+            // Acquire advisory lock scoped to this appointment
+            var lockKey = (int)(appointmentId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        // Attach room if provided
-        if (req.RoomId.HasValue)
-        {
-            var roomExists = await db.ClinicRooms.AnyAsync(r => r.Id == req.RoomId.Value && r.IsActive);
-            if (roomExists)
+            // Re-check appointment status INSIDE the lock (to prevent race condition)
+            await db.Entry(appointment).ReloadAsync();
+            if (appointment.Status == AppointmentStatus.Arrived)
             {
-                appointment.ClinicRoomId = req.RoomId.Value;
-                var room = await db.ClinicRooms.FindAsync(req.RoomId.Value);
-                if (room != null)
-                    appointment.RoomName = room.ArabicName;
+                await tx.RollbackAsync();
+                return Conflict(new { message = "تم تسجيل وصول هذا المريض مسبقاً" });
             }
+            if (!AppointmentStatusTransitions.IsValidTransition(appointment.Status, targetStatus))
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = $"لا يمكن تسجيل الوصول لموعد بحالة {appointment.Status}" });
+            }
+
+            // Update appointment
+            appointment.Status = targetStatus;
+            appointment.ArrivedAt = DateTime.UtcNow;
+            appointment.UpdatedAt = DateTime.UtcNow;
+
+            // Attach service if provided
+            if (req.ServiceId.HasValue)
+            {
+                var serviceExists = await db.ClinicServices.AnyAsync(s => s.Id == req.ServiceId.Value && s.IsActive);
+                if (serviceExists)
+                    appointment.ServiceId = req.ServiceId.Value;
+            }
+
+            // Attach room if provided
+            if (req.RoomId.HasValue)
+            {
+                var roomExists = await db.ClinicRooms.AnyAsync(r => r.Id == req.RoomId.Value && r.IsActive);
+                if (roomExists)
+                {
+                    appointment.ClinicRoomId = req.RoomId.Value;
+                    var room = await db.ClinicRooms.FindAsync(req.RoomId.Value);
+                    if (room != null)
+                        appointment.RoomName = room.ArabicName;
+                }
+            }
+
+            // Store notes
+            if (!string.IsNullOrWhiteSpace(req.Notes))
+                appointment.Notes = string.IsNullOrWhiteSpace(appointment.Notes)
+                    ? req.Notes
+                    : $"{appointment.Notes}\n{req.Notes}";
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                appointment.Id,
+                Status = appointment.Status.ToString(),
+                appointment.ArrivedAt,
+                ServiceId = appointment.ServiceId,
+                message = "تم تسجيل وصول المريض بنجاح"
+            });
         }
-
-        // Store notes
-        if (!string.IsNullOrWhiteSpace(req.Notes))
-            appointment.Notes = string.IsNullOrWhiteSpace(appointment.Notes)
-                ? req.Notes
-                : $"{appointment.Notes}\n{req.Notes}";
-
-        await db.SaveChangesAsync();
-
-        return Ok(new
+        catch (Exception ex)
         {
-            appointment.Id,
-            Status = appointment.Status.ToString(),
-            appointment.ArrivedAt,
-            ServiceId = appointment.ServiceId,
-            message = "تم تسجيل وصول المريض بنجاح"
-        });
+            logger.LogError(ex, "PatientJourney.Intake failed for appointment {AppointmentId}", appointmentId);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تسجيل الوصول" });
+        }
     }
 
     // ─── 3. POST /api/patient-journey/{appointmentId}/send-to-queue ─────────
@@ -1255,9 +1289,16 @@ public class PatientJourneyController(
 
     // ─── 5. POST /api/patient-journey/{visitId}/handoff-to-reception ────────
     /// <summary>Doctor finishes and sends patient to reception for checkout.</summary>
+    /// <remarks>
+    /// Sprint 2 FIX: Added transaction + advisory lock to prevent race condition
+    /// that could allow double-handoff when concurrent requests hit this endpoint.
+    /// Also restricted to Doctor+Admin only (was StaffOnly) and added InProgress validation.
+    /// </remarks>
     [HttpPost("{visitId:guid}/handoff-to-reception")]
+    [Authorize(Policy = "DoctorAccess")]
     public async Task<IActionResult> HandoffToReception(Guid visitId, [FromBody] HandoffRequest req)
     {
+        // Pre-flight validation (outside transaction for fast rejection)
         var visit = await db.Visits
             .Include(v => v.Appointment)
             .FirstOrDefaultAsync(v => v.Id == visitId);
@@ -1272,116 +1313,160 @@ public class PatientJourneyController(
         if (IsLeftWithoutCompletionCheckoutStatus(visit.CheckoutStatus))
             return BadRequest(new { message = "لا يمكن تسليم زيارة مغادرة بدون إكمال" });
 
-        // Update visit clinical data (F3: map structured fields to existing Visit fields)
-        if (!string.IsNullOrWhiteSpace(req.ChiefComplaint))
-            visit.ChiefComplaint = req.ChiefComplaint;
-        if (!string.IsNullOrWhiteSpace(req.TreatmentDone))
-            visit.TreatmentDone = req.TreatmentDone;
-        if (!string.IsNullOrWhiteSpace(req.Diagnosis))
-            visit.Diagnosis = req.Diagnosis;
-        if (!string.IsNullOrWhiteSpace(req.NextVisitPlan))
-            visit.NextVisitPlan = req.NextVisitPlan;
-        if (!string.IsNullOrWhiteSpace(req.Instructions))
-            visit.Instructions = req.Instructions;
+        // Sprint 2 FIX: Validate visit is actually InProgress before allowing handoff.
+        // Only visits with null CheckoutStatus (actively being treated) or "InProgress" can be handed off.
+        if (visit.CheckoutStatus == "ReadyForCheckout")
+            return Conflict(new { message = "الزيارة جاهزة للتحصيل بالفعل — تم تسليمها للاستقبال مسبقاً" });
 
-        // F3: Append extraoral/intraoral examination notes into ClinicalNotes with Arabic labels
-        var clinicalNotesParts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(req.ExtraoralExamination))
-            clinicalNotesParts.Add($"[فحص خارج الفم] {req.ExtraoralExamination}");
-        if (!string.IsNullOrWhiteSpace(req.IntraoralExamination))
-            clinicalNotesParts.Add($"[فحص داخل الفم] {req.IntraoralExamination}");
-
-        if (clinicalNotesParts.Count > 0)
+        // Sprint 2 FIX: Wrap in transaction + advisory lock to prevent double-handoff
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            var appendedNotes = string.Join(" | ", clinicalNotesParts);
-            visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
-                ? appendedNotes
-                : $"{visit.ClinicalNotes} | {appendedNotes}";
-        }
+            // Acquire advisory lock scoped to this visit
+            var lockKey = (int)(visitId.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
 
-        // F1: Append handoff notes to ClinicalNotes with Arabic label (don't overwrite)
-        if (!string.IsNullOrWhiteSpace(req.Notes))
-        {
-            var handoffLabel = $"[ملاحظات التسليم] {req.Notes}";
-            visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
-                ? handoffLabel
-                : $"{visit.ClinicalNotes} | {handoffLabel}";
-        }
-
-        // F6: First service goes to Visit.ServiceId; additional services text appended to ClinicalNotes
-        if (req.SuggestedServiceId.HasValue)
-            visit.ServiceId = req.SuggestedServiceId;
-        if (!string.IsNullOrWhiteSpace(req.AdditionalServicesText))
-        {
-            var additionalLabel = $"[خدمات إضافية] {req.AdditionalServicesText}";
-            visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
-                ? additionalLabel
-                : $"{visit.ClinicalNotes} | {additionalLabel}";
-        }
-
-        if (req.FollowUpDate.HasValue)
-            visit.NextVisitDate = req.FollowUpDate;
-        if (req.AmountDue.HasValue)
-            visit.AmountDueReference = req.AmountDue;
-        // FIX: Fallback — if AmountDueReference is still null, look up service default price
-        else if (!visit.AmountDueReference.HasValue)
-        {
-            var serviceId = visit.ServiceId ?? visit.Appointment?.ServiceId;
-            if (serviceId.HasValue)
+            // Re-check CheckoutStatus INSIDE the lock (to prevent race condition)
+            await db.Entry(visit).ReloadAsync();
+            if (visit.CheckoutStatus == "ReadyForCheckout")
             {
-                var svc = await db.ClinicServices.FindAsync(serviceId.Value);
-                if (svc != null && svc.DefaultPrice > 0)
-                    visit.AmountDueReference = svc.DefaultPrice;
+                await tx.RollbackAsync();
+                return Conflict(new { message = "الزيارة جاهزة للتحصيل بالفعل — تم تسليمها للاستقبال مسبقاً" });
             }
-        }
-        if (!string.IsNullOrWhiteSpace(req.ProposedProcedure))
-            visit.ProposedProcedure = req.ProposedProcedure;
-
-        // Mark as ready for checkout
-        visit.CheckoutStatus = "ReadyForCheckout";
-        visit.ReadyForCheckoutAt = DateTime.UtcNow;
-        visit.UpdatedAt = DateTime.UtcNow;
-
-        // Update queue item if exists
-        if (visit.AppointmentId.HasValue)
-        {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            var queueItem = await db.ClinicQueueItems
-                .FirstOrDefaultAsync(q => q.AppointmentId == visit.AppointmentId && q.QueueDate == today && q.IsActive);
-
-            if (queueItem != null && ClinicQueueStatusTransitions.IsValidTransition(queueItem.Status, ClinicQueueStatus.Completed))
+            if (visit.CheckoutStatus == "CheckedOut")
             {
-                queueItem.Status = ClinicQueueStatus.Completed;
-                queueItem.CompletedAt = DateTime.UtcNow;
-                queueItem.UpdatedAt = DateTime.UtcNow;
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن تسليم زيارة مكتملة الفاتورة للاستقبال" });
             }
+            if (IsLeftWithoutCompletionCheckoutStatus(visit.CheckoutStatus))
+            {
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "لا يمكن تسليم زيارة مغادرة بدون إكمال" });
+            }
+
+            // Update visit clinical data (F3: map structured fields to existing Visit fields)
+            if (!string.IsNullOrWhiteSpace(req.ChiefComplaint))
+                visit.ChiefComplaint = req.ChiefComplaint;
+            if (!string.IsNullOrWhiteSpace(req.TreatmentDone))
+                visit.TreatmentDone = req.TreatmentDone;
+            if (!string.IsNullOrWhiteSpace(req.Diagnosis))
+                visit.Diagnosis = req.Diagnosis;
+            if (!string.IsNullOrWhiteSpace(req.NextVisitPlan))
+                visit.NextVisitPlan = req.NextVisitPlan;
+            if (!string.IsNullOrWhiteSpace(req.Instructions))
+                visit.Instructions = req.Instructions;
+
+            // F3: Append extraoral/intraoral examination notes into ClinicalNotes with Arabic labels
+            var clinicalNotesParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(req.ExtraoralExamination))
+                clinicalNotesParts.Add($"[فحص خارج الفم] {req.ExtraoralExamination}");
+            if (!string.IsNullOrWhiteSpace(req.IntraoralExamination))
+                clinicalNotesParts.Add($"[فحص داخل الفم] {req.IntraoralExamination}");
+
+            if (clinicalNotesParts.Count > 0)
+            {
+                var appendedNotes = string.Join(" | ", clinicalNotesParts);
+                visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+                    ? appendedNotes
+                    : $"{visit.ClinicalNotes} | {appendedNotes}";
+            }
+
+            // F1: Append handoff notes to ClinicalNotes with Arabic label (don't overwrite)
+            if (!string.IsNullOrWhiteSpace(req.Notes))
+            {
+                var handoffLabel = $"[ملاحظات التسليم] {req.Notes}";
+                visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+                    ? handoffLabel
+                    : $"{visit.ClinicalNotes} | {handoffLabel}";
+            }
+
+            // F6: First service goes to Visit.ServiceId; additional services text appended to ClinicalNotes
+            if (req.SuggestedServiceId.HasValue)
+                visit.ServiceId = req.SuggestedServiceId;
+            if (!string.IsNullOrWhiteSpace(req.AdditionalServicesText))
+            {
+                var additionalLabel = $"[خدمات إضافية] {req.AdditionalServicesText}";
+                visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+                    ? additionalLabel
+                    : $"{visit.ClinicalNotes} | {additionalLabel}";
+            }
+
+            if (req.FollowUpDate.HasValue)
+                visit.NextVisitDate = req.FollowUpDate;
+            if (req.AmountDue.HasValue)
+                visit.AmountDueReference = req.AmountDue;
+            // FIX: Fallback — if AmountDueReference is still null, look up service default price
+            else if (!visit.AmountDueReference.HasValue)
+            {
+                var serviceId = visit.ServiceId ?? visit.Appointment?.ServiceId;
+                if (serviceId.HasValue)
+                {
+                    var svc = await db.ClinicServices.FindAsync(serviceId.Value);
+                    if (svc != null && svc.DefaultPrice > 0)
+                        visit.AmountDueReference = svc.DefaultPrice;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(req.ProposedProcedure))
+                visit.ProposedProcedure = req.ProposedProcedure;
+
+            // Mark as ready for checkout
+            visit.CheckoutStatus = "ReadyForCheckout";
+            visit.ReadyForCheckoutAt = DateTime.UtcNow;
+            visit.UpdatedAt = DateTime.UtcNow;
+
+            // Update queue item if exists
+            if (visit.AppointmentId.HasValue)
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var queueItem = await db.ClinicQueueItems
+                    .FirstOrDefaultAsync(q => q.AppointmentId == visit.AppointmentId && q.QueueDate == today && q.IsActive);
+
+                if (queueItem != null && ClinicQueueStatusTransitions.IsValidTransition(queueItem.Status, ClinicQueueStatus.Completed))
+                {
+                    queueItem.Status = ClinicQueueStatus.Completed;
+                    queueItem.CompletedAt = DateTime.UtcNow;
+                    queueItem.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                visit.Id,
+                AppointmentId = visit.AppointmentId,
+                VisitStatus = visit.CheckoutStatus ?? "InProgress",
+                CheckoutStatus = visit.CheckoutStatus,
+                ReadyForCheckoutAt = visit.ReadyForCheckoutAt,
+                AmountDueReference = visit.AmountDueReference,
+                ProposedProcedure = visit.ProposedProcedure,
+                message = "تم تسليم المريض للاستقبال بنجاح"
+            });
         }
-
-        await db.SaveChangesAsync();
-
-        return Ok(new
+        catch (Exception ex)
         {
-            visit.Id,
-            AppointmentId = visit.AppointmentId,
-            VisitStatus = visit.CheckoutStatus ?? "InProgress",
-            CheckoutStatus = visit.CheckoutStatus,
-            ReadyForCheckoutAt = visit.ReadyForCheckoutAt,
-            AmountDueReference = visit.AmountDueReference,
-            ProposedProcedure = visit.ProposedProcedure,
-            message = "تم تسليم المريض للاستقبال بنجاح"
-        });
+            logger.LogError(ex, "PatientJourney.HandoffToReception failed for visit {VisitId}", visitId);
+            return StatusCode(500, new { message = "حدث خطأ أثناء تسليم المريض للاستقبال" });
+        }
     }
 
     // ─── 6. POST /api/patient-journey/{id}/checkout ──────────────
     /// <summary>Complete checkout by appointmentId or visitId.
     /// First attempts to find by appointmentId; if not found, tries by visitId.
     /// This supports both appointment-based and walk-in patients.</summary>
+    /// <remarks>
+    /// Sprint 2 FIX: Added transaction + advisory lock to prevent race condition
+    /// that could allow double-checkout when concurrent requests hit this endpoint.
+    /// Pattern matches Sprint 1 SendToQueue/StartVisit and Sprint 2 Intake/Handoff fixes.
+    /// </remarks>
     [HttpPost("{id:guid}/checkout")]
     [Authorize(Policy = "AdminOrReception")]
     public async Task<IActionResult> Checkout(Guid id, [FromBody] CheckoutRequest? req)
     {
         req ??= new CheckoutRequest();
 
+        // Pre-flight validation (outside transaction for fast rejection)
         // Try appointment-based lookup first
         var appointment = await db.Appointments.FindAsync(id);
         Visit? visit = null;
@@ -1409,58 +1494,91 @@ public class PatientJourneyController(
         if (!visit.IsActive)
             return BadRequest(new { message = "الزيارة محذوفة" });
 
+        if (visit.CheckoutStatus == "CheckedOut")
+            return Conflict(new { message = "تم إنهاء حساب هذه الزيارة مسبقاً" });
+
         if (visit.CheckoutStatus != "ReadyForCheckout")
             return BadRequest(new { message = "الزيارة ليست جاهزة للحساب بعد" });
 
-        // Mark visit as checked out
-        visit.CheckoutStatus = "CheckedOut";
-        visit.UpdatedAt = DateTime.UtcNow;
-
-        // Complete appointment if linked and valid
-        if (appointment != null && appointment.IsActive)
+        // Sprint 2 FIX: Wrap in transaction + advisory lock to prevent double-checkout
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Completed))
+            // Acquire advisory lock scoped to this visit
+            var lockKey = (int)(visit.Id.GetHashCode() % 100000);
+            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", lockKey);
+
+            // Re-check CheckoutStatus INSIDE the lock (to prevent race condition)
+            await db.Entry(visit).ReloadAsync();
+            if (visit.CheckoutStatus == "CheckedOut")
             {
-                appointment.Status = AppointmentStatus.Completed;
-                appointment.UpdatedAt = DateTime.UtcNow;
+                await tx.RollbackAsync();
+                return Conflict(new { message = "تم إنهاء حساب هذه الزيارة مسبقاً" });
             }
-        }
-
-        // Complete queue item if still active
-        if (visit.AppointmentId.HasValue)
-        {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            var queueItem = await db.ClinicQueueItems
-                .FirstOrDefaultAsync(q => q.AppointmentId == visit.AppointmentId && q.QueueDate == today && q.IsActive
-                    && q.Status != ClinicQueueStatus.Completed && q.Status != ClinicQueueStatus.Cancelled);
-            if (queueItem != null && ClinicQueueStatusTransitions.IsValidTransition(queueItem.Status, ClinicQueueStatus.Completed))
+            if (visit.CheckoutStatus != "ReadyForCheckout")
             {
-                queueItem.Status = ClinicQueueStatus.Completed;
-                queueItem.CompletedAt = DateTime.UtcNow;
-                queueItem.UpdatedAt = DateTime.UtcNow;
+                await tx.RollbackAsync();
+                return BadRequest(new { message = "الزيارة ليست جاهزة للحساب بعد" });
             }
+
+            // Mark visit as checked out
+            visit.CheckoutStatus = "CheckedOut";
+            visit.UpdatedAt = DateTime.UtcNow;
+
+            // Complete appointment if linked and valid
+            if (appointment != null && appointment.IsActive)
+            {
+                // Reload appointment inside transaction for consistency
+                await db.Entry(appointment).ReloadAsync();
+                if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.Completed))
+                {
+                    appointment.Status = AppointmentStatus.Completed;
+                    appointment.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            // Complete queue item if still active
+            if (visit.AppointmentId.HasValue)
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var queueItem = await db.ClinicQueueItems
+                    .FirstOrDefaultAsync(q => q.AppointmentId == visit.AppointmentId && q.QueueDate == today && q.IsActive
+                        && q.Status != ClinicQueueStatus.Completed && q.Status != ClinicQueueStatus.Cancelled);
+                if (queueItem != null && ClinicQueueStatusTransitions.IsValidTransition(queueItem.Status, ClinicQueueStatus.Completed))
+                {
+                    queueItem.Status = ClinicQueueStatus.Completed;
+                    queueItem.CompletedAt = DateTime.UtcNow;
+                    queueItem.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            // Build recommended next actions
+            var nextActions = new List<string>();
+            if (req.NextAppointmentDate.HasValue)
+                nextActions.Add("حجز موعد متابعة");
+            if (req.PaymentAmount.HasValue && req.PaymentAmount.Value > 0)
+                nextActions.Add("تسجيل الدفع عبر صفحة المالية");
+            if (visit.AmountDueReference.HasValue && visit.AmountDueReference.Value > 0)
+                nextActions.Add("المبلغ المستحق: " + visit.AmountDueReference.Value.ToString("N0") + " ر.ي");
+
+            return Ok(new
+            {
+                AppointmentId = appointment?.Id,
+                VisitId = visit.Id,
+                CheckoutStatus = visit.CheckoutStatus,
+                AppointmentStatus = appointment?.Status.ToString(),
+                NextActions = nextActions,
+                message = "تم إنهاء الحساب بنجاح"
+            });
         }
-
-        await db.SaveChangesAsync();
-
-        // Build recommended next actions
-        var nextActions = new List<string>();
-        if (req.NextAppointmentDate.HasValue)
-            nextActions.Add("حجز موعد متابعة");
-        if (req.PaymentAmount.HasValue && req.PaymentAmount.Value > 0)
-            nextActions.Add("تسجيل الدفع عبر صفحة المالية");
-        if (visit.AmountDueReference.HasValue && visit.AmountDueReference.Value > 0)
-            nextActions.Add("المبلغ المستحق: " + visit.AmountDueReference.Value.ToString("N0") + " ر.ي");
-
-        return Ok(new
+        catch (Exception ex)
         {
-            AppointmentId = appointment?.Id,
-            VisitId = visit.Id,
-            CheckoutStatus = visit.CheckoutStatus,
-            AppointmentStatus = appointment?.Status.ToString(),
-            NextActions = nextActions,
-            message = "تم إنهاء الحساب بنجاح"
-        });
+            logger.LogError(ex, "PatientJourney.Checkout failed for id {Id}", id);
+            return StatusCode(500, new { message = "حدث خطأ أثناء إنهاء الحساب" });
+        }
     }
 
     // ─── 7. POST /api/patient-journey/{visitId}/left-without-completion ─────

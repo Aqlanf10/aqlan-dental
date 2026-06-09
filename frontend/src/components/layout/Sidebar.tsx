@@ -55,8 +55,8 @@ const NAV: NavEntry[] = [
   { href: "/patients",       label: "المرضى",           icon: Users,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.PATIENTS_VIEW },
 
   // ── العيادة ───────────────────────────────────────────────────────────────
-  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
-  { href: "/clinic-queue",   label: "قائمة الانتظار",  icon: ClipboardList,   roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
+  { href: "/appointments",   label: "المواعيد",        icon: CalendarDays,    roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.APPOINTMENTS_VIEW, section: "العيادة" },
+  { href: "/clinic-queue",   label: "قائمة الانتظار",  icon: ClipboardList,   roles: ["Admin", "GeneralDentist", "OralSurgeon", "Orthodontist"], permission: PERMISSION_KEYS.CLINIC_QUEUE_VIEW },
   { href: "/schedule",       label: "جداول الأطباء",   icon: Clock,           roles: ["Admin", "Reception", "GeneralDentist", "OralSurgeon", "Orthodontist"] },
   { href: "/doctor-clinic",  label: "عيادة الطبيب",    icon: Stethoscope,     roles: ["Admin","GeneralDentist","OralSurgeon","Orthodontist"] },
 

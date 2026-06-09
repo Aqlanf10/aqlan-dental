@@ -976,7 +976,7 @@ export default function DailyOperationsPage() {
     { value: "InProgress", label: "جاري العلاج" },
     { value: "Completed", label: "مكتمل" },
     { value: "NoShow", label: "لم يحضر" },
-    { value: "Cancelled", label: "ملغى" },
+    { value: "Cancelled", label: "ملغي" },
   ];
 
   // ── Side panel data ──

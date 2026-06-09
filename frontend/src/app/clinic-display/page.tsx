@@ -73,9 +73,9 @@ const STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string;
   Waiting:    { label: "في الانتظار",  color: "text-amber-300",  bg: "bg-amber-900/30",  dotColor: "bg-amber-400" },
   Called:     { label: "تم النداء",    color: "text-blue-300",   bg: "bg-blue-900/30",   dotColor: "bg-blue-400" },
   InRoom:     { label: "داخل الغرفة",  color: "text-purple-300", bg: "bg-purple-900/30", dotColor: "bg-purple-400" },
-  InProgress: { label: "قيد المعالجة", color: "text-teal-300",   bg: "bg-teal-900/30",   dotColor: "bg-teal-400" },
+  InProgress: { label: "جاري العلاج", color: "text-teal-300",   bg: "bg-teal-900/30",   dotColor: "bg-teal-400" },
   Completed:  { label: "مكتمل",        color: "text-gray-400",   bg: "bg-gray-800/30",   dotColor: "bg-gray-500" },
-  Cancelled:  { label: "ملغى",         color: "text-red-400",    bg: "bg-red-900/30",    dotColor: "bg-red-400" },
+  Cancelled:  { label: "ملغي",         color: "text-red-400",    bg: "bg-red-900/30",    dotColor: "bg-red-400" },
 };
 
 const REFRESH_INTERVAL = 20_000; // 20 seconds

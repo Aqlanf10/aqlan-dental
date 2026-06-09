@@ -145,7 +145,7 @@ export const APPT_STATUS_LABELS: Record<string, string> = {
   InRoom: "داخل الغرفة",
   InProgress: "جاري العلاج",
   Completed: "مكتمل",
-  Cancelled: "ملغى",
+  Cancelled: "ملغي",
   NoShow: "لم يحضر",
 };
 
@@ -155,7 +155,7 @@ export const QUEUE_STATUS_LABELS: Record<string, string> = {
   InRoom: "داخل الغرفة",
   InProgress: "جاري العلاج",
   Completed: "مكتمل",
-  Cancelled: "ملغى",
+  Cancelled: "ملغي",
 };
 
 export const ACTION_LABELS: Record<string, string> = {

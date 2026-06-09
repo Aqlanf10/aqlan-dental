@@ -695,11 +695,11 @@ export function TodaysVisitCard({
         {visit.checkoutStatus && (
           <span className={cn(
             "text-[10px] px-2 py-0.5 rounded-full font-medium mr-auto",
-            visit.checkoutStatus === "Completed" ? "bg-green-50 text-green-700" :
+            visit.checkoutStatus === "CheckedOut" ? "bg-green-50 text-green-700" :
             visit.checkoutStatus === "ReadyForCheckout" ? "bg-amber-50 text-amber-700" :
             "bg-gray-50 text-gray-700"
           )}>
-            {visit.checkoutStatus === "Completed" ? "مكتمل" :
+            {visit.checkoutStatus === "CheckedOut" ? "مكتمل" :
              visit.checkoutStatus === "ReadyForCheckout" ? "جاهز للحساب" :
              visit.checkoutStatus}
           </span>

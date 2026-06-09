@@ -80,9 +80,9 @@ export const APPOINTMENT_STATUS_LABELS: Record<string, string> = {
   Waiting: "في الانتظار",
   Called: "تم النداء",
   InRoom: "داخل الغرفة",
-  InProgress: "جارٍ",
+  InProgress: "جاري العلاج",
   Completed: "مكتمل",
-  Cancelled: "ملغى",
+  Cancelled: "ملغي",
   NoShow: "لم يحضر",
 };
 

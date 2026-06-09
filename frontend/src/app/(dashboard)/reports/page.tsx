@@ -147,9 +147,9 @@ const METHOD_LABELS: Record<string, string> = {
 };
 const STATUS_LABELS: Record<string, string> = {
   Scheduled: "مجدول", Confirmed: "مؤكد", Arrived: "وصل",
-  InProgress: "جارٍ", Completed: "مكتمل", Cancelled: "ملغى", NoShow: "لم يحضر",
-  pending: "قيد الانتظار", in_progress: "جارٍ", completed: "مكتمل",
-  cancelled: "ملغى", active: "نشط", overdue: "متأخر",
+  InProgress: "جاري العلاج", Completed: "مكتمل", Cancelled: "ملغي", NoShow: "لم يحضر",
+  pending: "قيد الانتظار", in_progress: "جاري العلاج", completed: "مكتمل",
+  cancelled: "ملغي", active: "نشط", overdue: "متأخر",
   delivered: "تم التسليم", sent: "مرسل", draft: "مسودة",
 };
 const CHART_COLORS = ["#3d7ab5", "#f5922e", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#f97316", "#6366f1"];

@@ -169,11 +169,12 @@ public partial class FinanceV3Controller
             .Include(i => i.Patient)
             .Where(i => i.IsActive);
         if (branchId.HasValue) recentInvoicesQuery = recentInvoicesQuery.Where(i => i.Patient.BranchId == branchId);
-        var recentInvoices = await recentInvoicesQuery
+        var recentInvoicesRaw = await recentInvoicesQuery
             .OrderByDescending(i => i.CreatedAt)
             .Take(10)
-            .Select(i => new { i.Id, i.InvoiceNumber, TotalAmount = i.TotalAmount, Status = i.Status.ToString() })
+            .Select(i => new { i.Id, i.InvoiceNumber, TotalAmount = i.TotalAmount, Status = i.Status })
             .ToListAsync();
+        var recentInvoices = recentInvoicesRaw.Select(i => new { i.Id, i.InvoiceNumber, i.TotalAmount, Status = i.Status.ToString() }).ToList();
 
         return Ok(new
         {
@@ -1403,7 +1404,7 @@ public partial class FinanceV3Controller
 
         var total = await query.CountAsync();
 
-        var invoices = await query
+        var invoicesRaw = await query
             .OrderByDescending(i => i.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -1412,7 +1413,7 @@ public partial class FinanceV3Controller
                 i.Id,
                 i.InvoiceNumber,
                 i.PatientId,
-                Status = i.Status.ToString(),
+                i.Status,
                 i.Subtotal,
                 i.DiscountAmount,
                 i.TotalAmount,
@@ -1424,6 +1425,23 @@ public partial class FinanceV3Controller
                 i.CreatedAt
             })
             .ToListAsync();
+
+        var invoices = invoicesRaw.Select(i => new
+        {
+            i.Id,
+            i.InvoiceNumber,
+            i.PatientId,
+            Status = i.Status.ToString(),
+            i.Subtotal,
+            i.DiscountAmount,
+            i.TotalAmount,
+            i.PaidAmount,
+            i.Balance,
+            i.PatientName,
+            i.PatientNumber,
+            i.IssueDate,
+            i.CreatedAt
+        }).ToList();
 
         return Ok(new { data = invoices, total, page, pageSize });
     }
@@ -1468,7 +1486,7 @@ public partial class FinanceV3Controller
 
         var today = DateOnly.FromDateTime(DateTime.Today);
 
-        var contracts = await query
+        var contractsRaw = await query
             .OrderByDescending(c => c.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -1484,11 +1502,28 @@ public partial class FinanceV3Controller
                 c.DiscountAmount,
                 PaidAmount = c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
                 OutstandingAmount = c.TotalAmount - c.DiscountAmount - c.Payments.Where(p => p.IsActive).Sum(p => p.Amount),
-                Status = c.Status.ToString(),
+                c.Status,
                 StartDate = c.StartDate.HasValue ? c.StartDate.Value.ToString("yyyy-MM-dd") : (string?)null,
                 IsOverdue = false
             })
             .ToListAsync();
+
+        var contracts = contractsRaw.Select(c => new
+        {
+            c.Id,
+            c.PatientId,
+            c.PatientName,
+            c.PatientNumber,
+            c.ContractNumber,
+            c.Specialty,
+            c.TotalAmount,
+            c.DiscountAmount,
+            c.PaidAmount,
+            c.OutstandingAmount,
+            Status = c.Status.ToString(),
+            c.StartDate,
+            c.IsOverdue
+        }).ToList();
 
         return Ok(new { data = contracts, total, page, pageSize });
     }
@@ -1530,7 +1565,7 @@ public partial class FinanceV3Controller
 
         var total = await query.CountAsync();
 
-        var bills = await query
+        var billsRaw = await query
             .OrderByDescending(b => b.BillDate)
             .ThenByDescending(b => b.CreatedAt)
             .Skip((page - 1) * pageSize)
@@ -1545,10 +1580,24 @@ public partial class FinanceV3Controller
                 b.PaidAmount,
                 Balance = b.TotalAmount - b.PaidAmount,
                 DueDate = b.DueDate.HasValue ? b.DueDate.Value.ToString("yyyy-MM-dd") : (string?)null,
-                Status = b.Status.ToString(),
+                b.Status,
                 b.CreatedAt
             })
             .ToListAsync();
+
+        var bills = billsRaw.Select(b => new
+        {
+            b.Id,
+            b.SupplierId,
+            b.SupplierName,
+            b.Description,
+            b.TotalAmount,
+            b.PaidAmount,
+            b.Balance,
+            b.DueDate,
+            Status = b.Status.ToString(),
+            b.CreatedAt
+        }).ToList();
 
         return Ok(new { data = bills, total, page, pageSize });
     }
@@ -1588,7 +1637,7 @@ public partial class FinanceV3Controller
 
         var total = await query.CountAsync();
 
-        var transfers = await query
+        var transfersRaw = await query
             .OrderByDescending(t => t.TransferDate)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -1601,7 +1650,7 @@ public partial class FinanceV3Controller
                 DestinationTreasuryName = t.DestinationTreasury != null ? t.DestinationTreasury.Name : "",
                 t.Amount,
                 DepositSource = t.DepositSource,
-                Status = t.Status.ToString(),
+                t.Status,
                 RequestedBy = t.PerformedByUser != null ? t.PerformedByUser.Username : "",
                 RequestedAt = t.TransferDate,
                 ApprovedBy = t.ApprovedByUser != null ? t.ApprovedByUser.Username : null,
@@ -1611,6 +1660,25 @@ public partial class FinanceV3Controller
                 RejectionReason = (string?)null
             })
             .ToListAsync();
+
+        var transfers = transfersRaw.Select(t => new
+        {
+            t.Id,
+            t.SourceTreasuryId,
+            t.SourceTreasuryName,
+            t.DestinationTreasuryId,
+            t.DestinationTreasuryName,
+            t.Amount,
+            t.DepositSource,
+            Status = t.Status.ToString(),
+            t.RequestedBy,
+            t.RequestedAt,
+            t.ApprovedBy,
+            t.ApprovedAt,
+            t.RejectedBy,
+            t.RejectedAt,
+            t.RejectionReason
+        }).ToList();
 
         return Ok(new { data = transfers, total, page, pageSize });
     }
@@ -1655,7 +1723,7 @@ public partial class FinanceV3Controller
         var total = await query.CountAsync();
 
         // Migration C: Load expense IDs first, then resolve Treasury info from JournalLine
-        var expensePage = await query
+        var expensePageRaw = await query
             .OrderByDescending(e => e.ExpenseDate)
             .ThenByDescending(e => e.CreatedAt)
             .Skip((page - 1) * pageSize)
@@ -1664,11 +1732,11 @@ public partial class FinanceV3Controller
             {
                 e.Id,
                 Title = e.Title,
-                Category = e.Category.ToString(),
+                e.Category,
                 e.Amount,
                 e.PaymentMethod,
                 ExpenseDate = e.ExpenseDate.ToString("yyyy-MM-dd"),
-                Status = e.ApprovalStatus.ToString(),
+                e.ApprovalStatus,
                 RequestedBy = e.PaidBy.ToString(),
                 ApprovedBy = e.ApprovedById,
                 ApprovedAt = e.ApprovedAt,
@@ -1686,6 +1754,25 @@ public partial class FinanceV3Controller
                     .FirstOrDefault()
             })
             .ToListAsync();
+
+        var expensePage = expensePageRaw.Select(e => new
+        {
+            e.Id,
+            e.Title,
+            Category = e.Category.ToString(),
+            e.Amount,
+            e.PaymentMethod,
+            e.ExpenseDate,
+            Status = e.ApprovalStatus.ToString(),
+            e.RequestedBy,
+            e.ApprovedBy,
+            e.ApprovedAt,
+            e.RejectedBy,
+            e.RejectedAt,
+            e.RejectionReason,
+            e.IsReversal,
+            e.JournalEntryId
+        }).ToList();
 
         // Resolve TreasuryId from JournalLine for each expense's JournalEntry
         var journalEntryIds = expensePage

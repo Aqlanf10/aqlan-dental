@@ -294,7 +294,10 @@ export default function DoctorClinicPage() {
   }, [confirmDiscardUnsavedClinicalNotes, resetClinicalWorkspace]);
 
   const selectPatient = useCallback((patient: DoctorPatientItem) => {
-    if (selectedPatient?.appointmentId === patient.appointmentId) return;
+    if (selectedPatient?.appointmentId === patient.appointmentId) {
+      setSelectedPatient(patient);
+      return;
+    }
     if (!confirmDiscardUnsavedClinicalNotes()) return;
     setActivePanel(null);
     setSelectedPatient(patient);
@@ -339,6 +342,22 @@ export default function DoctorClinicPage() {
   // ── Derived state ──
   const medicalAlerts = selectedSummary?.medicalAlerts ?? [];
   const isPatientSent = selectedPatient ? sentPatients.has(selectedPatient.appointmentId) : false;
+
+  // Sync selectedPatient state with the latest patients array updates
+  useEffect(() => {
+    if (selectedPatient) {
+      const updated = patients.find(p => p.appointmentId === selectedPatient.appointmentId);
+      if (updated) {
+        if (
+          updated.visitId !== selectedPatient.visitId ||
+          updated.appointmentStatus !== selectedPatient.appointmentStatus ||
+          updated.queueStatus !== selectedPatient.queueStatus
+        ) {
+          setSelectedPatient(updated);
+        }
+      }
+    }
+  }, [patients, selectedPatient]);
 
   // ── Keyboard shortcuts ──
   useEffect(() => {

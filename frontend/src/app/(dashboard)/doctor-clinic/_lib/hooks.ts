@@ -173,12 +173,19 @@ export function useUpdateVisit() {
       visitId: string;
       patientId?: string;
       body: {
+        chiefComplaint?: string;
         diagnosis?: string;
         treatmentDone?: string;
         instructions?: string;
         nextVisitPlan?: string;
         cost?: number;
         nextVisitDate?: string;
+        // S1: New fields to prevent data loss on interim save
+        serviceId?: string;
+        extraoralExamination?: string;
+        intraoralExamination?: string;
+        additionalServicesText?: string;
+        handoffNotes?: string;
       };
     }) => {
       const { data } = await api.put(`/api/visits/${params.visitId}`, params.body);

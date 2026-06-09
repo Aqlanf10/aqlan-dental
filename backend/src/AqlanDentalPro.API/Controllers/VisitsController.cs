@@ -43,6 +43,13 @@ public sealed class UpdateVisitRequest
     public string? NextVisitPlan { get; init; }
     public decimal? Cost { get; init; }
     public string? NextVisitDate { get; init; }
+
+    // S1: Structured clinical fields for interim save (prevents data loss)
+    public Guid? ServiceId { get; init; }
+    public string? ExtraoralExamination { get; init; }
+    public string? IntraoralExamination { get; init; }
+    public string? AdditionalServicesText { get; init; }
+    public string? HandoffNotes { get; init; } // Maps to clinicalNotes appended with label
 }
 
 // ─── Controller ─────────────────────────────────────────────────────────────────
@@ -91,6 +98,10 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
                 v.NextVisitPlan,
                 v.Cost,
                 NextVisitDate = v.NextVisitDate != null ? v.NextVisitDate.Value.ToString("yyyy-MM-dd") : null,
+                v.ServiceId,
+                v.CheckoutStatus,
+                v.AmountDueReference,
+                v.ProposedProcedure,
                 v.IsActive,
                 CreatedAt = v.CreatedAt.ToString("yyyy-MM-dd"),
                 UpdatedAt = v.UpdatedAt.ToString("yyyy-MM-dd"),
@@ -136,6 +147,10 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
                 v.NextVisitPlan,
                 v.Cost,
                 NextVisitDate = v.NextVisitDate != null ? v.NextVisitDate.Value.ToString("yyyy-MM-dd") : null,
+                v.ServiceId,
+                v.CheckoutStatus,
+                v.AmountDueReference,
+                v.ProposedProcedure,
                 v.IsActive,
                 CreatedAt = v.CreatedAt.ToString("yyyy-MM-dd"),
                 UpdatedAt = v.UpdatedAt.ToString("yyyy-MM-dd"),
@@ -277,6 +292,30 @@ public class VisitsController(AppDbContext db, ICurrentUserService currentUser) 
             if (!DateOnly.TryParse(req.NextVisitDate, out var nextVisitDate))
                 return BadRequest(new { message = "تنسيق تاريخ الزيارة القادمة غير صالح. استخدم YYYY-MM-DD" });
             visit.NextVisitDate = string.IsNullOrWhiteSpace(req.NextVisitDate) ? null : nextVisitDate;
+        }
+
+        // S1: Persist structured clinical fields on interim save (prevents data loss)
+        if (req.ServiceId.HasValue)
+            visit.ServiceId = req.ServiceId;
+
+        // Append extraoral/intraoral/additional services to ClinicalNotes with Arabic labels
+        // (same strategy as PatientJourneyController.HandoffToReception)
+        var clinicalNotesParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(req.ExtraoralExamination))
+            clinicalNotesParts.Add($"[فحص خارج الفم] {req.ExtraoralExamination}");
+        if (!string.IsNullOrWhiteSpace(req.IntraoralExamination))
+            clinicalNotesParts.Add($"[فحص داخل الفم] {req.IntraoralExamination}");
+        if (!string.IsNullOrWhiteSpace(req.AdditionalServicesText))
+            clinicalNotesParts.Add($"[خدمات إضافية] {req.AdditionalServicesText}");
+        if (!string.IsNullOrWhiteSpace(req.HandoffNotes))
+            clinicalNotesParts.Add($"[ملاحظات التسليم] {req.HandoffNotes}");
+
+        if (clinicalNotesParts.Count > 0)
+        {
+            var appendedNotes = string.Join(" | ", clinicalNotesParts);
+            visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+                ? appendedNotes
+                : $"{visit.ClinicalNotes} | {appendedNotes}";
         }
 
         visit.UpdatedAt = DateTime.UtcNow;

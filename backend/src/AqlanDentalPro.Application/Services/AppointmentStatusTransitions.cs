@@ -28,12 +28,14 @@ public static class AppointmentStatusTransitions
             AppointmentStatus.Cancelled,
             AppointmentStatus.NoShow
         },
-        // Arrived can move to waiting, cancelled, or no-show
+        // Arrived can move to waiting, called (direct call), in-room (direct entry), cancelled, or no-show
         [AppointmentStatus.Arrived] = new()
         {
             AppointmentStatus.Scheduled,  // Re-schedule
             AppointmentStatus.Confirmed,  // Back to confirmed
             AppointmentStatus.Waiting,
+            AppointmentStatus.Called,     // Direct call from arrived (skip waiting)
+            AppointmentStatus.InRoom,     // Direct entry to room (skip waiting/called)
             AppointmentStatus.Cancelled,
             AppointmentStatus.NoShow
         },

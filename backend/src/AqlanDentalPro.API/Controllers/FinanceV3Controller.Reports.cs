@@ -5,12 +5,218 @@ using AqlanDentalPro.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace AqlanDentalPro.API.Controllers;
 
 public partial class FinanceV3Controller
 {
     // ─── Dashboard KPIs ─────────────────────────────────────────────────────
+
+    private async Task<IActionResult> GetDashboardSchemaTolerantAsync(string? period)
+    {
+        if (!currentUser.IsAdmin && (!currentUser.BranchId.HasValue || currentUser.BranchId.Value == Guid.Empty))
+            return Forbid("ليس لديك فرع معين. تواصل مع الإدارة.");
+
+        var branchId = currentUser.IsAdmin ? (Guid?)null : currentUser.BranchId;
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        var todayDate = today.ToDateTime(TimeOnly.MinValue);
+        var monthStartDate = monthStart.ToDateTime(TimeOnly.MinValue);
+
+        var journalBranch = branchId.HasValue ? @" AND jl.""BranchId"" = @branchId" : "";
+        var entryBranch = branchId.HasValue ? @" AND je.""BranchId"" = @branchId" : "";
+        var treasuryBranch = branchId.HasValue ? @" AND ""BranchId"" = @branchId" : "";
+        var patientBranch = branchId.HasValue ? @" AND p.""BranchId"" = @branchId" : "";
+        var expenseBranch = branchId.HasValue ? @" AND ""BranchId"" = @branchId" : "";
+        var transferBranch = branchId.HasValue ? @" AND dt.""BranchId"" = @branchId" : "";
+
+        var todayInflow = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(jl.""Debit""), 0)
+            FROM ""JournalLines"" jl
+            JOIN ""JournalEntries"" je ON je.""Id"" = jl.""JournalEntryId""
+            WHERE jl.""AccountType""::text IN ('Treasury', '0')
+              AND je.""EntryDate"" = @today
+              AND je.""IsPosted"" = TRUE {journalBranch}");
+
+        var todayOutflow = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(jl.""Credit""), 0)
+            FROM ""JournalLines"" jl
+            JOIN ""JournalEntries"" je ON je.""Id"" = jl.""JournalEntryId""
+            WHERE jl.""AccountType""::text IN ('Treasury', '0')
+              AND je.""EntryDate"" = @today
+              AND je.""IsPosted"" = TRUE {journalBranch}");
+
+        var monthInflow = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(jl.""Debit""), 0)
+            FROM ""JournalLines"" jl
+            JOIN ""JournalEntries"" je ON je.""Id"" = jl.""JournalEntryId""
+            WHERE jl.""AccountType""::text IN ('Treasury', '0')
+              AND je.""EntryDate"" >= @monthStart
+              AND je.""IsPosted"" = TRUE {journalBranch}");
+
+        var monthOutflow = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(jl.""Credit""), 0)
+            FROM ""JournalLines"" jl
+            JOIN ""JournalEntries"" je ON je.""Id"" = jl.""JournalEntryId""
+            WHERE jl.""AccountType""::text IN ('Treasury', '0')
+              AND je.""EntryDate"" >= @monthStart
+              AND je.""IsPosted"" = TRUE {journalBranch}");
+
+        var todayAccruedRevenue = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(jl.""Credit"" - jl.""Debit""), 0)
+            FROM ""JournalLines"" jl
+            JOIN ""JournalEntries"" je ON je.""Id"" = jl.""JournalEntryId""
+            WHERE jl.""AccountType""::text IN ('Revenue', '4')
+              AND je.""EntryDate"" = @today
+              AND je.""IsPosted"" = TRUE {journalBranch}");
+
+        var monthAccruedRevenue = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(jl.""Credit"" - jl.""Debit""), 0)
+            FROM ""JournalLines"" jl
+            JOIN ""JournalEntries"" je ON je.""Id"" = jl.""JournalEntryId""
+            WHERE jl.""AccountType""::text IN ('Revenue', '4')
+              AND je.""EntryDate"" >= @monthStart
+              AND je.""IsPosted"" = TRUE {journalBranch}");
+
+        var contractOutstanding = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(c.""TotalAmount"" - c.""DiscountAmount"" - COALESCE(pay.""PaidAmount"", 0)), 0)
+            FROM ""Contracts"" c
+            JOIN ""Patients"" p ON p.""Id"" = c.""PatientId""
+            LEFT JOIN (
+                SELECT ""ContractId"", SUM(""Amount"") AS ""PaidAmount""
+                FROM ""Payments""
+                WHERE ""IsActive"" = TRUE AND ""ContractId"" IS NOT NULL
+                GROUP BY ""ContractId""
+            ) pay ON pay.""ContractId"" = c.""Id""
+            WHERE c.""Status""::text IN ('Active', '0', '1')
+              AND COALESCE(c.""IsActive"", TRUE) = TRUE {patientBranch}");
+
+        var invoiceOutstanding = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(i.""TotalAmount"" - COALESCE(pay.""PaidAmount"", 0)), 0)
+            FROM ""Invoices"" i
+            JOIN ""Patients"" p ON p.""Id"" = i.""PatientId""
+            LEFT JOIN (
+                SELECT ""InvoiceId"", SUM(""Amount"") AS ""PaidAmount""
+                FROM ""Payments""
+                WHERE ""IsActive"" = TRUE AND ""InvoiceId"" IS NOT NULL
+                GROUP BY ""InvoiceId""
+            ) pay ON pay.""InvoiceId"" = i.""Id""
+            WHERE i.""Status""::text IN ('Issued', '1')
+              AND i.""IsActive"" = TRUE {patientBranch}");
+
+        var journalEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE 1=1 {entryBranch}");
+        var postedEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE je.""IsPosted"" = TRUE {entryBranch}");
+        var reversalEntryCount = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""JournalEntries"" je WHERE je.""IsReversal"" = TRUE {entryBranch}");
+        var totalTreasuryBalance = await ScalarDecimalAsync($@"SELECT COALESCE(SUM(""Balance""), 0) FROM ""Treasuries"" WHERE ""IsActive"" = TRUE {treasuryBranch}");
+        var pendingExpenses = await ScalarIntAsync($@"SELECT COUNT(*) FROM ""OperationalExpenses"" WHERE ""ApprovalStatus""::text IN ('Pending', '1') AND ""IsActive"" = TRUE {expenseBranch}");
+        var pendingTransfers = await ScalarIntAsync($@"
+            SELECT COUNT(*)
+            FROM ""VaultTransfers"" vt
+            JOIN ""Treasuries"" dt ON dt.""Id"" = vt.""DestinationTreasuryId""
+            WHERE vt.""Status""::text IN ('Pending', '0') AND vt.""IsActive"" = TRUE {transferBranch}");
+        var activeContracts = await ScalarIntAsync($@"
+            SELECT COUNT(*)
+            FROM ""Contracts"" c
+            JOIN ""Patients"" p ON p.""Id"" = c.""PatientId""
+            WHERE c.""Status""::text IN ('Active', '0', '1') AND COALESCE(c.""IsActive"", TRUE) = TRUE {patientBranch}");
+        var unpaidInvoicesCount = await ScalarIntAsync($@"
+            SELECT COUNT(*)
+            FROM ""Invoices"" i
+            JOIN ""Patients"" p ON p.""Id"" = i.""PatientId""
+            WHERE i.""Status""::text IN ('Issued', '1') AND i.""IsActive"" = TRUE {patientBranch}");
+        var draftInvoicesCount = await ScalarIntAsync($@"
+            SELECT COUNT(*)
+            FROM ""Invoices"" i
+            JOIN ""Patients"" p ON p.""Id"" = i.""PatientId""
+            WHERE i.""Status""::text IN ('Draft', '0') AND i.""IsActive"" = TRUE {patientBranch}");
+        var pendingCommissionsAmount = await ScalarDecimalAsync($@"
+            SELECT COALESCE(SUM(ili.""DoctorCommissionAmount""), 0)
+            FROM ""InvoiceLineItems"" ili
+            JOIN ""Invoices"" i ON i.""Id"" = ili.""InvoiceId""
+            JOIN ""Patients"" p ON p.""Id"" = i.""PatientId""
+            WHERE ili.""IsActive"" = TRUE
+              AND ili.""CommissionStatus""::text NOT IN ('Paid', '3')
+              AND ili.""DoctorCommissionAmount"" > 0 {patientBranch}");
+
+        return Ok(new
+        {
+            TodayInflow = todayInflow,
+            TodayOutflow = todayOutflow,
+            TodayNet = todayInflow - todayOutflow,
+            MonthInflow = monthInflow,
+            MonthOutflow = monthOutflow,
+            MonthNet = monthInflow - monthOutflow,
+            TotalOutstanding = contractOutstanding + invoiceOutstanding,
+            ContractOutstanding = contractOutstanding,
+            InvoiceOutstanding = invoiceOutstanding,
+            TotalTreasuryBalance = totalTreasuryBalance,
+            TodayAccruedRevenue = todayAccruedRevenue,
+            MonthAccruedRevenue = monthAccruedRevenue,
+            JournalEntryCount = journalEntryCount,
+            PostedEntryCount = postedEntryCount,
+            ReversalEntryCount = reversalEntryCount,
+            DualWriteCoverage = journalEntryCount > 0 ? $"{(double)postedEntryCount / journalEntryCount * 100:F1}%" : "N/A",
+            PendingExpenses = pendingExpenses,
+            PendingTransfers = pendingTransfers,
+            ActiveContracts = activeContracts,
+            UnpaidInvoicesCount = unpaidInvoicesCount,
+            DraftInvoicesCount = draftInvoicesCount,
+            OverdueAmount = 0m,
+            PendingCommissionsAmount = pendingCommissionsAmount,
+            RecentPayments = Array.Empty<object>(),
+            RecentInvoices = Array.Empty<object>(),
+            Date = today.ToString("yyyy-MM-dd"),
+            Period = period,
+            IsConsolidated = !branchId.HasValue,
+            SchemaTolerantFallback = true
+        });
+
+        async Task<decimal> ScalarDecimalAsync(string sql)
+        {
+            var result = await ExecuteScalarAsync(sql, branchId, todayDate, monthStartDate);
+            return result == null || result == DBNull.Value ? 0m : Convert.ToDecimal(result);
+        }
+
+        async Task<int> ScalarIntAsync(string sql)
+        {
+            var result = await ExecuteScalarAsync(sql, branchId, todayDate, monthStartDate);
+            return result == null || result == DBNull.Value ? 0 : Convert.ToInt32(result);
+        }
+    }
+
+    private async Task<object?> ExecuteScalarAsync(string sql, Guid? branchId, DateTime today, DateTime monthStart)
+    {
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+            await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        if (branchId.HasValue)
+        {
+            var branchParam = command.CreateParameter();
+            branchParam.ParameterName = "branchId";
+            branchParam.DbType = DbType.Guid;
+            branchParam.Value = branchId.Value;
+            command.Parameters.Add(branchParam);
+        }
+
+        var todayParam = command.CreateParameter();
+        todayParam.ParameterName = "today";
+        todayParam.DbType = DbType.Date;
+        todayParam.Value = today;
+        command.Parameters.Add(todayParam);
+
+        var monthStartParam = command.CreateParameter();
+        monthStartParam.ParameterName = "monthStart";
+        monthStartParam.DbType = DbType.Date;
+        monthStartParam.Value = monthStart;
+        command.Parameters.Add(monthStartParam);
+
+        return await command.ExecuteScalarAsync();
+    }
 
     /// <summary>
     /// GET /api/finance-v3/dashboard — Returns KPI data for the Finance V3 dashboard header band.
@@ -230,7 +436,20 @@ public partial class FinanceV3Controller
         catch (Exception ex)
         {
             logger.LogError(ex, "GetDashboard failed");
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات", error = ex.Message, stackTrace = ex.StackTrace });
+
+            try
+            {
+                // Production safety fallback: older Railway schemas may have enum
+                // columns as varchar while EF expects integers, or the reverse. This
+                // read-only dashboard fallback casts enum-like columns to text so the
+                // page stays available until a verified backup + migration gate runs.
+                return await GetDashboardSchemaTolerantAsync(period);
+            }
+            catch (Exception fallbackEx)
+            {
+                logger.LogError(fallbackEx, "GetDashboard schema-tolerant fallback failed");
+                return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+            }
         }
     }
 

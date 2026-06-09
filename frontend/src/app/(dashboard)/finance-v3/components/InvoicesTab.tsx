@@ -124,16 +124,42 @@ export function InvoicesTab() {
             { key: "balance", label: "المتبقي", render: (r) => <span style={{ color: r.balance > 0 ? tokens.dangerBorder : tokens.successBorder, fontWeight: 700 }}>{formatYER(r.balance)}</span> },
             { key: "status", label: "الحالة", render: (r) => <StatusBadge status={r.status} /> },
             { key: "issueDate", label: "التاريخ", render: (r) => safeFormatDate(r.issueDate) },
-            { key: "refundAction", label: "", render: (r) => r.paidAmount > 0 && r.status !== "Cancelled" ? (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowCreditNote(r); }}
-                className="w-7 h-7 rounded-md flex items-center justify-center"
-                style={{ color: tokens.warningBorder }}
-                title="إرجاع مبلغ"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-            ) : null },
+            { key: "refundAction", label: "", render: (r) => (
+              <div className="flex items-center gap-1">
+                {/* Part D: Visible invoice print button in every row */}
+                {r.status !== "Cancelled" && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        const filename = r.invoiceNumber ? `invoice-${r.invoiceNumber}.pdf` : `invoice-${r.id}.pdf`;
+                        await downloadPdfFromApi(`/api/invoices/${r.id}/pdf`, filename);
+                        toast.success("تم تحميل الفاتورة");
+                      } catch (err) {
+                        const reason = err instanceof Error ? err.message : "خطأ";
+                        toast.error(`فشل تحميل الفاتورة: ${reason}`);
+                      }
+                    }}
+                    className="w-7 h-7 rounded-md flex items-center justify-center"
+                    style={{ color: tokens.brand }}
+                    title="طباعة الفاتورة"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {/* Refund button (credit note) */}
+                {r.paidAmount > 0 && r.status !== "Cancelled" ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowCreditNote(r); }}
+                    className="w-7 h-7 rounded-md flex items-center justify-center"
+                    style={{ color: tokens.warningBorder }}
+                    title="إرجاع مبلغ"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            ) },
           ]}
         />
       )}
@@ -237,14 +263,17 @@ export function InvoicesTab() {
                     <RotateCcw className="w-4 h-4" /> إرجاع مبلغ
                   </button>
                 )}
-                {/* Print button */}
+                {/* Print button in detail modal */}
                 {detail.status !== "Draft" && (
                   <button
                     onClick={async () => {
                       try {
-                        await downloadPdfFromApi(`/api/invoices/${detail.id}/pdf`, `invoice-${detail.invoiceNumber}.pdf`);
-                      } catch {
-                        toast.error("فشل في تحميل الفاتورة");
+                        const filename = detail.invoiceNumber ? `invoice-${detail.invoiceNumber}.pdf` : `invoice-${detail.id}.pdf`;
+                        await downloadPdfFromApi(`/api/invoices/${detail.id}/pdf`, filename);
+                        toast.success("تم تحميل الفاتورة");
+                      } catch (err) {
+                        const reason = err instanceof Error ? err.message : "خطأ";
+                        toast.error(`فشل تحميل الفاتورة: ${reason}`);
                       }
                     }}
                     style={{ ...btnPrimary, backgroundColor: tokens.brand }}

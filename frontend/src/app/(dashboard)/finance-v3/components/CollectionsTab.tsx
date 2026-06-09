@@ -160,11 +160,29 @@ export function CollectionsTab() {
       };
       if (selectedInvoice) payload.invoiceId = selectedInvoice;
       if (selectedContract) payload.contractId = selectedContract;
-      await api.post("/api/finance-v3/payments", payload);
-      toast.success("تم تسجيل الدفعة بنجاح");
+
+      // Part C: Capture created payment id + receiptNumber for immediate receipt download
+      const { data: created } = await api.post<{ id?: string; receiptNumber?: string }>("/api/finance-v3/payments", payload);
       resetForm();
       setShowRegister(false);
       fetchPayments();
+
+      // Attempt immediate PDF download — if it fails, still show payment success
+      const paymentId = created?.id;
+      const receiptNum = created?.receiptNumber;
+      if (paymentId) {
+        const filename = receiptNum ? `receipt-${receiptNum}.pdf` : `receipt-${paymentId}.pdf`;
+        try {
+          await downloadPdfFromApi(`/api/payments/${paymentId}/pdf`, filename);
+          toast.success("تم تسجيل الدفعة وتحميل سند القبض");
+        } catch (pdfErr) {
+          const reason = pdfErr instanceof Error ? pdfErr.message : "خطأ";
+          toast.success("تم تسجيل الدفعة بنجاح");
+          toast.error(`فشل تحميل سند القبض: ${reason}`);
+        }
+      } else {
+        toast.success("تم تسجيل الدفعة بنجاح");
+      }
     } catch (err) { toast.error(extractErrorMessage(err, "فشل في تسجيل الدفعة")); } finally { setSubmitting(false); }
   };
 
@@ -237,8 +255,10 @@ export function CollectionsTab() {
                     try {
                       const filename = r.receiptNumber ? `receipt-${r.receiptNumber}.pdf` : `receipt-${r.id}.pdf`;
                       await downloadPdfFromApi(`/api/payments/${r.id}/pdf`, filename);
-                    } catch {
-                      toast.error("فشل في تحميل إيصال الدفعة");
+                      toast.success("تم تحميل سند القبض");
+                    } catch (err) {
+                      const reason = err instanceof Error ? err.message : "خطأ";
+                      toast.error(`فشل تحميل سند القبض: ${reason}`);
                     }
                   }}
                   className="w-7 h-7 rounded-md flex items-center justify-center"

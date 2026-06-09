@@ -89,12 +89,11 @@ public class ClinicQueueStatusTransitionTests
     }
 
     [Fact]
-    public void Called_ToInProgress_IsInvalid()
+    public void Called_ToInProgress_IsValid()
     {
-        // CON-01 FIX: Called → InProgress removed — must go through InRoom first
-        // This prevents asymmetry with AppointmentStatusTransitions which doesn't allow Called → InProgress
+        // Doctor can start visit directly from Called status — common workflow
         ClinicQueueStatusTransitions.IsValidTransition(ClinicQueueStatus.Called, ClinicQueueStatus.InProgress)
-            .Should().BeFalse("cannot skip from Called directly to InProgress — must go through InRoom");
+            .Should().BeTrue();
     }
 
     [Fact]
@@ -238,7 +237,8 @@ public class ClinicQueueStatusTransitionTests
         allowed.Should().Contain(ClinicQueueStatus.Waiting);
         allowed.Should().Contain(ClinicQueueStatus.Cancelled);
         allowed.Should().Contain(ClinicQueueStatus.NoShow);
-        allowed.Count.Should().Be(5);
+        allowed.Should().Contain(ClinicQueueStatus.InProgress);  // Doctor can start visit from Called
+        allowed.Count.Should().Be(6);
     }
 
     [Fact]
@@ -332,11 +332,11 @@ public class ClinicQueueStatusTransitionTests
     }
 
     [Fact]
-    public void CannotSkipFromCalled_ToInProgress()
+    public void CanGoFromCalled_ToInProgress()
     {
-        // CON-01 FIX: This was previously allowed, causing asymmetry with AppointmentStatusTransitions
+        // Doctor can start visit directly from Called — no need to go through InRoom first
         ClinicQueueStatusTransitions.IsValidTransition(ClinicQueueStatus.Called, ClinicQueueStatus.InProgress)
-            .Should().BeFalse();
+            .Should().BeTrue();
     }
 
     [Fact]

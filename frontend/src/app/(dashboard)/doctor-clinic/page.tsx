@@ -29,6 +29,7 @@ import {
   useDoctorCreateFollowUpAppointment,
   useDoctorUpdateToothCondition,
   useDoctorCreateGeneralTreatment,
+  useCreateDraftInvoice,
   type DoctorPatientItem,
   type ServiceWithPrice,
 } from "./_lib/hooks";
@@ -65,12 +66,17 @@ type PanelType =
   | null;
 
 const EMPTY_CLINICAL_NOTES = {
+  chiefComplaint: "",
   diagnosis: "",
   treatmentDone: "",
   instructions: "",
   nextVisitPlan: "",
+  clinicalNotes: "",
+  extraoralExamination: "",
+  intraoralExamination: "",
   amountDue: 0,
   suggestedServiceId: "",
+  additionalServicesText: "",
   followUpDate: "",
 };
 
@@ -248,6 +254,7 @@ export default function DoctorClinicPage() {
   const createFollowUpMutation = useDoctorCreateFollowUpAppointment();
   const updateToothMutation = useDoctorUpdateToothCondition();
   const createGeneralTreatmentMutation = useDoctorCreateGeneralTreatment();
+  const createDraftInvoiceMutation = useCreateDraftInvoice();
 
   // ── Selected patient ──
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatientItem | null>(null);
@@ -372,10 +379,10 @@ export default function DoctorClinicPage() {
       await startVisitMutation.mutateAsync(selectedPatient.appointmentId);
       toast.success("تم بدء الزيارة بنجاح");
       setActivePanel(null);
-    } catch { toast.error("فشل بدء الزيارة"); }
+    } catch { toast.error("فشل بدء الزيارة — حاول مرة أخرى"); }
   }, [selectedPatient, startVisitMutation]);
 
-  // ── Handoff to reception ──
+  // ── Handoff to reception (F1+F3+F4+F6: structured data, append notes, draft invoice) ──
   const handleHandoff = useCallback(async () => {
     if (!selectedPatient?.visitId) { toast.error("لا توجد زيارة نشطة"); return; }
     if (sentPatients.has(selectedPatient.appointmentId)) { toast.error("تم إرسال هذا المريض للاستقبال بالفعل"); return; }
@@ -383,22 +390,38 @@ export default function DoctorClinicPage() {
       await handoffMutation.mutateAsync({
         visitId: selectedPatient.visitId,
         body: {
+          chiefComplaint: clinicalNotes.chiefComplaint || undefined,
           treatmentDone: clinicalNotes.treatmentDone || undefined,
           diagnosis: clinicalNotes.diagnosis || undefined,
           nextVisitPlan: clinicalNotes.nextVisitPlan || undefined,
           instructions: clinicalNotes.instructions || undefined,
+          extraoralExamination: clinicalNotes.extraoralExamination || undefined,
+          intraoralExamination: clinicalNotes.intraoralExamination || undefined,
           followUpDate: clinicalNotes.followUpDate || undefined,
           amountDue: clinicalNotes.amountDue !== 0 ? clinicalNotes.amountDue || undefined : 0,
           suggestedServiceId: clinicalNotes.suggestedServiceId || undefined,
+          additionalServicesText: clinicalNotes.additionalServicesText || undefined,
+          notes: clinicalNotes.clinicalNotes || undefined,
         },
       });
-      toast.success("تم إرسال المريض للاستقبال للتحصيل والخروج");
+      // F4: Create draft invoice when amountDue > 0 and suggestedServiceId exists
+      if (clinicalNotes.amountDue > 0 && clinicalNotes.suggestedServiceId && selectedPatient.visitId) {
+        try {
+          await createDraftInvoiceMutation.mutateAsync(selectedPatient.visitId);
+          toast.success("تم إنشاء فاتورة مبدئية وإرسال المريض للاستقبال");
+        } catch {
+          // Draft invoice failure is non-blocking — handoff already succeeded
+          toast.error("تم إرسال المريض للاستقبال لكن فشل إنشاء الفاتورة المبدئية");
+        }
+      } else {
+        toast.success("تم إرسال المريض للاستقبال للتحصيل والخروج");
+      }
       setActivePanel(null);
       setSentPatients(prev => new Set(prev).add(selectedPatient.appointmentId));
       setSelectedPatient(null);
       resetClinicalWorkspace();
     } catch { toast.error("فشل إرسال المريض للاستقبال"); }
-  }, [selectedPatient, handoffMutation, clinicalNotes, sentPatients, resetClinicalWorkspace]);
+  }, [selectedPatient, handoffMutation, clinicalNotes, sentPatients, resetClinicalWorkspace, createDraftInvoiceMutation]);
 
   // ── Update clinical notes ──
   const updateClinicalNotes = useCallback((updates: Partial<typeof clinicalNotes>) => {
@@ -406,30 +429,52 @@ export default function DoctorClinicPage() {
     setHasUnsavedClinicalNotes(true);
   }, []);
 
-  // ── Save visit button ──
+  // ── Save visit button (F3: save structured fields to individual Visit fields) ──
   const handleSaveVisit = useCallback(async () => {
     if (!selectedPatient) { toast.error("اختر مريضاً أولاً"); return; }
-    if (!selectedPatient.visitId) { toast.error("لا توجد زيارة نشطة لحفظها"); return; }
+
+    // FIX: Auto-start visit if not yet started — simplifies the doctor's workflow
+    // so they can fill data first and save directly without needing to click "تسجيل الفحص" first.
+    if (!selectedPatient.visitId) {
+      try {
+        await startVisitMutation.mutateAsync(selectedPatient.appointmentId);
+        toast.success("تم بدء الزيارة وحفظ البيانات تلقائياً");
+        // After starting visit, the patient data refreshes with visitId —
+        // save will continue in the next render cycle via hasUnsavedClinicalNotes.
+        setHasUnsavedClinicalNotes(true);
+        return;
+      } catch {
+        toast.error("فشل بدء الزيارة — حاول مرة أخرى");
+        return;
+      }
+    }
 
     try {
       await updateVisitMutation.mutateAsync({
         visitId: selectedPatient.visitId,
         patientId: selectedPatient.patientId,
         body: {
-          diagnosis: clinicalNotes.diagnosis,
-          treatmentDone: clinicalNotes.treatmentDone,
-          instructions: clinicalNotes.instructions,
-          nextVisitPlan: clinicalNotes.nextVisitPlan,
+          chiefComplaint: clinicalNotes.chiefComplaint || undefined,
+          diagnosis: clinicalNotes.diagnosis || undefined,
+          treatmentDone: clinicalNotes.treatmentDone || undefined,
+          instructions: clinicalNotes.instructions || undefined,
+          nextVisitPlan: clinicalNotes.nextVisitPlan || undefined,
           cost: clinicalNotes.amountDue > 0 ? clinicalNotes.amountDue : undefined,
           nextVisitDate: clinicalNotes.followUpDate || undefined,
+          // S1: Prevent data loss — send these on interim save too
+          serviceId: clinicalNotes.suggestedServiceId || undefined,
+          extraoralExamination: clinicalNotes.extraoralExamination || undefined,
+          intraoralExamination: clinicalNotes.intraoralExamination || undefined,
+          additionalServicesText: clinicalNotes.additionalServicesText || undefined,
+          handoffNotes: clinicalNotes.clinicalNotes || undefined,
         },
       });
       setHasUnsavedClinicalNotes(false);
-      toast.success("تم حفظ بيانات الزيارة");
+      toast.success("تم حفظ بيانات الزيارة في ملف المريض بنجاح");
     } catch {
-      toast.error("فشل حفظ بيانات الزيارة");
+      toast.error("فشل حفظ بيانات الزيارة — حاول مرة أخرى");
     }
-  }, [selectedPatient, updateVisitMutation, clinicalNotes]);
+  }, [selectedPatient, updateVisitMutation, clinicalNotes, startVisitMutation]);
 
   // ── Patient initials ──
   const getInitials = (name: string) => {
@@ -488,14 +533,14 @@ export default function DoctorClinicPage() {
               <span className="hidden lg:inline">تحديث</span>
             </button>
 
-            {/* Save */}
+            {/* Save — enabled even without visitId (auto-starts visit) */}
             <button
               onClick={handleSaveVisit}
-              disabled={updateVisitMutation.isPending || !selectedPatient?.visitId}
+              disabled={updateVisitMutation.isPending || startVisitMutation.isPending || !selectedPatient}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#444] hover:bg-[#f0f0f0] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Save className="w-3.5 h-3.5" />
-              <span className="hidden lg:inline">{updateVisitMutation.isPending ? "جار الحفظ..." : "حفظ الزيارة"}</span>
+              <span className="hidden lg:inline">{updateVisitMutation.isPending ? "جار الحفظ..." : "حفظ في ملف المريض"}</span>
             </button>
 
             {/* Handoff */}
@@ -567,6 +612,47 @@ export default function DoctorClinicPage() {
             </div>
           </div>
 
+          {/* ── CLINICAL VISIT DATA SUMMARY — always visible when visit is active ── */}
+          {selectedPatient?.visitId && (
+            <div className="flex-shrink-0 bg-white border-b border-[#e5e7eb] px-4 py-2.5">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-3.5 h-3.5 text-[#2563eb]" />
+                  <h3 className="text-[11px] font-bold text-[#1a1a1a]">بيانات الزيارة السريرية</h3>
+                  {hasUnsavedClinicalNotes && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">غير محفوظ</span>
+                  )}
+                </div>
+                <button
+                  onClick={handleSaveVisit}
+                  disabled={updateVisitMutation.isPending || startVisitMutation.isPending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-[#16a34a] hover:bg-[#15803d] disabled:opacity-50 transition-colors"
+                >
+                  <Save className="w-3 h-3" />
+                  {(updateVisitMutation.isPending || startVisitMutation.isPending) ? "جار الحفظ..." : "حفظ في ملف المريض"}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5">
+                {[
+                  { label: "الشكوى الرئيسية", value: clinicalNotes.chiefComplaint },
+                  { label: "فحص خارج الفم", value: clinicalNotes.extraoralExamination },
+                  { label: "فحص داخل الفم", value: clinicalNotes.intraoralExamination },
+                  { label: "التشخيص", value: clinicalNotes.diagnosis },
+                  { label: "الإجراء المنفذ", value: clinicalNotes.treatmentDone },
+                  { label: "ملاحظات سريرية", value: clinicalNotes.clinicalNotes },
+                  { label: "التعليمات", value: clinicalNotes.instructions },
+                  { label: "خطة الزيارة القادمة", value: clinicalNotes.nextVisitPlan },
+                  { label: "المبلغ المستحق", value: clinicalNotes.amountDue > 0 ? `${clinicalNotes.amountDue} ر.س` : "" },
+                ].map(field => (
+                  <div key={field.label} className="min-w-0">
+                    <span className="text-[9px] font-semibold text-[#9ca3af]">{field.label}</span>
+                    <p className="text-[10px] text-[#1a1a1a] truncate" title={field.value || "—"}>{field.value || "—"}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── PANEL CONTENT AREA — fills remaining space ── */}
           <div className="flex-1 overflow-y-auto">
             {hasPanelOpen && selectedPatient ? (
@@ -604,10 +690,17 @@ export default function DoctorClinicPage() {
                   {activePanel === "examination" && (
                     <ExaminationPanel patient={selectedPatient} diagnosis={clinicalNotes.diagnosis} medicalAlerts={medicalAlerts} onClose={() => setActivePanel(null)}
                       onSave={(data) => {
-                        const parts = [data.chiefComplaint ? `الشكوى: ${data.chiefComplaint}` : "", data.extraoral ? `فحص خارج الفم: ${data.extraoral}` : "", data.intraoral ? `فحص داخل الفم: ${data.intraoral}` : "", data.diagnosis ? `التشخيص: ${data.diagnosis}` : "", data.clinicalNotes ? `ملاحظات: ${data.clinicalNotes}` : ""].filter(Boolean).join(" | ");
-                        updateClinicalNotes({ diagnosis: parts || data.diagnosis, treatmentDone: data.treatmentDone || clinicalNotes.treatmentDone });
+                        // F3: Map structured clinical fields to individual Visit fields
+                        updateClinicalNotes({
+                          chiefComplaint: data.chiefComplaint || clinicalNotes.chiefComplaint,
+                          diagnosis: data.diagnosis || clinicalNotes.diagnosis,
+                          treatmentDone: data.treatmentDone || clinicalNotes.treatmentDone,
+                          clinicalNotes: data.clinicalNotes || clinicalNotes.clinicalNotes,
+                          extraoralExamination: data.extraoral || clinicalNotes.extraoralExamination,
+                          intraoralExamination: data.intraoral || clinicalNotes.intraoralExamination,
+                        });
                         setActivePanel(null);
-                        toast.success("تم حفظ الفحص والتشخيص");
+                        toast.success("تم حفظ الفحص والتشخيص بنجاح");
                       }}
                     />
                   )}
@@ -658,15 +751,21 @@ export default function DoctorClinicPage() {
                   {activePanel === "procedures" && (
                     <PricedProceduresPanel patient={selectedPatient} services={services} currentAmountDue={clinicalNotes.amountDue} currentTreatmentDone={clinicalNotes.treatmentDone} onClose={() => setActivePanel(null)}
                       onSave={(data) => {
-                        updateClinicalNotes({ treatmentDone: data.treatmentDone, amountDue: data.totalAmount, suggestedServiceId: data.suggestedServiceId });
+                        // F6: First service in suggestedServiceId, additional services text in additionalServicesText
+                        updateClinicalNotes({
+                          treatmentDone: data.treatmentDone,
+                          amountDue: data.totalAmount,
+                          suggestedServiceId: data.suggestedServiceId,
+                          additionalServicesText: data.additionalServicesText || clinicalNotes.additionalServicesText,
+                        });
                         setActivePanel(null);
-                        toast.success("تم حفظ الإجراءات المسعّرة");
+                        toast.success("تم حفظ الإجراءات المسعّرة بنجاح");
                       }}
                     />
                   )}
                   {activePanel === "treatmentPlan" && (
                     <TreatmentPlanPanel patient={selectedPatient} onClose={() => setActivePanel(null)}
-                      onSave={(data) => { updateClinicalNotes({ nextVisitPlan: data.plan }); setActivePanel(null); toast.success("تم حفظ خطة العلاج"); }}
+                      onSave={(data) => { updateClinicalNotes({ nextVisitPlan: data.plan }); setActivePanel(null); toast.success("تم حفظ خطة العلاج بنجاح"); }}
                     />
                   )}
                   {activePanel === "orthoFollowUp" && (
@@ -676,7 +775,7 @@ export default function DoctorClinicPage() {
                         const existing = clinicalNotes.treatmentDone;
                         updateClinicalNotes({ treatmentDone: existing ? `${existing} | ${parts}` : parts, nextVisitPlan: data.nextVisitPlan || clinicalNotes.nextVisitPlan });
                         setActivePanel(null);
-                        toast.success("تم حفظ متابعة التقويم");
+                        toast.success("تم حفظ متابعة التقويم بنجاح");
                       }}
                     />
                   )}
@@ -691,6 +790,7 @@ export default function DoctorClinicPage() {
                         await createPrescriptionMutation.mutateAsync({
                           patientId: selectedPatient.patientId,
                           doctorId: selectedPatient.doctorId || undefined,
+                          visitId: selectedPatient.visitId || undefined,
                           diagnosis: clinicalNotes.diagnosis || undefined,
                           notes: data.instructions || undefined,
                           drugs,
@@ -700,7 +800,7 @@ export default function DoctorClinicPage() {
                           treatmentDone: clinicalNotes.treatmentDone ? `${clinicalNotes.treatmentDone} | وصفة طبية` : "وصفة طبية",
                         });
                         setActivePanel(null);
-                        toast.success("تم إنشاء الوصفة الطبية وربطها بالمريض");
+                        toast.success("تم إنشاء الوصفة الطبية وربطها بالزيارة بنجاح");
                       }}
                     />
                   )}
@@ -723,7 +823,7 @@ export default function DoctorClinicPage() {
                           treatmentDone: clinicalNotes.treatmentDone ? `${clinicalNotes.treatmentDone} | طلب معمل: ${applianceType}` : `طلب معمل: ${applianceType}`,
                         });
                         setActivePanel(null);
-                        toast.success("تم إنشاء طلب المعمل وربطه بالزيارة");
+                        toast.success("تم إنشاء طلب المعمل وربطه بالزيارة بنجاح");
                       }}
                     />
                   )}
@@ -747,7 +847,7 @@ export default function DoctorClinicPage() {
                           nextVisitPlan: data.reason || clinicalNotes.nextVisitPlan,
                         });
                         setActivePanel(null);
-                        toast.success("تم إنشاء موعد المتابعة");
+                        toast.success("تم إنشاء موعد المتابعة بنجاح");
                       }}
                     />
                   )}

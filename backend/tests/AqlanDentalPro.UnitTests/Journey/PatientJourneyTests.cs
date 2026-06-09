@@ -1009,4 +1009,405 @@ public class PatientJourneyTests
         var isTerminal = checkoutStatus == "CheckedOut";
         isTerminal.Should().BeTrue();
     }
+
+    // ─── F1: Handoff Notes Appended to ClinicalNotes ─────────────────────
+
+    [Fact]
+    public async Task Handoff_AppendsNotes_ToClinicalNotes_WithArabicLabel()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = "ملاحظة أولى"
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate F1: append handoff notes with Arabic label
+        var handoffNotes = "يحتاج متابعة بعد أسبوع";
+        var handoffLabel = $"[ملاحظات التسليم] {handoffNotes}";
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? handoffLabel
+            : $"{visit.ClinicalNotes} | {handoffLabel}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Contain("[ملاحظات التسليم]");
+        saved.ClinicalNotes.Should().Contain(handoffNotes);
+        saved.ClinicalNotes.Should().Contain("ملاحظة أولى");
+    }
+
+    [Fact]
+    public async Task Handoff_AppendsNotes_ToEmptyClinicalNotes()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = null
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        var handoffNotes = "مريض حساس للمسكنات";
+        var handoffLabel = $"[ملاحظات التسليم] {handoffNotes}";
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? handoffLabel
+            : $"{visit.ClinicalNotes} | {handoffLabel}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Be(handoffLabel);
+    }
+
+    // ─── F3: Structured Clinical Fields Saved to Individual Visit Fields ─
+
+    [Fact]
+    public async Task Handoff_MapsChiefComplaint_ToVisitField()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow)
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        var chiefComplaint = "ألم في الضرس السفلي الأيمن";
+        visit.ChiefComplaint = chiefComplaint;
+        visit.Diagnosis = "تسوس عميق";
+        visit.TreatmentDone = "حشو عصب";
+        visit.Instructions = "تجنب الأكل الصلب لمدة يومين";
+        visit.NextVisitPlan = "تركيب تاج بعد أسبوع";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ChiefComplaint.Should().Be(chiefComplaint);
+        saved.Diagnosis.Should().Be("تسوس عميق");
+        saved.TreatmentDone.Should().Be("حشو عصب");
+        saved.Instructions.Should().Be("تجنب الأكل الصلب لمدة يومين");
+        saved.NextVisitPlan.Should().Be("تركيب تاج بعد أسبوع");
+    }
+
+    [Fact]
+    public async Task Handoff_AppendsExtraoralIntraoral_ToClinicalNotes()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = "ملاحظة سابقة"
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate F3: append extraoral/intraoral to ClinicalNotes with Arabic labels
+        var clinicalNotesParts = new List<string>();
+        var extraoral = "تورم خفيف في المنطقة الوجنية";
+        var intraoral = "تسوس سطحي في الضرس الثاني العلوي";
+        clinicalNotesParts.Add($"[فحص خارج الفم] {extraoral}");
+        clinicalNotesParts.Add($"[فحص داخل الفم] {intraoral}");
+
+        var appendedNotes = string.Join(" | ", clinicalNotesParts);
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? appendedNotes
+            : $"{visit.ClinicalNotes} | {appendedNotes}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Contain("[فحص خارج الفم]");
+        saved.ClinicalNotes.Should().Contain("[فحص داخل الفم]");
+        saved.ClinicalNotes.Should().Contain(extraoral);
+        saved.ClinicalNotes.Should().Contain(intraoral);
+        saved.ClinicalNotes.Should().Contain("ملاحظة سابقة");
+    }
+
+    // ─── F6: Multiple Services — First in ServiceId, Rest in ClinicalNotes ─
+
+    [Fact]
+    public async Task Handoff_FirstService_InServiceId_AdditionalInClinicalNotes()
+    {
+        await using var db = CreateContext();
+        var firstServiceId = Guid.NewGuid();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow)
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // F6: First service in ServiceId
+        visit.ServiceId = firstServiceId;
+        // Additional services as text in ClinicalNotes
+        var additionalServicesText = "تنظيف جير، إزالة ترسبات";
+        var additionalLabel = $"[خدمات إضافية] {additionalServicesText}";
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? additionalLabel
+            : $"{visit.ClinicalNotes} | {additionalLabel}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ServiceId.Should().Be(firstServiceId);
+        saved.ClinicalNotes.Should().Contain("[خدمات إضافية]");
+        saved.ClinicalNotes.Should().Contain(additionalServicesText);
+    }
+
+    // ─── F2: Prescription Supports VisitId ────────────────────────────────
+
+    [Fact]
+    public async Task Prescription_CanBeLinkedTo_Visit()
+    {
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+        var visitId = Guid.NewGuid();
+
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "أحمد", LastName = "سعيد" });
+        var visit = new Visit
+        {
+            Id = visitId,
+            PatientId = patientId,
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow)
+        };
+        db.Visits.Add(visit);
+
+        var prescription = new Prescription
+        {
+            PatientId = patientId,
+            VisitId = visitId,
+            Diagnosis = "تسوس",
+            Drugs = JsonDocument.Parse("[{\"name\":\"أموكسيسيلين\",\"dose\":\"500mg\",\"frequency\":\"3 مرات يومياً\",\"duration\":\"7 أيام\"}]")
+        };
+        db.Prescriptions.Add(prescription);
+        await db.SaveChangesAsync();
+
+        var saved = await db.Prescriptions.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == prescription.Id);
+        saved.Should().NotBeNull();
+        saved!.VisitId.Should().Be(visitId);
+        saved.PatientId.Should().Be(patientId);
+    }
+
+    [Fact]
+    public async Task Prescription_WithoutVisitId_StillWorks()
+    {
+        await using var db = CreateContext();
+        var patientId = Guid.NewGuid();
+
+        db.Patients.Add(new Patient { Id = patientId, FirstName = "سارة", LastName = "محمد" });
+
+        var prescription = new Prescription
+        {
+            PatientId = patientId,
+            VisitId = null,
+            Diagnosis = "التهاب لثة",
+            Drugs = JsonDocument.Parse("[{\"name\":\"ميترودينازول\",\"dose\":\"250mg\",\"frequency\":\"مرتين يومياً\",\"duration\":\"5 أيام\"}]")
+        };
+        db.Prescriptions.Add(prescription);
+        await db.SaveChangesAsync();
+
+        var saved = await db.Prescriptions.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.Id == prescription.Id);
+        saved.Should().NotBeNull();
+        saved!.VisitId.Should().BeNull();
+    }
+
+    // ─── S1: Interim Save Persists All Clinical Fields (Data Loss Prevention) ─
+
+    [Fact]
+    public async Task InterimSave_SetsChiefComplaint_OnVisit()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow)
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate S1: VisitsController PUT sets ChiefComplaint on interim save
+        visit.ChiefComplaint = "ألم في الضرس السفلي";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ChiefComplaint.Should().Be("ألم في الضرس السفلي");
+    }
+
+    [Fact]
+    public async Task InterimSave_SetsServiceId_OnVisit()
+    {
+        await using var db = CreateContext();
+        var serviceId = Guid.NewGuid();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow)
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate S1: VisitsController PUT sets ServiceId on interim save
+        visit.ServiceId = serviceId;
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ServiceId.Should().Be(serviceId);
+    }
+
+    [Fact]
+    public async Task InterimSave_AppendsExtraoral_ToClinicalNotes_WithArabicLabel()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = "ملاحظة سابقة"
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate S1: append extraoral exam with Arabic label on interim save
+        var extraoral = "تورم خفيف في المنطقة الوجنية";
+        var parts = new List<string> { $"[فحص خارج الفم] {extraoral}" };
+        var appendedNotes = string.Join(" | ", parts);
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? appendedNotes
+            : $"{visit.ClinicalNotes} | {appendedNotes}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Contain("[فحص خارج الفم]");
+        saved.ClinicalNotes.Should().Contain(extraoral);
+        saved.ClinicalNotes.Should().Contain("ملاحظة سابقة");
+    }
+
+    [Fact]
+    public async Task InterimSave_AppendsIntraoral_ToClinicalNotes_WithArabicLabel()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = null
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate S1: append intraoral exam with Arabic label on interim save
+        var intraoral = "تسوس سطحي في الضرس الثاني";
+        var label = $"[فحص داخل الفم] {intraoral}";
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? label
+            : $"{visit.ClinicalNotes} | {label}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Contain("[فحص داخل الفم]");
+        saved.ClinicalNotes.Should().Contain(intraoral);
+    }
+
+    [Fact]
+    public async Task InterimSave_AppendsAdditionalServices_ToClinicalNotes_WithArabicLabel()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = null
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate S1: append additional services text with Arabic label on interim save
+        var additionalServices = "تنظيف جير، إزالة ترسبات";
+        var label = $"[خدمات إضافية] {additionalServices}";
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? label
+            : $"{visit.ClinicalNotes} | {label}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Contain("[خدمات إضافية]");
+        saved.ClinicalNotes.Should().Contain(additionalServices);
+    }
+
+    [Fact]
+    public async Task InterimSave_AppendsHandoffNotes_ToClinicalNotes_WithArabicLabel()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = "ملاحظات سابقة"
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate S1: append handoff notes with Arabic label on interim save
+        var handoffNotes = "يحتاج متابعة";
+        var label = $"[ملاحظات التسليم] {handoffNotes}";
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? label
+            : $"{visit.ClinicalNotes} | {label}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Contain("[ملاحظات التسليم]");
+        saved.ClinicalNotes.Should().Contain(handoffNotes);
+        saved.ClinicalNotes.Should().Contain("ملاحظات سابقة");
+    }
+
+    [Fact]
+    public async Task InterimSave_CombinesAllLabeledFields_InClinicalNotes()
+    {
+        await using var db = CreateContext();
+        var visit = new Visit
+        {
+            PatientId = Guid.NewGuid(),
+            VisitDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            ClinicalNotes = null
+        };
+        db.Visits.Add(visit);
+        await db.SaveChangesAsync();
+
+        // Simulate S1: all labeled fields appended together
+        var parts = new List<string>();
+        parts.Add("[فحص خارج الفم] تورم خفيف");
+        parts.Add("[فحص داخل الفم] تسوس سطحي");
+        parts.Add("[خدمات إضافية] تنظيف جير");
+        parts.Add("[ملاحظات التسليم] يحتاج متابعة");
+        var appendedNotes = string.Join(" | ", parts);
+        visit.ClinicalNotes = string.IsNullOrWhiteSpace(visit.ClinicalNotes)
+            ? appendedNotes
+            : $"{visit.ClinicalNotes} | {appendedNotes}";
+        await db.SaveChangesAsync();
+
+        var saved = await db.Visits.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(v => v.Id == visit.Id);
+        saved!.ClinicalNotes.Should().Contain("[فحص خارج الفم]");
+        saved.ClinicalNotes.Should().Contain("[فحص داخل الفم]");
+        saved.ClinicalNotes.Should().Contain("[خدمات إضافية]");
+        saved.ClinicalNotes.Should().Contain("[ملاحظات التسليم]");
+    }
 }

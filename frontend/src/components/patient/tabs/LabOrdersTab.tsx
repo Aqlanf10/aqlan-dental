@@ -146,6 +146,11 @@ export function LabOrdersTab({ patientId }: LabOrdersTabProps) {
                 {order.applianceType ?? "طلب مختبر"}
               </span>
               {order.labName && <span className="text-xs text-[#64748b]">({order.labName})</span>}
+              {order.visitId && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-600 font-medium">
+                  مرتبط بزيارة
+                </span>
+              )}
             </div>
             {order.status && (
               <span className={cn("text-xs px-1.5 py-0.5 rounded-full font-medium",

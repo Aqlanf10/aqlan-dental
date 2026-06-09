@@ -213,20 +213,22 @@ const UPPER_FDI_TEETH = ["18", "17", "16", "15", "14", "13", "12", "11", "21", "
 const LOWER_FDI_TEETH = ["48", "47", "46", "45", "44", "43", "42", "41", "31", "32", "33", "34", "35", "36", "37", "38"];
 
 const DEFAULT_TOOTH_CONDITIONS = [
-  "Sound",
-  "Caries",
-  "Deep Caries",
-  "Reversible Pulpitis",
-  "Irreversible Pulpitis",
-  "Necrotic Pulp",
-  "Periapical Lesion",
-  "Fractured Tooth",
-  "Missing",
-  "Impacted",
-  "Mobility",
-  "Periodontal Pocket",
-  "Existing Restoration",
-  "Defective Restoration",
+  { value: "healthy", label: "سليم" },
+  { value: "decay", label: "تسوس" },
+  { value: "filled", label: "محشو" },
+  { value: "rct", label: "معالج عصب" },
+  { value: "crown", label: "تاج" },
+  { value: "extracted", label: "مخلوع" },
+  { value: "missing", label: "مفقود" },
+  { value: "implant", label: "زرعة" },
+  { value: "deep_caries", label: "تسوس عميق" },
+  { value: "pulpitis", label: "التهاب لب" },
+  { value: "necrotic_pulp", label: "لب متموت" },
+  { value: "periapical_lesion", label: "آفة حول الذروة" },
+  { value: "fractured", label: "كسر سن" },
+  { value: "mobility", label: "حركة" },
+  { value: "periodontal_pocket", label: "جيب لثوي" },
+  { value: "defective_restoration", label: "حشوة غير صالحة" },
 ];
 
 const DEFAULT_GENERAL_PROCEDURES = [
@@ -287,6 +289,14 @@ function addUniqueOption(options: string[], value: string) {
   return [...options, trimmed];
 }
 
+function addUniqueConditionOption(options: typeof DEFAULT_TOOTH_CONDITIONS, label: string) {
+  const trimmed = label.trim();
+  if (!trimmed) return options;
+  const value = trimmed.toLowerCase().replace(/\s+/g, "_");
+  if (options.some(option => option.value.toLowerCase() === value || option.label.toLowerCase() === trimmed.toLowerCase())) return options;
+  return [...options, { value, label: trimmed }];
+}
+
 function toggleValue(values: string[], value: string) {
   return values.includes(value) ? values.filter(v => v !== value) : [...values, value];
 }
@@ -318,7 +328,7 @@ export function GeneralDentistryPanel({
   onSave: (data: GeneralDentistryPanelData) => Promise<void> | void;
 }) {
   const [toothNumber, setToothNumber] = useState("");
-  const [condition, setCondition] = useState("Caries");
+  const [condition, setCondition] = useState("decay");
   const [surfaces, setSurfaces] = useState<string[]>([]);
   const [diagnosis, setDiagnosis] = useState("");
   const [procedureType, setProcedureType] = useState("حشو كومبوزت");
@@ -345,6 +355,7 @@ export function GeneralDentistryPanel({
   }, [services]);
 
   const selectedService = serviceId ? services.find(service => service.id === serviceId) : undefined;
+  const conditionLabel = conditionOptions.find(option => option.value === condition)?.label ?? condition;
   const canSave = !!toothNumber && !!condition && diagnosis.trim().length > 0 && procedureType.trim().length > 0;
 
   const handleServiceChange = (value: string) => {
@@ -359,8 +370,9 @@ export function GeneralDentistryPanel({
     const trimmed = customOption.trim();
     if (!trimmed) return;
     if (customOptionType === "condition") {
-      setConditionOptions(prev => addUniqueOption(prev, trimmed));
-      setCondition(trimmed);
+      const value = trimmed.toLowerCase().replace(/\s+/g, "_");
+      setConditionOptions(prev => addUniqueConditionOption(prev, trimmed));
+      setCondition(value);
     } else if (customOptionType === "procedure") {
       setProcedureOptions(prev => addUniqueOption(prev, trimmed));
       setProcedureType(trimmed);
@@ -380,13 +392,14 @@ export function GeneralDentistryPanel({
 
   const handleSave = async () => {
     if (!canSave) return;
-    const surfacesAffected = surfaces.join(",");
+    const surfacesAffected = surfaces.join("");
+    const surfacesText = surfaces.join(", ");
     const selectedServiceText = selectedService ? `الخدمة المالية المقترحة: ${selectedService.arabicName}` : "";
     const treatmentSummary = [
       "طب الأسنان العام",
       `السن ${toothNumber}`,
-      `الحالة: ${condition}`,
-      surfacesAffected ? `الأسطح: ${surfacesAffected}` : "",
+      `الحالة: ${conditionLabel}`,
+      surfacesText ? `الأسطح: ${surfacesText}` : "",
       `التشخيص: ${diagnosis.trim()}`,
       `الإجراء: ${procedureType.trim()}`,
       procedureDetails.trim() ? `التفاصيل: ${procedureDetails.trim()}` : "",
@@ -460,7 +473,7 @@ export function GeneralDentistryPanel({
         <div>
           <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>حالة السن *</label>
           <select value={condition} onChange={e => setCondition(e.target.value)} className={inputCls()}>
-            {conditionOptions.map(option => <option key={option} value={option}>{option}</option>)}
+            {conditionOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </div>
         <div>
@@ -474,7 +487,7 @@ export function GeneralDentistryPanel({
       <div>
         <div className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الأسطح المصابة</div>
         <div className="flex flex-wrap gap-1.5">
-          {["M", "D", "O", "B", "L", "I", "Cervical"].map(surface => (
+          {["M", "O", "D", "B", "F"].map(surface => (
             <button
               key={surface}
               type="button"

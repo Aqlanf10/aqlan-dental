@@ -72,7 +72,7 @@ export function QuickPaymentModal({
   onConfirm: (amount: number, method: string, desc: string, notes: string, referenceNumber?: string) => void;
 }) {
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("Cash");
+  const [method, setMethod] = useState("cash");
   const [desc, setDesc] = useState("");
   const [notes, setNotes] = useState("");
   const [voucherType, setVoucherType] = useState<"consultation" | "procedure">("consultation");

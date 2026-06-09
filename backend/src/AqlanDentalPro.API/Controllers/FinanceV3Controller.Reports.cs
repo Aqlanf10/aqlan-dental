@@ -230,7 +230,7 @@ public partial class FinanceV3Controller
         catch (Exception ex)
         {
             logger.LogError(ex, "GetDashboard failed");
-            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات" });
+            return StatusCode(500, new { message = "حدث خطأ أثناء تحميل البيانات", error = ex.Message, stackTrace = ex.StackTrace });
         }
     }
 

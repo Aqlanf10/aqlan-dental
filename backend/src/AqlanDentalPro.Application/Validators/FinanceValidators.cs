@@ -49,7 +49,7 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
 
         RuleFor(x => x.PaymentMethod)
             .NotEmpty().WithMessage("طريقة الدفع مطلوبة")
-            .Must(m => m != null && ValidMethods.Contains(m)).WithMessage("طريقة الدفع غير صالحة");
+            .Must(m => m != null && ValidMethods.Contains(m.ToLower())).WithMessage("طريقة الدفع غير صالحة");
 
         RuleFor(x => x.ServiceDescription)
             .MaximumLength(500).WithMessage("وصف الخدمة يجب ألا يتجاوز 500 حرف")
@@ -69,7 +69,7 @@ public sealed class UpdatePaymentRequestValidator : AbstractValidator<UpdatePaym
             .When(x => x.Amount.HasValue);
 
         RuleFor(x => x.PaymentMethod)
-            .Must(m => m == null || ValidMethods.Contains(m)).WithMessage("طريقة الدفع غير صالحة");
+            .Must(m => m == null || ValidMethods.Contains(m.ToLower())).WithMessage("طريقة الدفع غير صالحة");
 
         RuleFor(x => x.ServiceDescription)
             .MaximumLength(500).WithMessage("وصف الخدمة يجب ألا يتجاوز 500 حرف")

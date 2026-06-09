@@ -7,10 +7,10 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   PAYMENT_METHODS, inputCls, fmtRial,
-} from "../_lib/constants";
-import type { ServiceOption } from "../_lib/constants";
+} from "@/components/shared/journey/constants";
+import type { ServiceOption } from "@/components/shared/journey/types";
 
-// ─── Unified Confirmation Dialog ────────────────────────────────────────────
+// ─── Confirmation Dialog ──────────────────────────────────────────────────
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -27,37 +27,29 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   if (!open) return null;
 
+  const typeLabels: Record<string, string> = {
+    Cancelled: "إلغاء الموعد",
+    NoShow: "تسجيل عدم الحضور",
+    CancelQueue: "إلغاء الانتظار",
+    ChangeRoom: "تغيير الغرفة",
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="text-sm font-bold text-[#1a3a5c]">
-            {type === "Cancelled" ? "تأكيد إلغاء الموعد"
-              : type === "NoShow" ? "تأكيد تسجيل عدم الحضور"
-              : type === "CancelQueue" ? "تأكيد الإلغاء من الانتظار"
-              : "تأكيد تغيير الغرفة"}
-          </h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 transition">
-            <X className="w-4 h-4 text-gray-500" />
-          </button>
-        </div>
-        <div className="p-4 space-y-2">
-          {/* Patient name display */}
-          <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-            <span className="text-[11px] text-gray-500">المريض:</span>
-            <span className="text-sm font-bold text-[#1a3a5c]">{patientName}</span>
-          </div>
-          <p className="text-sm text-gray-700">
-            {type === "Cancelled"
-              ? "هل أنت متأكد من إلغاء هذا الموعد؟ لا يمكن التراجع عن هذا الإجراء."
-              : type === "NoShow"
-              ? "هل أنت متأكد من تسجيل عدم الحضور؟ سيتم تغيير حالة الموعد."
-              : type === "CancelQueue"
-              ? "هل أنت متأكد من إلغاء المريض من الانتظار؟ سيتم إخراجه من قائمة الانتظار."
-              : `هل أنت متأكد من نقل المريض إلى غرفة "${pendingChangeRoomName}"؟`}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4">
+        <div className="p-5 text-center">
+          <h3 className="text-sm font-bold text-[#1a3a5c] mb-2">{typeLabels[type] ?? type}</h3>
+          <p className="text-xs text-gray-600">
+            {type === "ChangeRoom"
+              ? `هل تريد تغيير الغرفة إلى ${pendingChangeRoomName ?? ""}؟`
+              : type === "Cancelled"
+                ? `هل تريد إلغاء موعد ${patientName}؟`
+                : type === "NoShow"
+                  ? `هل تريد تسجيل عدم حضور ${patientName}؟`
+                  : `هل تريد إلغاء ${patientName} من الانتظار؟`}
           </p>
         </div>
-        <div className="flex gap-2 justify-end p-4 border-t">
+        <div className="flex gap-2 justify-center p-4 border-t">
           <button
             onClick={onClose}
             className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
@@ -67,12 +59,7 @@ export function ConfirmDialog({
           <button
             onClick={onConfirm}
             disabled={isPending}
-            className={cn(
-              "px-4 py-2 text-xs font-bold rounded-lg text-white transition disabled:opacity-50",
-              type === "Cancelled" || type === "CancelQueue" ? "bg-red-600 hover:bg-red-700"
-              : type === "NoShow" ? "bg-orange-600 hover:bg-orange-700"
-              : "bg-[#3d7ab5] hover:bg-[#2d5e8e]"
-            )}
+            className="px-4 py-2 text-xs font-bold rounded-lg bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50"
           >
             {isPending ? "جارٍ..." : "تأكيد"}
           </button>
@@ -133,7 +120,7 @@ export function RecordPaymentModal({
               type="number"
               value={paymentAmount}
               onChange={(e) => setPaymentAmount(parseInt(e.target.value) || 0)}
-              className={inputCls}
+              className={inputCls()}
               dir="ltr"
               min={1}
               required
@@ -141,7 +128,7 @@ export function RecordPaymentModal({
           </div>
           <div>
             <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">طريقة الدفع</label>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputCls}>
+            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputCls()}>
               {PAYMENT_METHODS.map((m) => (
                 <option key={m.value} value={m.value}>{m.label}</option>
               ))}
@@ -152,7 +139,7 @@ export function RecordPaymentModal({
             <input
               value={paymentServiceDesc}
               onChange={(e) => setPaymentServiceDesc(e.target.value)}
-              className={inputCls}
+              className={inputCls()}
               placeholder="مثل: رسوم معاينة"
             />
           </div>
@@ -161,7 +148,7 @@ export function RecordPaymentModal({
             <textarea
               value={paymentNotes}
               onChange={(e) => setPaymentNotes(e.target.value)}
-              className={cn(inputCls, "h-16 resize-none")}
+              className={cn(inputCls(), "h-16 resize-none")}
             />
           </div>
           <div className="flex gap-2 justify-end pt-2 border-t">
@@ -219,7 +206,7 @@ export function SendSmsModal({
             <input
               value={smsTo}
               onChange={(e) => setSmsTo(e.target.value)}
-              className={inputCls}
+              className={inputCls()}
               dir="ltr"
               required
             />
@@ -229,7 +216,7 @@ export function SendSmsModal({
             <textarea
               value={smsMessage}
               onChange={(e) => setSmsMessage(e.target.value)}
-              className={cn(inputCls, "h-28 resize-none")}
+              className={cn(inputCls(), "h-28 resize-none")}
               placeholder="اكتب الرسالة هنا..."
               required
             />
@@ -304,7 +291,7 @@ export function PrescriptionModal({
               <input
                 value={prescDiagnosis}
                 onChange={(e) => setPrescDiagnosis(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
               />
             </div>
             <div>
@@ -312,7 +299,7 @@ export function PrescriptionModal({
               <input
                 value={prescNotes}
                 onChange={(e) => setPrescNotes(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
               />
             </div>
           </div>
@@ -354,7 +341,7 @@ export function PrescriptionModal({
                         updated[idx] = { ...updated[idx], name: e.target.value };
                         setPrescItems(updated);
                       }}
-                      className={inputCls}
+                      className={inputCls()}
                       required
                     />
                   </div>
@@ -367,7 +354,7 @@ export function PrescriptionModal({
                         updated[idx] = { ...updated[idx], dose: e.target.value };
                         setPrescItems(updated);
                       }}
-                      className={inputCls}
+                      className={inputCls()}
                       placeholder="مثل: 500mg"
                     />
                   </div>
@@ -380,7 +367,7 @@ export function PrescriptionModal({
                         updated[idx] = { ...updated[idx], frequency: e.target.value };
                         setPrescItems(updated);
                       }}
-                      className={inputCls}
+                      className={inputCls()}
                       placeholder="مثل: مرتين يومياً"
                     />
                   </div>
@@ -393,7 +380,7 @@ export function PrescriptionModal({
                         updated[idx] = { ...updated[idx], duration: e.target.value };
                         setPrescItems(updated);
                       }}
-                      className={inputCls}
+                      className={inputCls()}
                       placeholder="مثل: 7 أيام"
                     />
                   </div>
@@ -406,7 +393,7 @@ export function PrescriptionModal({
                         updated[idx] = { ...updated[idx], notes: e.target.value };
                         setPrescItems(updated);
                       }}
-                      className={inputCls}
+                      className={inputCls()}
                     />
                   </div>
                 </div>
@@ -479,7 +466,7 @@ export function EditVisitModal({
               <textarea
                 value={form.chiefComplaint}
                 onChange={(e) => setForm({ ...form, chiefComplaint: e.target.value })}
-                className={cn(inputCls, "h-16 resize-none")}
+                className={cn(inputCls(), "h-16 resize-none")}
               />
             </div>
             <div>
@@ -487,7 +474,7 @@ export function EditVisitModal({
               <textarea
                 value={form.clinicalNotes}
                 onChange={(e) => setForm({ ...form, clinicalNotes: e.target.value })}
-                className={cn(inputCls, "h-16 resize-none")}
+                className={cn(inputCls(), "h-16 resize-none")}
               />
             </div>
             <div>
@@ -495,7 +482,7 @@ export function EditVisitModal({
               <textarea
                 value={form.treatmentDone}
                 onChange={(e) => setForm({ ...form, treatmentDone: e.target.value })}
-                className={cn(inputCls, "h-16 resize-none")}
+                className={cn(inputCls(), "h-16 resize-none")}
               />
             </div>
             <div>
@@ -503,7 +490,7 @@ export function EditVisitModal({
               <input
                 value={form.diagnosis}
                 onChange={(e) => setForm({ ...form, diagnosis: e.target.value })}
-                className={inputCls}
+                className={inputCls()}
               />
             </div>
             <div>
@@ -511,7 +498,7 @@ export function EditVisitModal({
               <textarea
                 value={form.instructions}
                 onChange={(e) => setForm({ ...form, instructions: e.target.value })}
-                className={cn(inputCls, "h-16 resize-none")}
+                className={cn(inputCls(), "h-16 resize-none")}
               />
             </div>
             <div>
@@ -519,7 +506,7 @@ export function EditVisitModal({
               <textarea
                 value={form.nextVisitPlan}
                 onChange={(e) => setForm({ ...form, nextVisitPlan: e.target.value })}
-                className={cn(inputCls, "h-16 resize-none")}
+                className={cn(inputCls(), "h-16 resize-none")}
               />
             </div>
             <div>
@@ -528,7 +515,7 @@ export function EditVisitModal({
                 type="number"
                 value={form.cost}
                 onChange={(e) => setForm({ ...form, cost: parseInt(e.target.value) || 0 })}
-                className={inputCls}
+                className={inputCls()}
                 dir="ltr"
                 min={0}
               />
@@ -612,7 +599,7 @@ export function BookAppointmentModal({
                 type="date"
                 value={bookAptDate}
                 onChange={(e) => setBookAptDate(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
                 dir="ltr"
                 required
               />
@@ -623,7 +610,7 @@ export function BookAppointmentModal({
                 type="time"
                 value={bookAptStartTime}
                 onChange={(e) => setBookAptStartTime(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
                 dir="ltr"
                 required
               />
@@ -634,7 +621,7 @@ export function BookAppointmentModal({
                 type="time"
                 value={bookAptEndTime}
                 onChange={(e) => setBookAptEndTime(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
                 dir="ltr"
               />
             </div>
@@ -643,7 +630,7 @@ export function BookAppointmentModal({
               <div className="flex items-center gap-2">
                 <input
                   value={doctorName}
-                  className={cn(inputCls, "bg-gray-50")}
+                  className={cn(inputCls(), "bg-gray-50")}
                   readOnly
                 />
               </div>
@@ -653,7 +640,7 @@ export function BookAppointmentModal({
               <select
                 value={bookAptServiceId}
                 onChange={(e) => setBookAptServiceId(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
               >
                 <option value="">— اختر خدمة —</option>
                 {services.map((s) => (
@@ -666,7 +653,7 @@ export function BookAppointmentModal({
               <select
                 value={bookAptType}
                 onChange={(e) => setBookAptType(e.target.value)}
-                className={inputCls}
+                className={inputCls()}
               >
                 <option value="FollowUp">متابعة</option>
                 <option value="Consultation">معاينة</option>
@@ -680,7 +667,7 @@ export function BookAppointmentModal({
             <textarea
               value={bookAptNotes}
               onChange={(e) => setBookAptNotes(e.target.value)}
-              className={cn(inputCls, "h-16 resize-none")}
+              className={cn(inputCls(), "h-16 resize-none")}
             />
           </div>
           <div className="flex gap-2 justify-end pt-2 border-t">
@@ -837,14 +824,14 @@ export function UploadDocumentModal({
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className={inputCls}
+              className={inputCls()}
               placeholder="مثل: أشعة أسنان"
             />
           </div>
           {/* Document Type */}
           <div>
             <label className="block text-[10px] font-bold text-[#2d5e8e] mb-0.5">نوع المستند</label>
-            <select value={documentType} onChange={(e) => setDocumentType(e.target.value)} className={inputCls}>
+            <select value={documentType} onChange={(e) => setDocumentType(e.target.value)} className={inputCls()}>
               <option value="Radiograph">أشعة</option>
               <option value="LabReport">تقرير مخبري</option>
               <option value="Consent">موافقة</option>
@@ -859,7 +846,7 @@ export function UploadDocumentModal({
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className={cn(inputCls, "h-16 resize-none")}
+              className={cn(inputCls(), "h-16 resize-none")}
             />
           </div>
           {/* Actions */}

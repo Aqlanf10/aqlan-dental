@@ -1,6 +1,12 @@
 /**
  * Custom hooks for the Daily Operations page.
- * Reuses existing usePatientJourney mutations where possible.
+ *
+ * Many mutation hooks here have equivalents in @/hooks/usePatientJourney.ts,
+ * but the daily-ops versions invalidate ["daily-ops"] query keys in addition
+ * to ["patient-journey"] keys, so they cannot be simply re-exported.
+ *
+ * Hooks that are enhanced versions of usePatientJourney hooks are marked with:
+ *   // Enhanced: <usePatientJourney hook name> — <reason kept locally>
  */
 
 "use client";
@@ -10,7 +16,8 @@ import api from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { canViewFinanceReports } from "@/lib/roles";
-import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceOption, FinanceSummaryData } from "./constants";
+import type { TodayJourneyItem, DoctorOption, BranchOption, RoomOption, ServiceOption } from "@/components/shared/journey/types";
+import type { FinanceSummaryData } from "./constants";
 import type { DailyJourneySummary } from "@/types/journey";
 import type { DashboardStats } from "@/types/dashboard";
 
@@ -168,6 +175,7 @@ export function useQueueWaitTime() {
 
 // ─── Mutations ───────────────────────────────────────────────────────────────
 
+// Enhanced: useJourneyIntake — daily-ops invalidates ["daily-ops"] keys
 export function useIntake() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -185,6 +193,7 @@ export function useIntake() {
   });
 }
 
+// Enhanced: useJourneySendToQueue — daily-ops invalidates ["daily-ops"] + ["clinic-queue"] keys
 export function useSendToQueue() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -200,6 +209,7 @@ export function useSendToQueue() {
   });
 }
 
+// Enhanced: useJourneyCallPatient — accepts optional roomName param + invalidates ["daily-ops"] keys
 export function useCallPatient() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -230,6 +240,7 @@ export function useRecallPatient() {
   });
 }
 
+// Enhanced: useJourneyEnterRoom — daily-ops invalidates ["daily-ops"] keys
 export function useEnterRoom() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -244,6 +255,7 @@ export function useEnterRoom() {
   });
 }
 
+// Enhanced: useJourneyUpdateAppointmentStatus — daily-ops invalidates ["daily-ops"] keys
 export function useUpdateAppointmentStatus() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -259,6 +271,7 @@ export function useUpdateAppointmentStatus() {
   });
 }
 
+// Enhanced: useJourneyCreatePayment — includes referenceNumber param + invalidates ["daily-ops"] keys
 export function useCreatePayment() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -284,6 +297,7 @@ export function useCreatePayment() {
   });
 }
 
+// Enhanced: useJourneyCheckout — supports visitId fallback for walk-in patients + invalidates ["daily-ops"] keys
 export function useCheckout() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -316,6 +330,7 @@ export function useCheckout() {
   });
 }
 
+// Enhanced: useJourneyHandoff — includes proposedProcedure param + invalidates ["daily-ops"] keys
 export function useHandoff() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -362,6 +377,7 @@ export function useMarkLeftWithoutCompletion() {
   });
 }
 
+// Enhanced: useJourneyCancelQueue — daily-ops invalidates ["daily-ops"] keys
 export function useCancelQueue() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -376,6 +392,7 @@ export function useCancelQueue() {
   });
 }
 
+// Enhanced: useJourneyChangeRoom — daily-ops invalidates ["daily-ops"] keys
 export function useChangeRoom() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -390,6 +407,7 @@ export function useChangeRoom() {
   });
 }
 
+// Enhanced: useJourneyCreateAppointment — daily-ops invalidates ["daily-ops"] keys
 export function useCreateAppointment() {
   const queryClient = useQueryClient();
   return useMutation({

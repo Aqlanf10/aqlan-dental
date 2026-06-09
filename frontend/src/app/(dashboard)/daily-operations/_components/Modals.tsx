@@ -828,30 +828,50 @@ export function ConfirmDialog({
   isPending: boolean;
   onConfirm: () => void;
 }) {
-  const configs: Record<string, { title: string; body: string; btnColor: string }> = {
-    Cancel:      { title: "إلغاء الموعد",     body: `هل أنت متأكد من إلغاء موعد المريض ${patientName}؟`, btnColor: "#ef4444" },
-    NoShow:      { title: "لم يحضر",          body: `هل تريد تسجيل المريض ${patientName} كـ "لم يحضر"؟`, btnColor: "#f5922e" },
-    CancelQueue: { title: "إلغاء من الانتظار", body: `هل أنت متأكد من إلغاء المريض ${patientName} من قائمة الانتظار؟`, btnColor: "#ef4444" },
-    ChangeRoom:  { title: "تغيير الغرفة",     body: `هل تريد تغيير غرفة المريض ${patientName}؟`, btnColor: "#3d7ab5" },
-    Complete:    { title: "إنهاء الزيارة",     body: `هل تريد إنهاء زيارة المريض ${patientName}؟`, btnColor: "#16a34a" },
+  if (!open) return null;
+
+  const typeLabels: Record<string, string> = {
+    Cancel: "إلغاء الموعد",
+    NoShow: "تسجيل عدم الحضور",
+    CancelQueue: "إلغاء الانتظار",
+    ChangeRoom: "تغيير الغرفة",
+    Complete: "إكمال الزيارة",
   };
 
-  const cfg = configs[type] ?? configs.Cancel;
-
   return (
-    <ModalShell open={open} onClose={onClose} title={cfg.title} icon={AlertTriangle} iconColor={cfg.btnColor}>
-      <p className="text-sm leading-relaxed" style={{ color: "#475569" }}>{cfg.body}</p>
-      <div className="flex gap-2 mt-5">
-        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
-          style={{ background: "#f1f5f9", color: "#64748b" }}>تراجع</button>
-        <button onClick={onConfirm} disabled={isPending}
-          className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: cfg.btnColor, opacity: isPending ? 0.5 : 1 }}>
-          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          تأكيد
-        </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4">
+        <div className="p-5 text-center">
+          <h3 className="text-sm font-bold text-[#1a3a5c] mb-2">{typeLabels[type] ?? type}</h3>
+          <p className="text-xs text-gray-600">
+            {type === "Cancel"
+              ? `هل تريد إلغاء موعد ${patientName}؟`
+              : type === "NoShow"
+                ? `هل تريد تسجيل عدم حضور ${patientName}؟`
+                : type === "CancelQueue"
+                  ? `هل تريد إلغاء ${patientName} من الانتظار؟`
+                  : type === "Complete"
+                    ? `هل تريد إكمال زيارة ${patientName}؟`
+                    : `هل تريد تغيير الغرفة لـ ${patientName}؟`}
+          </p>
+        </div>
+        <div className="flex gap-2 justify-center p-4 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-bold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+          >
+            إلغاء
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isPending}
+            className="px-4 py-2 text-xs font-bold rounded-lg bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50"
+          >
+            {isPending ? "جارٍ..." : "تأكيد"}
+          </button>
+        </div>
       </div>
-    </ModalShell>
+    </div>
   );
 }
 

@@ -179,9 +179,9 @@ public class WhatsAppService(
                     .ToList()
             };
         }
-        catch (Exception ex) when (IsReadSchemaCompatibilityFailure(ex))
+        catch (Exception ex)
         {
-            logger.LogWarning(ex, "WhatsApp dashboard is using an empty schema-compatibility fallback");
+            logger.LogWarning(ex, "WhatsApp dashboard is using an empty read fallback");
             return new WhatsAppDashboardDto();
         }
     }

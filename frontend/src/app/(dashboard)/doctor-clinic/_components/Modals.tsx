@@ -209,6 +209,395 @@ export function ExaminationPanel({
    Priced Procedures Panel — THE KEY FEATURE
    Loads real services from catalog, multi-select, auto-total
    ═══════════════════════════════════════════════════════════════════════════ */
+const UPPER_FDI_TEETH = ["18", "17", "16", "15", "14", "13", "12", "11", "21", "22", "23", "24", "25", "26", "27", "28"];
+const LOWER_FDI_TEETH = ["48", "47", "46", "45", "44", "43", "42", "41", "31", "32", "33", "34", "35", "36", "37", "38"];
+
+const DEFAULT_TOOTH_CONDITIONS = [
+  "Sound",
+  "Caries",
+  "Deep Caries",
+  "Reversible Pulpitis",
+  "Irreversible Pulpitis",
+  "Necrotic Pulp",
+  "Periapical Lesion",
+  "Fractured Tooth",
+  "Missing",
+  "Impacted",
+  "Mobility",
+  "Periodontal Pocket",
+  "Existing Restoration",
+  "Defective Restoration",
+];
+
+const DEFAULT_GENERAL_PROCEDURES = [
+  "فحص وتشخيص",
+  "تنظيف وتلميع",
+  "إزالة جير",
+  "حشو كومبوزت",
+  "حشو أملغم",
+  "حشو مؤقت",
+  "علاج عصب جلسة أولى",
+  "استكمال علاج عصب",
+  "حشو عصب",
+  "خلع بسيط",
+  "خلع جراحي",
+  "ترميم كسر",
+  "تاج مؤقت",
+  "تاج نهائي",
+  "جسر",
+  "تلبيسة زركون",
+  "تبييض",
+  "فلورايد",
+  "سد شقوق",
+  "استشارة",
+];
+
+const DEFAULT_MATERIALS = [
+  "Composite",
+  "Glass Ionomer",
+  "Amalgam",
+  "Temporary Filling",
+  "Zirconia",
+  "E.max",
+  "Metal Ceramic",
+  "Gutta Percha",
+  "MTA",
+  "Calcium Hydroxide",
+];
+
+const DEFAULT_ANESTHESIA = [
+  "بدون تخدير",
+  "تخدير موضعي",
+  "تخدير ارتشاحي",
+  "تخدير عصب سفلي",
+  "تخدير رباطي",
+];
+
+const DEFAULT_INSTRUCTIONS = [
+  "تجنب الأكل على الجهة المعالجة لمدة ساعتين",
+  "تجنب الأطعمة القاسية لمدة 24 ساعة",
+  "مراجعة عند حدوث ألم مستمر أو تورم",
+  "المحافظة على التفريش والخيط",
+  "الالتزام بالدواء حسب الوصفة",
+];
+
+function addUniqueOption(options: string[], value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || options.some(option => option.toLowerCase() === trimmed.toLowerCase())) return options;
+  return [...options, trimmed];
+}
+
+function toggleValue(values: string[], value: string) {
+  return values.includes(value) ? values.filter(v => v !== value) : [...values, value];
+}
+
+export interface GeneralDentistryPanelData {
+  toothNumber: string;
+  condition: string;
+  surfacesAffected: string;
+  diagnosis: string;
+  procedureType: string;
+  procedureDetails: string;
+  materialUsed: string;
+  anesthesiaType: string;
+  instructions: string;
+  nextVisitPlan: string;
+  serviceId: string;
+  cost: number;
+  treatmentSummary: string;
+  chartNotes: string;
+}
+
+export function GeneralDentistryPanel({
+  onClose, patient, services, onSave, isPending = false,
+}: {
+  onClose: () => void;
+  patient: DoctorPatientItem | null;
+  services: ServiceWithPrice[];
+  isPending?: boolean;
+  onSave: (data: GeneralDentistryPanelData) => Promise<void> | void;
+}) {
+  const [toothNumber, setToothNumber] = useState("");
+  const [condition, setCondition] = useState("Caries");
+  const [surfaces, setSurfaces] = useState<string[]>([]);
+  const [diagnosis, setDiagnosis] = useState("");
+  const [procedureType, setProcedureType] = useState("حشو كومبوزت");
+  const [procedureDetails, setProcedureDetails] = useState("");
+  const [materialUsed, setMaterialUsed] = useState("Composite");
+  const [anesthesiaType, setAnesthesiaType] = useState("تخدير موضعي");
+  const [instructions, setInstructions] = useState("");
+  const [nextVisitPlan, setNextVisitPlan] = useState("");
+  const [serviceId, setServiceId] = useState("");
+  const [cost, setCost] = useState(0);
+
+  const [conditionOptions, setConditionOptions] = useState(DEFAULT_TOOTH_CONDITIONS);
+  const [procedureOptions, setProcedureOptions] = useState(DEFAULT_GENERAL_PROCEDURES);
+  const [materialOptions, setMaterialOptions] = useState(DEFAULT_MATERIALS);
+  const [anesthesiaOptions, setAnesthesiaOptions] = useState(DEFAULT_ANESTHESIA);
+  const [customOption, setCustomOption] = useState("");
+  const [customOptionType, setCustomOptionType] = useState<"condition" | "procedure" | "material" | "anesthesia">("procedure");
+
+  const serviceMatches = useMemo(() => {
+    return services.filter(service => {
+      const name = service.arabicName.toLowerCase();
+      return /حشو|عصب|خلع|تنظيف|جير|تاج|تلبيس|فحص|استشارة|ترميم|تبييض|فلورايد/.test(name);
+    });
+  }, [services]);
+
+  const selectedService = serviceId ? services.find(service => service.id === serviceId) : undefined;
+  const canSave = !!toothNumber && !!condition && diagnosis.trim().length > 0 && procedureType.trim().length > 0;
+
+  const handleServiceChange = (value: string) => {
+    setServiceId(value);
+    const service = services.find(s => s.id === value);
+    if (!service) return;
+    if (service.defaultPrice != null) setCost(service.defaultPrice);
+    if (!procedureType.trim()) setProcedureType(service.arabicName);
+  };
+
+  const handleAddCustomOption = () => {
+    const trimmed = customOption.trim();
+    if (!trimmed) return;
+    if (customOptionType === "condition") {
+      setConditionOptions(prev => addUniqueOption(prev, trimmed));
+      setCondition(trimmed);
+    } else if (customOptionType === "procedure") {
+      setProcedureOptions(prev => addUniqueOption(prev, trimmed));
+      setProcedureType(trimmed);
+    } else if (customOptionType === "material") {
+      setMaterialOptions(prev => addUniqueOption(prev, trimmed));
+      setMaterialUsed(trimmed);
+    } else {
+      setAnesthesiaOptions(prev => addUniqueOption(prev, trimmed));
+      setAnesthesiaType(trimmed);
+    }
+    setCustomOption("");
+  };
+
+  const handleInstructionClick = (instruction: string) => {
+    setInstructions(prev => prev.trim() ? `${prev.trim()}\n${instruction}` : instruction);
+  };
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    const surfacesAffected = surfaces.join(",");
+    const selectedServiceText = selectedService ? `الخدمة المالية المقترحة: ${selectedService.arabicName}` : "";
+    const treatmentSummary = [
+      "طب الأسنان العام",
+      `السن ${toothNumber}`,
+      `الحالة: ${condition}`,
+      surfacesAffected ? `الأسطح: ${surfacesAffected}` : "",
+      `التشخيص: ${diagnosis.trim()}`,
+      `الإجراء: ${procedureType.trim()}`,
+      procedureDetails.trim() ? `التفاصيل: ${procedureDetails.trim()}` : "",
+      materialUsed.trim() ? `المادة: ${materialUsed.trim()}` : "",
+      anesthesiaType.trim() ? `التخدير: ${anesthesiaType.trim()}` : "",
+      selectedServiceText,
+    ].filter(Boolean).join(" | ");
+
+    const chartNotes = [
+      diagnosis.trim() ? `التشخيص: ${diagnosis.trim()}` : "",
+      procedureDetails.trim() ? `تفاصيل الإجراء: ${procedureDetails.trim()}` : "",
+      materialUsed.trim() ? `المادة المستخدمة: ${materialUsed.trim()}` : "",
+      anesthesiaType.trim() ? `التخدير: ${anesthesiaType.trim()}` : "",
+      instructions.trim() ? `تعليمات: ${instructions.trim()}` : "",
+      nextVisitPlan.trim() ? `الخطة القادمة: ${nextVisitPlan.trim()}` : "",
+    ].filter(Boolean).join("\n");
+
+    await onSave({
+      toothNumber,
+      condition,
+      surfacesAffected,
+      diagnosis: diagnosis.trim(),
+      procedureType: procedureType.trim(),
+      procedureDetails: procedureDetails.trim(),
+      materialUsed: materialUsed.trim(),
+      anesthesiaType: anesthesiaType.trim(),
+      instructions: instructions.trim(),
+      nextVisitPlan: nextVisitPlan.trim(),
+      serviceId,
+      cost: Number.isFinite(cost) ? cost : 0,
+      treatmentSummary,
+      chartNotes,
+    });
+  };
+
+  return (
+    <div className="p-5 space-y-4">
+      <div className="p-3 rounded-xl" style={{ background: "#f0fdfa" }}>
+        <div className="font-bold text-sm" style={{ color: NAVY }}>{patient?.patientName}</div>
+        <div className="text-xs mt-0.5" style={{ color: "#64748b" }}>
+          توثيق السن والتشخيص والإجراء وربطه بملف المريض والزيارة الحالية
+        </div>
+      </div>
+
+      <div>
+        <div className="text-xs font-bold mb-2" style={{ color: NAVY }}>اختيار السن بنظام FDI</div>
+        <div className="space-y-2 rounded-xl border border-[#e5e7eb] p-3">
+          {[UPPER_FDI_TEETH, LOWER_FDI_TEETH].map((row, rowIndex) => (
+            <div key={rowIndex} className="grid grid-cols-8 gap-1.5">
+              {row.map(tooth => (
+                <button
+                  key={tooth}
+                  type="button"
+                  onClick={() => setToothNumber(tooth)}
+                  className="h-8 rounded-lg text-xs font-extrabold border transition"
+                  style={{
+                    background: toothNumber === tooth ? BLUE : "#fff",
+                    color: toothNumber === tooth ? "#fff" : NAVY,
+                    borderColor: toothNumber === tooth ? BLUE : "#dbe3ef",
+                  }}
+                >
+                  {tooth}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>حالة السن *</label>
+          <select value={condition} onChange={e => setCondition(e.target.value)} className={inputCls()}>
+            {conditionOptions.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الإجراء *</label>
+          <select value={procedureType} onChange={e => setProcedureType(e.target.value)} className={inputCls()}>
+            {procedureOptions.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <div className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الأسطح المصابة</div>
+        <div className="flex flex-wrap gap-1.5">
+          {["M", "D", "O", "B", "L", "I", "Cervical"].map(surface => (
+            <button
+              key={surface}
+              type="button"
+              onClick={() => setSurfaces(prev => toggleValue(prev, surface))}
+              className="px-3 py-1.5 rounded-full text-xs font-bold border"
+              style={{
+                background: surfaces.includes(surface) ? "#eff6ff" : "#fff",
+                borderColor: surfaces.includes(surface) ? BLUE : "#dbe3ef",
+                color: surfaces.includes(surface) ? BLUE : "#475569",
+              }}
+            >
+              {surface}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>التشخيص السريري *</label>
+        <textarea value={diagnosis} onChange={e => setDiagnosis(e.target.value)}
+          rows={2} placeholder="مثال: تسوس عميق مع حساسية حرارية في السن 36" className={inputCls()} />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>تفاصيل الإجراء المنفذ</label>
+        <textarea value={procedureDetails} onChange={e => setProcedureDetails(e.target.value)}
+          rows={3} placeholder="مثال: إزالة التسوس، تبطين، حشو كومبوزت طبقي مع ضبط الإطباق" className={inputCls()} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المادة المستخدمة</label>
+          <select value={materialUsed} onChange={e => setMaterialUsed(e.target.value)} className={inputCls()}>
+            {materialOptions.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>التخدير</label>
+          <select value={anesthesiaType} onChange={e => setAnesthesiaType(e.target.value)} className={inputCls()}>
+            {anesthesiaOptions.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[#e5e7eb] p-3 space-y-2">
+        <div className="text-xs font-bold" style={{ color: NAVY }}>إضافة خيار مخصص للقوائم</div>
+        <div className="grid grid-cols-1 md:grid-cols-[150px_1fr_auto] gap-2">
+          <select value={customOptionType} onChange={e => setCustomOptionType(e.target.value as typeof customOptionType)} className={inputCls()}>
+            <option value="procedure">إجراء</option>
+            <option value="condition">حالة سن</option>
+            <option value="material">مادة</option>
+            <option value="anesthesia">تخدير</option>
+          </select>
+          <input value={customOption} onChange={e => setCustomOption(e.target.value)}
+            placeholder="اكتب خياراً جديداً لاستخدامه الآن" className={inputCls()} />
+          <button type="button" onClick={handleAddCustomOption} disabled={!customOption.trim()}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
+            style={{ background: BLUE }}>
+            إضافة
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الخدمة المالية المقترحة</label>
+          <select value={serviceId} onChange={e => handleServiceChange(e.target.value)} className={inputCls()}>
+            <option value="">بدون ربط خدمة مالية</option>
+            {serviceMatches.map(service => (
+              <option key={service.id} value={service.id}>
+                {service.arabicName}{service.defaultPrice ? ` — ${fmtRial(service.defaultPrice)}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>المبلغ المرجعي للتحصيل</label>
+          <input type="number" min={0} value={cost} onChange={e => setCost(Number(e.target.value))}
+            className={inputCls()} />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>تعليمات للمريض</label>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {DEFAULT_INSTRUCTIONS.map(instruction => (
+            <button key={instruction} type="button" onClick={() => handleInstructionClick(instruction)}
+              className="px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[#dbe3ef] bg-white text-[#475569]">
+              {instruction}
+            </button>
+          ))}
+        </div>
+        <textarea value={instructions} onChange={e => setInstructions(e.target.value)}
+          rows={3} placeholder="تعليمات مخصصة للمريض بعد الإجراء..." className={inputCls()} />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold block mb-1" style={{ color: NAVY }}>الخطة القادمة</label>
+        <textarea value={nextVisitPlan} onChange={e => setNextVisitPlan(e.target.value)}
+          rows={2} placeholder="مثال: مراجعة بعد أسبوع، استكمال علاج عصب، تركيب تاج..." className={inputCls()} />
+      </div>
+
+      <div className="p-2.5 rounded-lg flex items-start gap-2" style={{ background: "#fff7ed" }}>
+        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: ORANGE }} />
+        <span className="text-[11px] font-medium" style={{ color: "#92400e" }}>
+          الحفظ هنا يوثق طب الأسنان العام في مخطط الأسنان والعلاجات العامة ويضيف ملخصاً للزيارة. التحصيل الفعلي يبقى عند الاستقبال.
+        </span>
+      </div>
+
+      <div className="flex gap-2 pt-3">
+        <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+          style={{ background: "#f1f5f9", color: "#64748b" }}>إلغاء</button>
+        <button onClick={handleSave} disabled={!canSave || isPending}
+          className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+          style={{ background: "#0f766e", opacity: !canSave || isPending ? 0.5 : 1 }}>
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+          حفظ وتوثيق طب الأسنان العام
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PricedProceduresPanel({
   onClose, patient, services, currentTreatmentDone, onSave,
 }: {

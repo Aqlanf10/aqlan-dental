@@ -27,6 +27,8 @@ import {
   useDoctorCreatePrescription,
   useDoctorCreateLabOrder,
   useDoctorCreateFollowUpAppointment,
+  useDoctorUpdateToothCondition,
+  useDoctorCreateGeneralTreatment,
   type DoctorPatientItem,
   type ServiceWithPrice,
 } from "./_lib/hooks";
@@ -34,6 +36,7 @@ import {
 import {
   StartVisitPanel,
   ExaminationPanel,
+  GeneralDentistryPanel,
   PricedProceduresPanel,
   TreatmentPlanPanel,
   OrthoFollowUpPanel,
@@ -50,6 +53,7 @@ import {
 type PanelType =
   | "startVisit"
   | "examination"
+  | "generalDentistry"
   | "procedures"
   | "treatmentPlan"
   | "orthoFollowUp"
@@ -89,6 +93,14 @@ function buildPrescriptionDrugs(prescriptionText: string, instructions: string) 
 /* ═══════════════════════════════════════════════════════════════════════════
    Action card definitions
    ═══════════════════════════════════════════════════════════════════════════ */
+function appendClinicalText(existing: string, addition: string) {
+  const cleanExisting = existing.trim();
+  const cleanAddition = addition.trim();
+  if (!cleanAddition) return cleanExisting;
+  if (!cleanExisting) return cleanAddition;
+  return `${cleanExisting}\n${cleanAddition}`;
+}
+
 interface ActionCardDef {
   key: PanelType;
   label: string;
@@ -107,6 +119,15 @@ const ACTION_CARDS: ActionCardDef[] = [
     icon: FileText,
     color: "#2563eb",
     bgColor: "#eff6ff",
+    requiredStatus: ["InRoom", "InProgress"],
+  },
+  {
+    key: "generalDentistry",
+    label: "طب الأسنان العام",
+    description: "توثيق السن والإجراء",
+    icon: Stethoscope,
+    color: "#0f766e",
+    bgColor: "#f0fdfa",
     requiredStatus: ["InRoom", "InProgress"],
   },
   {
@@ -225,6 +246,8 @@ export default function DoctorClinicPage() {
   const createPrescriptionMutation = useDoctorCreatePrescription();
   const createLabOrderMutation = useDoctorCreateLabOrder();
   const createFollowUpMutation = useDoctorCreateFollowUpAppointment();
+  const updateToothMutation = useDoctorUpdateToothCondition();
+  const createGeneralTreatmentMutation = useDoctorCreateGeneralTreatment();
 
   // ── Selected patient ──
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatientItem | null>(null);
@@ -561,7 +584,7 @@ export default function DoctorClinicPage() {
                             <CardIcon className="w-4 h-4" style={{ color: card?.color ?? "#2563eb" }} />
                           </div>
                           <div>
-                            <h2 className="text-sm font-bold text-[#1a1a1a]">{PANEL_TITLES[activePanel ?? ""]}</h2>
+                            <h2 className="text-sm font-bold text-[#1a1a1a]">{PANEL_TITLES[activePanel ?? ""] ?? card?.label ?? ""}</h2>
                             <p className="text-[10px] text-[#9ca3af]">{selectedPatient.patientName}</p>
                           </div>
                         </>
@@ -585,6 +608,50 @@ export default function DoctorClinicPage() {
                         updateClinicalNotes({ diagnosis: parts || data.diagnosis, treatmentDone: data.treatmentDone || clinicalNotes.treatmentDone });
                         setActivePanel(null);
                         toast.success("تم حفظ الفحص والتشخيص");
+                      }}
+                    />
+                  )}
+                  {activePanel === "generalDentistry" && (
+                    <GeneralDentistryPanel
+                      patient={selectedPatient}
+                      services={services}
+                      isPending={updateToothMutation.isPending || createGeneralTreatmentMutation.isPending}
+                      onClose={() => setActivePanel(null)}
+                      onSave={async (data) => {
+                        if (!selectedPatient) return;
+
+                        await updateToothMutation.mutateAsync({
+                          patientId: selectedPatient.patientId,
+                          body: {
+                            toothNumber: data.toothNumber,
+                            condition: data.condition,
+                            surfacesAffected: data.surfacesAffected || null,
+                            treatmentDone: data.treatmentSummary,
+                            notes: data.chartNotes || null,
+                          },
+                        });
+
+                        await createGeneralTreatmentMutation.mutateAsync({
+                          patientId: selectedPatient.patientId,
+                          doctorId: selectedPatient.doctorId || undefined,
+                          toothNumber: data.toothNumber,
+                          treatmentType: data.procedureType,
+                          materialUsed: data.materialUsed || undefined,
+                          anesthesiaType: data.anesthesiaType || undefined,
+                          cost: data.cost > 0 ? data.cost : undefined,
+                          notes: data.chartNotes || data.treatmentSummary,
+                        });
+
+                        updateClinicalNotes({
+                          diagnosis: appendClinicalText(clinicalNotes.diagnosis, `[طب الأسنان العام] السن ${data.toothNumber}: ${data.diagnosis}`),
+                          treatmentDone: appendClinicalText(clinicalNotes.treatmentDone, data.treatmentSummary),
+                          instructions: data.instructions ? appendClinicalText(clinicalNotes.instructions, data.instructions) : clinicalNotes.instructions,
+                          nextVisitPlan: data.nextVisitPlan || clinicalNotes.nextVisitPlan,
+                          amountDue: clinicalNotes.amountDue + (data.cost || 0),
+                          suggestedServiceId: data.serviceId || clinicalNotes.suggestedServiceId,
+                        });
+                        setActivePanel(null);
+                        toast.success("تم حفظ طب الأسنان العام وربطه بملف المريض");
                       }}
                     />
                   )}

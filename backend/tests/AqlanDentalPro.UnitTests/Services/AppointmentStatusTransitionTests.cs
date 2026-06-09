@@ -185,10 +185,19 @@ public class AppointmentStatusTransitionTests
     }
 
     [Fact]
-    public void Arrived_ToCalled_IsInvalid()
+    public void Arrived_ToCalled_IsValid()
     {
+        // Direct call from Arrived (skip Waiting) — common when patient goes straight to doctor
         AppointmentStatusTransitions.IsValidTransition(AppointmentStatus.Arrived, AppointmentStatus.Called)
-            .Should().BeFalse();
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void Arrived_ToInRoom_IsValid()
+    {
+        // Direct entry to room from Arrived (skip Waiting/Called) — common when patient walks in
+        AppointmentStatusTransitions.IsValidTransition(AppointmentStatus.Arrived, AppointmentStatus.InRoom)
+            .Should().BeTrue();
     }
 
     [Fact]

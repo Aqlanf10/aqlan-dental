@@ -1048,15 +1048,28 @@ public class PatientJourneyController(
         if (!appointment.IsActive)
             return BadRequest(new { message = "الموعد محذوف" });
 
-        // Must be in InRoom or Called status
-        if (appointment.Status != AppointmentStatus.InRoom && appointment.Status != AppointmentStatus.Called)
+        // Must be in InRoom, Called, or Arrived (with queue in InRoom/Called) status
+        // FIX: Accept Arrived status because SyncAppointmentStatus can be blocked by transition rules,
+        // leaving appointment.Status=Arrived while queueStatus=InRoom/Called (divergence is expected per SEC-01).
+        var queueItemCheck = await db.ClinicQueueItems
+            .FirstOrDefaultAsync(q => q.AppointmentId == appointmentId
+                && q.IsActive
+                && q.Status != ClinicQueueStatus.Completed
+                && q.Status != ClinicQueueStatus.Cancelled);
+
+        var isInRoomOrCalled = appointment.Status == AppointmentStatus.InRoom || appointment.Status == AppointmentStatus.Called;
+        var isArrivedWithQueueInRoom = appointment.Status == AppointmentStatus.Arrived
+            && queueItemCheck != null
+            && (queueItemCheck.Status == ClinicQueueStatus.InRoom || queueItemCheck.Status == ClinicQueueStatus.Called);
+
+        if (!isInRoomOrCalled && !isArrivedWithQueueInRoom)
             return BadRequest(new { message = "يجب أن يكون المريض داخل الغرفة قبل بدء الزيارة" });
 
-        // FIX: If appointment is Called, transition to InRoom first since Called→InProgress is not a valid transition.
+        // FIX: If appointment is Arrived or Called, transition to InRoom first.
         // This ensures the appointment status stays in sync with the queue/visit progression.
-        if (appointment.Status == AppointmentStatus.Called)
+        if (appointment.Status == AppointmentStatus.Arrived || appointment.Status == AppointmentStatus.Called)
         {
-            if (AppointmentStatusTransitions.IsValidTransition(AppointmentStatus.Called, AppointmentStatus.InRoom))
+            if (AppointmentStatusTransitions.IsValidTransition(appointment.Status, AppointmentStatus.InRoom))
             {
                 appointment.Status = AppointmentStatus.InRoom;
                 appointment.UpdatedAt = DateTime.UtcNow;

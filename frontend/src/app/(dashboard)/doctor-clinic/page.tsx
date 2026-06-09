@@ -409,7 +409,22 @@ export default function DoctorClinicPage() {
   // ── Save visit button (F3: save structured fields to individual Visit fields) ──
   const handleSaveVisit = useCallback(async () => {
     if (!selectedPatient) { toast.error("اختر مريضاً أولاً"); return; }
-    if (!selectedPatient.visitId) { toast.error("لا توجد زيارة نشطة لحفظها"); return; }
+
+    // FIX: Auto-start visit if not yet started — simplifies the doctor's workflow
+    // so they can fill data first and save directly without needing to click "تسجيل الفحص" first.
+    if (!selectedPatient.visitId) {
+      try {
+        await startVisitMutation.mutateAsync(selectedPatient.appointmentId);
+        toast.success("تم بدء الزيارة وحفظ البيانات تلقائياً");
+        // After starting visit, the patient data refreshes with visitId —
+        // save will continue in the next render cycle via hasUnsavedClinicalNotes.
+        setHasUnsavedClinicalNotes(true);
+        return;
+      } catch {
+        toast.error("فشل بدء الزيارة — حاول مرة أخرى");
+        return;
+      }
+    }
 
     try {
       await updateVisitMutation.mutateAsync({
@@ -436,7 +451,7 @@ export default function DoctorClinicPage() {
     } catch {
       toast.error("فشل حفظ بيانات الزيارة — حاول مرة أخرى");
     }
-  }, [selectedPatient, updateVisitMutation, clinicalNotes]);
+  }, [selectedPatient, updateVisitMutation, clinicalNotes, startVisitMutation]);
 
   // ── Patient initials ──
   const getInitials = (name: string) => {
@@ -495,10 +510,10 @@ export default function DoctorClinicPage() {
               <span className="hidden lg:inline">تحديث</span>
             </button>
 
-            {/* Save */}
+            {/* Save — enabled even without visitId (auto-starts visit) */}
             <button
               onClick={handleSaveVisit}
-              disabled={updateVisitMutation.isPending || !selectedPatient?.visitId}
+              disabled={updateVisitMutation.isPending || startVisitMutation.isPending || !selectedPatient}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#444] hover:bg-[#f0f0f0] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Save className="w-3.5 h-3.5" />
@@ -587,11 +602,11 @@ export default function DoctorClinicPage() {
                 </div>
                 <button
                   onClick={handleSaveVisit}
-                  disabled={updateVisitMutation.isPending}
+                  disabled={updateVisitMutation.isPending || startVisitMutation.isPending}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-[#16a34a] hover:bg-[#15803d] disabled:opacity-50 transition-colors"
                 >
                   <Save className="w-3 h-3" />
-                  {updateVisitMutation.isPending ? "جار الحفظ..." : "حفظ في ملف المريض"}
+                  {(updateVisitMutation.isPending || startVisitMutation.isPending) ? "جار الحفظ..." : "حفظ في ملف المريض"}
                 </button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1.5">

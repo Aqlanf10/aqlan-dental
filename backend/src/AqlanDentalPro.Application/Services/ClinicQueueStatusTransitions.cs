@@ -9,7 +9,7 @@ namespace AqlanDentalPro.Application.Services;
 ///
 /// Transition map:
 ///   Waiting    → Called, InRoom, Cancelled, NoShow
-///   Called     → InRoom, Waiting, Cancelled, NoShow
+///   Called     → InRoom, InProgress, Waiting, Cancelled, NoShow
 ///   InRoom     → InProgress, Called, Cancelled
 ///   InProgress → Completed, Cancelled
 ///   Completed  → (terminal)
@@ -55,6 +55,7 @@ public static class ClinicQueueStatusTransitions
         [ClinicQueueStatus.Called] = new()
         {
             ClinicQueueStatus.InRoom,
+            ClinicQueueStatus.InProgress,  // Doctor starts visit directly from Called
             ClinicQueueStatus.Waiting,   // Return to waiting
             ClinicQueueStatus.Cancelled,
             ClinicQueueStatus.NoShow     // Called but didn't respond

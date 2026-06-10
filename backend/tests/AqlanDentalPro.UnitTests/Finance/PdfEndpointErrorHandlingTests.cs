@@ -1,5 +1,6 @@
+using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
-using Shouldly;
+using Xunit;
 
 namespace AqlanDentalPro.UnitTests.Finance;
 
@@ -20,12 +21,12 @@ public class PdfEndpointErrorHandlingTests
         var method = typeof(AqlanDentalPro.API.Controllers.PaymentsController)
             .GetMethod("GetPaymentPdf");
 
-        method.ShouldNotBeNull("GetPaymentPdf endpoint must exist");
+        method.Should().NotBeNull("GetPaymentPdf endpoint must exist");
 
         // The method body should contain proper error handling.
         // We verify this by checking the method exists and has the correct attribute.
         var attributes = method!.GetCustomAttributes(typeof(HttpGetAttribute), false);
-        attributes.ShouldNotBeEmpty("GetPaymentPdf must have [HttpGet] attribute");
+        attributes.Should().NotBeEmpty("GetPaymentPdf must have [HttpGet] attribute");
     }
 
     [Fact]
@@ -34,15 +35,15 @@ public class PdfEndpointErrorHandlingTests
         var method = typeof(AqlanDentalPro.API.Controllers.PaymentsController)
             .GetMethod("GetPaymentPdf");
 
-        method.ShouldNotBeNull();
+        method.Should().NotBeNull();
 
         var httpGetAttr = method!
             .GetCustomAttributes(typeof(HttpGetAttribute), false)
             .Cast<HttpGetAttribute>()
             .FirstOrDefault();
 
-        httpGetAttr.ShouldNotBeNull();
-        httpGetAttr!.Template.ShouldBe("payments/{id:guid}/pdf");
+        httpGetAttr.Should().NotBeNull();
+        httpGetAttr!.Template.Should().Be("payments/{id:guid}/pdf");
     }
 
     // ─── Invoice PDF (GET /api/invoices/{id}/pdf) ────────────────────────
@@ -53,15 +54,15 @@ public class PdfEndpointErrorHandlingTests
         var method = typeof(AqlanDentalPro.API.Controllers.InvoicesController)
             .GetMethod("GetInvoicePdf");
 
-        method.ShouldNotBeNull();
+        method.Should().NotBeNull();
 
         var httpGetAttr = method!
             .GetCustomAttributes(typeof(HttpGetAttribute), false)
             .Cast<HttpGetAttribute>()
             .FirstOrDefault();
 
-        httpGetAttr.ShouldNotBeNull();
-        httpGetAttr!.Template.ShouldBe("{id:guid}/pdf");
+        httpGetAttr.Should().NotBeNull();
+        httpGetAttr!.Template.Should().Be("{id:guid}/pdf");
     }
 
     [Fact]
@@ -73,11 +74,11 @@ public class PdfEndpointErrorHandlingTests
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>()
             .FirstOrDefault();
 
-        authAttr.ShouldNotBeNull("InvoicesController must have [Authorize] attribute");
-        authAttr!.Policy.ShouldBe("FinanceAccess");
+        authAttr.Should().NotBeNull("InvoicesController must have [Authorize] attribute");
+        authAttr!.Policy.Should().Be("FinanceAccess");
     }
 
-    // ─── Financial Statement PDF (GET /api/reports/pdf/financial-statement/{patientId}) ─
+    // ─── Financial Statement PDF (GET /api/reports/pdf/financial-statement/{patientId}) ──
 
     [Fact]
     public void FinancialStatementPdf_HasCorrectRoute()
@@ -85,15 +86,15 @@ public class PdfEndpointErrorHandlingTests
         var method = typeof(AqlanDentalPro.API.Controllers.ReportsController)
             .GetMethod("GetFinancialStatementPdf");
 
-        method.ShouldNotBeNull();
+        method.Should().NotBeNull();
 
         var httpGetAttr = method!
             .GetCustomAttributes(typeof(HttpGetAttribute), false)
             .Cast<HttpGetAttribute>()
             .FirstOrDefault();
 
-        httpGetAttr.ShouldNotBeNull();
-        httpGetAttr!.Template.ShouldBe("pdf/financial-statement/{patientId:guid}");
+        httpGetAttr.Should().NotBeNull();
+        httpGetAttr!.Template.Should().Be("pdf/financial-statement/{patientId:guid}");
     }
 
     [Fact]
@@ -105,8 +106,8 @@ public class PdfEndpointErrorHandlingTests
             .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>()
             .FirstOrDefault();
 
-        authAttr.ShouldNotBeNull("ReportsController must have [Authorize] attribute");
-        authAttr!.Policy.ShouldBe("ReportsAccess");
+        authAttr.Should().NotBeNull("ReportsController must have [Authorize] attribute");
+        authAttr!.Policy.Should().Be("ReportsAccess");
     }
 
     // ─── Patient Financial Statement PDF (GET /api/patients/{patientId}/financial-statement/pdf) ─
@@ -117,15 +118,15 @@ public class PdfEndpointErrorHandlingTests
         var method = typeof(AqlanDentalPro.API.Controllers.PaymentsController)
             .GetMethod("GetPatientFinancialStatementPdf");
 
-        method.ShouldNotBeNull();
+        method.Should().NotBeNull();
 
         var httpGetAttr = method!
             .GetCustomAttributes(typeof(HttpGetAttribute), false)
             .Cast<HttpGetAttribute>()
             .FirstOrDefault();
 
-        httpGetAttr.ShouldNotBeNull();
-        httpGetAttr!.Template.ShouldBe("patients/{patientId:guid}/financial-statement/pdf");
+        httpGetAttr.Should().NotBeNull();
+        httpGetAttr!.Template.Should().Be("patients/{patientId:guid}/financial-statement/pdf");
     }
 
     // ─── Lab Order PDF (GET /api/lab-orders/{id}/print) ──────────────────
@@ -136,15 +137,15 @@ public class PdfEndpointErrorHandlingTests
         var method = typeof(AqlanDentalPro.API.Controllers.LabOrdersController)
             .GetMethod("PrintPdf");
 
-        method.ShouldNotBeNull();
+        method.Should().NotBeNull();
 
         var httpGetAttr = method!
             .GetCustomAttributes(typeof(HttpGetAttribute), false)
             .Cast<HttpGetAttribute>()
             .FirstOrDefault();
 
-        httpGetAttr.ShouldNotBeNull();
-        httpGetAttr!.Template.ShouldBe("{id:guid}/print");
+        httpGetAttr.Should().NotBeNull();
+        httpGetAttr!.Template.Should().Be("{id:guid}/print");
     }
 
     // ─── PDF Service Font Registration ───────────────────────────────────
@@ -153,16 +154,16 @@ public class PdfEndpointErrorHandlingTests
     public void PdfService_HasArabicFontNameConstant()
     {
         var fontName = AqlanDentalPro.Infrastructure.Services.PdfService.ArabicFontName;
-        fontName.ShouldBe("NotoNaskhArabic");
+        fontName.Should().Be("NotoNaskhArabic");
     }
 
     [Fact]
-    public void PdfService_HasEnsureFontsRegisteredMethod()
+    public void PdfService_HasRegisterFontsMethod()
     {
         var method = typeof(AqlanDentalPro.Infrastructure.Services.PdfService)
-            .GetMethod("EnsureFontsRegistered", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            .GetMethod("RegisterFonts", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 
-        method.ShouldNotBeNull("PdfService must have public static EnsureFontsRegistered method");
+        method.Should().NotBeNull("PdfService must have static RegisterFonts method for Arabic font initialization");
     }
 
     // ─── Frontend PDF Download Utility Contract ──────────────────────────
@@ -173,16 +174,16 @@ public class PdfEndpointErrorHandlingTests
         // Verify the pdfDownload module has the expected exports.
         // The file should export: downloadPdfFromApi, openPdfFromApi, extractPdfError
         var frontendPath = Path.Combine(
-            TestContext.CurrentContext.TestDirectory, "..", "..", "..", "..", "..",
+            AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..",
             "frontend", "src", "lib", "pdfDownload.ts");
 
         // Skip if not in a dev environment with frontend source
         if (!File.Exists(frontendPath)) return;
 
         var content = File.ReadAllText(frontendPath);
-        content.ShouldContain("downloadPdfFromApi", "pdfDownload.ts must export downloadPdfFromApi");
-        content.ShouldContain("extractPdfError", "pdfDownload.ts must export extractPdfError");
-        content.ShouldContain("responseType", "pdfDownload.ts must use responseType: blob");
+        content.Should().Contain("downloadPdfFromApi", "pdfDownload.ts must export downloadPdfFromApi");
+        content.Should().Contain("extractPdfError", "pdfDownload.ts must export extractPdfError");
+        content.Should().Contain("responseType", "pdfDownload.ts must use responseType: blob");
     }
 
     // ─── QuestPDF Document Content Verification ─────────────────────────
@@ -192,21 +193,21 @@ public class PdfEndpointErrorHandlingTests
     {
         // Verify the PaymentReceiptDocument uses the Arabic font constant
         var docType = typeof(AqlanDentalPro.Infrastructure.Services.PaymentReceiptDocument);
-        docType.ShouldNotBeNull("PaymentReceiptDocument class must exist");
+        docType.Should().NotBeNull("PaymentReceiptDocument class must exist");
     }
 
     [Fact]
     public void InvoiceDocument_UsesArabicFont()
     {
         var docType = typeof(AqlanDentalPro.Infrastructure.Services.InvoiceDocument);
-        docType.ShouldNotBeNull("InvoiceDocument class must exist");
+        docType.Should().NotBeNull("InvoiceDocument class must exist");
     }
 
     [Fact]
     public void FinancialStatementDocument_UsesArabicFont()
     {
         var docType = typeof(AqlanDentalPro.Infrastructure.Services.FinancialStatementDocument);
-        docType.ShouldNotBeNull("FinancialStatementDocument class must exist");
+        docType.Should().NotBeNull("FinancialStatementDocument class must exist");
     }
 
     // ─── Arabic Error Message Constants ─────────────────────────────────
@@ -217,7 +218,7 @@ public class PdfEndpointErrorHandlingTests
         // This test verifies that the error messages used in PDF endpoints
         // are in Arabic. We check by reading the source files for key phrases.
         var backendSrcDir = Path.Combine(
-            TestContext.CurrentContext.TestDirectory, "..", "..", "..", "..", "..",
+            AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..",
             "backend", "src", "AqlanDentalPro.API", "Controllers");
 
         if (!Directory.Exists(backendSrcDir)) return;
@@ -226,7 +227,7 @@ public class PdfEndpointErrorHandlingTests
         if (File.Exists(paymentsController))
         {
             var content = File.ReadAllText(paymentsController);
-            content.ShouldContain("حدث خطأ غير متوقع أثناء إنشاء سند القبض",
+            content.Should().Contain("حدث خطأ غير متوقع أثناء إنشاء سند القبض",
                 "PaymentsController.GetPaymentPdf must return Arabic 500 message");
         }
 
@@ -234,7 +235,7 @@ public class PdfEndpointErrorHandlingTests
         if (File.Exists(invoicesController))
         {
             var content = File.ReadAllText(invoicesController);
-            content.ShouldContain("حدث خطأ غير متوقع أثناء إنشاء الفاتورة",
+            content.Should().Contain("حدث خطأ غير متوقع أثناء إنشاء الفاتورة",
                 "InvoicesController.GetInvoicePdf must return Arabic 500 message");
         }
     }

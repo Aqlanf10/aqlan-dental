@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Data;
 using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
@@ -112,8 +113,15 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
         catch (Exception ex)
         {
             logger.LogError(ex, "GetAll inventory failed");
+            var fallback = await TryGetInventoryReadFallbackAsync(category, lowStock, page, pageSize);
+            if (fallback is not null)
+            {
+                logger.LogWarning(ex, "Inventory list is using a schema-tolerant read fallback");
+                return Ok(fallback);
+            }
+
             logger.LogWarning(ex, "Inventory list is using an empty read fallback");
-            return Ok(new { data = Array.Empty<object>(), total = 0, page, pageSize, readFallback = true });
+            return Ok(new { data = Array.Empty<object>(), total = 0, page, pageSize, readFallback = true, fallbackReason = "schema-unavailable" });
         }
     }
 
@@ -121,6 +129,157 @@ public class InventoryController(AppDbContext db, ILogger<InventoryController> l
     {
         var pg = ex.InnerException as PostgresException;
         return pg?.SqlState is "42P01" or "42703" or "42804" or "42883" or "22P02";
+    }
+
+    private async Task<object?> TryGetInventoryReadFallbackAsync(string? category, bool? lowStock, int page, int pageSize)
+    {
+        try
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Max(1, Math.Min(pageSize, 100));
+
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+                await connection.OpenAsync();
+
+            var columns = await GetTableColumnsAsync(connection, "Inventory");
+            if (columns.Count == 0)
+                return new { data = Array.Empty<object>(), total = 0, page, pageSize, readFallback = true, fallbackReason = "table-missing" };
+
+            var selectColumns = new List<string>
+            {
+                ColumnOrNull(columns, "Id"),
+                ColumnOrNull(columns, "Name"),
+                ColumnOrNull(columns, "Category"),
+                ColumnOrNull(columns, "Quantity"),
+                ColumnOrNull(columns, "MinQuantity"),
+                ColumnOrNull(columns, "Unit"),
+                ColumnOrNull(columns, "CostPerUnit"),
+                ColumnOrNull(columns, "BatchNumber"),
+                ColumnOrNull(columns, "ExpiryDate"),
+                ColumnOrNull(columns, "DefaultSupplierId"),
+                ColumnOrNull(columns, "CreatedAt")
+            };
+
+            var where = new List<string>();
+            if (columns.Contains("IsActive"))
+                where.Add("\"IsActive\" = true");
+            if (!string.IsNullOrWhiteSpace(category) && columns.Contains("Category"))
+                where.Add("\"Category\" = @category");
+            if (lowStock == true && columns.Contains("Quantity") && columns.Contains("MinQuantity"))
+                where.Add("\"Quantity\" <= \"MinQuantity\"");
+
+            var whereSql = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+            var orderSql = columns.Contains("Category") && columns.Contains("Name")
+                ? "ORDER BY \"Category\" NULLS LAST, \"Name\""
+                : "ORDER BY 1";
+
+            var total = await ExecuteScalarIntAsync(connection, $"SELECT COUNT(*) FROM \"Inventory\" {whereSql}", category);
+            var sql = $"""
+                SELECT {string.Join(", ", selectColumns)}
+                FROM "Inventory"
+                {whereSql}
+                {orderSql}
+                OFFSET @offset LIMIT @limit
+                """;
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            AddParameter(command, "offset", (page - 1) * pageSize);
+            AddParameter(command, "limit", pageSize);
+            if (!string.IsNullOrWhiteSpace(category) && columns.Contains("Category"))
+                AddParameter(command, "category", category);
+
+            var items = new List<object>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var quantity = ReadInt(reader, 3);
+                var minQuantity = ReadInt(reader, 4);
+                items.Add(new
+                {
+                    Id = ReadString(reader, 0),
+                    Name = ReadString(reader, 1) ?? "",
+                    Category = ReadString(reader, 2),
+                    Quantity = quantity,
+                    MinQuantity = minQuantity,
+                    Unit = ReadString(reader, 5),
+                    CostPerUnit = ReadDecimal(reader, 6),
+                    BatchNumber = ReadString(reader, 7),
+                    ExpiryDate = ReadDateString(reader, 8),
+                    DefaultSupplierId = ReadString(reader, 9),
+                    IsLowStock = quantity <= minQuantity,
+                    CreatedAt = ReadDateString(reader, 10)
+                });
+            }
+
+            return new { data = items, total, page, pageSize, readFallback = true, fallbackReason = "schema-tolerant" };
+        }
+        catch (Exception fallbackEx)
+        {
+            logger.LogWarning(fallbackEx, "Inventory schema-tolerant read fallback failed");
+            return null;
+        }
+    }
+
+    private static async Task<HashSet<string>> GetTableColumnsAsync(System.Data.Common.DbConnection connection, string tableName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = @tableName
+            """;
+        AddParameter(command, "tableName", tableName);
+
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(0));
+        return columns;
+    }
+
+    private static string ColumnOrNull(HashSet<string> columns, string name) =>
+        columns.Contains(name) ? $"\"{name}\"" : $"NULL AS \"{name}\"";
+
+    private static async Task<int> ExecuteScalarIntAsync(System.Data.Common.DbConnection connection, string sql, string? category)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        if (sql.Contains("@category", StringComparison.Ordinal))
+            AddParameter(command, "category", category);
+        var value = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(value);
+    }
+
+    private static void AddParameter(System.Data.Common.DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value ?? DBNull.Value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static string? ReadString(System.Data.Common.DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : Convert.ToString(reader.GetValue(ordinal));
+
+    private static int ReadInt(System.Data.Common.DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal));
+
+    private static decimal? ReadDecimal(System.Data.Common.DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : Convert.ToDecimal(reader.GetValue(ordinal));
+
+    private static string? ReadDateString(System.Data.Common.DbDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+            return null;
+        var value = reader.GetValue(ordinal);
+        return value switch
+        {
+            DateOnly date => date.ToString("yyyy-MM-dd"),
+            DateTime dateTime => dateTime.ToString("yyyy-MM-dd"),
+            _ => Convert.ToString(value)
+        };
     }
 
     [HttpGet("categories")]

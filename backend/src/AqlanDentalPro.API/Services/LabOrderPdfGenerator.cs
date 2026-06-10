@@ -64,7 +64,7 @@ public static class LabOrderPdfGenerator
                 });
             });
 
-            column.PaddingVertical(5).LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.Item().PaddingVertical(5).LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
         });
     }
 

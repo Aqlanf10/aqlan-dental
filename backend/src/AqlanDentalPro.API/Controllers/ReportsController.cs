@@ -1131,7 +1131,7 @@ public class ReportsController(AppDbContext db, IPdfService pdfService, ILogger<
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error generating financial statement PDF for patient {PatientId}", patientId);
-            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء كشف الحساب" });
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء كشف الحساب", detail = ex.Message, type = ex.GetType().Name });
         }
     }
 

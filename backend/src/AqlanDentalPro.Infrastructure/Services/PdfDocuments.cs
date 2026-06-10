@@ -24,7 +24,6 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
         container
             .Page(page =>
             {
-                // A6: 105mm × 148mm — quarter A4
                 page.Size(105, 148, Unit.Millimetre);
                 page.Margin(0.5f, Unit.Centimetre);
                 page.PageColor(Colors.White);
@@ -41,38 +40,33 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
     {
         container.Column(column =>
         {
-            // Header row: logo placeholder on left, center name on right
+            column.Spacing(2);
+
+            // Header row: center name on right, logo on left
             column.Item().Row(row =>
             {
-                // Right: center name
                 row.RelativeItem().AlignRight().Column(col =>
                 {
-                    col.Item().Text("مركز الدكتور عقلان الكامل")
+                    col.Item().Text("مركز الدكتور عقلان الكامل لتقويم وزراعة وتجميل الأسنان")
                         .Bold().FontSize(9).FontColor("#1a3a5c");
-                    col.Item().Text("لتقويم وزراعة وتجميل الأسنان")
-                        .FontSize(7).FontColor("#1a3a5c");
                 });
-                // Left: logo image if exists, else empty
-                var logoPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png");
-                if (!File.Exists(logoPath))
-                {
-                    logoPath = Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png");
-                }
-                if (File.Exists(logoPath))
+
+                var logoPath = ResolveLogoPath();
+                if (logoPath != null)
                 {
                     row.ConstantItem(45).AlignLeft().Image(logoPath);
                 }
             });
-            column.Spacing(2);
+
             column.Item().LineHorizontal(0.5f).LineColor("#1a3a5c");
-            column.Spacing(3);
+
             column.Item().AlignCenter().Text("سند قبض")
                 .Bold().FontSize(12).FontColor("#f5922e");
-            column.Item().AlignCenter().Text($"رقم السند: {Payment.ReceiptNumber}")
+            column.Item().AlignCenter().Text($"رقم السند: {Payment.ReceiptNumber ?? "-"}")
                 .FontSize(7).FontColor(Colors.Grey.Darken1);
             column.Item().AlignCenter().Text($"التاريخ: {Payment.PaymentDate:yyyy-MM-dd}")
                 .FontSize(7).FontColor(Colors.Grey.Darken1);
-            column.Spacing(2);
+
             column.Item().LineHorizontal(0.5f).LineColor("#f5922e");
         });
     }
@@ -86,7 +80,7 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             // Patient info
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text($"اسم المريض:").SemiBold().FontSize(8).FontColor("#1a3a5c");
+                row.RelativeItem().Text("اسم المريض:").SemiBold().FontSize(8).FontColor("#1a3a5c");
                 row.RelativeItem().Text($"{Payment.Patient?.FirstName} {Payment.Patient?.MiddleName} {Payment.Patient?.LastName}").FontSize(8);
             });
 
@@ -94,14 +88,14 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             {
                 column.Item().Row(row =>
                 {
-                    row.RelativeItem().Text($"رقم الملف:").SemiBold().FontSize(8).FontColor("#1a3a5c");
+                    row.RelativeItem().Text("رقم الملف:").SemiBold().FontSize(8).FontColor("#1a3a5c");
                     row.RelativeItem().Text(Payment.Patient.PatientNumber).FontSize(8);
                 });
             }
 
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text($"الطبيب المعالج:").SemiBold().FontSize(8).FontColor("#1a3a5c");
+                row.RelativeItem().Text("الطبيب المعالج:").SemiBold().FontSize(8).FontColor("#1a3a5c");
                 row.RelativeItem().Text(Payment.Doctor?.Name ?? "غير محدد").FontSize(8);
             });
 
@@ -116,15 +110,12 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             };
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text($"طريقة الدفع:").SemiBold().FontSize(8).FontColor("#1a3a5c");
+                row.RelativeItem().Text("طريقة الدفع:").SemiBold().FontSize(8).FontColor("#1a3a5c");
                 row.RelativeItem().Text(methodLabel).FontSize(8);
             });
 
             // Service description
-            column.Spacing(2);
             column.Item().Text($"البيان: {Payment.ServiceDescription ?? "دفعة مالية"}").FontSize(8).FontColor(Colors.Grey.Darken2);
-            
-            column.Spacing(4);
 
             // Amount Box
             column.Item().AlignCenter().Background("#eef3f9").Border(1).BorderColor("#1a3a5c").Padding(6).Column(box =>
@@ -136,12 +127,10 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
             // Notes
             if (!string.IsNullOrEmpty(Payment.Notes))
             {
-                column.Spacing(3);
                 column.Item().Text($"ملاحظات: {Payment.Notes}").FontSize(7).FontColor(Colors.Grey.Darken1);
             }
 
             // Signatures
-            column.Spacing(10);
             column.Item().Row(row =>
             {
                 row.RelativeItem().AlignCenter().Column(col =>
@@ -167,14 +156,28 @@ public class PaymentReceiptDocument(AqlanDentalPro.Domain.Entities.Payment Payme
 
     void ComposeFooter(IContainer container)
     {
-        container.LineHorizontal(0.5f).LineColor("#f5922e");
-        container.PaddingTop(3).Column(column =>
+        container.Column(column =>
         {
-            column.Item().AlignCenter().Text("هاتف: 04-253028  |  تعز، اليمن — شارع التحرير الأعلى")
+            column.Item().LineHorizontal(0.5f).LineColor("#f5922e");
+            column.Item().PaddingTop(3).AlignCenter().Text("هاتف: 04-253028  |  تعز، اليمن — شارع التحرير الأعلى")
                 .FontSize(6).FontColor("#1a3a5c");
             column.Item().AlignCenter().Text("شكراً لثقتكم بنا — نتمنى لكم دوام الصحة والعافية")
                 .FontSize(6).FontColor(Colors.Grey.Darken1);
         });
+    }
+
+    private static string? ResolveLogoPath()
+    {
+        var paths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
+        };
+        foreach (var path in paths)
+        {
+            if (File.Exists(path)) return path;
+        }
+        return null;
     }
 }
 
@@ -210,6 +213,8 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
     {
         container.Column(column =>
         {
+            column.Spacing(4);
+
             column.Item().Row(row =>
             {
                 row.RelativeItem().AlignRight().Column(col =>
@@ -221,21 +226,17 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                     col.Item().Text("هاتف: 04-253028")
                         .FontSize(8).FontColor(Colors.Grey.Darken2);
                 });
-                // Left: logo image if exists, else empty
-                var logoPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png");
-                if (!File.Exists(logoPath))
-                {
-                    logoPath = Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png");
-                }
-                if (File.Exists(logoPath))
+
+                var logoPath = ResolveLogoPath();
+                if (logoPath != null)
                 {
                     row.ConstantItem(60).AlignLeft().Image(logoPath);
                 }
             });
-            column.Spacing(6);
+
             column.Item().AlignCenter().Text("كشف الحساب المالي للمريض")
                 .Bold().FontSize(16).FontColor("#f5922e");
-            column.Spacing(4);
+
             column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
         });
     }
@@ -245,7 +246,7 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
         container.PaddingVertical(0.4f, Unit.Centimetre).Column(column =>
         {
             column.Spacing(8);
-            
+
             // Patient details card
             column.Item().Row(row =>
             {
@@ -254,21 +255,16 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
                 row.RelativeItem().Text($"هاتف: {Patient.Phone ?? "غير متوفر"}");
             });
 
-            column.Spacing(8);
             column.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten2);
-            column.Spacing(8);
 
             // Cost summaries
             column.Item().Element(ComposeSummary);
-            column.Spacing(12);
 
             // History table
             column.Item().Text("سجل الحركات والدفعات").Bold().FontSize(11).FontColor("#1a3a5c");
-            column.Spacing(4);
             column.Item().Element(ComposePaymentsTable);
 
             // Signature block
-            column.Spacing(35);
             column.Item().Row(row =>
             {
                 row.RelativeItem().AlignCenter().Column(col =>
@@ -288,7 +284,7 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
 
     void ComposeSummary(IContainer container)
     {
-        var totalCost = Patient.Contracts.Where(c => c.Status == ContractStatus.Active).Sum(c => c.TotalAmount - c.DiscountAmount);
+        var totalCost = (Patient.Contracts ?? []).Where(c => c.Status == ContractStatus.Active).Sum(c => c.TotalAmount - c.DiscountAmount);
         var totalPaid = Payments.Sum(p => p.Amount);
         var remaining = totalCost - totalPaid;
 
@@ -317,11 +313,11 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
         {
             table.ColumnsDefinition(columns =>
             {
-                columns.ConstantColumn(70);   // Date
-                columns.ConstantColumn(80);   // Receipt
-                columns.ConstantColumn(70);   // Method
-                columns.RelativeColumn();     // Description
-                columns.ConstantColumn(95);   // Amount YER
+                columns.ConstantColumn(70);
+                columns.ConstantColumn(80);
+                columns.ConstantColumn(70);
+                columns.RelativeColumn();
+                columns.ConstantColumn(95);
             });
 
             table.Header(header =>
@@ -346,22 +342,38 @@ public class FinancialStatementDocument(AqlanDentalPro.Domain.Entities.Patient P
 
     void ComposeFooter(IContainer container)
     {
-        container.LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-        container.PaddingTop(4).Row(row =>
+        container.Column(column =>
         {
-            row.RelativeItem().Column(col =>
+            column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.Item().PaddingTop(4).Row(row =>
             {
-                col.Item().Text("مركز الدكتور عقلان الكامل — كشف الحساب المالي").FontSize(7).FontColor(Colors.Grey.Darken1);
-                col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontColor(Colors.Grey.Darken1);
+                row.RelativeItem().Column(col =>
+                {
+                    col.Item().Text("مركز الدكتور عقلان الكامل — كشف الحساب المالي").FontSize(7).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontColor(Colors.Grey.Darken1);
+                });
+                row.ConstantItem(120).Text($"طبع في: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(6).FontColor(Colors.Grey.Lighten1);
             });
-            row.ConstantItem(120).Text($"طبع في: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(6).FontColor(Colors.Grey.Lighten1);
         });
+    }
+
+    private static string? ResolveLogoPath()
+    {
+        var paths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
+        };
+        foreach (var path in paths)
+        {
+            if (File.Exists(path)) return path;
+        }
+        return null;
     }
 }
 
 /// <summary>
 /// QuestPDF document for printing invoices with Arabic/RTL support.
-/// Uses NotoNaskhArabic font registered in PdfService.
 /// </summary>
 public class InvoiceDocument(Invoice Invoice) : IDocument
 {
@@ -395,6 +407,8 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
     {
         container.Column(column =>
         {
+            column.Spacing(4);
+
             column.Item().Row(row =>
             {
                 row.RelativeItem().AlignRight().Column(col =>
@@ -406,23 +420,19 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
                     col.Item().Text("هاتف: 04-253028")
                         .FontSize(8).FontFamily(FontName).FontColor(Colors.Grey.Darken2);
                 });
-                // Left: logo image if exists, else empty
-                var logoPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png");
-                if (!File.Exists(logoPath))
-                {
-                    logoPath = Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png");
-                }
-                if (File.Exists(logoPath))
+
+                var logoPath = ResolveLogoPath();
+                if (logoPath != null)
                 {
                     row.ConstantItem(60).AlignLeft().Image(logoPath);
                 }
             });
-            column.Spacing(6);
+
             column.Item().AlignCenter().Text("فاتورة")
                 .Bold().FontSize(20).FontFamily(FontName).FontColor("#1a3a5c");
             column.Item().AlignCenter().Text(Invoice.InvoiceNumber)
                 .FontSize(10).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
-            column.Spacing(4);
+
             column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
         });
     }
@@ -460,16 +470,11 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
                 });
             });
 
-            column.Spacing(8);
             column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-            column.Spacing(8);
 
             // Line items table
             column.Item().Text("بنود الفاتورة").SemiBold().FontSize(12).FontFamily(FontName);
-            column.Spacing(4);
             column.Item().Element(ComposeLineItemsTable);
-
-            column.Spacing(12);
 
             // Totals
             column.Item().Element(ComposeTotals);
@@ -477,13 +482,11 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
             // Notes
             if (!string.IsNullOrEmpty(Invoice.Notes))
             {
-                column.Spacing(12);
                 column.Item().Text($"ملاحظات: {Invoice.Notes}")
                     .FontSize(9).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
             }
 
             // Signature area
-            column.Spacing(40);
             column.Item().Row(row =>
             {
                 row.RelativeItem().AlignCenter().Column(col =>
@@ -513,12 +516,12 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
         {
             table.ColumnsDefinition(columns =>
             {
-                columns.ConstantColumn(40);   // #
-                columns.RelativeColumn(2);     // Service
-                columns.RelativeColumn(2);     // Description
-                columns.ConstantColumn(50);    // Qty
-                columns.ConstantColumn(80);    // Unit Price
-                columns.ConstantColumn(80);    // Total
+                columns.ConstantColumn(40);
+                columns.RelativeColumn(2);
+                columns.RelativeColumn(2);
+                columns.ConstantColumn(50);
+                columns.ConstantColumn(80);
+                columns.ConstantColumn(80);
             });
 
             table.Header(header =>
@@ -552,6 +555,7 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
         container.AlignLeft().Column(column =>
         {
             column.Spacing(4);
+
             column.Item().Row(row =>
             {
                 row.ConstantItem(120).Text("المجموع الفرعي:").FontFamily(FontName);
@@ -577,6 +581,7 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
             }
 
             column.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
+
             column.Item().Row(row =>
             {
                 row.ConstantItem(120).Text("الإجمالي:").Bold().FontFamily(FontName).FontSize(12);
@@ -602,15 +607,32 @@ public class InvoiceDocument(Invoice Invoice) : IDocument
 
     void ComposeFooter(IContainer container)
     {
-        container.LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-        container.PaddingTop(5).Row(row =>
+        container.Column(column =>
         {
-            row.RelativeItem().Column(col =>
+            column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.Item().PaddingTop(5).Row(row =>
             {
-                col.Item().Text("مركز الدكتور عقلان الكامل — فاتورة").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
-                col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                row.RelativeItem().Column(col =>
+                {
+                    col.Item().Text("مركز الدكتور عقلان الكامل — فاتورة").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                    col.Item().Text("شكراً لثقتكم بنا").FontSize(7).FontFamily(FontName).FontColor(Colors.Grey.Darken1);
+                });
+                row.ConstantItem(120).Text($"طبعت: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(7).FontColor(Colors.Grey.Lighten1);
             });
-            row.ConstantItem(120).Text($"طبعت: {DateTime.UtcNow:yyyy-MM-dd HH:mm}").FontSize(7).FontColor(Colors.Grey.Lighten1);
         });
+    }
+
+    private static string? ResolveLogoPath()
+    {
+        var paths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Fonts", "logo.png"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "logo.png"),
+        };
+        foreach (var path in paths)
+        {
+            if (File.Exists(path)) return path;
+        }
+        return null;
     }
 }

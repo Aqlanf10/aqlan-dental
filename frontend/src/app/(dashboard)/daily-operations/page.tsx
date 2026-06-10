@@ -351,19 +351,12 @@ export default function DailyOperationsPage() {
       return;
     }
     try {
-      const { data } = await api.get(`/api/payments/${latestPaymentId}/pdf`, {
-        responseType: "blob",
-      });
-      const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
-      const link = document.createElement("a");
-      link.href = url;
+      const { downloadPdfFromApi } = await import("@/lib/pdfDownload");
       const receiptNum = selectedSummary?.financeSummary?.latestPayment?.receiptNumber ?? latestPaymentId;
-      link.download = `receipt-${receiptNum}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      getApiErrorMessage(error, "");
-      toast.error("فشل تحميل سند الدفع");
+      await downloadPdfFromApi(`/api/payments/${latestPaymentId}/pdf`, `receipt-${receiptNum}.pdf`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "خطأ";
+      toast.error(`فشل تحميل سند الدفع: ${reason}`);
     }
   }, [getActiveItem, selectedSummary]);
 
@@ -757,15 +750,9 @@ export default function DailyOperationsPage() {
 
       if (result?.id) {
         try {
-          const { data } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, {
-            responseType: "blob",
-          }));
-          const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = `receipt-${result.receiptNumber || result.id}.pdf`;
-          link.click();
-          window.URL.revokeObjectURL(url);
+          const { downloadPdfFromApi } = await import("@/lib/pdfDownload");
+          const filename = `receipt-${result.receiptNumber || result.id}.pdf`;
+          await downloadPdfFromApi(`/api/payments/${result.id}/pdf`, filename);
         } catch {
           // PDF download failed, user can still download manually
         }
@@ -956,15 +943,9 @@ export default function DailyOperationsPage() {
       // Try to download PDF receipt
       if (result?.id) {
         try {
-          const { data: pdfData } = await import("@/lib/api").then(m => m.default.get(`/api/payments/${result.id}/pdf`, {
-            responseType: "blob",
-          }));
-          const url = window.URL.createObjectURL(new Blob([pdfData], { type: "application/pdf" }));
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = `receipt-${result.receiptNumber || result.id}.pdf`;
-          link.click();
-          window.URL.revokeObjectURL(url);
+          const { downloadPdfFromApi } = await import("@/lib/pdfDownload");
+          const filename = `receipt-${result.receiptNumber || result.id}.pdf`;
+          await downloadPdfFromApi(`/api/payments/${result.id}/pdf`, filename);
         } catch {
           // PDF download failed, user can still download manually
         }
@@ -2138,17 +2119,12 @@ function PatientDetailPanel({
               {finance.latestPayment?.id && (
                 <button onClick={async () => {
                   try {
-                    const { data } = await api.get(`/api/payments/${finance.latestPayment!.id}/pdf`, {
-                      responseType: "blob",
-                    });
-                    const url = window.URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
-                    const link = document.createElement("a");
-                    link.href = url;
-                    link.download = `receipt-${finance.latestPayment!.receiptNumber || finance.latestPayment!.id}.pdf`;
-                    link.click();
-                    window.URL.revokeObjectURL(url);
-                  } catch {
-                    toast.error("فشل تحميل السند");
+                    const { downloadPdfFromApi } = await import("@/lib/pdfDownload");
+                    const filename = `receipt-${finance.latestPayment!.receiptNumber || finance.latestPayment!.id}.pdf`;
+                    await downloadPdfFromApi(`/api/payments/${finance.latestPayment!.id}/pdf`, filename);
+                  } catch (err) {
+                    const reason = err instanceof Error ? err.message : "خطأ";
+                    toast.error(`فشل تحميل السند: ${reason}`);
                   }
                 }}
                   className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold transition hover:bg-purple-100"

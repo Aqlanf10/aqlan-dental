@@ -123,6 +123,11 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
             logger.LogWarning(ex, "Financial statement PDF generation failed for patient {PatientId}", patientId);
             return NotFound(new { message = ex.Message });
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error generating financial statement PDF for patient {PatientId}", patientId);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء كشف الحساب" });
+        }
     }
 
     [HttpGet("payments/{id:guid}/pdf")]
@@ -137,6 +142,11 @@ public class PaymentsController(IFinanceService service, IPdfService pdfService,
         {
             logger.LogWarning(ex, "Payment receipt PDF generation failed for payment {PaymentId}", id);
             return NotFound(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error generating payment receipt PDF for payment {PaymentId}", id);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء سند القبض" });
         }
     }
 }

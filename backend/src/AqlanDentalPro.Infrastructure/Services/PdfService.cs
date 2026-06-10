@@ -40,14 +40,23 @@ public class PdfService : IPdfService
             Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "NotoNaskhArabic-Regular.ttf"),
         };
 
+        var fontRegistered = false;
         foreach (var path in fontPaths)
         {
             if (File.Exists(path))
             {
                 using var stream = File.OpenRead(path);
                 FontManager.RegisterFont(stream);
+                fontRegistered = true;
+                Console.WriteLine($"[PdfService] Arabic font registered from: {path}");
                 break;
             }
+        }
+
+        if (!fontRegistered)
+        {
+            Console.Error.WriteLine($"[PdfService] WARNING: Arabic font 'NotoNaskhArabic-Regular.ttf' not found in any search path. " +
+                $"PDF Arabic text will render with fallback font. Searched: {string.Join(", ", fontPaths)}");
         }
     }
 

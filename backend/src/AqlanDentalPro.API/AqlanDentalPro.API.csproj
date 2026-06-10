@@ -24,4 +24,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+  <!-- Ensure font files and logo are copied to API output for QuestPDF at runtime -->
+  <ItemGroup>
+    <Content Include="..\..\Fonts\**" CopyToOutputDirectory="PreserveNewest" LinkBase="Fonts\" />
+  </ItemGroup>
 </Project>

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Data;
 using Npgsql;
 
 namespace AqlanDentalPro.API.Controllers;
@@ -204,8 +205,15 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
         catch (Exception ex)
         {
             logger.LogError(ex, "GetAll purchase orders failed");
+            var fallback = await TryGetPurchaseOrdersReadFallbackAsync(status, supplierId, page, pageSize);
+            if (fallback is not null)
+            {
+                logger.LogWarning(ex, "Purchase orders list is using a schema-tolerant read fallback");
+                return Ok(fallback);
+            }
+
             logger.LogWarning(ex, "Purchase orders list is using an empty read fallback");
-            return Ok(new { data = Array.Empty<object>(), total = 0, page, pageSize, readFallback = true });
+            return Ok(new { data = Array.Empty<object>(), total = 0, page, pageSize, readFallback = true, fallbackReason = "schema-unavailable" });
         }
     }
 
@@ -213,6 +221,166 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
     {
         var pg = ex.InnerException as PostgresException;
         return pg?.SqlState is "42P01" or "42703" or "42804" or "42883" or "22P02";
+    }
+
+    private async Task<object?> TryGetPurchaseOrdersReadFallbackAsync(string? status, Guid? supplierId, int page, int pageSize)
+    {
+        try
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Max(1, Math.Min(pageSize, 100));
+
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+                await connection.OpenAsync();
+
+            var orderColumns = await GetTableColumnsAsync(connection, "PurchaseOrders");
+            if (orderColumns.Count == 0)
+                return new { data = Array.Empty<object>(), total = 0, page, pageSize, readFallback = true, fallbackReason = "table-missing" };
+
+            var supplierColumns = await GetTableColumnsAsync(connection, "Suppliers");
+            var lineItemColumns = await GetTableColumnsAsync(connection, "PurchaseOrderLineItems");
+            var hasSuppliers = supplierColumns.Count > 0;
+            var hasLineItems = lineItemColumns.Count > 0;
+
+            var where = new List<string>();
+            if (orderColumns.Contains("IsActive"))
+                where.Add("po.\"IsActive\" = true");
+            if (!string.IsNullOrWhiteSpace(status) && orderColumns.Contains("Status"))
+                where.Add("po.\"Status\"::text = @status");
+            if (supplierId.HasValue && orderColumns.Contains("SupplierId"))
+                where.Add("po.\"SupplierId\" = @supplierId");
+
+            var whereSql = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+            var supplierJoin = hasSuppliers && orderColumns.Contains("SupplierId")
+                ? "LEFT JOIN \"Suppliers\" s ON s.\"Id\" = po.\"SupplierId\""
+                : "";
+            var lineItemCountSql = hasLineItems && lineItemColumns.Contains("PurchaseOrderId")
+                ? "(SELECT COUNT(*) FROM \"PurchaseOrderLineItems\" li WHERE li.\"PurchaseOrderId\" = po.\"Id\")"
+                : "0";
+            var orderBy = orderColumns.Contains("CreatedAt") ? "ORDER BY po.\"CreatedAt\" DESC" : "ORDER BY po.\"Id\"";
+
+            var total = await ExecuteScalarIntAsync(connection, $"SELECT COUNT(*) FROM \"PurchaseOrders\" po {whereSql}", status, supplierId);
+            var sql = $"""
+                SELECT
+                    {ColumnOrNull(orderColumns, "Id", "po")},
+                    {ColumnOrNull(orderColumns, "OrderNumber", "po")},
+                    {ColumnOrNull(orderColumns, "SupplierId", "po")},
+                    {(hasSuppliers && supplierColumns.Contains("Name") ? "s.\"Name\"" : "NULL AS \"SupplierName\"")},
+                    {(orderColumns.Contains("Status") ? "po.\"Status\"::text AS \"Status\"" : "NULL AS \"Status\"")},
+                    {ColumnOrNull(orderColumns, "OrderDate", "po")},
+                    {ColumnOrNull(orderColumns, "ExpectedDate", "po")},
+                    {ColumnOrNull(orderColumns, "TotalAmount", "po")},
+                    {lineItemCountSql} AS "LineItemCount",
+                    {ColumnOrNull(orderColumns, "CreatedAt", "po")},
+                    {ColumnOrNull(orderColumns, "UpdatedAt", "po")}
+                FROM "PurchaseOrders" po
+                {supplierJoin}
+                {whereSql}
+                {orderBy}
+                OFFSET @offset LIMIT @limit
+                """;
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            AddParameter(command, "offset", (page - 1) * pageSize);
+            AddParameter(command, "limit", pageSize);
+            if (!string.IsNullOrWhiteSpace(status) && orderColumns.Contains("Status"))
+                AddParameter(command, "status", status);
+            if (supplierId.HasValue && orderColumns.Contains("SupplierId"))
+                AddParameter(command, "supplierId", supplierId.Value);
+
+            var orders = new List<object>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var statusText = ReadString(reader, 4);
+                orders.Add(new
+                {
+                    Id = ReadString(reader, 0),
+                    OrderNumber = ReadString(reader, 1) ?? "",
+                    SupplierId = ReadString(reader, 2),
+                    SupplierName = ReadString(reader, 3) ?? "",
+                    Status = statusText,
+                    StatusArabic = GetStatusArabic(statusText),
+                    OrderDate = ReadDateString(reader, 5),
+                    ExpectedDate = ReadDateString(reader, 6),
+                    TotalAmount = ReadDecimal(reader, 7) ?? 0m,
+                    LineItemCount = ReadInt(reader, 8),
+                    CreatedAt = ReadDateString(reader, 9),
+                    UpdatedAt = ReadDateString(reader, 10)
+                });
+            }
+
+            return new { data = orders, total, page, pageSize, readFallback = true, fallbackReason = "schema-tolerant" };
+        }
+        catch (Exception fallbackEx)
+        {
+            logger.LogWarning(fallbackEx, "Purchase orders schema-tolerant read fallback failed");
+            return null;
+        }
+    }
+
+    private static async Task<HashSet<string>> GetTableColumnsAsync(System.Data.Common.DbConnection connection, string tableName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = @tableName
+            """;
+        AddParameter(command, "tableName", tableName);
+
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(0));
+        return columns;
+    }
+
+    private static string ColumnOrNull(HashSet<string> columns, string name, string alias) =>
+        columns.Contains(name) ? $"{alias}.\"{name}\"" : $"NULL AS \"{name}\"";
+
+    private static async Task<int> ExecuteScalarIntAsync(System.Data.Common.DbConnection connection, string sql, string? status, Guid? supplierId)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        if (sql.Contains("@status", StringComparison.Ordinal))
+            AddParameter(command, "status", status);
+        if (sql.Contains("@supplierId", StringComparison.Ordinal) && supplierId.HasValue)
+            AddParameter(command, "supplierId", supplierId.Value);
+        var value = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(value);
+    }
+
+    private static void AddParameter(System.Data.Common.DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value ?? DBNull.Value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static string? ReadString(System.Data.Common.DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : Convert.ToString(reader.GetValue(ordinal));
+
+    private static int ReadInt(System.Data.Common.DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? 0 : Convert.ToInt32(reader.GetValue(ordinal));
+
+    private static decimal? ReadDecimal(System.Data.Common.DbDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : Convert.ToDecimal(reader.GetValue(ordinal));
+
+    private static string? ReadDateString(System.Data.Common.DbDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+            return null;
+        var value = reader.GetValue(ordinal);
+        return value switch
+        {
+            DateOnly date => date.ToString("yyyy-MM-dd"),
+            DateTime dateTime => dateTime.ToString("yyyy-MM-dd"),
+            _ => Convert.ToString(value)
+        };
     }
 
     // ─── 2. GET /api/purchase-orders/{id} — Get PO with line items ──────
@@ -632,6 +800,11 @@ public class PurchaseOrdersController(AppDbContext db, ILogger<PurchaseOrdersCon
         PurchaseOrderStatus.Cancelled => "ملغى",
         _ => status.ToString()
     };
+
+    private static string GetStatusArabic(string? status) =>
+        Enum.TryParse<PurchaseOrderStatus>(status, true, out var parsed)
+            ? GetStatusArabic(parsed)
+            : status ?? "";
 
     /// <summary>Generates a unique purchase order number: PO-yyyyMMdd-NNN.</summary>
     private static async Task<string> GenerateOrderNumberAsync(AppDbContext db)

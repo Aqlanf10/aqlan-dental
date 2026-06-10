@@ -7,14 +7,20 @@ namespace AqlanDentalPro.API.Services;
 
 /// <summary>
 /// Lab Sprint 5 — Generates PDF for lab orders using QuestPDF.
+/// Uses the same Arabic font (NotoNaskhArabic) registered by PdfService.
 /// </summary>
 public static class LabOrderPdfGenerator
 {
+    // Use the same Arabic font as other PDF documents for consistency
+    private const string FontName = AqlanDentalPro.Infrastructure.Services.PdfService.ArabicFontName;
+
     public static byte[] Generate(LabOrder order, string clinicName, string clinicPhone, string clinicAddress)
     {
         QuestPDF.Settings.License = LicenseType.Community;
 
-        var culture = new System.Globalization.CultureInfo("ar-SA");
+        // Ensure fonts are registered before generating
+        AqlanDentalPro.Infrastructure.Services.PdfService.EnsureFontsRegistered();
+
         var items = order.Items?.OrderBy(i => i.SortOrder).ToList() ?? [];
 
         var doc = QuestPDF.Fluent.Document.Create(container =>
@@ -24,7 +30,8 @@ public static class LabOrderPdfGenerator
                 page.Size(PageSizes.A4);
                 page.Margin(1, Unit.Centimetre);
                 page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Tajawal"));
+                page.ContentFromRightToLeft();
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily(FontName));
 
                 page.Header().Element(compose => ComposeHeader(compose, order, clinicName, clinicPhone, clinicAddress));
                 page.Content().Element(compose => ComposeContent(compose, order, items));
@@ -37,25 +44,28 @@ public static class LabOrderPdfGenerator
 
     private static void ComposeHeader(IContainer container, LabOrder order, string clinicName, string clinicPhone, string clinicAddress)
     {
-        container.Row(row =>
+        container.Column(column =>
         {
-            row.RelativeItem().Column(column =>
+            column.Item().Row(row =>
             {
-                column.Item().Text(clinicName).Bold().FontSize(14);
-                column.Item().Text(clinicPhone).FontSize(9);
-                column.Item().Text(clinicAddress).FontSize(9);
+                row.RelativeItem().Column(col =>
+                {
+                    col.Item().Text(clinicName).Bold().FontSize(14).FontFamily(FontName);
+                    col.Item().Text(clinicPhone).FontSize(9).FontFamily(FontName);
+                    col.Item().Text(clinicAddress).FontSize(9).FontFamily(FontName);
+                });
+                row.ConstantItem(130).Element(compose => ComposeTrackingCode(compose, order.OrderNumber ?? order.Id.ToString("N")));
+                row.RelativeItem().AlignRight().Column(col =>
+                {
+                    col.Item().Text("أمر عمل معمل").Bold().FontSize(16).FontFamily(FontName);
+                    col.Item().Text($"رقم الطلب: {order.OrderNumber}").FontSize(10).FontFamily(FontName);
+                    col.Item().Text($"التاريخ: {order.SentDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.ToString("yyyy-MM-dd")}").FontSize(9).FontFamily(FontName);
+                    col.Item().Text($"الأولوية: {order.Priority}").FontSize(9).FontFamily(FontName);
+                });
             });
-            row.ConstantItem(130).Element(compose => ComposeTrackingCode(compose, order.OrderNumber ?? order.Id.ToString("N")));
-            row.RelativeItem().AlignRight().Column(column =>
-            {
-                column.Item().Text($"أمر عمل معمل").Bold().FontSize(16);
-                column.Item().Text($"رقم الطلب: {order.OrderNumber}").FontSize(10);
-                column.Item().Text($"التاريخ: {order.SentDate?.ToString("yyyy-MM-dd") ?? DateTime.Today.ToString("yyyy-MM-dd")}").FontSize(9);
-                column.Item().Text($"الأولوية: {order.Priority}").FontSize(9);
-            });
-        });
 
-        container.PaddingVertical(5).LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.PaddingVertical(5).LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+        });
     }
 
     private static void ComposeTrackingCode(IContainer container, string value)
@@ -76,7 +86,7 @@ public static class LabOrderPdfGenerator
                     row.ConstantItem(1).Background(Colors.White);
                 }
             });
-            column.Item().AlignCenter().Text(value).FontSize(8).Bold();
+            column.Item().AlignCenter().Text(value).FontSize(8).Bold().FontFamily(FontName);
         });
     }
 
@@ -91,17 +101,17 @@ public static class LabOrderPdfGenerator
             {
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text("بيانات المريض").Bold().FontSize(11);
-                    col.Item().Text($"الاسم: {order.Patient?.FirstName} {order.Patient?.LastName}");
-                    col.Item().Text($"رقم الملف: {order.Patient?.PatientNumber}");
-                    col.Item().Text($"الطبيب: {order.Doctor?.Name ?? "—"}");
+                    col.Item().Text("بيانات المريض").Bold().FontSize(11).FontFamily(FontName);
+                    col.Item().Text($"الاسم: {order.Patient?.FirstName} {order.Patient?.LastName}").FontFamily(FontName);
+                    col.Item().Text($"رقم الملف: {order.Patient?.PatientNumber}").FontFamily(FontName);
+                    col.Item().Text($"الطبيب: {order.Doctor?.Name ?? "—"}").FontFamily(FontName);
                 });
                 row.RelativeItem().Column(col =>
                 {
-                    col.Item().Text("بيانات المعمل").Bold().FontSize(11);
-                    col.Item().Text($"الاسم: {order.Lab?.Name ?? order.LabName ?? "—"}");
-                    col.Item().Text($"الهاتف: {order.Lab?.Phone ?? "—"}");
-                    col.Item().Text($"تاريخ الاستلام المتوقع: {order.ExpectedDate?.ToString("yyyy-MM-dd") ?? "—"}");
+                    col.Item().Text("بيانات المعمل").Bold().FontSize(11).FontFamily(FontName);
+                    col.Item().Text($"الاسم: {order.Lab?.Name ?? order.LabName ?? "—"}").FontFamily(FontName);
+                    col.Item().Text($"الهاتف: {order.Lab?.Phone ?? "—"}").FontFamily(FontName);
+                    col.Item().Text($"تاريخ الاستلام المتوقع: {order.ExpectedDate?.ToString("yyyy-MM-dd") ?? "—"}").FontFamily(FontName);
                 });
             });
 
@@ -109,7 +119,7 @@ public static class LabOrderPdfGenerator
             if (items.Count > 0)
             {
                 column.Spacing(5);
-                column.Item().Text("بنود العمل").Bold().FontSize(11);
+                column.Item().Text("بنود العمل").Bold().FontSize(11).FontFamily(FontName);
 
                 column.Item().Table(table =>
                 {
@@ -126,25 +136,25 @@ public static class LabOrderPdfGenerator
 
                     table.Header(header =>
                     {
-                        header.Cell().Element(CellStyle).Text("#");
-                        header.Cell().Element(CellStyle).Text("نوع العمل");
-                        header.Cell().Element(CellStyle).Text("السن");
-                        header.Cell().Element(CellStyle).Text("الظل");
-                        header.Cell().Element(CellStyle).Text("الوحدات");
-                        header.Cell().Element(CellStyle).Text("سعر الوحدة");
-                        header.Cell().Element(CellStyle).Text("الإجمالي");
+                        header.Cell().Element(CellStyle).Text("#").FontFamily(FontName);
+                        header.Cell().Element(CellStyle).Text("نوع العمل").FontFamily(FontName);
+                        header.Cell().Element(CellStyle).Text("السن").FontFamily(FontName);
+                        header.Cell().Element(CellStyle).Text("الظل").FontFamily(FontName);
+                        header.Cell().Element(CellStyle).Text("الوحدات").FontFamily(FontName);
+                        header.Cell().Element(CellStyle).Text("سعر الوحدة").FontFamily(FontName);
+                        header.Cell().Element(CellStyle).Text("الإجمالي").FontFamily(FontName);
                     });
 
                     for (var i = 0; i < items.Count; i++)
                     {
                         var item = items[i];
-                        table.Cell().Element(CellStyle).Text($"{i + 1}");
-                        table.Cell().Element(CellStyle).Text(item.WorkType?.Name ?? "—");
-                        table.Cell().Element(CellStyle).Text(item.ToothNumber ?? "—");
-                        table.Cell().Element(CellStyle).Text(item.Shade ?? "—");
-                        table.Cell().Element(CellStyle).Text($"{item.UnitsCount}");
-                        table.Cell().Element(CellStyle).Text(item.UnitPrice.HasValue ? $"{item.UnitPrice:N0}" : "—");
-                        table.Cell().Element(CellStyle).Text(item.TotalPrice.HasValue ? $"{item.TotalPrice:N0}" : "—");
+                        table.Cell().Element(CellStyle).Text($"{i + 1}").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.WorkType?.Name ?? "—").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.ToothNumber ?? "—").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.Shade ?? "—").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text($"{item.UnitsCount}").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.UnitPrice.HasValue ? $"{item.UnitPrice:N0}" : "—").FontFamily(FontName);
+                        table.Cell().Element(CellStyle).Text(item.TotalPrice.HasValue ? $"{item.TotalPrice:N0}" : "—").FontFamily(FontName);
                     }
                 });
             }
@@ -154,15 +164,15 @@ public static class LabOrderPdfGenerator
             {
                 column.Spacing(5);
                 var total = order.TotalCost ?? order.Cost ?? 0;
-                column.Item().AlignRight().Text($"التكلفة الإجمالية: {total:N0}").Bold().FontSize(12);
+                column.Item().AlignRight().Text($"التكلفة الإجمالية: {total:N0}").Bold().FontSize(12).FontFamily(FontName);
             }
 
             // Instructions
             if (!string.IsNullOrWhiteSpace(order.Instructions))
             {
                 column.Spacing(5);
-                column.Item().Text("تعليمات خاصة").Bold().FontSize(11);
-                column.Item().Text(order.Instructions).FontSize(9);
+                column.Item().Text("تعليمات خاصة").Bold().FontSize(11).FontFamily(FontName);
+                column.Item().Text(order.Instructions).FontSize(9).FontFamily(FontName);
             }
 
             // Doctor signature
@@ -173,7 +183,7 @@ public static class LabOrderPdfGenerator
                 row.ConstantItem(200).Column(col =>
                 {
                     col.Item().PaddingBottom(30).LineHorizontal(1).LineColor(Colors.Grey.Darken1);
-                    col.Item().AlignCenter().Text("توقيع الطبيب").FontSize(9);
+                    col.Item().AlignCenter().Text("توقيع الطبيب").FontSize(9).FontFamily(FontName);
                 });
             });
         });
@@ -183,7 +193,7 @@ public static class LabOrderPdfGenerator
     {
         container.AlignCenter().Text(x =>
         {
-            x.Span("تم إنشاؤه آلياً بواسطة نظام عقلان لطب الأسنان").FontSize(8).FontColor(Colors.Grey.Medium);
+            x.Span("تم إنشاؤه آلياً بواسطة نظام عقلان لطب الأسنان").FontSize(8).FontColor(Colors.Grey.Medium).FontFamily(FontName);
         });
     }
 

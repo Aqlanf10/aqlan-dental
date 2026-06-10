@@ -17,7 +17,10 @@ RUN dotnet publish src/AqlanDentalPro.API/AqlanDentalPro.API.csproj -c Release -
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends libicu-dev libfontconfig1 fontconfig && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libicu-dev libfontconfig1 fontconfig \
+    fonts-noto-core fonts-noto-extra fonts-freefont-ttf \
+    && fc-cache -fv \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system --gid 1001 appgroup && adduser --system --uid 1001 --ingroup appgroup appuser
 RUN mkdir -p wwwroot/uploads /data/uploads ai-models && chown -R appuser:appgroup wwwroot /data/uploads ai-models

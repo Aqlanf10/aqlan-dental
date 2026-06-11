@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import fs from "fs";
 import path from "path";
 
@@ -139,7 +139,7 @@ describe("Button separation in consumer components", () => {
   consumerFiles.forEach((relativePath) => {
     const filePath = path.join(projectRoot, relativePath);
 
-    describe(relativePath.split("/").pop(), () => {
+    describe(relativePath.split("/").pop() ?? relativePath, () => {
       let content: string;
 
       beforeAll(() => {

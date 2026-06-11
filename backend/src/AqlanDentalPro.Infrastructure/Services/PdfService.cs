@@ -14,9 +14,13 @@ public class PdfService : IPdfService
     private readonly AppDbContext _db;
     private readonly ILogger<PdfService> _logger;
 
-    public const string ArabicFontName = "NotoNaskhArabic";
+    // IMPORTANT: This must match the font family name embedded in the .ttf file.
+    // The NotoNaskhArabic-Regular.ttf has NameID 1 = "Noto Naskh Arabic" (with spaces).
+    // Previously this was incorrectly set to "NotoNaskhArabic" (no spaces), causing
+    // QuestPDF to fall back to a non-Arabic font, rendering Arabic text as boxes.
+    public const string ArabicFontName = "Noto Naskh Arabic";
 
-    // Font registration is done once statically
+    // Font registration is done once statically (thread-safe)
     private static bool _fontRegistered = false;
     private static readonly object _fontLock = new();
 
@@ -30,6 +34,7 @@ public class PdfService : IPdfService
     /// <summary>
     /// Registers Arabic fonts for QuestPDF. Call once at startup.
     /// Thread-safe, idempotent. Falls back gracefully if font files are missing.
+    /// Public static so that LabOrderPdfGenerator and other consumers can call it directly.
     /// </summary>
     public static void EnsureFontsRegistered()
     {
@@ -40,8 +45,8 @@ public class PdfService : IPdfService
 
             QuestPDF.Settings.License = LicenseType.Community;
 
-            // Register Arabic font for RTL PDF support
-            var fontPaths = new[]
+            // Register Arabic fonts for RTL PDF support (both Regular and Bold)
+            var regularFontPaths = new[]
             {
                 Path.Combine(AppContext.BaseDirectory, "Fonts", "NotoNaskhArabic-Regular.ttf"),
                 Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "NotoNaskhArabic-Regular.ttf"),
@@ -50,31 +55,29 @@ public class PdfService : IPdfService
                 "/usr/share/fonts/noto/NotoNaskhArabic-Regular.ttf",
             };
 
-            var fontRegistered = false;
-            foreach (var path in fontPaths)
+            var boldFontPaths = new[]
             {
-                try
-                {
-                    if (File.Exists(path))
-                    {
-                        using var stream = File.OpenRead(path);
-                        FontManager.RegisterFont(stream);
-                        fontRegistered = true;
-                        Console.WriteLine($"[PdfService] Arabic font registered from: {path}");
-                        break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[PdfService] Failed to register font from {path}: {ex.Message}");
-                }
-            }
+                Path.Combine(AppContext.BaseDirectory, "Fonts", "NotoNaskhArabic-Bold.ttf"),
+                Path.Combine(Directory.GetCurrentDirectory(), "Fonts", "NotoNaskhArabic-Bold.ttf"),
+                "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
+                "/usr/share/fonts/opentype/noto/NotoNaskhArabic-Bold.ttf",
+                "/usr/share/fonts/noto/NotoNaskhArabic-Bold.ttf",
+            };
 
-            if (!fontRegistered)
+            var regularRegistered = RegisterFontFromPaths(regularFontPaths, "NotoNaskhArabic-Regular");
+            var boldRegistered = RegisterFontFromPaths(boldFontPaths, "NotoNaskhArabic-Bold");
+
+            if (!regularRegistered)
             {
                 Console.Error.WriteLine("[PdfService] WARNING: Arabic font 'NotoNaskhArabic-Regular.ttf' not found in any search path. " +
                     "PDF Arabic text will render with system fallback font. " +
-                    $"Searched: {string.Join(", ", fontPaths)}");
+                    $"Searched: {string.Join(", ", regularFontPaths)}");
+            }
+
+            if (!boldRegistered)
+            {
+                Console.Error.WriteLine("[PdfService] WARNING: Arabic bold font 'NotoNaskhArabic-Bold.ttf' not found. " +
+                    "Bold Arabic text will use regular weight as fallback.");
             }
 
             // Also try to register common system fonts as fallbacks for QuestPDF
@@ -103,6 +106,32 @@ public class PdfService : IPdfService
                 Console.Error.WriteLine($"[PdfService] System font scan failed: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// Attempts to register a font from an ordered list of file paths.
+    /// Returns true if the font was successfully registered from any path.
+    /// </summary>
+    private static bool RegisterFontFromPaths(string[] paths, string fontLabel)
+    {
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    using var stream = File.OpenRead(path);
+                    FontManager.RegisterFont(stream);
+                    Console.WriteLine($"[PdfService] Arabic font ({fontLabel}) registered from: {path}");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[PdfService] Failed to register font ({fontLabel}) from {path}: {ex.Message}");
+            }
+        }
+        return false;
     }
 
     public async Task<byte[]> GeneratePaymentReceiptAsync(Guid paymentId)

@@ -154,16 +154,16 @@ public class PdfEndpointErrorHandlingTests
     public void PdfService_HasArabicFontNameConstant()
     {
         var fontName = AqlanDentalPro.Infrastructure.Services.PdfService.ArabicFontName;
-        fontName.Should().Be("NotoNaskhArabic");
+        fontName.Should().Be("Noto Naskh Arabic", "font family name must match the actual name embedded in the .ttf file");
     }
 
     [Fact]
-    public void PdfService_HasRegisterFontsMethod()
+    public void PdfService_HasEnsureFontsRegisteredMethod()
     {
         var method = typeof(AqlanDentalPro.Infrastructure.Services.PdfService)
-            .GetMethod("RegisterFonts", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            .GetMethod("EnsureFontsRegistered", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
 
-        method.Should().NotBeNull("PdfService must have static RegisterFonts method for Arabic font initialization");
+        method.Should().NotBeNull("PdfService must have public static EnsureFontsRegistered method for Arabic font initialization");
     }
 
     // ─── Frontend PDF Download Utility Contract ──────────────────────────

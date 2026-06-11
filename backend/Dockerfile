@@ -19,10 +19,18 @@ RUN dotnet publish src/AqlanDentalPro.API/AqlanDentalPro.API.csproj \
     -o /app/publish \
     --no-restore
 
+# Verify Arabic fonts are included in publish output
+RUN ls -la /app/publish/Fonts/ && \
+    test -f /app/publish/Fonts/NotoNaskhArabic-Regular.ttf || \
+    (echo "ERROR: NotoNaskhArabic-Regular.ttf not found in publish output!" && exit 1) && \
+    test -f /app/publish/Fonts/NotoNaskhArabic-Bold.ttf || \
+    (echo "WARNING: NotoNaskhArabic-Bold.ttf not found in publish output (non-fatal)")
+
 # ---- Runtime Stage ----
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
+# Install fontconfig for QuestPDF font rendering at runtime
 RUN apt-get update && apt-get install -y --no-install-recommends libfontconfig1 fontconfig && rm -rf /var/lib/apt/lists/*
 
 # Non-root user for security

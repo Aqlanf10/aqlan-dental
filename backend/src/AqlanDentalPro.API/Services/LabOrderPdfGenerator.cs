@@ -7,7 +7,7 @@ namespace AqlanDentalPro.API.Services;
 
 /// <summary>
 /// Lab Sprint 5 — Generates PDF for lab orders using QuestPDF.
-/// Uses the same Arabic font (NotoNaskhArabic) registered by PdfService.
+/// Uses the same Arabic font (Noto Naskh Arabic) registered by PdfService.
 /// </summary>
 public static class LabOrderPdfGenerator
 {

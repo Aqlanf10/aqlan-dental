@@ -7,7 +7,7 @@ import {
   Stethoscope, AlertTriangle, Search, RefreshCw,
   Globe,
   Wallet, UserPlus, Keyboard, Bell, BellOff,
-  Printer, Activity, Megaphone, Building2,
+  Printer, Download, Activity, Megaphone, Building2,
   X, Phone, MessageCircle,
   ClipboardCheck, LogIn, BellRing, CalendarPlus,
   Monitor, MoreHorizontal,
@@ -338,7 +338,30 @@ export default function DailyOperationsPage() {
     return sidePanelItem ?? selectedItem ?? null;
   }, [sidePanelItem, selectedItem]);
 
-  // ── Print receipt for active item ──
+  // ── Download receipt PDF for active item ──
+  const handleDownloadReceipt = useCallback(async () => {
+    const item = getActiveItem();
+    if (!item) {
+      toast.error("يرجى اختيار مريض أولاً");
+      return;
+    }
+    const latestPaymentId = selectedSummary?.financeSummary?.latestPayment?.id;
+    if (!latestPaymentId) {
+      toast.error("لا توجد دفعة حديثة لتحميل سند");
+      return;
+    }
+    try {
+      const { downloadPdfFromApi } = await import("@/lib/pdfDownload");
+      const receiptNum = selectedSummary?.financeSummary?.latestPayment?.receiptNumber ?? latestPaymentId;
+      await downloadPdfFromApi(`/api/payments/${latestPaymentId}/pdf`, `receipt-${receiptNum}.pdf`);
+      toast.success("تم تحميل سند القبض");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "خطأ";
+      toast.error(`فشل تحميل سند الدفع: ${reason}`);
+    }
+  }, [getActiveItem, selectedSummary]);
+
+  // ── Print receipt PDF for active item — prints the PDF itself, not the system page ──
   const handlePrintReceipt = useCallback(async () => {
     const item = getActiveItem();
     if (!item) {
@@ -351,12 +374,12 @@ export default function DailyOperationsPage() {
       return;
     }
     try {
-      const { downloadPdfFromApi } = await import("@/lib/pdfDownload");
+      const { printPdfFromApi } = await import("@/lib/pdfDownload");
       const receiptNum = selectedSummary?.financeSummary?.latestPayment?.receiptNumber ?? latestPaymentId;
-      await downloadPdfFromApi(`/api/payments/${latestPaymentId}/pdf`, `receipt-${receiptNum}.pdf`);
+      await printPdfFromApi(`/api/payments/${latestPaymentId}/pdf`, `receipt-${receiptNum}.pdf`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : "خطأ";
-      toast.error(`فشل تحميل سند الدفع: ${reason}`);
+      toast.error(`فشل طباعة سند الدفع: ${reason}`);
     }
   }, [getActiveItem, selectedSummary]);
 
@@ -1204,12 +1227,20 @@ export default function DailyOperationsPage() {
                   <span>موعد قادم</span>
                 </button>
 
-                {/* طباعة سند (Print Receipt) */}
+                {/* تحميل سند PDF (Download Receipt PDF) */}
+                <button onClick={() => { setMoreMenuOpen(false); handleDownloadReceipt(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-green-50"
+                  style={{ color: "#16a34a" }}>
+                  <Download className="w-4 h-4" />
+                  <span>تحميل سند PDF</span>
+                </button>
+
+                {/* طباعة سند مباشرة (Print Receipt — prints PDF only, not the system page) */}
                 <button onClick={() => { setMoreMenuOpen(false); handlePrintReceipt(); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition hover:bg-purple-50"
                   style={{ color: "#7c3aed" }}>
                   <Printer className="w-4 h-4" />
-                  <span>طباعة سند</span>
+                  <span>طباعة سند مباشرة</span>
                 </button>
 
                 <div className="my-1 border-t" style={{ borderColor: "#f1f5f9" }} />

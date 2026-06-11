@@ -3,8 +3,9 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, FileText, RotateCcw, RefreshCw } from "lucide-react";
+import { Plus, FlaskConical, Clock, CheckCircle2, XCircle, Package, Search, FileText, RotateCcw, RefreshCw, Printer, Download } from "lucide-react";
 import api from "@/lib/api";
+import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { toast } from "@/stores/toastStore";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
@@ -232,12 +233,44 @@ export default function LabPage() {
                               {NEXT_STATUS_LABELS[nextStatus] ?? "تقدّم"} ←
                             </button>
                           )}
+                          {/* Download PDF button — sends Authorization token */}
                           <button
                             type="button"
-                            onClick={() => window.open(`/api/lab-orders/${order.id}/print`, "_blank")}
-                            className="text-xs text-gray-500 hover:text-gray-800 font-medium"
+                            onClick={async () => {
+                              try {
+                                const filename = order.orderNumber
+                                  ? `lab-order-${order.orderNumber}.pdf`
+                                  : `lab-order-${order.id}.pdf`;
+                                await downloadPdfFromApi(`/api/lab-orders/${order.id}/print`, filename);
+                                toast.success("تم تحميل أمر العمل");
+                              } catch (err) {
+                                const reason = err instanceof Error ? err.message : "خطأ";
+                                toast.error(`فشل تحميل أمر العمل: ${reason}`);
+                              }
+                            }}
+                            className="text-xs text-green-600 hover:text-green-800 font-medium"
+                            title="تحميل PDF"
                           >
-                            PDF
+                            <Download className="w-3.5 h-3.5 inline" /> PDF
+                          </button>
+                          {/* Print PDF button — prints the PDF itself, not the system page */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const filename = order.orderNumber
+                                  ? `lab-order-${order.orderNumber}.pdf`
+                                  : `lab-order-${order.id}.pdf`;
+                                await printPdfFromApi(`/api/lab-orders/${order.id}/print`, filename);
+                              } catch (err) {
+                                const reason = err instanceof Error ? err.message : "خطأ";
+                                toast.error(`فشل طباعة أمر العمل: ${reason}`);
+                              }
+                            }}
+                            className="text-xs text-purple-600 hover:text-purple-800 font-medium"
+                            title="طباعة مباشرة"
+                          >
+                            <Printer className="w-3.5 h-3.5 inline" />
                           </button>
                         </div>
                       </td>

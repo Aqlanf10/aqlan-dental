@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Trash2,
   Printer,
+  Download,
   Loader2,
   AlertTriangle,
 } from "lucide-react";
@@ -14,7 +15,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useActiveCashierSession } from "@/hooks/useCashierSession";
-import { downloadPdfFromApi } from "@/lib/pdfDownload";
+import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import type { PaymentListItem, RegisterPaymentRequest } from "./types";
 import { PAYMENT_METHODS } from "./types";
 import { SectionHeader, LoadingSkeleton, EmptyState, DataTable, Modal, ConfirmDialog, tokens, inputStyle, labelStyle, btnPrimary, btnGhost } from "./FinanceSharedUI";
@@ -249,6 +250,7 @@ export function CollectionsTab() {
                 {isAdmin && (
                   <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(r.id); }} className="w-7 h-7 rounded-md flex items-center justify-center" style={{ color: tokens.dangerBorder }} title="عكس الدفعة"><Trash2 className="w-3.5 h-3.5" /></button>
                 )}
+                {/* Download PDF button */}
                 <button
                   onClick={async (e) => {
                     e.stopPropagation();
@@ -262,8 +264,26 @@ export function CollectionsTab() {
                     }
                   }}
                   className="w-7 h-7 rounded-md flex items-center justify-center"
+                  style={{ color: tokens.successBorder }}
+                  title="تحميل PDF"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+                {/* Print PDF button — prints the PDF itself, not the system page */}
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      const filename = r.receiptNumber ? `receipt-${r.receiptNumber}.pdf` : `receipt-${r.id}.pdf`;
+                      await printPdfFromApi(`/api/payments/${r.id}/pdf`, filename);
+                    } catch (err) {
+                      const reason = err instanceof Error ? err.message : "خطأ";
+                      toast.error(`فشل طباعة سند القبض: ${reason}`);
+                    }
+                  }}
+                  className="w-7 h-7 rounded-md flex items-center justify-center"
                   style={{ color: tokens.brand }}
-                  title="طباعة إيصال"
+                  title="طباعة مباشرة"
                 >
                   <Printer className="w-3.5 h-3.5" />
                 </button>

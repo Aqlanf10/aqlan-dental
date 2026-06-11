@@ -1,5 +1,6 @@
 using FluentAssertions;
 using QuestPDF.Fluent;
+using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using Xunit;
 

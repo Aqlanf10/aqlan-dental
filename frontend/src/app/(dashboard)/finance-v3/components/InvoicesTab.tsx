@@ -9,8 +9,9 @@ import {
   RotateCcw,
   HandCoins,
   Printer,
+  Download,
 } from "lucide-react";
-import { downloadPdfFromApi } from "@/lib/pdfDownload";
+import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { api } from "@/lib/api";
 import { toast } from "@/stores/toastStore";
 import type { InvoiceListItem, InvoiceDetail, CreditNoteDto, CreateCreditNoteRequest, ProcessRefundRequest } from "./types";
@@ -126,7 +127,7 @@ export function InvoicesTab() {
             { key: "issueDate", label: "التاريخ", render: (r) => safeFormatDate(r.issueDate) },
             { key: "refundAction", label: "", render: (r) => (
               <div className="flex items-center gap-1">
-                {/* Part D: Visible invoice print button in every row */}
+                {/* Download PDF button */}
                 {r.status !== "Cancelled" && (
                   <button
                     onClick={async (e) => {
@@ -141,8 +142,28 @@ export function InvoicesTab() {
                       }
                     }}
                     className="w-7 h-7 rounded-md flex items-center justify-center"
+                    style={{ color: tokens.successBorder }}
+                    title="تحميل PDF"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {/* Print PDF button — prints the PDF itself, not the system page */}
+                {r.status !== "Cancelled" && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        const filename = r.invoiceNumber ? `invoice-${r.invoiceNumber}.pdf` : `invoice-${r.id}.pdf`;
+                        await printPdfFromApi(`/api/invoices/${r.id}/pdf`, filename);
+                      } catch (err) {
+                        const reason = err instanceof Error ? err.message : "خطأ";
+                        toast.error(`فشل طباعة الفاتورة: ${reason}`);
+                      }
+                    }}
+                    className="w-7 h-7 rounded-md flex items-center justify-center"
                     style={{ color: tokens.brand }}
-                    title="طباعة الفاتورة"
+                    title="طباعة مباشرة"
                   >
                     <Printer className="w-3.5 h-3.5" />
                   </button>
@@ -263,7 +284,24 @@ export function InvoicesTab() {
                     <RotateCcw className="w-4 h-4" /> إرجاع مبلغ
                   </button>
                 )}
-                {/* Print button in detail modal */}
+                {/* Print button in detail modal — prints PDF only */}
+                {detail.status !== "Draft" && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const filename = detail.invoiceNumber ? `invoice-${detail.invoiceNumber}.pdf` : `invoice-${detail.id}.pdf`;
+                        await printPdfFromApi(`/api/invoices/${detail.id}/pdf`, filename);
+                      } catch (err) {
+                        const reason = err instanceof Error ? err.message : "خطأ";
+                        toast.error(`فشل طباعة الفاتورة: ${reason}`);
+                      }
+                    }}
+                    style={{ ...btnPrimary, backgroundColor: tokens.brand }}
+                  >
+                    <Printer className="w-4 h-4" /> طباعة الفاتورة
+                  </button>
+                )}
+                {/* Download button in detail modal */}
                 {detail.status !== "Draft" && (
                   <button
                     onClick={async () => {
@@ -276,9 +314,9 @@ export function InvoicesTab() {
                         toast.error(`فشل تحميل الفاتورة: ${reason}`);
                       }
                     }}
-                    style={{ ...btnPrimary, backgroundColor: tokens.brand }}
+                    style={{ ...btnPrimary, backgroundColor: tokens.successBorder }}
                   >
-                    <Printer className="w-4 h-4" /> طباعة الفاتورة
+                    <Download className="w-4 h-4" /> تحميل PDF
                   </button>
                 )}
               </div>

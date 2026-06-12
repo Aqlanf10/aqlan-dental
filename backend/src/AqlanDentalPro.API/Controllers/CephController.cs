@@ -1,3 +1,4 @@
+using AqlanDentalPro.API.Services;
 using AqlanDentalPro.Application.DTOs.Ceph;
 using AqlanDentalPro.Application.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -87,6 +88,31 @@ public class CephController(CephService service) : ControllerBase
             status  = "unavailable",
             message = "التتبع الآلي بالذكاء الاصطناعي يتطلب نموذج رؤية متخصص — قيد التطوير. استخدم الوضع اليدوي."
         });
+
+    // GET /api/ceph/{id}/report/pdf — C-C Arabic cephalometric PDF report
+    [HttpGet("{id:guid}/report/pdf")]
+    public async Task<IActionResult> GetReportPdf(
+        Guid id,
+        [FromServices] CephReportPdfGenerator reportGenerator,
+        [FromServices] ILogger<CephController> logger)
+    {
+        try
+        {
+            var pdfBytes = await reportGenerator.GenerateAsync(id);
+            return File(pdfBytes, "application/pdf", $"ceph-report-{id}.pdf");
+        }
+        catch (ArgumentException)
+        {
+            return NotFound(new { message = "تحليل السيفالومتري غير موجود" });
+        }
+        catch (Exception ex)
+        {
+            // Security rule: never expose exception details in HTTP responses —
+            // full details go to the server log only.
+            logger.LogError(ex, "Failed to generate ceph report PDF for analysis {AnalysisId}", id);
+            return StatusCode(500, new { message = "حدث خطأ غير متوقع أثناء إنشاء تقرير التحليل السيفالومتري" });
+        }
+    }
 
     // PUT /api/ceph/{id}/diagnosis
     [HttpPut("{id:guid}/diagnosis")]

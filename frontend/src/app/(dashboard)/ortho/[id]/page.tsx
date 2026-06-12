@@ -74,6 +74,7 @@ import {
   RECORDS_CHECKLIST_ITEMS,
 } from "@/types/ortho";
 import { TreatmentStagesPanel } from "@/components/ortho/TreatmentStagesPanel";
+import { OrthoStagesTimeline } from "@/components/ortho/OrthoStagesTimeline";
 import { ImagePreviewModal } from "@/components/shared/ImagePreviewModal";
 import { OrthoVisitTimeline } from "@/components/ortho/OrthoVisitTimeline";
 import { OrthoBeforeAfterCompare } from "@/components/ortho/OrthoBeforeAfterCompare";
@@ -2324,17 +2325,27 @@ export default function OrthoCaseDetailPage() {
           {activeTab === "diagnosis" && <DiagnosisPanel caseId={id} />}
           {activeTab === "plan" && <TreatmentPlanPanel caseId={id} />}
           {activeTab === "stages" && (
-            <TreatmentStagesPanel
-              caseId={id}
-              stages={localStages}
-              onUpdate={(stage) =>
-                setLocalStages((items) =>
-                  items.map((item) =>
-                    item.id === stage.id ? stage : item
-                  )
-                )
-              }
-            />
+            <div className="space-y-6">
+              <OrthoStagesTimeline stages={localStages} />
+              {localStages.length > 0 && (
+                <div className="border-t border-gray-100 pt-5">
+                  <h3 className="mb-3 text-sm font-semibold text-clinic-navy">
+                    إدارة المراحل
+                  </h3>
+                  <TreatmentStagesPanel
+                    caseId={id}
+                    stages={localStages}
+                    onUpdate={(stage) =>
+                      setLocalStages((items) =>
+                        items.map((item) =>
+                          item.id === stage.id ? stage : item
+                        )
+                      )
+                    }
+                  />
+                </div>
+              )}
+            </div>
           )}
           {activeTab === "visits" && (
             <OrthoVisitTimeline caseId={id} visits={visits} />

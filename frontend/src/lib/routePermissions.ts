@@ -34,6 +34,8 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { path: '/inventory', allowedRoles: ['Admin'] },
   
   // Reports - specific roles
+  // More specific path first (startsWith matching) — same roles as /reports
+  { path: '/reports/operations', allowedRoles: ['Admin', 'Accountant'] },
   { path: '/reports', allowedRoles: ['Admin', 'Accountant'] },
   
   // HR - Admin only

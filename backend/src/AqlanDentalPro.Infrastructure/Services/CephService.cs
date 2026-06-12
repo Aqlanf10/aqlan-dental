@@ -56,13 +56,22 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
     // ──────────────────────────────────────────────────────────────────────────
     public async Task<CephAnalysisDetailDto> CreateAsync(CreateCephAnalysisRequest req)
     {
+        // CephAnalysis.DoctorId references Doctors.Id, NOT Users.Id — resolve
+        // the current user's Doctor row (null for non-doctor users like Admin).
+        Guid? doctorId = null;
+        if (currentUser.UserId is Guid userId)
+            doctorId = await db.Doctors
+                .Where(d => d.UserId == userId && d.IsActive)
+                .Select(d => (Guid?)d.Id)
+                .FirstOrDefaultAsync();
+
         var analysis = new CephAnalysis
         {
             OrthoCaseId  = req.OrthoCaseId,
             AnalysisType = req.AnalysisType,
             XrayFileUrl  = req.XrayFileUrl,
             AiAssisted   = req.AiAssisted,
-            DoctorId     = currentUser.UserId,
+            DoctorId     = doctorId,
             Notes        = req.Notes
         };
 
@@ -940,7 +949,9 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         _          => ["steiner", "tweed", "mcnamara", "ricketts", "downs", "wits"]
     };
 
-    private static string GetMeasurementGroup(string name) => name switch
+    // Public: also used by CephReportPdfGenerator as the fallback when a
+    // CephNorm row is missing for a measurement.
+    public static string GetMeasurementGroup(string name) => name switch
     {
         "FMA" or "FMIA" or "IMPA"                                      => "tweed",
         "Co-A" or "Co-Gn" or "ANS-Me"                                  => "mcnamara",
@@ -953,7 +964,9 @@ public class CephService(AppDbContext db, ICurrentUserService currentUser, ILogg
         _                                                               => "steiner"
     };
 
-    private static string GetMeasurementNameAr(string name) => name switch
+    // Public: also used by CephReportPdfGenerator as the fallback when a
+    // CephNorm row has no NameAr.
+    public static string GetMeasurementNameAr(string name) => name switch
     {
         // Steiner
         "SNA"           => "زاوية SNA",

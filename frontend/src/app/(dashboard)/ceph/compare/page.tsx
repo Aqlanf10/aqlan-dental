@@ -282,7 +282,9 @@ function GroupRows({ label, rows }: { label: string; rows: CephCompareRow[] }) {
               </span>
             </td>
             <td className="px-4 py-3 text-xs text-gray-500 font-mono whitespace-nowrap" dir="ltr">
-              {row.normalValue.toFixed(1)} ± {row.stdDeviation.toFixed(1)}{row.unit}
+              {row.normalValue == null
+                ? "—"
+                : `${row.normalValue.toFixed(1)}${row.stdDeviation == null ? "" : ` ± ${row.stdDeviation.toFixed(1)}`}${row.unit}`}
             </td>
             <td className="px-4 py-3">
               <SeverityBadge severity={row.targetClassification} />

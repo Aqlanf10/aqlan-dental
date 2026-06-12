@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Brain, Calculator, Eye, EyeOff, Play, PlayCircle, ArrowRight,
-  Save, CheckCircle2, ChevronRight, Loader2,
+  Save, CheckCircle2, ChevronRight, Loader2, FileDown, Printer,
 } from "lucide-react";
 import type { CephAnalysis, CephLandmark, CephDiagnosis, AnalysisType } from "@/types/ceph";
 import { ANALYSIS_GROUPS, ANALYSIS_TYPE_AR } from "@/types/ceph";
@@ -12,6 +12,7 @@ import { buildMeasurementList, applyNormOverrides, type ApiNorm } from "@/lib/ce
 import { CephCanvas, LANDMARK_DEFS, LANDMARK_ORDER, SIMULATION_SCENARIOS } from "@/components/ceph/CephCanvas";
 import { AnalysisReport } from "@/components/ceph/AnalysisReport";
 import api from "@/lib/api";
+import { downloadPdfFromApi, printPdfFromApi } from "@/lib/pdfDownload";
 import { cn, formatArabicDate } from "@/lib/utils";
 
 const LANDMARK_GROUPS = [
@@ -46,6 +47,9 @@ export default function CephAnalysisPage() {
   // Honest-simulation state: the template tool is NOT AI and must say so.
   const [simNotice, setSimNotice]     = useState<string | null>(null);
   const [simError, setSimError]       = useState<string | null>(null);
+  // C-C: Arabic ceph PDF report (download / print)
+  const [pdfBusy, setPdfBusy]         = useState<'download' | 'print' | null>(null);
+  const [pdfError, setPdfError]       = useState<string | null>(null);
 
   useEffect(() => {
     api.get<ApiNorm[]>("/api/ceph-norms")
@@ -164,6 +168,21 @@ export default function CephAnalysisPage() {
     }
   };
 
+  const handleReportPdf = async (mode: 'download' | 'print') => {
+    setPdfBusy(mode);
+    setPdfError(null);
+    try {
+      const url = `/api/ceph/${id}/report/pdf`;
+      const filename = `ceph-report-${id}.pdf`;
+      if (mode === 'download') await downloadPdfFromApi(url, filename);
+      else await printPdfFromApi(url, filename);
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : 'تعذر إنشاء تقرير PDF');
+    } finally {
+      setPdfBusy(null);
+    }
+  };
+
   const handleDiagnosisChange = async (partial: Partial<CephDiagnosis>) => {
     const updated: CephDiagnosis = {
       ...diagnosis,
@@ -227,6 +246,28 @@ export default function CephAnalysisPage() {
             {saving ? 'حساب...' : saveStatus === 'saved' ? 'تم' : 'احسب'}
           </button>
 
+          {/* The PDF is generated from SAVED data only — gate on a clean,
+              computed state so a stale report can never be exported. */}
+          <button onClick={() => handleReportPdf('download')}
+            disabled={placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
+              : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
+              : 'تحميل تقرير التحليل السيفالومتري PDF'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+            {pdfBusy === 'download' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+            تحميل التقرير PDF
+          </button>
+
+          <button onClick={() => handleReportPdf('print')}
+            disabled={placedCount === 0 || isDirty || !analysis?.measurements?.length || pdfBusy !== null}
+            title={placedCount === 0 ? 'ضع المعالم واحسب القياسات أولًا لإنشاء التقرير'
+              : isDirty || !analysis?.measurements?.length ? 'اضغط «احسب» لحفظ المعالم والقياسات قبل إصدار التقرير'
+              : 'طباعة تقرير التحليل السيفالومتري'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition">
+            {pdfBusy === 'print' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+            طباعة التقرير
+          </button>
+
           <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
             <button onClick={() => setShowPlanes(!showPlanes)}
               className={cn("p-1.5 rounded-md transition", showPlanes ? "bg-white shadow-sm text-clinic-blue" : "text-gray-400")}
@@ -258,6 +299,12 @@ export default function CephAnalysisPage() {
       {simError && (
         <div className="flex-shrink-0 mx-1 mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {simError}
+        </div>
+      )}
+      {pdfError && (
+        <div className="flex-shrink-0 mx-1 mb-2 flex items-start justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span>فشل إنشاء تقرير PDF: {pdfError}</span>
+          <button onClick={() => setPdfError(null)} className="text-red-500 hover:text-red-700 font-bold flex-shrink-0">✕</button>
         </div>
       )}
 

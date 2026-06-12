@@ -33,6 +33,56 @@ public sealed class UpsertClinicalExamRequest
     public string? Habits { get; init; }
     public string? Notes { get; init; }
     public Guid? DoctorId { get; init; }
+
+    // ── Phase 3 — structured clinical examination (all optional / additive) ──
+
+    // Occlusal: right/left split + missing measures
+    public string? MolarRelationRight { get; init; }
+    public string? MolarRelationLeft { get; init; }
+    public string? CanineRelationRight { get; init; }
+    public string? CanineRelationLeft { get; init; }
+    public string? IncisorRelation { get; init; }
+    public decimal? OverbitePercent { get; init; }
+    public bool? DeepBite { get; init; }
+    public string? CrossbiteType { get; init; }
+    public bool? ScissorBite { get; init; }
+    public decimal? MidlineUpperShiftMm { get; init; }
+    public decimal? MidlineLowerShiftMm { get; init; }
+    public decimal? UpperCrowdingMm { get; init; }
+    public decimal? LowerCrowdingMm { get; init; }
+    public decimal? LowerSpacingMm { get; init; }
+    public string? CurveOfSpee { get; init; }
+    public string? ArchFormUpper { get; init; }
+    public string? ArchFormLower { get; init; }
+    public string? BoltonDiscrepancyNote { get; init; }
+
+    // Extraoral additions
+    public string? LipCompetenceGrade { get; init; }
+    public string? NasolabialAngle { get; init; }
+    public string? ChinPosition { get; init; }
+    public string? FunctionalShift { get; init; }
+    public bool? GummySmile { get; init; }
+
+    // Structured habit flags
+    public bool? ThumbSucking { get; init; }
+    public bool? MouthBreathing { get; init; }
+    public bool? TongueThrust { get; init; }
+    public bool? LipBiting { get; init; }
+    public bool? NailBiting { get; init; }
+    public bool? Bruxism { get; init; }
+
+    // Intraoral health
+    public string? OralHygiene { get; init; }
+    public string? GingivalCondition { get; init; }
+    public string? PeriodontalConcerns { get; init; }
+    public string? MissingTeethFdi { get; init; }
+    public string? RetainedDeciduousFdi { get; init; }
+    public string? ImpactedTeethFdi { get; init; }
+    public string? SupernumeraryNote { get; init; }
+    public string? EctopicEruptionNote { get; init; }
+    public string? FrenumNote { get; init; }
+    public string? TongueNote { get; init; }
+    public string? CariesNote { get; init; }
 }
 
 [ApiController]
@@ -263,6 +313,47 @@ public class OrthoCasesController(
             exam.Habits,
             exam.Notes,
             exam.DoctorId,
+            // Phase 3 — structured clinical examination
+            exam.MolarRelationRight,
+            exam.MolarRelationLeft,
+            exam.CanineRelationRight,
+            exam.CanineRelationLeft,
+            exam.IncisorRelation,
+            exam.OverbitePercent,
+            exam.DeepBite,
+            exam.CrossbiteType,
+            exam.ScissorBite,
+            exam.MidlineUpperShiftMm,
+            exam.MidlineLowerShiftMm,
+            exam.UpperCrowdingMm,
+            exam.LowerCrowdingMm,
+            exam.LowerSpacingMm,
+            exam.CurveOfSpee,
+            exam.ArchFormUpper,
+            exam.ArchFormLower,
+            exam.BoltonDiscrepancyNote,
+            exam.LipCompetenceGrade,
+            exam.NasolabialAngle,
+            exam.ChinPosition,
+            exam.FunctionalShift,
+            exam.GummySmile,
+            exam.ThumbSucking,
+            exam.MouthBreathing,
+            exam.TongueThrust,
+            exam.LipBiting,
+            exam.NailBiting,
+            exam.Bruxism,
+            exam.OralHygiene,
+            exam.GingivalCondition,
+            exam.PeriodontalConcerns,
+            exam.MissingTeethFdi,
+            exam.RetainedDeciduousFdi,
+            exam.ImpactedTeethFdi,
+            exam.SupernumeraryNote,
+            exam.EctopicEruptionNote,
+            exam.FrenumNote,
+            exam.TongueNote,
+            exam.CariesNote,
         });
     }
 
@@ -271,6 +362,51 @@ public class OrthoCasesController(
     {
         var orthoCase = await db.OrthoCases.FindAsync(id);
         if (orthoCase is null) return NotFound(new { message = "الحالة غير موجودة" });
+
+        // ── Phase 3 validation: enum-like fields (case-insensitive) ─────────────
+        var enumChecks = new (string Field, string? Value, IReadOnlyList<string> Allowed)[]
+        {
+            ("MolarRelationRight",  req.MolarRelationRight,  OrthoClinicalExamFields.AngleClasses),
+            ("MolarRelationLeft",   req.MolarRelationLeft,   OrthoClinicalExamFields.AngleClasses),
+            ("CanineRelationRight", req.CanineRelationRight, OrthoClinicalExamFields.AngleClasses),
+            ("CanineRelationLeft",  req.CanineRelationLeft,  OrthoClinicalExamFields.AngleClasses),
+            ("IncisorRelation",     req.IncisorRelation,     OrthoClinicalExamFields.IncisorRelations),
+            ("CrossbiteType",       req.CrossbiteType,       OrthoClinicalExamFields.CrossbiteTypes),
+            ("CurveOfSpee",         req.CurveOfSpee,         OrthoClinicalExamFields.CurveOfSpeeValues),
+            ("ArchFormUpper",       req.ArchFormUpper,       OrthoClinicalExamFields.ArchForms),
+            ("ArchFormLower",       req.ArchFormLower,       OrthoClinicalExamFields.ArchForms),
+            ("LipCompetenceGrade",  req.LipCompetenceGrade,  OrthoClinicalExamFields.LipCompetenceGrades),
+            ("NasolabialAngle",     req.NasolabialAngle,     OrthoClinicalExamFields.NasolabialAngles),
+            ("ChinPosition",        req.ChinPosition,        OrthoClinicalExamFields.ChinPositions),
+            ("OralHygiene",         req.OralHygiene,         OrthoClinicalExamFields.OralHygieneValues),
+        };
+
+        var normalized = new Dictionary<string, string?>();
+        foreach (var (field, value, allowed) in enumChecks)
+        {
+            if (!OrthoClinicalExamFields.TryNormalize(value, allowed, out var canonical))
+                return BadRequest(new { message = $"قيمة غير صالحة للحقل: {field}" });
+            normalized[field] = canonical;
+        }
+
+        // ── Phase 3 validation: numeric sanity (mm: -30..30, percent: 0..200) ──
+        var mmChecks = new (string Field, decimal? Value)[]
+        {
+            ("Overjet",             req.Overjet),
+            ("Overbite",            req.Overbite),
+            ("MidlineUpperShiftMm", req.MidlineUpperShiftMm),
+            ("MidlineLowerShiftMm", req.MidlineLowerShiftMm),
+            ("UpperCrowdingMm",     req.UpperCrowdingMm),
+            ("LowerCrowdingMm",     req.LowerCrowdingMm),
+            ("LowerSpacingMm",      req.LowerSpacingMm),
+        };
+        foreach (var (field, value) in mmChecks)
+        {
+            if (!OrthoClinicalExamFields.IsInRange(value, -30m, 30m))
+                return BadRequest(new { message = $"قيمة خارج النطاق المسموح للحقل: {field}" });
+        }
+        if (!OrthoClinicalExamFields.IsInRange(req.OverbitePercent, 0m, 200m))
+            return BadRequest(new { message = "قيمة خارج النطاق المسموح للحقل: OverbitePercent" });
 
         var existing = await db.OrthoClinicalExams
             .Where(e => e.OrthoCaseId == id)
@@ -305,6 +441,54 @@ public class OrthoCasesController(
         existing.Habits             = req.Habits;
         existing.Notes              = req.Notes;
         existing.DoctorId           = req.DoctorId;
+
+        // Phase 3 — occlusal (enum-likes stored in canonical casing)
+        existing.MolarRelationRight   = normalized["MolarRelationRight"];
+        existing.MolarRelationLeft    = normalized["MolarRelationLeft"];
+        existing.CanineRelationRight  = normalized["CanineRelationRight"];
+        existing.CanineRelationLeft   = normalized["CanineRelationLeft"];
+        existing.IncisorRelation      = normalized["IncisorRelation"];
+        existing.OverbitePercent      = req.OverbitePercent;
+        existing.DeepBite             = req.DeepBite;
+        existing.CrossbiteType        = normalized["CrossbiteType"];
+        existing.ScissorBite          = req.ScissorBite;
+        existing.MidlineUpperShiftMm  = req.MidlineUpperShiftMm;
+        existing.MidlineLowerShiftMm  = req.MidlineLowerShiftMm;
+        existing.UpperCrowdingMm      = req.UpperCrowdingMm;
+        existing.LowerCrowdingMm      = req.LowerCrowdingMm;
+        existing.LowerSpacingMm       = req.LowerSpacingMm;
+        existing.CurveOfSpee          = normalized["CurveOfSpee"];
+        existing.ArchFormUpper        = normalized["ArchFormUpper"];
+        existing.ArchFormLower        = normalized["ArchFormLower"];
+        existing.BoltonDiscrepancyNote = req.BoltonDiscrepancyNote;
+
+        // Phase 3 — extraoral additions
+        existing.LipCompetenceGrade   = normalized["LipCompetenceGrade"];
+        existing.NasolabialAngle      = normalized["NasolabialAngle"];
+        existing.ChinPosition         = normalized["ChinPosition"];
+        existing.FunctionalShift      = req.FunctionalShift;
+        existing.GummySmile           = req.GummySmile;
+
+        // Phase 3 — structured habit flags
+        existing.ThumbSucking         = req.ThumbSucking;
+        existing.MouthBreathing       = req.MouthBreathing;
+        existing.TongueThrust         = req.TongueThrust;
+        existing.LipBiting            = req.LipBiting;
+        existing.NailBiting           = req.NailBiting;
+        existing.Bruxism              = req.Bruxism;
+
+        // Phase 3 — intraoral health
+        existing.OralHygiene          = normalized["OralHygiene"];
+        existing.GingivalCondition    = req.GingivalCondition;
+        existing.PeriodontalConcerns  = req.PeriodontalConcerns;
+        existing.MissingTeethFdi      = req.MissingTeethFdi;
+        existing.RetainedDeciduousFdi = req.RetainedDeciduousFdi;
+        existing.ImpactedTeethFdi     = req.ImpactedTeethFdi;
+        existing.SupernumeraryNote    = req.SupernumeraryNote;
+        existing.EctopicEruptionNote  = req.EctopicEruptionNote;
+        existing.FrenumNote           = req.FrenumNote;
+        existing.TongueNote           = req.TongueNote;
+        existing.CariesNote           = req.CariesNote;
 
         await db.SaveChangesAsync();
         return Ok(new { existing.Id, message = "تم حفظ الفحص السريري" });
